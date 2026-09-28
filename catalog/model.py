@@ -206,7 +206,7 @@ def load_exclusions(path: Path) -> Exclusions:
 
 # ---------------------------------------------------------------------- validate
 def validate(books: list[dict], info: dict) -> tuple[list[str], list[str]]:
-    """Return (errors, warnings). Errors break the build; warnings are worth a look."""
+    """Return (errors, warnings). Errors block imports and syncs; warnings are worth a look."""
     errors: list[str] = []
     warnings: list[str] = []
 

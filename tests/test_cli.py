@@ -15,7 +15,6 @@ class Cli(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        shutil.copytree(ROOT / "src", self.tmp / "src")
         shutil.copytree(ROOT / "data" / "sample", self.tmp / "data" / "sample")
 
     def run_cli(self, *argv):
@@ -24,12 +23,10 @@ class Cli(unittest.TestCase):
             code = main(["--root", str(self.tmp), *argv])
         return code, out.getvalue(), err.getvalue()
 
-    def test_a_fresh_checkout_builds_and_validates_the_demo_data(self):
-        for command in ("validate", "build"):
-            code, out, _ = self.run_cli(command)
-            self.assertEqual(code, 0, command)
-            self.assertIn("demo data", out)
-        self.assertTrue((self.tmp / "dist" / "audiobook-catalog.html").exists())
+    def test_a_fresh_checkout_validates_the_demo_data(self):
+        code, out, _ = self.run_cli("validate")
+        self.assertEqual(code, 0)
+        self.assertIn("demo data", out)
 
     def test_commands_that_write_refuse_to_touch_the_demo_data(self):
         for argv in (["format"], ["import-audible", "x.csv"], ["sync-export", "x.json"]):
@@ -46,7 +43,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
         # once your own data exists it is used instead of the demo
-        code, out, _ = self.run_cli("build")
+        code, out, _ = self.run_cli("validate")
         self.assertEqual(code, 0)
         self.assertNotIn("demo data", out)
 
@@ -73,12 +70,12 @@ class Cli(unittest.TestCase):
         elsewhere = self.tmp / "elsewhere"
         self.assertEqual(self.run_cli("--data-dir", str(elsewhere), "init")[0], 0)
         self.assertEqual(load_books(elsewhere / "books.json"), [])
-        code, out, _ = self.run_cli("--data-dir", str(elsewhere), "build")
+        code, out, _ = self.run_cli("--data-dir", str(elsewhere), "validate")
         self.assertEqual(code, 0)
         self.assertNotIn("demo data", out)
 
     def test_a_missing_explicit_data_dir_is_an_error_not_a_silent_fallback(self):
-        code, _, err = self.run_cli("--data-dir", str(self.tmp / "nope"), "build")
+        code, _, err = self.run_cli("--data-dir", str(self.tmp / "nope"), "validate")
         self.assertEqual(code, 1)
         self.assertIn("error", err)
 

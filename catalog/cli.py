@@ -8,7 +8,6 @@ from collections import Counter
 from pathlib import Path
 
 from . import audible, goodreads
-from .build import build
 from .merge import merge
 from .model import (
     data_dir, dump_books, dump_series_info, is_demo, live_data_dir, load_books, load_exclusions,
@@ -149,14 +148,6 @@ def cmd_format(args) -> int:
     return 0
 
 
-def cmd_build(args) -> int:
-    if is_demo(args.root, args.data):
-        print(DEMO_NOTE)
-    out = build(args.root, args.out, args.data)
-    print(f"built {out} ({out.stat().st_size / 1024:.0f} KB)")
-    return 0
-
-
 def cmd_sync_export(args) -> int:
     """Replace data/books.json with a backup exported from the app (Export button)."""
     if not _require_own_data(args):
@@ -224,10 +215,6 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("format", help="rewrite data/*.json in the canonical layout")
     p.set_defaults(func=cmd_format)
-
-    p = sub.add_parser("build", help="write dist/audiobook-catalog.html")
-    p.add_argument("--out", type=Path)
-    p.set_defaults(func=cmd_build)
 
     p = sub.add_parser("sync-export", help="adopt a JSON backup exported from the app as data/books.json")
     p.add_argument("file", type=Path)

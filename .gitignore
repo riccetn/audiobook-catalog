@@ -1,9 +1,8 @@
 # ---- Personal data: this repository is public, your library is not. -----------------------
-# Your catalogue and everything derived from it (the built page embeds all of it).
+# Your catalogue (the page reads it straight from data/).
 data/books.json
 data/series-info.json
 data/excluded.txt
-dist/
 
 # Raw exports contain ratings, reviews and purchase history.
 data/raw/*
