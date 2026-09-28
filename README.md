@@ -94,6 +94,10 @@ node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json
 ```
 
 It refuses files that are not valid catalogue exports and prints what changed before writing.
+An export holds both the books and the series info (`{"books": [...], "seriesInfo": {...}}`), so
+`sync-export` updates `data/series-info.json` too; backups from before series info was exported (a
+plain list of books) still work and leave `data/series-info.json` as it is. The app's **Import**
+reads both kinds the same way.
 You can also edit `data/books.json` by hand; `make format` restores the one-book-per-line layout.
 
 **Update release info for a series**: edit `data/series-info.json`, then `make validate`.
@@ -137,8 +141,8 @@ holds your personal data). Any static web server pointed at the project root wor
 `--data-dir` and `CATALOG_DATA_DIR` only affect the command line tools, not the page.
 
 The page cannot write files, so edits made in the app live in that browser's `localStorage`, plus
-**Export / Import** JSON for real backups. Local edits are tagged with a fingerprint of the
-`books.json` they were made against. When `books.json` changes (an import, a `sync-export`, a hand
+**Export / Import** JSON for real backups (books and series info). Local edits are tagged with a
+fingerprint of the `books.json` and `series-info.json` they were made against. When either changes (an import, a `sync-export`, a hand
 edit), older local edits are **set aside** (kept under the `audiobook-catalog-data.backup` key)
 instead of silently hiding your new data. Treat `data/books.json` in git as the master copy and the
 browser as a scratch pad: Export, then `sync-export`.

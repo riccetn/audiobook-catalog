@@ -143,6 +143,45 @@ test('sync-export refuses files that are not catalogue exports', t => {
   assert.match(run('sync-export', bad).err, /cannot read/);
 });
 
+test('sync-export restores series info from the backup', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init', '--sample').code, 0);
+  const infoPath = path.join(tmp, 'data', 'series-info.json');
+  const books = loadBooks(path.join(tmp, 'data', 'books.json'));
+  const [series] = books.filter(b => b.s).map(b => b.s);
+  const seriesInfo = { [series]: { total: 9, status: 'ongoing', note: 'Researched in the app.' } };
+  const exported = path.join(tmp, 'export.json');
+  fs.writeFileSync(exported, JSON.stringify({ books, seriesInfo }));
+
+  const dry = run('sync-export', exported, '--dry-run');
+  assert.equal(dry.code, 0);
+  assert.match(dry.out, /series info: \d+ added, \d+ changed, \d+ removed/);
+  assert.notEqual(fs.readFileSync(infoPath, 'utf8'), formatSeriesInfo(seriesInfo));
+
+  const { code, out } = run('sync-export', exported);
+  assert.equal(code, 0);
+  assert.match(out, /wrote data\/series-info\.json/);
+  assert.equal(fs.readFileSync(infoPath, 'utf8'), formatSeriesInfo(seriesInfo));
+
+  // a malformed entry in the backup blocks the whole sync
+  fs.writeFileSync(exported, JSON.stringify({ books, seriesInfo: { [series]: { total: 0, status: 'maybe' } } }));
+  assert.equal(run('sync-export', exported).code, 1);
+  assert.equal(fs.readFileSync(infoPath, 'utf8'), formatSeriesInfo(seriesInfo));
+});
+
+test('sync-export of an older backup (a plain list of books) leaves series info alone', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init', '--sample').code, 0);
+  const infoPath = path.join(tmp, 'data', 'series-info.json');
+  const before = fs.readFileSync(infoPath, 'utf8');
+  const exported = path.join(tmp, 'export.json');
+  fs.writeFileSync(exported, fs.readFileSync(path.join(tmp, 'data', 'books.json')));
+  const { code, out } = run('sync-export', exported);
+  assert.equal(code, 0);
+  assert.match(out, /series info: not in this backup/);
+  assert.equal(fs.readFileSync(infoPath, 'utf8'), before);
+});
+
 test('--data-dir points anywhere', t => {
   const { tmp, run } = sandbox(t);
   const elsewhere = path.join(tmp, 'elsewhere');
