@@ -4,13 +4,12 @@ A personal audiobook library, merged from an Audible export and a Goodreads expo
 series and searchable by title, author, series and genre. The app is a plain `index.html` with
 `styles.css` and `app.js` next to it, and it reads the catalogue from `data/`. There is no build step.
 
-- Python 3.10+ (standard library only) for the data pipeline
 - Vanilla JavaScript for the app: no framework, no bundler, no dependencies
-- Node 18+ is optional, only for the browser smoke test
+- Node 18+ for the command line tools (`node catalog.js`) and the tests; no npm packages
 
 ```sh
 git clone <this repo> && cd audiobook-catalog
-make test     # unit tests + browser smoke test (uses the bundled fictional demo data)
+make test     # all tests, including a browser smoke test (uses the bundled fictional demo data)
 make serve    # serves the app (with the demo data) at http://localhost:8000/
 make help
 ```
@@ -20,10 +19,10 @@ make help
 The repository ships **fictional demo data** only; your own library lives in git-ignored files.
 
 ```sh
-python -m catalog init                                   # creates data/books.json etc. (empty)
+node catalog.js init                                     # creates data/books.json etc. (empty)
 cp ~/Downloads/ALE-spreadsheet-library.csv data/raw/     # your Audible Library Extractor export
-python -m catalog import-audible data/raw/ALE-spreadsheet-library.csv --dry-run
-python -m catalog import-audible data/raw/ALE-spreadsheet-library.csv
+node catalog.js import-audible data/raw/ALE-spreadsheet-library.csv --dry-run
+node catalog.js import-audible data/raw/ALE-spreadsheet-library.csv
 make serve                                               # your catalogue at http://localhost:8000/
 ```
 
@@ -42,9 +41,9 @@ data/
 index.html            the page; links styles.css and app.js
 styles.css
 app.js                the whole UI; fetches data/books.json (or data/sample/) at startup
-importers.js          the Audible/Goodreads importers and merge, ported from catalog/ for the page
-catalog/              the pipeline: importers, merge, validation, CLI (python -m catalog)
-tests/                unittest suite + app.smoke.test.mjs
+importers.js          the pipeline: importers, merge, validation (used by the page and the CLI)
+catalog.js            the command line: node catalog.js <command> (--help lists the commands)
+tests/                node:test suites (*.test.mjs), including the browser smoke test
 ```
 
 ## Data format
@@ -72,14 +71,14 @@ tests/                unittest suite + app.smoke.test.mjs
 **Add new Audible purchases**
 
 1. Export your library with the Audible Library Extractor and save the CSV in `data/raw/`.
-2. `python -m catalog import-audible data/raw/<file>.csv --dry-run` to preview, then run it without `--dry-run`.
+2. `node catalog.js import-audible data/raw/<file>.csv --dry-run` to preview, then run it without `--dry-run`.
 3. `make test`, then commit `data/books.json`.
 
 Only finished books are imported. The command lists what it added, and anything ambiguous
 (for example a book Audible files under several series).
 
 **Or import in the app**: press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
-runs the same importer and merge as the command line (`importers.js` is a port of `catalog/`), honours
+runs the same importer and merge as the command line (both use `importers.js`), honours
 `data/excluded.txt`, and shows the same preview: what is already there, which Audible ids get filled
 in, what is new and what needs a look. Nothing changes until you press **Add books**. Like any edit
 in the page, the result lives in that browser: press **Export** and run `sync-export` (below) to put it
@@ -90,8 +89,8 @@ in `data/books.json`.
 Edit books in the page (pencil icon, `+ Add a book`), press **Export**, then:
 
 ```sh
-python -m catalog sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json --dry-run
-python -m catalog sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json
+node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json --dry-run
+node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json
 ```
 
 It refuses files that are not valid catalogue exports and prints what changed before writing.
@@ -102,9 +101,8 @@ You can also edit `data/books.json` by hand; `make format` restores the one-book
 **Remove a book for good**: delete it from `data/books.json` *and* add its ASIN (or `Title | Author`
 for books without one) to `data/excluded.txt`, otherwise the next import brings it back.
 
-**Goodreads**: `python -m catalog import-goodreads data/raw/goodreads_library_export.csv`, or
-**Goodreads CSV** in the app. Goodreads
-has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
+**Goodreads**: `node catalog.js import-goodreads data/raw/goodreads_library_export.csv`, or
+**Goodreads CSV** in the app. Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
 
 ## Tidy names and spacing
@@ -112,7 +110,7 @@ MP3...) and the *read* shelf. Narrators come from the "Additional Authors" colum
 Authors and narrators keep a space between initials (`A. B. Quill`, not `A.B. Quill`), so the filters
 never list one person twice. Every text field also has stray spacing removed: runs of spaces, tabs,
 non-breaking or invisible characters, and leading/trailing whitespace. Both importers and
-`sync-export` apply this automatically (`tidy_book` in `catalog/model.py`), and `make validate` warns
+`sync-export` apply this automatically (`tidyBook` in `importers.js`), and `make validate` warns
 about any value that is not tidy. Capitalisation and quote styles are left alone.
 
 ## How imports avoid clobbering your edits
@@ -136,7 +134,7 @@ The page loads its data with `fetch`, which browsers block for pages opened stra
 (`file://`), so serve the project folder: `make serve` (it listens on 127.0.0.1 only, since the folder
 holds your personal data). Any static web server pointed at the project root works too. The app uses
 `data/books.json` and `data/series-info.json`, or `data/sample/` if you have no `data/books.json`;
-`--data-dir` and `CATALOG_DATA_DIR` only affect the Python tools, not the page.
+`--data-dir` and `CATALOG_DATA_DIR` only affect the command line tools, not the page.
 
 The page cannot write files, so edits made in the app live in that browser's `localStorage`, plus
 **Export / Import** JSON for real backups. Local edits are tagged with a fingerprint of the
@@ -147,12 +145,10 @@ browser as a scratch pad: Export, then `sync-export`.
 
 ## Development
 
-- `make test` runs `python -m unittest` and `node --test tests/app.smoke.test.mjs tests/importers.test.mjs`.
-  The smoke test executes the real `app.js` against a small fake DOM built from `index.html`, with a
-  fake `fetch` serving the demo data.
-- The importers exist twice, in `catalog/` (Python) and `importers.js` (the page). Change both
-  together: `tests/importers.test.mjs` mirrors the Python tests and also runs both pipelines on the
-  same exports, failing if their records, warnings or merge results differ.
+- `make test` runs `node --test tests/*.test.mjs`: the importers (`importers.test.mjs`), the command
+  line (`cli.test.mjs`), checks on the data files (`data.test.mjs`) and the browser smoke test
+  (`app.smoke.test.mjs`), which executes the real `app.js` against a small fake DOM built from
+  `index.html`, with a fake `fetch` serving the demo data.
 - `.github/workflows/ci.yml` runs the same on GitHub Actions.
 
 ## Privacy
@@ -160,7 +156,7 @@ browser as a scratch pad: Export, then `sync-export`.
 This repository is meant to be public, so nothing personal is tracked:
 
 - `data/books.json`, `data/series-info.json`, `data/excluded.txt` and `data/raw/*` are in
-  `.gitignore`. `tests/test_repo_hygiene.py` fails if any of them stops being ignored or a
+  `.gitignore`. `tests/data.test.mjs` fails if any of them stops being ignored or a
   file under `data/` other than the demo data becomes tracked.
 - The demo data and every example in the tests and docs are invented.
 - The consequence: **git does not back up your catalogue.** Keep your own copy: use the app's
