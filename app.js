@@ -16,6 +16,8 @@ let STARTUP_NOTICE = '';
 let VIEW = 'series';           // 'series' | 'library'
 let SERIES_FILTER = null;      // series name, '__standalone__', or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
+let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
+let PENDING_IMPORT = null;     // records of a previewed CSV import awaiting confirmation
 
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
 
@@ -272,6 +274,106 @@ function importBackup(file){
   reader.readAsText(file);
 }
 
+// ------------------------------------------------------------ Audible / Goodreads CSV import
+// The same pipeline as `node catalog.js import-audible|import-goodreads` (both use importers.js):
+// read the export, merge it into a copy of the catalogue, show what would change, and only
+// apply it when confirmed. Like every edit in the page, the result lives in this browser until
+// you Export it and run `node catalog.js sync-export`.
+const IMPORTERS = {
+  audible: {label: 'Audible', read: CatalogImport.readAudible},
+  goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},
+};
+let IMPORT_KIND = 'audible';
+
+// Merge into a copy of DATA, so nothing changes until the result is known to be valid.
+function mergeIntoCopy(records){
+  const data = JSON.parse(JSON.stringify(DATA));
+  const report = CatalogImport.merge(data, records, EXCLUSIONS);
+  // series-info problems are not the import's doing (a series renamed in the page); only block on the books
+  const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
+  return {data, report, errors};
+}
+
+function previewImport(kind, text, fileName){
+  const importer = IMPORTERS[kind];
+  const result = importer.read(text);
+  const {report, errors} = mergeIntoCopy(result.records);
+  const changes = report.added.length + report.backfilled.length;
+  PENDING_IMPORT = errors.length || !changes ? null : result.records;
+
+  const li = rec => {
+    const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
+    return `<li>${esc(rec.t)} &mdash; ${esc(rec.a)}${esc(series)}</li>`;
+  };
+  let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
+  html += `<p>Already in the catalogue: ${report.matched}</p>`;
+  if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
+  if(report.backfilled.length) html += `<p>Audible ids filled in on existing books: ${report.backfilled.length}</p>`;
+  if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
+  html += `<p>New: ${report.added.length}</p>`;
+  if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
+  if(result.warnings.length){
+    html += `<p class="warn">Needs a look (${result.warnings.length}):</p><ul>${result.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`;
+  }
+  if(errors.length){
+    html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
+  } else if(!changes){
+    html += '<p>Nothing new to add.</p>';
+  }
+
+  document.getElementById('importPreviewTitle').textContent = `${importer.label} import`;
+  document.getElementById('importPreviewBody').innerHTML = html;
+  const confirmBtn = document.getElementById('importConfirm');
+  confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
+  confirmBtn.textContent = report.added.length
+    ? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
+    : 'Save Audible ids';
+  document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
+  document.getElementById('importPreview').classList.add('open');
+}
+
+function applyImport(){
+  if(!PENDING_IMPORT) return;
+  // merged again, in case books were edited while the preview was open
+  const {data, report, errors} = mergeIntoCopy(PENDING_IMPORT);
+  closeImportPreview();
+  if(errors.length){ showIoStatus('The catalogue changed and the import no longer validates; nothing was added.', true); return; }
+  const added = report.added.length, backfilled = report.backfilled.length;
+  DATA = data;
+  populateFilters(); render(); persist();
+  showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
+    (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
+    '. Export and run sync-export to keep them in data/books.json.');
+}
+
+function closeImportPreview(){
+  PENDING_IMPORT = null;
+  document.getElementById('importPreview').classList.remove('open');
+}
+
+function importCsv(kind, file){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      previewImport(kind, e.target.result, file.name);
+    }catch(err){
+      closeImportPreview();
+      showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind].label} export.`, true);
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('importAudibleBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'audible'; document.getElementById('importCsvFile').click(); });
+document.getElementById('importGoodreadsBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'goodreads'; document.getElementById('importCsvFile').click(); });
+document.getElementById('importCsvFile').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(file) importCsv(IMPORT_KIND, file);
+  e.target.value = '';
+});
+document.getElementById('importConfirm').addEventListener('click', applyImport);
+document.getElementById('importCancel').addEventListener('click', closeImportPreview);
+
 document.getElementById('q').addEventListener('input', render);
 document.getElementById('authorFilter').addEventListener('change', render);
 document.getElementById('genreFilter').addEventListener('change', render);
@@ -357,7 +459,9 @@ async function loadData(){
     try{ booksText = await fetchText(dir + 'books.json'); }catch(e){ continue; }
     let infoText = '{}';
     try{ infoText = await fetchText(dir + 'series-info.json'); }catch(e){}
-    return {booksText, infoText};
+    let excludedText = '';
+    try{ excludedText = await fetchText(dir + 'excluded.txt'); }catch(e){}
+    return {booksText, infoText, excludedText};
   }
   throw new Error('no books.json found');
 }
@@ -381,9 +485,10 @@ function restoreLocalEdits(){
 
 async function start(){
   try{
-    const {booksText, infoText} = await loadData();
+    const {booksText, infoText, excludedText} = await loadData();
     DATA = JSON.parse(booksText);
     SERIES_INFO = JSON.parse(infoText);
+    EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
     BASELINE = hashString(booksText);
   }catch(e){
     document.getElementById('subtitle').textContent =

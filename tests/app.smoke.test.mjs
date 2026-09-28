@@ -12,6 +12,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const HTML = read('index.html');
 const APP_JS = read('app.js');
+const IMPORTERS_JS = read('importers.js');
 const DEMO_BOOKS = read('data/sample/books.json');
 const DEMO_INFO = read('data/sample/series-info.json');
 
@@ -51,7 +52,10 @@ async function boot({ files = { 'data/sample/books.json': DEMO_BOOKS, 'data/samp
   const fetch = async url => (url in files
     ? { ok: true, status: 200, text: async () => files[url] }
     : { ok: false, status: 404, text: async () => 'not found' });
-  const ctx = vm.createContext({ document, localStorage, fetch, console, setTimeout: () => 0, clearTimeout() {} });
+  // Files picked in a fake <input type="file"> are {name, text}; reading one completes at once.
+  class FileReader { readAsText(file) { this.onload({ target: { result: file.text } }); } }
+  const ctx = vm.createContext({ document, localStorage, fetch, FileReader, console, setTimeout: () => 0, clearTimeout() {} });
+  vm.runInContext(IMPORTERS_JS, ctx);
   vm.runInContext(APP_JS, ctx);
   await vm.runInContext('READY', ctx);
   const run = code => vm.runInContext(code, ctx);
@@ -60,6 +64,7 @@ async function boot({ files = { 'data/sample/books.json': DEMO_BOOKS, 'data/samp
   return { ctx, els, storage, get, run };
 }
 
+assert.ok(HTML.indexOf('<script src="importers.js">') >= 0 && HTML.indexOf('<script src="importers.js">') < HTML.indexOf('<script src="app.js">'));
 assert.ok(HTML.includes('<script src="app.js">') && HTML.includes('<link rel="stylesheet" href="styles.css">'));
 const demoBooks = JSON.parse(DEMO_BOOKS);
 
@@ -155,4 +160,56 @@ test('local edits are kept for the same data, and set aside when books.json chan
   const legacy = await boot({ storage: new Map([['audiobook-catalog-data', JSON.stringify([{ t: 'Old', a: 'Format' }])]]) });
   assert.equal(legacy.get('DATA[0].t'), demoBooks[0].t);
   assert.ok(legacy.storage.has('audiobook-catalog-data.backup'));
+});
+
+test('importing an Audible CSV previews first, then adds only new books', async () => {
+  const mine = JSON.stringify([{ t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5' }]);
+  const { els, get } = await boot({ files: { 'data/books.json': mine, 'data/excluded.txt': 'BGONE\n' } });
+  const csv = 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
+    + 'x,A Crown of Embers 5: A Spark of Dawn,A Crown of Embers Series (book 5),Ilse Marlowe,,Finished,B5\n'
+    + 'x,A Crown of Embers 6: Ashfall,A Crown of Embers Series (book 6),Ilse Marlowe,A.B. Quill,Finished,B6\n'
+    + 'x,Removed,,Ilse Marlowe,,Finished,BGONE\n'
+    + 'x,Half Way,,Ilse Marlowe,,2h left,B7\n';
+  els.importAudibleBtn.listeners.click[0]();
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
+
+  // preview: nothing changed yet
+  assert.ok(els.importPreview.classList.contains('open'));
+  assert.equal(els.importPreviewTitle.textContent, 'Audible import');
+  assert.match(els.importPreviewBody.innerHTML, /Already in the catalogue: 1/);
+  assert.match(els.importPreviewBody.innerHTML, /Audible ids filled in on existing books: 1/);
+  assert.match(els.importPreviewBody.innerHTML, /excluded\.txt\): 1/);
+  assert.match(els.importPreviewBody.innerHTML, /New: 1/);
+  assert.match(els.importPreviewBody.innerHTML, /Ashfall/);
+  assert.equal(els.importConfirm.textContent, 'Add 1 book');
+  assert.equal(get('DATA.length'), 1);
+
+  els.importConfirm.listeners.click[0]();
+  assert.ok(!els.importPreview.classList.contains('open'));
+  assert.deepEqual(get('DATA'), [
+    { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', id: 'B5' },
+    { t: 'A Crown of Embers 6: Ashfall', a: 'Ilse Marlowe', n: 'A. B. Quill', s: 'A Crown of Embers', sn: '6', id: 'B6' },
+  ]);
+  assert.match(els.ioStatus.textContent, /Added 1 book, filled in 1 Audible id/);
+
+  // the same file again: nothing to add, nothing to confirm
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
+  assert.match(els.importPreviewBody.innerHTML, /Nothing new to add/);
+  assert.equal(els.importConfirm.style.display, 'none');
+});
+
+test('importing a Goodreads CSV can be cancelled', async () => {
+  const { els, get } = await boot();
+  const before = get('DATA.length');
+  const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n'
+    + '"Zzz New Book (Zzz Saga, #2)",Nobody Yet,,Audible Audio,read,fantasy\n';
+  els.importGoodreadsBtn.listeners.click[0]();
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
+  assert.equal(els.importPreviewTitle.textContent, 'Goodreads import');
+  assert.match(els.importPreviewBody.innerHTML, /Zzz New Book &mdash; Nobody Yet  \[Zzz Saga #2\]/);
+  els.importCancel.listeners.click[0]();
+  assert.ok(!els.importPreview.classList.contains('open'));
+  assert.equal(get('DATA.length'), before);
+  els.importConfirm.listeners.click[0]();             // a stale click after cancelling does nothing
+  assert.equal(get('DATA.length'), before);
 });

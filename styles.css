@@ -52,7 +52,7 @@ h1{
 }
 .controls input:focus, .controls select:focus, button:focus{outline:2px solid var(--moss); outline-offset:1px;}
 .count-row{display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:.5rem;}
-.rowbtns{display:flex; gap:.4rem; align-items:center;}
+.rowbtns{display:flex; gap:.4rem; align-items:center; flex-wrap:wrap;}
 .iconbtn2{
   background:var(--card); color:var(--ink-soft); border:1px solid var(--line); padding:.5rem .8rem;
   border-radius:8px; font-size:.82rem; cursor:pointer; font-weight:600;
@@ -77,6 +77,15 @@ h1{
   width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
   background:var(--paper); color:var(--ink); font-size:.9rem;
 }
+.importPreview{
+  display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
+  padding:1rem; margin-bottom:1.5rem; font-size:.85rem;
+}
+.importPreview.open{display:block;}
+.importPreview h3{margin:0 0 .5rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
+.importPreview p{margin:.25rem 0;}
+.importPreview ul{margin:.3rem 0 .6rem; padding-left:1.2rem; max-height:16rem; overflow-y:auto; overflow-wrap:anywhere;}
+.importPreview .warn{color:#b0453f;}
 .formrow{display:flex; gap:.6rem;}
 .formrow > div{flex:1;}
 .formbtns{margin-top:.9rem; display:flex; gap:.5rem;}
