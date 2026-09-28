@@ -219,6 +219,23 @@ function validate(books, info){
   return {errors, warnings};
 }
 
+// ---------------------------------------------------------------------- backups
+/**
+ * Read a backup exported from the page: {books: [...], seriesInfo: {...}}, or a plain array of
+ * books from before series info was exported. Returns {books, seriesInfo}, where seriesInfo is
+ * null for the old format (so callers leave their series info alone). Throws if it is neither.
+ */
+function readBackup(data){
+  if(Array.isArray(data)) return {books: data, seriesInfo: null};
+  if(data && typeof data === 'object' && Array.isArray(data.books)){
+    const info = data.seriesInfo;
+    if(info === undefined) return {books: data.books, seriesInfo: null};
+    if(info && typeof info === 'object' && !Array.isArray(info)) return {books: data.books, seriesInfo: info};
+    throw new Error('seriesInfo is not an object');
+  }
+  throw new Error('expected a list of books or {books, seriesInfo}');
+}
+
 // ------------------------------------------------------------------------ CSV
 /**
  * Parse CSV text (RFC 4180: quoted fields, doubled quotes, newlines inside quotes) into objects
@@ -458,7 +475,7 @@ function merge(existing, incoming, exclusions){
 
 return {
   norm, seriesNorm, tidyText, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
-  Exclusions, parseExclusions, validate, parseCsv,
+  Exclusions, parseExclusions, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, readGoodreads, merge,
 };

@@ -12,6 +12,7 @@ function hashString(s){
 let DATA = [];
 let SERIES_INFO = {};
 let BASELINE = '';
+let INFO_BASELINE = '';        // same, for series-info.json
 let STARTUP_NOTICE = '';
 let VIEW = 'series';           // 'series' | 'library'
 let SERIES_FILTER = null;      // series name, '__standalone__', or null
@@ -232,7 +233,7 @@ function bookCard(b){
 }
 
 function persist(){
-  try{ localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA})); }catch(e){}
+  try{ localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO})); }catch(e){}
 }
 
 function showIoStatus(msg, isErr){
@@ -244,7 +245,7 @@ function showIoStatus(msg, isErr){
 }
 
 function exportBackup(){
-  const blob = new Blob([JSON.stringify(DATA, null, 2)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify({books: DATA, seriesInfo: SERIES_INFO}, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -260,13 +261,13 @@ function importBackup(file){
   const reader = new FileReader();
   reader.onload = e=>{
     try{
-      const imported = JSON.parse(e.target.result);
-      if(!Array.isArray(imported)) throw new Error('not an array');
-      const bad = imported.some(b=> typeof b !== 'object' || !b.t || !b.a);
+      const {books, seriesInfo} = CatalogImport.readBackup(JSON.parse(e.target.result));
+      const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
       if(bad) throw new Error('missing title/author');
-      DATA = imported;
+      DATA = books;
+      if(seriesInfo) SERIES_INFO = seriesInfo;     // older backups have no series info: keep the current one
       populateFilters(); render(); persist();
-      showIoStatus(`Imported ${imported.length} books.`);
+      showIoStatus(`Imported ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series.` : '.'));
     }catch(err){
       showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
     }
@@ -466,15 +467,17 @@ async function loadData(){
   throw new Error('no books.json found');
 }
 
-// Local edits are only reused if they were made against *this* books.json; otherwise an updated
-// data file would keep showing stale books.
+// Local edits are only reused if they were made against *this* books.json (and series-info.json, for
+// saves that carry series info); otherwise an updated data file would keep showing stale data.
 function restoreLocalEdits(){
   try{
     const raw = localStorage.getItem(LS_KEY);
     if(!raw) return;
     const saved = JSON.parse(raw);
-    if(saved && saved.base === BASELINE && Array.isArray(saved.data)){
+    const hasInfo = saved && typeof saved.info === 'object' && saved.info !== null && !Array.isArray(saved.info);
+    if(saved && saved.base === BASELINE && Array.isArray(saved.data) && (!hasInfo || saved.infoBase === INFO_BASELINE)){
       DATA = saved.data;
+      if(hasInfo) SERIES_INFO = saved.info;
     } else {
       localStorage.setItem(LS_KEY + '.backup', raw);
       localStorage.removeItem(LS_KEY);
@@ -490,6 +493,7 @@ async function start(){
     SERIES_INFO = JSON.parse(infoText);
     EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
     BASELINE = hashString(booksText);
+    INFO_BASELINE = hashString(infoText);
   }catch(e){
     document.getElementById('subtitle').textContent =
       "Couldn't load the catalogue data. Serve this folder over HTTP (make serve) instead of opening the file directly.";

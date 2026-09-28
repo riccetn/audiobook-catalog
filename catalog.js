@@ -196,20 +196,23 @@ function multisetMinus(a, b){
   return out;
 }
 
-/** Replace data/books.json with a backup exported from the app (Export button). */
+/** Replace data/books.json (and data/series-info.json, if the backup has it) with a backup exported from the app. */
 function cmdSyncExport(args, io){
   if(!requireOwnData(args, io)) return 2;
   const [booksPath, infoPath] = paths(args);
-  let newBooks;
+  let newBooks, newInfo;
   try{
-    newBooks = JSON.parse(readText(args.file));
+    ({books: newBooks, seriesInfo: newInfo} = C.readBackup(JSON.parse(readText(args.file))));
   }catch(exc){
     io.err(`cannot read ${args.file}: ${exc.message}`);
     return 1;
   }
-  const {errors} = C.validate(newBooks, loadSeriesInfo(infoPath));
-  // series-info problems are expected if a series was renamed/removed in the app; report but do not block on those
-  const blocking = errors.filter(e => !e.startsWith('series-info'));
+  const oldInfo = loadSeriesInfo(infoPath);
+  const {errors} = C.validate(newBooks, newInfo || oldInfo);
+  // a series-info entry left without books is expected if a series was renamed/removed in the app;
+  // report but do not block on that. A malformed entry in the backup's own series info does block.
+  const orphan = e => /^series-info: .* matches no series/.test(e);
+  const blocking = errors.filter(e => newInfo ? !orphan(e) : !e.startsWith('series-info'));
   if(blocking.length){
     io.err('Not a valid catalogue export:\n  ' + blocking.slice(0, 10).join('\n  '));
     return 1;
@@ -226,12 +229,28 @@ function cmdSyncExport(args, io){
   io.out(`${oldBooks.length} -> ${newBooks.length} books; ${added.length} new/renamed, ${gone.length} removed/renamed`);
   for(const [title, author] of added.slice(0, 10)) io.out(`    + ${title} - ${author}`);
   for(const [title, author] of gone.slice(0, 10)) io.out(`    - ${title} - ${author}`);
+  const infoChanged = newInfo && formatSeriesInfo(newInfo) !== formatSeriesInfo(oldInfo);
+  if(newInfo){
+    const names = Object.keys(newInfo), oldNames = Object.keys(oldInfo);
+    const addedInfo = names.filter(n => !(n in oldInfo));
+    const removedInfo = oldNames.filter(n => !(n in newInfo));
+    const changedInfo = names.filter(n => n in oldInfo && JSON.stringify(newInfo[n]) !== JSON.stringify(oldInfo[n]));
+    io.out(infoChanged
+      ? `series info: ${addedInfo.length} added, ${changedInfo.length} changed, ${removedInfo.length} removed`
+      : 'series info: unchanged');
+  } else {
+    io.out(`series info: not in this backup (older export), ${shown(infoPath, args.root)} left as is`);
+  }
   if(args.dryRun){
     io.out('(dry run: nothing written)');
     return 0;
   }
   dumpBooks(newBooks, booksPath);
   io.out(`wrote ${shown(booksPath, args.root)}`);
+  if(infoChanged){
+    dumpSeriesInfo(newInfo, infoPath);
+    io.out(`wrote ${shown(infoPath, args.root)}`);
+  }
   const orphaned = errors.filter(e => e.startsWith('series-info'));
   if(orphaned.length) io.out('series-info needs attention:\n  ' + orphaned.join('\n  '));
   return 0;
@@ -270,7 +289,7 @@ const COMMANDS = {
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the canonical layout'},
-  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json'},
+  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N)'},
 };
 

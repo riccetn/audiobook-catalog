@@ -213,3 +213,35 @@ test('importing a Goodreads CSV can be cancelled', async () => {
   els.importConfirm.listeners.click[0]();             // a stale click after cancelling does nothing
   assert.equal(get('DATA.length'), before);
 });
+
+test('Export includes series info, and Import brings it back', async () => {
+  const first = await boot();
+  const blobs = [];
+  first.ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
+  first.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+  first.els.exportBtn.listeners.click[0]();
+  const backup = JSON.parse(blobs[0]);
+  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO) });
+
+  // into a page that has no series info: it comes back, and survives a reload
+  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const files = { 'data/books.json': mine };
+  const other = await boot({ files });
+  assert.deepEqual(other.get('SERIES_INFO'), {});
+  other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  assert.deepEqual(other.get('DATA'), demoBooks);
+  assert.deepEqual(other.get('SERIES_INFO'), backup.seriesInfo);
+  const reloaded = await boot({ files, storage: new Map(other.storage) });
+  assert.deepEqual(reloaded.get('SERIES_INFO'), backup.seriesInfo);
+
+  // an older backup (a plain list of books) still imports and keeps the current series info
+  const legacy = await boot();
+  legacy.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: mine }], value: '' } });
+  assert.deepEqual(legacy.get('DATA'), [{ t: 'Mine', a: 'Me' }]);
+  assert.deepEqual(legacy.get('SERIES_INFO'), JSON.parse(DEMO_INFO));
+
+  // locally saved series info is set aside when series-info.json changes on disk
+  const changedInfo = await boot({ files: { 'data/books.json': mine, 'data/series-info.json': '{}\n' }, storage: new Map(other.storage) });
+  assert.deepEqual(changedInfo.get('SERIES_INFO'), {});
+  assert.ok(changedInfo.storage.has('audiobook-catalog-data.backup'));
+});
