@@ -1,0 +1,13 @@
+{
+  "Halloway & Finch": {
+    "total": 2,
+    "status": "complete",
+    "note": "series complete at 2 books (fictional demo data)"
+  },
+  "The Lantern Coast": {
+    "total": 5,
+    "status": "ongoing",
+    "note": "book 5 is announced (fictional demo data)",
+    "url": "https://example.com/"
+  }
+}
