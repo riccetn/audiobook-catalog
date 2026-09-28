@@ -1,4 +1,7 @@
-"""Reader for the Audible Library Extractor (ALE) spreadsheet export."""
+"""Reader for the Audible Library Extractor (ALE) spreadsheet export.
+
+importers.js is a JavaScript port of this module (and goodreads.py, merge.py): keep them in step.
+"""
 from __future__ import annotations
 
 import csv

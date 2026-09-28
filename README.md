@@ -42,6 +42,7 @@ data/
 index.html            the page; links styles.css and app.js
 styles.css
 app.js                the whole UI; fetches data/books.json (or data/sample/) at startup
+importers.js          the Audible/Goodreads importers and merge, ported from catalog/ for the page
 catalog/              the pipeline: importers, merge, validation, CLI (python -m catalog)
 tests/                unittest suite + app.smoke.test.mjs
 ```
@@ -77,6 +78,13 @@ tests/                unittest suite + app.smoke.test.mjs
 Only finished books are imported. The command lists what it added, and anything ambiguous
 (for example a book Audible files under several series).
 
+**Or import in the app**: press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
+runs the same importer and merge as the command line (`importers.js` is a port of `catalog/`), honours
+`data/excluded.txt`, and shows the same preview: what is already there, which Audible ids get filled
+in, what is new and what needs a look. Nothing changes until you press **Add books**. Like any edit
+in the page, the result lives in that browser: press **Export** and run `sync-export` (below) to put it
+in `data/books.json`.
+
 **Edit in the app, then bring the changes back**
 
 Edit books in the page (pencil icon, `+ Add a book`), press **Export**, then:
@@ -94,7 +102,8 @@ You can also edit `data/books.json` by hand; `make format` restores the one-book
 **Remove a book for good**: delete it from `data/books.json` *and* add its ASIN (or `Title | Author`
 for books without one) to `data/excluded.txt`, otherwise the next import brings it back.
 
-**Goodreads**: `python -m catalog import-goodreads data/raw/goodreads_library_export.csv`. Goodreads
+**Goodreads**: `python -m catalog import-goodreads data/raw/goodreads_library_export.csv`, or
+**Goodreads CSV** in the app. Goodreads
 has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
 
@@ -138,9 +147,12 @@ browser as a scratch pad: Export, then `sync-export`.
 
 ## Development
 
-- `make test` runs `python -m unittest` and `node --test tests/app.smoke.test.mjs`. The smoke test
-  executes the real `app.js` against a small fake DOM built from `index.html`, with a fake `fetch`
-  serving the demo data.
+- `make test` runs `python -m unittest` and `node --test tests/app.smoke.test.mjs tests/importers.test.mjs`.
+  The smoke test executes the real `app.js` against a small fake DOM built from `index.html`, with a
+  fake `fetch` serving the demo data.
+- The importers exist twice, in `catalog/` (Python) and `importers.js` (the page). Change both
+  together: `tests/importers.test.mjs` mirrors the Python tests and also runs both pipelines on the
+  same exports, failing if their records, warnings or merge results differ.
 - `.github/workflows/ci.yml` runs the same on GitHub Actions.
 
 ## Privacy
