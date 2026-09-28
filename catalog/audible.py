@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .model import normalize_author
+from .model import tidy_book
 
 # Audible's built-in "Your First Listen" sample appears in every library.
 SAMPLE_ASINS = {"B002V8N37Q"}
@@ -81,7 +81,7 @@ def row_to_record(row: dict) -> tuple[dict | None, str | None]:
         number = first_number or None
 
     title = (row.get("Title Short") or row.get("Title") or "").strip()
-    rec: dict = {"t": clean_title(title, number if series else None), "a": normalize_author((row.get("Authors") or "").strip())}
+    rec: dict = {"t": clean_title(title, number if series else None), "a": (row.get("Authors") or "").strip()}
     narrator = (row.get("Narrators") or "").strip()
     if narrator:
         rec["n"] = narrator
@@ -96,6 +96,7 @@ def row_to_record(row: dict) -> tuple[dict | None, str | None]:
         rec["g"] = tags
     if asin:
         rec["id"] = asin
+    rec = tidy_book(rec)
 
     warning = None
     if ambiguous:

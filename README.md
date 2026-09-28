@@ -100,11 +100,13 @@ for books without one) to `data/excluded.txt`, otherwise the next import brings 
 has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
 
-## Author names
+## Tidy names and spacing
 
-Authors with several initials are stored with a space between them (`A. B. Quill`, not `A.B. Quill`), so
-the author filter never lists one person twice. Both importers and `sync-export` apply the rule
-(`normalize_author` in `catalog/model.py`), and `make validate` warns about any name that breaks it.
+Authors and narrators keep a space between initials (`A. B. Quill`, not `A.B. Quill`), so the filters
+never list one person twice. Every text field also has stray spacing removed: runs of spaces, tabs,
+non-breaking or invisible characters, and leading/trailing whitespace. Both importers and
+`sync-export` apply this automatically (`tidy_book` in `catalog/model.py`), and `make validate` warns
+about any value that is not tidy. Capitalisation and quote styles are left alone.
 
 ## How imports avoid clobbering your edits
 

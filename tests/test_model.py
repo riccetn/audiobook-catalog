@@ -4,7 +4,7 @@ from pathlib import Path
 
 from catalog.model import (
     Exclusions, book_keys, dump_books, dump_series_info, first_author, load_books, load_exclusions,
-    load_series_info, lookup_keys, norm, normalize_author, series_norm, validate,
+    load_series_info, lookup_keys, norm, normalize_name, series_norm, tidy_book, tidy_text, validate,
 )
 
 
@@ -33,27 +33,49 @@ class Normalisation(unittest.TestCase):
         self.assertNotIn(("title", norm("Lantern of the Deep"), norm("R.T. Hale")), lookup_keys(box))
 
 
-class AuthorInitials(unittest.TestCase):
+class Tidying(unittest.TestCase):
     def test_run_together_initials_get_a_space(self):
         cases = {
             "A.B. Quill": "A. B. Quill",
-            "A. B. Quill": "A. B. Quill",                       # already fine: idempotent
+            "A. B. Quill": "A. B. Quill",                       # already fine
             "A.B.C. Quill": "A. B. C. Quill",                   # any number of initials
-            "Ann Vale, R.T. Hale": "Ann Vale, R. T. Hale",      # every name in a multi-author string
+            "Ann Vale, R.T. Hale": "Ann Vale, R. T. Hale",      # every name in a multi-name string
             "R.T. Hale and P.Q. Vale": "R. T. Hale and P. Q. Vale",
             "Ann Vale": "Ann Vale",
             "A. Quill": "A. Quill",                             # a single initial is untouched
             "Quill, A.B.": "Quill, A. B.",
         }
         for raw, expected in cases.items():
-            self.assertEqual(normalize_author(raw), expected, raw)
-            self.assertEqual(normalize_author(expected), expected, "idempotent: " + expected)
+            self.assertEqual(normalize_name(raw), expected, raw)
+            self.assertEqual(normalize_name(expected), expected, "idempotent: " + expected)
 
-    def test_validation_warns_once_per_spelling(self):
-        books = [{"t": "1", "a": "A.B. Quill"}, {"t": "2", "a": "A.B. Quill"}, {"t": "3", "a": "Ann Vale"}]
-        warnings = validate(books, {})[1]
-        self.assertEqual(len([w for w in warnings if "run-together initials" in w]), 1)
-        self.assertIn("'A. B. Quill'", "\n".join(warnings))
+    def test_whitespace_is_collapsed_everywhere(self):
+        self.assertEqual(tidy_text("  Ann    Vale \t"), "Ann Vale")
+        self.assertEqual(tidy_text("Ann\u00a0Vale"), "Ann Vale")                  # non-breaking space
+        self.assertEqual(tidy_text("Ann\u200b Vale\ufeff"), "Ann Vale")          # invisible characters
+        self.assertEqual(tidy_text("Two\nlines"), "Two lines")
+        self.assertEqual(normalize_name("A.B.   Quill"), "A. B. Quill")           # both fixes together
+
+    def test_tidy_book_touches_text_fields_only(self):
+        rec = {"t": "A  Title ", "a": "A.B. Quill", "n": "Ann   Vale", "s": " S ", "sn": "1",
+               "g": ["Fantasy ", "  ", "Cozy  Mystery"], "id": "B0X"}
+        self.assertEqual(tidy_book(rec), {"t": "A Title", "a": "A. B. Quill", "n": "Ann Vale", "s": "S", "sn": "1",
+                                          "g": ["Fantasy", "Cozy Mystery"], "id": "B0X"})
+        self.assertEqual(rec["t"], "A  Title ", "the input record is not modified")
+        self.assertEqual(tidy_book({"t": "x", "a": "y"}), {"t": "x", "a": "y"})   # missing keys stay missing
+
+    def test_validation_warns_once_per_untidy_value_in_any_field(self):
+        books = [
+            {"t": "1", "a": "A.B. Quill", "n": "R.T.  Hale"},
+            {"t": "2", "a": "A.B. Quill", "s": "Some  Series", "g": ["Cozy  Mystery"]},
+            {"t": "Double  Title", "a": "Ann Vale"},
+        ]
+        text = "\n".join(validate(books, {})[1])
+        self.assertEqual(text.count("author 'A.B. Quill'"), 1)
+        for needle in ("use 'A. B. Quill'", "narrator 'R.T.  Hale'", "use 'R. T. Hale'", "series 'Some  Series'",
+                       "genre 'Cozy  Mystery'", "title 'Double  Title'"):
+            self.assertIn(needle, text)
+        self.assertEqual(validate([{"t": "Fine", "a": "A. B. Quill", "n": "R. T. Hale"}], {})[1], [])
 
 
 class Storage(unittest.TestCase):

@@ -12,7 +12,7 @@ from .build import build
 from .merge import merge
 from .model import (
     data_dir, dump_books, dump_series_info, is_demo, live_data_dir, load_books, load_exclusions,
-    load_series_info, normalize_author, validate,
+    load_series_info, tidy_book, validate,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -173,13 +173,11 @@ def cmd_sync_export(args) -> int:
     if blocking:
         print("Not a valid catalogue export:\n  " + "\n  ".join(blocking[:10]), file=sys.stderr)
         return 1
-    tidied = 0
-    for book in new_books:                      # the app's edit form does not enforce the initials rule
-        fixed = normalize_author(book["a"])
-        if fixed != book["a"]:
-            book["a"], tidied = fixed, tidied + 1
+    tidied_books = [tidy_book(book) for book in new_books]      # the app's edit form does not enforce tidy text
+    tidied = sum(1 for before, after in zip(new_books, tidied_books) if before != after)
+    new_books = tidied_books
     if tidied:
-        print(f"spaced out run-together author initials on {tidied} book(s)")
+        print(f"tidied stray spacing / run-together initials on {tidied} book(s)")
     old_books = load_books(books_path)
     before = Counter((b["t"], b["a"]) for b in old_books)
     after = Counter((b["t"], b["a"]) for b in new_books)

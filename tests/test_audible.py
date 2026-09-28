@@ -52,9 +52,9 @@ class Rows(unittest.TestCase):
         self.assertEqual(rec, {"t": "Ts", "a": "A", "n": "N", "s": "S", "sn": "2", "g": ["Fantasy", "Magic"], "id": "B0000000A1"})
         self.assertIsNone(warning)
 
-    def test_author_initials_are_spaced(self):
-        rec, _ = row_to_record(self.row(Authors="A.B. Quill, Ann Vale"))
-        self.assertEqual(rec["a"], "A. B. Quill, Ann Vale")
+    def test_names_and_text_are_tidied(self):
+        rec, _ = row_to_record(self.row(Authors="A.B. Quill, Ann  Vale", Narrators="R.T.   Hale", Tags="Cozy  Mystery, Fantasy"))
+        self.assertEqual((rec["a"], rec["n"], rec["g"]), ("A. B. Quill, Ann Vale", "R. T. Hale", ["Cozy Mystery", "Fantasy"]))
 
     def test_unfinished_books_and_the_audible_sample_are_ignored(self):
         self.assertEqual(row_to_record(self.row(Progress="3h left")), (None, None))

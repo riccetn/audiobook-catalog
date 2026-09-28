@@ -40,14 +40,35 @@ def series_norm(name: str | None) -> str:
 
 
 _RUN_TOGETHER_INITIALS = re.compile(r"\b([A-Z])\.(?=[A-Z]\.)")
+_INVISIBLE = re.compile("[\u200b\ufeff]")
 
 
-def normalize_author(name: str) -> str:
-    """Put a space between run-together initials: "A.B. Quill" -> "A. B. Quill".
+def tidy_text(text: str) -> str:
+    """Trim and collapse whitespace: tabs, newlines, non-breaking spaces and runs of spaces become one space."""
+    return re.sub(r"\s+", " ", _INVISIBLE.sub("", text)).strip()
 
-    Applied to every name in a multi-author string, so "X Y, A.B. Quill" works too.
+
+def normalize_name(name: str) -> str:
+    """Tidy a person's name (authors and narrators) and space out run-together initials.
+
+    "A.B.  Quill" -> "A. B. Quill". Works on multi-name strings too: "Ann Vale, A.B. Quill".
     """
-    return _RUN_TOGETHER_INITIALS.sub(r"\1. ", name)
+    return _RUN_TOGETHER_INITIALS.sub(r"\1. ", tidy_text(name))
+
+
+def tidy_book(rec: dict) -> dict:
+    """Return a copy of a book record with tidy text in every field (see normalize_name / tidy_text)."""
+    out = dict(rec)
+    for key in ("t", "s", "sn", "id"):
+        if isinstance(out.get(key), str):
+            out[key] = tidy_text(out[key])
+    for key in ("a", "n"):
+        if isinstance(out.get(key), str):
+            out[key] = normalize_name(out[key])
+    if isinstance(out.get("g"), list):
+        out["g"] = [tidy_text(x) if isinstance(x, str) else x for x in out["g"]]
+        out["g"] = [x for x in out["g"] if x != ""]
+    return out
 
 
 def first_author(authors: str | None) -> str:
@@ -220,10 +241,21 @@ def validate(books: list[dict], info: dict) -> tuple[list[str], list[str]]:
 
     series_names = {b["s"] for b in books if isinstance(b, dict) and b.get("s")}
 
-    unspaced = sorted({b["a"] for b in books if isinstance(b, dict) and isinstance(b.get("a"), str)
-                       and normalize_author(b["a"]) != b["a"]})
-    for name in unspaced:
-        warnings.append(f"author {name!r} has run-together initials; use {normalize_author(name)!r}")
+    untidy: dict[tuple[str, str], str] = {}
+    labels = {"t": "title", "a": "author", "n": "narrator", "s": "series", "g": "genre"}
+    for book in books:
+        if not isinstance(book, dict):
+            continue
+        for key, label in labels.items():
+            values = book.get(key)
+            for value in (values if isinstance(values, list) else [values]):
+                if not isinstance(value, str):
+                    continue
+                expected = normalize_name(value) if key in ("a", "n") else tidy_text(value)
+                if expected != value:
+                    untidy[(label, value)] = expected
+    for (label, value), expected in sorted(untidy.items()):
+        warnings.append(f"{label} {value!r} has stray spacing or run-together initials; use {expected!r}")
 
     for name in sorted(series_names):
         if re.search(r"\(books?\b", name, re.IGNORECASE):
