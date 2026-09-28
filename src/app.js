@@ -1,9 +1,30 @@
-let DATA = JSON.parse(document.getElementById('book-data').textContent);
+const LS_KEY = 'audiobook-catalog-data';
+
+// Cheap non-cryptographic hash, used to tell which build a locally saved copy belongs to.
+function hashString(s){
+  let h = 5381;
+  for(let i = 0; i < s.length; i++){ h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
+  return (h >>> 0).toString(36) + ':' + s.length;
+}
+
+const EMBEDDED_JSON = document.getElementById('book-data').textContent;
+const BASELINE = hashString(EMBEDDED_JSON);
+let DATA = JSON.parse(EMBEDDED_JSON);
+let STARTUP_NOTICE = '';
 try{
-  const localSave = localStorage.getItem('audiobook-catalog-data');
-  if(localSave){
-    DATA = JSON.parse(localSave);
-    document.getElementById('book-data').textContent = localSave;
+  // Offline/standalone copies keep edits in localStorage. Only reuse them if they were made
+  // against *this* build's data; otherwise a rebuilt file would keep showing stale books.
+  const raw = localStorage.getItem(LS_KEY);
+  if(raw){
+    const saved = JSON.parse(raw);
+    if(saved && saved.base === BASELINE && Array.isArray(saved.data)){
+      DATA = saved.data;
+      document.getElementById('book-data').textContent = JSON.stringify(DATA);
+    } else {
+      localStorage.setItem(LS_KEY + '.backup', raw);
+      localStorage.removeItem(LS_KEY);
+      STARTUP_NOTICE = 'A newer catalogue build was loaded; earlier local edits were set aside, not deleted.';
+    }
   }
 }catch(e){}
 let SERIES_INFO = JSON.parse(document.getElementById('series-info').textContent);
@@ -247,7 +268,7 @@ function persist(){
       if(artifact){ await artifact.publish('<!DOCTYPE html>\n' + document.documentElement.outerHTML); savedOnline = true; }
     }catch(e){ /* not available in this view (e.g. an offline downloaded copy) */ }
     if(!savedOnline){
-      try{ localStorage.setItem('audiobook-catalog-data', document.getElementById('book-data').textContent); }catch(e){}
+      try{ localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA})); }catch(e){}
     }
   })();
 }
@@ -354,6 +375,8 @@ document.getElementById('addForm').addEventListener('submit', e=>{
   if(!b.t || !b.a) return;
 
   if(EDIT_INDEX !== null){
+    const prev = DATA[EDIT_INDEX];
+    if(prev && prev.id) b.id = prev.id;   // keep the Audible ASIN so re-imports still match this book
     DATA[EDIT_INDEX] = b;
   } else {
     DATA.push(b);
@@ -372,3 +395,4 @@ populateFilters();
   SERIES_FILTER = saved.filter || null;
   setView(saved.view || 'series');
 })();
+if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
