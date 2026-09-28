@@ -1,17 +1,17 @@
 # Audiobook catalogue
 
 A personal audiobook library, merged from an Audible export and a Goodreads export, grouped by
-series and searchable by title, author, series and genre. It builds into **one self-contained HTML
-file** that works offline, and also runs as a hosted Claude artifact.
+series and searchable by title, author, series and genre. The app is a plain `index.html` with
+`styles.css` and `app.js` next to it, and it reads the catalogue from `data/`. There is no build step.
 
-- Python 3.10+ (standard library only) for the data pipeline and build
+- Python 3.10+ (standard library only) for the data pipeline
 - Vanilla JavaScript for the app: no framework, no bundler, no dependencies
 - Node 18+ is optional, only for the browser smoke test
 
 ```sh
 git clone <this repo> && cd audiobook-catalog
 make test     # unit tests + browser smoke test (uses the bundled fictional demo data)
-make serve    # builds and previews the demo at http://localhost:8000/audiobook-catalog.html
+make serve    # serves the app (with the demo data) at http://localhost:8000/
 make help
 ```
 
@@ -24,10 +24,10 @@ python -m catalog init                                   # creates data/books.js
 cp ~/Downloads/ALE-spreadsheet-library.csv data/raw/     # your Audible Library Extractor export
 python -m catalog import-audible data/raw/ALE-spreadsheet-library.csv --dry-run
 python -m catalog import-audible data/raw/ALE-spreadsheet-library.csv
-make build                                               # dist/audiobook-catalog.html: your page
+make serve                                               # your catalogue at http://localhost:8000/
 ```
 
-Until `data/books.json` exists, `build` and `validate` fall back to the demo data (and say so).
+Until `data/books.json` exists, the app and `validate` fall back to the demo data (`validate` says so).
 Commands that write refuse to touch the demo data.
 
 ## Layout
@@ -39,18 +39,16 @@ data/
   series-info.json    YOUR researched release info per series (git-ignored)
   excluded.txt        books your imports must never re-add (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
-src/
-  index.template.html page skeleton with {{PLACEHOLDERS}}
-  styles.css
-  app.js              the whole UI
-catalog/              the pipeline: importers, merge, validation, build, CLI (python -m catalog)
+index.html            the page; links styles.css and app.js
+styles.css
+app.js                the whole UI; fetches data/books.json (or data/sample/) at startup
+catalog/              the pipeline: importers, merge, validation, CLI (python -m catalog)
 tests/                unittest suite + app.smoke.test.mjs
-dist/                 build output (git-ignored, it embeds your data)
 ```
 
 ## Data format
 
-`data/books.json` is a list of records with short keys, to keep the embedded page small:
+`data/books.json` is a list of records with short keys, to keep the file small:
 
 | key  | meaning                                             | required |
 |------|-----------------------------------------------------|----------|
@@ -123,34 +121,33 @@ after more edits. New books get the series spelling already in use. If Audible l
 several series, a parent series wins over its sub-series (`Thornmere` over `Thornmere: Wardens`);
 otherwise the first is used and the book is flagged in the import output.
 
-## Two ways the app saves
+## Running the app and saving edits
 
-| where it runs | how edits persist |
-|---|---|
-| Hosted Claude artifact | the page republishes itself with the new data |
-| Standalone file (`dist/`) | `localStorage` in that browser, plus **Export / Import** JSON for real backups |
+The page loads its data with `fetch`, which browsers block for pages opened straight from disk
+(`file://`), so serve the project folder: `make serve` (it listens on 127.0.0.1 only, since the folder
+holds your personal data). Any static web server pointed at the project root works too. The app uses
+`data/books.json` and `data/series-info.json`, or `data/sample/` if you have no `data/books.json`;
+`--data-dir` and `CATALOG_DATA_DIR` only affect the Python tools, not the page.
 
-Local edits are tagged with a fingerprint of the data the file was built from. After a rebuild
-with different data, older local edits are **set aside** (kept under the
-`audiobook-catalog-data.backup` key) instead of silently hiding your new data. Treat `data/books.json`
-in git as the master copy and the browser as a scratch pad: Export, then `sync-export`.
-
-To host it again as a Claude artifact, give `dist/audiobook-catalog.html` to Claude to publish.
-It uses a Claude-only save call when available and falls back to the local mode everywhere else.
+The page cannot write files, so edits made in the app live in that browser's `localStorage`, plus
+**Export / Import** JSON for real backups. Local edits are tagged with a fingerprint of the
+`books.json` they were made against. When `books.json` changes (an import, a `sync-export`, a hand
+edit), older local edits are **set aside** (kept under the `audiobook-catalog-data.backup` key)
+instead of silently hiding your new data. Treat `data/books.json` in git as the master copy and the
+browser as a scratch pad: Export, then `sync-export`.
 
 ## Development
 
 - `make test` runs `python -m unittest` and `node --test tests/app.smoke.test.mjs`. The smoke test
-  executes the built page's real script against a small fake DOM; `make test` builds first.
-- `.github/workflows/ci.yml` runs the same on GitHub Actions and uploads the built page.
-- The build is deterministic: same inputs, byte-identical output. Data is embedded with `<`
-  escaped, so a hostile title cannot break out of its `<script>` tag (there is a test for it).
+  executes the real `app.js` against a small fake DOM built from `index.html`, with a fake `fetch`
+  serving the demo data.
+- `.github/workflows/ci.yml` runs the same on GitHub Actions.
 
 ## Privacy
 
 This repository is meant to be public, so nothing personal is tracked:
 
-- `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/raw/*` and `dist/` are in
+- `data/books.json`, `data/series-info.json`, `data/excluded.txt` and `data/raw/*` are in
   `.gitignore`. `tests/test_repo_hygiene.py` fails if any of them stops being ignored or a
   file under `data/` other than the demo data becomes tracked.
 - The demo data and every example in the tests and docs are invented.
@@ -161,14 +158,6 @@ This repository is meant to be public, so nothing personal is tracked:
 
 If you ever commit personal data by mistake, deleting it in a later commit is not enough: it stays
 in history. Rewrite the history (or start the repository afresh) before pushing.
-
-## Changes compared with the hosted page
-
-The app was split into `src/` unchanged, apart from two fixes that only matter once there is a
-build step (see the commit history):
-
-- local edits are reused only when they were made against the same build (see above)
-- editing a book keeps its `id`
 
 ## Known data quirks
 

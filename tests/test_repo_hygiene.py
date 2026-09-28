@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PRIVATE = ["data/books.json", "data/series-info.json", "data/excluded.txt", "data/raw/*", "dist/"]
+PRIVATE = ["data/books.json", "data/series-info.json", "data/excluded.txt", "data/raw/*"]
 
 
 class Hygiene(unittest.TestCase):

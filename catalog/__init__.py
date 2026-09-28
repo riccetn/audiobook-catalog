@@ -1,1 +1,1 @@
-"""Audiobook catalogue: data pipeline and build tooling (standard library only)."""
+"""Audiobook catalogue: data pipeline tooling (standard library only)."""

@@ -12,9 +12,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: make test          # builds first, then unit tests + browser smoke test
+      - run: make test          # unit tests + browser smoke test
       - run: make validate
-      - uses: actions/upload-artifact@v4
-        with:
-          name: audiobook-catalog
-          path: dist/audiobook-catalog.html

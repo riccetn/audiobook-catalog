@@ -1,33 +1,18 @@
 const LS_KEY = 'audiobook-catalog-data';
+// Served from the project root: your own catalogue in data/ if it exists, otherwise the bundled demo.
+const DATA_DIRS = ['data/', 'data/sample/'];
 
-// Cheap non-cryptographic hash, used to tell which build a locally saved copy belongs to.
+// Cheap non-cryptographic hash, used to tell which version of books.json a locally saved copy belongs to.
 function hashString(s){
   let h = 5381;
   for(let i = 0; i < s.length; i++){ h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
   return (h >>> 0).toString(36) + ':' + s.length;
 }
 
-const EMBEDDED_JSON = document.getElementById('book-data').textContent;
-const BASELINE = hashString(EMBEDDED_JSON);
-let DATA = JSON.parse(EMBEDDED_JSON);
+let DATA = [];
+let SERIES_INFO = {};
+let BASELINE = '';
 let STARTUP_NOTICE = '';
-try{
-  // Offline/standalone copies keep edits in localStorage. Only reuse them if they were made
-  // against *this* build's data; otherwise a rebuilt file would keep showing stale books.
-  const raw = localStorage.getItem(LS_KEY);
-  if(raw){
-    const saved = JSON.parse(raw);
-    if(saved && saved.base === BASELINE && Array.isArray(saved.data)){
-      DATA = saved.data;
-      document.getElementById('book-data').textContent = JSON.stringify(DATA);
-    } else {
-      localStorage.setItem(LS_KEY + '.backup', raw);
-      localStorage.removeItem(LS_KEY);
-      STARTUP_NOTICE = 'A newer catalogue build was loaded; earlier local edits were set aside, not deleted.';
-    }
-  }
-}catch(e){}
-let SERIES_INFO = JSON.parse(document.getElementById('series-info').textContent);
 let VIEW = 'series';           // 'series' | 'library'
 let SERIES_FILTER = null;      // series name, '__standalone__', or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
@@ -79,18 +64,7 @@ function setView(v){
   } else {
     crumb.classList.remove('show');
   }
-  syncUIStateTag();
   render();
-}
-
-function syncUIStateTag(){
-  document.getElementById('ui-state').textContent = JSON.stringify({
-    view: VIEW,
-    filter: SERIES_FILTER,
-    q: document.getElementById('q').value,
-    authorFilter: document.getElementById('authorFilter').value,
-    genreFilter: document.getElementById('genreFilter').value
-  });
 }
 
 function openSeries(name){
@@ -99,7 +73,6 @@ function openSeries(name){
 }
 
 function render(){
-  syncUIStateTag();
   if(VIEW === 'series'){ renderSeriesOverview(); return; }
 
   const q = document.getElementById('q').value.trim();
@@ -159,7 +132,7 @@ function render(){
       if(el.dataset.confirm === '1'){
         DATA.splice(i,1);
         if(EDIT_INDEX === i){ closeForm(); }
-        syncDataTag(); populateFilters(); render(); persist();
+        populateFilters(); render(); persist();
       } else {
         el.dataset.confirm = '1';
         el.innerHTML = '&check;';
@@ -256,21 +229,8 @@ function bookCard(b){
   </div></div>`;
 }
 
-function syncDataTag(){
-  document.getElementById('book-data').textContent = JSON.stringify(DATA);
-}
-
 function persist(){
-  (async ()=>{
-    let savedOnline = false;
-    try{
-      const artifact = await claude.use('artifact');
-      if(artifact){ await artifact.publish('<!DOCTYPE html>\n' + document.documentElement.outerHTML); savedOnline = true; }
-    }catch(e){ /* not available in this view (e.g. an offline downloaded copy) */ }
-    if(!savedOnline){
-      try{ localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA})); }catch(e){}
-    }
-  })();
+  try{ localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA})); }catch(e){}
 }
 
 function showIoStatus(msg, isErr){
@@ -303,7 +263,7 @@ function importBackup(file){
       const bad = imported.some(b=> typeof b !== 'object' || !b.t || !b.a);
       if(bad) throw new Error('missing title/author');
       DATA = imported;
-      syncDataTag(); populateFilters(); render(); persist();
+      populateFilters(); render(); persist();
       showIoStatus(`Imported ${imported.length} books.`);
     }catch(err){
       showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
@@ -381,18 +341,59 @@ document.getElementById('addForm').addEventListener('submit', e=>{
   } else {
     DATA.push(b);
   }
-  syncDataTag(); populateFilters(); render(); persist();
+  populateFilters(); render(); persist();
   closeForm();
 });
 
-populateFilters();
-(function initUIState(){
-  let saved = {};
-  try { saved = JSON.parse(document.getElementById('ui-state').textContent || '{}'); } catch(e){}
-  document.getElementById('q').value = saved.q || '';
-  document.getElementById('authorFilter').value = saved.authorFilter || '';
-  document.getElementById('genreFilter').value = saved.genreFilter || '';
-  SERIES_FILTER = saved.filter || null;
-  setView(saved.view || 'series');
-})();
-if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
+async function fetchText(url){
+  const res = await fetch(url, {cache: 'no-cache'});
+  if(!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return res.text();
+}
+
+async function loadData(){
+  for(const dir of DATA_DIRS){
+    let booksText;
+    try{ booksText = await fetchText(dir + 'books.json'); }catch(e){ continue; }
+    let infoText = '{}';
+    try{ infoText = await fetchText(dir + 'series-info.json'); }catch(e){}
+    return {booksText, infoText};
+  }
+  throw new Error('no books.json found');
+}
+
+// Local edits are only reused if they were made against *this* books.json; otherwise an updated
+// data file would keep showing stale books.
+function restoreLocalEdits(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return;
+    const saved = JSON.parse(raw);
+    if(saved && saved.base === BASELINE && Array.isArray(saved.data)){
+      DATA = saved.data;
+    } else {
+      localStorage.setItem(LS_KEY + '.backup', raw);
+      localStorage.removeItem(LS_KEY);
+      STARTUP_NOTICE = 'The catalogue data has changed; earlier local edits were set aside, not deleted.';
+    }
+  }catch(e){}
+}
+
+async function start(){
+  try{
+    const {booksText, infoText} = await loadData();
+    DATA = JSON.parse(booksText);
+    SERIES_INFO = JSON.parse(infoText);
+    BASELINE = hashString(booksText);
+  }catch(e){
+    document.getElementById('subtitle').textContent =
+      "Couldn't load the catalogue data. Serve this folder over HTTP (make serve) instead of opening the file directly.";
+    return;
+  }
+  restoreLocalEdits();
+  populateFilters();
+  setView('series');
+  if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
+}
+
+const READY = start();
