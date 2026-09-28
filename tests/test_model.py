@@ -4,7 +4,7 @@ from pathlib import Path
 
 from catalog.model import (
     Exclusions, book_keys, dump_books, dump_series_info, first_author, load_books, load_exclusions,
-    load_series_info, lookup_keys, norm, series_norm, validate,
+    load_series_info, lookup_keys, norm, normalize_author, series_norm, validate,
 )
 
 
@@ -31,6 +31,29 @@ class Normalisation(unittest.TestCase):
         self.assertIn(("title", norm("A Spark of Dawn"), norm("Ilse Marlowe")), lookup_keys(long_form))
         box = {"t": "Lantern of the Deep: Books 1-3", "a": "R.T. Hale"}
         self.assertNotIn(("title", norm("Lantern of the Deep"), norm("R.T. Hale")), lookup_keys(box))
+
+
+class AuthorInitials(unittest.TestCase):
+    def test_run_together_initials_get_a_space(self):
+        cases = {
+            "A.B. Quill": "A. B. Quill",
+            "A. B. Quill": "A. B. Quill",                       # already fine: idempotent
+            "A.B.C. Quill": "A. B. C. Quill",                   # any number of initials
+            "Ann Vale, R.T. Hale": "Ann Vale, R. T. Hale",      # every name in a multi-author string
+            "R.T. Hale and P.Q. Vale": "R. T. Hale and P. Q. Vale",
+            "Ann Vale": "Ann Vale",
+            "A. Quill": "A. Quill",                             # a single initial is untouched
+            "Quill, A.B.": "Quill, A. B.",
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(normalize_author(raw), expected, raw)
+            self.assertEqual(normalize_author(expected), expected, "idempotent: " + expected)
+
+    def test_validation_warns_once_per_spelling(self):
+        books = [{"t": "1", "a": "A.B. Quill"}, {"t": "2", "a": "A.B. Quill"}, {"t": "3", "a": "Ann Vale"}]
+        warnings = validate(books, {})[1]
+        self.assertEqual(len([w for w in warnings if "run-together initials" in w]), 1)
+        self.assertIn("'A. B. Quill'", "\n".join(warnings))
 
 
 class Storage(unittest.TestCase):

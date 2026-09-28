@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from .audible import ImportResult
+from .model import normalize_author
 
 # Goodreads has no "audiobook" flag; the edition's binding is the best signal there is.
 AUDIO_BINDINGS = {"Audio CD", "Audiobook", "Audible Audio", "MP3 CD", "MP3 Book", "Audio"}
@@ -40,7 +41,7 @@ def read_library(path: Path) -> ImportResult:
                 result.skipped_unfinished += 1
                 continue
             title, series, number = parse_title(row.get("Title") or "")
-            rec: dict = {"t": title, "a": (row.get("Author") or "").strip()}
+            rec: dict = {"t": title, "a": normalize_author((row.get("Author") or "").strip())}
             # Goodreads files narrators under "Additional Authors"; treat that as a best guess.
             narrator = (row.get("Additional Authors") or "").strip()
             if narrator:

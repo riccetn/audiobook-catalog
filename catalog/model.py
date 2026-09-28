@@ -39,6 +39,17 @@ def series_norm(name: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", n)
 
 
+_RUN_TOGETHER_INITIALS = re.compile(r"\b([A-Z])\.(?=[A-Z]\.)")
+
+
+def normalize_author(name: str) -> str:
+    """Put a space between run-together initials: "A.B. Quill" -> "A. B. Quill".
+
+    Applied to every name in a multi-author string, so "X Y, A.B. Quill" works too.
+    """
+    return _RUN_TOGETHER_INITIALS.sub(r"\1. ", name)
+
+
 def first_author(authors: str | None) -> str:
     return norm(re.split(r",| and | & ", authors or "")[0])
 
@@ -208,6 +219,11 @@ def validate(books: list[dict], info: dict) -> tuple[list[str], list[str]]:
             seen_ids[b["id"]] = label
 
     series_names = {b["s"] for b in books if isinstance(b, dict) and b.get("s")}
+
+    unspaced = sorted({b["a"] for b in books if isinstance(b, dict) and isinstance(b.get("a"), str)
+                       and normalize_author(b["a"]) != b["a"]})
+    for name in unspaced:
+        warnings.append(f"author {name!r} has run-together initials; use {normalize_author(name)!r}")
 
     for name in sorted(series_names):
         if re.search(r"\(books?\b", name, re.IGNORECASE):

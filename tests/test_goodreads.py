@@ -20,6 +20,13 @@ class TitleParsing(unittest.TestCase):
 
 
 class Reading(unittest.TestCase):
+    def test_author_initials_are_spaced(self):
+        header = "Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n"
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "gr.csv"
+            path.write_text(header + "Some Book,A.B. Quill,,Audiobook,read,\n", encoding="utf-8")
+            self.assertEqual(read_library(path).records[0]["a"], "A. B. Quill")
+
     def test_only_read_audio_editions_are_kept(self):
         header = "Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n"
         rows = (

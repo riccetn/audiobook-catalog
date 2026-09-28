@@ -100,6 +100,12 @@ for books without one) to `data/excluded.txt`, otherwise the next import brings 
 has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
 
+## Author names
+
+Authors with several initials are stored with a space between them (`A. B. Quill`, not `A.B. Quill`), so
+the author filter never lists one person twice. Both importers and `sync-export` apply the rule
+(`normalize_author` in `catalog/model.py`), and `make validate` warns about any name that breaks it.
+
 ## How imports avoid clobbering your edits
 
 Imports only ever *add* books; an existing book is never overwritten. An incoming book counts as

@@ -54,6 +54,16 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.run_cli("init", "--sample")[0], 0)
         self.assertEqual(load_books(self.tmp / "data" / "books.json"), load_books(self.tmp / "data" / "sample" / "books.json"))
 
+    def test_sync_export_spaces_author_initials(self):
+        import json
+        self.assertEqual(self.run_cli("init", "--sample")[0], 0)
+        export = self.tmp / "export.json"
+        export.write_text(json.dumps([{"t": "New Book", "a": "A.B. Quill"}]), encoding="utf-8")
+        code, out, _ = self.run_cli("sync-export", str(export))
+        self.assertEqual(code, 0)
+        self.assertIn("spaced out run-together author initials on 1", out)
+        self.assertEqual(load_books(self.tmp / "data" / "books.json")[0]["a"], "A. B. Quill")
+
     def test_data_dir_option_points_anywhere(self):
         elsewhere = self.tmp / "elsewhere"
         self.assertEqual(self.run_cli("--data-dir", str(elsewhere), "init")[0], 0)
