@@ -1,0 +1,15 @@
+# ---- Personal data: this repository is public, your library is not. -----------------------
+# Your catalogue and everything derived from it (the built page embeds all of it).
+data/books.json
+data/series-info.json
+data/excluded.txt
+dist/
+
+# Raw exports contain ratings, reviews and purchase history.
+data/raw/*
+!data/raw/.gitkeep
+
+# ---- Noise ----------------------------------------------------------------------------------
+__pycache__/
+*.pyc
+.DS_Store

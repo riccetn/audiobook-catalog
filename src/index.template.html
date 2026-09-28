@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Audiobook Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+<style>
+{{STYLES}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Audiobook Catalogue</h1>
+  <p class="sub" id="subtitle">Loading&hellip;</p>
+
+  <div class="viewToggle">
+    <button id="btnSeriesView" class="active">By Series</button>
+    <button id="btnLibraryView">All Books</button>
+  </div>
+
+  <div class="crumb" id="crumb">
+    <button id="backToSeries">&larr; All series</button>
+    <span id="crumbLabel"></span>
+  </div>
+
+  <div class="controls">
+    <input type="text" id="q" placeholder="Search title, author, series, genre&hellip;">
+    <select id="authorFilter"><option value="">All authors</option></select>
+    <select id="genreFilter"><option value="">All genres</option></select>
+  </div>
+
+  <div class="count-row">
+    <span id="resultCount"></span>
+    <div class="rowbtns">
+      <button class="iconbtn2" id="exportBtn" title="Download a backup JSON file">Export</button>
+      <button class="iconbtn2" id="importBtn" title="Restore from a backup JSON file">Import</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none">
+      <button class="addbtn" id="toggleAdd">+ Add a book</button>
+    </div>
+  </div>
+  <p id="ioStatus" class="ioStatus"></p>
+
+  <form id="addForm">
+    <h3 id="formTitle">Add a book</h3>
+    <div class="formrow">
+      <div><label>Title</label><input id="f_t" required></div>
+      <div><label>Author</label><input id="f_a" required></div>
+    </div>
+    <div class="formrow">
+      <div><label>Narrator</label><input id="f_n"></div>
+      <div><label>Genres (comma separated)</label><input id="f_g"></div>
+    </div>
+    <div class="formrow">
+      <div><label>Series</label><input id="f_s"></div>
+      <div><label>Book # in series</label><input id="f_sn"></div>
+    </div>
+    <div class="formbtns">
+      <button type="submit" class="save" id="formSaveBtn">Add book</button>
+      <button type="button" id="cancelAdd">Cancel</button>
+    </div>
+  </form>
+
+  <div id="results"></div>
+</div>
+
+<script type="application/json" id="book-data">{{BOOK_DATA}}</script>
+<script type="application/json" id="series-info">{{SERIES_INFO}}</script>
+<script type="application/json" id="ui-state">{{UI_STATE}}</script>
+<script>
+{{APP_JS}}
+</script>
+</body>
+</html>
