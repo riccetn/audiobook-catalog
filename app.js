@@ -19,6 +19,7 @@ let SERIES_FILTER = null;      // series name, '__standalone__', or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
 let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
 let PENDING_IMPORT = null;     // records of a previewed CSV import awaiting confirmation
+let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
 
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
 
@@ -105,6 +106,7 @@ function render(){
     const books = groups[name].sort((a,b)=> (parseFloat(a.sn)||0) - (parseFloat(b.sn)||0));
     const info = SERIES_INFO[name];
     let head = `<p class="series-title">${esc(name)} <span class="n">${books.length} owned</span>`;
+    head += ` ${seriesEditButton(name)}`;
     if(info){
       head += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
       if(info.url){
@@ -157,6 +159,7 @@ function render(){
       openEditForm(i);
     });
   });
+  bindSeriesEditButtons();
 }
 
 function renderSeriesOverview(){
@@ -193,6 +196,7 @@ function renderSeriesOverview(){
     html += `<div class="srow"><div class="srow-head">
       <button class="srow-title" data-series="${esc(name)}">${esc(name)}</button>
       <span class="srow-owned">${books.length} owned${info ? ' of ' + esc(info.total) : ''}</span>
+      ${seriesEditButton(name)}
     </div>`;
     let foot = `<div class="srow-foot"><span class="tag">${esc(authors.join(', '))}</span>`;
     if(info){
@@ -216,7 +220,81 @@ function renderSeriesOverview(){
   document.querySelectorAll('.srow-title').forEach(btn=>{
     btn.addEventListener('click', e=> openSeries(e.currentTarget.dataset.series));
   });
+  bindSeriesEditButtons();
 }
+
+// ------------------------------------------------------------------ series info
+// Edits the series' entry in series-info.json (released total, status, note, author site). Like book
+// edits, it lives in this browser until you Export and run `node catalog.js sync-export`.
+function seriesEditButton(name){
+  const label = SERIES_INFO[name] ? 'Edit series info' : 'Add series info';
+  return `<button class="iconbtn sedit" data-series="${esc(name)}" title="${label}" aria-label="${label}">&#9998;</button>`;
+}
+
+function bindSeriesEditButtons(){
+  document.querySelectorAll('.iconbtn.sedit').forEach(btn=>{
+    btn.addEventListener('click', e=> openSeriesForm(e.currentTarget.dataset.series));
+  });
+}
+
+function openSeriesForm(name){
+  closeForm();
+  const info = SERIES_INFO[name];
+  EDIT_SERIES = name;
+  document.getElementById('seriesFormTitle').textContent = (info ? 'Series info: ' : 'Add series info: ') + name;
+  document.getElementById('sf_total').value = info ? String(info.total) : '';
+  document.getElementById('sf_status').value = info ? info.status : 'ongoing';
+  document.getElementById('sf_note').value = info ? info.note || '' : '';
+  document.getElementById('sf_url').value = info ? info.url || '' : '';
+  document.getElementById('seriesFormError').textContent = '';
+  document.getElementById('seriesRemoveBtn').style.display = info ? '' : 'none';
+  const form = document.getElementById('seriesForm');
+  form.classList.add('open');
+  form.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function closeSeriesForm(){
+  EDIT_SERIES = null;
+  document.getElementById('seriesForm').classList.remove('open');
+  document.getElementById('seriesForm').reset();
+  document.getElementById('seriesFormError').textContent = '';
+}
+
+function saveSeriesForm(){
+  const name = EDIT_SERIES;
+  if(name === null) return;
+  const totalText = document.getElementById('sf_total').value.trim();
+  const entry = {
+    total: /^\d+$/.test(totalText) ? parseInt(totalText, 10) : totalText.toLowerCase(),
+    status: document.getElementById('sf_status').value,
+    note: CatalogImport.tidyText(document.getElementById('sf_note').value),
+  };
+  const url = document.getElementById('sf_url').value.trim();
+  if(url) entry.url = url;
+  // the same rules as `make validate`, applied to just this series
+  const {errors} = CatalogImport.validate(DATA, {[name]: entry});
+  const problems = errors.filter(e=> e.startsWith('series-info')).map(e=> e.replace(/^series-info(\[[^\]]*\])?: /, ''));
+  if(problems.length){
+    document.getElementById('seriesFormError').textContent = problems.join('; ');
+    return;
+  }
+  SERIES_INFO = {...SERIES_INFO, [name]: entry};
+  closeSeriesForm(); render(); persist();
+  showIoStatus(`Saved series info for ${name}. Export and run sync-export to keep it in data/series-info.json.`);
+}
+
+function removeSeriesInfo(){
+  const name = EDIT_SERIES;
+  if(name === null || !SERIES_INFO[name]) return;
+  const {[name]: _removed, ...rest} = SERIES_INFO;
+  SERIES_INFO = rest;
+  closeSeriesForm(); render(); persist();
+  showIoStatus(`Removed series info for ${name}.`);
+}
+
+document.getElementById('seriesForm').addEventListener('submit', e=>{ e.preventDefault(); saveSeriesForm(); });
+document.getElementById('seriesRemoveBtn').addEventListener('click', removeSeriesInfo);
+document.getElementById('cancelSeries').addEventListener('click', closeSeriesForm);
 
 function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
@@ -378,9 +456,9 @@ document.getElementById('importCancel').addEventListener('click', closeImportPre
 document.getElementById('q').addEventListener('input', render);
 document.getElementById('authorFilter').addEventListener('change', render);
 document.getElementById('genreFilter').addEventListener('change', render);
-document.getElementById('btnSeriesView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); setView('series'); });
-document.getElementById('btnLibraryView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); setView('library'); });
-document.getElementById('backToSeries').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); setView('series'); });
+document.getElementById('btnSeriesView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
+document.getElementById('btnLibraryView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('library'); });
+document.getElementById('backToSeries').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
 document.getElementById('exportBtn').addEventListener('click', exportBackup);
 document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
 document.getElementById('importFile').addEventListener('change', e=>{
@@ -394,6 +472,7 @@ document.getElementById('toggleAdd').addEventListener('click', ()=>{
   if(form.classList.contains('open') && EDIT_INDEX === null){
     closeForm();
   } else {
+    closeSeriesForm();
     EDIT_INDEX = null;
     document.getElementById('formTitle').textContent = 'Add a book';
     document.getElementById('formSaveBtn').textContent = 'Add book';
@@ -411,6 +490,7 @@ function closeForm(){
 
 function openEditForm(i){
   const b = DATA[i];
+  closeSeriesForm();
   EDIT_INDEX = i;
   document.getElementById('f_t').value = b.t || '';
   document.getElementById('f_a').value = b.a || '';

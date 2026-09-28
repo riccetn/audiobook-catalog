@@ -77,6 +77,19 @@ h1{
   width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
   background:var(--paper); color:var(--ink); font-size:.9rem;
 }
+#seriesForm{
+  display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
+  padding:1rem; margin-bottom:1.5rem;
+}
+#seriesForm.open{display:block;}
+#seriesForm h3{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
+#seriesForm label{display:block; font-size:.78rem; color:var(--ink-soft); margin:.5rem 0 .2rem;}
+#seriesForm input, #seriesForm select{
+  width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
+  background:var(--paper); color:var(--ink); font-size:.9rem;
+}
+.formError{font-size:.8rem; color:#b0453f; margin:.5rem 0 0; overflow-wrap:anywhere;}
+.formError:empty{display:none;}
 .importPreview{
   display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
   padding:1rem; margin-bottom:1.5rem; font-size:.85rem;
@@ -141,6 +154,7 @@ h1{
   font-family:'Lora',Georgia,serif; font-weight:600; font-size:1rem; color:var(--ink);
 }
 .srow-title:hover{color:var(--moss);}
-.srow-owned{font-size:.78rem; color:var(--ink-soft); white-space:nowrap;}
+.srow-owned{font-size:.78rem; color:var(--ink-soft); white-space:nowrap; margin-left:auto;}
+.srow-head .iconbtn, .series-title .iconbtn{font-size:.85rem;}
 .srow-note{font-size:.8rem; color:var(--ink-soft); margin-top:.3rem;}
 .srow-foot{display:flex; gap:.6rem; align-items:center; margin-top:.4rem; flex-wrap:wrap;}
