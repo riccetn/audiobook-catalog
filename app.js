@@ -275,10 +275,10 @@ function importBackup(file){
 }
 
 // ------------------------------------------------------------ Audible / Goodreads CSV import
-// The same pipeline as `python -m catalog import-audible|import-goodreads` (see importers.js):
+// The same pipeline as `node catalog.js import-audible|import-goodreads` (both use importers.js):
 // read the export, merge it into a copy of the catalogue, show what would change, and only
 // apply it when confirmed. Like every edit in the page, the result lives in this browser until
-// you Export it and run `python -m catalog sync-export`.
+// you Export it and run `node catalog.js sync-export`.
 const IMPORTERS = {
   audible: {label: 'Audible', read: CatalogImport.readAudible},
   goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},

@@ -1,17 +1,15 @@
-// Audible and Goodreads importers for the browser: a port of catalog/model.py (the parts imports
-// use), catalog/audible.py, catalog/goodreads.py and catalog/merge.py. Keep the two in step: the
-// same inputs must give the same records and the same merge result. tests/importers.test.mjs
-// mirrors the Python tests.
+// The catalogue's data pipeline: tidying and identity of book records, validation, the Audible and
+// Goodreads readers, and the merge that adds imported books without clobbering hand edits.
 //
-// Loaded by index.html as a plain script (defines the global CatalogImport) and by Node's
-// require() in the tests.
+// Shared by the page (index.html loads it as a plain script, defining the global CatalogImport) and
+// the command line (catalog.js require()s it), so both import exactly the same way.
 const CatalogImport = (() => {
 
-// ------------------------------------------------------------------ model.py
+// ------------------------------------------------------------------ book records
 const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id'];
 const STATUSES = ['ongoing', 'complete'];
 const SERIES_NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
-// Python's \b is Unicode-aware, JavaScript's is ASCII-only; this is the Unicode "no word char before".
+// JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
 const WORD_START = '(?<![\\p{L}\\p{N}_])';
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -31,7 +29,7 @@ function seriesNorm(name){
 
 const RUN_TOGETHER_INITIALS = new RegExp(WORD_START + '([A-Z])\\.(?=[A-Z]\\.)', 'gu');
 const INVISIBLE = /[\u200b\ufeff]/g;
-const WHITESPACE = /[\s\x1c-\x1f]+/g;   // what Python's \s matches
+const WHITESPACE = /[\s\x1c-\x1f]+/g;   // \s plus the ASCII separator controls
 
 /** Trim and collapse whitespace: tabs, newlines, non-breaking spaces and runs of spaces become one space. */
 function tidyText(text){
@@ -62,7 +60,7 @@ function firstAuthor(authors){
   return norm((authors || '').split(/,| and | & /)[0]);
 }
 
-// Keys are arrays in Python (tuples); here they are JSON strings so they work as Map keys.
+// Keys are JSON-encoded arrays so they work as Map and Set keys.
 const key = (...parts) => JSON.stringify(parts);
 
 /** Identity keys for a book, strongest first. The series key survives title edits. */
@@ -124,7 +122,7 @@ function parseExclusions(text){
   return ex;
 }
 
-// Python's repr() of a string or list of strings, so messages read the same as the command line's.
+// Quote a value for a message, Python-repr style: 'Title', or "It's" when it contains a quote.
 function repr(v){
   if(Array.isArray(v)) return '[' + v.map(repr).join(', ') + ']';
   if(typeof v !== 'string') return String(v);
@@ -224,7 +222,7 @@ function validate(books, info){
 // ------------------------------------------------------------------------ CSV
 /**
  * Parse CSV text (RFC 4180: quoted fields, doubled quotes, newlines inside quotes) into objects
- * keyed by the header row, like Python's csv.DictReader: a leading BOM is dropped, blank lines are
+ * keyed by the header row: a leading BOM is dropped, blank lines are
  * skipped, and missing trailing fields are undefined.
  */
 function parseCsv(text){
@@ -262,7 +260,7 @@ function parseCsv(text){
 
 const cell = (row, name) => (row[name] || '').trim();
 
-// ------------------------------------------------------------------ audible.py
+// -------------------------------------------------------------------- Audible
 // Audible's built-in "Your First Listen" sample appears in every library.
 const SAMPLE_ASINS = new Set(['B002V8N37Q']);
 
@@ -362,7 +360,7 @@ function readAudible(text){
   return result;
 }
 
-// ---------------------------------------------------------------- goodreads.py
+// ------------------------------------------------------------------ Goodreads
 // Goodreads has no "audiobook" flag; the edition's binding is the best signal there is.
 const AUDIO_BINDINGS = new Set(['Audio CD', 'Audiobook', 'Audible Audio', 'MP3 CD', 'MP3 Book', 'Audio']);
 const PAREN = /^(.*?)\s*\(([^()]+)\)\s*$/;
@@ -409,7 +407,7 @@ function readGoodreads(text){
   return result;
 }
 
-// -------------------------------------------------------------------- merge.py
+// ---------------------------------------------------------------------- merge
 /**
  * Append incoming records that are not in `existing` yet (mutates `existing`). An existing book
  * always wins, except that a missing Audible id is filled in; series names are folded onto the

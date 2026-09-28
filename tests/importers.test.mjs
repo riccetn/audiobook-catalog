@@ -1,17 +1,9 @@
-// Tests for importers.js, the browser port of the Python importers. The cases mirror
-// tests/test_model.py, test_audible.py, test_goodreads.py and test_merge.py, and the last test runs
-// the Python pipeline on the same files and checks both give identical results.
+// Tests for importers.js: tidying, validation, the Audible and Goodreads readers and the merge.
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const C = createRequire(import.meta.url)('../importers.js');
 
 const book = (t, a = 'Author', extra = {}) => ({ t, a, ...extra });
@@ -27,6 +19,12 @@ test('series names: spelling variants are one series, different series stay apar
 test('first author ignores co-authors', () => {
   assert.equal(C.firstAuthor('R.T. Hale, C.J. Marsh'), C.firstAuthor('R.T. Hale'));
   assert.equal(C.firstAuthor('Ann Vale and P.T. Vale'), C.norm('Ann Vale'));
+});
+
+test('the series key survives a title edit', () => {
+  const a = { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5' };
+  const b = { t: 'A Crown of Embers 5: A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers Series', sn: '5' };
+  assert.deepEqual(C.bookKeys(a).filter(k => C.bookKeys(b).includes(k)), [C.bookKeys(a)[0]]);
 });
 
 test('lookup keys are forgiving in one direction only', () => {
@@ -64,18 +62,45 @@ test('exclusions accept ASINs and title | author pairs', () => {
   assert.equal(C.parseExclusions('').size, 0);
 });
 
-test('validation: errors and warnings', () => {
+test('validation: a clean catalogue passes; required fields, unknown keys, ids', () => {
   const clean = [{ t: 'A', a: 'B', s: 'S', sn: '1', g: ['x'], id: 'B0' }];
   assert.deepEqual(C.validate(clean, { S: { total: 3, status: 'ongoing', note: 'n', url: 'https://example.com' } }), { errors: [], warnings: [] });
   assert.equal(C.validate([{ t: '', a: 'x' }, { t: 't', a: 'a', bogus: 1 }, 'nope'], {}).errors.length, 3);
+  assert.ok(C.validate([{ t: 't', a: 'a', sn: '1' }], {}).errors.some(e => e.includes('no series')));
   assert.ok(C.validate([{ t: '1', a: 'a', id: 'B0' }, { t: '2', a: 'a', id: 'B0' }], {}).errors.some(e => e.includes('duplicate id')));
+});
+
+test('validation: series-info must match a series and be well formed', () => {
+  const books = [{ t: 't', a: 'a', s: 'Real' }];
+  const errors = C.validate(books, {
+    Ghost: { total: 2, status: 'ongoing', note: 'n' },
+    Real: { total: 0, status: 'paused', note: '', url: 'ftp://x', extra: 1 },
+  }).errors.join('\n');
+  for (const needle of ["'Ghost' matches no series", 'status must be', 'total must be', 'note is required', 'url must start', 'unknown keys']) {
+    assert.ok(errors.includes(needle), needle);
+  }
+  assert.deepEqual(C.validate([{ t: 't', a: 'a', s: 'S' }], { S: { total: 'many', status: 'ongoing', note: 'n' } }).errors, []);
+});
+
+test('validation: warnings for lookalike series, leftover markup, odd numbers, untidy values (once each)', () => {
   const warnings = C.validate([
     { t: '1', a: 'a', s: 'Ember Coast' }, { t: '2', a: 'a', s: 'Ember Coast Series' },
-    { t: '3', a: 'a', s: 'Foo (book 1), Bar' }, { t: '4', a: 'A.B. Quill', s: 'Odd', sn: '1, 1' },
+    { t: '3', a: 'a', s: 'Foo (book 1), Bar' }, { t: '4', a: 'a', s: 'Odd', sn: '1, 1' },
   ], {}).warnings.join('\n');
-  for (const needle of ['look like the same series', 'leftover Audible markup', 'unusual series number', "use 'A. B. Quill'"]) {
+  for (const needle of ['look like the same series', 'leftover Audible markup', 'unusual series number']) {
     assert.ok(warnings.includes(needle), needle);
   }
+  const untidy = C.validate([
+    { t: '1', a: 'A.B. Quill', n: 'R.T.  Hale' },
+    { t: '2', a: 'A.B. Quill', s: 'Some  Series', g: ['Cozy  Mystery'] },
+    { t: 'Double  Title', a: 'Ann Vale' },
+  ], {}).warnings.join('\n');
+  assert.equal(untidy.split("author 'A.B. Quill'").length - 1, 1);
+  for (const needle of ["use 'A. B. Quill'", "narrator 'R.T.  Hale'", "use 'R. T. Hale'", "series 'Some  Series'",
+                        "genre 'Cozy  Mystery'", "title 'Double  Title'"]) {
+    assert.ok(untidy.includes(needle), needle);
+  }
+  assert.deepEqual(C.validate([{ t: 'Fine', a: 'A. B. Quill', n: 'R. T. Hale' }], {}).warnings, []);
 });
 
 // -------------------------------------------------------------------- CSV
@@ -213,71 +238,4 @@ test('merge: ids, long titles, boxed sets, series spelling, exclusions, authors'
   existing = [book('Dark', 'Ann')];
   C.merge(existing, [book('Dark', 'Bob')]);
   assert.equal(existing.length, 2);
-});
-
-// ------------------------------------------------------- parity with Python
-const python = ['python3', 'python'].find(cmd => spawnSync(cmd, ['--version']).status === 0);
-
-test('gives exactly the same results as the Python importers', { skip: !python && 'python not found' }, () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-parity-'));
-  const audible = '\ufeff' + HEADER
-    + 'Long,A Crown of Embers 5: A Spark of Dawn,A Crown of Embers Series (book 5),5,Ilse Marlowe,"R.T.  Hale",,Epic,Finished,BX1,\n'
-    + 'L,Lantern of the Deep 10,Lantern of the Deep (book 10),10,A.B. Quill,,"Cozy, Mystery",,Finished,BX2,"a ""quoted""\nblurb"\n'
-    + 'W,Wardens,"Thornmere: Wardens (book 3), Thornmere (book 5)",,Ann Vale,,,,Finished,BX3,\n'
-    + 'A,Ambiguous,"Alpha (book 1), Beta (book 2)",,Ann Vale,,,,Finished,BX4,\n'
-    + "V,Vera's Case,\"Vera Stone, Ghost Hunter (book )\",\"2, 7\",Ann Vale,,,,Finished,BX5,\n"
-    + 'U,Unfinished,,,Ann Vale,,,,2h left,BX6,\n'
-    + 'N,No Author,,,,,,,Finished,BX7,\n'
-    + 'Box,Lantern of the Deep: Books 1-3,,,A.B. Quill,,,,Finished,BX8,\n'
-    + 'Ex,Excluded One,,,Ann Vale,,,,Finished,BX9,\n';
-  const goodreads = GR_HEADER
-    + '"Frosted (Blaze, #6; Dana O\'Hare, #1)",Ann  Vale,Nate Narrator,Audible Audio,read,"urban-fantasy, witches"\n'
-    + '"Ballads and Brigands (Red Harbor #3)",Bob,,Audio CD,read,\n'
-    + '"Rift Clash: A LitRPG Adventure (Rift Universe, Book 8)",Cy,,MP3 CD,to-read,\n'
-    + 'Excluded Two,A.B. Quill,,Audiobook,read,\n'
-    + 'Paper,Dee,,Paperback,read,\n';
-  const excluded = '# test\nBX9 # gone\nExcluded Two | A. B. Quill\n';
-  const existing = [
-    book('A Spark of Dawn', 'Ilse Marlowe', { s: 'A Crown of Embers', sn: '5' }),
-    book('Lantern of the Deep', 'A. B. Quill'),
-    book('Frosted', 'Ann Vale', { s: 'Blaze', sn: '6', id: 'BOLD' }),
-  ];
-  const files = { 'audible.csv': audible, 'goodreads.csv': goodreads, 'excluded.txt': excluded, 'books.json': JSON.stringify(existing) };
-  for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text);
-
-  const script = `
-import json, sys
-from pathlib import Path
-from catalog import audible, goodreads
-from catalog.merge import merge
-from catalog.model import load_exclusions, validate
-d = Path(sys.argv[1])
-books = json.loads((d / "books.json").read_text())
-ex = load_exclusions(d / "excluded.txt")
-out = []
-for reader, name in ((audible, "audible.csv"), (goodreads, "goodreads.csv")):
-    r = reader.read_library(d / name)
-    rep = merge(books, r.records, ex)
-    out.append({"records": r.records, "warnings": r.warnings, "skipped": r.skipped_unfinished,
-                "added": rep.added, "backfilled": rep.backfilled, "excluded": rep.excluded, "matched": rep.matched})
-errors, warnings = validate(books, {})
-print(json.dumps({"steps": out, "books": books, "errors": errors, "warnings": warnings}))
-`;
-  const py = spawnSync(python, ['-c', script, dir], { cwd: root, encoding: 'utf8' });
-  fs.rmSync(dir, { recursive: true, force: true });
-  assert.equal(py.status, 0, py.stderr);
-  const expected = JSON.parse(py.stdout);
-
-  const books = structuredClone(existing);
-  const ex = C.parseExclusions(excluded);
-  const steps = [[C.readAudible, audible], [C.readGoodreads, goodreads]].map(([read, text]) => {
-    const r = read(text);
-    const rep = C.merge(books, r.records, ex);
-    return { records: r.records, warnings: r.warnings, skipped: r.skippedUnfinished,
-             added: rep.added, backfilled: rep.backfilled, excluded: rep.excluded, matched: rep.matched };
-  });
-  const { errors, warnings } = C.validate(books, {});
-  assert.deepEqual(JSON.parse(JSON.stringify({ steps, books, errors, warnings })), expected);
-  assert.ok(expected.steps[0].added.length && expected.steps[0].backfilled.length && expected.steps[1].excluded.length,
-    'the fixture exercises adding, backfilling and exclusions');
 });
