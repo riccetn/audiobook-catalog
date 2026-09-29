@@ -100,7 +100,11 @@ plain list of books) still work and leave `data/series-info.json` as it is. The 
 reads both kinds the same way.
 You can also edit `data/books.json` by hand; `make format` restores the one-book-per-line layout.
 
-**Update release info for a series**: edit `data/series-info.json`, then `make validate`.
+**Update release info for a series**: press the pencil next to a series (in the series overview or
+above its books) to edit how many books are released, whether it is ongoing or complete, the note and
+the author site, or to add or remove that info. The form checks the same rules as `make validate`.
+Like book edits, the change lives in the browser until you **Export** and run `sync-export`. Or edit
+`data/series-info.json` by hand, then `make validate`.
 
 **Remove a book for good**: delete it from `data/books.json` *and* add its ASIN (or `Title | Author`
 for books without one) to `data/excluded.txt`, otherwise the next import brings it back.

@@ -245,3 +245,60 @@ test('Export includes series info, and Import brings it back', async () => {
   assert.deepEqual(changedInfo.get('SERIES_INFO'), {});
   assert.ok(changedInfo.storage.has('audiobook-catalog-data.backup'));
 });
+
+test('series info can be edited, added and removed in the page', async () => {
+  const { ctx, els, get, storage } = await boot();
+  const info = JSON.parse(DEMO_INFO);
+  const [name] = Object.keys(info);
+  assert.match(els.results.innerHTML, /class="iconbtn sedit"/);
+
+  // edit: the form starts from the current entry
+  ctx.openSeriesForm(name);
+  assert.ok(els.seriesForm.classList.contains('open'));
+  assert.equal(els.sf_total.value, String(info[name].total));
+  assert.equal(els.sf_status.value, info[name].status);
+  assert.equal(els.sf_note.value, info[name].note);
+  assert.equal(els.seriesRemoveBtn.style.display, '');
+  Object.assign(els.sf_total, { value: '7' });
+  Object.assign(els.sf_status, { value: 'ongoing' });
+  Object.assign(els.sf_note, { value: '  book 8   is announced ' });
+  Object.assign(els.sf_url, { value: 'https://example.com/author' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.ok(!els.seriesForm.classList.contains('open'));
+  assert.deepEqual(get(`SERIES_INFO[${JSON.stringify(name)}]`),
+    { total: 7, status: 'ongoing', note: 'book 8 is announced', url: 'https://example.com/author' });
+  assert.match(els.results.innerHTML, /7 owned|owned of 7/);
+  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).info[name].total, 7);
+
+  // invalid input is refused with a message, and nothing changes
+  ctx.openSeriesForm(name);
+  Object.assign(els.sf_total, { value: 'lots' });
+  Object.assign(els.sf_note, { value: '' });
+  Object.assign(els.sf_url, { value: 'example.com' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.ok(els.seriesForm.classList.contains('open'));
+  assert.match(els.seriesFormError.textContent, /total must be a positive integer/);
+  assert.match(els.seriesFormError.textContent, /note is required/);
+  assert.match(els.seriesFormError.textContent, /url must start with/);
+  assert.equal(get(`SERIES_INFO[${JSON.stringify(name)}].total`), 7);
+  els.cancelSeries.listeners.click[0]();
+  assert.ok(!els.seriesForm.classList.contains('open'));
+
+  // add: a series without info gets a fresh entry ("many" is allowed)
+  const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
+  assert.ok(bare, 'the demo data has a series without info');
+  ctx.openSeriesForm(bare);
+  assert.equal(els.sf_total.value, '');
+  assert.equal(els.seriesRemoveBtn.style.display, 'none');
+  Object.assign(els.sf_total, { value: 'Many' });
+  Object.assign(els.sf_status, { value: 'complete' });
+  Object.assign(els.sf_note, { value: 'finished' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get(`SERIES_INFO[${JSON.stringify(bare)}]`), { total: 'many', status: 'complete', note: 'finished' });
+
+  // remove
+  ctx.openSeriesForm(name);
+  els.seriesRemoveBtn.listeners.click[0]();
+  assert.equal(get(`${JSON.stringify(name)} in SERIES_INFO`), false);
+  assert.equal(get(`${JSON.stringify(bare)} in SERIES_INFO`), true);
+});

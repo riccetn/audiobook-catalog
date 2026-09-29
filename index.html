@@ -73,6 +73,22 @@
     </div>
   </form>
 
+  <form id="seriesForm">
+    <h3 id="seriesFormTitle">Series info</h3>
+    <div class="formrow">
+      <div><label>Books released so far</label><input id="sf_total" placeholder="e.g. 12, or many"></div>
+      <div><label>Status</label><select id="sf_status"><option value="ongoing">ongoing</option><option value="complete">complete</option></select></div>
+    </div>
+    <div><label>Note</label><input id="sf_note" placeholder="e.g. book 5 is announced"></div>
+    <div><label>Author or publisher site (optional)</label><input id="sf_url" placeholder="https://"></div>
+    <p id="seriesFormError" class="formError"></p>
+    <div class="formbtns">
+      <button type="submit" class="save" id="seriesSaveBtn">Save series info</button>
+      <button type="button" id="seriesRemoveBtn">Remove info</button>
+      <button type="button" id="cancelSeries">Cancel</button>
+    </div>
+  </form>
+
   <div id="results"></div>
 </div>
 
