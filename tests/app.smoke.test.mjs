@@ -278,7 +278,6 @@ test('series info can be edited, added and removed in the page', async () => {
   els.seriesForm.listeners.submit[0]({ preventDefault() {} });
   assert.ok(els.seriesForm.classList.contains('open'));
   assert.match(els.seriesFormError.textContent, /total must be a positive integer/);
-  assert.match(els.seriesFormError.textContent, /note is required/);
   assert.match(els.seriesFormError.textContent, /url must start with/);
   assert.equal(get(`SERIES_INFO[${JSON.stringify(name)}].total`), 7);
   els.cancelSeries.listeners.click[0]();

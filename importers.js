@@ -209,7 +209,6 @@ function validate(books, info){
     if(!(Number.isInteger(total) && total > 0) && total !== 'many'){
       errors.push(`series-info[${repr(name)}]: total must be a positive integer (or "many")`);
     }
-    if(!nonEmpty(entry.note)) errors.push(`series-info[${repr(name)}]: note is required`);
     if('url' in entry && !(typeof entry.url === 'string' && /^https?:\/\//.test(entry.url))){
       errors.push(`series-info[${repr(name)}]: url must start with http:// or https://`);
     }

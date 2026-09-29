@@ -160,7 +160,7 @@ test('sync-export restores series info from the backup', t => {
 
   const { code, out } = run('sync-export', exported);
   assert.equal(code, 0);
-  assert.match(out, /wrote data\/series-info\.json/);
+  assert.match(out, /wrote data[\/\\]series-info\.json/);
   assert.equal(fs.readFileSync(infoPath, 'utf8'), formatSeriesInfo(seriesInfo));
 
   // a malformed entry in the backup blocks the whole sync
