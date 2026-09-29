@@ -205,7 +205,7 @@ function renderSeriesOverview(){
     }
     foot += '</div>';
     html += foot;
-    if(info) html += `<p class="srow-note">${esc(info.note)}</p>`;
+    if(info && info.note !== '') html += `<p class="srow-note">${esc(info.note)}</p>`;
     html += '</div>';
   });
 

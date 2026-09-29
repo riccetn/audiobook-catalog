@@ -76,7 +76,7 @@ test('validation: series-info must match a series and be well formed', () => {
     Ghost: { total: 2, status: 'ongoing', note: 'n' },
     Real: { total: 0, status: 'paused', note: '', url: 'ftp://x', extra: 1 },
   }).errors.join('\n');
-  for (const needle of ["'Ghost' matches no series", 'status must be', 'total must be', 'note is required', 'url must start', 'unknown keys']) {
+  for (const needle of ["'Ghost' matches no series", 'status must be', 'total must be', 'url must start', 'unknown keys']) {
     assert.ok(errors.includes(needle), needle);
   }
   assert.deepEqual(C.validate([{ t: 't', a: 'a', s: 'S' }], { S: { total: 'many', status: 'ongoing', note: 'n' } }).errors, []);

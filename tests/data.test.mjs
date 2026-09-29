@@ -15,7 +15,7 @@ const { formatBooks, formatSeriesInfo, loadBooks, loadSeriesInfo } = require('..
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(root, 'data');
-const read = file => fs.readFileSync(file, 'utf8');
+const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 
 function canonical(folder) {
   return formatBooks(loadBooks(path.join(folder, 'books.json'))) === read(path.join(folder, 'books.json'))
