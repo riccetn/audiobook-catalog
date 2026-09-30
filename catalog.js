@@ -38,29 +38,8 @@ const readText = file => fs.readFileSync(file, 'utf8');
 const loadBooks = file => JSON.parse(readText(file));
 const loadSeriesInfo = file => JSON.parse(readText(file));
 
-function recordLine(book){
-  const ordered = {};
-  for(const k of BOOK_KEYS) if(k in book) ordered[k] = book[k];
-  for(const [k, v] of Object.entries(book)) if(!BOOK_KEYS.includes(k)) ordered[k] = v;
-  return JSON.stringify(ordered);
-}
-
-/** One record per line, so git diffs show exactly which books changed. */
-function formatBooks(books){
-  if(!books.length) return '[]\n';
-  return '[\n' + books.map(b => '  ' + recordLine(b)).join(',\n') + '\n]\n';
-}
-
-/** Sorted by series name, ignoring case, for stable diffs. */
-function formatSeriesInfo(info){
-  const byName = (x, y) => { const a = x.toLowerCase(), b = y.toLowerCase(); return a < b ? -1 : a > b ? 1 : 0; };
-  const ordered = {};
-  for(const name of Object.keys(info).sort(byName)) ordered[name] = info[name];
-  return JSON.stringify(ordered, null, 2) + '\n';
-}
-
-const dumpBooks = (books, file) => fs.writeFileSync(file, formatBooks(books), 'utf8');
-const dumpSeriesInfo = (info, file) => fs.writeFileSync(file, formatSeriesInfo(info), 'utf8');
+const dumpBooks = (books, file) => fs.writeFileSync(file, JSON.stringify(books), 'utf8');
+const dumpSeriesInfo = (info, file) => fs.writeFileSync(file, JSON.stringify(info), 'utf8');
 
 function loadExclusions(file){
   return fs.existsSync(file) ? C.parseExclusions(readText(file)) : C.parseExclusions('');
@@ -229,15 +208,12 @@ function cmdSyncExport(args, io){
   io.out(`${oldBooks.length} -> ${newBooks.length} books; ${added.length} new/renamed, ${gone.length} removed/renamed`);
   for(const [title, author] of added.slice(0, 10)) io.out(`    + ${title} - ${author}`);
   for(const [title, author] of gone.slice(0, 10)) io.out(`    - ${title} - ${author}`);
-  const infoChanged = newInfo && formatSeriesInfo(newInfo) !== formatSeriesInfo(oldInfo);
   if(newInfo){
     const names = Object.keys(newInfo), oldNames = Object.keys(oldInfo);
     const addedInfo = names.filter(n => !(n in oldInfo));
     const removedInfo = oldNames.filter(n => !(n in newInfo));
     const changedInfo = names.filter(n => n in oldInfo && JSON.stringify(newInfo[n]) !== JSON.stringify(oldInfo[n]));
-    io.out(infoChanged
-      ? `series info: ${addedInfo.length} added, ${changedInfo.length} changed, ${removedInfo.length} removed`
-      : 'series info: unchanged');
+    io.out(`series info: ${addedInfo.length} added, ${changedInfo.length} changed, ${removedInfo.length} removed`);
   } else {
     io.out(`series info: not in this backup (older export), ${shown(infoPath, args.root)} left as is`);
   }
@@ -247,7 +223,7 @@ function cmdSyncExport(args, io){
   }
   dumpBooks(newBooks, booksPath);
   io.out(`wrote ${shown(booksPath, args.root)}`);
-  if(infoChanged){
+  if(newInfo){
     dumpSeriesInfo(newInfo, infoPath);
     io.out(`wrote ${shown(infoPath, args.root)}`);
   }
@@ -360,7 +336,7 @@ function main(argv, io = {out: s => console.log(s), err: s => console.error(s)})
   }
 }
 
-module.exports = {main, formatBooks, formatSeriesInfo, loadBooks, loadSeriesInfo, dataDir, liveDataDir};
+module.exports = {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir};
 
 if(require.main === module){
   const code = main(process.argv.slice(2));

@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const { main, formatBooks, formatSeriesInfo, loadBooks } = createRequire(import.meta.url)('../catalog.js');
+const { main, loadBooks } = createRequire(import.meta.url)('../catalog.js');
 
 function sandbox(t) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-cli-'));
@@ -64,7 +64,7 @@ test('import-audible previews with --dry-run, then adds, fills in ids and honour
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
   const books = path.join(tmp, 'data', 'books.json');
-  fs.writeFileSync(books, formatBooks([{ t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5' }]));
+  fs.writeFileSync(books, JSON.stringify([{ t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5' }]));
   fs.appendFileSync(path.join(tmp, 'data', 'excluded.txt'), 'BGONE\n');
   const csv = path.join(tmp, 'library.csv');
   fs.writeFileSync(csv, 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
@@ -109,7 +109,7 @@ test('an import that would leave invalid data writes nothing', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
   const books = path.join(tmp, 'data', 'books.json');
-  fs.writeFileSync(books, formatBooks([{ t: 'Broken', a: 'X', sn: '1' }]));
+  fs.writeFileSync(books, JSON.stringify([{ t: 'Broken', a: 'X', sn: '1' }]));
   const csv = path.join(tmp, 'library.csv');
   fs.writeFileSync(csv, 'Title Short,Authors,Progress,ASIN\nNew,Y,Finished,B1\n');
   const { code, err } = run('import-audible', csv);
@@ -156,17 +156,17 @@ test('sync-export restores series info from the backup', t => {
   const dry = run('sync-export', exported, '--dry-run');
   assert.equal(dry.code, 0);
   assert.match(dry.out, /series info: \d+ added, \d+ changed, \d+ removed/);
-  assert.notEqual(fs.readFileSync(infoPath, 'utf8'), formatSeriesInfo(seriesInfo));
+  assert.notEqual(fs.readFileSync(infoPath, 'utf8'), JSON.stringify(seriesInfo));
 
   const { code, out } = run('sync-export', exported);
   assert.equal(code, 0);
   assert.match(out, /wrote data[\/\\]series-info\.json/);
-  assert.equal(fs.readFileSync(infoPath, 'utf8'), formatSeriesInfo(seriesInfo));
+  assert.equal(fs.readFileSync(infoPath, 'utf8'), JSON.stringify(seriesInfo));
 
   // a malformed entry in the backup blocks the whole sync
   fs.writeFileSync(exported, JSON.stringify({ books, seriesInfo: { [series]: { total: 0, status: 'maybe' } } }));
   assert.equal(run('sync-export', exported).code, 1);
-  assert.equal(fs.readFileSync(infoPath, 'utf8'), formatSeriesInfo(seriesInfo));
+  assert.equal(fs.readFileSync(infoPath, 'utf8'), JSON.stringify(seriesInfo));
 });
 
 test('sync-export of an older backup (a plain list of books) leaves series info alone', t => {
@@ -207,12 +207,4 @@ test('bad command lines print the usage', t => {
     assert.match(err, /usage: node catalog.js/);
   }
   assert.match(run('--help').out, /import-goodreads/);
-});
-
-test('books are written one per line in a stable key order; series-info is sorted', () => {
-  const text = formatBooks([{ a: 'X', t: 'Title', g: ['Fantasy'], id: 'B0' }, { t: 'Ünï', a: 'Y' }]);
-  assert.equal(text.split('\n')[1], '  {"t":"Title","a":"X","g":["Fantasy"],"id":"B0"},');
-  assert.ok(text.includes('Ünï'));                      // no \u escapes
-  assert.equal(formatBooks([]), '[]\n');
-  assert.deepEqual(Object.keys(JSON.parse(formatSeriesInfo({ b: { total: 1 }, A: { total: 2 } }))), ['A', 'b']);
 });
