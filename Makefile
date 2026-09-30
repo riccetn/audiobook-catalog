@@ -11,7 +11,7 @@ test:            ## run the tests: importers, command line, data checks and the 
 validate:        ## check data/ for errors and suspicious entries
 	$(NODE) catalog.js validate
 
-serve:           ## open the app at http://localhost:8000/
+serve:           ## open the app at http://localhost:8000/; edits in the page are saved to data/
 	$(NODE) catalog.js serve
 
 format:          ## rewrite data/*.json in the canonical layout

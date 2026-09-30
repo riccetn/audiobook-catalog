@@ -2,13 +2,6 @@ const LS_KEY = 'audiobook-catalog-data';
 // Served from the project root: your own catalogue in data/ if it exists, otherwise the bundled demo.
 const DATA_DIRS = ['data/', 'data/sample/'];
 
-// Cheap non-cryptographic hash, used to tell which version of books.json a locally saved copy belongs to.
-function hashString(s){
-  let h = 5381;
-  for(let i = 0; i < s.length; i++){ h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
-  return (h >>> 0).toString(36) + ':' + s.length;
-}
-
 let DATA = [];
 let SERIES_INFO = {};
 let BASELINE = '';
@@ -20,6 +13,9 @@ let EDIT_INDEX = null;         // index into DATA being edited, or null when add
 let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
 let PENDING_IMPORT = null;     // records of a previewed CSV import awaiting confirmation
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
+let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
+let SAVING = false;            // a save to disk is on its way
+let SAVE_AGAIN = false;        // more edits came in while it was
 
 // Filter value for books with no date read, in the "Read any time" select.
 const UNDATED = '__undated__';
@@ -241,7 +237,7 @@ function renderSeriesOverview(){
 
 // ------------------------------------------------------------------ series info
 // Edits the series' entry in series-info.json (released total, status, note, author site). Like book
-// edits, it lives in this browser until you Export and run `node catalog.js sync-export`.
+// edits, it is saved to disk by `make serve` (see persist).
 function seriesEditButton(name){
   const label = SERIES_INFO[name] ? 'Edit series info' : 'Add series info';
   return `<button class="iconbtn sedit" data-series="${esc(name)}" title="${label}" aria-label="${label}">&#9998;</button>`;
@@ -296,7 +292,7 @@ function saveSeriesForm(){
   }
   SERIES_INFO = {...SERIES_INFO, [name]: entry};
   closeSeriesForm(); render(); persist();
-  showIoStatus(`Saved series info for ${name}. Export and run sync-export to keep it in data/series-info.json.`);
+  showIoStatus(`Saved series info for ${name}.` + keepHint('data/series-info.json'));
 }
 
 function removeSeriesInfo(){
@@ -328,8 +324,64 @@ function bookCard(b){
   </div></div>`;
 }
 
+// Where edits go: with `make serve` and your own data/books.json, straight to disk (saveToDisk).
+// Every edit is also kept in localStorage until the disk has it, so nothing is lost if a save fails
+// (server stopped, or the files changed on disk meanwhile); with any other server, or the demo data,
+// localStorage is all there is, and Export + `node catalog.js sync-export` bring edits back to data/.
 function persist(){
+  saveLocally();
+  if(DISK_SAVE) saveToDisk();
+}
+
+function saveLocally(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO})); }catch(e){}
+}
+
+// The end of a status message about an edit: how to get it into the data file, unless that happens anyway.
+function keepHint(file){
+  return DISK_SAVE ? '' : ` Export and run sync-export to keep it in ${file}.`;
+}
+
+async function saveToDisk(){
+  if(SAVING){ SAVE_AGAIN = true; return; }
+  SAVING = true;
+  SAVE_AGAIN = false;
+  let res, body;
+  try{
+    res = await fetch('api/save', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, base: BASELINE, infoBase: INFO_BASELINE}),
+    });
+    body = await res.json();
+  }catch(e){
+    SAVING = false;
+    showIoStatus('Not saved to disk (is `make serve` still running?). Your edits are kept in this browser.', true);
+    return;
+  }
+  SAVING = false;
+  if(!res.ok){
+    const why = body.conflict
+      ? 'data/books.json changed on disk since this page loaded it. Export your edits here, then reload the page.'
+      : [body.error, ...(body.errors || [])].filter(Boolean).join('; ');
+    showIoStatus(`Not saved to disk: ${why} Your edits are kept in this browser.`, true);
+    return;
+  }
+  BASELINE = body.base;
+  INFO_BASELINE = body.infoBase;
+  if(SAVE_AGAIN){ saveLocally(); saveToDisk(); return; }
+  // the disk has everything now (tidied the way sync-export tidies); the browser copy is no longer needed
+  if(JSON.stringify(body.books) !== JSON.stringify(DATA)){ DATA = body.books; populateFilters(); render(); }
+  try{ localStorage.removeItem(LS_KEY); }catch(e){}
+  if(!document.getElementById('ioStatus').textContent) showIoStatus('Saved.');
+}
+
+// Whether the server saves edits (only `make serve`, and only to your own data/books.json).
+async function detectDiskSave(dir){
+  if(dir !== 'data/') return false;
+  try{
+    const res = await fetch('api/save', {cache: 'no-cache'});
+    return res.ok && (await res.json()).writable === true;
+  }catch(e){ return false; }
 }
 
 function showIoStatus(msg, isErr){
@@ -374,8 +426,7 @@ function importBackup(file){
 // ------------------------------------------------------------ Audible / Goodreads CSV import
 // The same pipeline as `node catalog.js import-audible|import-goodreads` (both use importers.js):
 // read the export, merge it into a copy of the catalogue, show what would change, and only
-// apply it when confirmed. Like every edit in the page, the result lives in this browser until
-// you Export it and run `node catalog.js sync-export`.
+// apply it when confirmed. Like every edit in the page, the result is then saved (see persist).
 const IMPORTERS = {
   audible: {label: 'Audible', read: CatalogImport.readAudible},
   goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},
@@ -442,7 +493,7 @@ function applyImport(){
   showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
     (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
     (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
-    '. Export and run sync-export to keep them in data/books.json.');
+    '.' + keepHint('data/books.json'));
 }
 
 function closeImportPreview(){
@@ -587,47 +638,52 @@ async function loadData(){
     try{ infoText = await fetchText(dir + 'series-info.json'); }catch(e){}
     let excludedText = '';
     try{ excludedText = await fetchText(dir + 'excluded.txt'); }catch(e){}
-    return {booksText, infoText, excludedText};
+    return {dir, booksText, infoText, excludedText};
   }
   throw new Error('no books.json found');
 }
 
 // Local edits are only reused if they were made against *this* books.json (and series-info.json, for
 // saves that carry series info); otherwise an updated data file would keep showing stale data.
+// Returns whether there were edits to reuse.
 function restoreLocalEdits(){
   try{
     const raw = localStorage.getItem(LS_KEY);
-    if(!raw) return;
+    if(!raw) return false;
     const saved = JSON.parse(raw);
     const hasInfo = saved && typeof saved.info === 'object' && saved.info !== null && !Array.isArray(saved.info);
     if(saved && saved.base === BASELINE && Array.isArray(saved.data) && (!hasInfo || saved.infoBase === INFO_BASELINE)){
       DATA = CatalogImport.fixBooks(saved.data);
       if(hasInfo) SERIES_INFO = saved.info;
+      return true;
     } else {
       localStorage.setItem(LS_KEY + '.backup', raw);
       localStorage.removeItem(LS_KEY);
       STARTUP_NOTICE = 'The catalogue data has changed; earlier local edits were set aside, not deleted.';
     }
   }catch(e){}
+  return false;
 }
 
 async function start(){
   try{
-    const {booksText, infoText, excludedText} = await loadData();
+    const {dir, booksText, infoText, excludedText} = await loadData();
     DATA = CatalogImport.fixBooks(JSON.parse(booksText));   // "r": "2024-03-15" -> ["2024-03-15"]
     SERIES_INFO = JSON.parse(infoText);
     EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
-    BASELINE = hashString(booksText);
-    INFO_BASELINE = hashString(infoText);
+    BASELINE = CatalogImport.fingerprint(booksText);
+    INFO_BASELINE = CatalogImport.fingerprint(infoText);
+    DISK_SAVE = await detectDiskSave(dir);
   }catch(e){
     document.getElementById('subtitle').textContent =
       "Couldn't load the catalogue data. Serve this folder over HTTP (make serve) instead of opening the file directly.";
     return;
   }
-  restoreLocalEdits();
+  const restored = restoreLocalEdits();
   populateFilters();
   setView('series');
   if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
+  else if(restored && DISK_SAVE) await saveToDisk();     // edits a failed save left in this browser
 }
 
 const READY = start();
