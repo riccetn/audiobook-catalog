@@ -59,6 +59,7 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `id` | Audible ASIN, so re-imports recognise the book      |          |
+| `gr` | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book | |
 | `isbn` | list of ISBNs, one per edition you know of (`["9780000000002", "9780306406157"]`), always the 13-digit form without hyphens. A boxed set's ISBN may be on each book in it. A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |  |
 | `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list |  |
 
@@ -81,7 +82,7 @@ Only finished books are imported. The command lists what it added, and anything 
 
 **Or import in the app**: press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
 runs the same importer and merge as the command line (both use `importers.js`), honours
-`data/excluded.txt`, and shows the same preview: what is already there, which Audible ids get filled
+`data/excluded.txt`, and shows the same preview: what is already there, which Audible and Goodreads ids get filled
 in, what is new and what needs a look. Nothing changes until you press **Add books**; then, like any
 edit in the page, it is saved to `data/books.json` (see below).
 
@@ -118,11 +119,12 @@ doesn't count for book 2. Pick **Series with missing books** in the series overv
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
-the import exclusion list, `data/excluded.txt`, as its ASIN (if it has one) and as `Title | Author`
-(Goodreads exports have no ASINs), so no later Audible or Goodreads import brings it back. With
+the import exclusion list, `data/excluded.txt`, as its ASIN and its Goodreads id (`Goodreads 4242`), if
+it has them, and as `Title | Author`, so no later Audible or Goodreads import brings it back. With
 `make serve` that is saved to `data/excluded.txt` along with the removal; otherwise it goes into
-**Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN or
-`Title | Author` to `data/excluded.txt` yourself. You can also exclude by ISBN: a line `ISBN 978-0-00-000000-2`
+**Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN,
+`Goodreads 4242` or `Title | Author` to `data/excluded.txt` yourself (a Goodreads id needs its `Goodreads`
+prefix; a bare number is read as an ASIN). You can also exclude by ISBN: a line `ISBN 978-0-00-000000-2`
 (or just the ISBN-13) skips every imported book that carries that ISBN, in any of its editions' forms (so
 an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN counts as both an ASIN and an ISBN.
 Removing a book in the page does not add its ISBNs, since another book may share them. To let an import add a book again, delete its lines
@@ -144,6 +146,8 @@ changes dates you already have. Audible imports do not set dates read.
 **Goodreads**: `node catalog.js import-goodreads data/raw/goodreads_library_export.csv`, or
 **Goodreads CSV** in the app. Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
+Each book keeps Goodreads' *Book Id* as `gr`, so a later export still finds it after you rename it; books
+already in the catalogue get their Goodreads id filled in the first time an export matches them.
 
 ## Tidy names and spacing
 
@@ -158,12 +162,12 @@ about any value that is not tidy. Capitalisation and quote styles are left alone
 Imports only ever *add* books; an existing book is never overwritten. An incoming book counts as
 already present if any of these match, strongest first:
 
-1. its Audible `id`
+1. its Audible `id` or its Goodreads id (`gr`)
 2. same first author + same series (spelling-insensitive: `Ember Coast` = `Ember Coast Series`) + same number
 3. same author and title, also forgiving of the long Audible form: `A Crown of Embers 5: A Spark of Dawn`
    finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
 
-When a match has no `id` yet, the Audible ASIN is filled in (and likewise dates read, when it has none), so later imports keep matching even
+When a match has no `id` or `gr` yet, the Audible ASIN or Goodreads id is filled in (and likewise dates read, when it has none), so later imports keep matching even
 after more edits. ISBNs the match does not have yet are added to its `isbn` list (another edition), never replacing any.
 ISBNs are *not* used to decide that two books are the same, because one ISBN can belong to several books (a boxed set):
 an incoming book whose ISBN is already on another book is still added if nothing else matches. New books get the series spelling already in use. If Audible lists a book under

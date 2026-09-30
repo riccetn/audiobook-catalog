@@ -69,7 +69,8 @@ const EXCLUDED_HEADER = `# Books that imports must never re-add (because you rem
 # One entry per line; anything after '#' is a comment. Either:
 #   B0XXXXXXXX                  an Audible ASIN
 #   ISBN 978-0-00-000000-2      an ISBN (skips every book carrying it, e.g. all books of a boxed set)
-#   Some Title | Some Author    for books with no ASIN (e.g. Goodreads-only entries)
+#   Goodreads 12345678          a Goodreads book id (the number in goodreads.com/book/show/...)
+#   Some Title | Some Author    for books with neither id
 `;
 
 function paths(args){
@@ -110,6 +111,7 @@ function runImport(args, io, read, label){
   io.out(`${label}: ${result.records.length} finished books read from ${path.basename(args.file)}`);
   io.out(`  already in the catalogue: ${report.matched}`);
   if(report.backfilled.length) io.out(`  Audible ids filled in on existing books: ${report.backfilled.length}`);
+  if(report.goodreadsFilled.length) io.out(`  Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}`);
   if(report.datesFilled.length) io.out(`  dates read filled in on existing books: ${report.datesFilled.length}`);
   if(report.isbnsFilled.length) io.out(`  ISBNs added to existing books: ${report.isbnsFilled.length}`);
   if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);

@@ -108,15 +108,15 @@ test('search narrows the library view', async () => {
   assert.match(els.results.innerHTML, /No books match/);
 });
 
-test('editing a book keeps its Audible id', async () => {
+test('editing a book keeps its Audible and Goodreads ids', async () => {
   const { ctx, els, get, run } = await boot();
-  run("DATA[0].id = 'TESTASIN01'");
+  run("DATA[0].id = 'TESTASIN01'; DATA[0].gr = '4242'");
   ctx.setView('library');
   ctx.openEditForm(0);
   assert.equal(els.formTitle.textContent, 'Edit book');
   els.f_t.value = 'Renamed In The App';
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-  assert.deepEqual(get('({t: DATA[0].t, id: DATA[0].id})'), { t: 'Renamed In The App', id: 'TESTASIN01' });
+  assert.deepEqual(get('({t: DATA[0].t, id: DATA[0].id, gr: DATA[0].gr})'), { t: 'Renamed In The App', id: 'TESTASIN01', gr: '4242' });
 });
 
 test('adding a book appends it', async () => {

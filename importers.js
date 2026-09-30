@@ -17,7 +17,9 @@ function fingerprint(s){
 }
 
 // ------------------------------------------------------------------ book records
-const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id', 'isbn', 'r'];
+// A Goodreads book id, as stored in `gr`: the number in goodreads.com/book/show/12345.
+const GOODREADS_ID = /^\d+$/;
+const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id', 'gr', 'isbn', 'r'];
 const STATUSES = ['ongoing', 'complete'];
 const SERIES_NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
 // JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
@@ -160,7 +162,7 @@ function normalizeName(name){
 /** Return a copy of a book record with tidy text in every field. */
 function tidyBook(rec){
   const out = {...fixIsbns(fixReadDates(rec))};
-  for(const key of ['t', 's', 'sn', 'id']){
+  for(const key of ['t', 's', 'sn', 'id', 'gr']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
   for(const key of ['a', 'n']){
@@ -191,6 +193,7 @@ const key = (...parts) => JSON.stringify(parts);
 function bookKeys(rec){
   const keys = [];
   if(rec.id) keys.push(key('id', rec.id));
+  if(rec.gr) keys.push(key('gr', rec.gr));
   if(rec.s && rec.sn) keys.push(key('series', firstAuthor(rec.a), seriesNorm(rec.s), String(rec.sn).trim()));
   keys.push(key('title', norm(rec.t), firstAuthor(rec.a)));
   return keys;
@@ -224,10 +227,12 @@ class Exclusions {
     this.ids = new Set();
     this.titles = new Set();   // key(norm(title), firstAuthor(author))
     this.isbns = new Set();    // 13-digit ISBNs
+    this.grs = new Set();      // Goodreads book ids
     this.lines = new Map();   // key -> the entry as written in data/excluded.txt
   }
   /**
-   * Add one line of data/excluded.txt: an ASIN, "ISBN 978...", or "Title | Author"; '#' starts a comment.
+   * Add one line of data/excluded.txt: an ASIN, "ISBN 978...", "Goodreads 12345" or "Title | Author";
+   * '#' starts a comment.
    * Returns the entry as it should be written, or null for a blank line or one already covered.
    * A bare ISBN-13 counts as an ISBN; a bare ISBN-10 as both an ASIN and an ISBN (Amazon uses a print
    * edition's ISBN-10 as its ASIN).
@@ -237,6 +242,13 @@ class Exclusions {
     if(!line) return null;
     const bar = line.indexOf('|');
     if(bar < 0){
+      const gr = GOODREADS_ENTRY.exec(line);
+      if(gr){
+        if(this.grs.has(gr[1])) return null;
+        this.grs.add(gr[1]);
+        this.lines.set(key('gr', gr[1]), line = `Goodreads ${gr[1]}`);
+        return line;
+      }
       const isbn = parseIsbn(line);
       if(isbn && (/^isbn/i.test(line) || !/^[\dX]{10}$/i.test(line))){
         if(this.isbns.has(isbn)) return null;
@@ -258,7 +270,7 @@ class Exclusions {
     return line;
   }
   covers(rec){
-    return this.ids.has(rec.id) || this.titles.has(key(norm(rec.t), firstAuthor(rec.a))) ||
+    return this.ids.has(rec.id) || this.grs.has(rec.gr) || this.titles.has(key(norm(rec.t), firstAuthor(rec.a))) ||
       bookIsbns(rec).some(isbn => this.isbns.has(isbn));
   }
   /** The entries, one per line as in data/excluded.txt, without comments. */
@@ -266,7 +278,13 @@ class Exclusions {
   get size(){ return this.lines.size; }
 }
 
-/** Parse the text of data/excluded.txt: an ASIN, "ISBN 978...", or "Title | Author", per line; '#' starts a comment. */
+// "Goodreads 12345" (or "GR 12345"): a Goodreads book id, which needs its prefix to tell it from an ASIN.
+const GOODREADS_ENTRY = /^(?:goodreads|gr)(?:\s+id)?:?\s*(\d+)$/i;
+
+/**
+ * Parse the text of data/excluded.txt: an ASIN, "ISBN 978...", "Goodreads 12345" or "Title | Author",
+ * per line; '#' starts a comment.
+ */
 function parseExclusions(text){
   const ex = new Exclusions();
   for(const line of (text || '').split(/\r\n|\r|\n/)) ex.add(line);
@@ -274,14 +292,15 @@ function parseExclusions(text){
 }
 
 /**
- * The data/excluded.txt entries that keep a removed book out of later imports: its ASIN, if it has
- * one, and "Title | Author" (Goodreads has no ASINs). '#' and '|' would break the line, and matching
- * ignores punctuation anyway, so they are dropped.
+ * The data/excluded.txt entries that keep a removed book out of later imports: its ASIN and its
+ * Goodreads book id, if it has them, and "Title | Author" (for books with neither). '#' and '|' would
+ * break the line, and matching ignores punctuation anyway, so they are dropped.
  */
 function exclusionEntries(rec){
   const clean = v => tidyText(String(v || '').replace(/[#|]/g, ' '));
   const entries = [];
   if(rec.id && clean(rec.id)) entries.push(clean(rec.id));
+  if(GOODREADS_ID.test(String(rec.gr || '').trim())) entries.push(`Goodreads ${String(rec.gr).trim()}`);
   if(clean(rec.t) && clean(rec.a)) entries.push(`${clean(rec.t)} | ${clean(rec.a)}`);
   return entries;
 }
@@ -302,7 +321,7 @@ function validate(books, info){
   const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
   const nonEmpty = v => typeof v === 'string' && v.trim() !== '';
 
-  const seenIds = new Map();
+  const seenIds = new Map(), seenGrs = new Map();
   books.forEach((b, i) => {
     const label = isObj(b) ? `book #${i} (${repr(b.t === undefined ? '?' : b.t)})` : `book #${i}`;
     if(!isObj(b)){ errors.push(`${label}: not an object`); return; }
@@ -312,8 +331,11 @@ function validate(books, info){
     for(const k of ['t', 'a']){
       if(!nonEmpty(b[k])) errors.push(`${label}: missing ${repr(k)}`);
     }
-    for(const k of ['n', 's', 'sn', 'id']){
+    for(const k of ['n', 's', 'sn', 'id', 'gr']){
       if(k in b && !nonEmpty(b[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
+    }
+    if(nonEmpty(b.gr) && !GOODREADS_ID.test(b.gr.trim())){
+      errors.push(`${label}: 'gr' must be a Goodreads book id (digits only), not ${repr(b.gr)}`);
     }
     if('g' in b && !(Array.isArray(b.g) && b.g.every(nonEmpty))){
       errors.push(`${label}: 'g' must be a list of non-empty strings`);
@@ -346,6 +368,10 @@ function validate(books, info){
     if(b.id){
       if(seenIds.has(b.id)) errors.push(`${label}: duplicate id ${b.id} (also ${seenIds.get(b.id)})`);
       seenIds.set(b.id, label);
+    }
+    if(b.gr){
+      if(seenGrs.has(b.gr)) errors.push(`${label}: duplicate Goodreads id ${b.gr} (also ${seenGrs.get(b.gr)})`);
+      seenGrs.set(b.gr, label);
     }
   });
 
@@ -623,6 +649,9 @@ function readGoodreads(text){
     }
     const shelves = (row.Bookshelves || '').split(',').map(s => s.trim()).filter(Boolean);
     if(shelves.length) rec.g = shelves;
+    // Goodreads' own id for the edition; spreadsheet programs sometimes save it as ="12345".
+    const gr = cell(row, 'Book Id').replace(/[="\s]/g, '');
+    if(GOODREADS_ID.test(gr)) rec.gr = gr;
     const isbns = rowIsbns(row);
     if(isbns.length) rec.isbn = isbns;
     const read = parseReadDate(cell(row, 'Date Read'));   // Goodreads keeps only the latest read
@@ -636,14 +665,15 @@ function readGoodreads(text){
 // ---------------------------------------------------------------------- merge
 /**
  * Append incoming records that are not in `existing` yet (mutates `existing`). An existing book
- * always wins, except that a missing Audible id and missing dates read are filled in, and ISBNs it
+ * always wins, except that a missing Audible id, Goodreads id and dates read are filled in, and ISBNs it
  * does not have yet are added to its list (another edition); series names are folded onto the
  * spelling already in use. ISBNs never make two books the same: one ISBN may be on several books (a
- * boxed set's ISBN on each book in it). Returns {added, backfilled, datesFilled, isbnsFilled, excluded, matched}.
+ * boxed set's ISBN on each book in it). Returns {added, backfilled, goodreadsFilled, datesFilled, isbnsFilled, excluded, matched}
+ * (`backfilled`: books that gained an Audible id, `goodreadsFilled`: a Goodreads id).
  */
 function merge(existing, incoming, exclusions){
   exclusions = exclusions || new Exclusions();
-  const report = {added: [], backfilled: [], datesFilled: [], isbnsFilled: [], excluded: [], matched: 0};
+  const report = {added: [], backfilled: [], goodreadsFilled: [], datesFilled: [], isbnsFilled: [], excluded: [], matched: 0};
 
   const index = new Map();
   const indexKey = (k, i) => { if(!index.has(k)) index.set(k, i); };
@@ -670,6 +700,11 @@ function merge(existing, incoming, exclusions){
         existing[match].id = rec.id;
         report.backfilled.push(existing[match]);
         indexKey(key('id', rec.id), match);
+      }
+      if(rec.gr && !existing[match].gr){
+        existing[match].gr = rec.gr;
+        report.goodreadsFilled.push(existing[match]);
+        indexKey(key('gr', rec.gr), match);
       }
       if(rec.r && rec.r.length && !existing[match].r){
         existing[match].r = [...rec.r];

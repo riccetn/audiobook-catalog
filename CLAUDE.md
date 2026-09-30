@@ -55,16 +55,16 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
 
 ## Data model (short form; full table in the README)
 
-`books.json` is a list of records with short keys `t a n s sn g id r` (title, author, narrator,
-series, series number as text, genres, Audible ASIN, dates read). `series-info.json` maps a series
+`books.json` is a list of records with short keys `t a n s sn g id gr isbn r` (title, author,
+narrator, series, series number as text, genres, Audible ASIN, Goodreads book id, ISBNs, dates read). `series-info.json` maps a series
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`.
-`data/excluded.txt` lists ASINs or `Title | Author` lines that imports must never re-add; code only
+`data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345` or `Title | Author` lines that imports must never re-add; code only
 ever appends to it.
 
 Invariants the code relies on:
-- Imports only add books, never overwrite. Matching order: `id`, then first author + series + number
+- Imports only add books, never overwrite. Matching order: `id` or `gr`, then first author + series + number
   (spelling-insensitive), then author + title (forgiving Audible's long titles, never mistaking a
-  boxed set for book 1). A match may gain a missing `id` or dates read, nothing else.
+  boxed set for book 1). A match may gain a missing `id`, `gr` or dates read, and ISBNs it lacks; nothing else.
 - Every text field goes through `tidyBook`; `validate` warns on untidy values.
 - Anything that writes user data (imports, `sync-export`, `serve` saves) validates first and refuses
   to touch `data/sample/`.

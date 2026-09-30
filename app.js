@@ -372,7 +372,7 @@ function saveLocally(){
   }catch(e){}
 }
 
-// Add entries (an ASIN, "ISBN 978...", or "Title | Author") to the books imports skip; returns how many were new.
+// Add entries (an ASIN, "ISBN 978...", "Goodreads 12345" or "Title | Author") to the books imports skip; returns how many were new.
 function addExclusions(entries){
   const added = entries.map(e=> EXCLUSIONS.add(e)).filter(Boolean);
   NEW_EXCLUDED.push(...added);
@@ -493,7 +493,7 @@ function previewImport(kind, text, fileName){
   const importer = IMPORTERS[kind];
   const result = importer.read(text);
   const {report, errors} = mergeIntoCopy(result.records);
-  const changes = report.added.length + report.backfilled.length + report.datesFilled.length + report.isbnsFilled.length;
+  const changes = report.added.length + report.backfilled.length + report.goodreadsFilled.length + report.datesFilled.length + report.isbnsFilled.length;
   PENDING_IMPORT = errors.length || !changes ? null : result.records;
 
   const li = rec => {
@@ -504,6 +504,7 @@ function previewImport(kind, text, fileName){
   html += `<p>Already in the catalogue: ${report.matched}</p>`;
   if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
   if(report.backfilled.length) html += `<p>Audible ids filled in on existing books: ${report.backfilled.length}</p>`;
+  if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
   if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
   if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
@@ -524,7 +525,7 @@ function previewImport(kind, text, fileName){
   confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
   confirmBtn.textContent = report.added.length
     ? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
-    : report.backfilled.length ? 'Save Audible ids' : report.datesFilled.length ? 'Save dates read' : 'Save ISBNs';
+    : report.backfilled.length ? 'Save Audible ids' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read' : 'Save ISBNs';
   document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
   document.getElementById('importPreview').classList.add('open');
 }
@@ -536,11 +537,12 @@ function applyImport(){
   closeImportPreview();
   if(errors.length){ showIoStatus('The catalogue changed and the import no longer validates; nothing was added.', true); return; }
   const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
-  const withIsbns = report.isbnsFilled.length;
+  const withIsbns = report.isbnsFilled.length, withGr = report.goodreadsFilled.length;
   DATA = data;
   populateFilters(); render(); persist();
   showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
     (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
+    (withGr ? `, filled in ${withGr} Goodreads id${withGr === 1 ? '' : 's'}` : '') +
     (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
     (withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
     '.' + keepHint('data/books.json'));
@@ -674,7 +676,9 @@ document.getElementById('addForm').addEventListener('submit', e=>{
 
   if(EDIT_INDEX !== null){
     const prev = DATA[EDIT_INDEX];
-    if(prev && prev.id) b.id = prev.id;   // keep the Audible ASIN so re-imports still match this book
+    // keep the Audible ASIN and Goodreads id so re-imports still match this book
+    if(prev && prev.id) b.id = prev.id;
+    if(prev && prev.gr) b.gr = prev.gr;
     DATA[EDIT_INDEX] = b;
   } else {
     DATA.push(b);
