@@ -28,6 +28,22 @@ const readYears = b => readDates(b).map(d => d.slice(0, 4));
 
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
 
+// Series numbers you don't own yet, from series-info.json's released total; null when that is unknown.
+function seriesMissing(name){
+  const info = SERIES_INFO[name];
+  return info ? CatalogImport.missingNumbers(DATA.filter(b=> b.s === name), info.total) : null;
+}
+
+// [3, 5, 6, 7] -> "#3, #5-7"
+function numberList(nums){
+  const runs = [];
+  nums.forEach(n=>{
+    const last = runs[runs.length - 1];
+    if(last && n === last[1] + 1) last[1] = n; else runs.push([n, n]);
+  });
+  return runs.map(([a,b])=> a === b ? `#${a}` : `#${a}\u2013${b}`).join(', ');
+}
+
 function populateFilters(){
   const authors = uniqueSorted(DATA.map(b=>b.a));
   const genres = uniqueSorted(DATA.flatMap(b=>b.g||[]));
@@ -72,6 +88,7 @@ function setView(v){
   document.getElementById('genreFilter').style.display = showLibControls ? '' : 'none';
   document.getElementById('readFilter').style.display = showLibControls ? '' : 'none';
   document.getElementById('toggleAdd').style.display = showLibControls ? '' : 'none';
+  document.getElementById('missingFilter').style.display = showLibControls ? 'none' : '';
   const crumb = document.getElementById('crumb');
   if(v === 'library' && SERIES_FILTER){
     crumb.classList.add('show');
@@ -128,7 +145,11 @@ function render(){
     }
     head += '</p>';
     if(info){
-      head += `<p class="series-note">${esc(info.total)} released total \u2014 ${esc(info.note)}</p>`;
+      const missing = seriesMissing(name);
+      const note = [`${esc(info.total)} released total`];
+      if(missing && missing.length) note.push(`missing ${numberList(missing)}`);
+      if(info.note) note.push(esc(info.note));
+      head += `<p class="series-note">${note.join(' \u2014 ')}</p>`;
     }
     html += `<div class="series-group">${head}`;
     books.forEach(b=> html += bookCard(b));
@@ -194,14 +215,17 @@ function renderSeriesOverview(){
       return hay.includes(q);
     });
   }
+  const onlyMissing = document.getElementById('missingFilter').value === 'missing';
+  if(onlyMissing) seriesNames = seriesNames.filter(name=> (seriesMissing(name) || []).length);
 
   document.getElementById('subtitle').textContent =
     `${Object.keys(groups).length} series across ${DATA.length} audiobooks \u2014 tap a series to see its titles`;
   document.getElementById('resultCount').textContent = `${seriesNames.length} series shown`;
 
   let html = '';
-  if(seriesNames.length === 0 && !(!q || 'standalone'.includes(q))){
-    html = '<p class="empty">No series match your search.</p>';
+  const showStandalone = !onlyMissing && (!q || 'standalone'.includes(q));
+  if(seriesNames.length === 0 && !showStandalone){
+    html = onlyMissing ? '<p class="empty">No series with missing books.</p>' : '<p class="empty">No series match your search.</p>';
   }
 
   seriesNames.forEach(name=>{
@@ -218,13 +242,15 @@ function renderSeriesOverview(){
       foot += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
       if(info.url) foot += ` <a class="authorlink" href="${esc(info.url)}" target="_blank" rel="noopener">author site \u2197</a>`;
     }
+    const missing = seriesMissing(name);
+    if(missing && missing.length) foot += ` <span class="missing">missing ${numberList(missing)}</span>`;
     foot += '</div>';
     html += foot;
     if(info && info.note !== '') html += `<p class="srow-note">${esc(info.note)}</p>`;
     html += '</div>';
   });
 
-  if(!q || 'standalone'.includes(q)){
+  if(showStandalone){
     html += `<div class="srow"><div class="srow-head">
       <button class="srow-title" data-series="__standalone__">Standalone</button>
       <span class="srow-owned">${standaloneCount} owned</span>
@@ -545,6 +571,7 @@ document.getElementById('q').addEventListener('input', render);
 document.getElementById('authorFilter').addEventListener('change', render);
 document.getElementById('genreFilter').addEventListener('change', render);
 document.getElementById('readFilter').addEventListener('change', render);
+document.getElementById('missingFilter').addEventListener('change', render);
 document.getElementById('btnSeriesView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
 document.getElementById('btnLibraryView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('library'); });
 document.getElementById('backToSeries').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });

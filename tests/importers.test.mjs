@@ -295,3 +295,12 @@ test('merge: ids, long titles, boxed sets, series spelling, exclusions, authors'
   C.merge(existing, [book('Dark', 'Bob')]);
   assert.equal(existing.length, 2);
 });
+
+test('missing books: gaps up to the released total, boxed sets fill their range, novellas do not', () => {
+  const owned = ['1', '2.5', '4-6', '9', 'x'].map(sn => book('T' + sn, 'A', { s: 'Brass Meadow', sn }));
+  assert.deepEqual(C.missingNumbers(owned, 8), [2, 3, 7, 8]);
+  assert.deepEqual(C.missingNumbers(owned, 5), [2, 3]);
+  assert.deepEqual(C.missingNumbers([book('One', 'A', { s: 'Brass Meadow', sn: '1-3' })], 3), []);
+  assert.equal(C.missingNumbers(owned, 'many'), null);
+  assert.equal(C.missingNumbers(owned, undefined), null);
+});
