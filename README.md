@@ -34,7 +34,7 @@ Commands that write refuse to touch the demo data.
 ```
 data/
   sample/             fictional demo data: the only data committed to git
-  books.json          YOUR catalogue, one book per line (git-ignored)
+  books.json          YOUR catalogue (git-ignored)
   series-info.json    YOUR researched release info per series (git-ignored)
   excluded.txt        books your imports must never re-add (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
@@ -48,7 +48,7 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 
 ## Data format
 
-`data/books.json` is a list of records with short keys, to keep the file small:
+`data/books.json` is a list of titles, with short keys to keep the file small:
 
 | key  | meaning                                             | required |
 |------|-----------------------------------------------------|----------|
@@ -58,10 +58,36 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 | `s`  | series name                                         |          |
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
-| `id` | Audible ASIN, so re-imports recognise the book      |          |
-| `gr` | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book | |
-| `isbn` | list of ISBNs, one per edition you know of (`["9780000000002", "9780306406157"]`), always the 13-digit form without hyphens. A boxed set's ISBN may be on each book in it. A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |  |
-| `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list |  |
+| `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
+| `e`  | list of the title's editions (below)                |          |
+
+Each title can have several **editions** (the Audible release, a UK release, the paperback...). An
+edition needs at least one of `id`, `gr` or `isbn`:
+
+| key    | meaning                                                                  |
+|--------|--------------------------------------------------------------------------|
+| `id`   | Audible ASIN, so re-imports recognise the book                           |
+| `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
+| `isbn` | list of this edition's ISBNs, always the 13-digit form without hyphens (`["9780000000002"]`). A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |
+| `p`    | publisher                                                                |
+| `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
+| `len`  | length in whole minutes (`642`)                                          |
+
+```json
+{"t":"The Salt Road","a":"Marisol Quenby","s":"The Lantern Coast","sn":"1",
+ "e":[{"id":"B0SAMPLE01","gr":"9001","isbn":["9780000000002"],"p":"Gullwing Audio","d":"2019-04-02","len":642}]}
+```
+
+**Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
+titles, with the same ASIN, Goodreads id or ISBN; that shared identifier is what ties them together.
+The page shows "Also in this edition: …" on each of them, and editing the edition on one updates it on
+the others. `make validate` warns when the copies disagree. (A book you only have as a box set can still
+be one record with a range such as `"sn": "2-3"`.)
+
+**Older files**: before editions, a book held its `id`, `gr` and `isbn` itself. Such books are still
+read, as a book with one edition holding them (all its ISBNs on that edition; split them in the edit
+form if they belong to different editions). `make validate` mentions it, and `make format`, or any save
+from the page, an import or `sync-export`, writes them in the new shape.
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
@@ -78,7 +104,8 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 3. `make test`, then commit `data/books.json`.
 
 Only finished books are imported. The command lists what it added, and anything ambiguous
-(for example a book Audible files under several series).
+(for example a book Audible files under several series). Each book gets its Audible edition: the ASIN,
+the ISBNs, the publisher, the release date and the length, as far as the export has them.
 
 **Or import in the app**: press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
 runs the same importer and merge as the command line (both use `importers.js`), honours
@@ -88,7 +115,11 @@ edit in the page, it is saved to `data/books.json` (see below).
 
 **Edit in the app**
 
-Edit books in the page (pencil icon, `+ Add a book`). With `make serve` and your own `data/books.json`,
+Edit books in the page (pencil icon, `+ Add a book`). *Editions* takes one edition per line, the way the
+book card shows them: `ASIN B0SAMPLE01; Goodreads 4242; ISBN 978-0-00-000000-2; Publisher Gullwing Audio;
+Released 2021-05; Length 10h 42m` (any of the parts; hyphens and ISBN-10s are fine). To tie a box set to
+its titles, give the edition the same ASIN (or Goodreads id) on each title: the details you typed on one
+are copied to the others. With `make serve` and your own `data/books.json`,
 every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other
 server, or the demo data, edits stay in the browser: press **Export**, then:
 
@@ -104,7 +135,7 @@ An export holds the books, the series info and the list of books imports must sk
 Backups from before series info was exported (a plain list of books), or before the exclusions were,
 still work and leave those files as they are. The app's **Import** reads all of them the same way,
 adding the backup's exclusions to the ones it already has.
-You can also edit `data/books.json` by hand; `make format` restores the one-book-per-line layout.
+You can also edit `data/books.json` by hand; `make format` rewrites it the way the tools write it.
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
@@ -119,8 +150,8 @@ doesn't count for book 2. Pick **Series with missing books** in the series overv
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
-the import exclusion list, `data/excluded.txt`, as its ASIN and its Goodreads id (`Goodreads 4242`), if
-it has them, and as `Title | Author`, so no later Audible or Goodreads import brings it back. With
+the import exclusion list, `data/excluded.txt`, as the ASINs and Goodreads ids (`Goodreads 4242`) of its
+editions, and as `Title | Author`, so no later Audible or Goodreads import brings it back. With
 `make serve` that is saved to `data/excluded.txt` along with the removal; otherwise it goes into
 **Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN,
 `Goodreads 4242` or `Title | Author` to `data/excluded.txt` yourself (a Goodreads id needs its `Goodreads`
@@ -131,10 +162,10 @@ Removing a book in the page does not add its ISBNs, since another book may share
 from `data/excluded.txt`.
 
 **ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
-Goodreads' `ISBN` and `ISBN13`) on the book, and later imports add the ISBNs of other editions. Edit them in the
-page under *ISBN(s)* (comma separated; hyphens and ISBN-10s are fine, they are stored as ISBN-13). The same
-ISBN may be on several books, e.g. each book of a boxed set. Searching the library for an ISBN, typed any
-way, finds the books that carry it.
+Goodreads' `ISBN` and `ISBN13`) on the edition they import. Edit them in the page under *Editions*
+(`ISBN 978-0-00-000000-2, 0-306-40615-2`; stored as ISBN-13). The same ISBN may be on several books, e.g. each
+book of a boxed set. Searching the library for an ISBN, typed any way, finds the books that carry it;
+searching for an ASIN, a Goodreads id or a publisher works too.
 
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
@@ -146,8 +177,9 @@ changes dates you already have. Audible imports do not set dates read.
 **Goodreads**: `node catalog.js import-goodreads data/raw/goodreads_library_export.csv`, or
 **Goodreads CSV** in the app. Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
-Each book keeps Goodreads' *Book Id* as `gr`, so a later export still finds it after you rename it; books
-already in the catalogue get their Goodreads id filled in the first time an export matches them.
+Each book keeps Goodreads' *Book Id* as its edition's `gr`, with the edition's *Publisher* and *Year Published*,
+so a later export still finds it after you rename it; books already in the catalogue get their Goodreads id
+filled in the first time an export matches them.
 
 ## Tidy names and spacing
 
@@ -162,13 +194,19 @@ about any value that is not tidy. Capitalisation and quote styles are left alone
 Imports only ever *add* books; an existing book is never overwritten. An incoming book counts as
 already present if any of these match, strongest first:
 
-1. its Audible `id` or its Goodreads id (`gr`)
+1. the Audible `id` or Goodreads id (`gr`) of any of its editions
 2. same first author + same series (spelling-insensitive: `Ember Coast` = `Ember Coast Series`) + same number
 3. same author and title, also forgiving of the long Audible form: `A Crown of Embers 5: A Spark of Dawn`
    finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
 
-When a match has no `id` or `gr` yet, the Audible ASIN or Goodreads id is filled in (and likewise dates read, when it has none), so later imports keep matching even
-after more edits. ISBNs the match does not have yet are added to its `isbn` list (another edition), never replacing any.
+The imported edition then goes into the match without replacing anything:
+- if one of the match's editions has the same ASIN, Goodreads id or ISBN, that edition gets whatever it is
+  missing (ASIN, Goodreads id, more ISBNs, publisher, release date, length), and so do its copies on a box set's other titles;
+- otherwise, if the match has a single edition of its own that does not have a different ASIN or Goodreads id,
+  that edition is filled in the same way (so a Goodreads export finds and completes the edition an Audible import made);
+- otherwise it is added as another edition of the book.
+
+Dates read are filled in when the match has none. So later imports keep matching even after more edits.
 ISBNs are *not* used to decide that two books are the same, because one ISBN can belong to several books (a boxed set):
 an incoming book whose ISBN is already on another book is still added if nothing else matches. New books get the series spelling already in use. If Audible lists a book under
 several series, a parent series wins over its sub-series (`Thornmere` over `Thornmere: Wardens`);

@@ -1,13 +1,14 @@
 [
-  {"t":"The Salt Road","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"1","g":["Fantasy","Adventure"],"id":"SAMPLE0001","r":["2023-06-02","2025-11-20"]},
-  {"t":"Beacons at Low Tide","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"2","g":["Fantasy","Adventure"],"id":"SAMPLE0002","r":["2023-07-14"]},
-  {"t":"The Drowned Chart","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"3","g":["Fantasy","Adventure"],"id":"SAMPLE0003"},
-  {"t":"A Storm Named Wren","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"4","g":["Fantasy","Adventure"],"id":"SAMPLE0004"},
-  {"t":"The Ledger of Small Hours","a":"Priya Ostrander","n":"Dana Whitlock","s":"Halloway & Finch","sn":"1","g":["Mystery","Cozy"],"id":"SAMPLE0005","r":["2024-02"]},
-  {"t":"Murder at the Marmalade Fair","a":"Priya Ostrander","n":"Dana Whitlock","s":"Halloway & Finch","sn":"2","g":["Mystery","Cozy"],"id":"SAMPLE0006"},
-  {"t":"The Brass Orchard","a":"Wendell Ashcombe","n":"Ingrid Voss","s":"The Orchard Cycle","sn":"1","g":["Science Fiction"],"id":"SAMPLE0007"},
-  {"t":"The Orchard Cycle: Books 2-3","a":"Wendell Ashcombe","n":"Ingrid Voss","s":"The Orchard Cycle","sn":"2-3","g":["Science Fiction"],"id":"SAMPLE0008"},
-  {"t":"An Atlas of Quiet Places","a":"Odalys Rennick","n":"Odalys Rennick","g":["Nonfiction","Travel"],"id":"SAMPLE0009","r":["2022"]},
+  {"t":"The Salt Road","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"1","g":["Fantasy","Adventure"],"e":[{"id":"SAMPLE0001","gr":"9001","isbn":["9780000000002"],"p":"Gullwing Audio","d":"2019-04-02","len":642},{"id":"SAMPLE0101","isbn":["9781000000009"],"p":"Harbourlight Sound","d":"2020-09"}],"r":["2023-06-02","2025-11-20"]},
+  {"t":"Beacons at Low Tide","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"2","g":["Fantasy","Adventure"],"e":[{"id":"SAMPLE0002","p":"Gullwing Audio","d":"2020-03-10","len":701}],"r":["2023-07-14"]},
+  {"t":"The Drowned Chart","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"3","g":["Fantasy","Adventure"],"e":[{"id":"SAMPLE0003"}]},
+  {"t":"A Storm Named Wren","a":"Marisol Quenby","n":"Tobias Frane","s":"The Lantern Coast","sn":"4","g":["Fantasy","Adventure"],"e":[{"id":"SAMPLE0004"}]},
+  {"t":"The Ledger of Small Hours","a":"Priya Ostrander","n":"Dana Whitlock","s":"Halloway & Finch","sn":"1","g":["Mystery","Cozy"],"e":[{"id":"SAMPLE0005"}],"r":["2024-02"]},
+  {"t":"Murder at the Marmalade Fair","a":"Priya Ostrander","n":"Dana Whitlock","s":"Halloway & Finch","sn":"2","g":["Mystery","Cozy"],"e":[{"id":"SAMPLE0006"}]},
+  {"t":"The Brass Orchard","a":"Wendell Ashcombe","n":"Ingrid Voss","s":"The Orchard Cycle","sn":"1","g":["Science Fiction"],"e":[{"id":"SAMPLE0007"}]},
+  {"t":"The Copper Graft","a":"Wendell Ashcombe","n":"Ingrid Voss","s":"The Orchard Cycle","sn":"2","g":["Science Fiction"],"e":[{"id":"SAMPLE0008","isbn":["9780306406157"],"p":"Kestrel Row Audio","d":"2022-11","len":1385}]},
+  {"t":"Harvest of Gears","a":"Wendell Ashcombe","n":"Ingrid Voss","s":"The Orchard Cycle","sn":"3","g":["Science Fiction"],"e":[{"id":"SAMPLE0008","isbn":["9780306406157"],"p":"Kestrel Row Audio","d":"2022-11","len":1385}]},
+  {"t":"An Atlas of Quiet Places","a":"Odalys Rennick","n":"Odalys Rennick","g":["Nonfiction","Travel"],"e":[{"id":"SAMPLE0009"}],"r":["2022"]},
   {"t":"The Clockmaker's Apprentice","a":"Ferran Doyle","n":"Ingrid Voss","g":["Historical Fiction"],"r":["2026-01-09"]},
   {"t":"Nine Ways to Lose a Kingdom","a":"Ferran Doyle","g":["Fantasy","Humor"]}
 ]

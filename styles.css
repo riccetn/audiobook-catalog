@@ -73,8 +73,8 @@ h1{
 #addForm.open{display:block;}
 #addForm h3{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
 #addForm label{display:block; font-size:.78rem; color:var(--ink-soft); margin:.5rem 0 .2rem;}
-#addForm input{
-  width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
+#addForm input, #addForm textarea{
+  width:100%; font-family:inherit; resize:vertical; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
   background:var(--paper); color:var(--ink); font-size:.9rem;
 }
 #seriesForm{
@@ -90,7 +90,8 @@ h1{
 }
 .formError{font-size:.8rem; color:#b0453f; margin:.5rem 0 0; overflow-wrap:anywhere;}
 .formError:empty{display:none;}
-.book .read, .book .isbn{color:var(--ink-soft); font-size:.78rem; margin-top:.15rem;}
+.book .read, .book .edition{color:var(--ink-soft); font-size:.78rem; margin-top:.15rem; overflow-wrap:anywhere;}
+.book .edition .also{font-style:italic;}
 .importPreview{
   display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
   padding:1rem; margin-bottom:1.5rem; font-size:.85rem;

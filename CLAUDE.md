@@ -34,9 +34,9 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
   script defining the global `CatalogImport` (loaded by `index.html` via `<script>`) and also
   `module.exports` it for `catalog.js`. Keep it that way: no `import`/`require`, no Node or DOM APIs,
   so the page and the CLI import, tidy, validate and merge identically.
-  Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`, `validate`,
-  `readAudible`, `readGoodreads`, `merge`, `parseExclusions`/`exclusionEntries`, `readBackup`,
-  `fingerprint`.
+  Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
+  `readAudible`, `readGoodreads`, `merge`, `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
+  `parseExclusions`/`exclusionEntries`, `readBackup`, `fingerprint`.
 - `catalog.js`: CommonJS CLI (`main(argv, io)`) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
   the same checks as `sync-export`, refuses a save if the file's `fingerprint` changed on disk since
@@ -55,16 +55,22 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
 
 ## Data model (short form; full table in the README)
 
-`books.json` is a list of records with short keys `t a n s sn g id gr isbn r` (title, author,
-narrator, series, series number as text, genres, Audible ASIN, Goodreads book id, ISBNs, dates read). `series-info.json` maps a series
+`books.json` is a list of titles with short keys `t a n s sn g r e` (title, author, narrator, series,
+series number as text, genres, dates read, editions). Each edition in `e` has `id gr isbn p d len`
+(Audible ASIN, Goodreads book id, ISBNs, publisher, release date, length in minutes) and needs one of
+the first three. A box set is one edition copied onto each of its titles, linked by the shared
+identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn` on the book) are
+migrated on load by `fixBooks`. A missing `r` means the read date is unknown, not unread. `series-info.json` maps a series
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`.
 `data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345` or `Title | Author` lines that imports must never re-add; code only
 ever appends to it.
 
 Invariants the code relies on:
-- Imports only add books, never overwrite. Matching order: `id` or `gr`, then first author + series + number
+- Imports only add books, never overwrite. Matching order: any edition's `id` or `gr`, then first author + series + number
   (spelling-insensitive), then author + title (forgiving Audible's long titles, never mistaking a
-  boxed set for book 1). A match may gain a missing `id`, `gr` or dates read, and ISBNs it lacks; nothing else.
+  boxed set for book 1). A match may gain dates read and editions: an incoming edition fills in the
+  edition it shares an identifier with (and that edition's box-set copies), or the match's only
+  unshared edition when nothing conflicts, else is added; existing values are never changed.
 - Every text field goes through `tidyBook`; `validate` warns on untidy values.
 - Anything that writes user data (imports, `sync-export`, `serve` saves) validates first and refuses
   to touch `data/sample/`.
