@@ -112,6 +112,12 @@ test('import-goodreads adds read audiobooks', t => {
     + '"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,fantasy,2024/03/15\n');
   assert.match(run('import-goodreads', csv).out, /dates read filled in on existing books: 1/);
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].r, ['2024-03-15']);
+
+  // and a later one with Goodreads' Book Id column fills that in too
+  fs.writeFileSync(csv, 'Book Id,Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n'
+    + '4242,"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,fantasy\n');
+  assert.match(run('import-goodreads', csv).out, /Goodreads ids filled in on existing books: 1/);
+  assert.equal(loadBooks(path.join(tmp, 'data', 'books.json'))[0].gr, '4242');
 });
 
 // The columns of a real Audible Library Extractor CSV export.

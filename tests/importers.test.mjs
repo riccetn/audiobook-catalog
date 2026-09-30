@@ -86,6 +86,21 @@ test('validation: a clean catalogue passes; required fields, unknown keys, ids',
   assert.ok(C.validate([{ t: '1', a: 'a', id: 'B0' }, { t: '2', a: 'a', id: 'B0' }], {}).errors.some(e => e.includes('duplicate id')));
 });
 
+test('Goodreads ids: validated, excluded, and kept apart from ASINs', () => {
+  assert.deepEqual(C.validate([{ t: 'A', a: 'B', gr: '4242' }], {}), { errors: [], warnings: [] });
+  assert.ok(C.validate([{ t: 'A', a: 'B', gr: 'show/4242' }], {}).errors.some(e => e.includes('digits only')));
+  assert.ok(C.validate([{ t: 'A', a: 'B', gr: 4242 }], {}).errors.some(e => e.includes("'gr' must be")));
+  assert.ok(C.validate([{ t: '1', a: 'a', gr: '7' }, { t: '2', a: 'a', gr: '7' }], {}).errors.some(e => e.includes('duplicate Goodreads id 7')));
+
+  assert.deepEqual(C.exclusionEntries({ t: 'Gone', a: 'Ann Vale', id: 'B9', gr: '4242' }), ['B9', 'Goodreads 4242', 'Gone | Ann Vale']);
+  const ex = C.parseExclusions('Goodreads 4242\ngr: 77  # the paperback\n');
+  assert.deepEqual(ex.entries, ['Goodreads 4242', 'Goodreads 77']);
+  assert.equal(ex.add('GOODREADS 4242'), null);
+  assert.ok(ex.covers({ t: 'Renamed', a: 'Someone', gr: '77' }));
+  assert.ok(!ex.covers({ t: 'Renamed', a: 'Someone', id: '77' }), 'a Goodreads id is not an ASIN');
+  assert.ok(!C.parseExclusions('4242\n').covers({ t: 'x', a: 'y', gr: '4242' }), 'a bare number is an ASIN, not a Goodreads id');
+});
+
 test('validation: series-info must match a series and be well formed', () => {
   const books = [{ t: 't', a: 'a', s: 'Real' }];
   const errors = C.validate(books, {
@@ -216,7 +231,7 @@ test('Audible export: BOM, quoted newlines and counts', () => {
 });
 
 // --------------------------------------------------------------- Goodreads
-const GR_HEADER = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n';
+const GR_HEADER = 'Book Id,Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n';
 
 test('Goodreads series formats', () => {
   const cases = {
@@ -232,13 +247,15 @@ test('Goodreads series formats', () => {
 
 test('Goodreads export: only read audio editions, with tidy names', () => {
   const result = C.readGoodreads(GR_HEADER
-    + '"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,"urban-fantasy, witches",2024/03/15\n'
-    + 'Paperback,Bob,,Paperback,read,\n'
-    + 'Unread audio,Cy,,Audiobook,to-read,\n'
-    + 'Some Book,A.B.  Quill,R.T. Hale,Audiobook,read,\n');
+    + '4242,"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,"urban-fantasy, witches",2024/03/15\n'
+    + '11,Paperback,Bob,,Paperback,read,\n'
+    + '12,Unread audio,Cy,,Audiobook,to-read,\n'
+    + '"=""77""",Some Book,A.B.  Quill,R.T. Hale,Audiobook,read,\n'
+    + ',No Id,Dee,,Audiobook,read,\n');
   assert.deepEqual(result.records, [
-    { t: 'Kept', a: 'Ann', n: 'Nate Narrator', s: 'Series', sn: '2', g: ['urban-fantasy', 'witches'], r: ['2024-03-15'] },
-    { t: 'Some Book', a: 'A. B. Quill', n: 'R. T. Hale' },
+    { t: 'Kept', a: 'Ann', gr: '4242', n: 'Nate Narrator', s: 'Series', sn: '2', g: ['urban-fantasy', 'witches'], r: ['2024-03-15'] },
+    { t: 'Some Book', a: 'A. B. Quill', gr: '77', n: 'R. T. Hale' },
+    { t: 'No Id', a: 'Dee' },
   ]);
   assert.equal(result.skippedUnfinished, 1);
 });
@@ -260,6 +277,14 @@ test('merge: hand edits win but a missing id is filled in', () => {
     { s: 'A Crown of Embers Series', sn: '5', g: ['Theirs'], id: 'B5' })]);
   assert.deepEqual(existing, [{ t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', g: ['Mine'], id: 'B5' }]);
   assert.equal(report.backfilled.length, 1);
+});
+
+test('merge: a Goodreads id matches a renamed book, and a missing one is filled in', () => {
+  const existing = [book('Renamed By Hand', 'Author', { gr: '4242' }), book('No Id Yet')];
+  const report = C.merge(existing, [book('Goodreads Title', 'Author', { gr: '4242' }), book('No Id Yet', 'Author', { gr: '77' })]);
+  assert.deepEqual(existing.map(b => [b.t, b.gr]), [['Renamed By Hand', '4242'], ['No Id Yet', '77']]);
+  assert.deepEqual([report.added.length, report.goodreadsFilled.length, report.backfilled.length], [0, 1, 0]);
+  assert.equal(C.merge(existing, [book('Renamed Again', 'Author', { gr: '77' })]).added.length, 0);
 });
 
 test('merge: dates read are filled in on books without any, never replaced', () => {
