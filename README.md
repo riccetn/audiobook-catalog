@@ -59,6 +59,7 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `id` | Audible ASIN, so re-imports recognise the book      |          |
+| `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day |  |
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
@@ -109,6 +110,13 @@ Like book edits, the change lives in the browser until you **Export** and run `s
 **Remove a book for good**: delete it from `data/books.json` *and* add its ASIN (or `Title | Author`
 for books without one) to `data/excluded.txt`, otherwise the next import brings it back.
 
+**Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
+(`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
+for a re-read), or press **+ Read today**. The date shows on the book, and in **All Books** the
+*Read in* filter picks the books read in a given year, or those with no date yet. A Goodreads import
+fills in its *Date Read* on books that have no dates yet (Goodreads keeps only the latest one); it never
+changes dates you already have. Audible imports do not set dates read.
+
 **Goodreads**: `node catalog.js import-goodreads data/raw/goodreads_library_export.csv`, or
 **Goodreads CSV** in the app. Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
@@ -131,7 +139,7 @@ already present if any of these match, strongest first:
 3. same author and title, also forgiving of the long Audible form: `A Crown of Embers 5: A Spark of Dawn`
    finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
 
-When a match has no `id` yet, the Audible ASIN is filled in, so later imports keep matching even
+When a match has no `id` yet, the Audible ASIN is filled in (and likewise dates read, when it has none), so later imports keep matching even
 after more edits. New books get the series spelling already in use. If Audible lists a book under
 several series, a parent series wins over its sub-series (`Thornmere` over `Thornmere: Wardens`);
 otherwise the first is used and the book is flagged in the import output.

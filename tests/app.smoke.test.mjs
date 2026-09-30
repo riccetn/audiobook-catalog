@@ -125,6 +125,52 @@ test('adding a book appends it', async () => {
   assert.deepEqual(get('DATA[DATA.length-1]'), { t: 'Brand New', a: 'Some Author', g: ['Fantasy', 'Cozy'] });
 });
 
+test('dates read: shown on the card, edited in the form, and filterable by year', async () => {
+  const { ctx, els, get } = await boot();
+  ctx.setView('library');
+  const dated = demoBooks.find(b => b.r && b.r.length > 1);
+  assert.ok(dated, 'the demo data has a book read more than once');
+  assert.ok(els.results.innerHTML.includes(`Read ${dated.r.join(', ')}`));
+
+  // the read filter lists each year, newest first, and "no date"
+  assert.match(els.readFilter.innerHTML, /Read in 2026.*Read in 2025.*Read in 2023/);
+  assert.match(els.readFilter.innerHTML, /No date read/);
+  els.readFilter.value = '2025';
+  ctx.render();
+  const inYear = demoBooks.filter(b => (b.r || []).some(d => d.startsWith('2025')));
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, inYear.length);
+  els.readFilter.value = '__undated__';
+  ctx.render();
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, demoBooks.filter(b => !b.r).length);
+  els.readFilter.value = '';
+
+  // edit: the form shows the dates; they are tidied, sorted and de-duplicated on save
+  const i = demoBooks.indexOf(dated);
+  ctx.openEditForm(i);
+  assert.equal(els.f_r.value, dated.r.join(', '));
+  els.f_r.value = '2026/9/1, 2021, 2026-09-01';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get(`DATA[${i}].r`), ['2021', '2026-09-01']);
+
+  // "+ Read today" appends today's date once
+  ctx.openEditForm(i);
+  els.readTodayBtn.listeners.click[0]();
+  els.readTodayBtn.listeners.click[0]();
+  const today = get('today()');
+  assert.equal(els.f_r.value, `2021, 2026-09-01, ${today}`);
+
+  // a bad date is refused with a message, and nothing changes
+  els.f_r.value = '2026-02-30';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.match(els.formError.textContent, /Not a date: 2026-02-30/);
+  assert.deepEqual(get(`DATA[${i}].r`), ['2021', '2026-09-01']);
+
+  // clearing the field removes the dates
+  els.f_r.value = '';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(get(`'r' in DATA[${i}]`), false);
+});
+
 test('your own data/books.json wins over the demo', async () => {
   const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
   const { get } = await boot({ files: { 'data/books.json': mine, 'data/sample/books.json': DEMO_BOOKS } });
@@ -196,6 +242,20 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
   assert.match(els.importPreviewBody.innerHTML, /Nothing new to add/);
   assert.equal(els.importConfirm.style.display, 'none');
+});
+
+test('a Goodreads import fills in dates read on books that have none', async () => {
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', id: 'B1' }]);
+  const { els, get } = await boot({ files: { 'data/books.json': mine } });
+  const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
+    + 'Old Favourite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
+  els.importGoodreadsBtn.listeners.click[0]();
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
+  assert.match(els.importPreviewBody.innerHTML, /Dates read filled in on existing books: 1/);
+  assert.equal(els.importConfirm.textContent, 'Save dates read');
+  els.importConfirm.listeners.click[0]();
+  assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: 'Ann Vale', id: 'B1', r: ['2023-11-04'] }]);
+  assert.match(els.ioStatus.textContent, /filled in dates read on 1 book/);
 });
 
 test('importing a Goodreads CSV can be cancelled', async () => {

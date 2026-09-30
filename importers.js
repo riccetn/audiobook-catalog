@@ -6,11 +6,41 @@
 const CatalogImport = (() => {
 
 // ------------------------------------------------------------------ book records
-const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id'];
+const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id', 'r'];
 const STATUSES = ['ongoing', 'complete'];
 const SERIES_NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
 // JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
 const WORD_START = '(?<![\\p{L}\\p{N}_])';
+
+/**
+ * A date a book was read, as stored in `r`: "2024-03-15", or just "2024-03" / "2024" when that is all
+ * you remember. Also accepts Goodreads' "2024/03/15" and single-digit months/days. Returns the
+ * canonical form, or null when it is not a real date.
+ */
+function parseReadDate(text){
+  const m = /^(\d{4})(?:[-/](\d{1,2})(?:[-/](\d{1,2}))?)?$/.exec(tidyText(String(text || '')));
+  if(!m) return null;
+  const [, y, mo, d] = m;
+  if(mo === undefined) return y;
+  const month = Number(mo);
+  if(month < 1 || month > 12) return null;
+  const pad = n => String(n).padStart(2, '0');
+  if(d === undefined) return `${y}-${pad(month)}`;
+  const day = Number(d);
+  const daysInMonth = new Date(Date.UTC(Number(y), month, 0)).getUTCDate();
+  if(day < 1 || day > daysInMonth) return null;
+  return `${y}-${pad(month)}-${pad(day)}`;
+}
+
+/** Parse a comma separated list of read dates. Returns {dates (sorted, no repeats), bad (unparseable)}. */
+function parseReadDates(text){
+  const dates = new Set(), bad = [];
+  for(const part of String(text || '').split(/[,;]/).map(x => x.trim()).filter(Boolean)){
+    const date = parseReadDate(part);
+    if(date) dates.add(date); else bad.push(part);
+  }
+  return {dates: [...dates].sort(), bad};
+}
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -52,6 +82,9 @@ function tidyBook(rec){
   }
   if(Array.isArray(out.g)){
     out.g = out.g.map(x => typeof x === 'string' ? tidyText(x) : x).filter(x => x !== '');
+  }
+  if(Array.isArray(out.r)){
+    out.r = out.r.map(x => typeof x === 'string' ? tidyText(x) : x);
   }
   return out;
 }
@@ -153,6 +186,13 @@ function validate(books, info){
     }
     if('g' in b && !(Array.isArray(b.g) && b.g.every(nonEmpty))){
       errors.push(`${label}: 'g' must be a list of non-empty strings`);
+    }
+    if('r' in b){
+      if(!(Array.isArray(b.r) && b.r.length && b.r.every(d => typeof d === 'string' && parseReadDate(d) === d))){
+        errors.push(`${label}: 'r' must be a non-empty list of dates read (YYYY-MM-DD, YYYY-MM or YYYY)`);
+      } else if(b.r.some((d, j) => j > 0 && b.r[j - 1] >= d)){
+        warnings.push(`${label}: dates read ${repr(b.r)} are not in order (or repeat one)`);
+      }
     }
     if(b.sn && !b.s) errors.push(`${label}: has a series number but no series`);
     if(b.sn && typeof b.sn === 'string' && !SERIES_NUMBER.test(b.sn.trim())){
@@ -417,6 +457,8 @@ function readGoodreads(text){
     }
     const shelves = (row.Bookshelves || '').split(',').map(s => s.trim()).filter(Boolean);
     if(shelves.length) rec.g = shelves;
+    const read = parseReadDate(cell(row, 'Date Read'));   // Goodreads keeps only the latest read
+    if(read) rec.r = [read];
     rec = tidyBook(rec);
     if(rec.a && rec.t) result.records.push(rec);
   }
@@ -426,12 +468,12 @@ function readGoodreads(text){
 // ---------------------------------------------------------------------- merge
 /**
  * Append incoming records that are not in `existing` yet (mutates `existing`). An existing book
- * always wins, except that a missing Audible id is filled in; series names are folded onto the
- * spelling already in use. Returns {added, backfilled, excluded, matched}.
+ * always wins, except that a missing Audible id and missing dates read are filled in; series names
+ * are folded onto the spelling already in use. Returns {added, backfilled, datesFilled, excluded, matched}.
  */
 function merge(existing, incoming, exclusions){
   exclusions = exclusions || new Exclusions();
-  const report = {added: [], backfilled: [], excluded: [], matched: 0};
+  const report = {added: [], backfilled: [], datesFilled: [], excluded: [], matched: 0};
 
   const index = new Map();
   const indexKey = (k, i) => { if(!index.has(k)) index.set(k, i); };
@@ -459,6 +501,10 @@ function merge(existing, incoming, exclusions){
         report.backfilled.push(existing[match]);
         indexKey(key('id', rec.id), match);
       }
+      if(rec.r && rec.r.length && !existing[match].r){
+        existing[match].r = [...rec.r];
+        report.datesFilled.push(existing[match]);
+      }
       continue;
     }
     if(exclusions.covers(rec)){
@@ -473,7 +519,7 @@ function merge(existing, incoming, exclusions){
 }
 
 return {
-  norm, seriesNorm, tidyText, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
+  norm, seriesNorm, tidyText, parseReadDate, parseReadDates, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   Exclusions, parseExclusions, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, readGoodreads, merge,

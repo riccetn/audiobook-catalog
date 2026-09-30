@@ -21,6 +21,12 @@ let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: book
 let PENDING_IMPORT = null;     // records of a previewed CSV import awaiting confirmation
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
 
+// Filter value for books with no date read, in the "Read any time" select.
+const UNDATED = '__undated__';
+
+// Year a book was (last) read in, for the read filter: '2024' from ['2021-05', '2024-03-15'].
+const readYears = b => (b.r || []).map(d => d.slice(0, 4));
+
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
 
 function populateFilters(){
@@ -28,23 +34,29 @@ function populateFilters(){
   const genres = uniqueSorted(DATA.flatMap(b=>b.g||[]));
   const aSel = document.getElementById('authorFilter');
   const gSel = document.getElementById('genreFilter');
-  const aCur = aSel.value, gCur = gSel.value;
+  const rSel = document.getElementById('readFilter');
+  const years = uniqueSorted(DATA.flatMap(readYears)).reverse();
+  const aCur = aSel.value, gCur = gSel.value, rCur = rSel.value;
   aSel.innerHTML = '<option value="">All authors</option>' + authors.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
   gSel.innerHTML = '<option value="">All genres</option>' + genres.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
-  aSel.value = aCur; gSel.value = gCur;
+  rSel.innerHTML = '<option value="">Read any time</option>' + years.map(y=>`<option value="${esc(y)}">Read in ${esc(y)}</option>`).join('')
+    + `<option value="${UNDATED}">No date read</option>`;
+  aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
 }
 
 function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function matches(b, q, author, genre){
+function matches(b, q, author, genre, read){
   if(SERIES_FILTER){
     if(SERIES_FILTER === '__standalone__'){ if(b.s) return false; }
     else if(b.s !== SERIES_FILTER) return false;
   }
   if(author && b.a !== author) return false;
   if(genre && !(b.g||[]).includes(genre)) return false;
+  if(read === UNDATED){ if(b.r && b.r.length) return false; }
+  else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const hay = [b.t,b.a,b.n,b.s,...(b.g||[])].filter(Boolean).join(' ').toLowerCase();
     if(!hay.includes(q.toLowerCase())) return false;
@@ -59,6 +71,7 @@ function setView(v){
   const showLibControls = v === 'library';
   document.getElementById('authorFilter').style.display = showLibControls ? '' : 'none';
   document.getElementById('genreFilter').style.display = showLibControls ? '' : 'none';
+  document.getElementById('readFilter').style.display = showLibControls ? '' : 'none';
   document.getElementById('toggleAdd').style.display = showLibControls ? '' : 'none';
   const crumb = document.getElementById('crumb');
   if(v === 'library' && SERIES_FILTER){
@@ -82,7 +95,8 @@ function render(){
   const q = document.getElementById('q').value.trim();
   const author = document.getElementById('authorFilter').value;
   const genre = document.getElementById('genreFilter').value;
-  const filtered = DATA.map((b,i)=>({...b, _i:i})).filter(b=>matches(b,q,author,genre));
+  const read = document.getElementById('readFilter').value;
+  const filtered = DATA.map((b,i)=>({...b, _i:i})).filter(b=>matches(b,q,author,genre,read));
 
   document.getElementById('subtitle').textContent =
     `${DATA.length} audiobooks, merged from your Audible library and Goodreads history`;
@@ -300,9 +314,11 @@ function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
   const meta = [b.a, b.n ? 'narr. '+b.n : null].filter(Boolean).join(' \u2014 ');
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
+  const read = b.r && b.r.length ? `<div class="read">Read ${esc(b.r.join(', '))}</div>` : '';
   return `<div class="book">${num}<div class="info">
     <div class="title">${esc(b.t)}</div>
     <div class="meta">${esc(meta)}</div>
+    ${read}
     ${genres ? `<div class="genres">${genres}</div>` : ''}
   </div><div class="book-actions">
     <button class="iconbtn edit" data-i="${b._i}" title="Edit" aria-label="Edit">&#9998;</button>
@@ -377,7 +393,7 @@ function previewImport(kind, text, fileName){
   const importer = IMPORTERS[kind];
   const result = importer.read(text);
   const {report, errors} = mergeIntoCopy(result.records);
-  const changes = report.added.length + report.backfilled.length;
+  const changes = report.added.length + report.backfilled.length + report.datesFilled.length;
   PENDING_IMPORT = errors.length || !changes ? null : result.records;
 
   const li = rec => {
@@ -388,6 +404,7 @@ function previewImport(kind, text, fileName){
   html += `<p>Already in the catalogue: ${report.matched}</p>`;
   if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
   if(report.backfilled.length) html += `<p>Audible ids filled in on existing books: ${report.backfilled.length}</p>`;
+  if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
   html += `<p>New: ${report.added.length}</p>`;
   if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
@@ -406,7 +423,7 @@ function previewImport(kind, text, fileName){
   confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
   confirmBtn.textContent = report.added.length
     ? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
-    : 'Save Audible ids';
+    : report.backfilled.length ? 'Save Audible ids' : 'Save dates read';
   document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
   document.getElementById('importPreview').classList.add('open');
 }
@@ -417,11 +434,12 @@ function applyImport(){
   const {data, report, errors} = mergeIntoCopy(PENDING_IMPORT);
   closeImportPreview();
   if(errors.length){ showIoStatus('The catalogue changed and the import no longer validates; nothing was added.', true); return; }
-  const added = report.added.length, backfilled = report.backfilled.length;
+  const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
   DATA = data;
   populateFilters(); render(); persist();
   showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
     (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
+    (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
     '. Export and run sync-export to keep them in data/books.json.');
 }
 
@@ -456,6 +474,7 @@ document.getElementById('importCancel').addEventListener('click', closeImportPre
 document.getElementById('q').addEventListener('input', render);
 document.getElementById('authorFilter').addEventListener('change', render);
 document.getElementById('genreFilter').addEventListener('change', render);
+document.getElementById('readFilter').addEventListener('change', render);
 document.getElementById('btnSeriesView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
 document.getElementById('btnLibraryView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('library'); });
 document.getElementById('backToSeries').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
@@ -476,14 +495,29 @@ document.getElementById('toggleAdd').addEventListener('click', ()=>{
     EDIT_INDEX = null;
     document.getElementById('formTitle').textContent = 'Add a book';
     document.getElementById('formSaveBtn').textContent = 'Add book';
+    document.getElementById('formError').textContent = '';
     form.reset();
     form.classList.add('open');
   }
 });
 document.getElementById('cancelAdd').addEventListener('click', closeForm);
 
+// Today in the viewer's time zone, as YYYY-MM-DD.
+function today(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+document.getElementById('readTodayBtn').addEventListener('click', ()=>{
+  const input = document.getElementById('f_r');
+  const current = input.value.trim();
+  if(current.split(/[,;]/).map(x=>x.trim()).includes(today())) return;
+  input.value = current ? current.replace(/[,;\s]*$/, '') + ', ' + today() : today();
+});
+
 function closeForm(){
   EDIT_INDEX = null;
+  document.getElementById('formError').textContent = '';
   document.getElementById('addForm').classList.remove('open');
   document.getElementById('addForm').reset();
 }
@@ -498,6 +532,8 @@ function openEditForm(i){
   document.getElementById('f_g').value = (b.g||[]).join(', ');
   document.getElementById('f_s').value = b.s || '';
   document.getElementById('f_sn').value = b.sn || '';
+  document.getElementById('f_r').value = (b.r||[]).join(', ');
+  document.getElementById('formError').textContent = '';
   document.getElementById('formTitle').textContent = 'Edit book';
   document.getElementById('formSaveBtn').textContent = 'Save changes';
   document.getElementById('addForm').classList.add('open');
@@ -516,6 +552,13 @@ document.getElementById('addForm').addEventListener('submit', e=>{
   const g = document.getElementById('f_g').value.trim();
   if(g) b.g = g.split(',').map(x=>x.trim()).filter(Boolean);
   if(!b.t || !b.a) return;
+  const {dates, bad} = CatalogImport.parseReadDates(document.getElementById('f_r').value);
+  if(bad.length){
+    document.getElementById('formError').textContent =
+      `Not a date: ${bad.join(', ')}. Use YYYY-MM-DD, or YYYY-MM / YYYY if you don't remember the day.`;
+    return;
+  }
+  if(dates.length) b.r = dates;
 
   if(EDIT_INDEX !== null){
     const prev = DATA[EDIT_INDEX];
