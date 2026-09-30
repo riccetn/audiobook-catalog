@@ -295,3 +295,77 @@ test('merge: ids, long titles, boxed sets, series spelling, exclusions, authors'
   C.merge(existing, [book('Dark', 'Bob')]);
   assert.equal(existing.length, 2);
 });
+
+// ------------------------------------------------------------------- ISBNs
+// Real check digits, invented books: 978-0-00-000000-2 and friends.
+const ISBN_A = '9780000000002', ISBN_B = '9781000000009', ISBN_BOX = '9780306406157';
+
+test('ISBNs: ISBN-10 and ISBN-13, hyphens, prefixes and Goodreads quoting; bad check digits refused', () => {
+  const cases = {
+    '978-0-00-000000-2': ISBN_A, 'ISBN 9780000000002': ISBN_A, 'isbn-13: 978 0 00 000000 2': ISBN_A,
+    '0-306-40615-2': ISBN_BOX, '="0306406152"': ISBN_BOX, '="9780306406157"': ISBN_BOX, '080442957x': '9780804429573',
+    '9780000000003': null, '0306406153': null, '=""': null, '': null, 'B012345678': null, '1234567890123': null,
+  };
+  for (const [raw, expected] of Object.entries(cases)) assert.equal(C.parseIsbn(raw), expected, raw);
+  assert.deepEqual(C.parseIsbns(`${ISBN_A}, 0-306-40615-2; ${ISBN_A} nope`), { isbns: [ISBN_A, ISBN_BOX], bad: [`${ISBN_A} nope`] });
+  assert.deepEqual(C.parseIsbns(`${ISBN_A} 0306406152`), { isbns: [ISBN_A, ISBN_BOX], bad: [] });
+});
+
+test('ISBNs: a plain string becomes a list, and tidying stores the 13-digit form once', () => {
+  assert.deepEqual(C.fixIsbns({ t: 'A', a: 'B', isbn: '978-0-00-000000-2, 0306406152' }).isbn, [ISBN_A, ISBN_BOX]);
+  assert.deepEqual(C.fixIsbns({ t: 'A', a: 'B', isbn: ' ' }), { t: 'A', a: 'B' });
+  assert.deepEqual(C.fixIsbns({ t: 'A', a: 'B', isbn: 'soon' }).isbn, ['soon']);   // left for validate() to report
+  assert.deepEqual(C.fixBooks([{ t: 'A', a: 'B', isbn: ISBN_A }])[0].isbn, [ISBN_A]);
+  assert.deepEqual(C.tidyBook({ t: 'A', a: 'B', isbn: ['0-306-40615-2', ISBN_BOX, ' bad  one '] }).isbn, [ISBN_BOX, 'bad one']);
+});
+
+test('ISBNs: validation', () => {
+  // several per book, and the same ISBN on several books (a boxed set), are fine
+  assert.deepEqual(C.validate([{ t: '1', a: 'A', isbn: [ISBN_A, ISBN_BOX] }, { t: '2', a: 'A', isbn: [ISBN_BOX] }], {}), { errors: [], warnings: [] });
+  for (const isbn of [[], ISBN_A, [''], [9780000000002]]) {
+    assert.ok(C.validate([{ t: 'A', a: 'B', isbn }], {}).errors.some(e => e.includes("'isbn' must be")), JSON.stringify(isbn));
+  }
+  assert.ok(C.validate([{ t: 'A', a: 'B', isbn: ['9780000000003'] }], {}).errors.some(e => e.includes('not a valid ISBN')));
+  const { errors, warnings } = C.validate([{ t: 'A', a: 'B', isbn: ['978-0-00-000000-2', ISBN_A] }], {});
+  assert.deepEqual(errors, []);
+  assert.ok(warnings.some(w => w.includes(`as '${ISBN_A}'`)));
+  assert.ok(warnings.some(w => w.includes('listed twice')));
+});
+
+test('ISBNs are read from Audible and Goodreads exports', () => {
+  const [rec] = C.audibleRowToRecord({ Title: 'T', Authors: 'A', Progress: 'Finished', ASIN: 'B1', ISBN10: '0306406152', ISBN13: ISBN_BOX });
+  assert.deepEqual(rec.isbn, [ISBN_BOX]);
+  assert.equal('isbn' in C.audibleRowToRecord({ Title: 'T', Authors: 'A', Progress: 'Finished', ISBN13: 'n/a' })[0], false);
+  const result = C.readGoodreads('Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf\n'
+    + 'With,Ann,"=""0306406152""","=""9780306406157""",Audible Audio,read\n'
+    + 'Without,Ann,"=""""","=""""",Audiobook,read\n');
+  assert.deepEqual(result.records, [{ t: 'With', a: 'Ann', isbn: [ISBN_BOX] }, { t: 'Without', a: 'Ann' }]);
+});
+
+test('merge: ISBNs of other editions are added to the book, and never make two books one', () => {
+  const existing = [book('One', 'Author', { isbn: [ISBN_A] }), book('Two')];
+  const report = C.merge(existing, [book('One', 'Author', { isbn: [ISBN_B, ISBN_A] }), book('Two', 'Author', { isbn: [ISBN_BOX] })]);
+  assert.deepEqual(existing.map(b => b.isbn), [[ISBN_A, ISBN_B], [ISBN_BOX]]);
+  assert.deepEqual([report.isbnsFilled.length, report.added.length], [2, 0]);
+  assert.equal(C.merge(existing, [book('One', 'Author', { isbn: [ISBN_B] })]).isbnsFilled.length, 0);
+
+  // a boxed set's ISBN on each of its books: they stay separate books, and the set itself is a new book
+  const boxed = [book('First', 'Author', { isbn: [ISBN_BOX] })];
+  const added = C.merge(boxed, [book('Second', 'Author', { isbn: [ISBN_BOX] }), book('The Boxed Set', 'Author', { isbn: [ISBN_BOX] })]).added;
+  assert.deepEqual(added.map(b => b.t), ['Second', 'The Boxed Set']);
+});
+
+test('exclusions by ISBN', () => {
+  const ex = C.parseExclusions(`ISBN 978-0-00-000000-2  # read the paperback\n${ISBN_BOX}\n0306406152\nB012345678\n`);
+  assert.deepEqual(ex.entries, [`ISBN ${ISBN_A}`, `ISBN ${ISBN_BOX}`, '0306406152', 'B012345678']);
+  assert.equal(ex.add('isbn: 0-00-000000-0'), null);   // the ISBN-10 of 978-0-00-000000-2
+  assert.ok(ex.covers({ t: 'x', a: 'y', isbn: ['9780000000002'] }));
+  assert.ok(ex.covers({ t: 'x', a: 'y', isbn: [ISBN_B, ISBN_BOX] }));
+  assert.ok(ex.covers({ t: 'x', a: 'y', id: '0306406152' }));   // a bare ISBN-10 is also an ASIN
+  assert.ok(!ex.covers({ t: 'x', a: 'y', isbn: [ISBN_B] }));
+
+  const existing = [];
+  const report = C.merge(existing, [book('Box Book 1', 'Author', { isbn: [ISBN_BOX] }), book('Box Book 2', 'Author', { isbn: [ISBN_BOX] }), book('Fine', 'Author', { isbn: [ISBN_B] })], ex);
+  assert.deepEqual(existing.map(b => b.t), ['Fine']);
+  assert.equal(report.excluded.length, 2);
+});

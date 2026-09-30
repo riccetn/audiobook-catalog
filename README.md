@@ -59,6 +59,7 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `id` | Audible ASIN, so re-imports recognise the book      |          |
+| `isbn` | list of ISBNs, one per edition you know of (`["9780000000002", "9780306406157"]`), always the 13-digit form without hyphens. A boxed set's ISBN may be on each book in it. A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |  |
 | `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list |  |
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
@@ -115,8 +116,17 @@ the import exclusion list, `data/excluded.txt`, as its ASIN (if it has one) and 
 (Goodreads exports have no ASINs), so no later Audible or Goodreads import brings it back. With
 `make serve` that is saved to `data/excluded.txt` along with the removal; otherwise it goes into
 **Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN or
-`Title | Author` to `data/excluded.txt` yourself. To let an import add a book again, delete its lines
+`Title | Author` to `data/excluded.txt` yourself. You can also exclude by ISBN: a line `ISBN 978-0-00-000000-2`
+(or just the ISBN-13) skips every imported book that carries that ISBN, in any of its editions' forms (so
+an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN counts as both an ASIN and an ISBN.
+Removing a book in the page does not add its ISBNs, since another book may share them. To let an import add a book again, delete its lines
 from `data/excluded.txt`.
+
+**ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
+Goodreads' `ISBN` and `ISBN13`) on the book, and later imports add the ISBNs of other editions. Edit them in the
+page under *ISBN(s)* (comma separated; hyphens and ISBN-10s are fine, they are stored as ISBN-13). The same
+ISBN may be on several books, e.g. each book of a boxed set. Searching the library for an ISBN, typed any
+way, finds the books that carry it.
 
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
@@ -148,7 +158,9 @@ already present if any of these match, strongest first:
    finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
 
 When a match has no `id` yet, the Audible ASIN is filled in (and likewise dates read, when it has none), so later imports keep matching even
-after more edits. New books get the series spelling already in use. If Audible lists a book under
+after more edits. ISBNs the match does not have yet are added to its `isbn` list (another edition), never replacing any.
+ISBNs are *not* used to decide that two books are the same, because one ISBN can belong to several books (a boxed set):
+an incoming book whose ISBN is already on another book is still added if nothing else matches. New books get the series spelling already in use. If Audible lists a book under
 several series, a parent series wins over its sub-series (`Thornmere` over `Thornmere: Wardens`);
 otherwise the first is used and the book is flagged in the import output.
 
