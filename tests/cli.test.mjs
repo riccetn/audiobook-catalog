@@ -103,6 +103,12 @@ test('import-goodreads adds read audiobooks', t => {
   assert.match(out, /Goodreads: 1 finished books read from goodreads.csv/);
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')),
     [{ t: 'Kept', a: 'Ann', n: 'Nate Narrator', s: 'Series', sn: '2', g: ['fantasy'] }]);
+
+  // a later export with a date read fills it in on the book already there
+  fs.writeFileSync(csv, 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
+    + '"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,fantasy,2024/03/15\n');
+  assert.match(run('import-goodreads', csv).out, /dates read filled in on existing books: 1/);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].r, ['2024-03-15']);
 });
 
 test('an import that would leave invalid data writes nothing', t => {

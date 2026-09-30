@@ -103,6 +103,22 @@ test('validation: warnings for lookalike series, leftover markup, odd numbers, u
   assert.deepEqual(C.validate([{ t: 'Fine', a: 'A. B. Quill', n: 'R. T. Hale' }], {}).warnings, []);
 });
 
+test('dates read: full, month-only and year-only dates, in order', () => {
+  const cases = {
+    '2024-03-15': '2024-03-15', '2024/3/5': '2024-03-05', ' 2024-03 ': '2024-03', '2024': '2024',
+    '2024-02-29': '2024-02-29', '2023-02-29': null, '2024-13': null, '2024-00-10': null, '15/03/2024': null, '': null,
+  };
+  for (const [raw, expected] of Object.entries(cases)) assert.equal(C.parseReadDate(raw), expected, raw);
+  assert.deepEqual(C.parseReadDates('2025-01-02, 2021, 2025/1/2; nope'), { dates: ['2021', '2025-01-02'], bad: ['nope'] });
+  assert.deepEqual(C.parseReadDates('  '), { dates: [], bad: [] });
+
+  assert.deepEqual(C.validate([{ t: 'A', a: 'B', r: ['2021', '2024-03', '2025-01-02'] }], {}), { errors: [], warnings: [] });
+  for (const r of [[], '2024-01-01', ['2024/01/01'], ['2023-02-29'], [2024]]) {
+    assert.ok(C.validate([{ t: 'A', a: 'B', r }], {}).errors.some(e => e.includes("'r' must be")), JSON.stringify(r));
+  }
+  assert.ok(C.validate([{ t: 'A', a: 'B', r: ['2025-01-01', '2024-01-01'] }], {}).warnings.some(w => w.includes('not in order')));
+});
+
 // -------------------------------------------------------------------- CSV
 test('CSV: BOM, quotes, doubled quotes, newlines in quotes, CRLF, short rows', () => {
   const rows = C.parseCsv('\ufeffa,b,c\r\n1,"x, ""y""","multi\nline"\r\n\r\n2,plain\n3,mid"quote,\n');
@@ -168,7 +184,7 @@ test('Audible export: BOM, quoted newlines and counts', () => {
 });
 
 // --------------------------------------------------------------- Goodreads
-const GR_HEADER = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n';
+const GR_HEADER = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n';
 
 test('Goodreads series formats', () => {
   const cases = {
@@ -184,12 +200,12 @@ test('Goodreads series formats', () => {
 
 test('Goodreads export: only read audio editions, with tidy names', () => {
   const result = C.readGoodreads(GR_HEADER
-    + '"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,"urban-fantasy, witches"\n'
+    + '"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,"urban-fantasy, witches",2024/03/15\n'
     + 'Paperback,Bob,,Paperback,read,\n'
     + 'Unread audio,Cy,,Audiobook,to-read,\n'
     + 'Some Book,A.B.  Quill,R.T. Hale,Audiobook,read,\n');
   assert.deepEqual(result.records, [
-    { t: 'Kept', a: 'Ann', n: 'Nate Narrator', s: 'Series', sn: '2', g: ['urban-fantasy', 'witches'] },
+    { t: 'Kept', a: 'Ann', n: 'Nate Narrator', s: 'Series', sn: '2', g: ['urban-fantasy', 'witches'], r: ['2024-03-15'] },
     { t: 'Some Book', a: 'A. B. Quill', n: 'R. T. Hale' },
   ]);
   assert.equal(result.skippedUnfinished, 1);
@@ -212,6 +228,14 @@ test('merge: hand edits win but a missing id is filled in', () => {
     { s: 'A Crown of Embers Series', sn: '5', g: ['Theirs'], id: 'B5' })]);
   assert.deepEqual(existing, [{ t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', g: ['Mine'], id: 'B5' }]);
   assert.equal(report.backfilled.length, 1);
+});
+
+test('merge: dates read are filled in on books without any, never replaced', () => {
+  const existing = [book('Dated', 'Author', { r: ['2020-01-01'] }), book('Undated')];
+  const report = C.merge(existing, [book('Dated', 'Author', { r: ['2024-03-15'] }), book('Undated', 'Author', { r: ['2024-04-01'] })]);
+  assert.deepEqual(existing.map(b => b.r), [['2020-01-01'], ['2024-04-01']]);
+  assert.deepEqual([report.datesFilled.length, report.added.length], [1, 0]);
+  assert.equal(C.merge(existing, [book('Undated', 'Author', { r: ['2025-01-01'] })]).datesFilled.length, 0);
 });
 
 test('merge: ids, long titles, boxed sets, series spelling, exclusions, authors', () => {

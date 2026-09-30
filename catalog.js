@@ -10,7 +10,6 @@ const path = require('node:path');
 const C = require('./importers.js');
 
 const ROOT = __dirname;
-const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id'];
 const DATA_DIR_ENV = 'CATALOG_DATA_DIR';
 
 // ------------------------------------------------------------------ data location
@@ -93,6 +92,7 @@ function runImport(args, io, read, label){
   io.out(`${label}: ${result.records.length} finished books read from ${path.basename(args.file)}`);
   io.out(`  already in the catalogue: ${report.matched}`);
   if(report.backfilled.length) io.out(`  Audible ids filled in on existing books: ${report.backfilled.length}`);
+  if(report.datesFilled.length) io.out(`  dates read filled in on existing books: ${report.datesFilled.length}`);
   if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
   io.out(`  new: ${report.added.length}`);
   preview(report.added, io);
