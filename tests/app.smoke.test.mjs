@@ -108,15 +108,17 @@ test('search narrows the library view', async () => {
   assert.match(els.results.innerHTML, /No books match/);
 });
 
-test('editing a book keeps its Audible and Goodreads ids', async () => {
+test('editing a book keeps its editions', async () => {
   const { ctx, els, get, run } = await boot();
-  run("DATA[0].id = 'TESTASIN01'; DATA[0].gr = '4242'");
+  run("DATA[0].e = [{id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642}, {id: 'TESTASIN02'}]");
   ctx.setView('library');
   ctx.openEditForm(0);
   assert.equal(els.formTitle.textContent, 'Edit book');
+  assert.equal(els.f_e.value, 'ASIN TESTASIN01; Goodreads 4242; Publisher Gull Audio; Length 10h 42m\nASIN TESTASIN02');
   els.f_t.value = 'Renamed In The App';
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-  assert.deepEqual(get('({t: DATA[0].t, id: DATA[0].id, gr: DATA[0].gr})'), { t: 'Renamed In The App', id: 'TESTASIN01', gr: '4242' });
+  assert.deepEqual(get('({t: DATA[0].t, e: DATA[0].e})'),
+    { t: 'Renamed In The App', e: [{ id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642 }, { id: 'TESTASIN02' }] });
 });
 
 test('adding a book appends it', async () => {
@@ -179,6 +181,7 @@ test('dates read: shown on the card, edited in the form, and filterable by year'
 });
 
 test('ISBNs: shown on the card, searchable however typed, edited in the form', async () => {
+  // written before editions: read as the book's first edition
   const mine = JSON.stringify([{ t: 'Boxed One', a: 'Ann Vale', isbn: ['9780306406157'] }, { t: 'Other', a: 'Ann Vale' }]);
   const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
   ctx.setView('library');
@@ -191,30 +194,54 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
   els.q.value = '';
 
   ctx.openEditForm(0);
-  assert.equal(els.f_isbn.value, '9780306406157');
-  els.f_isbn.value = '9780306406157, 978-0-00-000000-2';
+  assert.equal(els.f_e.value, 'ISBN 9780306406157');
+  els.f_e.value = 'ISBN 9780306406157, 978-0-00-000000-2';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.deepEqual(get('DATA[0].isbn'), ['9780306406157', '9780000000002']);
+  assert.deepEqual(get('DATA[0].e'), [{ isbn: ['9780306406157', '9780000000002'] }]);
 
-  // the same ISBN may go on another book (a boxed set)
+  // the same ISBN may go on another book (a boxed set); the cards then say so
   ctx.openEditForm(1);
-  els.f_isbn.value = '0306406152';
+  els.f_e.value = '0306406152';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.deepEqual(get('DATA[1].isbn'), ['9780306406157']);
+  assert.deepEqual(get('DATA[1].e'), [{ isbn: ['9780306406157'] }]);
+  assert.match(els.results.innerHTML, /Also in this edition: Boxed One/);
 
   // a mistyped ISBN is refused with a message, and nothing changes
   ctx.openEditForm(1);
-  els.f_isbn.value = '9780306406158';
+  els.f_e.value = 'ISBN 9780306406158';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.match(els.formError.textContent, /Not an ISBN: 9780306406158/);
-  assert.deepEqual(get('DATA[1].isbn'), ['9780306406157']);
-  els.f_isbn.value = '';
+  assert.match(els.formError.textContent, /Not understood in editions: ISBN 9780306406158/);
+  assert.deepEqual(get('DATA[1].e'), [{ isbn: ['9780306406157'] }]);
+  els.f_e.value = 'Publisher Only';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.equal(get("'isbn' in DATA[1]"), false);
+  assert.match(els.formError.textContent, /edition #1: needs an Audible ASIN/);
+  els.f_e.value = '';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(get("'e' in DATA[1]"), false);
 });
 
-test('a Goodreads import adds the ISBNs of other editions to books already there', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', isbn: ['9780000000002'], r: ['2020'] }]);
+test('box sets: the edition shows on each of its books, and editing it on one edits it on all', async () => {
+  const { ctx, els, get } = await boot();
+  ctx.setView('library');
+  const two = demoBooks.findIndex(b => b.t === 'The Copper Graft'), three = demoBooks.findIndex(b => b.t === 'Harvest of Gears');
+  assert.ok(two >= 0 && three >= 0, 'the demo data has a box set');
+  assert.match(els.results.innerHTML, /ASIN SAMPLE0008; ISBN 9780306406157; Publisher Kestrel Row Audio; Released 2022-11; Length 23h 5m/);
+  assert.match(els.results.innerHTML, /Also in this edition: Harvest of Gears #3/);
+  assert.match(els.results.innerHTML, /Also in this edition: The Copper Graft #2/);
+  els.q.value = 'kestrel row';
+  ctx.render();
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 2, 'search finds a publisher');
+  els.q.value = '';
+
+  ctx.openEditForm(two);
+  els.f_e.value = els.f_e.value.replace('Kestrel Row Audio', 'Merlin Lane Audio');
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(get(`DATA[${three}].e[0].p`), 'Merlin Lane Audio');
+  assert.match(els.ioStatus.textContent, /Also updated the shared edition on 1 other book/);
+});
+
+test('a Goodreads import adds the ISBNs to the edition of books already there', async () => {
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ isbn: ['9780000000002'] }], r: ['2020'] }]);
   const { els, get } = await boot({ files: { 'data/books.json': mine } });
   const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
     + 'Old Favourite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
@@ -223,7 +250,7 @@ test('a Goodreads import adds the ISBNs of other editions to books already there
   assert.match(els.importPreviewBody.innerHTML, /ISBNs added to existing books: 1/);
   assert.equal(els.importConfirm.textContent, 'Save ISBNs');
   els.importConfirm.listeners.click[0]();
-  assert.deepEqual(get('DATA[0].isbn'), ['9780000000002', '9780306406157']);
+  assert.deepEqual(get('DATA[0].e'), [{ isbn: ['9780000000002', '9780306406157'] }]);
   assert.match(els.ioStatus.textContent, /added ISBNs to 1 book/);
 });
 
@@ -289,8 +316,8 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   els.importConfirm.listeners.click[0]();
   assert.ok(!els.importPreview.classList.contains('open'));
   assert.deepEqual(get('DATA'), [
-    { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', id: 'B5' },
-    { t: 'A Crown of Embers 6: Ashfall', a: 'Ilse Marlowe', n: 'A. B. Quill', s: 'A Crown of Embers', sn: '6', id: 'B6' },
+    { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
+    { t: 'A Crown of Embers 6: Ashfall', a: 'Ilse Marlowe', n: 'A. B. Quill', s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6' }] },
   ]);
   assert.match(els.ioStatus.textContent, /Added 1 book, filled in 1 Audible id/);
 
@@ -316,7 +343,7 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 });
 
 test('a Goodreads import fills in dates read on books that have none', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', id: 'B1' }]);
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B1' }] }]);
   const { els, get } = await boot({ files: { 'data/books.json': mine } });
   const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
     + 'Old Favourite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
@@ -325,7 +352,7 @@ test('a Goodreads import fills in dates read on books that have none', async () 
   assert.match(els.importPreviewBody.innerHTML, /Dates read filled in on existing books: 1/);
   assert.equal(els.importConfirm.textContent, 'Save dates read');
   els.importConfirm.listeners.click[0]();
-  assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: 'Ann Vale', id: 'B1', r: ['2023-11-04'] }]);
+  assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B1' }], r: ['2023-11-04'] }]);
   assert.match(els.ioStatus.textContent, /filled in dates read on 1 book/);
 });
 

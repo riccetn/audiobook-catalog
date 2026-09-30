@@ -73,7 +73,8 @@
       <div><label>Date(s) read, comma separated</label><input id="f_r" placeholder="e.g. 2024-03-15, 2026-01"></div>
       <div class="formrow-btn"><button type="button" id="readTodayBtn" title="Add today's date">+ Read today</button></div>
     </div>
-    <div><label>ISBN(s), comma separated: one per edition</label><input id="f_isbn" placeholder="e.g. 978-0-00-000000-2"></div>
+    <div><label>Editions, one per line: ASIN, Goodreads id, ISBN(s), publisher, release date, length (a box set: the same edition on each of its books)</label>
+      <textarea id="f_e" rows="3" placeholder="e.g. ASIN B0SAMPLE01; Goodreads 4242; ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m"></textarea></div>
     <p id="formError" class="formError"></p>
     <div class="formbtns">
       <button type="submit" class="save" id="formSaveBtn">Add book</button>

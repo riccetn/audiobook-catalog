@@ -73,7 +73,9 @@ function matches(b, q, author, genre, read){
   if(read === UNDATED){ if(readDates(b).length) return false; }
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
-    const hay = [b.t,b.a,b.n,b.s,...(b.g||[]),...(Array.isArray(b.isbn) ? b.isbn : [])].filter(Boolean).join(' ').toLowerCase();
+    const editions = CatalogImport.bookEditions(b);
+    const hay = [b.t,b.a,b.n,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.p, ...(Array.isArray(ed.isbn) ? ed.isbn : [])])]
+      .filter(x=> typeof x === 'string').join(' ').toLowerCase();
     // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
     const isbn = CatalogImport.parseIsbn(q);
     if(!hay.includes(q.toLowerCase()) && !(isbn && CatalogImport.bookIsbns(b).includes(isbn))) return false;
@@ -129,6 +131,7 @@ function render(){
 
   const seriesNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
   let html = '';
+  SHARED = sharedEditions();
 
   if(filtered.length === 0){
     html = '<p class="empty">No books match. Try clearing a filter.</p>';
@@ -339,17 +342,40 @@ document.getElementById('seriesForm').addEventListener('submit', e=>{ e.preventD
 document.getElementById('seriesRemoveBtn').addEventListener('click', removeSeriesInfo);
 document.getElementById('cancelSeries').addEventListener('click', closeSeriesForm);
 
+// Edition object -> indexes of the other books it is also on (a box set), for the books being shown.
+let SHARED = new Map();
+
+function sharedEditions(){
+  const byKey = new Map();
+  const keys = ed=> [...['id','gr'].filter(k=> ed[k]).map(k=> k + ' ' + ed[k]), ...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
+  DATA.forEach((b,i)=> CatalogImport.bookEditions(b).forEach(ed=> keys(ed).forEach(k=>{
+    if(!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push([i, ed]);
+  })));
+  const shared = new Map();
+  DATA.forEach((b,i)=> CatalogImport.bookEditions(b).forEach(ed=>{
+    const others = new Set();
+    for(const k of keys(ed)) for(const [j, x] of byKey.get(k)) if(j !== i && CatalogImport.sameEdition(x, ed)) others.add(j);
+    if(others.size) shared.set(ed, [...others]);
+  }));
+  return shared;
+}
+
 function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
   const meta = [b.a, b.n ? 'narr. '+b.n : null].filter(Boolean).join(' \u2014 ');
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
   const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
-  const isbns = Array.isArray(b.isbn) && b.isbn.length ? `<div class="isbn">ISBN ${esc(b.isbn.join(', '))}</div>` : '';
+  const editions = CatalogImport.bookEditions(b).map(ed=>{
+    const also = (SHARED.get(ed) || []).map(k=> DATA[k].t + (DATA[k].sn ? ` #${DATA[k].sn}` : ''));
+    return `<div class="edition">${esc(CatalogImport.formatEdition(ed))}` +
+      (also.length ? `<br><span class="also">Also in this edition: ${esc(also.join(', '))}</span>` : '') + '</div>';
+  }).join('');
   return `<div class="book">${num}<div class="info">
     <div class="title">${esc(b.t)}</div>
     <div class="meta">${esc(meta)}</div>
     ${read}
-    ${isbns}
+    ${editions}
     ${genres ? `<div class="genres">${genres}</div>` : ''}
   </div><div class="book-actions">
     <button class="iconbtn edit" data-i="${b._i}" title="Edit" aria-label="Edit">&#9998;</button>
@@ -493,7 +519,8 @@ function previewImport(kind, text, fileName){
   const importer = IMPORTERS[kind];
   const result = importer.read(text);
   const {report, errors} = mergeIntoCopy(result.records);
-  const changes = report.added.length + report.backfilled.length + report.goodreadsFilled.length + report.datesFilled.length + report.isbnsFilled.length;
+  const changes = report.added.length + report.backfilled.length + report.goodreadsFilled.length + report.datesFilled.length +
+    report.isbnsFilled.length + report.detailsFilled.length + report.editionsAdded.length;
   PENDING_IMPORT = errors.length || !changes ? null : result.records;
 
   const li = rec => {
@@ -507,6 +534,8 @@ function previewImport(kind, text, fileName){
   if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
   if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
   if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
+  if(report.detailsFilled.length) html += `<p>Publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
+  if(report.editionsAdded.length) html += `<p>Other editions added to existing books: ${report.editionsAdded.length}</p>`;
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
   html += `<p>New: ${report.added.length}</p>`;
   if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
@@ -525,7 +554,8 @@ function previewImport(kind, text, fileName){
   confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
   confirmBtn.textContent = report.added.length
     ? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
-    : report.backfilled.length ? 'Save Audible ids' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read' : 'Save ISBNs';
+    : report.backfilled.length ? 'Save Audible ids' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
+    : report.editionsAdded.length ? 'Save editions' : report.isbnsFilled.length ? 'Save ISBNs' : 'Save edition details';
   document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
   document.getElementById('importPreview').classList.add('open');
 }
@@ -538,6 +568,7 @@ function applyImport(){
   if(errors.length){ showIoStatus('The catalogue changed and the import no longer validates; nothing was added.', true); return; }
   const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
   const withIsbns = report.isbnsFilled.length, withGr = report.goodreadsFilled.length;
+  const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
   DATA = data;
   populateFilters(); render(); persist();
   showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
@@ -545,6 +576,8 @@ function applyImport(){
     (withGr ? `, filled in ${withGr} Goodreads id${withGr === 1 ? '' : 's'}` : '') +
     (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
     (withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
+    (withEditions ? `, added editions to ${withEditions} book${withEditions === 1 ? '' : 's'}` : '') +
+    (withDetails ? `, filled in edition details on ${withDetails} book${withDetails === 1 ? '' : 's'}` : '') +
     '.' + keepHint('data/books.json'));
 }
 
@@ -639,7 +672,7 @@ function openEditForm(i){
   document.getElementById('f_s').value = b.s || '';
   document.getElementById('f_sn').value = b.sn || '';
   document.getElementById('f_r').value = readDates(b).join(', ');
-  document.getElementById('f_isbn').value = Array.isArray(b.isbn) ? b.isbn.join(', ') : '';
+  document.getElementById('f_e').value = CatalogImport.bookEditions(b).map(CatalogImport.formatEdition).join('\n');
   document.getElementById('formError').textContent = '';
   document.getElementById('formTitle').textContent = 'Edit book';
   document.getElementById('formSaveBtn').textContent = 'Save changes';
@@ -666,25 +699,23 @@ document.getElementById('addForm').addEventListener('submit', e=>{
     return;
   }
   if(dates.length) b.r = dates;
-  const {isbns, bad: badIsbns} = CatalogImport.parseIsbns(document.getElementById('f_isbn').value);
-  if(badIsbns.length){
-    document.getElementById('formError').textContent =
-      `Not an ISBN: ${badIsbns.join(', ')}. Check the digits; hyphens and ISBN-10s are fine.`;
+  const {editions, bad: badParts} = CatalogImport.parseEditions(document.getElementById('f_e').value);
+  // "book #0 ('Title') edition #2: needs an ..." -> "edition #2: needs an ..."
+  const problems = (editions.length ? CatalogImport.validate([{t: b.t, a: b.a, e: editions}], {}).errors : [])
+    .map(e=> e.includes(' edition #') ? e.slice(e.indexOf(' edition #') + 1) : e);
+  if(badParts.length || problems.length){
+    document.getElementById('formError').textContent = badParts.length
+      ? `Not understood in editions: ${badParts.join('; ')}. Write e.g. "ASIN B0…; Goodreads 4242; ISBN 978…; Publisher …; Released 2021-05; Length 10h 42m", one edition per line.`
+      : problems.join('; ');
     return;
   }
-  if(isbns.length) b.isbn = isbns;
+  if(editions.length) b.e = editions;
 
-  if(EDIT_INDEX !== null){
-    const prev = DATA[EDIT_INDEX];
-    // keep the Audible ASIN and Goodreads id so re-imports still match this book
-    if(prev && prev.id) b.id = prev.id;
-    if(prev && prev.gr) b.gr = prev.gr;
-    DATA[EDIT_INDEX] = b;
-  } else {
-    DATA.push(b);
-  }
+  // editing an edition a box set shares with other books edits it there too
+  const others = CatalogImport.saveBook(DATA, EDIT_INDEX, b);
   populateFilters(); render(); persist();
   closeForm();
+  if(others) showIoStatus(`Also updated the shared edition on ${others} other book${others === 1 ? '' : 's'}.`);
 });
 
 async function fetchText(url){

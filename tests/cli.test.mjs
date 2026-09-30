@@ -88,8 +88,8 @@ test('import-audible previews with --dry-run, then adds, fills in ids and honour
 
   assert.equal(run('import-audible', csv).code, 0);
   assert.deepEqual(loadBooks(books), [
-    { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', id: 'B5' },
-    { t: 'Ashfall', a: 'Ilse Marlowe', n: 'A. B. Quill', s: 'A Crown of Embers', sn: '6', id: 'B6' },
+    { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
+    { t: 'Ashfall', a: 'Ilse Marlowe', n: 'A. B. Quill', s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6' }] },
   ]);
   assert.match(run('import-audible', csv).out, /new: 0/);
 });
@@ -117,7 +117,7 @@ test('import-goodreads adds read audiobooks', t => {
   fs.writeFileSync(csv, 'Book Id,Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n'
     + '4242,"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,fantasy\n');
   assert.match(run('import-goodreads', csv).out, /Goodreads ids filled in on existing books: 1/);
-  assert.equal(loadBooks(path.join(tmp, 'data', 'books.json'))[0].gr, '4242');
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ gr: '4242' }]);
 });
 
 // The columns of a real Audible Library Extractor CSV export.
@@ -139,14 +139,40 @@ test('imports store ISBNs, add other editions\' ISBNs, and skip ISBNs in exclude
   let { code, out } = run('import-audible', csv);
   assert.equal(code, 0);
   assert.match(out, /skipped \(listed in data\/excluded.txt\): 1/);
-  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [{ t: 'Kept', a: 'Ann', id: 'B1', isbn: ['9780306406157'] }]);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [{ t: 'Kept', a: 'Ann', e: [{ id: 'B1', isbn: ['9780306406157'] }] }]);
 
   const gr = path.join(tmp, 'goodreads.csv');
   fs.writeFileSync(gr, 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf\n'
     + 'Kept,Ann,"=""""","=""9780000000002""",Audible Audio,read\n');
   ({ code, out } = run('import-goodreads', gr));
   assert.match(out, /ISBNs added to existing books: 1/);
-  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].isbn, ['9780306406157', '9780000000002']);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ id: 'B1', isbn: ['9780306406157', '9780000000002'] }]);
+});
+
+test('imports keep editions: publisher, release date and length, and another ASIN as another edition', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, ALE_COLUMNS.join(',') + '\n'
+    + row({ Title: 'Kept', Authors: 'Ann', Progress: 'Finished', ASIN: 'B1', Publishers: 'Gull Audio', 'Release Date': '2021-05-04', Length: '10 hrs and 42 mins' }));
+  assert.equal(run('import-audible', csv).code, 0);
+  fs.writeFileSync(csv, ALE_COLUMNS.join(',') + '\n' + row({ Title: 'Kept', Authors: 'Ann', Progress: 'Finished', ASIN: 'B1UK' }));
+  assert.match(run('import-audible', csv).out, /other editions added to existing books: 1/);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')),
+    [{ t: 'Kept', a: 'Ann', e: [{ id: 'B1', p: 'Gull Audio', d: '2021-05-04', len: 642 }, { id: 'B1UK' }] }]);
+});
+
+test('books from before editions validate, and format rewrites them with editions', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const booksPath = path.join(tmp, 'data', 'books.json');
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Old', a: 'Ann', id: 'B1', gr: '7', isbn: ['9780306406157'] }]));
+  const { code, out } = run('validate');
+  assert.equal(code, 0);
+  assert.match(out, /from before editions/);
+  assert.equal(run('format').code, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')), [{ t: 'Old', a: 'Ann', e: [{ id: 'B1', gr: '7', isbn: ['9780306406157'] }] }]);
+  assert.doesNotMatch(run('validate').out, /from before editions/);
 });
 
 test('an import that would leave invalid data writes nothing', t => {

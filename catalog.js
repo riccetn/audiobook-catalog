@@ -114,6 +114,8 @@ function runImport(args, io, read, label){
   if(report.goodreadsFilled.length) io.out(`  Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}`);
   if(report.datesFilled.length) io.out(`  dates read filled in on existing books: ${report.datesFilled.length}`);
   if(report.isbnsFilled.length) io.out(`  ISBNs added to existing books: ${report.isbnsFilled.length}`);
+  if(report.detailsFilled.length) io.out(`  publisher, release date or length filled in on existing books: ${report.detailsFilled.length}`);
+  if(report.editionsAdded.length) io.out(`  other editions added to existing books: ${report.editionsAdded.length}`);
   if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
   io.out(`  new: ${report.added.length}`);
   preview(report.added, io);
@@ -139,8 +141,13 @@ function runImport(args, io, read, label){
 function cmdValidate(args, io){
   const [booksPath, infoPath] = paths(args);
   if(isDemo(args.root, args.data)) io.out(DEMO_NOTE);
-  const books = loadBooks(booksPath), info = loadSeriesInfo(infoPath);
+  const raw = JSON.parse(readText(booksPath));
+  const books = C.fixBooks(raw), info = loadSeriesInfo(infoPath);
   const {errors, warnings} = C.validate(books, info);
+  if(Array.isArray(raw) && raw.some(b => b && typeof b === 'object' && ['id', 'gr', 'isbn'].some(k => k in b))){
+    io.out('note: some books keep their ids and ISBNs from before editions; they are read as editions, ' +
+      'and `make format` (or any save) writes them that way');
+  }
   for(const w of warnings) io.out('warning: ' + w);
   for(const e of errors) io.out('error: ' + e);
   const series = new Set(Array.isArray(books) ? books.filter(b => b && b.s).map(b => b.s) : []);
@@ -174,13 +181,13 @@ function cmdInit(args, io){
   return 0;
 }
 
-/** Rewrite data/*.json in the canonical layout (one book per line, series-info sorted). */
+/** Rewrite data/*.json the way the tools write them: in the current format (with editions), as compact JSON. */
 function cmdFormat(args, io){
   if(!requireOwnData(args, io)) return 2;
   const [booksPath, infoPath] = paths(args);
   dumpBooks(loadBooks(booksPath), booksPath);
   dumpSeriesInfo(loadSeriesInfo(infoPath), infoPath);
-  io.out('data files rewritten in canonical layout');
+  io.out('data files rewritten in the current format');
   return 0;
 }
 
@@ -397,7 +404,7 @@ const COMMANDS = {
     help: 'add audiobooks from a Goodreads library export CSV'},
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
-  'format': {run: cmdFormat, help: 'rewrite data/*.json in the canonical layout'},
+  'format': {run: cmdFormat, help: 'rewrite data/*.json in the current format (e.g. old ids and ISBNs as editions)'},
   'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt)'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},
 };

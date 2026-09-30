@@ -14,7 +14,7 @@ validate:        ## check data/ for errors and suspicious entries
 serve:           ## open the app at http://localhost:8000/; edits in the page are saved to data/
 	$(NODE) catalog.js serve
 
-format:          ## rewrite data/*.json in the canonical layout
+format:          ## rewrite data/*.json in the current format (old ids and ISBNs as editions)
 	$(NODE) catalog.js format
 
 init:            ## create your own (git-ignored) data files, empty
