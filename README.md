@@ -96,10 +96,12 @@ node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json
 ```
 
 It refuses files that are not valid catalogue exports and prints what changed before writing.
-An export holds both the books and the series info (`{"books": [...], "seriesInfo": {...}}`), so
-`sync-export` updates `data/series-info.json` too; backups from before series info was exported (a
-plain list of books) still work and leave `data/series-info.json` as it is. The app's **Import**
-reads both kinds the same way.
+An export holds the books, the series info and the list of books imports must skip
+(`{"books": [...], "seriesInfo": {...}, "excluded": [...]}`), so `sync-export` updates
+`data/series-info.json` too and adds any new entries to `data/excluded.txt` (it never removes one).
+Backups from before series info was exported (a plain list of books), or before the exclusions were,
+still work and leave those files as they are. The app's **Import** reads all of them the same way,
+adding the backup's exclusions to the ones it already has.
 You can also edit `data/books.json` by hand; `make format` restores the one-book-per-line layout.
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
@@ -108,8 +110,13 @@ the author site, or to add or remove that info. The form checks the same rules a
 Like book edits, the change is saved to `data/series-info.json`. Or edit
 `data/series-info.json` by hand, then `make validate`.
 
-**Remove a book for good**: delete it from `data/books.json` *and* add its ASIN (or `Title | Author`
-for books without one) to `data/excluded.txt`, otherwise the next import brings it back.
+**Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
+the import exclusion list, `data/excluded.txt`, as its ASIN (if it has one) and as `Title | Author`
+(Goodreads exports have no ASINs), so no later Audible or Goodreads import brings it back. With
+`make serve` that is saved to `data/excluded.txt` along with the removal; otherwise it goes into
+**Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN or
+`Title | Author` to `data/excluded.txt` yourself. To let an import add a book again, delete its lines
+from `data/excluded.txt`.
 
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
@@ -155,7 +162,8 @@ holds your personal data). Any static web server pointed at the project root wor
 
 `make serve` also saves: every edit in the page (books, series info, CSV imports, **Import** of a
 backup) is sent to the server, which checks it like `sync-export` does (the same validation and
-tidying) and writes `data/books.json` and `data/series-info.json`. It only accepts saves from the page
+tidying) and writes `data/books.json` and `data/series-info.json`, and adds books removed in the page
+to `data/excluded.txt` (that file is only ever added to). It only accepts saves from the page
 it serves, only to your own `data/books.json` (never the demo), and refuses a save if either file changed
 on disk since the page loaded it (an import, a `sync-export`, a hand edit), so it never overwrites
 those; reload the page to pick them up. A refused or failed save (for example with the server stopped)
@@ -163,7 +171,7 @@ says so under the buttons.
 
 Until the disk has them, edits also live in that browser's `localStorage`, and with any other static
 server they only live there: use **Export** and `sync-export`. **Export / Import** JSON also make real
-backups (books and series info). Local edits are tagged with a fingerprint of the `books.json` and
+backups (books, series info and the import exclusion list). Local edits are tagged with a fingerprint of the `books.json` and
 `series-info.json` they were made against. When either changes, older local edits are **set aside**
 (kept under the `audiobook-catalog-data.backup` key) instead of silently hiding your new data; if they
 still match on the next load, `make serve` saves them then.

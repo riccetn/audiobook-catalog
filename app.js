@@ -11,6 +11,7 @@ let VIEW = 'series';           // 'series' | 'library'
 let SERIES_FILTER = null;      // series name, '__standalone__', or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
 let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
+let NEW_EXCLUDED = [];         // entries added to EXCLUSIONS in the page that data/excluded.txt does not have yet
 let PENDING_IMPORT = null;     // records of a previewed CSV import awaiting confirmation
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
 let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
@@ -147,9 +148,11 @@ function render(){
       const el = e.currentTarget;
       const i = parseInt(el.dataset.i,10);
       if(el.dataset.confirm === '1'){
-        DATA.splice(i,1);
+        const [removed] = DATA.splice(i,1);
+        addExclusions(CatalogImport.exclusionEntries(removed));   // so the next import does not bring it back
         if(EDIT_INDEX === i){ closeForm(); }
         populateFilters(); render(); persist();
+        showIoStatus(`Removed ${removed.t}; imports will skip it.` + keepHint('data/books.json and data/excluded.txt'));
       } else {
         el.dataset.confirm = '1';
         el.innerHTML = '&check;';
@@ -334,7 +337,16 @@ function persist(){
 }
 
 function saveLocally(){
-  try{ localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO})); }catch(e){}
+  try{
+    localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO, excluded: NEW_EXCLUDED}));
+  }catch(e){}
+}
+
+// Add entries (an ASIN, or "Title | Author") to the books imports skip; returns how many were new.
+function addExclusions(entries){
+  const added = entries.map(e=> EXCLUSIONS.add(e)).filter(Boolean);
+  NEW_EXCLUDED.push(...added);
+  return added.length;
 }
 
 // The end of a status message about an edit: how to get it into the data file, unless that happens anyway.
@@ -347,10 +359,11 @@ async function saveToDisk(){
   SAVING = true;
   SAVE_AGAIN = false;
   let res, body;
+  const excluded = NEW_EXCLUDED.slice();
   try{
     res = await fetch('api/save', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, base: BASELINE, infoBase: INFO_BASELINE}),
+      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, excluded, base: BASELINE, infoBase: INFO_BASELINE}),
     });
     body = await res.json();
   }catch(e){
@@ -368,6 +381,7 @@ async function saveToDisk(){
   }
   BASELINE = body.base;
   INFO_BASELINE = body.infoBase;
+  NEW_EXCLUDED = NEW_EXCLUDED.slice(excluded.length);   // data/excluded.txt has those now
   if(SAVE_AGAIN){ saveLocally(); saveToDisk(); return; }
   // the disk has everything now (tidied the way sync-export tidies); the browser copy is no longer needed
   if(JSON.stringify(body.books) !== JSON.stringify(DATA)){ DATA = body.books; populateFilters(); render(); }
@@ -393,7 +407,8 @@ function showIoStatus(msg, isErr){
 }
 
 function exportBackup(){
-  const blob = new Blob([JSON.stringify({books: DATA, seriesInfo: SERIES_INFO}, null, 2)], {type:'application/json'});
+  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries};
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -409,13 +424,15 @@ function importBackup(file){
   const reader = new FileReader();
   reader.onload = e=>{
     try{
-      const {books, seriesInfo} = CatalogImport.readBackup(JSON.parse(e.target.result));
+      const {books, seriesInfo, excluded} = CatalogImport.readBackup(JSON.parse(e.target.result));
       const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
       if(bad) throw new Error('missing title/author');
       DATA = books;
       if(seriesInfo) SERIES_INFO = seriesInfo;     // older backups have no series info: keep the current one
+      const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
       populateFilters(); render(); persist();
-      showIoStatus(`Imported ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series.` : '.'));
+      showIoStatus(`Imported ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series` : '') +
+        (newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
     }catch(err){
       showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
     }
@@ -655,6 +672,7 @@ function restoreLocalEdits(){
     if(saved && saved.base === BASELINE && Array.isArray(saved.data) && (!hasInfo || saved.infoBase === INFO_BASELINE)){
       DATA = CatalogImport.fixBooks(saved.data);
       if(hasInfo) SERIES_INFO = saved.info;
+      if(Array.isArray(saved.excluded)) addExclusions(saved.excluded.filter(x=> typeof x === 'string'));
       return true;
     } else {
       localStorage.setItem(LS_KEY + '.backup', raw);

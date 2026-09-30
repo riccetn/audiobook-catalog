@@ -161,27 +161,55 @@ class Exclusions {
   constructor(ids, titles){
     this.ids = new Set(ids || []);
     this.titles = new Set((titles || []).map(([t, a]) => key(t, a)));   // [norm(title), firstAuthor(author)]
+    this.lines = new Map();   // key -> the entry as written in data/excluded.txt
+  }
+  /**
+   * Add one line of data/excluded.txt: an ASIN, or "Title | Author"; '#' starts a comment.
+   * Returns the entry as it should be written, or null for a blank line or one already covered.
+   */
+  add(line){
+    line = tidyText(String(line).split('#')[0]);
+    if(!line) return null;
+    const bar = line.indexOf('|');
+    if(bar < 0){
+      if(this.ids.has(line)) return null;
+      this.ids.add(line);
+      this.lines.set(key('id', line), line);
+      return line;
+    }
+    const title = line.slice(0, bar).trim(), author = line.slice(bar + 1).trim();
+    const k = key(norm(title), firstAuthor(author));
+    if(this.titles.has(k)) return null;
+    this.titles.add(k);
+    this.lines.set(k, line = `${title} | ${author}`);
+    return line;
   }
   covers(rec){
     return this.ids.has(rec.id) || this.titles.has(key(norm(rec.t), firstAuthor(rec.a)));
   }
+  /** The entries, one per line as in data/excluded.txt, without comments. */
+  get entries(){ return [...this.lines.values()]; }
   get size(){ return this.ids.size + this.titles.size; }
 }
 
 /** Parse the text of data/excluded.txt: an ASIN, or "Title | Author", per line; '#' starts a comment. */
 function parseExclusions(text){
   const ex = new Exclusions();
-  for(let line of (text || '').split(/\r\n|\r|\n/)){
-    line = line.split('#')[0].trim();
-    if(!line) continue;
-    const bar = line.indexOf('|');
-    if(bar >= 0){
-      ex.titles.add(key(norm(line.slice(0, bar).trim()), firstAuthor(line.slice(bar + 1).trim())));
-    } else {
-      ex.ids.add(line);
-    }
-  }
+  for(const line of (text || '').split(/\r\n|\r|\n/)) ex.add(line);
   return ex;
+}
+
+/**
+ * The data/excluded.txt entries that keep a removed book out of later imports: its ASIN, if it has
+ * one, and "Title | Author" (Goodreads has no ASINs). '#' and '|' would break the line, and matching
+ * ignores punctuation anyway, so they are dropped.
+ */
+function exclusionEntries(rec){
+  const clean = v => tidyText(String(v || '').replace(/[#|]/g, ' '));
+  const entries = [];
+  if(rec.id && clean(rec.id)) entries.push(clean(rec.id));
+  if(clean(rec.t) && clean(rec.a)) entries.push(`${clean(rec.t)} | ${clean(rec.a)}`);
+  return entries;
 }
 
 // Quote a value for a message, Python-repr style: 'Title', or "It's" when it contains a quote.
@@ -289,19 +317,22 @@ function validate(books, info){
 
 // ---------------------------------------------------------------------- backups
 /**
- * Read a backup exported from the page: {books: [...], seriesInfo: {...}}, or a plain array of
- * books from before series info was exported. Returns {books, seriesInfo}, where seriesInfo is
- * null for the old format (so callers leave their series info alone). Throws if it is neither.
+ * Read a backup exported from the page: {books: [...], seriesInfo: {...}, excluded: [...]}, or a
+ * plain array of books from before series info was exported. Returns {books, seriesInfo, excluded};
+ * seriesInfo and excluded (the data/excluded.txt entries) are null when the backup predates them,
+ * so callers leave theirs alone. Throws if it is neither.
  */
 function readBackup(data){
-  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null};
+  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null, excluded: null};
   if(data && typeof data === 'object' && Array.isArray(data.books)){
-    const info = data.seriesInfo;
-    if(info === undefined) return {books: fixBooks(data.books), seriesInfo: null};
-    if(info && typeof info === 'object' && !Array.isArray(info)) return {books: fixBooks(data.books), seriesInfo: info};
-    throw new Error('seriesInfo is not an object');
+    const {seriesInfo: info, excluded} = data;
+    if(info !== undefined && !(info && typeof info === 'object' && !Array.isArray(info))) throw new Error('seriesInfo is not an object');
+    if(excluded !== undefined && !(Array.isArray(excluded) && excluded.every(x => typeof x === 'string'))){
+      throw new Error('excluded is not a list of strings');
+    }
+    return {books: fixBooks(data.books), seriesInfo: info === undefined ? null : info, excluded: excluded === undefined ? null : excluded};
   }
-  throw new Error('expected a list of books or {books, seriesInfo}');
+  throw new Error('expected a list of books or {books, seriesInfo, excluded}');
 }
 
 // ------------------------------------------------------------------------ CSV
@@ -549,7 +580,7 @@ function merge(existing, incoming, exclusions){
 
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
-  Exclusions, parseExclusions, validate, readBackup, parseCsv,
+  Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, readGoodreads, merge,
 };

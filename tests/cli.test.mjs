@@ -198,6 +198,30 @@ test('sync-export restores series info from the backup', t => {
   assert.equal(fs.readFileSync(infoPath, 'utf8'), JSON.stringify(seriesInfo));
 });
 
+test('sync-export adds the backup\'s excluded books to excluded.txt', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const excludedPath = path.join(tmp, 'data', 'excluded.txt');
+  fs.appendFileSync(excludedPath, 'BOLD');                       // no newline at the end
+  const before = fs.readFileSync(excludedPath, 'utf8');
+  const exported = path.join(tmp, 'export.json');
+  fs.writeFileSync(exported, JSON.stringify({ books: [], seriesInfo: {}, excluded: ['BOLD', 'BNEW', 'Gone | Ann Vale'] }));
+
+  const dry = run('sync-export', exported, '--dry-run');
+  assert.match(dry.out, /excluded from imports: 2 new/);
+  assert.match(dry.out, /x Gone \| Ann Vale/);
+  assert.equal(fs.readFileSync(excludedPath, 'utf8'), before);
+
+  assert.equal(run('sync-export', exported).code, 0);
+  assert.equal(fs.readFileSync(excludedPath, 'utf8'), before + '\nBNEW\nGone | Ann Vale\n');
+  assert.match(run('sync-export', exported).out, /excluded from imports: 0 new/);
+
+  // and imports skip them from then on
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\nx,Gone,,Ann Vale,,Finished,B1\n');
+  assert.match(run('import-audible', csv).out, /skipped \(listed in data\/excluded.txt\): 1/);
+});
+
 test('sync-export of an older backup (a plain list of books) leaves series info alone', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init', '--sample').code, 0);
@@ -271,6 +295,18 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
   assert.equal(saved.base, fp(fs.readFileSync(booksPath, 'utf8')));
   assert.equal(saved.infoBase, fp(fs.readFileSync(infoPath, 'utf8')));
   assert.deepEqual(fs.readdirSync(path.join(tmp, 'data')).filter(f => f.endsWith('.tmp')), []);
+
+  // books removed in the page are added to excluded.txt, once
+  const excludedPath = path.join(tmp, 'data', 'excluded.txt');
+  fs.unlinkSync(excludedPath);
+  const excluded = await put({ books: saved.books, seriesInfo, excluded: ['BGONE', 'Gone | Ann'], base: saved.base, infoBase: saved.infoBase });
+  assert.equal(excluded.status, 200);
+  const excludedText = fs.readFileSync(excludedPath, 'utf8');
+  assert.match(excludedText, /^# Books that imports must never re-add/);
+  assert.ok(excludedText.endsWith('\nBGONE\nGone | Ann\n'));
+  assert.equal((await put({ books: saved.books, seriesInfo, excluded: ['gone | ann'], base: saved.base, infoBase: saved.infoBase })).status, 200);
+  assert.equal(fs.readFileSync(excludedPath, 'utf8'), excludedText);
+  assert.equal((await put({ books: saved.books, seriesInfo, excluded: 'BGONE', base: saved.base, infoBase: saved.infoBase })).status, 400);
 
   // a save based on an older version of the files is refused, and the files stay as they are
   const stale = await put({ books: [], seriesInfo: {}, base, infoBase });

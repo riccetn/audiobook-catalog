@@ -44,6 +44,23 @@ function loadExclusions(file){
   return fs.existsSync(file) ? C.parseExclusions(readText(file)) : C.parseExclusions('');
 }
 
+/**
+ * Entries of `entries` that data/excluded.txt does not cover yet, as they would be written there.
+ * The file is only ever added to: removing an entry stays a hand edit.
+ */
+function newExclusions(file, entries){
+  const ex = loadExclusions(file);
+  return (entries || []).map(e => ex.add(e)).filter(Boolean);
+}
+
+/** Append entries to data/excluded.txt, creating it (with its explanatory header) if needed. */
+function appendExclusions(file, lines){
+  if(!lines.length) return;
+  let text = fs.existsSync(file) ? readText(file) : EXCLUDED_HEADER;
+  if(text && !text.endsWith('\n')) text += '\n';
+  writeAtomic(file, text + lines.map(l => l + '\n').join(''));
+}
+
 // ---------------------------------------------------------------------- commands
 const DEMO_NOTE = 'note: no data/books.json found, so this is the bundled demo data (data/sample). ' +
   'Run `node catalog.js init` to start your own catalogue.';
@@ -191,13 +208,16 @@ function checkFromApp(newBooks, newInfo, oldInfo){
   return {books, tidied, blocking, errors};
 }
 
-/** Replace data/books.json (and data/series-info.json, if the backup has it) with a backup exported from the app. */
+/**
+ * Replace data/books.json (and data/series-info.json, if the backup has it) with a backup exported
+ * from the app, and add the backup's excluded books to data/excluded.txt.
+ */
 function cmdSyncExport(args, io){
   if(!requireOwnData(args, io)) return 2;
-  const [booksPath, infoPath] = paths(args);
-  let newBooks, newInfo;
+  const [booksPath, infoPath, excludedPath] = paths(args);
+  let newBooks, newInfo, excluded;
   try{
-    ({books: newBooks, seriesInfo: newInfo} = C.readBackup(JSON.parse(readText(args.file))));
+    ({books: newBooks, seriesInfo: newInfo, excluded} = C.readBackup(JSON.parse(readText(args.file))));
   }catch(exc){
     io.err(`cannot read ${args.file}: ${exc.message}`);
     return 1;
@@ -227,6 +247,11 @@ function cmdSyncExport(args, io){
   } else {
     io.out(`series info: not in this backup (older export), ${shown(infoPath, args.root)} left as is`);
   }
+  const addedExcluded = newExclusions(excludedPath, excluded);
+  if(excluded){
+    io.out(`excluded from imports: ${addedExcluded.length} new`);
+    for(const line of addedExcluded.slice(0, 10)) io.out(`    x ${line}`);
+  }
   if(args.dryRun){
     io.out('(dry run: nothing written)');
     return 0;
@@ -236,6 +261,10 @@ function cmdSyncExport(args, io){
   if(newInfo){
     dumpSeriesInfo(newInfo, infoPath);
     io.out(`wrote ${shown(infoPath, args.root)}`);
+  }
+  if(addedExcluded.length){
+    appendExclusions(excludedPath, addedExcluded);
+    io.out(`added to ${shown(excludedPath, args.root)}`);
   }
   const orphaned = errors.filter(e => e.startsWith('series-info'));
   if(orphaned.length) io.out('series-info needs attention:\n  ' + orphaned.join('\n  '));
@@ -277,13 +306,16 @@ function sameOrigin(req, port){
 
 /**
  * The page's saves: GET says whether saving is possible (only to your own data/books.json, never the
- * demo), PUT {books, seriesInfo, base, infoBase} writes both files. `base` and `infoBase` are the
+ * demo), PUT {books, seriesInfo, excluded, base, infoBase} writes both files, and adds the entries in
+ * `excluded` (books removed in the page) to data/excluded.txt. `base` and `infoBase` are the
  * fingerprints of the files the page's edits started from; if either file changed since (an import,
- * sync-export or a hand edit), the save is refused rather than overwriting that change.
+ * sync-export or a hand edit), the save is refused rather than overwriting that change. excluded.txt
+ * is only ever added to, so it needs no such check.
  */
 function handleSave(req, res, root, port){
   const dir = path.join(root, 'data');
   const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
+  const excludedPath = path.join(dir, 'excluded.txt');
   const writable = fs.existsSync(booksPath);
   if(req.method === 'GET'){ sendJson(res, 200, {writable}); return; }
   if(req.method !== 'PUT'){ sendJson(res, 405, {error: 'use GET or PUT'}); return; }
@@ -299,10 +331,10 @@ function handleSave(req, res, root, port){
   });
   req.on('end', () => {
     if(res.headersSent) return;
-    let body, books, seriesInfo;
+    let body, books, seriesInfo, excluded;
     try{
       body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      ({books, seriesInfo} = C.readBackup(body));
+      ({books, seriesInfo, excluded} = C.readBackup(body));
       if(!seriesInfo) throw new Error('seriesInfo missing');
     }catch(exc){ sendJson(res, 400, {error: `not a catalogue: ${exc.message}`}); return; }
 
@@ -318,6 +350,7 @@ function handleSave(req, res, root, port){
     try{
       if(newBooksText !== booksText) writeAtomic(booksPath, newBooksText);
       if(newInfoText !== infoText) writeAtomic(infoPath, newInfoText);
+      appendExclusions(excludedPath, newExclusions(excludedPath, excluded));
     }catch(exc){ sendJson(res, 500, {error: `could not write: ${exc.message}`}); return; }
     sendJson(res, 200, {base: C.fingerprint(newBooksText), infoBase: C.fingerprint(newInfoText), books: checked.books});
   });
@@ -361,7 +394,7 @@ const COMMANDS = {
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the canonical layout'},
-  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json'},
+  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt)'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},
 };
 
