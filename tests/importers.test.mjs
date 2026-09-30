@@ -62,6 +62,22 @@ test('exclusions accept ASINs and title | author pairs', () => {
   assert.equal(C.parseExclusions('').size, 0);
 });
 
+test('exclusions list their entries, and a removed book gets entries that keep it out', () => {
+  const ex = C.parseExclusions('# comment\nB012345678  # trailing note\nSome Title|Some Author\n');
+  assert.deepEqual(ex.entries, ['B012345678', 'Some Title | Some Author']);
+  // an entry already covered is not added twice, however it is spelled
+  assert.equal(ex.add('B012345678'), null);
+  assert.equal(ex.add('some title! | Some Author'), null);
+  assert.equal(ex.add('  New   Title | Ann  # why '), 'New Title | Ann');
+  assert.equal(ex.add('a\nb'), 'a b');     // never more than one line
+
+  assert.deepEqual(C.exclusionEntries({ t: 'Gone', a: 'Ann Vale', id: 'B9' }), ['B9', 'Gone | Ann Vale']);
+  const odd = { t: 'Book #2 | Part One', a: 'Ann Vale' };
+  const [entry] = C.exclusionEntries(odd);
+  assert.equal(entry, 'Book 2 Part One | Ann Vale');
+  assert.ok(C.parseExclusions(entry).covers(odd));
+});
+
 test('validation: a clean catalogue passes; required fields, unknown keys, ids', () => {
   const clean = [{ t: 'A', a: 'B', s: 'S', sn: '1', g: ['x'], id: 'B0' }];
   assert.deepEqual(C.validate(clean, { S: { total: 3, status: 'ongoing', note: 'n', url: 'https://example.com' } }), { errors: [], warnings: [] });
@@ -129,6 +145,10 @@ test('dates read: a plain string becomes a list', () => {
   assert.deepEqual(C.tidyBook({ t: 'A', a: 'B', r: '2024-03-15' }).r, ['2024-03-15']);
   assert.deepEqual(C.readBackup({ books: [{ t: 'A', a: 'B', r: '2024' }], seriesInfo: {} }).books[0].r, ['2024']);
   assert.deepEqual(C.readBackup([{ t: 'A', a: 'B', r: '2024' }]).books[0].r, ['2024']);
+  assert.deepEqual(C.readBackup({ books: [], seriesInfo: {}, excluded: ['B9'] }).excluded, ['B9']);
+  assert.equal(C.readBackup({ books: [], seriesInfo: {} }).excluded, null);
+  assert.throws(() => C.readBackup({ books: [], excluded: 'B9' }), /excluded/);
+  assert.throws(() => C.readBackup({ books: [], excluded: [7] }), /excluded/);
 });
 
 // -------------------------------------------------------------------- CSV

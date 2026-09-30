@@ -303,7 +303,7 @@ test('Export includes series info, and Import brings it back', async () => {
   first.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
   first.els.exportBtn.listeners.click[0]();
   const backup = JSON.parse(blobs[0]);
-  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO) });
+  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), excluded: [] });
 
   // into a page that has no series info: it comes back, and survives a reload
   const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
@@ -326,6 +326,56 @@ test('Export includes series info, and Import brings it back', async () => {
   const changedInfo = await boot({ files: { 'data/books.json': mine, 'data/series-info.json': '{}\n' }, storage: new Map(other.storage) });
   assert.deepEqual(changedInfo.get('SERIES_INFO'), {});
   assert.ok(changedInfo.storage.has('audiobook-catalog-data.backup'));
+});
+
+// Press a book's remove button twice (the second press confirms), as in the library view.
+function removeBook(ctx, i) {
+  const btn = { dataset: { i: String(i) }, style: {}, innerHTML: '' };
+  let handler;
+  ctx.document.querySelectorAll = sel => (sel === '.iconbtn.del'
+    ? [{ addEventListener: (type, fn) => { handler = fn; } }] : []);
+  ctx.render();
+  handler({ currentTarget: btn });
+  handler({ currentTarget: btn });
+}
+
+test('removing a book excludes it from imports, and Export / Import carry the exclusions', async () => {
+  const mine = JSON.stringify([{ t: 'Keep', a: 'Ann Vale' }, { t: 'Gone', a: 'Ann Vale', id: 'BGONE2' }]);
+  const files = { 'data/books.json': mine, 'data/excluded.txt': '# header\nBOLD\n' };
+  const { ctx, els, get, storage } = await boot({ files });
+  ctx.setView('library');
+  removeBook(ctx, 1);
+  assert.deepEqual(get('DATA'), [{ t: 'Keep', a: 'Ann Vale' }]);
+  assert.deepEqual(get('NEW_EXCLUDED'), ['BGONE2', 'Gone | Ann Vale']);
+  assert.match(els.ioStatus.textContent, /Removed Gone; imports will skip it\. Export and run sync-export/);
+  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).excluded, ['BGONE2', 'Gone | Ann Vale']);
+
+  // an import (Audible by id, or Goodreads by title) does not bring it back
+  els.importAudibleBtn.listeners.click[0]();
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'l.csv', text:
+    'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\nx,Gone,,Ann Vale,,Finished,BGONE2\n' }], value: '' } });
+  assert.match(els.importPreviewBody.innerHTML, /excluded\.txt\): 1/);
+  els.importGoodreadsBtn.listeners.click[0]();
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'g.csv', text:
+    'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\nGone,Ann Vale,,Audible Audio,read,\n' }], value: '' } });
+  assert.match(els.importPreviewBody.innerHTML, /excluded\.txt\): 1/);
+
+  // a reload keeps the exclusions along with the edit
+  const reloaded = await boot({ files, storage: new Map(storage) });
+  assert.deepEqual(reloaded.get('EXCLUSIONS.entries'), ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
+
+  // Export has the whole list; Import adds it to another page's list
+  const blobs = [];
+  ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
+  ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+  els.exportBtn.listeners.click[0]();
+  const backup = JSON.parse(blobs[0]);
+  assert.deepEqual(backup.excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
+  const other = await boot({ files: { 'data/books.json': '[]', 'data/excluded.txt': 'BOLD\nOther\n' } });
+  other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  assert.deepEqual(other.get('EXCLUSIONS.entries'), ['BOLD', 'Other', 'BGONE2', 'Gone | Ann Vale']);
+  assert.deepEqual(other.get('NEW_EXCLUDED'), ['BGONE2', 'Gone | Ann Vale']);
+  assert.match(other.els.ioStatus.textContent, /2 more excluded from imports/);
 });
 
 test('series info can be edited, added and removed in the page', async () => {
@@ -427,6 +477,27 @@ test('with make serve, edits are saved to disk and the browser copy is dropped',
   assert.equal(saves[1].body.base, 'b1');
   assert.equal(saves[1].body.seriesInfo['Mine Saga'].total, 3);
   assert.doesNotMatch(els.ioStatus.textContent, /sync-export/);
+});
+
+test('with make serve, a removed book\'s exclusions are sent with the save, once', async () => {
+  const mine = JSON.stringify([{ t: 'Keep', a: 'Me' }, { t: 'Gone', a: 'Me' }]);
+  const saves = [];
+  const api = async init => {
+    if (!init.method) return { status: 200, body: { writable: true } };
+    const body = JSON.parse(init.body);
+    saves.push(body);
+    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i', books: body.books } };
+  };
+  const { ctx, get, run } = await boot({ files: { 'data/books.json': mine }, api });
+  ctx.setView('library');
+  removeBook(ctx, 1);
+  await settle();
+  assert.deepEqual(saves[0].excluded, ['Gone | Me']);
+  assert.deepEqual(get('NEW_EXCLUDED'), []);
+  assert.deepEqual(get('EXCLUSIONS.entries'), ['Gone | Me']);
+  run("DATA[0].t = 'Kept'; persist();");
+  await settle();
+  assert.deepEqual(saves[1].excluded, []);
 });
 
 test('edits made while a save is on its way are saved right after it', async () => {
