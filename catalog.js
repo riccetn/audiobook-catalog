@@ -34,7 +34,7 @@ const isDemo = (root, dir) => path.resolve(dir) === path.join(root, 'data', 'sam
 
 // ------------------------------------------------------------------- load / save
 const readText = file => fs.readFileSync(file, 'utf8');
-const loadBooks = file => JSON.parse(readText(file));
+const loadBooks = file => C.fixBooks(JSON.parse(readText(file)));   // "r": "2024-03-15" -> ["2024-03-15"]
 const loadSeriesInfo = file => JSON.parse(readText(file));
 
 const dumpBooks = (books, file) => fs.writeFileSync(file, JSON.stringify(books), 'utf8');

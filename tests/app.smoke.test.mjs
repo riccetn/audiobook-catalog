@@ -244,6 +244,21 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   assert.equal(els.importConfirm.style.display, 'none');
 });
 
+test('a date read written as a plain string loads, renders, and round-trips through Export / Import', async () => {
+  const mine = JSON.stringify([{ t: 'Hand Edited', a: 'Ann Vale', r: '2024-03-15' }, { t: 'Odd', a: 'Ann Vale', r: 5 }]);
+  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  assert.deepEqual(get('DATA[0].r'), ['2024-03-15']);
+  ctx.setView('library');
+  assert.match(els.results.innerHTML, /Read 2024-03-15/);
+  assert.match(els.readFilter.innerHTML, /Read in 2024/);
+
+  const backup = JSON.stringify({ books: [{ t: 'From Backup', a: 'Ann Vale', r: '2023-01-05' }], seriesInfo: {} });
+  els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: backup }], value: '' } });
+  assert.doesNotMatch(els.ioStatus.textContent, /Couldn't read/);
+  assert.deepEqual(get('DATA'), [{ t: 'From Backup', a: 'Ann Vale', r: ['2023-01-05'] }]);
+  assert.match(els.results.innerHTML, /Read 2023-01-05/);
+});
+
 test('a Goodreads import fills in dates read on books that have none', async () => {
   const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', id: 'B1' }]);
   const { els, get } = await boot({ files: { 'data/books.json': mine } });

@@ -139,6 +139,26 @@ test('sync-export tidies names and spacing', t => {
   assert.deepEqual(saved, [{ t: 'New Book', a: 'A. B. Quill', n: 'R. T. Hale' }, { t: 'Fine Book', a: 'Ann Vale' }]);
 });
 
+test('a date read written as a plain string is accepted and saved as a list', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const booksPath = path.join(tmp, 'data', 'books.json');
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Hand Edited', a: 'Ann Vale', r: '2024-03-15' }]));
+  assert.equal(run('validate').code, 0);
+
+  const exported = path.join(tmp, 'export.json');
+  fs.writeFileSync(exported, JSON.stringify({ books: [
+    { t: 'Hand Edited', a: 'Ann Vale', r: '2024-03-15' },
+    { t: 'Two Reads', a: 'Ann Vale', r: '2025-01-02, 2021' },
+  ], seriesInfo: {} }));
+  const { code, err } = run('sync-export', exported);
+  assert.equal(code, 0, err);
+  assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')).map(b => b.r), [['2024-03-15'], ['2021', '2025-01-02']]);
+
+  fs.writeFileSync(exported, JSON.stringify([{ t: 'Bad', a: 'Ann Vale', r: 'last summer' }]));
+  assert.match(run('sync-export', exported).err, /'r' must be a non-empty list/);
+});
+
 test('sync-export refuses files that are not catalogue exports', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init', '--sample').code, 0);

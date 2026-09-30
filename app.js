@@ -25,7 +25,9 @@ let EDIT_SERIES = null;        // name of the series whose info is being edited,
 const UNDATED = '__undated__';
 
 // Year a book was (last) read in, for the read filter: '2024' from ['2021-05', '2024-03-15'].
-const readYears = b => (b.r || []).map(d => d.slice(0, 4));
+// Dates read of a book; [] when it has none (or something that is not a list of dates).
+const readDates = b => Array.isArray(b.r) ? b.r.filter(d => typeof d === 'string') : [];
+const readYears = b => readDates(b).map(d => d.slice(0, 4));
 
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
 
@@ -55,7 +57,7 @@ function matches(b, q, author, genre, read){
   }
   if(author && b.a !== author) return false;
   if(genre && !(b.g||[]).includes(genre)) return false;
-  if(read === UNDATED){ if(b.r && b.r.length) return false; }
+  if(read === UNDATED){ if(readDates(b).length) return false; }
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const hay = [b.t,b.a,b.n,b.s,...(b.g||[])].filter(Boolean).join(' ').toLowerCase();
@@ -314,7 +316,7 @@ function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
   const meta = [b.a, b.n ? 'narr. '+b.n : null].filter(Boolean).join(' \u2014 ');
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
-  const read = b.r && b.r.length ? `<div class="read">Read ${esc(b.r.join(', '))}</div>` : '';
+  const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
   return `<div class="book">${num}<div class="info">
     <div class="title">${esc(b.t)}</div>
     <div class="meta">${esc(meta)}</div>
@@ -532,7 +534,7 @@ function openEditForm(i){
   document.getElementById('f_g').value = (b.g||[]).join(', ');
   document.getElementById('f_s').value = b.s || '';
   document.getElementById('f_sn').value = b.sn || '';
-  document.getElementById('f_r').value = (b.r||[]).join(', ');
+  document.getElementById('f_r').value = readDates(b).join(', ');
   document.getElementById('formError').textContent = '';
   document.getElementById('formTitle').textContent = 'Edit book';
   document.getElementById('formSaveBtn').textContent = 'Save changes';
@@ -599,7 +601,7 @@ function restoreLocalEdits(){
     const saved = JSON.parse(raw);
     const hasInfo = saved && typeof saved.info === 'object' && saved.info !== null && !Array.isArray(saved.info);
     if(saved && saved.base === BASELINE && Array.isArray(saved.data) && (!hasInfo || saved.infoBase === INFO_BASELINE)){
-      DATA = saved.data;
+      DATA = CatalogImport.fixBooks(saved.data);
       if(hasInfo) SERIES_INFO = saved.info;
     } else {
       localStorage.setItem(LS_KEY + '.backup', raw);
@@ -612,7 +614,7 @@ function restoreLocalEdits(){
 async function start(){
   try{
     const {booksText, infoText, excludedText} = await loadData();
-    DATA = JSON.parse(booksText);
+    DATA = CatalogImport.fixBooks(JSON.parse(booksText));   // "r": "2024-03-15" -> ["2024-03-15"]
     SERIES_INFO = JSON.parse(infoText);
     EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
     BASELINE = hashString(booksText);

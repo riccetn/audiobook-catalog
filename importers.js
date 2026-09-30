@@ -42,6 +42,24 @@ function parseReadDates(text){
   return {dates: [...dates].sort(), bad};
 }
 
+/**
+ * Return a book with its dates read as a list. Hand-edited data may hold a single date as a plain
+ * string ("r": "2024-03-15", or "2023, 2024-03"); that becomes ["2024-03-15"]. An empty string drops
+ * the field; anything that still is not a list of dates is left for validate() to report.
+ */
+function fixReadDates(rec){
+  if(!rec || typeof rec !== 'object' || typeof rec.r !== 'string') return rec;
+  const {r, ...rest} = rec;
+  if(!r.trim()) return rest;
+  const {dates, bad} = parseReadDates(r);
+  return {...rest, r: bad.length ? [tidyText(r)] : dates};
+}
+
+/** fixReadDates() on every book of a list; anything that is not a list is returned as is. */
+function fixBooks(books){
+  return Array.isArray(books) ? books.map(fixReadDates) : books;
+}
+
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 /** Lower-case and collapse everything that is not a letter or digit. */
@@ -73,7 +91,7 @@ function normalizeName(name){
 
 /** Return a copy of a book record with tidy text in every field. */
 function tidyBook(rec){
-  const out = {...rec};
+  const out = {...fixReadDates(rec)};
   for(const key of ['t', 's', 'sn', 'id']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
@@ -265,11 +283,11 @@ function validate(books, info){
  * null for the old format (so callers leave their series info alone). Throws if it is neither.
  */
 function readBackup(data){
-  if(Array.isArray(data)) return {books: data, seriesInfo: null};
+  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null};
   if(data && typeof data === 'object' && Array.isArray(data.books)){
     const info = data.seriesInfo;
-    if(info === undefined) return {books: data.books, seriesInfo: null};
-    if(info && typeof info === 'object' && !Array.isArray(info)) return {books: data.books, seriesInfo: info};
+    if(info === undefined) return {books: fixBooks(data.books), seriesInfo: null};
+    if(info && typeof info === 'object' && !Array.isArray(info)) return {books: fixBooks(data.books), seriesInfo: info};
     throw new Error('seriesInfo is not an object');
   }
   throw new Error('expected a list of books or {books, seriesInfo}');
@@ -519,7 +537,7 @@ function merge(existing, incoming, exclusions){
 }
 
 return {
-  norm, seriesNorm, tidyText, parseReadDate, parseReadDates, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
+  norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   Exclusions, parseExclusions, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, readGoodreads, merge,

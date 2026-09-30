@@ -59,7 +59,7 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `id` | Audible ASIN, so re-imports recognise the book      |          |
-| `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day |  |
+| `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list |  |
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.

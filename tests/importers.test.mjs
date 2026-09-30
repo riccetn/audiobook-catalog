@@ -119,6 +119,18 @@ test('dates read: full, month-only and year-only dates, in order', () => {
   assert.ok(C.validate([{ t: 'A', a: 'B', r: ['2025-01-01', '2024-01-01'] }], {}).warnings.some(w => w.includes('not in order')));
 });
 
+test('dates read: a plain string becomes a list', () => {
+  assert.deepEqual(C.fixReadDates({ t: 'A', a: 'B', r: '2024/3/15' }), { t: 'A', a: 'B', r: ['2024-03-15'] });
+  assert.deepEqual(C.fixReadDates({ t: 'A', a: 'B', r: '2025, 2021-06' }).r, ['2021-06', '2025']);
+  assert.deepEqual(C.fixReadDates({ t: 'A', a: 'B', r: '  ' }), { t: 'A', a: 'B' });
+  assert.deepEqual(C.fixReadDates({ t: 'A', a: 'B', r: 'soon' }).r, ['soon']);   // left for validate() to report
+  const listed = { t: 'A', a: 'B', r: ['2024'] };
+  assert.equal(C.fixReadDates(listed), listed);
+  assert.deepEqual(C.tidyBook({ t: 'A', a: 'B', r: '2024-03-15' }).r, ['2024-03-15']);
+  assert.deepEqual(C.readBackup({ books: [{ t: 'A', a: 'B', r: '2024' }], seriesInfo: {} }).books[0].r, ['2024']);
+  assert.deepEqual(C.readBackup([{ t: 'A', a: 'B', r: '2024' }]).books[0].r, ['2024']);
+});
+
 // -------------------------------------------------------------------- CSV
 test('CSV: BOM, quotes, doubled quotes, newlines in quotes, CRLF, short rows', () => {
   const rows = C.parseCsv('\ufeffa,b,c\r\n1,"x, ""y""","multi\nline"\r\n\r\n2,plain\n3,mid"quote,\n');
