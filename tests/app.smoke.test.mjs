@@ -178,6 +178,55 @@ test('dates read: shown on the card, edited in the form, and filterable by year'
   assert.equal(get(`'r' in DATA[${i}]`), false);
 });
 
+test('ISBNs: shown on the card, searchable however typed, edited in the form', async () => {
+  const mine = JSON.stringify([{ t: 'Boxed One', a: 'Ann Vale', isbn: ['9780306406157'] }, { t: 'Other', a: 'Ann Vale' }]);
+  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  ctx.setView('library');
+  assert.match(els.results.innerHTML, /ISBN 9780306406157/);
+  for (const q of ['9780306406157', '0-306-40615-2', '406157']) {
+    els.q.value = q;
+    ctx.render();
+    assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 1, q);
+  }
+  els.q.value = '';
+
+  ctx.openEditForm(0);
+  assert.equal(els.f_isbn.value, '9780306406157');
+  els.f_isbn.value = '9780306406157, 978-0-00-000000-2';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get('DATA[0].isbn'), ['9780306406157', '9780000000002']);
+
+  // the same ISBN may go on another book (a boxed set)
+  ctx.openEditForm(1);
+  els.f_isbn.value = '0306406152';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get('DATA[1].isbn'), ['9780306406157']);
+
+  // a mistyped ISBN is refused with a message, and nothing changes
+  ctx.openEditForm(1);
+  els.f_isbn.value = '9780306406158';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.match(els.formError.textContent, /Not an ISBN: 9780306406158/);
+  assert.deepEqual(get('DATA[1].isbn'), ['9780306406157']);
+  els.f_isbn.value = '';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(get("'isbn' in DATA[1]"), false);
+});
+
+test('a Goodreads import adds the ISBNs of other editions to books already there', async () => {
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', isbn: ['9780000000002'], r: ['2020'] }]);
+  const { els, get } = await boot({ files: { 'data/books.json': mine } });
+  const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
+    + 'Old Favourite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
+  els.importGoodreadsBtn.listeners.click[0]();
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
+  assert.match(els.importPreviewBody.innerHTML, /ISBNs added to existing books: 1/);
+  assert.equal(els.importConfirm.textContent, 'Save ISBNs');
+  els.importConfirm.listeners.click[0]();
+  assert.deepEqual(get('DATA[0].isbn'), ['9780000000002', '9780306406157']);
+  assert.match(els.ioStatus.textContent, /added ISBNs to 1 book/);
+});
+
 test('your own data/books.json wins over the demo', async () => {
   const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
   const { get } = await boot({ files: { 'data/books.json': mine, 'data/sample/books.json': DEMO_BOOKS } });

@@ -114,6 +114,27 @@ test('import-goodreads adds read audiobooks', t => {
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].r, ['2024-03-15']);
 });
 
+test('imports store ISBNs, add other editions\' ISBNs, and skip ISBNs in excluded.txt', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  fs.appendFileSync(path.join(tmp, 'data', 'excluded.txt'), 'ISBN 978-1-00-000000-9\n');
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, 'Title,Authors,Progress,ASIN,ISBN 10,ISBN 13\n'
+    + 'Kept,Ann,Finished,B1,0306406152,9780306406157\n'
+    + 'Gone,Ann,Finished,B2,,9781000000009\n');
+  let { code, out } = run('import-audible', csv);
+  assert.equal(code, 0);
+  assert.match(out, /skipped \(listed in data\/excluded.txt\): 1/);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [{ t: 'Kept', a: 'Ann', id: 'B1', isbn: ['9780306406157'] }]);
+
+  const gr = path.join(tmp, 'goodreads.csv');
+  fs.writeFileSync(gr, 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf\n'
+    + 'Kept,Ann,"=""""","=""9780000000002""",Audible Audio,read\n');
+  ({ code, out } = run('import-goodreads', gr));
+  assert.match(out, /ISBNs added to existing books: 1/);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].isbn, ['9780306406157', '9780000000002']);
+});
+
 test('an import that would leave invalid data writes nothing', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
