@@ -111,6 +111,12 @@ the author site, or to add or remove that info. The form checks the same rules a
 Like book edits, the change is saved to `data/series-info.json`. Or edit
 `data/series-info.json` by hand, then `make validate`.
 
+**Find books missing from a series**: when a series has a released total in `data/series-info.json`,
+the series overview and the series itself list the numbers you don't own (for example
+"missing #3, #5–7"). A boxed set (`"4-6"`) counts for every number in it; a novella such as `"2.5"`
+doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
+those series. Series whose total is `"many"`, or that have no release info, are left out.
+
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
 the import exclusion list, `data/excluded.txt`, as its ASIN (if it has one) and as `Title | Author`
 (Goodreads exports have no ASINs), so no later Audible or Goodreads import brings it back. With

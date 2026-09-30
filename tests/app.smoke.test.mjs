@@ -427,6 +427,28 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
   assert.match(other.els.ioStatus.textContent, /2 more excluded from imports/);
 });
 
+test('series show which books are missing, and can be filtered to those', async () => {
+  const { els, get } = await boot();
+  const info = JSON.parse(DEMO_INFO);
+  const gaps = Object.keys(info).filter(name =>
+    get(`CatalogImport.missingNumbers(DATA.filter(b => b.s === ${JSON.stringify(name)}), ${info[name].total})`).length);
+  assert.ok(gaps.length > 0 && gaps.length < Object.keys(info).length, 'the demo data should have a series with gaps and one without');
+  assert.match(els.results.innerHTML, /class="missing">missing #/);
+
+  els.missingFilter.value = 'missing';
+  els.missingFilter.listeners.change[0]();
+  assert.equal((els.results.innerHTML.match(/class="srow-title"/g) || []).length, gaps.length);  // no Standalone row either
+  assert.equal(els.resultCount.textContent, `${gaps.length} series shown`);
+  assert.equal(els.missingFilter.style.display, '');
+
+  els.btnLibraryView.listeners.click[0]();
+  assert.equal(els.missingFilter.style.display, 'none');
+
+  const { ctx: ctx2, els: els2 } = await boot();
+  ctx2.openSeries(gaps[0]);
+  assert.match(els2.results.innerHTML, /class="series-note">[^<]*missing #/);
+});
+
 test('series info can be edited, added and removed in the page', async () => {
   const { ctx, els, get, storage } = await boot();
   const info = JSON.parse(DEMO_INFO);

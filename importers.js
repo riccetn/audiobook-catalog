@@ -694,12 +694,31 @@ function merge(existing, incoming, exclusions){
   return report;
 }
 
+/**
+ * The series numbers from 1 to `total` that none of `books` covers, e.g. [3, 5]. A boxed set
+ * ("4-6") covers each number in it; a novella such as "2.5" covers none, so it does not hide a
+ * missing book 2. Returns null when `total` is not a count (e.g. "many" or no series info).
+ */
+function missingNumbers(books, total){
+  if(!(Number.isInteger(total) && total > 0)) return null;
+  const owned = new Set();
+  for(const b of books){
+    const m = /^(\d+)(?:-(\d+))?$/.exec(String(b.sn || '').trim());
+    if(!m) continue;
+    const from = parseInt(m[1], 10), to = Math.min(m[2] ? parseInt(m[2], 10) : from, total);
+    for(let n = from; n <= to; n++) owned.add(n);
+  }
+  const missing = [];
+  for(let n = 1; n <= total; n++) if(!owned.has(n)) missing.push(n);
+  return missing;
+}
+
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   parseIsbn, parseIsbns, fixIsbns, bookIsbns, rowIsbns,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  parseGoodreadsTitle, readGoodreads, merge,
+  parseGoodreadsTitle, readGoodreads, merge, missingNumbers,
 };
 })();
 
