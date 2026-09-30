@@ -122,7 +122,7 @@ an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN cou
 Removing a book in the page does not add its ISBNs, since another book may share them. To let an import add a book again, delete its lines
 from `data/excluded.txt`.
 
-**ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's ISBN columns,
+**ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the book, and later imports add the ISBNs of other editions. Edit them in the
 page under *ISBN(s)* (comma separated; hyphens and ISBN-10s are fine, they are stored as ISBN-13). The same
 ISBN may be on several books, e.g. each book of a boxed set. Searching the library for an ISBN, typed any

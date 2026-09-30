@@ -114,14 +114,22 @@ test('import-goodreads adds read audiobooks', t => {
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].r, ['2024-03-15']);
 });
 
+// The columns of a real Audible Library Extractor CSV export.
+const ALE_COLUMNS = ['Added', 'Title', 'Title Short', 'Series', 'Book Numbers', 'Blurb', 'Authors', 'Narrators', 'Tags', 'Categories',
+  'Parent Category', 'Child Category', 'Length', 'Progress', 'Release Date', 'Purchase Date', 'Publishers', 'My Rating', 'Rating',
+  'Ratings', 'Favorite', 'Format', 'Language', 'Whispersync', 'From Plus Catalog', 'Unavailable', 'Archived', 'Downloaded',
+  'Store Page Changed', 'Store Page Missing', 'ASIN', 'ISBN10', 'ISBN13', 'Summary', 'People Also Bought', 'Store Page Url',
+  'Sample', 'Web Player', 'Cover', 'Search In Goodreads', 'Subtitle', 'Collection Ids'];
+const row = values => ALE_COLUMNS.map(c => values[c] || '').join(',') + '\n';
+
 test('imports store ISBNs, add other editions\' ISBNs, and skip ISBNs in excluded.txt', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
   fs.appendFileSync(path.join(tmp, 'data', 'excluded.txt'), 'ISBN 978-1-00-000000-9\n');
   const csv = path.join(tmp, 'library.csv');
-  fs.writeFileSync(csv, 'Title,Authors,Progress,ASIN,ISBN 10,ISBN 13\n'
-    + 'Kept,Ann,Finished,B1,0306406152,9780306406157\n'
-    + 'Gone,Ann,Finished,B2,,9781000000009\n');
+  fs.writeFileSync(csv, ALE_COLUMNS.join(',') + '\n'
+    + row({ Title: 'Kept', Authors: 'Ann', Progress: 'Finished', ASIN: 'B1', ISBN10: '0306406152', ISBN13: '9780306406157' })
+    + row({ Title: 'Gone', Authors: 'Ann', Progress: 'Finished', ASIN: 'B2', ISBN13: '9781000000009' }));
   let { code, out } = run('import-audible', csv);
   assert.equal(code, 0);
   assert.match(out, /skipped \(listed in data\/excluded.txt\): 1/);

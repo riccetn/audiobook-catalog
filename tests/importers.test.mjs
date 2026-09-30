@@ -333,9 +333,9 @@ test('ISBNs: validation', () => {
 });
 
 test('ISBNs are read from Audible and Goodreads exports', () => {
-  const [rec] = C.audibleRowToRecord({ Title: 'T', Authors: 'A', Progress: 'Finished', ASIN: 'B1', 'ISBN 10': '0306406152', 'ISBN 13': ISBN_BOX });
+  const [rec] = C.audibleRowToRecord({ Title: 'T', Authors: 'A', Progress: 'Finished', ASIN: 'B1', ISBN10: '0306406152', ISBN13: ISBN_BOX });
   assert.deepEqual(rec.isbn, [ISBN_BOX]);
-  assert.equal('isbn' in C.audibleRowToRecord({ Title: 'T', Authors: 'A', Progress: 'Finished', 'ISBN 13': 'n/a' })[0], false);
+  assert.equal('isbn' in C.audibleRowToRecord({ Title: 'T', Authors: 'A', Progress: 'Finished', ISBN13: 'n/a' })[0], false);
   const result = C.readGoodreads('Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf\n'
     + 'With,Ann,"=""0306406152""","=""9780306406157""",Audible Audio,read\n'
     + 'Without,Ann,"=""""","=""""",Audiobook,read\n');

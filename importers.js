@@ -464,7 +464,7 @@ function parseCsv(text){
 
 const cell = (row, name) => (row[name] || '').trim();
 
-// "ISBN", "ISBN13", "ISBN 10", "ISBNs"...: the exports name their ISBN columns differently.
+// Audible Library Extractor has "ISBN10" and "ISBN13", Goodreads "ISBN" and "ISBN13"; spacing and case are forgiven.
 const ISBN_COLUMN = /^isbns?[\s_-]*(1[03])?$/i;
 
 /** The valid ISBNs in a CSV row's ISBN columns, 13-digit and without repeats. */
