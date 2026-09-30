@@ -68,6 +68,7 @@ const DEMO_NOTE = 'note: no data/books.json found, so this is the bundled demo d
 const EXCLUDED_HEADER = `# Books that imports must never re-add (because you removed them on purpose).
 # One entry per line; anything after '#' is a comment. Either:
 #   B0XXXXXXXX                  an Audible ASIN
+#   ISBN 978-0-00-000000-2      an ISBN (skips every book carrying it, e.g. all books of a boxed set)
 #   Some Title | Some Author    for books with no ASIN (e.g. Goodreads-only entries)
 `;
 
@@ -110,6 +111,7 @@ function runImport(args, io, read, label){
   io.out(`  already in the catalogue: ${report.matched}`);
   if(report.backfilled.length) io.out(`  Audible ids filled in on existing books: ${report.backfilled.length}`);
   if(report.datesFilled.length) io.out(`  dates read filled in on existing books: ${report.datesFilled.length}`);
+  if(report.isbnsFilled.length) io.out(`  ISBNs added to existing books: ${report.isbnsFilled.length}`);
   if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
   io.out(`  new: ${report.added.length}`);
   preview(report.added, io);

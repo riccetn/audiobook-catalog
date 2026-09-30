@@ -17,7 +17,7 @@ function fingerprint(s){
 }
 
 // ------------------------------------------------------------------ book records
-const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id', 'r'];
+const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id', 'isbn', 'r'];
 const STATUSES = ['ongoing', 'complete'];
 const SERIES_NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
 // JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
@@ -66,9 +66,66 @@ function fixReadDates(rec){
   return {...rest, r: bad.length ? [tidyText(r)] : dates};
 }
 
-/** fixReadDates() on every book of a list; anything that is not a list is returned as is. */
+// ------------------------------------------------------------------------ ISBNs
+const isbn10Ok = s => [...s].reduce((sum, c, i) => sum + (10 - i) * (c === 'X' ? 10 : Number(c)), 0) % 11 === 0;
+const isbn13Check = s => String((10 - [...s.slice(0, 12)].reduce((sum, c, i) => sum + Number(c) * (i % 2 ? 3 : 1), 0) % 10) % 10);
+
+/**
+ * An ISBN as stored in `isbn`: always the 13-digit form without hyphens, so the ISBN-10 and ISBN-13
+ * of one edition are the same entry. Accepts hyphens and spaces, an "ISBN" prefix, and Goodreads'
+ * ="0441013597" quoting. Returns null when it is not a valid ISBN (wrong length or check digit).
+ */
+function parseIsbn(text){
+  const s = String(text || '').toUpperCase().replace(/ISBN(?:-?1[03])?:?/g, '').replace(/[\s\-="']/g, '');
+  if(/^\d{9}[\dX]$/.test(s)){
+    if(!isbn10Ok(s)) return null;
+    const twelve = '978' + s.slice(0, 9);
+    return twelve + isbn13Check(twelve);
+  }
+  if(/^97[89]\d{10}$/.test(s)) return isbn13Check(s) === s[12] ? s : null;
+  return null;
+}
+
+/**
+ * Parse a list of ISBNs separated by commas or semicolons (or spaces, when every part is a whole ISBN).
+ * Returns {isbns (13-digit, no repeats, in the order given), bad (not an ISBN)}.
+ */
+function parseIsbns(text){
+  const isbns = [], bad = [];
+  for(const part of String(text || '').split(/[,;]/).map(x => tidyText(x)).filter(Boolean)){
+    let found = [parseIsbn(part)];
+    if(!found[0] && part.includes(' ')){
+      const words = part.split(' ').map(parseIsbn);
+      if(words.every(Boolean)) found = words;
+    }
+    if(!found[0]){ bad.push(part); continue; }
+    for(const isbn of found) if(!isbns.includes(isbn)) isbns.push(isbn);
+  }
+  return {isbns, bad};
+}
+
+/**
+ * Return a book with its ISBNs as a list, like fixReadDates() for dates: a hand-written "isbn":
+ * "978-0-441-01359-3" (or several, comma separated) becomes ["9780441013593"]. An empty string drops
+ * the field; text that is not a list of ISBNs is left for validate() to report.
+ */
+function fixIsbns(rec){
+  if(!rec || typeof rec !== 'object' || typeof rec.isbn !== 'string') return rec;
+  const {isbn, ...rest} = rec;
+  if(!isbn.trim()) return rest;
+  const {isbns, bad} = parseIsbns(isbn);
+  return {...rest, isbn: bad.length ? [tidyText(isbn)] : isbns};
+}
+
+/** The ISBNs of a book, as 13-digit strings; [] when it has none (or none that are valid). */
+function bookIsbns(rec){
+  if(!rec || !Array.isArray(rec.isbn)) return [];
+  return [...new Set(rec.isbn.map(parseIsbn).filter(Boolean))];
+}
+
+/** fixReadDates() and fixIsbns() on every book of a list; anything that is not a list is returned as is. */
 function fixBooks(books){
-  return Array.isArray(books) ? books.map(fixReadDates) : books;
+  return Array.isArray(books) ? books.map(b => fixIsbns(fixReadDates(b))) : books;
 }
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -102,7 +159,7 @@ function normalizeName(name){
 
 /** Return a copy of a book record with tidy text in every field. */
 function tidyBook(rec){
-  const out = {...fixReadDates(rec)};
+  const out = {...fixIsbns(fixReadDates(rec))};
   for(const key of ['t', 's', 'sn', 'id']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
@@ -114,6 +171,11 @@ function tidyBook(rec){
   }
   if(Array.isArray(out.r)){
     out.r = out.r.map(x => typeof x === 'string' ? tidyText(x) : x);
+  }
+  if(Array.isArray(out.isbn)){
+    // the 13-digit form; anything that is not an ISBN is kept (tidied) for validate() to report
+    const isbns = out.isbn.map(x => typeof x === 'string' ? parseIsbn(x) || tidyText(x) : x);
+    out.isbn = isbns.filter((x, i) => typeof x !== 'string' || isbns.indexOf(x) === i);
   }
   return out;
 }
@@ -158,22 +220,33 @@ function lookupKeys(rec){
 
 /** Books that imports must never re-add (because you removed them on purpose). */
 class Exclusions {
-  constructor(ids, titles){
-    this.ids = new Set(ids || []);
-    this.titles = new Set((titles || []).map(([t, a]) => key(t, a)));   // [norm(title), firstAuthor(author)]
+  constructor(){
+    this.ids = new Set();
+    this.titles = new Set();   // key(norm(title), firstAuthor(author))
+    this.isbns = new Set();    // 13-digit ISBNs
     this.lines = new Map();   // key -> the entry as written in data/excluded.txt
   }
   /**
-   * Add one line of data/excluded.txt: an ASIN, or "Title | Author"; '#' starts a comment.
+   * Add one line of data/excluded.txt: an ASIN, "ISBN 978...", or "Title | Author"; '#' starts a comment.
    * Returns the entry as it should be written, or null for a blank line or one already covered.
+   * A bare ISBN-13 counts as an ISBN; a bare ISBN-10 as both an ASIN and an ISBN (Amazon uses a print
+   * edition's ISBN-10 as its ASIN).
    */
   add(line){
     line = tidyText(String(line).split('#')[0]);
     if(!line) return null;
     const bar = line.indexOf('|');
     if(bar < 0){
-      if(this.ids.has(line)) return null;
+      const isbn = parseIsbn(line);
+      if(isbn && (/^isbn/i.test(line) || !/^[\dX]{10}$/i.test(line))){
+        if(this.isbns.has(isbn)) return null;
+        this.isbns.add(isbn);
+        this.lines.set(key('isbn', isbn), line = `ISBN ${isbn}`);
+        return line;
+      }
+      if(this.ids.has(line) && (!isbn || this.isbns.has(isbn))) return null;
       this.ids.add(line);
+      if(isbn) this.isbns.add(isbn);
       this.lines.set(key('id', line), line);
       return line;
     }
@@ -185,14 +258,15 @@ class Exclusions {
     return line;
   }
   covers(rec){
-    return this.ids.has(rec.id) || this.titles.has(key(norm(rec.t), firstAuthor(rec.a)));
+    return this.ids.has(rec.id) || this.titles.has(key(norm(rec.t), firstAuthor(rec.a))) ||
+      bookIsbns(rec).some(isbn => this.isbns.has(isbn));
   }
   /** The entries, one per line as in data/excluded.txt, without comments. */
   get entries(){ return [...this.lines.values()]; }
-  get size(){ return this.ids.size + this.titles.size; }
+  get size(){ return this.lines.size; }
 }
 
-/** Parse the text of data/excluded.txt: an ASIN, or "Title | Author", per line; '#' starts a comment. */
+/** Parse the text of data/excluded.txt: an ASIN, "ISBN 978...", or "Title | Author", per line; '#' starts a comment. */
 function parseExclusions(text){
   const ex = new Exclusions();
   for(const line of (text || '').split(/\r\n|\r|\n/)) ex.add(line);
@@ -249,6 +323,20 @@ function validate(books, info){
         errors.push(`${label}: 'r' must be a non-empty list of dates read (YYYY-MM-DD, YYYY-MM or YYYY)`);
       } else if(b.r.some((d, j) => j > 0 && b.r[j - 1] >= d)){
         warnings.push(`${label}: dates read ${repr(b.r)} are not in order (or repeat one)`);
+      }
+    }
+    if('isbn' in b){
+      if(!(Array.isArray(b.isbn) && b.isbn.length && b.isbn.every(nonEmpty))){
+        errors.push(`${label}: 'isbn' must be a non-empty list of ISBNs`);
+      } else {
+        const seen = new Set();
+        for(const x of b.isbn){
+          const isbn = parseIsbn(x);
+          if(!isbn) errors.push(`${label}: ${repr(x)} is not a valid ISBN`);
+          else if(isbn !== x) warnings.push(`${label}: write ISBN ${repr(x)} as ${repr(isbn)}`);
+          if(isbn && seen.has(isbn)) warnings.push(`${label}: ISBN ${isbn} is listed twice`);
+          seen.add(isbn);
+        }
       }
     }
     if(b.sn && !b.s) errors.push(`${label}: has a series number but no series`);
@@ -376,6 +464,22 @@ function parseCsv(text){
 
 const cell = (row, name) => (row[name] || '').trim();
 
+// Audible Library Extractor has "ISBN10" and "ISBN13", Goodreads "ISBN" and "ISBN13"; spacing and case are forgiven.
+const ISBN_COLUMN = /^isbns?[\s_-]*(1[03])?$/i;
+
+/** The valid ISBNs in a CSV row's ISBN columns, 13-digit and without repeats. */
+function rowIsbns(row){
+  const isbns = [];
+  for(const [name, value] of Object.entries(row)){
+    if(!ISBN_COLUMN.test(name.trim())) continue;
+    for(const part of String(value || '').split(/[,;]/)){
+      const isbn = parseIsbn(part);
+      if(isbn && !isbns.includes(isbn)) isbns.push(isbn);
+    }
+  }
+  return isbns;
+}
+
 // -------------------------------------------------------------------- Audible
 // Audible's built-in "Your First Listen" sample appears in every library.
 const SAMPLE_ASINS = new Set(['B002V8N37Q']);
@@ -449,6 +553,8 @@ function audibleRowToRecord(row){
   if(!tags.length && cell(row, 'Child Category')) tags = [cell(row, 'Child Category')];
   if(tags.length) rec.g = tags;
   if(asin) rec.id = asin;
+  const isbns = rowIsbns(row);
+  if(isbns.length) rec.isbn = isbns;
   rec = tidyBook(rec);
 
   const warning = ambiguous
@@ -517,6 +623,8 @@ function readGoodreads(text){
     }
     const shelves = (row.Bookshelves || '').split(',').map(s => s.trim()).filter(Boolean);
     if(shelves.length) rec.g = shelves;
+    const isbns = rowIsbns(row);
+    if(isbns.length) rec.isbn = isbns;
     const read = parseReadDate(cell(row, 'Date Read'));   // Goodreads keeps only the latest read
     if(read) rec.r = [read];
     rec = tidyBook(rec);
@@ -528,12 +636,14 @@ function readGoodreads(text){
 // ---------------------------------------------------------------------- merge
 /**
  * Append incoming records that are not in `existing` yet (mutates `existing`). An existing book
- * always wins, except that a missing Audible id and missing dates read are filled in; series names
- * are folded onto the spelling already in use. Returns {added, backfilled, datesFilled, excluded, matched}.
+ * always wins, except that a missing Audible id and missing dates read are filled in, and ISBNs it
+ * does not have yet are added to its list (another edition); series names are folded onto the
+ * spelling already in use. ISBNs never make two books the same: one ISBN may be on several books (a
+ * boxed set's ISBN on each book in it). Returns {added, backfilled, datesFilled, isbnsFilled, excluded, matched}.
  */
 function merge(existing, incoming, exclusions){
   exclusions = exclusions || new Exclusions();
-  const report = {added: [], backfilled: [], datesFilled: [], excluded: [], matched: 0};
+  const report = {added: [], backfilled: [], datesFilled: [], isbnsFilled: [], excluded: [], matched: 0};
 
   const index = new Map();
   const indexKey = (k, i) => { if(!index.has(k)) index.set(k, i); };
@@ -564,6 +674,12 @@ function merge(existing, incoming, exclusions){
       if(rec.r && rec.r.length && !existing[match].r){
         existing[match].r = [...rec.r];
         report.datesFilled.push(existing[match]);
+      }
+      const have = bookIsbns(existing[match]);
+      const more = bookIsbns(rec).filter(isbn => !have.includes(isbn));
+      if(more.length){
+        existing[match].isbn = [...(Array.isArray(existing[match].isbn) ? existing[match].isbn : []), ...more];
+        if(!report.isbnsFilled.includes(existing[match]) && !report.added.includes(existing[match])) report.isbnsFilled.push(existing[match]);
       }
       continue;
     }
@@ -599,6 +715,7 @@ function missingNumbers(books, total){
 
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
+  parseIsbn, parseIsbns, fixIsbns, bookIsbns, rowIsbns,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, readGoodreads, merge, missingNumbers,

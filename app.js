@@ -73,8 +73,10 @@ function matches(b, q, author, genre, read){
   if(read === UNDATED){ if(readDates(b).length) return false; }
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
-    const hay = [b.t,b.a,b.n,b.s,...(b.g||[])].filter(Boolean).join(' ').toLowerCase();
-    if(!hay.includes(q.toLowerCase())) return false;
+    const hay = [b.t,b.a,b.n,b.s,...(b.g||[]),...(Array.isArray(b.isbn) ? b.isbn : [])].filter(Boolean).join(' ').toLowerCase();
+    // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
+    const isbn = CatalogImport.parseIsbn(q);
+    if(!hay.includes(q.toLowerCase()) && !(isbn && CatalogImport.bookIsbns(b).includes(isbn))) return false;
   }
   return true;
 }
@@ -342,10 +344,12 @@ function bookCard(b){
   const meta = [b.a, b.n ? 'narr. '+b.n : null].filter(Boolean).join(' \u2014 ');
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
   const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
+  const isbns = Array.isArray(b.isbn) && b.isbn.length ? `<div class="isbn">ISBN ${esc(b.isbn.join(', '))}</div>` : '';
   return `<div class="book">${num}<div class="info">
     <div class="title">${esc(b.t)}</div>
     <div class="meta">${esc(meta)}</div>
     ${read}
+    ${isbns}
     ${genres ? `<div class="genres">${genres}</div>` : ''}
   </div><div class="book-actions">
     <button class="iconbtn edit" data-i="${b._i}" title="Edit" aria-label="Edit">&#9998;</button>
@@ -368,7 +372,7 @@ function saveLocally(){
   }catch(e){}
 }
 
-// Add entries (an ASIN, or "Title | Author") to the books imports skip; returns how many were new.
+// Add entries (an ASIN, "ISBN 978...", or "Title | Author") to the books imports skip; returns how many were new.
 function addExclusions(entries){
   const added = entries.map(e=> EXCLUSIONS.add(e)).filter(Boolean);
   NEW_EXCLUDED.push(...added);
@@ -489,7 +493,7 @@ function previewImport(kind, text, fileName){
   const importer = IMPORTERS[kind];
   const result = importer.read(text);
   const {report, errors} = mergeIntoCopy(result.records);
-  const changes = report.added.length + report.backfilled.length + report.datesFilled.length;
+  const changes = report.added.length + report.backfilled.length + report.datesFilled.length + report.isbnsFilled.length;
   PENDING_IMPORT = errors.length || !changes ? null : result.records;
 
   const li = rec => {
@@ -501,6 +505,7 @@ function previewImport(kind, text, fileName){
   if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
   if(report.backfilled.length) html += `<p>Audible ids filled in on existing books: ${report.backfilled.length}</p>`;
   if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
+  if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
   html += `<p>New: ${report.added.length}</p>`;
   if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
@@ -519,7 +524,7 @@ function previewImport(kind, text, fileName){
   confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
   confirmBtn.textContent = report.added.length
     ? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
-    : report.backfilled.length ? 'Save Audible ids' : 'Save dates read';
+    : report.backfilled.length ? 'Save Audible ids' : report.datesFilled.length ? 'Save dates read' : 'Save ISBNs';
   document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
   document.getElementById('importPreview').classList.add('open');
 }
@@ -531,11 +536,13 @@ function applyImport(){
   closeImportPreview();
   if(errors.length){ showIoStatus('The catalogue changed and the import no longer validates; nothing was added.', true); return; }
   const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
+  const withIsbns = report.isbnsFilled.length;
   DATA = data;
   populateFilters(); render(); persist();
   showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
     (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
     (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
+    (withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
     '.' + keepHint('data/books.json'));
 }
 
@@ -630,6 +637,7 @@ function openEditForm(i){
   document.getElementById('f_s').value = b.s || '';
   document.getElementById('f_sn').value = b.sn || '';
   document.getElementById('f_r').value = readDates(b).join(', ');
+  document.getElementById('f_isbn').value = Array.isArray(b.isbn) ? b.isbn.join(', ') : '';
   document.getElementById('formError').textContent = '';
   document.getElementById('formTitle').textContent = 'Edit book';
   document.getElementById('formSaveBtn').textContent = 'Save changes';
@@ -656,6 +664,13 @@ document.getElementById('addForm').addEventListener('submit', e=>{
     return;
   }
   if(dates.length) b.r = dates;
+  const {isbns, bad: badIsbns} = CatalogImport.parseIsbns(document.getElementById('f_isbn').value);
+  if(badIsbns.length){
+    document.getElementById('formError').textContent =
+      `Not an ISBN: ${badIsbns.join(', ')}. Check the digits; hyphens and ISBN-10s are fine.`;
+    return;
+  }
+  if(isbns.length) b.isbn = isbns;
 
   if(EDIT_INDEX !== null){
     const prev = DATA[EDIT_INDEX];

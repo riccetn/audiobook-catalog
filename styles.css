@@ -90,7 +90,7 @@ h1{
 }
 .formError{font-size:.8rem; color:#b0453f; margin:.5rem 0 0; overflow-wrap:anywhere;}
 .formError:empty{display:none;}
-.book .read{color:var(--ink-soft); font-size:.78rem; margin-top:.15rem;}
+.book .read, .book .isbn{color:var(--ink-soft); font-size:.78rem; margin-top:.15rem;}
 .importPreview{
   display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
   padding:1rem; margin-bottom:1.5rem; font-size:.85rem;
