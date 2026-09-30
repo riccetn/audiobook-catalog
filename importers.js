@@ -5,6 +5,17 @@
 // the command line (catalog.js require()s it), so both import exactly the same way.
 const CatalogImport = (() => {
 
+// ------------------------------------------------------------------ fingerprints
+/**
+ * Cheap non-cryptographic hash of a data file's text. The page tags its edits with the fingerprint of
+ * the books.json it loaded, and `serve` refuses to save over a file whose fingerprint has changed since.
+ */
+function fingerprint(s){
+  let h = 5381;
+  for(let i = 0; i < s.length; i++){ h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
+  return (h >>> 0).toString(36) + ':' + s.length;
+}
+
 // ------------------------------------------------------------------ book records
 const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'id', 'r'];
 const STATUSES = ['ongoing', 'complete'];
@@ -537,7 +548,7 @@ function merge(existing, incoming, exclusions){
 }
 
 return {
-  norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
+  fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   Exclusions, parseExclusions, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, readGoodreads, merge,

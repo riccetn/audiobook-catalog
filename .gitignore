@@ -3,6 +3,8 @@
 data/books.json
 data/series-info.json
 data/excluded.txt
+# Left behind only if `make serve` is stopped in the middle of saving.
+data/.*.tmp
 
 # Raw exports contain ratings, reviews and purchase history.
 data/raw/*

@@ -4,12 +4,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const { main, loadBooks } = createRequire(import.meta.url)('../catalog.js');
+const require = createRequire(import.meta.url);
+const { main, loadBooks, createServer } = require('../catalog.js');
+const CatalogImport = require('../importers.js');
 
 function sandbox(t) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-cli-'));
@@ -233,4 +236,68 @@ test('bad command lines print the usage', t => {
     assert.match(err, /usage: node catalog.js/);
   }
   assert.match(run('--help').out, /import-goodreads/);
+});
+
+test('serve saves the page\'s edits to your own data, and nothing else', async t => {
+  const { tmp, run } = sandbox(t);
+  const server = createServer(tmp, () => server.address().port);
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const port = server.address().port;
+  const url = `http://localhost:${port}/api/save`;
+  const fp = CatalogImport.fingerprint;
+  const put = (body, headers = {}) => fetch(url, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
+  });
+
+  // demo data only: not writable, and a save is refused
+  assert.deepEqual(await (await fetch(url)).json(), { writable: false });
+  assert.equal((await put({ books: [], seriesInfo: {} })).status, 409);
+
+  assert.equal(run('init').code, 0);
+  const booksPath = path.join(tmp, 'data', 'books.json'), infoPath = path.join(tmp, 'data', 'series-info.json');
+  assert.deepEqual(await (await fetch(url)).json(), { writable: true });
+  const base = fp(fs.readFileSync(booksPath, 'utf8')), infoBase = fp(fs.readFileSync(infoPath, 'utf8'));
+
+  // a save writes both files, tidied like sync-export, and returns the new fingerprints
+  const books = [{ t: 'Saved  From Page', a: 'A.B. Quill', s: 'Saga', sn: '1' }];
+  const seriesInfo = { Saga: { total: 3, status: 'ongoing', note: '' } };
+  const res = await put({ books, seriesInfo, base, infoBase });
+  assert.equal(res.status, 200);
+  const saved = await res.json();
+  assert.deepEqual(loadBooks(booksPath), [{ t: 'Saved From Page', a: 'A. B. Quill', s: 'Saga', sn: '1' }]);
+  assert.deepEqual(saved.books, loadBooks(booksPath));
+  assert.deepEqual(JSON.parse(fs.readFileSync(infoPath, 'utf8')), seriesInfo);
+  assert.equal(saved.base, fp(fs.readFileSync(booksPath, 'utf8')));
+  assert.equal(saved.infoBase, fp(fs.readFileSync(infoPath, 'utf8')));
+  assert.deepEqual(fs.readdirSync(path.join(tmp, 'data')).filter(f => f.endsWith('.tmp')), []);
+
+  // a save based on an older version of the files is refused, and the files stay as they are
+  const stale = await put({ books: [], seriesInfo: {}, base, infoBase });
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).conflict, true);
+  assert.equal(loadBooks(booksPath).length, 1);
+
+  // invalid books are refused with the reasons
+  const bad = await put({ books: [{ t: 'No Author' }], seriesInfo: {}, base: saved.base, infoBase: saved.infoBase });
+  assert.equal(bad.status, 400);
+  assert.ok((await bad.json()).errors.length);
+  assert.equal(loadBooks(booksPath).length, 1);
+
+  // other sites cannot save: wrong origin, wrong host, or not JSON
+  const ok = { books: [], seriesInfo: {}, base: saved.base, infoBase: saved.infoBase };
+  assert.equal((await put(ok, { Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(ok) })).status, 403);
+  const wrongHost = await new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: '/api/save', method: 'PUT',
+      headers: { Host: `evil.example:${port}`, 'Content-Type': 'application/json' } }, resolve);
+    req.on('error', reject);
+    req.end(JSON.stringify(ok));
+  });
+  assert.equal(wrongHost.statusCode, 403);
+  wrongHost.resume();
+  assert.equal(loadBooks(booksPath).length, 1);
+
+  // and the data files are still served as before
+  assert.deepEqual(await (await fetch(`http://localhost:${port}/data/books.json`)).json(), loadBooks(booksPath));
 });

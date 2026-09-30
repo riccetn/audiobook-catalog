@@ -35,7 +35,7 @@ function makeElement(id) {
  * (default: no data/books.json yet, so the demo). `storage` is a Map standing in for localStorage.
  */
 async function boot({ files = { 'data/sample/books.json': DEMO_BOOKS, 'data/sample/series-info.json': DEMO_INFO },
-                      storage = new Map() } = {}) {
+                      storage = new Map(), api = null } = {}) {
   const els = {};
   for (const [, id] of HTML.matchAll(/id="([^"]+)"/g)) els[id] = makeElement(id);
   const document = {
@@ -49,9 +49,16 @@ async function boot({ files = { 'data/sample/books.json': DEMO_BOOKS, 'data/samp
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: k => storage.delete(k),
   };
-  const fetch = async url => (url in files
-    ? { ok: true, status: 200, text: async () => files[url] }
-    : { ok: false, status: 404, text: async () => 'not found' });
+  // `api(init)` stands in for `make serve`'s api/save and returns {status, body}; without it, a plain static server.
+  const fetch = async (url, init = {}) => {
+    if (url === 'api/save' && api) {
+      const { status, body } = await api(init);
+      return { ok: status < 300, status, json: async () => body };
+    }
+    return url in files
+      ? { ok: true, status: 200, text: async () => files[url], json: async () => JSON.parse(files[url]) }
+      : { ok: false, status: 404, text: async () => 'not found', json: async () => { throw new SyntaxError('not JSON'); } };
+  };
   // Files picked in a fake <input type="file"> are {name, text}; reading one completes at once.
   class FileReader { readAsText(file) { this.onload({ target: { result: file.text } }); } }
   const ctx = vm.createContext({ document, localStorage, fetch, FileReader, console, setTimeout: () => 0, clearTimeout() {} });
@@ -375,4 +382,106 @@ test('series info can be edited, added and removed in the page', async () => {
   els.seriesRemoveBtn.listeners.click[0]();
   assert.equal(get(`${JSON.stringify(name)} in SERIES_INFO`), false);
   assert.equal(get(`${JSON.stringify(bare)} in SERIES_INFO`), true);
+});
+
+// Lets pending promises (a save on its way to the fake server) settle.
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('with make serve, edits are saved to disk and the browser copy is dropped', async () => {
+  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const saves = [];
+  const api = async init => {
+    if (!init.method) return { status: 200, body: { writable: true } };
+    const body = JSON.parse(init.body);
+    saves.push({ method: init.method, headers: init.headers, body });
+    const books = body.books.map(b => ({ ...b, t: b.t.trim() }));   // the server tidies
+    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i' + saves.length, books } };
+  };
+  const { ctx, els, get, storage } = await boot({ files: { 'data/books.json': mine }, api });
+  assert.equal(get('DISK_SAVE'), true);
+  ctx.setView('library');
+  els.toggleAdd.listeners.click[0]();
+  Object.assign(els.f_t, { value: 'New  ' });
+  Object.assign(els.f_a, { value: 'Me' });
+  Object.assign(els.f_s, { value: 'Mine Saga' });
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  await settle();
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].method, 'PUT');
+  assert.equal(saves[0].headers['Content-Type'], 'application/json');
+  assert.deepEqual(saves[0].body.books, [{ t: 'Mine', a: 'Me' }, { t: 'New', a: 'Me', s: 'Mine Saga' }]);
+  assert.equal(saves[0].body.base, get('CatalogImport.fingerprint(' + JSON.stringify(mine) + ')'));
+  assert.deepEqual(saves[0].body.seriesInfo, {});
+  assert.equal(get('BASELINE'), 'b1');                  // the next save starts from the file just written
+  assert.deepEqual(get('DATA[1]'), { t: 'New', a: 'Me', s: 'Mine Saga' });
+  assert.ok(!storage.has('audiobook-catalog-data'));
+  assert.equal(els.ioStatus.textContent, 'Saved.');
+
+  // series info goes along, and the status message no longer asks for Export + sync-export
+  ctx.openSeriesForm('Mine Saga');
+  Object.assign(els.sf_total, { value: '3' });
+  Object.assign(els.sf_status, { value: 'ongoing' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  await settle();
+  assert.equal(saves.length, 2);
+  assert.equal(saves[1].body.base, 'b1');
+  assert.equal(saves[1].body.seriesInfo['Mine Saga'].total, 3);
+  assert.doesNotMatch(els.ioStatus.textContent, /sync-export/);
+});
+
+test('edits made while a save is on its way are saved right after it', async () => {
+  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const saves = [];
+  let release;
+  const api = async init => {
+    if (!init.method) return { status: 200, body: { writable: true } };
+    const body = JSON.parse(init.body);
+    saves.push(body);
+    if (saves.length === 1) await new Promise(resolve => { release = resolve; });
+    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i', books: body.books } };
+  };
+  const { get, run } = await boot({ files: { 'data/books.json': mine }, api });
+  run("DATA[0].t = 'One'; persist(); DATA[0].t = 'Two'; persist();");
+  await settle();
+  assert.equal(saves.length, 1);
+  release();
+  await settle(); await settle();
+  assert.equal(saves.length, 2);
+  assert.equal(saves[1].books[0].t, 'Two');
+  assert.equal(saves[1].base, 'b1');
+  assert.equal(get('DATA[0].t'), 'Two');
+});
+
+test('a refused save keeps the edits in the browser and says why', async () => {
+  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  let answer = { status: 409, body: { error: 'changed', conflict: true } };
+  const api = async init => (init.method ? answer : { status: 200, body: { writable: true } });
+  const { get, run, els, storage } = await boot({ files: { 'data/books.json': mine }, api });
+  run("DATA[0].t = 'Edited'; persist();");
+  await settle();
+  assert.match(els.ioStatus.textContent, /Not saved to disk: data\/books\.json changed on disk/);
+  assert.equal(JSON.parse(storage.get('audiobook-catalog-data')).data[0].t, 'Edited');
+
+  // after a reload against the same file, the kept edits are saved again
+  let saved = null;
+  answer = { status: 200, body: { base: 'b', infoBase: 'i', books: [{ t: 'Edited', a: 'Me' }] } };
+  const again = await boot({ files: { 'data/books.json': mine }, storage: new Map(storage),
+    api: async init => { if (init.method) saved = JSON.parse(init.body); return init.method ? answer : { status: 200, body: { writable: true } }; } });
+  await settle();
+  assert.equal(saved.books[0].t, 'Edited');
+  assert.ok(!again.storage.has('audiobook-catalog-data'));
+  assert.equal(again.get('DATA[0].t'), 'Edited');
+});
+
+test('without make serve (or with the demo data) edits stay in the browser', async () => {
+  let calls = 0;
+  const api = async () => { calls++; return { status: 200, body: { writable: true } }; };
+  const demo = await boot({ api });                     // demo data: never asks the server
+  assert.equal(demo.get('DISK_SAVE'), false);
+  assert.equal(calls, 0);
+  const plain = await boot({ files: { 'data/books.json': JSON.stringify([{ t: 'Mine', a: 'Me' }]) } });
+  assert.equal(plain.get('DISK_SAVE'), false);
+  plain.run("DATA[0].t = 'Edited'; persist();");
+  await settle();
+  assert.ok(plain.storage.has('audiobook-catalog-data'));
 });

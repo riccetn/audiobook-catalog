@@ -81,13 +81,14 @@ Only finished books are imported. The command lists what it added, and anything 
 **Or import in the app**: press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
 runs the same importer and merge as the command line (both use `importers.js`), honours
 `data/excluded.txt`, and shows the same preview: what is already there, which Audible ids get filled
-in, what is new and what needs a look. Nothing changes until you press **Add books**. Like any edit
-in the page, the result lives in that browser: press **Export** and run `sync-export` (below) to put it
-in `data/books.json`.
+in, what is new and what needs a look. Nothing changes until you press **Add books**; then, like any
+edit in the page, it is saved to `data/books.json` (see below).
 
-**Edit in the app, then bring the changes back**
+**Edit in the app**
 
-Edit books in the page (pencil icon, `+ Add a book`), press **Export**, then:
+Edit books in the page (pencil icon, `+ Add a book`). With `make serve` and your own `data/books.json`,
+every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other
+server, or the demo data, edits stay in the browser: press **Export**, then:
 
 ```sh
 node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json --dry-run
@@ -104,7 +105,7 @@ You can also edit `data/books.json` by hand; `make format` restores the one-book
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
 the author site, or to add or remove that info. The form checks the same rules as `make validate`.
-Like book edits, the change lives in the browser until you **Export** and run `sync-export`. Or edit
+Like book edits, the change is saved to `data/series-info.json`. Or edit
 `data/series-info.json` by hand, then `make validate`.
 
 **Remove a book for good**: delete it from `data/books.json` *and* add its ASIN (or `Title | Author`
@@ -152,17 +153,25 @@ holds your personal data). Any static web server pointed at the project root wor
 `data/books.json` and `data/series-info.json`, or `data/sample/` if you have no `data/books.json`;
 `--data-dir` and `CATALOG_DATA_DIR` only affect the command line tools, not the page.
 
-The page cannot write files, so edits made in the app live in that browser's `localStorage`, plus
-**Export / Import** JSON for real backups (books and series info). Local edits are tagged with a
-fingerprint of the `books.json` and `series-info.json` they were made against. When either changes (an import, a `sync-export`, a hand
-edit), older local edits are **set aside** (kept under the `audiobook-catalog-data.backup` key)
-instead of silently hiding your new data. Treat `data/books.json` in git as the master copy and the
-browser as a scratch pad: Export, then `sync-export`.
+`make serve` also saves: every edit in the page (books, series info, CSV imports, **Import** of a
+backup) is sent to the server, which checks it like `sync-export` does (the same validation and
+tidying) and writes `data/books.json` and `data/series-info.json`. It only accepts saves from the page
+it serves, only to your own `data/books.json` (never the demo), and refuses a save if either file changed
+on disk since the page loaded it (an import, a `sync-export`, a hand edit), so it never overwrites
+those; reload the page to pick them up. A refused or failed save (for example with the server stopped)
+says so under the buttons.
+
+Until the disk has them, edits also live in that browser's `localStorage`, and with any other static
+server they only live there: use **Export** and `sync-export`. **Export / Import** JSON also make real
+backups (books and series info). Local edits are tagged with a fingerprint of the `books.json` and
+`series-info.json` they were made against. When either changes, older local edits are **set aside**
+(kept under the `audiobook-catalog-data.backup` key) instead of silently hiding your new data; if they
+still match on the next load, `make serve` saves them then.
 
 ## Development
 
 - `make test` runs `node --test tests/*.test.mjs`: the importers (`importers.test.mjs`), the command
-  line (`cli.test.mjs`), checks on the data files (`data.test.mjs`) and the browser smoke test
+  line and the save endpoint of `serve` (`cli.test.mjs`), checks on the data files (`data.test.mjs`) and the browser smoke test
   (`app.smoke.test.mjs`), which executes the real `app.js` against a small fake DOM built from
   `index.html`, with a fake `fetch` serving the demo data.
 - `.github/workflows/ci.yml` runs the same on GitHub Actions.

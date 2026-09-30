@@ -175,6 +175,22 @@ function multisetMinus(a, b){
   return out;
 }
 
+/**
+ * Check books (and series info, when given) coming from the app, as in a backup or a save from the page.
+ * Returns the books with tidy text, the errors that block writing them, and all errors.
+ */
+function checkFromApp(newBooks, newInfo, oldInfo){
+  const {errors} = C.validate(newBooks, newInfo || oldInfo);
+  // a series-info entry left without books is expected if a series was renamed/removed in the app;
+  // report but do not block on that. A malformed entry in the app's own series info does block.
+  const orphan = e => /^series-info: .* matches no series/.test(e);
+  const blocking = errors.filter(e => newInfo ? !orphan(e) : !e.startsWith('series-info'));
+  if(blocking.length) return {blocking, errors};
+  const books = newBooks.map(C.tidyBook);      // the app's edit form does not enforce tidy text
+  const tidied = newBooks.filter((b, i) => JSON.stringify(b) !== JSON.stringify(books[i])).length;
+  return {books, tidied, blocking, errors};
+}
+
 /** Replace data/books.json (and data/series-info.json, if the backup has it) with a backup exported from the app. */
 function cmdSyncExport(args, io){
   if(!requireOwnData(args, io)) return 2;
@@ -187,17 +203,11 @@ function cmdSyncExport(args, io){
     return 1;
   }
   const oldInfo = loadSeriesInfo(infoPath);
-  const {errors} = C.validate(newBooks, newInfo || oldInfo);
-  // a series-info entry left without books is expected if a series was renamed/removed in the app;
-  // report but do not block on that. A malformed entry in the backup's own series info does block.
-  const orphan = e => /^series-info: .* matches no series/.test(e);
-  const blocking = errors.filter(e => newInfo ? !orphan(e) : !e.startsWith('series-info'));
+  const {books: tidiedBooks, tidied, blocking, errors} = checkFromApp(newBooks, newInfo, oldInfo);
   if(blocking.length){
     io.err('Not a valid catalogue export:\n  ' + blocking.slice(0, 10).join('\n  '));
     return 1;
   }
-  const tidiedBooks = newBooks.map(C.tidyBook);      // the app's edit form does not enforce tidy text
-  const tidied = newBooks.filter((b, i) => JSON.stringify(b) !== JSON.stringify(tidiedBooks[i])).length;
   newBooks = tidiedBooks;
   if(tidied) io.out(`tidied stray spacing / run-together initials on ${tidied} book(s)`);
   const oldBooks = loadBooks(booksPath);
@@ -237,15 +247,91 @@ const CONTENT_TYPES = {
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
 };
 
-/** Serve the project folder to this machine only (it holds your personal data). */
-function cmdServe(args, io){
-  const root = args.root;
-  const server = http.createServer((req, res) => {
-    let file;
+// Largest save the page may send: far more than any real catalogue, small enough to bound memory.
+const MAX_SAVE_BYTES = 32 * 1024 * 1024;
+
+/** Write a file in one step, so a crash or a full disk never leaves half a catalogue behind. */
+function writeAtomic(file, text){
+  const tmp = path.join(path.dirname(file), '.' + path.basename(file) + '.tmp');
+  fs.writeFileSync(tmp, text, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+function sendJson(res, status, body){
+  res.writeHead(status, {'Content-Type': CONTENT_TYPES['.json'], 'Cache-Control': 'no-store'});
+  res.end(JSON.stringify(body));
+}
+
+/**
+ * Only this page may save: the request must name this server as its host (so another site cannot
+ * reach it through DNS rebinding), come from this server's own origin if the browser says where it
+ * comes from, and be JSON (which a cross-site page cannot send without a CORS preflight, never granted).
+ */
+function sameOrigin(req, port){
+  const hosts = [`localhost:${port}`, `127.0.0.1:${port}`];
+  if(!hosts.includes(req.headers.host)) return false;
+  const origin = req.headers.origin;
+  if(origin !== undefined && origin !== `http://${req.headers.host}`) return false;
+  return /^application\/json(;|$)/.test(req.headers['content-type'] || '');
+}
+
+/**
+ * The page's saves: GET says whether saving is possible (only to your own data/books.json, never the
+ * demo), PUT {books, seriesInfo, base, infoBase} writes both files. `base` and `infoBase` are the
+ * fingerprints of the files the page's edits started from; if either file changed since (an import,
+ * sync-export or a hand edit), the save is refused rather than overwriting that change.
+ */
+function handleSave(req, res, root, port){
+  const dir = path.join(root, 'data');
+  const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
+  const writable = fs.existsSync(booksPath);
+  if(req.method === 'GET'){ sendJson(res, 200, {writable}); return; }
+  if(req.method !== 'PUT'){ sendJson(res, 405, {error: 'use GET or PUT'}); return; }
+  if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'saves are only accepted from this page'}); return; }
+  if(!writable){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
+
+  const chunks = [];
+  let size = 0;
+  req.on('data', chunk => {
+    size += chunk.length;
+    if(size > MAX_SAVE_BYTES){ sendJson(res, 413, {error: 'too large'}); req.destroy(); return; }
+    chunks.push(chunk);
+  });
+  req.on('end', () => {
+    if(res.headersSent) return;
+    let body, books, seriesInfo;
     try{
-      const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      ({books, seriesInfo} = C.readBackup(body));
+      if(!seriesInfo) throw new Error('seriesInfo missing');
+    }catch(exc){ sendJson(res, 400, {error: `not a catalogue: ${exc.message}`}); return; }
+
+    const booksText = readText(booksPath);
+    const infoText = fs.existsSync(infoPath) ? readText(infoPath) : '{}';
+    if(body.base !== C.fingerprint(booksText) || body.infoBase !== C.fingerprint(infoText)){
+      sendJson(res, 409, {error: 'data/books.json or data/series-info.json changed on disk since the page loaded it', conflict: true});
+      return;
+    }
+    const checked = checkFromApp(books, seriesInfo, null);
+    if(checked.blocking.length){ sendJson(res, 400, {error: 'not saved', errors: checked.blocking.slice(0, 10)}); return; }
+    const newBooksText = JSON.stringify(checked.books), newInfoText = JSON.stringify(seriesInfo);
+    try{
+      if(newBooksText !== booksText) writeAtomic(booksPath, newBooksText);
+      if(newInfoText !== infoText) writeAtomic(infoPath, newInfoText);
+    }catch(exc){ sendJson(res, 500, {error: `could not write: ${exc.message}`}); return; }
+    sendJson(res, 200, {base: C.fingerprint(newBooksText), infoBase: C.fingerprint(newInfoText), books: checked.books});
+  });
+}
+
+/** The server behind `serve`: the project folder, plus the page's saves (see handleSave). */
+function createServer(root, port){
+  return http.createServer((req, res) => {
+    let file, urlPath;
+    try{
+      urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       file = path.join(root, urlPath.endsWith('/') ? urlPath + 'index.html' : urlPath);
     }catch(e){ res.writeHead(400).end('bad request'); return; }
+    if(urlPath === '/api/save'){ handleSave(req, res, root, port()); return; }
     if(!file.startsWith(root + path.sep) && file !== root){ res.writeHead(403).end('forbidden'); return; }
     fs.readFile(file, (err, body) => {
       if(err){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }
@@ -253,7 +339,17 @@ function cmdServe(args, io){
       res.end(body);
     });
   });
-  server.listen(args.port, '127.0.0.1', () => io.out(`serving ${root} at http://localhost:${args.port}/ (Ctrl+C to stop)`));
+}
+
+/** Serve the project folder to this machine only (it holds your personal data). */
+function cmdServe(args, io){
+  const server = createServer(args.root, () => server.address().port);
+  server.listen(args.port, '127.0.0.1', () => {
+    io.out(`serving ${args.root} at http://localhost:${args.port}/ (Ctrl+C to stop)`);
+    io.out(fs.existsSync(path.join(args.root, 'data', 'books.json'))
+      ? 'edits in the page are saved to data/books.json and data/series-info.json'
+      : 'showing the demo data; edits in the page stay in the browser (run `node catalog.js init` for your own)');
+  });
   return null;   // keeps running
 }
 
@@ -266,7 +362,7 @@ const COMMANDS = {
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the canonical layout'},
   'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json'},
-  'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N)'},
+  'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},
 };
 
 const USAGE = `usage: node catalog.js [--root DIR] [--data-dir DIR] <command> [options]
@@ -336,7 +432,7 @@ function main(argv, io = {out: s => console.log(s), err: s => console.error(s)})
   }
 }
 
-module.exports = {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir};
+module.exports = {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir, createServer};
 
 if(require.main === module){
   const code = main(process.argv.slice(2));
