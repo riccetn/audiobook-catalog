@@ -57,7 +57,7 @@ function matches(b, q, author, genre, read){
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const editions = CatalogImport.bookEditions(b);
-    const hay = [b.t,b.a,b.n,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.p, ...(Array.isArray(ed.isbn) ? ed.isbn : [])])]
+    const hay = [b.t,b.a,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.n, ed.p, ed.desc, ...(Array.isArray(ed.isbn) ? ed.isbn : [])])]
       .filter(x=> typeof x === 'string').join(' ').toLowerCase();
     // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
     const isbn = CatalogImport.parseIsbn(q);
@@ -354,20 +354,21 @@ const AUDIBLE_URL = 'https://www.audible.com/pd/', GOODREADS_URL = 'https://www.
 /** An edition as formatEdition() writes it, with its ASIN and Goodreads id linking to the book there. */
 function editionHtml(ed){
   const link = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
-  const {id, gr, ...rest} = ed;
-  const details = CatalogImport.formatEdition(rest);
-  return [id ? 'ASIN ' + link(AUDIBLE_URL, id) : '', gr ? 'Goodreads ' + link(GOODREADS_URL, gr) : '', esc(details)]
-    .filter(Boolean).join('; ');
+  const urls = {id: AUDIBLE_URL, gr: GOODREADS_URL};
+  return CatalogImport.editionParts(ed).map(([k, label, value])=>
+    (label ? esc(label) + ' ' : '') + (urls[k] ? link(urls[k], value) : esc(value))).join('; ');
 }
 
 function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
-  const meta = [b.a, b.n ? 'narr. '+b.n : null].filter(Boolean).join(' \u2014 ');
+  // the narrators of all its editions; each edition line names its own only when they differ
+  const narrators = CatalogImport.bookNarrators(b);
+  const meta = [b.a, narrators.length ? 'narr. '+narrators.join(' / ') : null].filter(Boolean).join(' \u2014 ');
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
   const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
   const editions = CatalogImport.bookEditions(b).map(ed=>{
     const also = (SHARED.get(ed) || []).map(k=> DATA[k].t + (DATA[k].sn ? ` #${DATA[k].sn}` : ''));
-    return `<div class="edition">${editionHtml(ed)}` +
+    return `<div class="edition">${editionHtml(narrators.length > 1 ? ed : {...ed, n: undefined})}` +
       (also.length ? `<br><span class="also">Also in this edition: ${esc(also.join(', '))}</span>` : '') + '</div>';
   }).join('');
   const picked = MERGE_FROM === b._i;
@@ -435,7 +436,6 @@ function openEditForm(i){
   EDIT_INDEX = i;
   document.getElementById('f_t').value = b.t || '';
   document.getElementById('f_a').value = b.a || '';
-  document.getElementById('f_n').value = b.n || '';
   document.getElementById('f_g').value = (b.g||[]).join(', ');
   document.getElementById('f_s').value = b.s || '';
   document.getElementById('f_sn').value = b.sn || '';
@@ -454,7 +454,6 @@ document.getElementById('addForm').addEventListener('submit', e=>{
     t: document.getElementById('f_t').value.trim(),
     a: document.getElementById('f_a').value.trim(),
   };
-  const n = document.getElementById('f_n').value.trim(); if(n) b.n = n;
   const s = document.getElementById('f_s').value.trim(); if(s) b.s = s;
   const sn = document.getElementById('f_sn').value.trim(); if(sn) b.sn = sn;
   const g = document.getElementById('f_g').value.trim();

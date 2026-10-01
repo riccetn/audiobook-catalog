@@ -51,8 +51,10 @@ test('names and text are tidied', () => {
   assert.equal(C.tidyText('Ann\u00a0Vale'), 'Ann Vale');
   assert.equal(C.tidyText('Ann\u200b Vale\ufeff'), 'Ann Vale');
   assert.equal(C.tidyText('Two\nlines'), 'Two lines');
-  const rec = { t: 'A  Title ', a: 'A.B. Quill', n: 'Ann   Vale', s: ' S ', sn: '1', g: ['Fantasy ', '  ', 'Cozy  Mystery'], ...ed({ id: ' B0X', p: 'Gull  Audio' }) };
-  assert.deepEqual(C.tidyBook(rec), { t: 'A Title', a: 'A. B. Quill', n: 'Ann Vale', s: 'S', sn: '1', g: ['Fantasy', 'Cozy Mystery'], ...ed({ id: 'B0X', p: 'Gull Audio' }) });
+  const rec = { t: 'A  Title ', a: 'A.B. Quill', s: ' S ', sn: '1', g: ['Fantasy ', '  ', 'Cozy  Mystery'],
+    ...ed({ id: ' B0X', n: 'A.B.  Vale', p: 'Gull  Audio', desc: ' UK   edition' }) };
+  assert.deepEqual(C.tidyBook(rec), { t: 'A Title', a: 'A. B. Quill', s: 'S', sn: '1', g: ['Fantasy', 'Cozy Mystery'],
+    ...ed({ id: 'B0X', n: 'A. B. Vale', p: 'Gull Audio', desc: 'UK edition' }) });
   assert.equal(rec.t, 'A  Title ', 'the input record is not modified');
 });
 
@@ -126,7 +128,7 @@ test('validation: warnings for lookalike series, leftover markup, odd numbers, u
     assert.ok(warnings.includes(needle), needle);
   }
   const untidy = C.validate([
-    { t: '1', a: 'A.B. Quill', n: 'R.T.  Hale' },
+    { t: '1', a: 'A.B. Quill', ...ed({ n: 'R.T.  Hale' }) },
     { t: '2', a: 'A.B. Quill', s: 'Some  Series', g: ['Cozy  Mystery'] },
     { t: 'Double  Title', a: 'Ann Vale' },
   ], {}).warnings.join('\n');
@@ -135,7 +137,7 @@ test('validation: warnings for lookalike series, leftover markup, odd numbers, u
                         "genre 'Cozy  Mystery'", "title 'Double  Title'"]) {
     assert.ok(untidy.includes(needle), needle);
   }
-  assert.deepEqual(C.validate([{ t: 'Fine', a: 'A. B. Quill', n: 'R. T. Hale' }], {}).warnings, []);
+  assert.deepEqual(C.validate([{ t: 'Fine', a: 'A. B. Quill', ...ed({ n: 'R. T. Hale' }) }], {}).warnings, []);
 });
 
 test('dates read: full, month-only and year-only dates, in order', () => {
@@ -211,9 +213,9 @@ test('Audible rows', () => {
   const base = { Title: 'T', 'Title Short': 'Ts', Authors: 'A', Progress: 'Finished', ASIN: 'B0000000A1' };
   const row = kw => ({ ...base, ...kw });
   assert.deepEqual(C.audibleRowToRecord(row({ Series: 'S (book 2)', Narrators: 'N', Tags: 'Fantasy, Magic' })),
-    [{ t: 'Ts', a: 'A', n: 'N', s: 'S', sn: '2', g: ['Fantasy', 'Magic'], ...ed({ id: 'B0000000A1' }) }, null]);
+    [{ t: 'Ts', a: 'A', s: 'S', sn: '2', g: ['Fantasy', 'Magic'], ...ed({ id: 'B0000000A1', n: 'N' }) }, null]);
   const [tidy] = C.audibleRowToRecord(row({ Authors: 'A.B. Quill, Ann  Vale', Narrators: 'R.T.   Hale', Tags: 'Cozy  Mystery, Fantasy' }));
-  assert.deepEqual([tidy.a, tidy.n, tidy.g], ['A. B. Quill, Ann Vale', 'R. T. Hale', ['Cozy Mystery', 'Fantasy']]);
+  assert.deepEqual([tidy.a, tidy.e[0].n, tidy.g], ['A. B. Quill, Ann Vale', 'R. T. Hale', ['Cozy Mystery', 'Fantasy']]);
   assert.deepEqual(C.audibleRowToRecord(row({ Progress: '3h left' })), [null, null]);
   assert.deepEqual(C.audibleRowToRecord(row({ ASIN: 'B002V8N37Q' })), [null, null]);
   const [fallback] = C.audibleRowToRecord(row({ Series: 'S', 'Book Numbers': '4, 1', 'Child Category': 'Epic' }));
@@ -299,8 +301,8 @@ test('Goodreads export: only read audio editions, with tidy names', () => {
     + '"=""77""",Some Book,A.B.  Quill,R.T. Hale,Audiobook,read,\n'
     + ',No Id,Dee,,Audiobook,read,\n');
   assert.deepEqual(result.records, [
-    { t: 'Kept', a: 'Ann', n: 'Nate Narrator', s: 'Series', sn: '2', g: ['urban-fantasy', 'witches'], ...ed({ gr: '4242' }), r: ['2024-03-15'] },
-    { t: 'Some Book', a: 'A. B. Quill', n: 'R. T. Hale', ...ed({ gr: '77' }) },
+    { t: 'Kept', a: 'Ann', s: 'Series', sn: '2', g: ['urban-fantasy', 'witches'], ...ed({ gr: '4242', n: 'Nate Narrator' }), r: ['2024-03-15'] },
+    { t: 'Some Book', a: 'A. B. Quill', ...ed({ gr: '77', n: 'R. T. Hale' }) },
     { t: 'No Id', a: 'Dee' },
   ]);
   assert.equal(result.skippedUnfinished, 1);
@@ -470,11 +472,12 @@ test('editions: validation of fields, and of a box set edition shared by several
   assert.deepEqual(C.validate(clean, {}), { errors: [], warnings: [] });
 
   const errors = C.validate([
-    { t: 'A', a: 'B', e: [] }, { t: 'C', a: 'B', e: [{ p: 'Only a publisher' }] },
+    { t: 'A', a: 'B', e: [] }, { t: 'C', a: 'B', e: [{}, { n: '' }] },
     { t: 'D', a: 'B', e: [{ id: 'B1', d: '15/03/2024', len: 12.5, extra: 1 }, 'nope'] },
     { t: 'E', a: 'B', e: [{ id: 'B9' }, { id: 'B9', p: 'x' }] },
   ], {}).errors.join('\n');
-  for (const needle of ["'e' must be a non-empty list", 'needs an Audible ASIN', "'d' must be a release date", "'len' must be",
+  for (const needle of ["'e' must be a non-empty list", 'edition #1: is empty', "edition #2: 'n' must be a non-empty string",
+                        "'d' must be a release date", "'len' must be",
                         "unknown key 'extra'", 'edition #2: not an object', 'lists the edition with id B9 twice']) {
     assert.ok(errors.includes(needle), needle);
   }
@@ -528,13 +531,16 @@ test('merge: a box set edition on several titles matches them, and is filled in 
 });
 
 test('editions as text: formatted for the card and read back from the form', () => {
-  const edition = { id: 'B0X', gr: '4242', isbn: [ISBN_A], p: 'Gull Audio', d: '2021-05', len: 642 };
+  const edition = { id: 'B0X', gr: '4242', isbn: [ISBN_A], n: 'Ann Vale', p: 'Gull Audio', d: '2021-05', len: 642, desc: 'UK edition' };
   const line = C.formatEdition(edition);
-  assert.equal(line, `ASIN B0X; Goodreads 4242; ISBN ${ISBN_A}; Publisher Gull Audio; Released 2021-05; Length 10h 42m`);
+  assert.equal(line, `UK edition; Narrated by Ann Vale; ASIN B0X; Goodreads 4242; ISBN ${ISBN_A}; Publisher Gull Audio; Released 2021-05; Length 10h 42m`);
   assert.deepEqual(C.parseEditions(line), { editions: [edition], bad: [] });
-  assert.deepEqual(C.parseEditions(`asin: B1; isbn 978-0-00-000000-2, 0306406152\n\n${ISBN_B}; 2020; 45 min\nfoo; Goodreads x`), {
-    editions: [{ id: 'B1', isbn: [ISBN_A, ISBN_BOX] }, { isbn: [ISBN_B], d: '2020', len: 45 }],
-    bad: ['foo', 'Goodreads x'],
+  // text without a label is the description, once per edition; anything else unreadable is reported
+  assert.deepEqual(C.parseEditions(`asin: B1; isbn 978-0-00-000000-2, 0306406152; Dramatized adaptation\n\n${ISBN_B}; 2020; 45 min; narrator R. T. Hale\n`
+    + 'Audio CD; Goodreads x; second description\nDescription: First edition'), {
+    editions: [{ id: 'B1', isbn: [ISBN_A, ISBN_BOX], desc: 'Dramatized adaptation' }, { isbn: [ISBN_B], n: 'R. T. Hale', d: '2020', len: 45 },
+      { desc: 'Audio CD' }, { desc: 'First edition' }],
+    bad: ['Goodreads x', 'second description'],
   });
 });
 
@@ -579,13 +585,13 @@ test('findDuplicates pairs books an import would match, but not a box set\'s tit
 test('mergeBooks keeps the picked fields and combines genres, dates read and editions', () => {
   const a = book('Salt Road', 'Marisol Quenby', { s: 'Lantern Coast', sn: '1', g: ['Fantasy'], r: ['2025-11-20'],
     ...ed({ gr: '4242', p: 'Gullwing Audio' }, { isbn: [ISBN_BOX] }) });
-  const b = book('The Salt Road', 'Marisol Quenby', { n: 'Tobias Frane', s: 'The Lantern Coast', sn: '1',
-    g: ['Fantasy', 'Adventure'], r: ['2023-06-02', '2025-11-20'], ...ed({ id: 'B1', gr: '4242', len: 642 }, { id: 'B2' }) });
-  // by default the first entry that has a value wins; the narrator only b has
+  const b = book('The Salt Road', 'Marisol Quenby', { s: 'The Lantern Coast', sn: '1',
+    g: ['Fantasy', 'Adventure'], r: ['2023-06-02', '2025-11-20'], ...ed({ id: 'B1', gr: '4242', n: 'Tobias Frane', len: 642 }, { id: 'B2' }) });
+  // by default the first entry that has a value wins; the narrator only b's edition has
   assert.deepEqual(C.mergeBooks([a, b]), {
-    t: 'Salt Road', a: 'Marisol Quenby', n: 'Tobias Frane', s: 'Lantern Coast', sn: '1', g: ['Fantasy', 'Adventure'],
+    t: 'Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', g: ['Fantasy', 'Adventure'],
     r: ['2023-06-02', '2025-11-20'],
-    e: [{ id: 'B1', gr: '4242', p: 'Gullwing Audio', len: 642 }, { isbn: [ISBN_BOX] }, { id: 'B2' }],
+    e: [{ id: 'B1', gr: '4242', n: 'Tobias Frane', p: 'Gullwing Audio', len: 642 }, { isbn: [ISBN_BOX] }, { id: 'B2' }],
   });
   const picked = C.mergeBooks([a, b], { t: 1, series: 1 });
   assert.equal(picked.t, 'The Salt Road');
@@ -617,4 +623,21 @@ test('editions that do not disagree on an ASIN or Goodreads id can be joined, on
   assert.deepEqual(C.splitEditions(books), [0]);
   assert.deepEqual(C.splitEditions(books, new Set([C.editionsKey(books[0])])), []);
   assert.equal(C.editionsKey(book('x', 'y', ed({ gr: '7' }, { id: 'B1' }))), C.editionsKey(books[0]));
+});
+
+test('narrators: a narrator on the book moves onto its editions', () => {
+  assert.deepEqual(C.fixEditions({ t: 'A', a: 'B', n: 'Ann Vale', e: [{ id: 'B1' }, { id: 'B2', n: 'R. T. Hale' }] }),
+    { t: 'A', a: 'B', e: [{ id: 'B1', n: 'Ann Vale' }, { id: 'B2', n: 'R. T. Hale' }] });
+  assert.deepEqual(C.fixEditions({ t: 'A', a: 'B', n: 'Ann Vale' }), { t: 'A', a: 'B', e: [{ n: 'Ann Vale' }] });
+  assert.deepEqual(C.fixEditions({ t: 'A', a: 'B', n: ' ' }), { t: 'A', a: 'B' });
+  // from before editions: ids and narrator make one edition
+  assert.deepEqual(C.fixBooks([{ t: 'A', a: 'B', n: 'Ann Vale', id: 'B1' }])[0].e, [{ id: 'B1', n: 'Ann Vale' }]);
+  assert.deepEqual(C.validate(C.fixBooks([{ t: 'A', a: 'B', n: 'Ann Vale', id: 'B1' }]), {}), { errors: [], warnings: [] });
+  assert.ok(C.validate([{ t: 'A', a: 'B', n: 'Ann Vale' }], {}).errors.some(e => e.includes("unknown key 'n'")));
+
+  assert.deepEqual(C.bookNarrators(book('A', 'B', ed({ n: 'Ann Vale' }, { n: 'R. T. Hale' }, { n: 'Ann Vale' }, { id: 'B3' }))), ['Ann Vale', 'R. T. Hale']);
+  // an import's narrator never replaces the one you have
+  const existing = [book('One', 'Author', ed({ id: 'B1', n: 'Mine' }))];
+  C.merge(existing, [book('One', 'Author', ed({ gr: '7', n: 'A guess' }))]);
+  assert.deepEqual(existing[0].e, [{ id: 'B1', gr: '7', n: 'Mine' }]);
 });

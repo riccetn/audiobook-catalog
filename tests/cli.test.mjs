@@ -89,7 +89,7 @@ test('import-audible previews with --dry-run, then adds, fills in ids and honour
   assert.equal(run('import-audible', csv).code, 0);
   assert.deepEqual(loadBooks(books), [
     { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
-    { t: 'Ashfall', a: 'Ilse Marlowe', n: 'A. B. Quill', s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6' }] },
+    { t: 'Ashfall', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6', n: 'A. B. Quill' }] },
   ]);
   assert.match(run('import-audible', csv).out, /new: 0/);
 });
@@ -105,7 +105,7 @@ test('import-goodreads adds read audiobooks', t => {
   assert.equal(code, 0);
   assert.match(out, /Goodreads: 1 finished books read from goodreads.csv/);
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')),
-    [{ t: 'Kept', a: 'Ann', n: 'Nate Narrator', s: 'Series', sn: '2', g: ['fantasy'] }]);
+    [{ t: 'Kept', a: 'Ann', s: 'Series', sn: '2', g: ['fantasy'], e: [{ n: 'Nate Narrator' }] }]);
 
   // a later export with a date read fills it in on the book already there
   fs.writeFileSync(csv, 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
@@ -117,7 +117,7 @@ test('import-goodreads adds read audiobooks', t => {
   fs.writeFileSync(csv, 'Book Id,Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n'
     + '4242,"Kept (Series, #2)",Ann,Nate Narrator,Audible Audio,read,fantasy\n');
   assert.match(run('import-goodreads', csv).out, /Goodreads ids filled in on existing books: 1/);
-  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ gr: '4242' }]);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ gr: '4242', n: 'Nate Narrator' }]);
 });
 
 // The columns of a real Audible Library Extractor CSV export.
@@ -211,7 +211,8 @@ test('sync-export tidies names and spacing', t => {
   assert.equal(code, 0);
   assert.match(out, /tidied stray spacing \/ run-together initials on 1 book/);
   const saved = loadBooks(path.join(tmp, 'data', 'books.json'));
-  assert.deepEqual(saved, [{ t: 'New Book', a: 'A. B. Quill', n: 'R. T. Hale' }, { t: 'Fine Book', a: 'Ann Vale' }]);
+  // a narrator on the book, from before narrators moved to editions, is saved on an edition
+  assert.deepEqual(saved, [{ t: 'New Book', a: 'A. B. Quill', e: [{ n: 'R. T. Hale' }] }, { t: 'Fine Book', a: 'Ann Vale' }]);
 });
 
 test('a date read written as a plain string is accepted and saved as a list', t => {

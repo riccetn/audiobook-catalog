@@ -65,11 +65,11 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
 
 ## Data model (short form; full table in the README)
 
-`books.json` is a list of titles with short keys `t a n s sn g r e` (title, author, narrator, series,
-series number as text, genres, dates read, editions). Each edition in `e` has `id gr isbn p d len`
-(Audible ASIN, Goodreads book id, ISBNs, publisher, release date, length in minutes) and needs one of
-the first three. A box set is one edition copied onto each of its titles, linked by the shared
-identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn` on the book) are
+`books.json` is a list of titles with short keys `t a s sn g r e` (title, author, series,
+series number as text, genres, dates read, editions). Each edition in `e` has `id gr isbn n p d len desc`
+(Audible ASIN, Goodreads book id, ISBNs, narrator, publisher, release date, length in minutes, free-text
+description) and must not be empty. A box set is one edition copied onto each of its titles, linked by the shared
+identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn`/`n` on the book) are
 migrated on load by `fixBooks`. A missing `r` means the read date is unknown, not unread. `series-info.json` maps a series
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`.
 `data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345` or `Title | Author` lines that imports must never re-add; code only

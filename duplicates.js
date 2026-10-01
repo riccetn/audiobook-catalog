@@ -1,6 +1,6 @@
 // The duplicates page: books that look like one title entered twice (the way an import would match
 // them; see findDuplicates), plus a pair picked by hand with the merge button on the catalogue page
-// (duplicates.html#merge=3,7). Merging keeps one entry, with the title, author, narrator and series you
+// (duplicates.html#merge=3,7). Merging keeps one entry, with the title, author and series you
 // pick, and every genre, date read and edition of the others; the rest are removed without excluding
 // them from imports (the kept book carries their ids, so an import finds it). Pairs marked
 // "Not duplicates" are remembered in this browser (store.js).
@@ -8,12 +8,12 @@
 // (one book imported from both Audible and Goodreads), unless you untick that. Books merged before
 // that, whose editions still look like one, are listed below the duplicates to be joined the same way.
 let DUP_GROUPS = [];           // groups of DATA indexes shown
-let DUP_PICKS = [];            // per group: which book's title, author, narrator and series to keep
+let DUP_PICKS = [];            // per group: which book's title, author and series to keep
 let DUP_MANUAL = null;         // the pair picked by hand, until it is merged or kept apart
 let DUP_FOUND = 0;             // how many of DUP_GROUPS findDuplicates found (the rest is DUP_MANUAL)
 let SPLIT = [];                // indexes of books whose editions look like one edition recorded twice
 
-const DUP_FIELDS = [['t', 'Title'], ['a', 'Author'], ['n', 'Narrator'], ['series', 'Series']];
+const DUP_FIELDS = [['t', 'Title'], ['a', 'Author'], ['series', 'Series']];   // narrators are on the editions, which are all kept
 const dupValue = (b, f)=> f === 'series' ? (b.s ? b.s + (b.sn ? ` #${b.sn}` : '') : '') : (b[f] || '');
 
 // The pair in the address (#merge=3,7), if it names two books.
