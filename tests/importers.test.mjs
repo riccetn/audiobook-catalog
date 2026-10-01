@@ -594,3 +594,27 @@ test('mergeBooks keeps the picked fields and combines genres, dates read and edi
   assert.deepEqual(a.e, [{ gr: '4242', p: 'Gullwing Audio' }, { isbn: [ISBN_BOX] }]);
   assert.deepEqual(C.validate([picked], {}).errors, []);
 });
+
+test('editions that do not disagree on an ASIN or Goodreads id can be joined, on merge or later', () => {
+  const audible = book('Salt Road', 'Marisol Quenby', ed({ id: 'B1', isbn: [ISBN_A], len: 642 }));
+  const goodreads = book('Salt Road', 'Marisol Quenby', ed({ gr: '4242', isbn: [ISBN_B], p: 'Gull Audio', len: 600 }));
+  assert.equal(C.editionsJoinable([{ id: 'B1' }, { gr: '4242' }]), true);
+  assert.equal(C.editionsJoinable([{ id: 'B1' }, { id: 'B2' }]), false);
+  assert.equal(C.editionsJoinable([{ id: 'B1' }]), false);
+  // the first edition's values win; ISBNs are combined
+  assert.deepEqual(C.mergeBooks([audible, goodreads], { joinEditions: true }).e,
+    [{ id: 'B1', gr: '4242', isbn: [ISBN_A, ISBN_B], p: 'Gull Audio', len: 642 }]);
+  assert.equal(C.mergeBooks([audible, goodreads]).e.length, 2);
+  assert.equal(audible.e[0].gr, undefined);              // the inputs are left alone
+
+  const books = [
+    book('Two Editions', 'A', ed({ id: 'B1' }, { gr: '7' })),
+    book('Two Asins', 'A', ed({ id: 'B2' }, { id: 'B3' })),
+    book('Box One', 'A', ed({ id: 'BBOX' }, { gr: '8' })),
+    book('Box Two', 'A', ed({ id: 'BBOX' })),
+    book('One', 'A', ed({ id: 'B4' })),
+  ];
+  assert.deepEqual(C.splitEditions(books), [0]);
+  assert.deepEqual(C.splitEditions(books, new Set([C.editionsKey(books[0])])), []);
+  assert.equal(C.editionsKey(book('x', 'y', ed({ gr: '7' }, { id: 'B1' }))), C.editionsKey(books[0]));
+});

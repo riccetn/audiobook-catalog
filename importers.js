@@ -1124,11 +1124,56 @@ function findDuplicates(books, notSame){
 }
 
 /**
+ * Whether several editions could all be one edition: none disagree with another on the ASIN or
+ * Goodreads id. The usual case is one book imported twice, once with its Audible ASIN and once with
+ * its Goodreads id.
+ */
+function editionsJoinable(editions){
+  return editions.length > 1 && editions.every((x, i) => editions.slice(i + 1).every(y => !editionsConflict(x, y)));
+}
+
+/** Editions made into one: the first, filled in from the others (nothing it has is changed). */
+function joinEditions(editions){
+  const out = orderEdition({...editions[0], ...(Array.isArray(editions[0].isbn) ? {isbn: [...editions[0].isbn]} : {})});
+  for(const ed of editions.slice(1)) fillEdition(out, ed);
+  return out;
+}
+
+/** Key for "these editions of a book are different editions": the ids they carry, in any order. */
+function editionsKey(rec){
+  const ids = bookEditions(rec).flatMap(ed => [
+    ...['id', 'gr'].filter(k => typeof ed[k] === 'string' && ed[k]).map(k => k + ' ' + ed[k]),
+    ...editionIsbns(ed).map(x => 'isbn ' + x),
+  ]);
+  return key('editions', ...[...new Set(ids)].sort());
+}
+
+/**
+ * Books whose editions look like one edition recorded twice (see editionsJoinable), as indexes into
+ * `books`; a book with an edition that another book shares (a box set) is left out. `keepApart` holds
+ * editionsKey()s of books whose editions are different.
+ */
+function splitEditions(books, keepApart){
+  keepApart = keepApart || new Set();
+  const owners = new Map();   // ASIN / Goodreads id / ISBN -> how many books carry it
+  books.forEach(b => {
+    const ids = new Set(bookEditions(b).flatMap(ed => [...['id', 'gr'].filter(k => ed[k]).map(k => k + ' ' + ed[k]), ...editionIsbns(ed)]));
+    for(const id of ids) owners.set(id, (owners.get(id) || 0) + 1);
+  });
+  const shared = ed => [...['id', 'gr'].filter(k => ed[k]).map(k => k + ' ' + ed[k]), ...editionIsbns(ed)].some(id => owners.get(id) > 1);
+  return books.map((b, i) => i).filter(i => {
+    const editions = bookEditions(books[i]);
+    return editionsJoinable(editions) && !editions.some(shared) && !keepApart.has(editionsKey(books[i]));
+  });
+}
+
+/**
  * One book made of several entries for the same title. `pick` says, for 't', 'a', 'n' and 'series'
  * (the series and its number together), which entry's value to keep, as an index into `recs`; by
  * default the first entry that has one. Genres and dates read are combined, and so are editions: an
  * edition that shares an ASIN, Goodreads id or ISBN with one already kept fills in what it lacks,
- * the others are added.
+ * the others are added. With `pick.joinEditions`, editions that do not disagree on an ASIN or
+ * Goodreads id become one edition (see editionsJoinable).
  */
 function mergeBooks(recs, pick){
   pick = pick || {};
@@ -1156,7 +1201,8 @@ function mergeBooks(recs, pick){
     if(same) fillEdition(same, ed);
     else editions.push(orderEdition({...ed, ...(Array.isArray(ed.isbn) ? {isbn: [...ed.isbn]} : {})}));
   }
-  if(editions.length) out.e = editions;
+  if(pick.joinEditions && editionsJoinable(editions)) out.e = [joinEditions(editions)];
+  else if(editions.length) out.e = editions;
   return out;
 }
 
@@ -1167,6 +1213,7 @@ return {
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
+  editionsJoinable, joinEditions, editionsKey, splitEditions,
 };
 })();
 

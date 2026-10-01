@@ -17,7 +17,8 @@ let SAVING = false;            // a save to disk is on its way
 let SAVE_AGAIN = false;        // more edits came in while it was
 let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[LS_KEY]
 
-// Pairs of books marked "Not duplicates" on the duplicates page; kept in this browser only.
+// Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
+// duplicates page; kept in this browser only.
 const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
 let NOT_DUPLICATES = new Set();
 try{
@@ -36,9 +37,9 @@ function localNow(){
   try{ return localStorage.getItem(LS_KEY); }catch(e){ return null; }
 }
 
-// The page links: the duplicates link says how many there are.
+// The page links: the duplicates link says how many duplicates and books with split editions there are.
 function updateNav(){
-  const n = CatalogImport.findDuplicates(DATA, NOT_DUPLICATES).length;
+  const n = CatalogImport.findDuplicates(DATA, NOT_DUPLICATES).length + CatalogImport.splitEditions(DATA, NOT_DUPLICATES).length;
   document.getElementById('dupCount').textContent = n ? ` (${n})` : '';
 }
 
