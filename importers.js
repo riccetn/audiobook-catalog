@@ -292,9 +292,9 @@ function saveBook(books, index, rec){
   return changed.size;
 }
 
-/** fixReadDates() and fixEditions() on every book of a list; anything that is not a list is returned as is. */
+/** fixReadDates(), fixEditions() and fixSeriesTitle() on every book of a list; anything that is not a list is returned as is. */
 function fixBooks(books){
-  return Array.isArray(books) ? books.map(b => fixEditions(fixReadDates(b))) : books;
+  return Array.isArray(books) ? books.map(b => fixSeriesTitle(fixEditions(fixReadDates(b)))) : books;
 }
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -444,6 +444,9 @@ class Exclusions {
     const k = key(norm(title), firstAuthor(author));
     if(this.titles.has(k)) return null;
     this.titles.add(k);
+    // an entry written before series were split off titles still keeps out the book under its short title
+    const split = splitSeriesTitle(title);
+    if(split && split[0]) this.titles.add(key(norm(split[0]), firstAuthor(author)));
     this.lines.set(k, line = `${title} | ${author}`);
     return line;
   }
@@ -825,7 +828,7 @@ function audibleRowToRecord(row){
   const minutes = parseLength(cell(row, 'Length'));
   if(minutes) edition.len = minutes;
   if(edition.id || edition.isbn) rec.e = [edition];
-  rec = tidyBook(rec);
+  rec = tidyBook(fixSeriesTitle(rec));   // a title like "Lantern of the Deep: Ember Coast, Book 2" with no Series column
 
   const warning = ambiguous
     ? `${repr(rec.t)}: belongs to several series (${row.Series}); using ${repr(series)}`
@@ -876,13 +879,70 @@ function parseGoodreadsTitle(raw){
   return [clean, first, null];
 }
 
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven',
+  'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+// "Title: Series, Book 3" (also "Volume 3", "Vol. 3", "#3" or "Book Three"). The title takes the last
+// colon, so a subtitle stays with it; a series name with a colon in it loses its first part.
+const COLON_SERIES = new RegExp('^(.+):\\s*(.+?)\\s*,\\s*(?:book|volume|vol\\.?|#)\\s*(\\d+(?:\\.\\d+)?|' +
+  NUMBER_WORDS.join('|') + ')\\s*$', 'i');
+
+/** "Title: Series, Book 3" -> ["Title", "Series", "3"], or null. */
+function splitColonSeries(raw){
+  const m = COLON_SERIES.exec(raw);
+  if(!m) return null;
+  const word = NUMBER_WORDS.indexOf(m[3].toLowerCase());
+  return [m[1].trim(), m[2].trim(), word >= 0 ? String(word) : m[3]];
+}
+
+/**
+ * Split a series and number off a title written as "Title: Series, Book 3" or "Title (Series, #3)".
+ * Returns [title, series, number], or null when the title names no series with a number.
+ */
+function splitSeriesTitle(raw){
+  raw = tidyText(raw);
+  const colon = splitColonSeries(raw);
+  if(colon) return colon;
+  if(!PAREN.test(raw)) return null;
+  const parts = parseGoodreadsTitle(raw);
+  return parts[1] && parts[2] ? parts : null;
+}
+
+/**
+ * Take the series out of the title of a book imported before titles were split ("Title: Series, Book 3").
+ * A book without a series gets the one in its title; a book that already has that series only loses it
+ * from the title (and gains the number if it had none). A different series or number is never changed;
+ * then the title stays as it is.
+ */
+function fixSeriesTitle(rec){
+  if(!isObject(rec) || typeof rec.t !== 'string') return rec;
+  const split = splitSeriesTitle(rec.t);
+  if(!split || !split[0]) return rec;
+  const [t, s, sn] = split;
+  if(!rec.s && !rec.sn) return {...rec, t, s, sn};
+  if(typeof rec.s !== 'string' || seriesNorm(rec.s) !== seriesNorm(s)) return rec;
+  if(rec.sn && Number(rec.sn) !== Number(sn)) return rec;
+  return {...rec, t, ...(rec.sn ? {} : {sn})};
+}
+
+/**
+ * A Goodreads title: "Frosted (Blaze, #6; Dana O'Hare, #1)" or "Frosted: Blaze, Book 6" -> ["Frosted", "Blaze", "6"].
+ * When both are there, the colon part is dropped if it names the same series.
+ */
+function readGoodreadsTitle(raw){
+  const [title, series, number] = parseGoodreadsTitle(raw);
+  const colon = splitColonSeries(title);
+  if(!colon) return [title, series, number];
+  if(!series) return colon;
+  return seriesNorm(colon[1]) === seriesNorm(series) ? [colon[0], series, number || colon[2]] : [title, series, number];
+}
+
 /** Read the text of a Goodreads library export CSV. Keeps audio editions on the "read" shelf. */
 function readGoodreads(text){
   const result = {records: [], warnings: [], skippedUnfinished: 0};
   for(const row of parseCsv(text)){
     if(!AUDIO_BINDINGS.has(cell(row, 'Binding'))) continue;
     if(cell(row, 'Exclusive Shelf') !== 'read'){ result.skippedUnfinished++; continue; }
-    const [title, series, number] = parseGoodreadsTitle(row.Title || '');
+    const [title, series, number] = readGoodreadsTitle(row.Title || '');
     let rec = {t: title, a: cell(row, 'Author')};
     // Goodreads files narrators under "Additional Authors"; treat that as a best guess.
     const narrator = cell(row, 'Additional Authors');
@@ -1106,7 +1166,7 @@ return {
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, formatEdition, parseEditions, saveBook,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  parseGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
+  parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
 };
 })();
 

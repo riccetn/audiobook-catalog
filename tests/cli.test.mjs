@@ -175,6 +175,17 @@ test('books from before editions validate, and format rewrites them with edition
   assert.doesNotMatch(run('validate').out, /from before editions/);
 });
 
+test('titles holding their series validate, and format splits them', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const booksPath = path.join(tmp, 'data', 'books.json');
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'The First Adventure: Fantasy Adventures, Book 1', a: 'Ann' }]));
+  assert.match(run('validate').out, /1 title\(s\) still hold their series/);
+  assert.equal(run('format').code, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')), [{ t: 'The First Adventure', a: 'Ann', s: 'Fantasy Adventures', sn: '1' }]);
+  assert.doesNotMatch(run('validate').out, /still hold their series/);
+});
+
 test('an import that would leave invalid data writes nothing', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
