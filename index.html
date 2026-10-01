@@ -41,6 +41,7 @@
       <button class="iconbtn2" id="importAudibleBtn" title="Add finished books from an Audible Library Extractor CSV">Audible CSV</button>
       <button class="iconbtn2" id="importGoodreadsBtn" title="Add read audiobooks from a Goodreads library export CSV">Goodreads CSV</button>
       <input type="file" id="importCsvFile" accept=".csv,text/csv" style="display:none">
+      <button class="iconbtn2" id="dupBtn" title="Find books entered twice and merge them">Duplicates</button>
       <button class="addbtn" id="toggleAdd">+ Add a book</button>
     </div>
   </div>
@@ -52,6 +53,14 @@
     <div class="formbtns">
       <button type="button" class="save" id="importConfirm">Add books</button>
       <button type="button" id="importCancel">Cancel</button>
+    </div>
+  </div>
+
+  <div id="dupPanel" class="importPreview">
+    <h3 id="dupTitle">Duplicates</h3>
+    <div id="dupBody"></div>
+    <div class="formbtns">
+      <button type="button" id="dupClose">Close</button>
     </div>
   </div>
 

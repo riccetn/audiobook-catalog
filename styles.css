@@ -101,6 +101,17 @@ h1{
 .importPreview p{margin:.25rem 0;}
 .importPreview ul{margin:.3rem 0 .6rem; padding-left:1.2rem; max-height:16rem; overflow-y:auto; overflow-wrap:anywhere;}
 .importPreview .warn{color:#b0453f;}
+.dup-group{border-top:1px solid var(--line); padding-top:.7rem; margin-top:.7rem;}
+.dup-books{display:flex; gap:.5rem; flex-wrap:wrap;}
+.dup-book{flex:1 1 220px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:.5rem .65rem; background:var(--paper); overflow-wrap:anywhere;}
+.dup-field{display:block; margin:.1rem 0;}
+.dup-choice{cursor:pointer;}
+.dup-choice input{margin:0 .3rem 0 0; accent-color:var(--moss);}
+.dup-label{color:var(--ink-soft); font-size:.75rem;}
+.dup-extra{color:var(--ink-soft); font-size:.75rem; margin-top:.15rem;}
+.dup-result{margin-top:.5rem; font-weight:600;}
+.book.picked{border-color:var(--moss); box-shadow:0 0 0 1px var(--moss);}
+.book.picked .iconbtn.merge{color:var(--moss);}
 .formrow{display:flex; gap:.6rem;}
 .formrow > div{flex:1;}
 .formrow > .formrow-btn{flex:0 0 auto; display:flex; align-items:flex-end;}

@@ -17,6 +17,10 @@ let EDIT_SERIES = null;        // name of the series whose info is being edited,
 let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
 let SAVING = false;            // a save to disk is on its way
 let SAVE_AGAIN = false;        // more edits came in while it was
+let DUP_GROUPS = [];           // groups of DATA indexes shown in the duplicates panel
+let DUP_PICKS = [];            // per group: which book's title, author, narrator and series to keep
+let DUP_MANUAL = false;        // the panel shows two books picked by hand, not the ones found
+let MERGE_FROM = null;         // index of the first book picked with its merge button, or null
 
 // Filter value for books with no date read, in the "Read any time" select.
 const UNDATED = '__undated__';
@@ -57,6 +61,7 @@ function populateFilters(){
   rSel.innerHTML = '<option value="">Read any time</option>' + years.map(y=>`<option value="${esc(y)}">Read in ${esc(y)}</option>`).join('')
     + `<option value="${UNDATED}">No date read</option>`;
   aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
+  refreshDuplicates();
 }
 
 function esc(s){
@@ -199,6 +204,9 @@ function render(){
       const i = parseInt(e.currentTarget.dataset.i,10);
       openEditForm(i);
     });
+  });
+  document.querySelectorAll('.iconbtn.merge').forEach(btn=>{
+    btn.addEventListener('click', e=> pickMergeBook(parseInt(e.currentTarget.dataset.i,10)));
   });
   bindSeriesEditButtons();
 }
@@ -371,7 +379,9 @@ function bookCard(b){
     return `<div class="edition">${esc(CatalogImport.formatEdition(ed))}` +
       (also.length ? `<br><span class="also">Also in this edition: ${esc(also.join(', '))}</span>` : '') + '</div>';
   }).join('');
-  return `<div class="book">${num}<div class="info">
+  const picked = MERGE_FROM === b._i;
+  const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${DATA[MERGE_FROM].t}`;
+  return `<div class="book${picked ? ' picked' : ''}">${num}<div class="info">
     <div class="title">${esc(b.t)}</div>
     <div class="meta">${esc(meta)}</div>
     ${read}
@@ -379,9 +389,163 @@ function bookCard(b){
     ${genres ? `<div class="genres">${genres}</div>` : ''}
   </div><div class="book-actions">
     <button class="iconbtn edit" data-i="${b._i}" title="Edit" aria-label="Edit">&#9998;</button>
+    <button class="iconbtn merge" data-i="${b._i}" title="${esc(mergeLabel)}" aria-label="${esc(mergeLabel)}">&#8644;</button>
     <button class="iconbtn del" data-i="${b._i}" title="Remove" aria-label="Remove">&times;</button>
   </div></div>`;
 }
+
+// ------------------------------------------------------------------ duplicates
+// The Duplicates button lists books that look like one title entered twice (the way an import would
+// match them; see findDuplicates), and the merge button on a book pairs it with any other by hand. Merging
+// keeps one entry, with the title, author, narrator and series you pick, and every genre, date read and
+// edition of the others; the rest are removed without excluding them from imports (the kept book
+// carries their ids, so an import finds it). Pairs marked "Not duplicates" are remembered in this browser.
+const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
+let NOT_DUPLICATES = new Set();
+try{
+  const saved = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || '[]');
+  if(Array.isArray(saved)) NOT_DUPLICATES = new Set(saved.filter(x=> typeof x === 'string'));
+}catch(e){}
+
+const DUP_FIELDS = [['t', 'Title'], ['a', 'Author'], ['n', 'Narrator'], ['series', 'Series']];
+const dupValue = (b, f)=> f === 'series' ? (b.s ? b.s + (b.sn ? ` #${b.sn}` : '') : '') : (b[f] || '');
+
+// Called whenever DATA changes (from populateFilters): indexes in the panel would be stale.
+function refreshDuplicates(){
+  const found = CatalogImport.findDuplicates(DATA, NOT_DUPLICATES);
+  document.getElementById('dupBtn').textContent = found.length ? `Duplicates (${found.length})` : 'Duplicates';
+  MERGE_FROM = null;
+  if(!document.getElementById('dupPanel').classList.contains('open')) return;
+  if(DUP_MANUAL) closeDuplicates(); else showDuplicates(found);
+}
+
+function openDuplicates(){
+  closeForm(); closeSeriesForm();
+  DUP_MANUAL = false;
+  showDuplicates(CatalogImport.findDuplicates(DATA, NOT_DUPLICATES));
+}
+
+// Show `groups` in the panel, keeping the choices made for a group that is still there.
+function showDuplicates(groups){
+  const before = new Map(DUP_GROUPS.map((g, k)=> [g.join(','), DUP_PICKS[k]]));
+  DUP_GROUPS = groups;
+  DUP_PICKS = groups.map(g=> before.get(g.join(',')) || {});
+  renderDuplicates();
+  const panel = document.getElementById('dupPanel');
+  panel.classList.add('open');
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function closeDuplicates(){
+  DUP_GROUPS = []; DUP_PICKS = []; DUP_MANUAL = false;
+  document.getElementById('dupPanel').classList.remove('open');
+}
+
+function renderDuplicates(){
+  document.getElementById('dupTitle').textContent = DUP_MANUAL ? 'Merge two books'
+    : DUP_GROUPS.length ? `${DUP_GROUPS.length} possible duplicate${DUP_GROUPS.length === 1 ? '' : 's'}` : 'Duplicates';
+  if(!DUP_GROUPS.length){
+    document.getElementById('dupBody').innerHTML = '<p>No books look like duplicates. To merge two books anyway, ' +
+      'press &#8644; on one of them and then on the other.</p>';
+    return;
+  }
+  let html = '<p>Pick what to keep where the entries differ. Genres, dates read and editions are combined.</p>';
+  DUP_GROUPS.forEach((idx, g)=>{
+    const books = idx.map(i=> DATA[i]);
+    const merged = CatalogImport.mergeBooks(books, DUP_PICKS[g]);
+    html += `<div class="dup-group"><div class="dup-books">`;
+    books.forEach((b, k)=>{
+      html += '<div class="dup-book">';
+      DUP_FIELDS.forEach(([f, label])=>{
+        const value = dupValue(b, f);
+        if(!value) return;
+        const choices = new Set(books.map(x=> dupValue(x, f)).filter(Boolean));
+        const line = `<span class="dup-label">${label}</span> ${esc(value)}`;
+        if(choices.size < 2){ html += `<div class="dup-field">${line}</div>`; return; }
+        const checked = dupValue(merged, f) === value && books.findIndex(x=> dupValue(x, f) === value) === k;
+        html += `<label class="dup-field dup-choice"><input type="radio" name="dup-${g}-${f}" data-g="${g}" data-f="${f}" data-k="${k}"${checked ? ' checked' : ''}> ${line}</label>`;
+      });
+      const extra = [
+        (b.g || []).length ? esc(b.g.join(', ')) : '',
+        readDates(b).length ? 'Read ' + esc(readDates(b).join(', ')) : '',
+        ...CatalogImport.bookEditions(b).map(ed=> esc(CatalogImport.formatEdition(ed))),
+      ].filter(Boolean);
+      html += extra.map(x=> `<div class="dup-extra">${x}</div>`).join('') + '</div>';
+    });
+    const editions = CatalogImport.bookEditions(merged).length;
+    html += `</div><p class="dup-result">Becomes: ${esc(merged.t)} — ${esc(merged.a)}` +
+      (merged.s ? ` — ${esc(dupValue(merged, 'series'))}` : '') +
+      (editions ? `, ${editions} edition${editions === 1 ? '' : 's'}` : '') +
+      (readDates(merged).length ? `, read ${esc(readDates(merged).join(', '))}` : '') + '</p>';
+    html += `<div class="formbtns"><button type="button" class="save dup-merge" data-g="${g}">Merge into one</button>` +
+      `<button type="button" class="dup-apart" data-g="${g}">Not duplicates</button></div></div>`;
+  });
+  document.getElementById('dupBody').innerHTML = html;
+  document.querySelectorAll('#dupBody input[type=radio]').forEach(input=>{
+    input.addEventListener('change', e=>{
+      const {g, f, k} = e.currentTarget.dataset;
+      DUP_PICKS[g][f] = parseInt(k, 10);
+      renderDuplicates();
+    });
+  });
+  document.querySelectorAll('#dupBody .dup-merge').forEach(btn=>{
+    btn.addEventListener('click', e=> mergeGroup(parseInt(e.currentTarget.dataset.g, 10)));
+  });
+  document.querySelectorAll('#dupBody .dup-apart').forEach(btn=>{
+    btn.addEventListener('click', e=> keepApart(parseInt(e.currentTarget.dataset.g, 10)));
+  });
+}
+
+// Merge group `g` into its first book: on a copy of DATA, so nothing changes unless the result validates.
+function mergeGroup(g){
+  const idx = DUP_GROUPS[g];
+  if(!idx) return;
+  const merged = CatalogImport.mergeBooks(idx.map(i=> DATA[i]), DUP_PICKS[g]);
+  const data = JSON.parse(JSON.stringify(DATA));
+  const keep = Math.min(...idx);
+  // an edition a box set shares with other titles gets what the merged one gained there too
+  CatalogImport.saveBook(data, keep, merged);
+  idx.filter(i=> i !== keep).sort((x, y)=> y - x).forEach(i=> data.splice(i, 1));
+  const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
+  if(errors.length){
+    showIoStatus(`Couldn't merge ${merged.t}: ${errors[0]}`, true);
+    return;
+  }
+  closeForm();
+  DATA = data;
+  populateFilters(); render(); persist();
+  showIoStatus(`Merged ${idx.length} entries into ${merged.t}.` + keepHint('data/books.json'));
+}
+
+// Remember that the books of group `g` are different books, in this browser.
+function keepApart(g){
+  const books = (DUP_GROUPS[g] || []).map(i=> DATA[i]);
+  books.forEach((x, k)=> books.slice(k + 1).forEach(y=> NOT_DUPLICATES.add(CatalogImport.duplicatePairKey(x, y))));
+  try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...NOT_DUPLICATES])); }catch(e){}
+  refreshDuplicates();
+}
+
+// The merge button on a book: the first press picks it, a press on another book opens the two in the panel.
+function pickMergeBook(i){
+  if(MERGE_FROM === null){
+    MERGE_FROM = i;
+    showIoStatus(`Now press ⇄ on the book to merge ${DATA[i].t} with.`);
+  } else if(MERGE_FROM === i){
+    MERGE_FROM = null;
+  } else {
+    const pair = [MERGE_FROM, i].sort((x, y)=> x - y);
+    MERGE_FROM = null;
+    closeForm(); closeSeriesForm();
+    DUP_MANUAL = true;
+    showDuplicates([pair]);
+  }
+  render();
+}
+
+document.getElementById('dupBtn').addEventListener('click', ()=>{
+  if(document.getElementById('dupPanel').classList.contains('open')) closeDuplicates(); else openDuplicates();
+});
+document.getElementById('dupClose').addEventListener('click', closeDuplicates);
 
 // Where edits go: with `make serve` and your own data/books.json, straight to disk (saveToDisk).
 // Every edit is also kept in localStorage until the disk has it, so nothing is lost if a save fails

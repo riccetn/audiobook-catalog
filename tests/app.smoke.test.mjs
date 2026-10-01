@@ -654,3 +654,65 @@ test('without make serve (or with the demo data) edits stay in the browser', asy
   await settle();
   assert.ok(plain.storage.has('audiobook-catalog-data'));
 });
+
+test('duplicates: found, merged with the picked title, or kept apart', async () => {
+  const mine = JSON.stringify([
+    { t: 'The Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ id: 'B1' }] },
+    { t: 'Beacons', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '2', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
+    { t: 'Salt Road', a: 'Marisol Quenby', n: 'Tobias Frane', s: 'Lantern Coast', sn: '1', r: ['2023-06-02'], e: [{ gr: '4242' }] },
+    { t: 'The Drowned Chart', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '3', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
+    { t: 'Ledger', a: 'Priya Ostrander' },
+    { t: 'The Ledger', a: 'P. Ostrander' },
+  ]);
+  const { ctx, els, get, run, storage } = await boot({ files: { 'data/books.json': mine } });
+  // a box set's titles share an edition but are not duplicates
+  assert.equal(els.dupBtn.textContent, 'Duplicates (1)');
+  els.dupBtn.listeners.click[0]();
+  assert.ok(els.dupPanel.classList.contains('open'));
+  assert.deepEqual(get('DUP_GROUPS'), [[0, 2]]);
+  assert.match(els.dupBody.innerHTML, /name="dup-0-t"[^>]*checked> <span class="dup-label">Title<\/span> The Salt Road/);
+  assert.match(els.dupBody.innerHTML, /Becomes: The Salt Road/);
+
+  // pick the second entry's title, then merge: one book with both editions, the narrator and the date read
+  run('DUP_PICKS[0].t = 1; renderDuplicates()');
+  assert.match(els.dupBody.innerHTML, /Becomes: Salt Road/);
+  ctx.mergeGroup(0);
+  assert.equal(get('DATA.length'), 5);
+  assert.deepEqual(get('DATA[0]'), { t: 'Salt Road', a: 'Marisol Quenby', n: 'Tobias Frane', s: 'Lantern Coast', sn: '1',
+    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1' }, { gr: '4242' }] });
+  assert.match(els.ioStatus.textContent, /^Merged 2 entries into Salt Road\./);
+  assert.equal(get('EXCLUSIONS.size'), 0);              // the removed entry's ids live on in the kept book
+  assert.equal(els.dupBtn.textContent, 'Duplicates');
+  assert.match(els.dupBody.innerHTML, /No books look like duplicates/);
+  assert.ok(storage.has('audiobook-catalog-data'));
+
+  // two books the search misses can be merged by hand: the merge button on one, then the other
+  ctx.setView('library');
+  ctx.pickMergeBook(3);
+  assert.match(els.results.innerHTML, /class="book picked"/);
+  ctx.pickMergeBook(4);
+  assert.equal(get('DUP_MANUAL'), true);
+  assert.deepEqual(get('DUP_GROUPS'), [[3, 4]]);
+  // "Not duplicates" is remembered in this browser
+  ctx.keepApart(0);
+  assert.equal(JSON.parse(storage.get('audiobook-catalog-not-duplicates')).length, 1);
+  ctx.closeDuplicates();
+  assert.ok(!els.dupPanel.classList.contains('open'));
+  ctx.pickMergeBook(3);
+  ctx.pickMergeBook(4);
+  ctx.mergeGroup(0);
+  assert.equal(get('DATA.length'), 4);
+  assert.deepEqual(get('DATA[3]'), { t: 'Ledger', a: 'Priya Ostrander' });
+  assert.ok(!els.dupPanel.classList.contains('open'));   // a pair picked by hand closes once merged
+});
+
+test('duplicates marked "Not duplicates" stay apart after a reload', async () => {
+  const files = { 'data/books.json': JSON.stringify([{ t: 'The Ledger', a: 'Priya Ostrander' }, { t: 'The Ledger, Book 1', a: 'Priya Ostrander' }]) };
+  const first = await boot({ files });
+  assert.equal(first.els.dupBtn.textContent, 'Duplicates (1)');
+  first.ctx.openDuplicates();
+  first.ctx.keepApart(0);
+  assert.equal(first.els.dupBtn.textContent, 'Duplicates');
+  const again = await boot({ files, storage: first.storage });
+  assert.equal(again.els.dupBtn.textContent, 'Duplicates');
+});

@@ -36,7 +36,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
   so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
   `readAudible`, `readGoodreads`, `merge`, `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
-  `parseExclusions`/`exclusionEntries`, `readBackup`, `fingerprint`.
+  `parseExclusions`/`exclusionEntries`, `readBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`.
 - `catalog.js`: CommonJS CLI (`main(argv, io)`) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
   the same checks as `sync-export`, refuses a save if the file's `fingerprint` changed on disk since
@@ -44,7 +44,8 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
 - `app.js`: the whole UI, global-state style (`DATA`, `SERIES_INFO`, `VIEW`, ...) rendering into
   elements from `index.html`. Fetches `data/` then falls back to `data/sample/`. Keeps unsaved edits in
   `localStorage` (`audiobook-catalog-data`), tagged with the fingerprint of the files they were made
-  against; stale edits are set aside under `audiobook-catalog-data.backup`.
+  against; stale edits are set aside under `audiobook-catalog-data.backup`. Pairs marked
+  "Not duplicates" in the duplicates panel live only in `audiobook-catalog-not-duplicates`.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
   - `importers.test.mjs`: pipeline unit tests.
   - `cli.test.mjs`: CLI commands and the `serve` save endpoint, in temp directories.
