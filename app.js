@@ -1,33 +1,15 @@
-const LS_KEY = 'audiobook-catalog-data';
-// Served from the project root: your own catalogue in data/ if it exists, otherwise the bundled demo.
-const DATA_DIRS = ['data/', 'data/sample/'];
-
-let DATA = [];
-let SERIES_INFO = {};
-let BASELINE = '';
-let INFO_BASELINE = '';        // same, for series-info.json
-let STARTUP_NOTICE = '';
+// The catalogue page: the series overview, all books, and editing books and series info.
+// Loading and saving live in store.js.
 let VIEW = 'series';           // 'series' | 'library'
 let SERIES_FILTER = null;      // series name, '__standalone__', or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
-let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
-let NEW_EXCLUDED = [];         // entries added to EXCLUSIONS in the page that data/excluded.txt does not have yet
-let PENDING_IMPORT = null;     // records of a previewed CSV import awaiting confirmation
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
-let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
-let SAVING = false;            // a save to disk is on its way
-let SAVE_AGAIN = false;        // more edits came in while it was
-let DUP_GROUPS = [];           // groups of DATA indexes shown in the duplicates panel
-let DUP_PICKS = [];            // per group: which book's title, author, narrator and series to keep
-let DUP_MANUAL = false;        // the panel shows two books picked by hand, not the ones found
 let MERGE_FROM = null;         // index of the first book picked with its merge button, or null
 
 // Filter value for books with no date read, in the "Read any time" select.
 const UNDATED = '__undated__';
 
 // Year a book was (last) read in, for the read filter: '2024' from ['2021-05', '2024-03-15'].
-// Dates read of a book; [] when it has none (or something that is not a list of dates).
-const readDates = b => Array.isArray(b.r) ? b.r.filter(d => typeof d === 'string') : [];
 const readYears = b => readDates(b).map(d => d.slice(0, 4));
 
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
@@ -61,11 +43,7 @@ function populateFilters(){
   rSel.innerHTML = '<option value="">Read any time</option>' + years.map(y=>`<option value="${esc(y)}">Read in ${esc(y)}</option>`).join('')
     + `<option value="${UNDATED}">No date read</option>`;
   aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
-  refreshDuplicates();
-}
-
-function esc(s){
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  MERGE_FROM = null;             // DATA changed, so an index picked for merging may be stale
 }
 
 function matches(b, q, author, genre, read){
@@ -394,385 +372,6 @@ function bookCard(b){
   </div></div>`;
 }
 
-// ------------------------------------------------------------------ duplicates
-// The Duplicates button lists books that look like one title entered twice (the way an import would
-// match them; see findDuplicates), and the merge button on a book pairs it with any other by hand. Merging
-// keeps one entry, with the title, author, narrator and series you pick, and every genre, date read and
-// edition of the others; the rest are removed without excluding them from imports (the kept book
-// carries their ids, so an import finds it). Pairs marked "Not duplicates" are remembered in this browser.
-const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
-let NOT_DUPLICATES = new Set();
-try{
-  const saved = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || '[]');
-  if(Array.isArray(saved)) NOT_DUPLICATES = new Set(saved.filter(x=> typeof x === 'string'));
-}catch(e){}
-
-const DUP_FIELDS = [['t', 'Title'], ['a', 'Author'], ['n', 'Narrator'], ['series', 'Series']];
-const dupValue = (b, f)=> f === 'series' ? (b.s ? b.s + (b.sn ? ` #${b.sn}` : '') : '') : (b[f] || '');
-
-// Called whenever DATA changes (from populateFilters): indexes in the panel would be stale.
-function refreshDuplicates(){
-  const found = CatalogImport.findDuplicates(DATA, NOT_DUPLICATES);
-  document.getElementById('dupBtn').textContent = found.length ? `Duplicates (${found.length})` : 'Duplicates';
-  MERGE_FROM = null;
-  if(!document.getElementById('dupPanel').classList.contains('open')) return;
-  if(DUP_MANUAL) closeDuplicates(); else showDuplicates(found);
-}
-
-function openDuplicates(){
-  closeForm(); closeSeriesForm();
-  DUP_MANUAL = false;
-  showDuplicates(CatalogImport.findDuplicates(DATA, NOT_DUPLICATES));
-}
-
-// Show `groups` in the panel, keeping the choices made for a group that is still there.
-function showDuplicates(groups){
-  const before = new Map(DUP_GROUPS.map((g, k)=> [g.join(','), DUP_PICKS[k]]));
-  DUP_GROUPS = groups;
-  DUP_PICKS = groups.map(g=> before.get(g.join(',')) || {});
-  renderDuplicates();
-  const panel = document.getElementById('dupPanel');
-  panel.classList.add('open');
-  panel.scrollIntoView({behavior:'smooth', block:'start'});
-}
-
-function closeDuplicates(){
-  DUP_GROUPS = []; DUP_PICKS = []; DUP_MANUAL = false;
-  document.getElementById('dupPanel').classList.remove('open');
-}
-
-function renderDuplicates(){
-  document.getElementById('dupTitle').textContent = DUP_MANUAL ? 'Merge two books'
-    : DUP_GROUPS.length ? `${DUP_GROUPS.length} possible duplicate${DUP_GROUPS.length === 1 ? '' : 's'}` : 'Duplicates';
-  if(!DUP_GROUPS.length){
-    document.getElementById('dupBody').innerHTML = '<p>No books look like duplicates. To merge two books anyway, ' +
-      'press &#8644; on one of them and then on the other.</p>';
-    return;
-  }
-  let html = '<p>Pick what to keep where the entries differ. Genres, dates read and editions are combined.</p>';
-  DUP_GROUPS.forEach((idx, g)=>{
-    const books = idx.map(i=> DATA[i]);
-    const merged = CatalogImport.mergeBooks(books, DUP_PICKS[g]);
-    html += `<div class="dup-group"><div class="dup-books">`;
-    books.forEach((b, k)=>{
-      html += '<div class="dup-book">';
-      DUP_FIELDS.forEach(([f, label])=>{
-        const value = dupValue(b, f);
-        if(!value) return;
-        const choices = new Set(books.map(x=> dupValue(x, f)).filter(Boolean));
-        const line = `<span class="dup-label">${label}</span> ${esc(value)}`;
-        if(choices.size < 2){ html += `<div class="dup-field">${line}</div>`; return; }
-        const checked = dupValue(merged, f) === value && books.findIndex(x=> dupValue(x, f) === value) === k;
-        html += `<label class="dup-field dup-choice"><input type="radio" name="dup-${g}-${f}" data-g="${g}" data-f="${f}" data-k="${k}"${checked ? ' checked' : ''}> ${line}</label>`;
-      });
-      const extra = [
-        (b.g || []).length ? esc(b.g.join(', ')) : '',
-        readDates(b).length ? 'Read ' + esc(readDates(b).join(', ')) : '',
-        ...CatalogImport.bookEditions(b).map(ed=> esc(CatalogImport.formatEdition(ed))),
-      ].filter(Boolean);
-      html += extra.map(x=> `<div class="dup-extra">${x}</div>`).join('') + '</div>';
-    });
-    const editions = CatalogImport.bookEditions(merged).length;
-    html += `</div><p class="dup-result">Becomes: ${esc(merged.t)} — ${esc(merged.a)}` +
-      (merged.s ? ` — ${esc(dupValue(merged, 'series'))}` : '') +
-      (editions ? `, ${editions} edition${editions === 1 ? '' : 's'}` : '') +
-      (readDates(merged).length ? `, read ${esc(readDates(merged).join(', '))}` : '') + '</p>';
-    html += `<div class="formbtns"><button type="button" class="save dup-merge" data-g="${g}">Merge into one</button>` +
-      `<button type="button" class="dup-apart" data-g="${g}">Not duplicates</button></div></div>`;
-  });
-  document.getElementById('dupBody').innerHTML = html;
-  document.querySelectorAll('#dupBody input[type=radio]').forEach(input=>{
-    input.addEventListener('change', e=>{
-      const {g, f, k} = e.currentTarget.dataset;
-      DUP_PICKS[g][f] = parseInt(k, 10);
-      renderDuplicates();
-    });
-  });
-  document.querySelectorAll('#dupBody .dup-merge').forEach(btn=>{
-    btn.addEventListener('click', e=> mergeGroup(parseInt(e.currentTarget.dataset.g, 10)));
-  });
-  document.querySelectorAll('#dupBody .dup-apart').forEach(btn=>{
-    btn.addEventListener('click', e=> keepApart(parseInt(e.currentTarget.dataset.g, 10)));
-  });
-}
-
-// Merge group `g` into its first book: on a copy of DATA, so nothing changes unless the result validates.
-function mergeGroup(g){
-  const idx = DUP_GROUPS[g];
-  if(!idx) return;
-  const merged = CatalogImport.mergeBooks(idx.map(i=> DATA[i]), DUP_PICKS[g]);
-  const data = JSON.parse(JSON.stringify(DATA));
-  const keep = Math.min(...idx);
-  // an edition a box set shares with other titles gets what the merged one gained there too
-  CatalogImport.saveBook(data, keep, merged);
-  idx.filter(i=> i !== keep).sort((x, y)=> y - x).forEach(i=> data.splice(i, 1));
-  const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
-  if(errors.length){
-    showIoStatus(`Couldn't merge ${merged.t}: ${errors[0]}`, true);
-    return;
-  }
-  closeForm();
-  DATA = data;
-  populateFilters(); render(); persist();
-  showIoStatus(`Merged ${idx.length} entries into ${merged.t}.` + keepHint('data/books.json'));
-}
-
-// Remember that the books of group `g` are different books, in this browser.
-function keepApart(g){
-  const books = (DUP_GROUPS[g] || []).map(i=> DATA[i]);
-  books.forEach((x, k)=> books.slice(k + 1).forEach(y=> NOT_DUPLICATES.add(CatalogImport.duplicatePairKey(x, y))));
-  try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...NOT_DUPLICATES])); }catch(e){}
-  refreshDuplicates();
-}
-
-// The merge button on a book: the first press picks it, a press on another book opens the two in the panel.
-function pickMergeBook(i){
-  if(MERGE_FROM === null){
-    MERGE_FROM = i;
-    showIoStatus(`Now press ⇄ on the book to merge ${DATA[i].t} with.`);
-  } else if(MERGE_FROM === i){
-    MERGE_FROM = null;
-  } else {
-    const pair = [MERGE_FROM, i].sort((x, y)=> x - y);
-    MERGE_FROM = null;
-    closeForm(); closeSeriesForm();
-    DUP_MANUAL = true;
-    showDuplicates([pair]);
-  }
-  render();
-}
-
-document.getElementById('dupBtn').addEventListener('click', ()=>{
-  if(document.getElementById('dupPanel').classList.contains('open')) closeDuplicates(); else openDuplicates();
-});
-document.getElementById('dupClose').addEventListener('click', closeDuplicates);
-
-// Where edits go: with `make serve` and your own data/books.json, straight to disk (saveToDisk).
-// Every edit is also kept in localStorage until the disk has it, so nothing is lost if a save fails
-// (server stopped, or the files changed on disk meanwhile); with any other server, or the demo data,
-// localStorage is all there is, and Export + `node catalog.js sync-export` bring edits back to data/.
-function persist(){
-  saveLocally();
-  if(DISK_SAVE) saveToDisk();
-}
-
-function saveLocally(){
-  try{
-    localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO, excluded: NEW_EXCLUDED}));
-  }catch(e){}
-}
-
-// Add entries (an ASIN, "ISBN 978...", "Goodreads 12345" or "Title | Author") to the books imports skip; returns how many were new.
-function addExclusions(entries){
-  const added = entries.map(e=> EXCLUSIONS.add(e)).filter(Boolean);
-  NEW_EXCLUDED.push(...added);
-  return added.length;
-}
-
-// The end of a status message about an edit: how to get it into the data file, unless that happens anyway.
-function keepHint(file){
-  return DISK_SAVE ? '' : ` Export and run sync-export to keep it in ${file}.`;
-}
-
-async function saveToDisk(){
-  if(SAVING){ SAVE_AGAIN = true; return; }
-  SAVING = true;
-  SAVE_AGAIN = false;
-  let res, body;
-  const excluded = NEW_EXCLUDED.slice();
-  try{
-    res = await fetch('api/save', {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, excluded, base: BASELINE, infoBase: INFO_BASELINE}),
-    });
-    body = await res.json();
-  }catch(e){
-    SAVING = false;
-    showIoStatus('Not saved to disk (is `make serve` still running?). Your edits are kept in this browser.', true);
-    return;
-  }
-  SAVING = false;
-  if(!res.ok){
-    const why = body.conflict
-      ? 'data/books.json changed on disk since this page loaded it. Export your edits here, then reload the page.'
-      : [body.error, ...(body.errors || [])].filter(Boolean).join('; ');
-    showIoStatus(`Not saved to disk: ${why} Your edits are kept in this browser.`, true);
-    return;
-  }
-  BASELINE = body.base;
-  INFO_BASELINE = body.infoBase;
-  NEW_EXCLUDED = NEW_EXCLUDED.slice(excluded.length);   // data/excluded.txt has those now
-  if(SAVE_AGAIN){ saveLocally(); saveToDisk(); return; }
-  // the disk has everything now (tidied the way sync-export tidies); the browser copy is no longer needed
-  if(JSON.stringify(body.books) !== JSON.stringify(DATA)){ DATA = body.books; populateFilters(); render(); }
-  try{ localStorage.removeItem(LS_KEY); }catch(e){}
-  if(!document.getElementById('ioStatus').textContent) showIoStatus('Saved.');
-}
-
-// Whether the server saves edits (only `make serve`, and only to your own data/books.json).
-async function detectDiskSave(dir){
-  if(dir !== 'data/') return false;
-  try{
-    const res = await fetch('api/save', {cache: 'no-cache'});
-    return res.ok && (await res.json()).writable === true;
-  }catch(e){ return false; }
-}
-
-function showIoStatus(msg, isErr){
-  const el = document.getElementById('ioStatus');
-  el.textContent = msg;
-  el.classList.toggle('err', !!isErr);
-  clearTimeout(el._t);
-  el._t = setTimeout(()=>{ el.textContent = ''; }, 5000);
-}
-
-function exportBackup(){
-  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries};
-  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'audiobook-catalog-backup-' + new Date().toISOString().slice(0,10) + '.json';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showIoStatus('Backup downloaded.');
-}
-
-function importBackup(file){
-  const reader = new FileReader();
-  reader.onload = e=>{
-    try{
-      const {books, seriesInfo, excluded} = CatalogImport.readBackup(JSON.parse(e.target.result));
-      const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
-      if(bad) throw new Error('missing title/author');
-      DATA = books;
-      if(seriesInfo) SERIES_INFO = seriesInfo;     // older backups have no series info: keep the current one
-      const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
-      populateFilters(); render(); persist();
-      showIoStatus(`Imported ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series` : '') +
-        (newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
-    }catch(err){
-      showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
-    }
-  };
-  reader.readAsText(file);
-}
-
-// ------------------------------------------------------------ Audible / Goodreads CSV import
-// The same pipeline as `node catalog.js import-audible|import-goodreads` (both use importers.js):
-// read the export, merge it into a copy of the catalogue, show what would change, and only
-// apply it when confirmed. Like every edit in the page, the result is then saved (see persist).
-const IMPORTERS = {
-  audible: {label: 'Audible', read: CatalogImport.readAudible},
-  goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},
-};
-let IMPORT_KIND = 'audible';
-
-// Merge into a copy of DATA, so nothing changes until the result is known to be valid.
-function mergeIntoCopy(records){
-  const data = JSON.parse(JSON.stringify(DATA));
-  const report = CatalogImport.merge(data, records, EXCLUSIONS);
-  // series-info problems are not the import's doing (a series renamed in the page); only block on the books
-  const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
-  return {data, report, errors};
-}
-
-function previewImport(kind, text, fileName){
-  const importer = IMPORTERS[kind];
-  const result = importer.read(text);
-  const {report, errors} = mergeIntoCopy(result.records);
-  const changes = report.added.length + report.backfilled.length + report.goodreadsFilled.length + report.datesFilled.length +
-    report.isbnsFilled.length + report.detailsFilled.length + report.editionsAdded.length;
-  PENDING_IMPORT = errors.length || !changes ? null : result.records;
-
-  const li = rec => {
-    const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
-    return `<li>${esc(rec.t)} &mdash; ${esc(rec.a)}${esc(series)}</li>`;
-  };
-  let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
-  html += `<p>Already in the catalogue: ${report.matched}</p>`;
-  if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
-  if(report.backfilled.length) html += `<p>Audible ids filled in on existing books: ${report.backfilled.length}</p>`;
-  if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
-  if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
-  if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
-  if(report.detailsFilled.length) html += `<p>Publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
-  if(report.editionsAdded.length) html += `<p>Other editions added to existing books: ${report.editionsAdded.length}</p>`;
-  if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
-  html += `<p>New: ${report.added.length}</p>`;
-  if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
-  if(result.warnings.length){
-    html += `<p class="warn">Needs a look (${result.warnings.length}):</p><ul>${result.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`;
-  }
-  if(errors.length){
-    html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
-  } else if(!changes){
-    html += '<p>Nothing new to add.</p>';
-  }
-
-  document.getElementById('importPreviewTitle').textContent = `${importer.label} import`;
-  document.getElementById('importPreviewBody').innerHTML = html;
-  const confirmBtn = document.getElementById('importConfirm');
-  confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
-  confirmBtn.textContent = report.added.length
-    ? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
-    : report.backfilled.length ? 'Save Audible ids' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
-    : report.editionsAdded.length ? 'Save editions' : report.isbnsFilled.length ? 'Save ISBNs' : 'Save edition details';
-  document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
-  document.getElementById('importPreview').classList.add('open');
-}
-
-function applyImport(){
-  if(!PENDING_IMPORT) return;
-  // merged again, in case books were edited while the preview was open
-  const {data, report, errors} = mergeIntoCopy(PENDING_IMPORT);
-  closeImportPreview();
-  if(errors.length){ showIoStatus('The catalogue changed and the import no longer validates; nothing was added.', true); return; }
-  const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
-  const withIsbns = report.isbnsFilled.length, withGr = report.goodreadsFilled.length;
-  const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
-  DATA = data;
-  populateFilters(); render(); persist();
-  showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
-    (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
-    (withGr ? `, filled in ${withGr} Goodreads id${withGr === 1 ? '' : 's'}` : '') +
-    (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
-    (withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
-    (withEditions ? `, added editions to ${withEditions} book${withEditions === 1 ? '' : 's'}` : '') +
-    (withDetails ? `, filled in edition details on ${withDetails} book${withDetails === 1 ? '' : 's'}` : '') +
-    '.' + keepHint('data/books.json'));
-}
-
-function closeImportPreview(){
-  PENDING_IMPORT = null;
-  document.getElementById('importPreview').classList.remove('open');
-}
-
-function importCsv(kind, file){
-  const reader = new FileReader();
-  reader.onload = e=>{
-    try{
-      previewImport(kind, e.target.result, file.name);
-    }catch(err){
-      closeImportPreview();
-      showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind].label} export.`, true);
-    }
-  };
-  reader.readAsText(file);
-}
-
-document.getElementById('importAudibleBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'audible'; document.getElementById('importCsvFile').click(); });
-document.getElementById('importGoodreadsBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'goodreads'; document.getElementById('importCsvFile').click(); });
-document.getElementById('importCsvFile').addEventListener('change', e=>{
-  const file = e.target.files[0];
-  if(file) importCsv(IMPORT_KIND, file);
-  e.target.value = '';
-});
-document.getElementById('importConfirm').addEventListener('click', applyImport);
-document.getElementById('importCancel').addEventListener('click', closeImportPreview);
-
 document.getElementById('q').addEventListener('input', render);
 document.getElementById('authorFilter').addEventListener('change', render);
 document.getElementById('genreFilter').addEventListener('change', render);
@@ -781,14 +380,6 @@ document.getElementById('missingFilter').addEventListener('change', render);
 document.getElementById('btnSeriesView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
 document.getElementById('btnLibraryView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('library'); });
 document.getElementById('backToSeries').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
-document.getElementById('exportBtn').addEventListener('click', exportBackup);
-document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
-document.getElementById('importFile').addEventListener('change', e=>{
-  const file = e.target.files[0];
-  if(file) importBackup(file);
-  e.target.value = '';
-});
-
 document.getElementById('toggleAdd').addEventListener('click', ()=>{
   const form = document.getElementById('addForm');
   if(form.classList.contains('open') && EDIT_INDEX === null){
@@ -882,67 +473,26 @@ document.getElementById('addForm').addEventListener('submit', e=>{
   if(others) showIoStatus(`Also updated the shared edition on ${others} other book${others === 1 ? '' : 's'}.`);
 });
 
-async function fetchText(url){
-  const res = await fetch(url, {cache: 'no-cache'});
-  if(!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  return res.text();
-}
-
-async function loadData(){
-  for(const dir of DATA_DIRS){
-    let booksText;
-    try{ booksText = await fetchText(dir + 'books.json'); }catch(e){ continue; }
-    let infoText = '{}';
-    try{ infoText = await fetchText(dir + 'series-info.json'); }catch(e){}
-    let excludedText = '';
-    try{ excludedText = await fetchText(dir + 'excluded.txt'); }catch(e){}
-    return {dir, booksText, infoText, excludedText};
-  }
-  throw new Error('no books.json found');
-}
-
-// Local edits are only reused if they were made against *this* books.json (and series-info.json, for
-// saves that carry series info); otherwise an updated data file would keep showing stale data.
-// Returns whether there were edits to reuse.
-function restoreLocalEdits(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if(!raw) return false;
-    const saved = JSON.parse(raw);
-    const hasInfo = saved && typeof saved.info === 'object' && saved.info !== null && !Array.isArray(saved.info);
-    if(saved && saved.base === BASELINE && Array.isArray(saved.data) && (!hasInfo || saved.infoBase === INFO_BASELINE)){
-      DATA = CatalogImport.fixBooks(saved.data);
-      if(hasInfo) SERIES_INFO = saved.info;
-      if(Array.isArray(saved.excluded)) addExclusions(saved.excluded.filter(x=> typeof x === 'string'));
-      return true;
-    } else {
-      localStorage.setItem(LS_KEY + '.backup', raw);
-      localStorage.removeItem(LS_KEY);
-      STARTUP_NOTICE = 'The catalogue data has changed; earlier local edits were set aside, not deleted.';
-    }
-  }catch(e){}
-  return false;
-}
-
-async function start(){
-  try{
-    const {dir, booksText, infoText, excludedText} = await loadData();
-    DATA = CatalogImport.fixBooks(JSON.parse(booksText));   // "r": "2024-03-15" -> ["2024-03-15"]
-    SERIES_INFO = JSON.parse(infoText);
-    EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
-    BASELINE = CatalogImport.fingerprint(booksText);
-    INFO_BASELINE = CatalogImport.fingerprint(infoText);
-    DISK_SAVE = await detectDiskSave(dir);
-  }catch(e){
-    document.getElementById('subtitle').textContent =
-      "Couldn't load the catalogue data. Serve this folder over HTTP (make serve) instead of opening the file directly.";
+// The merge button on a book: the first press picks it, a press on another book opens the two on the
+// duplicates page (which checks they are still the same books).
+function pickMergeBook(i){
+  if(MERGE_FROM === null){
+    MERGE_FROM = i;
+    showIoStatus(`Now press \u21c4 on the book to merge ${DATA[i].t} with.`);
+  } else if(MERGE_FROM === i){
+    MERGE_FROM = null;
+  } else {
+    const pair = [MERGE_FROM, i].sort((x, y)=> x - y);
+    MERGE_FROM = null;
+    location.href = 'duplicates.html#merge=' + pair.join(',');
     return;
   }
-  const restored = restoreLocalEdits();
-  populateFilters();
-  setView('series');
-  if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
-  else if(restored && DISK_SAVE) await saveToDisk();     // edits a failed save left in this browser
+  render();
 }
 
-const READY = start();
+// After a save to disk tidied the books (store.js).
+function refreshPage(){
+  populateFilters(); render();
+}
+
+const READY = startPage(()=>{ populateFilters(); setView('series'); });

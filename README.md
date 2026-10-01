@@ -1,8 +1,9 @@
 # Audiobook catalogue
 
 A personal audiobook library, merged from an Audible export and a Goodreads export, grouped by
-series and searchable by title, author, series and genre. The app is a plain `index.html` with
-`styles.css` and `app.js` next to it, and it reads the catalogue from `data/`. There is no build step.
+series and searchable by title, author, series and genre. The app is three plain pages (the catalogue,
+*Import & export* and *Duplicates*) with a stylesheet and a script each, and it reads the catalogue
+from `data/`. There is no build step.
 
 - Vanilla JavaScript for the app: no framework, no bundler, no dependencies
 - Node 18+ for the command line tools (`node catalog.js`) and the tests; no npm packages
@@ -38,9 +39,11 @@ data/
   series-info.json    YOUR researched release info per series (git-ignored)
   excluded.txt        books your imports must never re-add (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
-index.html            the page; links styles.css and app.js
+index.html, app.js    the catalogue: browse by series or all books, edit books and series info
+import.html, import.js    Audible and Goodreads CSV imports, backups (Export / Restore)
+duplicates.html, duplicates.js    find and merge books entered twice
+store.js              shared by the pages: loads data/books.json (or data/sample/), keeps and saves edits
 styles.css
-app.js                the whole UI; fetches data/books.json (or data/sample/) at startup
 importers.js          the pipeline: importers, merge, validation (used by the page and the CLI)
 catalog.js            the command line: node catalog.js <command> (--help lists the commands)
 tests/                node:test suites (*.test.mjs), including the browser smoke test
@@ -107,7 +110,7 @@ Only finished books are imported. The command lists what it added, and anything 
 (for example a book Audible files under several series). Each book gets its Audible edition: the ASIN,
 the ISBNs, the publisher, the release date and the length, as far as the export has them.
 
-**Or import in the app**: press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
+**Or import in the app**: on the *Import & export* page, press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
 runs the same importer and merge as the command line (both use `importers.js`), honours
 `data/excluded.txt`, and shows the same preview: what is already there, which Audible and Goodreads ids get filled
 in, what is new and what needs a look. Nothing changes until you press **Add books**; then, like any
@@ -121,7 +124,7 @@ Released 2021-05; Length 10h 42m` (any of the parts; hyphens and ISBN-10s are fi
 its titles, give the edition the same ASIN (or Goodreads id) on each title: the details you typed on one
 are copied to the others. With `make serve` and your own `data/books.json`,
 every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other
-server, or the demo data, edits stay in the browser: press **Export**, then:
+server, or the demo data, edits stay in the browser: press **Export** on the *Import & export* page, then:
 
 ```sh
 node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json --dry-run
@@ -133,7 +136,7 @@ An export holds the books, the series info and the list of books imports must sk
 (`{"books": [...], "seriesInfo": {...}, "excluded": [...]}`), so `sync-export` updates
 `data/series-info.json` too and adds any new entries to `data/excluded.txt` (it never removes one).
 Backups from before series info was exported (a plain list of books), or before the exclusions were,
-still work and leave those files as they are. The app's **Import** reads all of them the same way,
+still work and leave those files as they are. The app's **Restore** reads all of them the same way,
 adding the backup's exclusions to the ones it already has.
 You can also edit `data/books.json` by hand; `make format` rewrites it the way the tools write it.
 
@@ -161,7 +164,7 @@ an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN cou
 Removing a book in the page does not add its ISBNs, since another book may share them. To let an import add a book again, delete its lines
 from `data/excluded.txt`.
 
-**Merge duplicates**: press **Duplicates** (it shows how many it found) to list books that look like
+**Merge duplicates**: the *Duplicates* page (its link shows how many it found) lists books that look like
 one title entered twice, found the way an import matches books (same author, series and number,
 or same author and title, forgiving Audible's long titles); books that only share a box set's edition
 are not duplicates. For each pair, pick the title, author, narrator and series to keep where they
@@ -169,8 +172,8 @@ differ; genres, dates read and editions are combined (an edition with the same A
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
 adding them to `data/excluded.txt`, since the kept book carries their ids and imports find it. **Not
 duplicates** stops offering that pair in this browser. To merge two books the list misses (say, an
-author spelled two ways), press &#8644; on one book and then on the other. Like any edit, a merge is
-saved to `data/books.json`.
+author spelled two ways), press &#8644; on one book in the catalogue and then on the other; the
+duplicates page opens with the two. Like any edit, a merge is saved to `data/books.json`.
 
 **ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the edition they import. Edit them in the page under *Editions*
@@ -231,8 +234,8 @@ holds your personal data). Any static web server pointed at the project root wor
 `data/books.json` and `data/series-info.json`, or `data/sample/` if you have no `data/books.json`;
 `--data-dir` and `CATALOG_DATA_DIR` only affect the command line tools, not the page.
 
-`make serve` also saves: every edit in the page (books, series info, CSV imports, **Import** of a
-backup) is sent to the server, which checks it like `sync-export` does (the same validation and
+`make serve` also saves: every edit in the pages (books, series info, CSV imports, **Restore** of a
+backup, merges) is sent to the server, which checks it like `sync-export` does (the same validation and
 tidying) and writes `data/books.json` and `data/series-info.json`, and adds books removed in the page
 to `data/excluded.txt` (that file is only ever added to). It only accepts saves from the page
 it serves, only to your own `data/books.json` (never the demo), and refuses a save if either file changed
@@ -241,18 +244,21 @@ those; reload the page to pick them up. A refused or failed save (for example wi
 says so under the buttons.
 
 Until the disk has them, edits also live in that browser's `localStorage`, and with any other static
-server they only live there: use **Export** and `sync-export`. **Export / Import** JSON also make real
+server they only live there: use **Export** and `sync-export`. **Export / Restore** JSON also make real
 backups (books, series info and the import exclusion list). Local edits are tagged with a fingerprint of the `books.json` and
 `series-info.json` they were made against. When either changes, older local edits are **set aside**
 (kept under the `audiobook-catalog-data.backup` key) instead of silently hiding your new data; if they
 still match on the next load, `make serve` saves them then.
 
+All pages share those edits, so moving between them keeps your work. If two tabs edit the catalogue
+at once, the one that saves second refuses and asks you to reload it, rather than overwriting the other.
+
 ## Development
 
 - `make test` runs `node --test tests/*.test.mjs`: the importers (`importers.test.mjs`), the command
   line and the save endpoint of `serve` (`cli.test.mjs`), checks on the data files (`data.test.mjs`) and the browser smoke test
-  (`app.smoke.test.mjs`), which executes the real `app.js` against a small fake DOM built from
-  `index.html`, with a fake `fetch` serving the demo data.
+  (`app.smoke.test.mjs`), which executes each page's real scripts against a small fake DOM built from
+  its HTML, with a fake `fetch` serving the demo data.
 - `.github/workflows/ci.yml` runs the same on GitHub Actions.
 
 ## Privacy

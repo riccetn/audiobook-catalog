@@ -12,6 +12,11 @@
 <body>
 <div class="wrap">
   <h1>Audiobook Catalogue</h1>
+  <nav class="pages">
+    <a href="index.html" class="current" aria-current="page">Catalogue</a>
+    <a href="import.html">Import &amp; export</a>
+    <a href="duplicates.html">Duplicates<span id="dupCount"></span></a>
+  </nav>
   <p class="sub" id="subtitle">Loading&hellip;</p>
 
   <div class="viewToggle">
@@ -35,34 +40,10 @@
   <div class="count-row">
     <span id="resultCount"></span>
     <div class="rowbtns">
-      <button class="iconbtn2" id="exportBtn" title="Download a backup JSON file">Export</button>
-      <button class="iconbtn2" id="importBtn" title="Restore from a backup JSON file">Import</button>
-      <input type="file" id="importFile" accept="application/json" style="display:none">
-      <button class="iconbtn2" id="importAudibleBtn" title="Add finished books from an Audible Library Extractor CSV">Audible CSV</button>
-      <button class="iconbtn2" id="importGoodreadsBtn" title="Add read audiobooks from a Goodreads library export CSV">Goodreads CSV</button>
-      <input type="file" id="importCsvFile" accept=".csv,text/csv" style="display:none">
-      <button class="iconbtn2" id="dupBtn" title="Find books entered twice and merge them">Duplicates</button>
       <button class="addbtn" id="toggleAdd">+ Add a book</button>
     </div>
   </div>
   <p id="ioStatus" class="ioStatus"></p>
-
-  <div id="importPreview" class="importPreview">
-    <h3 id="importPreviewTitle"></h3>
-    <div id="importPreviewBody"></div>
-    <div class="formbtns">
-      <button type="button" class="save" id="importConfirm">Add books</button>
-      <button type="button" id="importCancel">Cancel</button>
-    </div>
-  </div>
-
-  <div id="dupPanel" class="importPreview">
-    <h3 id="dupTitle">Duplicates</h3>
-    <div id="dupBody"></div>
-    <div class="formbtns">
-      <button type="button" id="dupClose">Close</button>
-    </div>
-  </div>
 
   <form id="addForm">
     <h3 id="formTitle">Add a book</h3>
@@ -111,6 +92,7 @@
 </div>
 
 <script src="importers.js"></script>
+<script src="store.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
