@@ -122,7 +122,8 @@ Edit books in the page (pencil icon, `+ Add a book`). *Editions* takes one editi
 book card shows them: `ASIN B0SAMPLE01; Goodreads 4242; ISBN 978-0-00-000000-2; Publisher Gullwing Audio;
 Released 2021-05; Length 10h 42m` (any of the parts; hyphens and ISBN-10s are fine). To tie a box set to
 its titles, give the edition the same ASIN (or Goodreads id) on each title: the details you typed on one
-are copied to the others. With `make serve` and your own `data/books.json`,
+are copied to the others. On the card, an edition's ASIN links to the book on Audible (audible.com,
+which sends you on to your own store) and its Goodreads id to the book on Goodreads. With `make serve` and your own `data/books.json`,
 every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other
 server, or the demo data, edits stay in the browser: press **Export** on the *Import & export* page, then:
 

@@ -127,6 +127,17 @@ test('editing a book keeps its editions', async () => {
     { t: 'Renamed In The App', e: [{ id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642 }, { id: 'TESTASIN02' }] });
 });
 
+test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Goodreads', async () => {
+  const { ctx, els, run } = await boot();
+  run("DATA[0].e = [{id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642}, {isbn: ['9780000000002']}]");
+  ctx.setView('library');
+  ctx.render();
+  const html = els.results.innerHTML;
+  assert.match(html, /ASIN <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a>; Goodreads <a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a>; Publisher Gull Audio; Length 10h 42m/);
+  // an edition without either id has no links
+  assert.match(html, /<div class="edition">ISBN 9780000000002<\/div>/);
+});
+
 test('adding a book appends it', async () => {
   const { ctx, els, get } = await boot();
   const before = get('DATA.length');
@@ -231,7 +242,7 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
   ctx.setView('library');
   const two = demoBooks.findIndex(b => b.t === 'The Copper Graft'), three = demoBooks.findIndex(b => b.t === 'Harvest of Gears');
   assert.ok(two >= 0 && three >= 0, 'the demo data has a box set');
-  assert.match(els.results.innerHTML, /ASIN SAMPLE0008; ISBN 9780306406157; Publisher Kestrel Row Audio; Released 2022-11; Length 23h 5m/);
+  assert.match(els.results.innerHTML, /ASIN <a [^>]*>SAMPLE0008<\/a>; ISBN 9780306406157; Publisher Kestrel Row Audio; Released 2022-11; Length 23h 5m/);
   assert.match(els.results.innerHTML, /Also in this edition: Harvest of Gears #3/);
   assert.match(els.results.innerHTML, /Also in this edition: The Copper Graft #2/);
   els.q.value = 'kestrel row';

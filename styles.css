@@ -100,6 +100,7 @@ h1{
 .formError:empty{display:none;}
 .book .read, .book .edition{color:var(--ink-soft); font-size:.78rem; margin-top:.15rem; overflow-wrap:anywhere;}
 .book .edition .also{font-style:italic;}
+.book .edition a{color:inherit;}
 .importPreview{
   display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
   padding:1rem; margin-bottom:1.5rem; font-size:.85rem;
