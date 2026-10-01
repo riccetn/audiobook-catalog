@@ -42,6 +42,7 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
     querySelectorAll: () => [],
     createElement: () => makeElement('created'),
     body: { appendChild() {}, removeChild() {} },
+    title: '',
   };
   const localStorage = {
     getItem: k => (storage.has(k) ? storage.get(k) : null),
@@ -60,9 +61,25 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
   };
   // Files picked in a fake <input type="file"> are {name, text}; reading one completes at once.
   class FileReader { readAsText(file) { this.onload({ target: { result: file.text } }); } }
+  // The session history: `entries` of {hash, state}, `at` the current one; back() and forward() fire popstate.
   const location = { href: page, hash, pathname: '/' + page };
-  const history = { replaceState() { location.hash = ''; } };
-  const ctx = vm.createContext({ document, localStorage, fetch, FileReader, location, history, console, setTimeout: () => 0, clearTimeout() {} });
+  const windowListeners = {};
+  const fire = type => (windowListeners[type] || []).forEach(fn => fn({}));
+  const entries = [{ hash, state: null }];
+  let at = 0;
+  const hashOf = url => (String(url).includes('#') ? String(url).slice(String(url).indexOf('#')) : '');
+  const history = {
+    entries,
+    get state() { return entries[at].state; },
+    get at() { return at; },
+    pushState(state, title, url) { entries.splice(at + 1); entries.push({ hash: hashOf(url), state }); at++; location.hash = hashOf(url); },
+    replaceState(state, title, url) { entries[at] = { hash: hashOf(url), state }; location.hash = hashOf(url); },
+    go(n) { at += n; location.hash = entries[at].hash; fire('popstate'); fire('hashchange'); },
+    back() { this.go(-1); }, forward() { this.go(1); },
+  };
+  const addEventListener = (type, fn) => (windowListeners[type] ||= []).push(fn);
+  const ctx = vm.createContext({ document, localStorage, fetch, FileReader, location, history, addEventListener,
+    console, setTimeout: () => 0, clearTimeout() {} });
   // the page's own scripts, in order
   for (const [, src] of html.matchAll(/<script src="([^"]+)">/g)) vm.runInContext(read(src), ctx);
   await vm.runInContext('READY', ctx);
@@ -112,6 +129,97 @@ test('search narrows the library view', async () => {
   els.q.value = 'zzzz-no-such-book-zzzz';
   ctx.render();
   assert.match(els.results.innerHTML, /No books match/);
+});
+
+test('the address names the view, so a series, a book or a search can be linked to', async () => {
+  const { ctx, els } = await boot();
+  assert.equal(ctx.location.hash, '');
+  ctx.openSeries('Halloway & Finch');
+  assert.equal(ctx.location.hash, '#series=Halloway+%26+Finch');
+  assert.equal(ctx.document.title, 'Halloway & Finch — Audiobook Catalogue');
+  // the overview links each series to that address, and book cards link to their own
+  ctx.setView('series');
+  assert.match(els.results.innerHTML, /<a class="srow-title" href="#series=Halloway\+%26\+Finch">Halloway &amp; Finch<\/a>/);
+  assert.match(els.results.innerHTML, /<a class="srow-title" href="#standalone">Standalone<\/a>/);
+  ctx.openSeries('The Lantern Coast');
+  assert.match(els.results.innerHTML, /<div class="title"><a href="#book=The\+Salt\+Road">The Salt Road<\/a><\/div>/);
+
+  // opening one of those addresses shows the same thing
+  const series = await boot({ hash: '#series=Halloway+%26+Finch' });
+  assert.deepEqual(series.get('[VIEW, SERIES_FILTER]'), ['library', 'Halloway & Finch']);
+  assert.equal((series.els.results.innerHTML.match(/class="book"/g) || []).length, 2);
+  assert.equal(series.els.crumbLabel.textContent, 'Halloway & Finch');
+  const book = await boot({ hash: '#book=The+Salt+Road' });
+  assert.equal((book.els.results.innerHTML.match(/class="book"/g) || []).length, 1);
+  assert.match(book.els.results.innerHTML, /The Salt Road/);
+  assert.equal(book.els.crumbLabel.textContent, 'The Salt Road');
+  const standalone = await boot({ hash: '#standalone' });
+  assert.equal(standalone.els.crumbLabel.textContent, 'Standalone books');
+  assert.equal((standalone.els.results.innerHTML.match(/class="book"/g) || []).length, 3);
+
+  // a search and the filters
+  const found = await boot({ hash: '#books&q=ashcombe&read=undated&genre=Science+Fiction' });
+  assert.deepEqual(found.get('[VIEW, SERIES_FILTER]'), ['library', null]);
+  assert.equal(found.els.q.value, 'ashcombe');
+  assert.equal(found.els.readFilter.value, '__undated__');
+  assert.equal((found.els.results.innerHTML.match(/class="book"/g) || []).length, 3);
+  assert.equal(found.ctx.location.hash, '#books&q=ashcombe&genre=Science+Fiction&read=undated');
+  const gaps = await boot({ hash: '#q=coast&missing' });
+  assert.equal(gaps.get('VIEW'), 'series');
+  assert.equal(gaps.els.missingFilter.value, 'missing');
+  assert.equal(gaps.els.q.value, 'coast');
+  // an address it does not understand shows the series overview
+  const odd = await boot({ hash: '#nothing=here&%E0%A4%A' });
+  assert.equal(odd.get('VIEW'), 'series');
+  assert.equal(odd.ctx.location.hash, '');
+});
+
+test('back and forward step through series, books, filters and searches', async () => {
+  const { ctx, els, get } = await boot();
+  const { history } = ctx;
+  ctx.openSeries('The Lantern Coast');
+  // a click on a book link opens it here, with a history entry; filters that would hide it are cleared
+  els.authorFilter.value = 'Somebody Else';
+  const link = { getAttribute: () => '#book=Beacons+at+Low+Tide' };
+  let prevented = false;
+  els.results.listeners.click[0]({ target: { closest: () => link }, button: 0, preventDefault() { prevented = true; } });
+  assert.ok(prevented);
+  assert.equal(ctx.location.hash, '#book=Beacons+at+Low+Tide');
+  assert.equal(els.authorFilter.value, '');
+  // a click with a modifier key is left to the browser (a new tab)
+  els.results.listeners.click[0]({ target: { closest: () => link }, button: 0, ctrlKey: true, preventDefault() { assert.fail('prevented'); } });
+
+  els.btnLibraryView.listeners.click[0]();
+  els.genreFilter.value = 'Mystery';
+  els.genreFilter.listeners.change[0]();
+  // typing a search is one entry, however many letters
+  for (const q of ['p', 'pr', 'priya']) { els.q.value = q; els.q.listeners.input[0](); }
+  assert.deepEqual(history.entries.map(e => e.hash),
+    ['', '#series=The+Lantern+Coast', '#book=Beacons+at+Low+Tide', '#books', '#books&genre=Mystery', '#books&q=priya&genre=Mystery']);
+
+  history.back();
+  assert.equal(els.q.value, '');
+  assert.equal(els.genreFilter.value, 'Mystery');
+  history.back(); history.back();
+  assert.deepEqual(get('[VIEW, BOOK_FILTER]'), ['library', 'Beacons at Low Tide']);
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 1);
+  history.back();
+  assert.deepEqual(get('[VIEW, SERIES_FILTER, BOOK_FILTER]'), ['library', 'The Lantern Coast', null]);
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 4);
+  history.back();
+  assert.deepEqual(get('[VIEW, SERIES_FILTER]'), ['series', null]);
+  history.forward();
+  assert.equal(get('SERIES_FILTER'), 'The Lantern Coast');
+
+  // a new search after going back starts a new entry instead of rewriting an old one
+  els.q.value = 'salt'; els.q.listeners.input[0]();
+  assert.deepEqual(history.entries.map(e => e.hash), ['', '#series=The+Lantern+Coast', '#series=The+Lantern+Coast&q=salt']);
+  // leaving a series closes a form left open on it
+  ctx.openEditForm(0);
+  history.back();
+  assert.ok(els.addForm.classList.contains('open'), 'only the search changed');
+  history.back();
+  assert.ok(!els.addForm.classList.contains('open'));
 });
 
 test('editing a book keeps its editions', async () => {
@@ -221,7 +329,7 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
   els.f_e.value = '0306406152';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.deepEqual(get('DATA[1].e'), [{ isbn: ['9780306406157'] }]);
-  assert.match(els.results.innerHTML, /Also in this edition: Boxed One/);
+  assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=Boxed\+One">Boxed One<\/a>/);
 
   // a mistyped ISBN is refused with a message, and nothing changes
   ctx.openEditForm(1);
@@ -266,8 +374,8 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
   const two = demoBooks.findIndex(b => b.t === 'The Copper Graft'), three = demoBooks.findIndex(b => b.t === 'Harvest of Gears');
   assert.ok(two >= 0 && three >= 0, 'the demo data has a box set');
   assert.match(els.results.innerHTML, /ASIN <a [^>]*>SAMPLE0008<\/a>; ISBN 9780306406157; Publisher Kestrel Row Audio; Released 2022-11; Length 23h 5m/);
-  assert.match(els.results.innerHTML, /Also in this edition: Harvest of Gears #3/);
-  assert.match(els.results.innerHTML, /Also in this edition: The Copper Graft #2/);
+  assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=Harvest\+of\+Gears">Harvest of Gears #3<\/a>/);
+  assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=The\+Copper\+Graft">The Copper Graft #2<\/a>/);
   els.q.value = 'kestrel row';
   ctx.render();
   assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 2, 'search finds a publisher');

@@ -182,7 +182,7 @@ h1{
 }
 .srow-head{display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; flex-wrap:wrap;}
 .srow-title{
-  background:none; border:none; padding:0; text-align:left; cursor:pointer;
+  background:none; border:none; padding:0; text-align:left; cursor:pointer; text-decoration:none;
   font-family:'Lora',Georgia,serif; font-weight:600; font-size:1rem; color:var(--ink);
 }
 .srow-title:hover{color:var(--moss);}
@@ -191,3 +191,5 @@ h1{
 .srow-foot .missing{font-size:.78rem; color:var(--ink-soft); font-style:italic;}
 .srow-note{font-size:.8rem; color:var(--ink-soft); margin-top:.3rem;}
 .srow-foot{display:flex; gap:.6rem; align-items:center; margin-top:.4rem; flex-wrap:wrap;}
+.series-title a, .book .title a{text-decoration:none; color:inherit;}
+.series-title a:hover, .book .title a:hover, .book .edition .also a:hover{color:var(--moss);}

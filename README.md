@@ -198,6 +198,15 @@ Goodreads' `ISBN` and `ISBN13`) on the edition they import. Edit them in the pag
 book of a boxed set. Searching the library for an ISBN, typed any way, finds the books that carry it;
 searching for an ASIN, a Goodreads id or a publisher works too.
 
+**Link to a series, a book or a search**: the address after the `#` says what the catalogue shows, so
+you can bookmark it, share it with yourself or reload it: `index.html#series=The+Lantern+Coast` (a series,
+from its name in the overview), `#standalone`, `#book=The+Salt+Road` (a book's title on its card links
+here, as do the other titles of a box set), `#books` (all books), and the search and filters on top:
+`#books&q=quenby&genre=Fantasy&read=2023` (`read=undated` for books with no date read), or
+`#q=coast&missing` in the series overview. The browser's back and forward buttons step through what
+you looked at: each series, book, view and filter you pick is one step, and so is a search, however
+many letters you type. Ctrl- or middle-click a series or book to open it in a new tab.
+
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
 for a re-read), or press **+ Read today**. The date shows on the book, and in **All Books** the
