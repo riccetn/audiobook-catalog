@@ -229,12 +229,35 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.match(els.formError.textContent, /Not understood in editions: ISBN 9780306406158/);
   assert.deepEqual(get('DATA[1].e'), [{ isbn: ['9780306406157'] }]);
-  els.f_e.value = 'Publisher Only';
+  els.f_e.value = 'Goodreads 12; second note; third note';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.match(els.formError.textContent, /edition #1: needs an Audible ASIN/);
+  assert.match(els.formError.textContent, /Not understood in editions: third note/);
   els.f_e.value = '';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.equal(get("'e' in DATA[1]"), false);
+});
+
+test('narrators and descriptions live on editions: shown on the card, searchable, edited in the form', async () => {
+  const { ctx, els, get } = await boot();
+  ctx.setView('library');
+  const salt = demoBooks.findIndex(b => b.t === 'The Salt Road');
+  assert.ok(demoBooks[salt].e.some(ed => ed.desc), 'the demo data has an edition with a description');
+  // both narrators on the book; with different narrators each edition names its own
+  assert.match(els.results.innerHTML, /narr\. Tobias Frane \/ Hollis Marr/);
+  assert.match(els.results.innerHTML, /UK edition; Narrated by Hollis Marr; ASIN/);
+  assert.doesNotMatch(els.results.innerHTML, /Narrated by Ingrid Voss/, 'a single narrator is not repeated on the edition');
+  for (const q of ['hollis marr', 'uk edition']) {
+    els.q.value = q;
+    ctx.render();
+    assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 1, q);
+  }
+  els.q.value = '';
+
+  ctx.openEditForm(salt);
+  assert.match(els.f_e.value, /^Narrated by Tobias Frane; ASIN SAMPLE0001/);
+  els.f_e.value += '\nDramatized adaptation; Narrated by A full cast; Goodreads 777';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get(`DATA[${salt}].e[2]`), { gr: '777', n: 'A full cast', desc: 'Dramatized adaptation' });
 });
 
 test('box sets: the edition shows on each of its books, and editing it on one edits it on all', async () => {
@@ -334,7 +357,7 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   assert.ok(!els.importPreview.classList.contains('open'));
   assert.deepEqual(get('DATA'), [
     { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
-    { t: 'A Crown of Embers 6: Ashfall', a: 'Ilse Marlowe', n: 'A. B. Quill', s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6' }] },
+    { t: 'A Crown of Embers 6: Ashfall', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6', n: 'A. B. Quill' }] },
   ]);
   assert.match(els.ioStatus.textContent, /Added 1 book, filled in 1 Audible id/);
 
@@ -703,8 +726,8 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
   assert.match(els.dupBody.innerHTML, /Becomes: Salt Road/);
   ctx.mergeGroup(0);
   assert.equal(get('DATA.length'), 5);
-  assert.deepEqual(get('DATA[0]'), { t: 'Salt Road', a: 'Marisol Quenby', n: 'Tobias Frane', s: 'Lantern Coast', sn: '1',
-    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1', gr: '4242' }] });   // Audible's and Goodreads' records of one edition
+  assert.deepEqual(get('DATA[0]'), { t: 'Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1',
+    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1', gr: '4242', n: 'Tobias Frane' }] });   // Audible's and Goodreads' records of one edition
   assert.match(els.ioStatus.textContent, /^Merged 2 entries into Salt Road\./);
   assert.equal(get('EXCLUSIONS.size'), 0);              // the removed entry's ids live on in the kept book
   assert.deepEqual(get('DUP_GROUPS'), [[3, 4]]);

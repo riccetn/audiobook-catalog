@@ -144,8 +144,8 @@ function cmdValidate(args, io){
   const raw = JSON.parse(readText(booksPath));
   const books = C.fixBooks(raw), info = loadSeriesInfo(infoPath);
   const {errors, warnings} = C.validate(books, info);
-  if(Array.isArray(raw) && raw.some(b => b && typeof b === 'object' && ['id', 'gr', 'isbn'].some(k => k in b))){
-    io.out('note: some books keep their ids and ISBNs from before editions; they are read as editions, ' +
+  if(Array.isArray(raw) && raw.some(b => b && typeof b === 'object' && ['id', 'gr', 'isbn', 'n'].some(k => k in b))){
+    io.out('note: some books keep their ids, ISBNs or narrator on the book, from before editions; they are read as editions, ' +
       'and `make format` (or any save) writes them that way');
   }
   const retitled = Array.isArray(raw) ? raw.filter(b => b && typeof b === 'object' && C.fixSeriesTitle(b) !== b).length : 0;

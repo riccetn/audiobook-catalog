@@ -19,9 +19,10 @@ function fingerprint(s){
 // ------------------------------------------------------------------ book records
 // A Goodreads book id, as stored in `gr`: the number in goodreads.com/book/show/12345.
 const GOODREADS_ID = /^\d+$/;
-const BOOK_KEYS = ['t', 'a', 'n', 's', 'sn', 'g', 'r', 'e'];
-// An edition: Audible ASIN, Goodreads id, ISBNs, publisher, release date, length in minutes.
-const EDITION_KEYS = ['id', 'gr', 'isbn', 'p', 'd', 'len'];
+const BOOK_KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'e'];
+// An edition: Audible ASIN, Goodreads id, ISBNs, narrator(s), publisher, release date, length in
+// minutes, and your own description of it ("UK edition", "Dramatized adaptation", "Audio CD").
+const EDITION_KEYS = ['id', 'gr', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
 // Before editions, a book held its ASIN, Goodreads id and ISBNs itself; fixEditions() moves them.
 const LEGACY_KEYS = ['id', 'gr', 'isbn'];
 const STATUSES = ['ongoing', 'complete'];
@@ -193,13 +194,15 @@ function fillEdition(ed, from){
 /**
  * Return a book in the edition format. A book from before editions keeps its ASIN, Goodreads id and
  * ISBNs itself ("id", "gr", "isbn"); they become its first edition (or fill in the edition that
- * already has that ASIN or Goodreads id). ISBNs written as text become lists, and an empty `e` is dropped.
+ * already has that ASIN or Goodreads id). A narrator on the book itself ("n", from before narrators
+ * moved to editions) goes on each of its editions that has none, or on a new edition when it has none.
+ * ISBNs written as text become lists, and an empty `e` is dropped.
  */
 function fixEditions(rec){
   if(!isObject(rec)) return rec;
   const legacy = {}, out = {};
   for(const [k, v] of Object.entries(rec)){
-    if(LEGACY_KEYS.includes(k)) legacy[k] = v; else out[k] = v;
+    if(LEGACY_KEYS.includes(k)) legacy[k] = v; else if(k !== 'n') out[k] = v;
   }
   const fixedLegacy = fixIsbns(legacy);
   let editions = Array.isArray(rec.e) ? rec.e.map(ed => isObject(ed) ? fixIsbns(ed) : ed) : rec.e;
@@ -208,31 +211,53 @@ function fixEditions(rec){
     const same = editions.find(ed => isObject(ed) && sameEdition(ed, fixedLegacy) && ['id', 'gr'].some(k => ed[k] && ed[k] === fixedLegacy[k]));
     if(same) fillEdition(same, fixedLegacy); else editions.unshift(orderEdition(fixedLegacy));
   }
+  if('n' in rec && !(typeof rec.n === 'string' && !rec.n.trim())){
+    if(editions === undefined || (Array.isArray(editions) && !editions.length)) editions = [{n: rec.n}];
+    else if(Array.isArray(editions)) editions = editions.map(ed => isObject(ed) && ed.n === undefined ? orderEdition({...ed, n: rec.n}) : ed);
+    else out.n = rec.n;   // `e` is not a list: leave both for validate() to report
+  }
   if(Array.isArray(editions) && !editions.length) editions = undefined;
   if(editions === undefined) delete out.e; else out.e = editions;
   return out;
 }
 
-/**
- * An edition as one line of text, the way the page shows it and its edit form takes it:
- * "ASIN B0X; Goodreads 4242; ISBN 9780000000002; Publisher Gull Audio; Released 2021-05; Length 10h 42m".
- */
-function formatEdition(ed){
-  const parts = [];
-  if(ed.id) parts.push(`ASIN ${ed.id}`);
-  if(ed.gr) parts.push(`Goodreads ${ed.gr}`);
-  if(Array.isArray(ed.isbn) && ed.isbn.length) parts.push(`ISBN ${ed.isbn.join(', ')}`);
-  if(ed.p) parts.push(`Publisher ${ed.p}`);
-  if(ed.d) parts.push(`Released ${ed.d}`);
-  if(Number.isInteger(ed.len)) parts.push(`Length ${formatLength(ed.len)}`);
-  return parts.join('; ');
+/** The narrators of a book's editions, without repeats, e.g. ["Ann Vale", "R. T. Hale"]. */
+function bookNarrators(rec){
+  return [...new Set(bookEditions(rec).map(ed => ed.n).filter(n => typeof n === 'string' && n))];
 }
 
-const EDITION_PART = /^(asin|goodreads(?:\s+id)?|gr|isbns?|publisher|released?|length)\b:?\s*(.*)$/i;
+/**
+ * The parts of an edition as formatEdition() writes them, as [key, label, value] (the description has
+ * no label), so the page can turn some of them into links.
+ */
+function editionParts(ed){
+  const parts = [];
+  if(ed.desc) parts.push(['desc', '', ed.desc]);
+  if(ed.n) parts.push(['n', 'Narrated by', ed.n]);
+  if(ed.id) parts.push(['id', 'ASIN', ed.id]);
+  if(ed.gr) parts.push(['gr', 'Goodreads', ed.gr]);
+  if(Array.isArray(ed.isbn) && ed.isbn.length) parts.push(['isbn', 'ISBN', ed.isbn.join(', ')]);
+  if(ed.p) parts.push(['p', 'Publisher', ed.p]);
+  if(ed.d) parts.push(['d', 'Released', ed.d]);
+  if(Number.isInteger(ed.len)) parts.push(['len', 'Length', formatLength(ed.len)]);
+  return parts;
+}
+
+/**
+ * An edition as one line of text, the way the page shows it and its edit form takes it: "UK edition;
+ * Narrated by Ann Vale; ASIN B0X; Goodreads 4242; ISBN 9780000000002; Publisher Gull Audio;
+ * Released 2021-05; Length 10h 42m".
+ */
+function formatEdition(ed){
+  return editionParts(ed).map(([, label, value]) => label ? `${label} ${value}` : value).join('; ');
+}
+
+const EDITION_PART = /^(asin|goodreads(?:\s+id)?|gr|isbns?|publisher|released?|length|narrated\s+by|narrators?|description)\b:?\s*(.*)$/i;
 
 /**
  * Read editions written one per line as formatEdition() writes them. Parts are separated by ';' and
- * start with their label; a bare ISBN, date or length is recognised without one.
+ * start with their label; a bare ISBN, date or length is recognised without one, and other text
+ * without a label is the edition's description (one per edition).
  * Returns {editions, bad (the parts that could not be read)}.
  */
 function parseEditions(text){
@@ -248,11 +273,14 @@ function parseEditions(text){
       if(label === 'asin') [field, v] = ['id', value];
       else if(label === 'goodreads' || label === 'gr') [field, v] = ['gr', GOODREADS_ID.test(value) ? value : null];
       else if(label === 'publisher') [field, v] = ['p', value];
+      else if(label.startsWith('narrat')) [field, v] = ['n', value];
+      else if(label === 'description') [field, v] = ['desc', ed.desc ? null : value];
       else if(label.startsWith('releas')) [field, v] = ['d', date];
       else if(label === 'length') [field, v] = ['len', minutes];
       else if(label.startsWith('isbn') || (!label && allIsbns)) [field, v] = ['isbn', allIsbns ? isbns.isbns : null];
       else if(!label && date) [field, v] = ['d', date];
       else if(!label && minutes) [field, v] = ['len', minutes];
+      else if(!label && !ed.desc) [field, v] = ['desc', value];
       if(!v){ bad.push(part); continue; }
       if(field === 'isbn') ed.isbn = [...new Set([...(ed.isbn || []), ...v])];
       else ed[field] = v;
@@ -330,9 +358,10 @@ function normalizeName(name){
 function tidyEdition(ed){
   if(!isObject(ed)) return ed;
   const out = {...fixIsbns(ed)};
-  for(const key of ['id', 'gr', 'p', 'd']){
+  for(const key of ['id', 'gr', 'p', 'd', 'desc']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
+  if(typeof out.n === 'string') out.n = normalizeName(out.n);
   if(Array.isArray(out.isbn)){
     // the 13-digit form; anything that is not an ISBN is kept (tidied) for validate() to report
     const isbns = out.isbn.map(x => typeof x === 'string' ? parseIsbn(x) || tidyText(x) : x);
@@ -347,9 +376,7 @@ function tidyBook(rec){
   for(const key of ['t', 's', 'sn']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
-  for(const key of ['a', 'n']){
-    if(typeof out[key] === 'string') out[key] = normalizeName(out[key]);
-  }
+  if(typeof out.a === 'string') out.a = normalizeName(out.a);
   if(Array.isArray(out.g)){
     out.g = out.g.map(x => typeof x === 'string' ? tidyText(x) : x).filter(x => x !== '');
   }
@@ -502,12 +529,10 @@ function validateEdition(ed, label, errors, warnings){
   for(const k of Object.keys(ed)){
     if(!EDITION_KEYS.includes(k)) errors.push(`${label}: unknown key ${repr(k)}`);
   }
-  for(const k of ['id', 'gr', 'p', 'd']){
+  for(const k of ['id', 'gr', 'n', 'p', 'd', 'desc']){
     if(k in ed && !nonEmpty(ed[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
   }
-  if(!nonEmpty(ed.id) && !nonEmpty(ed.gr) && !('isbn' in ed)){
-    errors.push(`${label}: needs an Audible ASIN ('id'), a Goodreads id ('gr') or an ISBN ('isbn')`);
-  }
+  if(!Object.keys(ed).length) errors.push(`${label}: is empty`);
   if(nonEmpty(ed.gr) && !GOODREADS_ID.test(ed.gr.trim())){
     errors.push(`${label}: 'gr' must be a Goodreads book id (digits only), not ${repr(ed.gr)}`);
   }
@@ -552,7 +577,7 @@ function validate(books, info){
     for(const k of ['t', 'a']){
       if(!nonEmpty(b[k])) errors.push(`${label}: missing ${repr(k)}`);
     }
-    for(const k of ['n', 's', 'sn']){
+    for(const k of ['s', 'sn']){
       if(k in b && !nonEmpty(b[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
     }
     if('g' in b && !(Array.isArray(b.g) && b.g.every(nonEmpty))){
@@ -596,20 +621,22 @@ function validate(books, info){
   const seriesNames = new Set(books.filter(b => isObj(b) && b.s).map(b => b.s));
 
   const untidy = new Map();
-  const labels = {t: 'title', a: 'author', n: 'narrator', s: 'series', g: 'genre'};
+  const labels = {t: 'title', a: 'author', s: 'series', g: 'genre'};
   for(const b of books){
     if(!isObj(b)) continue;
     for(const [k, label] of Object.entries(labels)){
       const values = Array.isArray(b[k]) ? b[k] : [b[k]];
       for(const value of values){
         if(typeof value !== 'string') continue;
-        const expected = (k === 'a' || k === 'n') ? normalizeName(value) : tidyText(value);
+        const expected = k === 'a' ? normalizeName(value) : tidyText(value);
         if(expected !== value) untidy.set(key(label, value), [label, value, expected]);
       }
     }
   }
   for(const ed of books.flatMap(bookEditions)){
     if(typeof ed.p === 'string' && tidyText(ed.p) !== ed.p) untidy.set(key('publisher', ed.p), ['publisher', ed.p, tidyText(ed.p)]);
+    if(typeof ed.n === 'string' && normalizeName(ed.n) !== ed.n) untidy.set(key('narrator', ed.n), ['narrator', ed.n, normalizeName(ed.n)]);
+    if(typeof ed.desc === 'string' && tidyText(ed.desc) !== ed.desc) untidy.set(key('description', ed.desc), ['description', ed.desc, tidyText(ed.desc)]);
   }
   const byText = (x, y) => x < y ? -1 : x > y ? 1 : 0;
   for(const [label, value, expected] of [...untidy.values()].sort((x, y) => byText(x[0], y[0]) || byText(x[1], y[1]))){
@@ -809,8 +836,6 @@ function audibleRowToRecord(row){
 
   const title = (row['Title Short'] || row.Title || '').trim();
   let rec = {t: cleanTitle(title, series ? number : null), a: cell(row, 'Authors')};
-  const narrator = cell(row, 'Narrators');
-  if(narrator) rec.n = narrator;
   if(series){
     rec.s = series;
     if(number) rec.sn = number;
@@ -820,6 +845,7 @@ function audibleRowToRecord(row){
   if(tags.length) rec.g = tags;
   const edition = {};
   if(asin) edition.id = asin;
+  if(cell(row, 'Narrators')) edition.n = cell(row, 'Narrators');
   const isbns = rowIsbns(row);
   if(isbns.length) edition.isbn = isbns;
   if(cell(row, 'Publishers')) edition.p = cell(row, 'Publishers');
@@ -827,7 +853,7 @@ function audibleRowToRecord(row){
   if(released) edition.d = released;
   const minutes = parseLength(cell(row, 'Length'));
   if(minutes) edition.len = minutes;
-  if(edition.id || edition.isbn) rec.e = [edition];
+  if(Object.keys(edition).length) rec.e = [edition];
   rec = tidyBook(fixSeriesTitle(rec));   // a title like "Lantern of the Deep: Ember Coast, Book 2" with no Series column
 
   const warning = ambiguous
@@ -944,9 +970,6 @@ function readGoodreads(text){
     if(cell(row, 'Exclusive Shelf') !== 'read'){ result.skippedUnfinished++; continue; }
     const [title, series, number] = readGoodreadsTitle(row.Title || '');
     let rec = {t: title, a: cell(row, 'Author')};
-    // Goodreads files narrators under "Additional Authors"; treat that as a best guess.
-    const narrator = cell(row, 'Additional Authors');
-    if(narrator) rec.n = narrator;
     if(series){
       rec.s = series;
       if(number) rec.sn = number;
@@ -957,12 +980,14 @@ function readGoodreads(text){
     const edition = {};
     const gr = cell(row, 'Book Id').replace(/[="\s]/g, '');
     if(GOODREADS_ID.test(gr)) edition.gr = gr;
+    // Goodreads files narrators under "Additional Authors"; treat that as a best guess.
+    if(cell(row, 'Additional Authors')) edition.n = cell(row, 'Additional Authors');
     const isbns = rowIsbns(row);
     if(isbns.length) edition.isbn = isbns;
     if(cell(row, 'Publisher')) edition.p = cell(row, 'Publisher');
     const year = parseReadDate(cell(row, 'Year Published'));   // this edition's; "Original Publication Year" is the book's
     if(year) edition.d = year;
-    if(edition.gr || edition.isbn) rec.e = [edition];
+    if(Object.keys(edition).length) rec.e = [edition];
     const read = parseReadDate(cell(row, 'Date Read'));   // Goodreads keeps only the latest read
     if(read) rec.r = [read];
     rec = tidyBook(rec);
@@ -1168,7 +1193,7 @@ function splitEditions(books, keepApart){
 }
 
 /**
- * One book made of several entries for the same title. `pick` says, for 't', 'a', 'n' and 'series'
+ * One book made of several entries for the same title. `pick` says, for 't', 'a' and 'series'
  * (the series and its number together), which entry's value to keep, as an index into `recs`; by
  * default the first entry that has one. Genres and dates read are combined, and so are editions: an
  * edition that shares an ASIN, Goodreads id or ISBN with one already kept fills in what it lacks,
@@ -1182,7 +1207,7 @@ function mergeBooks(recs, pick){
     return Number.isInteger(i) && recs[i] && has(recs[i]) ? recs[i] : recs.find(has);
   };
   const out = {};
-  for(const k of ['t', 'a', 'n']){
+  for(const k of ['t', 'a']){
     const rec = from(k, b => typeof b[k] === 'string' && b[k] !== '');
     if(rec) out[k] = rec[k];
   }
@@ -1209,7 +1234,8 @@ function mergeBooks(recs, pick){
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   parseIsbn, parseIsbns, fixIsbns, bookIsbns, rowIsbns,
-  bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, formatEdition, parseEditions, saveBook,
+  bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, saveBook,
+  bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,

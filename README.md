@@ -57,28 +57,31 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 |------|-----------------------------------------------------|----------|
 | `t`  | title                                               | yes      |
 | `a`  | author                                              | yes      |
-| `n`  | narrator(s)                                         |          |
 | `s`  | series name                                         |          |
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
 | `e`  | list of the title's editions (below)                |          |
 
-Each title can have several **editions** (the Audible release, a UK release, the paperback...). An
-edition needs at least one of `id`, `gr` or `isbn`:
+Each title can have several **editions** (the Audible release, a UK release with another narrator, a
+dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
+the ASIN, Goodreads id and ISBNs are what imports and box sets go by:
 
 | key    | meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
 | `id`   | Audible ASIN, so re-imports recognise the book                           |
 | `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
 | `isbn` | list of this edition's ISBNs, always the 13-digit form without hyphens (`["9780000000002"]`). A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |
+| `n`    | narrator(s) of this edition                                              |
 | `p`    | publisher                                                                |
 | `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
 | `len`  | length in whole minutes (`642`)                                          |
+| `desc` | your own description of the edition, free text (`"UK edition"`, `"First edition"`, `"Dramatized adaptation"`, `"Audio CD"`) |
 
 ```json
 {"t":"The Salt Road","a":"Marisol Quenby","s":"The Lantern Coast","sn":"1",
- "e":[{"id":"B0SAMPLE01","gr":"9001","isbn":["9780000000002"],"p":"Gullwing Audio","d":"2019-04-02","len":642}]}
+ "e":[{"id":"B0SAMPLE01","gr":"9001","isbn":["9780000000002"],"n":"Tobias Frane","p":"Gullwing Audio","d":"2019-04-02","len":642},
+      {"id":"B0SAMPLE02","n":"Hollis Marr","desc":"UK edition"}]}
 ```
 
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
@@ -87,10 +90,11 @@ The page shows "Also in this edition: …" on each of them, and editing the edit
 the others. `make validate` warns when the copies disagree. (A book you only have as a box set can still
 be one record with a range such as `"sn": "2-3"`.)
 
-**Older files**: before editions, a book held its `id`, `gr` and `isbn` itself. Such books are still
-read, as a book with one edition holding them (all its ISBNs on that edition; split them in the edit
-form if they belong to different editions). `make validate` mentions it, and `make format`, or any save
-from the page, an import or `sync-export`, writes them in the new shape.
+**Older files**: before editions, a book held its `id`, `gr` and `isbn` itself, and its narrator (`n`)
+until narrators moved to editions. Such books are still read: the ids become one edition (all its ISBNs
+on it; split them in the edit form if they belong to different editions), and the narrator goes on each
+edition that has none (on a new edition, for a book without any). `make validate` mentions it, and
+`make format`, or any save from the page, an import or `sync-export`, writes them in the new shape.
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
@@ -108,7 +112,7 @@ from the page, an import or `sync-export`, writes them in the new shape.
 
 Only finished books are imported. The command lists what it added, and anything ambiguous
 (for example a book Audible files under several series). Each book gets its Audible edition: the ASIN,
-the ISBNs, the publisher, the release date and the length, as far as the export has them.
+the ISBNs, the narrators, the publisher, the release date and the length, as far as the export has them.
 
 **Or import in the app**: on the *Import & export* page, press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
 runs the same importer and merge as the command line (both use `importers.js`), honours
@@ -119,8 +123,12 @@ edit in the page, it is saved to `data/books.json` (see below).
 **Edit in the app**
 
 Edit books in the page (pencil icon, `+ Add a book`). *Editions* takes one edition per line, the way the
-book card shows them: `ASIN B0SAMPLE01; Goodreads 4242; ISBN 978-0-00-000000-2; Publisher Gullwing Audio;
-Released 2021-05; Length 10h 42m` (any of the parts; hyphens and ISBN-10s are fine). To tie a box set to
+book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goodreads 4242;
+ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts;
+hyphens and ISBN-10s are fine). Text without a label is the edition's description, so a line can be as
+short as `Dramatized adaptation; Narrated by A full cast`. The narrator is on the edition too: the card
+lists the narrators of all a book's editions, and each edition line names its own when they differ;
+searching finds narrators and descriptions. To tie a box set to
 its titles, give the edition the same ASIN (or Goodreads id) on each title: the details you typed on one
 are copied to the others. On the card, an edition's ASIN links to the book on Audible (audible.com,
 which sends you on to your own store) and its Goodreads id to the book on Goodreads. With `make serve` and your own `data/books.json`,
@@ -168,7 +176,7 @@ from `data/excluded.txt`.
 **Merge duplicates**: the *Duplicates* page (its link shows how many it found) lists books that look like
 one title entered twice, found the way an import matches books (same author, series and number,
 or same author and title, forgiving Audible's long titles); books that only share a box set's edition
-are not duplicates. For each pair, pick the title, author, narrator and series to keep where they
+are not duplicates. For each pair, pick the title, author and series to keep where they
 differ; genres, dates read and editions are combined (an edition with the same ASIN, Goodreads id or ISBN
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
 adding them to `data/excluded.txt`, since the kept book carries their ids and imports find it. **Not
@@ -199,7 +207,8 @@ changes dates you already have. Audible imports do not set dates read.
 
 **Goodreads**: `node catalog.js import-goodreads data/raw/goodreads_library_export.csv`, or
 **Goodreads CSV** in the app. Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
-MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
+MP3...) and the *read* shelf. The edition's narrator comes from the "Additional Authors" column, which is a guess
+(it never replaces a narrator you already have).
 Each book keeps Goodreads' *Book Id* as its edition's `gr`, with the edition's *Publisher* and *Year Published*,
 so a later export still finds it after you rename it; books already in the catalogue get their Goodreads id
 filled in the first time an export matches them. Goodreads puts the series in the title, as
