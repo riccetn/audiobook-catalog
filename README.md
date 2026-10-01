@@ -175,6 +175,14 @@ duplicates** stops offering that pair in this browser. To merge two books the li
 author spelled two ways), press &#8644; on one book in the catalogue and then on the other; the
 duplicates page opens with the two. Like any edit, a merge is saved to `data/books.json`.
 
+When the merged entries' editions don't disagree on an ASIN or Goodreads id (typically one book
+imported from Audible with its ASIN and from Goodreads with its Goodreads id), they become one edition
+with both ids; untick *Make the editions one edition* to keep them separate. Where they disagree on a
+detail such as the length, the first entry's value is kept. A box set's shared edition is never
+joined this way. Books merged before this, or that got two such editions some other way, are listed
+under *Editions that look like one*: **Make one edition** joins them, **Keep separate** stops
+listing that book in this browser. The *Duplicates* link counts both.
+
 **ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the edition they import. Edit them in the page under *Editions*
 (`ISBN 978-0-00-000000-2, 0-306-40615-2`; stored as ISBN-13). The same ISBN may be on several books, e.g. each

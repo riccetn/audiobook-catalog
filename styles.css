@@ -119,6 +119,9 @@ h1{
 .dup-label{color:var(--ink-soft); font-size:.75rem;}
 .dup-extra{color:var(--ink-soft); font-size:.75rem; margin-top:.15rem;}
 .dup-result{margin-top:.5rem; font-weight:600;}
+.dup-join{display:block; margin:.4rem 0 0; cursor:pointer;}
+.dup-join input{margin:0 .3rem 0 0; accent-color:var(--moss);}
+.dup-heading{font-family:'Lora',Georgia,serif; font-size:1.05rem; font-weight:600; margin:1.5rem 0 .3rem;}
 .book.picked{border-color:var(--moss); box-shadow:0 0 0 1px var(--moss);}
 .book.picked .iconbtn.merge{color:var(--moss);}
 .formrow{display:flex; gap:.6rem;}

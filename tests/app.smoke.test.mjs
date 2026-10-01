@@ -693,7 +693,7 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
   ctx.mergeGroup(0);
   assert.equal(get('DATA.length'), 5);
   assert.deepEqual(get('DATA[0]'), { t: 'Salt Road', a: 'Marisol Quenby', n: 'Tobias Frane', s: 'Lantern Coast', sn: '1',
-    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1' }, { gr: '4242' }] });
+    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1', gr: '4242' }] });   // Audible's and Goodreads' records of one edition
   assert.match(els.ioStatus.textContent, /^Merged 2 entries into Salt Road\./);
   assert.equal(get('EXCLUSIONS.size'), 0);              // the removed entry's ids live on in the kept book
   assert.deepEqual(get('DUP_GROUPS'), [[3, 4]]);
@@ -743,4 +743,39 @@ test('an edit is not saved over changes another tab made meanwhile', async () =>
   assert.equal(JSON.parse(storage.get('audiobook-catalog-data')).data[0].t, 'Edited Here');
   one.run("DATA[1].t = 'Again Here'; persist();");      // the tab that saved last can keep going
   assert.equal(JSON.parse(storage.get('audiobook-catalog-data')).data[1].t, 'Again Here');
+});
+
+test('merging keeps editions apart when asked, and books merged that way can be joined later', async () => {
+  const mine = JSON.stringify([
+    { t: 'The Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', e: [{ id: 'B1', len: 642 }] },
+    { t: 'Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', e: [{ gr: '4242', p: 'Gull Audio' }] },
+    { t: 'Beacons', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '2', e: [{ id: 'B2' }, { gr: '777', isbn: ['9780306406157'] }] },
+    { t: 'The Drowned Chart', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '3', e: [{ id: 'B3' }, { id: 'B3X' }] },
+    { t: 'Box Set', a: 'Marisol Quenby', e: [{ id: 'BBOX' }, { gr: '888' }] },
+    { t: 'Other In Box', a: 'Marisol Quenby', e: [{ id: 'BBOX' }] },
+  ]);
+  const files = { 'data/books.json': mine };
+  const { ctx, els, get, run, storage } = await boot({ page: 'duplicates.html', files });
+  // Beacons (an ASIN edition and a Goodreads one) is listed; two ASINs, or a box set's shared edition, are not
+  assert.deepEqual(get('SPLIT'), [2]);
+  assert.match(els.subtitle.textContent, /1 book with editions that look like one/);
+  assert.equal(els.dupCount.textContent, ' (2)');
+  assert.match(els.dupBody.innerHTML, /class="dup-joinbox" data-g="0" checked/);
+
+  // untick "Make the editions one edition": the merge keeps both
+  run('DUP_PICKS[0].joinEditions = false; renderDuplicates()');
+  assert.match(els.dupBody.innerHTML, /class="dup-joinbox" data-g="0">/);
+  ctx.mergeGroup(0);
+  assert.deepEqual(get('DATA[0].e'), [{ id: 'B1', len: 642 }, { gr: '4242', p: 'Gull Audio' }]);
+  // ...and the merged book is now offered for joining, like Beacons
+  assert.deepEqual(get('SPLIT'), [0, 1]);
+  ctx.joinBookEditions(0);
+  assert.deepEqual(get('DATA[0].e'), [{ id: 'B1', gr: '4242', p: 'Gull Audio', len: 642 }]);
+  assert.match(els.ioStatus.textContent, /^The Salt Road now has one edition\./);
+  // "Keep separate" is remembered in this browser
+  ctx.keepEditionsApart(get('SPLIT[0]'));
+  assert.deepEqual(get('SPLIT'), []);
+  const again = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(get('DATA')) }, storage: new Map([...storage].filter(([k]) => k !== 'audiobook-catalog-data')) });
+  assert.deepEqual(again.get('SPLIT'), []);
+  assert.equal(again.els.dupCount.textContent, '');
 });
