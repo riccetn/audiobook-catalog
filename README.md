@@ -193,7 +193,14 @@ changes dates you already have. Audible imports do not set dates read.
 MP3...) and the *read* shelf. Narrators come from the "Additional Authors" column, which is a guess.
 Each book keeps Goodreads' *Book Id* as its edition's `gr`, with the edition's *Publisher* and *Year Published*,
 so a later export still finds it after you rename it; books already in the catalogue get their Goodreads id
-filled in the first time an export matches them.
+filled in the first time an export matches them. Goodreads puts the series in the title, as
+`The First Adventure (Fantasy Adventures, #1)` or `The First Adventure: Fantasy Adventures, Book 1`; both
+become the title `The First Adventure` in series `Fantasy Adventures`, number `1`.
+
+Books imported before titles were split this way (or by hand) are split when the catalogue loads: a book with
+no series gets the one in its title, and a book that already has that series just loses it from the title.
+A book whose title names a different series or number than the one it has is left alone. `make validate`
+says how many titles still hold their series, and `make format`, or any save, writes them split.
 
 ## Tidy names and spacing
 

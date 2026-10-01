@@ -234,6 +234,11 @@ test('Audible export: BOM, quoted newlines and counts', () => {
   assert.ok(result.warnings.some(w => w.includes('no author')));
 });
 
+test('Audible: a title holding its series is split when the Series column is empty', () => {
+  const result = C.readAudible(HEADER + '"Second Wind: Fantasy Adventures, Book 2",,,,Ann,,,,Finished,B2,\n');
+  assert.deepEqual(result.records, [{ t: 'Second Wind', a: 'Ann', s: 'Fantasy Adventures', sn: '2', ...ed({ id: 'B2' }) }]);
+});
+
 // --------------------------------------------------------------- Goodreads
 const GR_HEADER = 'Book Id,Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n';
 
@@ -247,6 +252,43 @@ test('Goodreads series formats', () => {
     'The Lamplighter': ['The Lamplighter', null, null],
   };
   for (const [raw, expected] of Object.entries(cases)) assert.deepEqual(C.parseGoodreadsTitle(raw), expected, raw);
+});
+
+test('Goodreads titles with the series after a colon', () => {
+  const cases = {
+    'The First Adventure: Fantasy Adventures, Book 1': ['The First Adventure', 'Fantasy Adventures', '1'],
+    'The First Adventure (Fantasy Adventures, #1)': ['The First Adventure', 'Fantasy Adventures', '1'],
+    'The First Adventure: Fantasy Adventures, Book 1 (Fantasy Adventures, #1)': ['The First Adventure', 'Fantasy Adventures', '1'],
+    'Salt Roads: A Tale of the Reach: Ember Coast, Book Three': ['Salt Roads: A Tale of the Reach', 'Ember Coast', '3'],
+    'Glass Harbor: Tidewatch, Vol. 2.5': ['Glass Harbor', 'Tidewatch', '2.5'],
+    // a colon part naming another series than the brackets stays in the title
+    'Iron Gate: Wardens, Book 2 (Thornmere, #5)': ['Iron Gate: Wardens, Book 2', 'Thornmere', '5'],
+    'Rift Clash: A LitRPG Adventure': ['Rift Clash: A LitRPG Adventure', null, null],
+  };
+  for (const [raw, expected] of Object.entries(cases)) assert.deepEqual(C.readGoodreadsTitle(raw), expected, raw);
+  const result = C.readGoodreads(GR_HEADER + '4243,"The First Adventure: Fantasy Adventures, Book 1",Ann,,Audible Audio,read,\n');
+  assert.deepEqual(result.records, [{ t: 'The First Adventure', a: 'Ann', s: 'Fantasy Adventures', sn: '1', ...ed({ gr: '4243' }) }]);
+});
+
+test('books imported with the series in the title are split on load, never changing a series', () => {
+  const [plain, same, numbered, other, otherNumber, paren, nothing] = C.fixBooks([
+    { t: 'The First Adventure: Fantasy Adventures, Book 1', a: 'Ann' },
+    { t: 'The First Adventure: Fantasy Adventures, Book 1', a: 'Ann', s: 'The Fantasy Adventures Series' },
+    { t: 'Second Wind: Fantasy Adventures, Book 2', a: 'Ann', s: 'Fantasy Adventures', sn: '2', r: ['2024'] },
+    { t: 'Iron Gate: Wardens, Book 2', a: 'Ann', s: 'Thornmere', sn: '5' },
+    { t: 'Second Wind: Fantasy Adventures, Book 2', a: 'Ann', s: 'Fantasy Adventures', sn: '7' },
+    { t: 'Kept (Fantasy Adventures, #3)', a: 'Ann' },
+    { t: 'Lantern (Unabridged)', a: 'Ann' },
+  ]);
+  assert.deepEqual(plain, { t: 'The First Adventure', a: 'Ann', s: 'Fantasy Adventures', sn: '1' });
+  assert.deepEqual(same, { t: 'The First Adventure', a: 'Ann', s: 'The Fantasy Adventures Series', sn: '1' });
+  assert.deepEqual(numbered, { t: 'Second Wind', a: 'Ann', s: 'Fantasy Adventures', sn: '2', r: ['2024'] });
+  assert.deepEqual(other, { t: 'Iron Gate: Wardens, Book 2', a: 'Ann', s: 'Thornmere', sn: '5' });
+  assert.deepEqual(otherNumber.t, 'Second Wind: Fantasy Adventures, Book 2');
+  assert.deepEqual(paren, { t: 'Kept', a: 'Ann', s: 'Fantasy Adventures', sn: '3' });
+  assert.deepEqual(nothing, { t: 'Lantern (Unabridged)', a: 'Ann' });
+  // an exclusion written with the long title still keeps the book out
+  assert.ok(C.parseExclusions('The First Adventure: Fantasy Adventures, Book 1 | Ann').covers(plain));
 });
 
 test('Goodreads export: only read audio editions, with tidy names', () => {

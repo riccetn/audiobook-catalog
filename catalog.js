@@ -148,6 +148,11 @@ function cmdValidate(args, io){
     io.out('note: some books keep their ids and ISBNs from before editions; they are read as editions, ' +
       'and `make format` (or any save) writes them that way');
   }
+  const retitled = Array.isArray(raw) ? raw.filter(b => b && typeof b === 'object' && C.fixSeriesTitle(b) !== b).length : 0;
+  if(retitled){
+    io.out(`note: ${retitled} title(s) still hold their series ("Title: Series, Book 3"); they are read with the series ` +
+      'split off, and `make format` (or any save) writes them that way');
+  }
   for(const w of warnings) io.out('warning: ' + w);
   for(const e of errors) io.out('error: ' + e);
   const series = new Set(Array.isArray(books) ? books.filter(b => b && b.s).map(b => b.s) : []);
