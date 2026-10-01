@@ -2,6 +2,9 @@
 // on disk), the status line and the page links. Each page's own script defines refreshPage(), which
 // redraws it from DATA, and starts with startPage().
 const LS_KEY = 'audiobook-catalog-data';
+// A catalogue kept in this browser alone, for a copy of the app with no data/books.json of its own (the
+// app installed on a phone from a static host): {books, seriesInfo, excluded}. It starts with a Restore.
+const DEVICE_KEY = 'audiobook-catalog-device';
 // Served from the project root: your own catalogue in data/ if it exists, otherwise the bundled demo.
 const DATA_DIRS = ['data/', 'data/sample/'];
 
@@ -15,7 +18,9 @@ let NEW_EXCLUDED = [];         // entries added to EXCLUSIONS in the page that d
 let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
 let SAVING = false;            // a save to disk is on its way
 let SAVE_AGAIN = false;        // more edits came in while it was
-let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[LS_KEY]
+let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[storeKey()]
+let DATA_DIR = '';             // where the data files came from: 'data/', or 'data/sample/' for the demo
+let ON_DEVICE = false;         // the catalogue is this browser's own (DEVICE_KEY), not the files it was served
 
 // Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
 // duplicates page; kept in this browser only.
@@ -33,8 +38,10 @@ function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+const storeKey = () => ON_DEVICE ? DEVICE_KEY : LS_KEY;
+
 function localNow(){
-  try{ return localStorage.getItem(LS_KEY); }catch(e){ return null; }
+  try{ return localStorage.getItem(storeKey()); }catch(e){ return null; }
 }
 
 // The page links: the duplicates link says how many duplicates and books with split editions there are.
@@ -59,6 +66,16 @@ function persist(){
 }
 
 function saveLocally(){
+  if(ON_DEVICE){
+    try{
+      localStorage.setItem(DEVICE_KEY, JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries}));
+      LOCAL_SEEN = localNow();
+    }catch(e){
+      // nothing else holds this catalogue, so say so instead of losing the edit quietly
+      showIoStatus('Not saved: this device refused to store the catalogue (is its storage full?). Export a backup.', true);
+    }
+    return;
+  }
   try{
     localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO, excluded: NEW_EXCLUDED}));
     LOCAL_SEEN = localNow();
@@ -74,7 +91,7 @@ function addExclusions(entries){
 
 // The end of a status message about an edit: how to get it into the data file, unless that happens anyway.
 function keepHint(file){
-  return DISK_SAVE ? '' : ` Export it on the Import & export page and run sync-export to keep it in ${file}.`;
+  return DISK_SAVE || ON_DEVICE ? '' : ` Export it on the Import & export page and run sync-export to keep it in ${file}.`;
 }
 
 async function saveToDisk(){
@@ -110,6 +127,40 @@ async function saveToDisk(){
   if(JSON.stringify(body.books) !== JSON.stringify(DATA)){ DATA = body.books; refreshPage(); updateNav(); }
   try{ localStorage.removeItem(LS_KEY); LOCAL_SEEN = null; }catch(e){}
   if(!document.getElementById('ioStatus').textContent) showIoStatus('Saved.');
+}
+
+/**
+ * Make this browser's copy the catalogue itself, when the page has no data/books.json of its own (the
+ * demo is showing): from now on it loads from and saves to DEVICE_KEY, and no update of the demo data
+ * can set it aside. Returns whether it did. Called when a backup is restored.
+ */
+function keepOnDevice(){
+  if(ON_DEVICE || DATA_DIR === 'data/') return false;
+  ON_DEVICE = true;
+  LOCAL_SEEN = localNow();
+  askToKeepStorage();
+  return true;
+}
+
+// Ask the browser not to clear this site's storage when space runs low; on a phone it may otherwise.
+function askToKeepStorage(){
+  try{ navigator.storage.persist().catch(()=>{}); }catch(e){}
+}
+
+// The catalogue kept on this device, if there is one; loads it and returns true.
+function loadDeviceCopy(){
+  try{
+    const raw = localStorage.getItem(DEVICE_KEY);
+    if(!raw) return false;
+    const {books, seriesInfo, excluded} = CatalogImport.readBackup(JSON.parse(raw));
+    DATA = books;                     // readBackup has migrated them already
+    SERIES_INFO = seriesInfo || {};
+    EXCLUSIONS = CatalogImport.parseExclusions('');
+    (excluded || []).forEach(e=> EXCLUSIONS.add(e));
+    BASELINE = INFO_BASELINE = '';
+    LOCAL_SEEN = raw;
+    return true;
+  }catch(e){ return false; }
 }
 
 // Whether the server saves edits (only `make serve`, and only to your own data/books.json).
@@ -181,15 +232,21 @@ async function startPage(init){
     EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
     BASELINE = CatalogImport.fingerprint(booksText);
     INFO_BASELINE = CatalogImport.fingerprint(infoText);
+    DATA_DIR = dir;
     DISK_SAVE = await detectDiskSave(dir);
   }catch(e){
     document.getElementById('subtitle').textContent =
       "Couldn't load the catalogue data. Serve this folder over HTTP (make serve) instead of opening the file directly.";
     return;
   }
-  const restored = restoreLocalEdits();
+  ON_DEVICE = DATA_DIR !== 'data/' && loadDeviceCopy();
+  if(ON_DEVICE) askToKeepStorage();
+  const restored = !ON_DEVICE && restoreLocalEdits();
   init();
   updateNav();
   if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
   else if(restored && DISK_SAVE) await saveToDisk();     // edits a failed save left in this browser
 }
+
+// Installable as an app (on a phone, say), and usable offline once it is: see sw.js.
+try{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch(e){}

@@ -50,6 +50,12 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
   tab wrote localStorage since this page last did. Each page script defines `refreshPage()` (redraw
   from `DATA`, called after a save to disk tidied the books) and `const READY = startPage(...)`.
   Pairs marked "Not duplicates" live only in `audiobook-catalog-not-duplicates`.
+  With no `data/books.json` served (the demo, e.g. the installed phone app), a Restore makes the
+  backup this device's own catalogue (`keepOnDevice`, localStorage `audiobook-catalog-device`), which
+  then loads instead of the demo and takes every save (`ON_DEVICE`).
+- `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
+  only the app and `data/sample/`, never `data/` or `api/`; add new page scripts to its `APP` list
+  (the smoke test checks).
 - `app.js` (`index.html`): series overview, all books, the book and series-info forms, global-state
   style (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
 - `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Export / Restore of backups.

@@ -290,6 +290,7 @@ function cmdSyncExport(args, io){
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
+  '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png',
 };
 
 // Largest save the page may send: far more than any real catalogue, small enough to bound memory.

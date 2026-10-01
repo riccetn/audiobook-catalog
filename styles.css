@@ -193,3 +193,9 @@ h1{
 .srow-foot{display:flex; gap:.6rem; align-items:center; margin-top:.4rem; flex-wrap:wrap;}
 .series-title a, .book .title a{text-decoration:none; color:inherit;}
 .series-title a:hover, .book .title a:hover, .book .edition .also a:hover{color:var(--moss);}
+/* Phones: less space around the page, and the filters two to a row. */
+@media (max-width:600px){
+  .wrap{padding:1rem .9rem 3rem;}
+  h1{font-size:1.6rem;}
+  .controls select{flex:1 1 40%; max-width:none;}
+}
