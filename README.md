@@ -161,6 +161,17 @@ an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN cou
 Removing a book in the page does not add its ISBNs, since another book may share them. To let an import add a book again, delete its lines
 from `data/excluded.txt`.
 
+**Merge duplicates**: press **Duplicates** (it shows how many it found) to list books that look like
+one title entered twice, found the way an import matches books (same author, series and number,
+or same author and title, forgiving Audible's long titles); books that only share a box set's edition
+are not duplicates. For each pair, pick the title, author, narrator and series to keep where they
+differ; genres, dates read and editions are combined (an edition with the same ASIN, Goodreads id or ISBN
+as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
+adding them to `data/excluded.txt`, since the kept book carries their ids and imports find it. **Not
+duplicates** stops offering that pair in this browser. To merge two books the list misses (say, an
+author spelled two ways), press &#8644; on one book and then on the other. Like any edit, a merge is
+saved to `data/books.json`.
+
 **ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the edition they import. Edit them in the page under *Editions*
 (`ISBN 978-0-00-000000-2, 0-306-40615-2`; stored as ISBN-13). The same ISBN may be on several books, e.g. each

@@ -514,3 +514,41 @@ test('saving a book keeps the copies of a shared edition in step', () => {
   assert.equal(C.saveBook(books, 3, book('Four', 'A')), 0);
   assert.equal(books[1].e[0].id, 'BBOX');
 });
+
+// ------------------------------------------------------------------ duplicates
+test('findDuplicates pairs books an import would match, but not a box set\'s titles', () => {
+  const books = [
+    book('The Salt Road', 'Marisol Quenby', { s: 'Lantern Coast', sn: '1', ...ed({ id: 'B1' }) }),
+    book('Beacons', 'Marisol Quenby', { s: 'Lantern Coast', sn: '2', ...ed({ id: 'BBOX' }) }),
+    book('The Drowned Chart', 'Marisol Quenby', { s: 'Lantern Coast', sn: '3', ...ed({ id: 'BBOX' }) }),
+    book('Salt Road', 'Marisol Quenby', { s: 'The Lantern Coast Series', sn: '1', ...ed({ gr: '4242' }) }),
+    book('Lantern Coast 2: Beacons', 'Marisol Quenby, Tobias Frane'),
+    book('Beacons', 'Someone Else'),
+    book('Lantern Coast, Books 1-3', 'Marisol Quenby', { s: 'Lantern Coast', sn: '1-3' }),
+  ];
+  // same series and number; Audible's long title for "Beacons"; different authors and the boxed set stay apart
+  assert.deepEqual(C.findDuplicates(books), [[0, 3], [1, 4]]);
+  // a pair marked as different books is not offered again, whichever way round
+  const notSame = new Set([C.duplicatePairKey(books[4], books[1])]);
+  assert.deepEqual(C.findDuplicates(books, notSame), [[0, 3]]);
+  assert.deepEqual(C.findDuplicates([]), []);
+});
+
+test('mergeBooks keeps the picked fields and combines genres, dates read and editions', () => {
+  const a = book('Salt Road', 'Marisol Quenby', { s: 'Lantern Coast', sn: '1', g: ['Fantasy'], r: ['2025-11-20'],
+    ...ed({ gr: '4242', p: 'Gullwing Audio' }, { isbn: [ISBN_BOX] }) });
+  const b = book('The Salt Road', 'Marisol Quenby', { n: 'Tobias Frane', s: 'The Lantern Coast', sn: '1',
+    g: ['Fantasy', 'Adventure'], r: ['2023-06-02', '2025-11-20'], ...ed({ id: 'B1', gr: '4242', len: 642 }, { id: 'B2' }) });
+  // by default the first entry that has a value wins; the narrator only b has
+  assert.deepEqual(C.mergeBooks([a, b]), {
+    t: 'Salt Road', a: 'Marisol Quenby', n: 'Tobias Frane', s: 'Lantern Coast', sn: '1', g: ['Fantasy', 'Adventure'],
+    r: ['2023-06-02', '2025-11-20'],
+    e: [{ id: 'B1', gr: '4242', p: 'Gullwing Audio', len: 642 }, { isbn: [ISBN_BOX] }, { id: 'B2' }],
+  });
+  const picked = C.mergeBooks([a, b], { t: 1, series: 1 });
+  assert.equal(picked.t, 'The Salt Road');
+  assert.equal(picked.s, 'The Lantern Coast');
+  // the inputs are left alone
+  assert.deepEqual(a.e, [{ gr: '4242', p: 'Gullwing Audio' }, { isbn: [ISBN_BOX] }]);
+  assert.deepEqual(C.validate([picked], {}).errors, []);
+});

@@ -1016,13 +1016,97 @@ function missingNumbers(books, total){
   return missing;
 }
 
+// ---------------------------------------------------------------------- duplicates
+/**
+ * Key for "these two books are different books", so a pair you dismissed is not offered again.
+ * Built from what identifies a title (not from list positions, which change), in either order.
+ */
+function duplicatePairKey(x, y){
+  const id = b => key(norm(b.t), firstAuthor(b.a), seriesNorm(b.s), String(b.sn || '').trim());
+  return [id(x), id(y)].sort().join(' ');
+}
+
+/**
+ * Books that look like one title entered twice, as groups of indexes into `books`, e.g. [[3, 17]].
+ * Two books pair up the way an import would match them, minus the ids: the same first author, series
+ * and number (spelling-insensitive), or the same author and title, forgiving Audible's long titles.
+ * Sharing an ASIN or Goodreads id pairs nothing by itself, since a box set's titles share one edition.
+ * `notSame` holds duplicatePairKey()s of pairs that are different books.
+ */
+function findDuplicates(books, notSame){
+  notSame = notSame || new Set();
+  const isId = k => k.startsWith('["id"') || k.startsWith('["gr"');
+  const byKey = new Map();
+  books.forEach((b, i) => {
+    if(!isObject(b) || typeof b.t !== 'string') return;
+    for(const k of bookKeys(b).filter(k => !isId(k))){
+      if(!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(i);
+    }
+  });
+  const parent = books.map((b, i) => i);
+  const root = i => parent[i] === i ? i : (parent[i] = root(parent[i]));
+  books.forEach((b, i) => {
+    if(!isObject(b) || typeof b.t !== 'string') return;
+    for(const k of lookupKeys(b).filter(k => !isId(k))){
+      for(const j of byKey.get(k) || []){
+        if(j !== i && !notSame.has(duplicatePairKey(b, books[j]))) parent[root(j)] = root(i);
+      }
+    }
+  });
+  const groups = new Map();
+  books.forEach((b, i) => {
+    const r = root(i);
+    if(!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(i);
+  });
+  return [...groups.values()].filter(g => g.length > 1);
+}
+
+/**
+ * One book made of several entries for the same title. `pick` says, for 't', 'a', 'n' and 'series'
+ * (the series and its number together), which entry's value to keep, as an index into `recs`; by
+ * default the first entry that has one. Genres and dates read are combined, and so are editions: an
+ * edition that shares an ASIN, Goodreads id or ISBN with one already kept fills in what it lacks,
+ * the others are added.
+ */
+function mergeBooks(recs, pick){
+  pick = pick || {};
+  const from = (field, has) => {
+    const i = pick[field];
+    return Number.isInteger(i) && recs[i] && has(recs[i]) ? recs[i] : recs.find(has);
+  };
+  const out = {};
+  for(const k of ['t', 'a', 'n']){
+    const rec = from(k, b => typeof b[k] === 'string' && b[k] !== '');
+    if(rec) out[k] = rec[k];
+  }
+  const series = from('series', b => typeof b.s === 'string' && b.s !== '');
+  if(series){
+    out.s = series.s;
+    if(series.sn) out.sn = series.sn;
+  }
+  const genres = [...new Set(recs.flatMap(b => Array.isArray(b.g) ? b.g : []))];
+  if(genres.length) out.g = genres;
+  const dates = [...new Set(recs.flatMap(b => Array.isArray(b.r) ? b.r : []))].sort();
+  if(dates.length) out.r = dates;
+  const editions = [];
+  for(const ed of recs.flatMap(bookEditions)){
+    const same = editions.find(x => sameEdition(x, ed));
+    if(same) fillEdition(same, ed);
+    else editions.push(orderEdition({...ed, ...(Array.isArray(ed.isbn) ? {isbn: [...ed.isbn]} : {})}));
+  }
+  if(editions.length) out.e = editions;
+  return out;
+}
+
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   parseIsbn, parseIsbns, fixIsbns, bookIsbns, rowIsbns,
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, formatEdition, parseEditions, saveBook,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  parseGoodreadsTitle, readGoodreads, merge, missingNumbers,
+  parseGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
 };
 })();
 
