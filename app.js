@@ -347,6 +347,19 @@ function sharedEditions(){
   return shared;
 }
 
+// Audible's US store: the catalogue has no notion of a store region, and audible.com redirects
+// a visitor to their own store when the title is sold there.
+const AUDIBLE_URL = 'https://www.audible.com/pd/', GOODREADS_URL = 'https://www.goodreads.com/book/show/';
+
+/** An edition as formatEdition() writes it, with its ASIN and Goodreads id linking to the book there. */
+function editionHtml(ed){
+  const link = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
+  const {id, gr, ...rest} = ed;
+  const details = CatalogImport.formatEdition(rest);
+  return [id ? 'ASIN ' + link(AUDIBLE_URL, id) : '', gr ? 'Goodreads ' + link(GOODREADS_URL, gr) : '', esc(details)]
+    .filter(Boolean).join('; ');
+}
+
 function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
   const meta = [b.a, b.n ? 'narr. '+b.n : null].filter(Boolean).join(' \u2014 ');
@@ -354,7 +367,7 @@ function bookCard(b){
   const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
   const editions = CatalogImport.bookEditions(b).map(ed=>{
     const also = (SHARED.get(ed) || []).map(k=> DATA[k].t + (DATA[k].sn ? ` #${DATA[k].sn}` : ''));
-    return `<div class="edition">${esc(CatalogImport.formatEdition(ed))}` +
+    return `<div class="edition">${editionHtml(ed)}` +
       (also.length ? `<br><span class="also">Also in this edition: ${esc(also.join(', '))}</span>` : '') + '</div>';
   }).join('');
   const picked = MERGE_FROM === b._i;
