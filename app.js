@@ -2,6 +2,7 @@
 // Loading and saving live in store.js.
 let VIEW = 'series';           // 'series' | 'library'
 let SERIES_FILTER = null;      // series name, '__standalone__', or null
+let BOOK_FILTER = null;        // title of the book linked to (#book=...), or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
 let MERGE_FROM = null;         // index of the first book picked with its merge button, or null
@@ -47,6 +48,7 @@ function populateFilters(){
 }
 
 function matches(b, q, author, genre, read){
+  if(BOOK_FILTER !== null && b.t !== BOOK_FILTER) return false;
   if(SERIES_FILTER){
     if(SERIES_FILTER === '__standalone__'){ if(b.s) return false; }
     else if(b.s !== SERIES_FILTER) return false;
@@ -66,8 +68,9 @@ function matches(b, q, author, genre, read){
   return true;
 }
 
-function setView(v){
-  VIEW = v;
+// Show VIEW with SERIES_FILTER / BOOK_FILTER and the filters as they are; navigate() is how they change.
+function showView(){
+  const v = VIEW;
   document.getElementById('btnSeriesView').classList.toggle('active', v==='series');
   document.getElementById('btnLibraryView').classList.toggle('active', v==='library');
   const showLibControls = v === 'library';
@@ -77,20 +80,123 @@ function setView(v){
   document.getElementById('toggleAdd').style.display = showLibControls ? '' : 'none';
   document.getElementById('missingFilter').style.display = showLibControls ? 'none' : '';
   const crumb = document.getElementById('crumb');
-  if(v === 'library' && SERIES_FILTER){
-    crumb.classList.add('show');
-    document.getElementById('crumbLabel').textContent =
-      SERIES_FILTER === '__standalone__' ? 'Standalone books' : SERIES_FILTER;
-  } else {
-    crumb.classList.remove('show');
-  }
+  const label = v !== 'library' ? null : BOOK_FILTER !== null ? BOOK_FILTER
+    : SERIES_FILTER === '__standalone__' ? 'Standalone books' : SERIES_FILTER;
+  crumb.classList.toggle('show', !!label);
+  document.getElementById('crumbLabel').textContent = label || '';
+  document.title = (label ? label + ' — ' : v === 'library' ? 'All books — ' : '') + 'Audiobook Catalogue';
   render();
 }
 
-function openSeries(name){
-  SERIES_FILTER = name;
-  setView('library');
+// ------------------------------------------------------------------ the address
+// What is shown lives in the address after the #, so a series, a book or a search can be linked to,
+// bookmarked and reloaded, and the browser's back and forward buttons step through what you looked at:
+//   (nothing)            the series overview      #q=gull&missing     ...searched, only series with gaps
+//   #books               all books                #series=The+Gull+Saga, #standalone, #book=Ember+Road
+//   &q=...&author=...&genre=...&read=2024 (or read=undated) narrow the books shown.
+
+/** What the page shows now, as navigate() and the address take it. */
+function viewState(){
+  const val = id=> document.getElementById(id).value;
+  return {view: VIEW, series: SERIES_FILTER, book: BOOK_FILTER, q: val('q').trim(),
+    author: val('authorFilter'), genre: val('genreFilter'), read: val('readFilter'), missing: val('missingFilter') === 'missing'};
 }
+
+/** A view state -> the address's #... ('' for the plain series overview). */
+function stateHash(st){
+  const enc = v=> encodeURIComponent(v).replace(/%20/g, '+');
+  const parts = [];
+  if(st.view === 'library'){
+    if(st.book !== null) parts.push('book=' + enc(st.book));
+    else if(st.series === '__standalone__') parts.push('standalone');
+    else if(st.series !== null) parts.push('series=' + enc(st.series));
+    else parts.push('books');
+  }
+  if(st.q) parts.push('q=' + enc(st.q));
+  if(st.view === 'library'){
+    if(st.author) parts.push('author=' + enc(st.author));
+    if(st.genre) parts.push('genre=' + enc(st.genre));
+    if(st.read) parts.push('read=' + enc(st.read === UNDATED ? 'undated' : st.read));
+  } else if(st.missing) parts.push('missing');
+  return parts.length ? '#' + parts.join('&') : '';
+}
+
+/** The address's #... -> a view state; anything it does not understand is ignored. */
+function stateFromHash(hash){
+  const dec = v=>{ try{ return decodeURIComponent(v.replace(/\+/g, ' ')); }catch(e){ return v; } };
+  const p = new Map();
+  String(hash || '').replace(/^#/, '').split('&').filter(Boolean).forEach(part=>{
+    const i = part.indexOf('=');
+    if(i < 0) p.set(dec(part), true); else p.set(dec(part.slice(0, i)), dec(part.slice(i + 1)));
+  });
+  const text = k=> typeof p.get(k) === 'string' ? p.get(k).trim() : '';
+  const book = text('book') || null;
+  const series = book ? null : p.has('standalone') ? '__standalone__' : text('series') || null;
+  const read = text('read');
+  return {view: book || series || p.has('books') ? 'library' : 'series', series, book, q: text('q'),
+    author: text('author'), genre: text('genre'), read: read === 'undated' ? UNDATED : read, missing: p.get('missing') === true};
+}
+
+// Show a view state (from navigate() or the address).
+function applyState(st){
+  VIEW = st.view; SERIES_FILTER = st.series; BOOK_FILTER = st.book;
+  document.getElementById('q').value = st.q;
+  document.getElementById('authorFilter').value = st.author;
+  document.getElementById('genreFilter').value = st.genre;
+  document.getElementById('readFilter').value = st.read;
+  document.getElementById('missingFilter').value = st.missing ? 'missing' : '';
+  showView();
+}
+
+const placeOf = st=> [st.view, st.series, st.book].join('\n');
+
+function setAddress(how, st, data){
+  const hash = stateHash(st);
+  try{ history[how === 'replace' ? 'replaceState' : 'pushState'](data || null, '', hash || location.pathname + (location.search || '')); }catch(e){}
+}
+
+/**
+ * Change what is shown (`change` is part of a view state) and record it in the address: a new history
+ * entry, so Back returns here, unless `how` is 'replace'. Going to another series, book or view closes
+ * the forms and starts at the top of the page.
+ */
+function navigate(change, how = 'push', data = null){
+  const before = viewState();
+  const st = {...before, ...change};
+  const moved = placeOf(st) !== placeOf(before);
+  if(moved){ closeForm(); closeSeriesForm(); }
+  applyState(st);
+  // compared with the address, not `before`: the search box or a select already holds its new value
+  const after = viewState();
+  if(how === 'replace' || stateHash(after) !== stateHash(stateFromHash(location.hash))) setAddress(how, after, data);
+  if(moved && how !== 'replace' && typeof scrollTo === 'function') scrollTo(0, 0);
+}
+
+function setView(v){ navigate({view: v, series: null, book: null}); }
+function openSeries(name){ navigate({view: 'library', series: name, book: null}); }
+// A book is shown on its own, without the filters, which might hide it.
+function openBook(title){ navigate({view: 'library', series: null, book: title, q: '', author: '', genre: '', read: ''}); }
+
+// Back and forward (and an address typed or pasted in): show what the address says. The browser puts
+// the scroll position back itself, as the page is redrawn before this returns.
+function showAddress(){
+  const st = stateFromHash(location.hash);
+  if(stateHash(st) === stateHash(viewState())) return;
+  if(placeOf(st) !== placeOf(viewState())){ closeForm(); closeSeriesForm(); }
+  applyState(st);
+}
+addEventListener('popstate', showAddress);
+addEventListener('hashchange', showAddress);
+
+// Links to a series or a book (#series=..., #book=...) in the list: a plain click shows it here and
+// records it in the history; with a modifier key, or opened from the menu, they work as links.
+document.getElementById('results').addEventListener('click', e=>{
+  const a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+  if(!a || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  const st = stateFromHash(a.getAttribute('href'));
+  if(st.book !== null) openBook(st.book); else navigate({view: st.view, series: st.series, book: null});
+});
 
 function render(){
   if(VIEW === 'series'){ renderSeriesOverview(); return; }
@@ -123,7 +229,7 @@ function render(){
   seriesNames.forEach(name=>{
     const books = groups[name].sort((a,b)=> (parseFloat(a.sn)||0) - (parseFloat(b.sn)||0));
     const info = SERIES_INFO[name];
-    let head = `<p class="series-title">${esc(name)} <span class="n">${books.length} owned</span>`;
+    let head = `<p class="series-title"><a href="${esc(bookHref(name, 'series'))}">${esc(name)}</a> <span class="n">${books.length} owned</span>`;
     head += ` ${seriesEditButton(name)}`;
     if(info){
       head += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
@@ -224,7 +330,7 @@ function renderSeriesOverview(){
     const authors = uniqueSorted(books.map(b=>b.a));
     const info = SERIES_INFO[name];
     html += `<div class="srow"><div class="srow-head">
-      <button class="srow-title" data-series="${esc(name)}">${esc(name)}</button>
+      <a class="srow-title" href="${esc(stateHash({view: 'library', series: name, book: null}))}">${esc(name)}</a>
       <span class="srow-owned">${books.length} owned${info ? ' of ' + esc(info.total) : ''}</span>
       ${seriesEditButton(name)}
     </div>`;
@@ -243,15 +349,12 @@ function renderSeriesOverview(){
 
   if(showStandalone){
     html += `<div class="srow"><div class="srow-head">
-      <button class="srow-title" data-series="__standalone__">Standalone</button>
+      <a class="srow-title" href="#standalone">Standalone</a>
       <span class="srow-owned">${standaloneCount} owned</span>
     </div></div>`;
   }
 
   document.getElementById('results').innerHTML = html;
-  document.querySelectorAll('.srow-title').forEach(btn=>{
-    btn.addEventListener('click', e=> openSeries(e.currentTarget.dataset.series));
-  });
   bindSeriesEditButtons();
 }
 
@@ -359,6 +462,11 @@ function editionHtml(ed){
     (label ? esc(label) + ' ' : '') + (urls[k] ? link(urls[k], value) : esc(value))).join('; ');
 }
 
+// The address of a book (or, with kind 'series', a series) shown on its own.
+function bookHref(name, kind = 'book'){
+  return stateHash({view: 'library', series: kind === 'series' ? name : null, book: kind === 'book' ? name : null});
+}
+
 function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
   // the narrators of all its editions; each edition line names its own only when they differ
@@ -367,14 +475,15 @@ function bookCard(b){
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
   const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
   const editions = CatalogImport.bookEditions(b).map(ed=>{
-    const also = (SHARED.get(ed) || []).map(k=> DATA[k].t + (DATA[k].sn ? ` #${DATA[k].sn}` : ''));
+    const also = (SHARED.get(ed) || []).map(k=>
+      `<a href="${esc(bookHref(DATA[k].t))}">${esc(DATA[k].t + (DATA[k].sn ? ` #${DATA[k].sn}` : ''))}</a>`);
     return `<div class="edition">${editionHtml(narrators.length > 1 ? ed : {...ed, n: undefined})}` +
-      (also.length ? `<br><span class="also">Also in this edition: ${esc(also.join(', '))}</span>` : '') + '</div>';
+      (also.length ? `<br><span class="also">Also in this edition: ${also.join(', ')}</span>` : '') + '</div>';
   }).join('');
   const picked = MERGE_FROM === b._i;
   const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${DATA[MERGE_FROM].t}`;
   return `<div class="book${picked ? ' picked' : ''}">${num}<div class="info">
-    <div class="title">${esc(b.t)}</div>
+    <div class="title"><a href="${esc(bookHref(b.t))}">${esc(b.t)}</a></div>
     <div class="meta">${esc(meta)}</div>
     ${read}
     ${editions}
@@ -386,14 +495,17 @@ function bookCard(b){
   </div></div>`;
 }
 
-document.getElementById('q').addEventListener('input', render);
-document.getElementById('authorFilter').addEventListener('change', render);
-document.getElementById('genreFilter').addEventListener('change', render);
-document.getElementById('readFilter').addEventListener('change', render);
-document.getElementById('missingFilter').addEventListener('change', render);
-document.getElementById('btnSeriesView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
-document.getElementById('btnLibraryView').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('library'); });
-document.getElementById('backToSeries').addEventListener('click', ()=>{ SERIES_FILTER=null; closeForm(); closeSeriesForm(); setView('series'); });
+// Typing a search is one step back, however many letters it took: the first change of the search
+// adds a history entry, the rest of the typing updates it.
+document.getElementById('q').addEventListener('input', ()=>{
+  const typing = !!(history.state && history.state.search);
+  navigate({}, typing ? 'replace' : 'push', {search: true});
+});
+['authorFilter', 'genreFilter', 'readFilter', 'missingFilter'].forEach(id=>
+  document.getElementById(id).addEventListener('change', ()=> navigate({})));
+document.getElementById('btnSeriesView').addEventListener('click', ()=> setView('series'));
+document.getElementById('btnLibraryView').addEventListener('click', ()=> setView('library'));
+document.getElementById('backToSeries').addEventListener('click', ()=> setView('series'));
 document.getElementById('toggleAdd').addEventListener('click', ()=>{
   const form = document.getElementById('addForm');
   if(form.classList.contains('open') && EDIT_INDEX === null){
@@ -507,4 +619,5 @@ function refreshPage(){
   populateFilters(); render();
 }
 
-const READY = startPage(()=>{ populateFilters(); setView('series'); });
+// The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
+const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); });
