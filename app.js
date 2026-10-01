@@ -140,7 +140,9 @@ function stateFromHash(hash){
 // Show a view state (from navigate() or the address).
 function applyState(st){
   VIEW = st.view; SERIES_FILTER = st.series; BOOK_FILTER = st.book;
-  document.getElementById('q').value = st.q;
+  // st.q is trimmed; leave the box alone when it already says that, or a space being typed is lost
+  const box = document.getElementById('q');
+  if(box.value.trim() !== st.q) box.value = st.q;
   document.getElementById('authorFilter').value = st.author;
   document.getElementById('genreFilter').value = st.genre;
   document.getElementById('readFilter').value = st.read;

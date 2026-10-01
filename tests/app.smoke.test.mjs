@@ -211,6 +211,13 @@ test('back and forward step through series, books, filters and searches', async 
   history.forward();
   assert.equal(get('SERIES_FILTER'), 'The Lantern Coast');
 
+  // a space typed in the search box stays there (the address carries the search without it)
+  els.q.value = 'beacons '; els.q.listeners.input[0]();
+  assert.equal(els.q.value, 'beacons ');
+  els.q.value = 'beacons at'; els.q.listeners.input[0]();
+  assert.equal(ctx.location.hash, '#series=The+Lantern+Coast&q=beacons+at');
+  history.back();
+
   // a new search after going back starts a new entry instead of rewriting an old one
   els.q.value = 'salt'; els.q.listeners.input[0]();
   assert.deepEqual(history.entries.map(e => e.hash), ['', '#series=The+Lantern+Coast', '#series=The+Lantern+Coast&q=salt']);
