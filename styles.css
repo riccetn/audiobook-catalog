@@ -26,6 +26,14 @@ h1{
   letter-spacing:-.01em;
 }
 .sub{color:var(--ink-soft); font-size:.92rem; margin:0 0 1.25rem;}
+.pages{display:flex; gap:1.1rem; flex-wrap:wrap; margin:.2rem 0 .6rem; font-size:.88rem; border-bottom:1px solid var(--line);}
+.pages a{color:var(--ink-soft); text-decoration:none; font-weight:600; padding:.35rem 0; border-bottom:2px solid transparent; margin-bottom:-1px;}
+.pages a:hover{color:var(--ink);}
+.pages a.current{color:var(--moss); border-bottom-color:var(--moss);}
+.panel{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:1rem; margin-bottom:1.5rem; font-size:.88rem;}
+.panel h2{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:1.05rem; font-weight:600;}
+.panel p{margin:0 0 .7rem; color:var(--ink-soft);}
+.hint{color:var(--ink-soft); font-size:.85rem; margin:0 0 1rem;}
 .viewToggle{display:flex; gap:.4rem; margin-bottom:1.1rem;}
 .viewToggle button{
   padding:.45rem .9rem; border-radius:20px; border:1px solid var(--line); background:var(--card);
@@ -101,7 +109,8 @@ h1{
 .importPreview p{margin:.25rem 0;}
 .importPreview ul{margin:.3rem 0 .6rem; padding-left:1.2rem; max-height:16rem; overflow-y:auto; overflow-wrap:anywhere;}
 .importPreview .warn{color:#b0453f;}
-.dup-group{border-top:1px solid var(--line); padding-top:.7rem; margin-top:.7rem;}
+.dup-group{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.8rem; margin-bottom:1rem; font-size:.85rem;}
+.dup-note{margin:0 0 .5rem; color:var(--moss); font-weight:600; font-size:.8rem;}
 .dup-books{display:flex; gap:.5rem; flex-wrap:wrap;}
 .dup-book{flex:1 1 220px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:.5rem .65rem; background:var(--paper); overflow-wrap:anywhere;}
 .dup-field{display:block; margin:.1rem 0;}

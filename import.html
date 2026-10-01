@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Import &amp; export · Audiobook Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Audiobook Catalogue</h1>
+  <nav class="pages">
+    <a href="index.html">Catalogue</a>
+    <a href="import.html" class="current" aria-current="page">Import &amp; export</a>
+    <a href="duplicates.html">Duplicates<span id="dupCount"></span></a>
+  </nav>
+  <p class="sub" id="subtitle">Loading&hellip;</p>
+  <p id="ioStatus" class="ioStatus"></p>
+
+  <section class="panel">
+    <h2>Add books from an export</h2>
+    <p>Pick an Audible Library Extractor CSV or a Goodreads library export. You see what would change before anything does.</p>
+    <div class="rowbtns">
+      <button class="iconbtn2" id="importAudibleBtn" title="Add finished books from an Audible Library Extractor CSV">Audible CSV</button>
+      <button class="iconbtn2" id="importGoodreadsBtn" title="Add read audiobooks from a Goodreads library export CSV">Goodreads CSV</button>
+      <input type="file" id="importCsvFile" accept=".csv,text/csv" style="display:none">
+    </div>
+  </section>
+
+  <div id="importPreview" class="importPreview">
+    <h3 id="importPreviewTitle"></h3>
+    <div id="importPreviewBody"></div>
+    <div class="formbtns">
+      <button type="button" class="save" id="importConfirm">Add books</button>
+      <button type="button" id="importCancel">Cancel</button>
+    </div>
+  </div>
+
+  <section class="panel">
+    <h2>Backups</h2>
+    <p>Export downloads the books, the series info and the list of books imports skip. Restore replaces the catalogue with a backup.</p>
+    <div class="rowbtns">
+      <button class="iconbtn2" id="exportBtn" title="Download a backup JSON file">Export</button>
+      <button class="iconbtn2" id="importBtn" title="Restore from a backup JSON file">Restore</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none">
+    </div>
+  </section>
+</div>
+
+<script src="importers.js"></script>
+<script src="store.js"></script>
+<script src="import.js"></script>
+</body>
+</html>

@@ -5,7 +5,8 @@ for workflows and the data format. This file covers what you need to change the 
 
 ## What this is
 
-A personal audiobook catalogue: a static page (`index.html`, `styles.css`, `app.js`) that reads
+A personal audiobook catalogue: static pages (`index.html`, `import.html`, `duplicates.html`, sharing
+`styles.css`) that read
 `data/books.json` and `data/series-info.json`, plus a Node command line (`catalog.js`) for imports,
 validation and a local server that saves edits made in the page.
 
@@ -31,7 +32,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
 ## Architecture
 
 - `importers.js`: the data pipeline, shared by the page and the CLI. It is written as a plain
-  script defining the global `CatalogImport` (loaded by `index.html` via `<script>`) and also
+  script defining the global `CatalogImport` (loaded by every page via `<script>`) and also
   `module.exports` it for `catalog.js`. Keep it that way: no `import`/`require`, no Node or DOM APIs,
   so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
@@ -41,16 +42,23 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push an
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
   the same checks as `sync-export`, refuses a save if the file's `fingerprint` changed on disk since
   the page loaded it, and writes atomically (`writeAtomic`). Exports `main`, `createServer` etc. for tests.
-- `app.js`: the whole UI, global-state style (`DATA`, `SERIES_INFO`, `VIEW`, ...) rendering into
-  elements from `index.html`. Fetches `data/` then falls back to `data/sample/`. Keeps unsaved edits in
-  `localStorage` (`audiobook-catalog-data`), tagged with the fingerprint of the files they were made
-  against; stale edits are set aside under `audiobook-catalog-data.backup`. Pairs marked
-  "Not duplicates" in the duplicates panel live only in `audiobook-catalog-not-duplicates`.
+- `store.js`: shared by the pages, loaded after `importers.js`: the globals (`DATA`, `SERIES_INFO`,
+  `EXCLUSIONS`, ...), loading (`startPage(init)`: fetches `data/`, then falls back to `data/sample/`),
+  `persist` (localStorage `audiobook-catalog-data`, tagged with the fingerprint of the files the edits
+  were made against, plus `saveToDisk` under `make serve`), the status line and the page links.
+  Stale edits are set aside under `audiobook-catalog-data.backup`; `persist` refuses when another
+  tab wrote localStorage since this page last did. Each page script defines `refreshPage()` (redraw
+  from `DATA`, called after a save to disk tidied the books) and `const READY = startPage(...)`.
+  Pairs marked "Not duplicates" live only in `audiobook-catalog-not-duplicates`.
+- `app.js` (`index.html`): series overview, all books, the book and series-info forms, global-state
+  style (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
+- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Export / Restore of backups.
+- `duplicates.js` (`duplicates.html`): duplicate groups and merging.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
   - `importers.test.mjs`: pipeline unit tests.
   - `cli.test.mjs`: CLI commands and the `serve` save endpoint, in temp directories.
   - `data.test.mjs`: validates the data files and enforces the privacy rules below.
-  - `app.smoke.test.mjs`: runs the real `index.html` + `importers.js` + `app.js` in `node:vm` with a
+  - `app.smoke.test.mjs`: runs a page's real HTML and its scripts (`boot({page})`) in `node:vm` with a
     hand-rolled fake DOM and fake `fetch`. When you add elements or DOM APIs to the app, the fake DOM
     may need extending.
 
