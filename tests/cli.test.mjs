@@ -162,6 +162,22 @@ test('imports keep editions: publisher, release date and length, and another ASI
     [{ t: 'Kept', a: 'Ann', e: [{ id: 'B1', p: 'Gull Audio', d: '2021-05-04', len: 642 }, { id: 'B1UK' }] }]);
 });
 
+test('export-goodreads writes a CSV Goodreads imports, and --dry-run writes nothing', t => {
+  const { tmp, run } = sandbox(t);
+  const file = path.join(tmp, 'goodreads.csv');
+  let { code, out } = run('export-goodreads', file, '--dry-run');
+  assert.equal(code, 0);
+  assert.match(out, /dry run/);
+  assert.ok(!fs.existsSync(file));
+  ({ code, out } = run('export-goodreads', file));
+  assert.equal(code, 0);
+  const books = loadBooks(path.join(root, 'data', 'sample', 'books.json'));
+  assert.match(out, new RegExp(`${books.length} books for Goodreads`));
+  const rows = CatalogImport.parseCsv(fs.readFileSync(file, 'utf8'));
+  assert.equal(rows.length, books.length);
+  assert.ok(rows.every(r => r['Exclusive Shelf'] === 'read'));
+});
+
 test('books from before editions validate, and format rewrites them with editions', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
