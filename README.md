@@ -173,6 +173,12 @@ from Goodreads) are not looked up. It asks audible.com; `--store uk` (or `de`, `
 asks another store, for books the first one doesn't know. It needs the internet and uses Audible's own
 catalogue API, which needs no account but isn't an official public API, so it could stop working.
 
+**Or in the app**: with `make serve` running, the *Import & export* page has **Fill in series from
+Audible**. Pick the store and press **Look up series**; the server asks Audible (a browser may not), and the
+page shows what would be filled in, the same way the command does. Nothing changes until you press
+**Save series**; then it is saved like any other edit. The panel only shows when the page is served by
+`make serve`.
+
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
 the import exclusion list, `data/excluded.txt`, as the ASINs and Goodreads ids (`Goodreads 4242`) of its
 editions, and as `Title | Author`, so no later Audible or Goodreads import brings it back. With

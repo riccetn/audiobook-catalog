@@ -396,6 +396,46 @@ test('bad command lines print the usage', t => {
   assert.match(run('--help').out, /import-goodreads/);
 });
 
+test('serve looks books up on Audible for the page, and only for the page', async t => {
+  const { tmp } = sandbox(t);
+  const asked = [];
+  const fetchAudible = async u => {
+    asked.push(u);
+    const asin = /products\/([^?]+)/.exec(u)[1];
+    if (asin === 'B0DOWN0000') return { ok: false, status: 503 };
+    const body = {
+      B0SERIES01: { product: { series: [{ title: 'Gull Isle', sequence: '2', asin: 'B0GULLISLE' }] } },
+      B0GULLISLE: { product: { relationships: [{ relationship_to_product: 'child', sequence: '3' }] } },
+    }[asin];
+    return { ok: !!body, status: body ? 200 : 404, json: async () => body };
+  };
+  const server = createServer(tmp, () => server.address().port, { fetch: fetchAudible, pause: async () => {} });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const port = server.address().port;
+  const ask = (body, headers = {}) => fetch(`http://localhost:${port}/api/audible`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
+  });
+
+  const res = await ask({ store: 'de', groups: 'series', asins: ['B0SERIES01', 'B0UNKNOWN0'] });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { results: { B0SERIES01: [{ name: 'Gull Isle', number: '2', asin: 'B0GULLISLE' }], B0UNKNOWN0: null } });
+  assert.ok(asked.every(u => u.startsWith('https://api.audible.de/')));
+  assert.deepEqual(await (await ask({ store: 'us', groups: 'relationships', asins: ['B0GULLISLE'] })).json(), { results: { B0GULLISLE: 3 } });
+
+  const down = await ask({ store: 'us', groups: 'series', asins: ['B0DOWN0000'] });
+  assert.equal(down.status, 502);
+  assert.match((await down.json()).error, /could not reach audible.com/);
+  for (const bad of [{ store: 'xx', groups: 'series', asins: [] }, { store: 'us', groups: 'all', asins: [] },
+    { store: 'us', groups: 'series', asins: ['../../etc'] }, { store: 'us', groups: 'series', asins: Array(26).fill('B0SERIES01') }]) {
+    assert.equal((await ask(bad)).status, 400, JSON.stringify(bad).slice(0, 60));
+  }
+  const before = asked.length;
+  assert.equal((await ask({ store: 'us', groups: 'series', asins: ['B0SERIES01'] }, { Origin: 'http://evil.example' })).status, 403);
+  assert.equal((await fetch(`http://localhost:${port}/api/audible`)).status, 405);
+  assert.equal(asked.length, before);
+});
+
 test('serve saves the page\'s edits to your own data, and nothing else', async t => {
   const { tmp, run } = sandbox(t);
   const server = createServer(tmp, () => server.address().port);
@@ -409,12 +449,12 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
   });
 
   // demo data only: not writable, and a save is refused
-  assert.deepEqual(await (await fetch(url)).json(), { writable: false });
+  assert.deepEqual(await (await fetch(url)).json(), { writable: false, audible: true });
   assert.equal((await put({ books: [], seriesInfo: {} })).status, 409);
 
   assert.equal(run('init').code, 0);
   const booksPath = path.join(tmp, 'data', 'books.json'), infoPath = path.join(tmp, 'data', 'series-info.json');
-  assert.deepEqual(await (await fetch(url)).json(), { writable: true });
+  assert.deepEqual(await (await fetch(url)).json(), { writable: true, audible: true });
   const base = fp(fs.readFileSync(booksPath, 'utf8')), infoBase = fp(fs.readFileSync(infoPath, 'utf8'));
 
   // a save writes both files, tidied like sync-export, and returns the new fingerprints

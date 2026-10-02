@@ -49,10 +49,10 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: k => storage.delete(k),
   };
-  // `api(init)` stands in for `make serve`'s api/save and returns {status, body}; without it, a plain static server.
+  // `api(init, url)` stands in for `make serve`'s api/save and api/audible and returns {status, body}; without it, a plain static server.
   const fetch = async (url, init = {}) => {
-    if (url === 'api/save' && api) {
-      const { status, body } = await api(init);
+    if ((url === 'api/save' || url === 'api/audible') && api) {
+      const { status, body } = await api(init, url);
       return { ok: status < 300, status, json: async () => body };
     }
     return url in files
@@ -803,12 +803,58 @@ test('a refused save keeps the edits in the browser and says why', async () => {
   assert.equal(again.get('DATA[0].t'), 'Edited');
 });
 
+test('with make serve, series can be looked up on Audible, previewed, then saved', async () => {
+  const mine = JSON.stringify([
+    { t: 'Loose', a: 'Ann Vale', e: [{ id: 'B0LOOSE001' }] },
+    { t: 'Gull 2', a: 'Ann Vale', s: 'Gull Isle', sn: '2', e: [{ id: 'B0GULL0002' }] },
+  ]);
+  const lookups = [], saves = [];
+  const api = async (init, url) => {
+    if (!init.method) return { status: 200, body: { writable: true, audible: true } };
+    const body = JSON.parse(init.body);
+    if (url === 'api/save') { saves.push(body); return { status: 200, body: { base: 'b', infoBase: 'i', books: body.books } }; }
+    lookups.push(body);
+    const series = asin => [{ name: 'The Gull Isle Series', number: asin === 'B0LOOSE001' ? '1' : '2', asin: 'B0GULLISLE' }];
+    const results = Object.fromEntries(body.asins.map(a => [a, body.groups === 'series' ? series(a) : 4]));
+    return { status: 200, body: { results } };
+  };
+  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api });
+  assert.equal(els.audiblePanel.style.display, '');
+  els.audibleStore.value = 'uk';
+  await els.audibleSeriesBtn.listeners.click[0]();
+  assert.deepEqual(lookups, [
+    { store: 'uk', groups: 'series', asins: ['B0LOOSE001', 'B0GULL0002'] },
+    { store: 'uk', groups: 'relationships', asins: ['B0GULLISLE'] },
+  ]);
+  assert.equal(els.importPreviewTitle.textContent, 'Series from Audible');
+  assert.match(els.importPreviewBody.innerHTML, /Series or number filled in: 1/);
+  assert.match(els.importPreviewBody.innerHTML, /Loose &mdash; Ann Vale {2}\[Gull Isle #1\]/);
+  assert.match(els.importPreviewBody.innerHTML, /Gull Isle: 4/);
+  assert.equal(els.importConfirm.textContent, 'Save series');
+  assert.equal(get('"s" in DATA[0]'), false);             // nothing changed before confirming
+
+  els.importConfirm.listeners.click[0]();
+  await settle();
+  assert.deepEqual(get('DATA[0]'), { t: 'Loose', a: 'Ann Vale', s: 'Gull Isle', sn: '1', e: [{ id: 'B0LOOSE001' }] });
+  assert.equal(get('SERIES_INFO["Gull Isle"].total'), 4);
+  assert.equal(get('SERIES_INFO["Gull Isle"].status'), 'ongoing');
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].seriesInfo['Gull Isle'].total, 4);
+  assert.match(els.ioStatus.textContent, /Filled in the series of 1 book and released totals for 1 series/);
+
+  // without make serve there is no lookup to offer
+  const plain = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  assert.equal(plain.els.audiblePanel.style.display, 'none');
+});
+
 test('without make serve (or with the demo data) edits stay in the browser', async () => {
   let calls = 0;
-  const api = async () => { calls++; return { status: 200, body: { writable: true } }; };
-  const demo = await boot({ api });                     // demo data: never asks the server
+  const api = async init => { calls++; assert.equal(init.method, undefined); return { status: 200, body: { writable: true } }; };
+  const demo = await boot({ api });                     // demo data: only asks what the server can do, never saves
   assert.equal(demo.get('DISK_SAVE'), false);
-  assert.equal(calls, 0);
+  demo.run("DATA[0].t = 'Edited'; persist();");
+  await settle();
+  assert.equal(calls, 1);
   const plain = await boot({ files: { 'data/books.json': JSON.stringify([{ t: 'Mine', a: 'Me' }]) } });
   assert.equal(plain.get('DISK_SAVE'), false);
   plain.run("DATA[0].t = 'Edited'; persist();");

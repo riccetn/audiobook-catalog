@@ -323,7 +323,7 @@ function sameOrigin(req, port){
 
 /**
  * The page's saves: GET says whether saving is possible (only to your own data/books.json, never the
- * demo), PUT {books, seriesInfo, excluded, base, infoBase} writes both files, and adds the entries in
+ * demo) and that Audible lookups are, PUT {books, seriesInfo, excluded, base, infoBase} writes both files, and adds the entries in
  * `excluded` (books removed in the page) to data/excluded.txt. `base` and `infoBase` are the
  * fingerprints of the files the page's edits started from; if either file changed since (an import,
  * sync-export or a hand edit), the save is refused rather than overwriting that change. excluded.txt
@@ -334,7 +334,8 @@ function handleSave(req, res, root, port){
   const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
   const excludedPath = path.join(dir, 'excluded.txt');
   const writable = fs.existsSync(booksPath);
-  if(req.method === 'GET'){ sendJson(res, 200, {writable}); return; }
+  // `audible`: this server can also look books up on Audible for the page (see handleAudible)
+  if(req.method === 'GET'){ sendJson(res, 200, {writable, audible: true}); return; }
   if(req.method !== 'PUT'){ sendJson(res, 405, {error: 'use GET or PUT'}); return; }
   if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'saves are only accepted from this page'}); return; }
   if(!writable){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
@@ -373,8 +374,46 @@ function handleSave(req, res, root, port){
   });
 }
 
-/** The server behind `serve`: the project folder, plus the page's saves (see handleSave). */
-function createServer(root, port){
+const ASIN = /^[A-Z0-9]{10}$/;
+
+/**
+ * The page's Audible lookups, since a browser may not ask Audible itself: POST {store, groups, asins}
+ * with up to AUDIBLE_BATCH ASINs answers {results: {asin: ...}} as fetchFromAudible() finds them.
+ * Same-origin only, like saves, so no other site can use this server to reach Audible.
+ */
+function handleAudible(req, res, port, get, pause){
+  if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use POST'}); return; }
+  if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'lookups are only accepted from this page'}); return; }
+  const chunks = [];
+  let size = 0;
+  req.on('data', chunk => {
+    size += chunk.length;
+    if(size > 64 * 1024){ sendJson(res, 413, {error: 'too large'}); req.destroy(); return; }
+    chunks.push(chunk);
+  });
+  req.on('end', async () => {
+    if(res.headersSent) return;
+    let store, groups, asins;
+    try{
+      ({store, groups, asins} = JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    }catch(exc){ sendJson(res, 400, {error: 'not JSON'}); return; }
+    if(!Object.prototype.hasOwnProperty.call(C.AUDIBLE_STORES, store) || !['series', 'relationships'].includes(groups) ||
+       !Array.isArray(asins) || asins.length > AUDIBLE_BATCH || !asins.every(a => typeof a === 'string' && ASIN.test(a))){
+      sendJson(res, 400, {error: `expected {store, groups: "series" or "relationships", asins: up to ${AUDIBLE_BATCH} ASINs}`});
+      return;
+    }
+    try{
+      sendJson(res, 200, {results: Object.fromEntries(await fetchFromAudible(get, pause, store, asins, groups))});
+    }catch(exc){ sendJson(res, 502, {error: `could not reach ${C.AUDIBLE_STORES[store]} (${exc.message})`}); }
+  });
+}
+
+/**
+ * The server behind `serve`: the project folder, plus the page's saves (see handleSave) and Audible
+ * lookups (handleAudible; `audible` swaps in {fetch, pause} for tests).
+ */
+function createServer(root, port, audible = {}){
+  const get = audible.fetch || globalThis.fetch, pause = audible.pause || defaultPause;
   return http.createServer((req, res) => {
     let file, urlPath;
     try{
@@ -382,6 +421,7 @@ function createServer(root, port){
       file = path.join(root, urlPath.endsWith('/') ? urlPath + 'index.html' : urlPath);
     }catch(e){ res.writeHead(400).end('bad request'); return; }
     if(urlPath === '/api/save'){ handleSave(req, res, root, port()); return; }
+    if(urlPath === '/api/audible'){ handleAudible(req, res, port(), get, pause); return; }
     if(!file.startsWith(root + path.sep) && file !== root){ res.writeHead(403).end('forbidden'); return; }
     fs.readFile(file, (err, body) => {
       if(err){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }
@@ -391,7 +431,33 @@ function createServer(root, port){
   });
 }
 
-/** Serve the project folder to this machine only (it holds your personal data). */
+// ----------------------------------------------------------- Audible's catalogue
+const AUDIBLE_PAUSE_MS = 250;   // between requests, to be gentle with Audible
+const AUDIBLE_BATCH = 25;       // ASINs per api/audible request from the page
+
+/**
+ * Look ASINs up in one Audible store, one after another: for `series` groups, a Map of ASIN ->
+ * audibleSeries() list; for `relationships` (series ASINs), ASIN -> audibleSeriesTotal(). An ASIN
+ * Audible doesn't know maps to null. Throws when Audible can't be reached or answers with an error.
+ */
+async function fetchFromAudible(get, pause, store, asins, groups){
+  const found = new Map();
+  for(const asin of asins){
+    const res = await get(C.audibleProductUrl(asin, store, groups), {headers: {accept: 'application/json'}});
+    let json = null;
+    if(res.status !== 404){
+      if(!res.ok) throw new Error(`Audible answered ${res.status}`);
+      json = await res.json();
+    }
+    const known = json && json.product ? json : null;
+    found.set(asin, known && (groups === 'series' ? C.audibleSeries(known) : C.audibleSeriesTotal(known)));
+    await pause();
+  }
+  return found;
+}
+
+const defaultPause = () => new Promise(done => setTimeout(done, AUDIBLE_PAUSE_MS));
+
 /**
  * Fill in series, numbers and released totals from Audible's catalogue, looked up by ASIN. Only
  * empty values are filled: a book's series or number, and series-info for series that have none.
@@ -405,50 +471,22 @@ function cmdSeries(args, io){
 }
 
 async function lookUpSeries(args, io, books, info, booksPath, infoPath){
-  const get = io.fetch || globalThis.fetch;
-  const pause = io.pause || (() => new Promise(done => setTimeout(done, 250)));   // be gentle with Audible
+  const get = io.fetch || globalThis.fetch, pause = io.pause || defaultPause;
   const store = C.AUDIBLE_STORES[args.store];
-  // null when Audible doesn't know the ASIN in this store
-  const lookUp = async (asin, groups) => {
-    const res = await get(C.audibleProductUrl(asin, args.store, groups), {headers: {accept: 'application/json'}});
-    if(res.status === 404) return null;
-    if(!res.ok) throw new Error(`Audible answered ${res.status}`);
-    const json = await res.json();
-    return json && json.product ? json : null;
-  };
-
   const asins = C.seriesLookups(books, info);
   io.out(`looking up ${asins.length} book(s) on ${store}`);
-  const found = new Map();
-  let unknown = 0;
+  let found, report, totals;
   try{
-    for(const asin of asins){
-      const json = await lookUp(asin, 'series');
-      if(json) found.set(asin, C.audibleSeries(json)); else unknown++;
-      await pause();
-    }
+    found = await fetchFromAudible(get, pause, args.store, asins, 'series');
+    report = C.seriesFromAudible(books, found);
+    const wanted = [...report.series].filter(([name]) => !Object.prototype.hasOwnProperty.call(info, name)).map(([, asin]) => asin);
+    totals = C.addSeriesTotals(info, report.series, await fetchFromAudible(get, pause, args.store, wanted, 'relationships'),
+      args.store, new Date().toISOString().slice(0, 10));
   }catch(exc){
     io.err(`error: could not reach ${store} (${exc.message}); nothing written`);
     return 1;
   }
-  const report = C.seriesFromAudible(books, found);
-
-  const today = new Date().toISOString().slice(0, 10);
-  const totals = [];
-  try{
-    for(const [name, asin] of report.series){
-      if(Object.prototype.hasOwnProperty.call(info, name)) continue;
-      const total = C.audibleSeriesTotal(await lookUp(asin, 'relationships'));
-      await pause();
-      if(!total) continue;
-      // Audible only lists what is out, so whether the series is finished is yours to check
-      info[name] = {total, status: 'ongoing', note: `${total} released on ${store} as of ${today}; is it complete?`};
-      totals.push(name);
-    }
-  }catch(exc){
-    io.err(`error: could not reach ${store} (${exc.message}); nothing written`);
-    return 1;
-  }
+  const unknown = [...found.values()].filter(x => x === null).length;
 
   io.out(`  series or number filled in: ${report.filled.length}`);
   preview(report.filled, io);
@@ -481,6 +519,7 @@ async function lookUpSeries(args, io, books, info, booksPath, infoPath){
   return 0;
 }
 
+/** Serve the project folder to this machine only (it holds your personal data). */
 function cmdServe(args, io){
   const server = createServer(args.root, () => server.address().port);
   server.listen(args.port, '127.0.0.1', () => {

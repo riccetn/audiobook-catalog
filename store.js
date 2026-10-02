@@ -21,6 +21,7 @@ let SAVE_AGAIN = false;        // more edits came in while it was
 let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[storeKey()]
 let DATA_DIR = '';             // where the data files came from: 'data/', or 'data/sample/' for the demo
 let ON_DEVICE = false;         // the catalogue is this browser's own (DEVICE_KEY), not the files it was served
+let AUDIBLE_LOOKUP = false;    // `make serve` can look books up on Audible for the page (api/audible)
 
 // Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
 // duplicates page; kept in this browser only.
@@ -163,12 +164,14 @@ function loadDeviceCopy(){
   }catch(e){ return false; }
 }
 
-// Whether the server saves edits (only `make serve`, and only to your own data/books.json).
+// Whether the server saves edits (only `make serve`, and only to your own data/books.json). Also
+// notes whether it looks books up on Audible (`make serve`, with the demo data too).
 async function detectDiskSave(dir){
-  if(dir !== 'data/') return false;
   try{
     const res = await fetch('api/save', {cache: 'no-cache'});
-    return res.ok && (await res.json()).writable === true;
+    const body = res.ok ? await res.json() : {};
+    AUDIBLE_LOOKUP = body.audible === true;
+    return dir === 'data/' && body.writable === true;
   }catch(e){ return false; }
 }
 
