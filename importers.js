@@ -679,22 +679,35 @@ function validate(books, info){
 
 // ---------------------------------------------------------------------- backups
 /**
- * Read a backup exported from the page: {books: [...], seriesInfo: {...}, excluded: [...]}, or a
- * plain array of books from before series info was exported. Returns {books, seriesInfo, excluded};
- * seriesInfo and excluded (the data/excluded.txt entries) are null when the backup predates them,
- * so callers leave theirs alone. Throws if it is neither.
+ * Read a backup exported from the page: {books: [...], seriesInfo: {...}, excluded: [...],
+ * notDuplicates: [...]}, or a plain array of books from before series info was exported. Returns
+ * {books, seriesInfo, excluded, notDuplicates}; seriesInfo, excluded (the data/excluded.txt entries)
+ * and notDuplicates (the data/not-duplicates.txt entries) are null when the backup predates them, so
+ * callers leave theirs alone. Throws if it is neither.
  */
 function readBackup(data){
-  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null, excluded: null};
+  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null, excluded: null, notDuplicates: null};
   if(data && typeof data === 'object' && Array.isArray(data.books)){
-    const {seriesInfo: info, excluded} = data;
+    const {seriesInfo: info, excluded, notDuplicates} = data;
     if(info !== undefined && !(info && typeof info === 'object' && !Array.isArray(info))) throw new Error('seriesInfo is not an object');
-    if(excluded !== undefined && !(Array.isArray(excluded) && excluded.every(x => typeof x === 'string'))){
-      throw new Error('excluded is not a list of strings');
+    for(const [name, list] of [['excluded', excluded], ['notDuplicates', notDuplicates]]){
+      if(list !== undefined && !(Array.isArray(list) && list.every(x => typeof x === 'string'))){
+        throw new Error(`${name} is not a list of strings`);
+      }
     }
-    return {books: fixBooks(data.books), seriesInfo: info === undefined ? null : info, excluded: excluded === undefined ? null : excluded};
+    return {books: fixBooks(data.books), seriesInfo: info === undefined ? null : info, excluded: excluded === undefined ? null : excluded,
+      notDuplicates: notDuplicates === undefined ? null : notDuplicates};
   }
   throw new Error('expected a list of books or {books, seriesInfo, excluded}');
+}
+
+/**
+ * The entries of data/not-duplicates.txt: one duplicatePairKey() or editionsKey() per line, for the
+ * books the duplicates page was told are different books (or have different editions). Lines
+ * starting with '#' are comments.
+ */
+function parseNotDuplicates(text){
+  return [...new Set(String(text || '').split(/\r\n|\r|\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')))];
 }
 
 // ------------------------------------------------------------------------ CSV
@@ -1365,7 +1378,7 @@ return {
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible, addSeriesTotals,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
-  editionsJoinable, joinEditions, editionsKey, splitEditions,
+  editionsJoinable, joinEditions, editionsKey, splitEditions, parseNotDuplicates,
 };
 })();
 

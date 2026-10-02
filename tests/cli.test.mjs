@@ -295,6 +295,25 @@ test('sync-export adds the backup\'s excluded books to excluded.txt', t => {
   assert.match(run('import-audible', csv).out, /skipped \(listed in data\/excluded.txt\): 1/);
 });
 
+test('sync-export adds the backup\'s "Not duplicates" marks to not-duplicates.txt', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const notDupPath = path.join(tmp, 'data', 'not-duplicates.txt');
+  const exported = path.join(tmp, 'export.json');
+  const marks = ['["a","b","",""] ["c","b","",""]', '["editions","gr 7","id B1"]'];
+  fs.writeFileSync(exported, JSON.stringify({ books: [], seriesInfo: {}, notDuplicates: marks }));
+
+  const dry = run('sync-export', exported, '--dry-run');
+  assert.match(dry.out, /marked not duplicates: 2 new/);
+  assert.ok(!fs.existsSync(notDupPath));
+  assert.equal(run('sync-export', exported).code, 0);
+  assert.deepEqual(CatalogImport.parseNotDuplicates(fs.readFileSync(notDupPath, 'utf8')), marks);
+  assert.match(run('sync-export', exported).out, /marked not duplicates: 0 new/);
+  // a backup from before the marks were exported leaves the file alone
+  fs.writeFileSync(exported, JSON.stringify({ books: [], seriesInfo: {} }));
+  assert.doesNotMatch(run('sync-export', exported).out, /not duplicates/);
+});
+
 test('sync-export of an older backup (a plain list of books) leaves series info alone', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init', '--sample').code, 0);
@@ -526,6 +545,17 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
   assert.equal((await put({ books: saved.books, seriesInfo, excluded: ['gone | ann'], base: saved.base, infoBase: saved.infoBase })).status, 200);
   assert.equal(fs.readFileSync(excludedPath, 'utf8'), excludedText);
   assert.equal((await put({ books: saved.books, seriesInfo, excluded: 'BGONE', base: saved.base, infoBase: saved.infoBase })).status, 400);
+
+  // so are the pairs marked "Not duplicates" on the duplicates page, to not-duplicates.txt
+  const notDupPath = path.join(tmp, 'data', 'not-duplicates.txt');
+  const marks = ['["a","b","",""] ["c","b","",""]', '["editions","gr 7","id B1"]'];
+  assert.equal((await put({ books: saved.books, seriesInfo, notDuplicates: marks, base: saved.base, infoBase: saved.infoBase })).status, 200);
+  const notDupText = fs.readFileSync(notDupPath, 'utf8');
+  assert.match(notDupText, /^# Books the Duplicates page was told are different books/);
+  assert.deepEqual(CatalogImport.parseNotDuplicates(notDupText), marks);
+  assert.equal((await put({ books: saved.books, seriesInfo, notDuplicates: [marks[1]], base: saved.base, infoBase: saved.infoBase })).status, 200);
+  assert.equal(fs.readFileSync(notDupPath, 'utf8'), notDupText);
+  assert.equal((await put({ books: saved.books, seriesInfo, notDuplicates: 'x', base: saved.base, infoBase: saved.infoBase })).status, 400);
 
   // a save based on an older version of the files is refused, and the files stay as they are
   const stale = await put({ books: [], seriesInfo: {}, base, infoBase });

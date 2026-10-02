@@ -8,7 +8,7 @@ function refreshPage(){
 }
 
 function exportBackup(){
-  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries};
+  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries, notDuplicates: [...NOT_DUPLICATES]};
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -25,12 +25,13 @@ function importBackup(file){
   const reader = new FileReader();
   reader.onload = e=>{
     try{
-      const {books, seriesInfo, excluded} = CatalogImport.readBackup(JSON.parse(e.target.result));
+      const {books, seriesInfo, excluded, notDuplicates} = CatalogImport.readBackup(JSON.parse(e.target.result));
       const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
       if(bad) throw new Error('missing title/author');
       DATA = books;
       if(seriesInfo) SERIES_INFO = seriesInfo;     // older backups have no series info: keep the current one
       const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
+      addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
       // with no data/books.json to save to (the demo is showing), the restored catalogue becomes this device's own
       const onDevice = keepOnDevice();
       refreshPage(); persist();

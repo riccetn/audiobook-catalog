@@ -709,3 +709,14 @@ test('narrators: a narrator on the book moves onto its editions', () => {
   C.merge(existing, [book('One', 'Author', ed({ gr: '7', n: 'A guess' }))]);
   assert.deepEqual(existing[0].e, [{ id: 'B1', gr: '7', n: 'Mine' }]);
 });
+
+test('backups carry the "Not duplicates" marks, and not-duplicates.txt lists them one per line', () => {
+  const marks = ['["a","b","",""] ["c","b","",""]'];
+  assert.deepEqual(C.readBackup({ books: [], notDuplicates: marks }).notDuplicates, marks);
+  assert.equal(C.readBackup({ books: [] }).notDuplicates, null);
+  assert.equal(C.readBackup([]).notDuplicates, null);
+  assert.throws(() => C.readBackup({ books: [], notDuplicates: [1] }), /notDuplicates is not a list of strings/);
+  assert.deepEqual(C.parseNotDuplicates('# header\n\n' + marks[0] + '\r\n  ' + marks[0] + '  \n["editions","id B1"]'),
+    [marks[0], '["editions","id B1"]']);
+  assert.deepEqual(C.parseNotDuplicates(''), []);
+});

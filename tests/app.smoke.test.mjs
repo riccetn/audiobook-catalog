@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -539,7 +540,7 @@ test('Export includes series info, and Import brings it back', async () => {
   first.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
   first.els.exportBtn.listeners.click[0]();
   const backup = JSON.parse(blobs[0]);
-  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), excluded: [] });
+  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), excluded: [], notDuplicates: [] });
 
   // into a page that has no series info: it comes back, and survives a reload
   const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
@@ -1053,4 +1054,50 @@ test('the app can be installed: the manifest\'s icons and everything the service
     for (const [, src] of read(page).matchAll(/<script src="([^"]+)">/g)) assert.ok(cached.includes(src), `sw.js caches ${src}`);
   }
   assert.ok(!cached.some(f => f.startsWith('data/') && !f.startsWith('data/sample/')), 'never your own data');
+});
+
+test('"Not duplicates" marks come from data/not-duplicates.txt, are saved there by make serve, and travel in backups', async () => {
+  const books = [{ t: 'The Ledger', a: 'Priya Ostrander' }, { t: 'The Ledger, Book 1', a: 'Priya Ostrander' },
+    { t: 'Salt Road', a: 'Marisol Quenby' }, { t: 'Salt Road, Book 1', a: 'Marisol Quenby' }];
+  const pairKey = (x, y) => createRequire(import.meta.url)('../importers.js').duplicatePairKey(books[x], books[y]);
+  const saves = [];
+  const api = async init => {
+    if (!init.method) return { status: 200, body: { writable: true } };
+    const body = JSON.parse(init.body);
+    saves.push(body);
+    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i' + saves.length, books: body.books } };
+  };
+  const ledger = pairKey(0, 1);
+  const files = { 'data/books.json': JSON.stringify(books), 'data/not-duplicates.txt': '# header\n' + ledger + '\n' };
+  const { ctx, get, els } = await boot({ page: 'duplicates.html', files, api });
+  // the file's marks hide that pair; nothing to save yet
+  assert.deepEqual(get('DUP_GROUPS'), [[2, 3]]);
+  assert.equal(saves.length, 0);
+
+  // marking the other pair saves it, and only it, to the file
+  ctx.keepApart(0);
+  await settle();
+  assert.equal(saves.length, 1);
+  assert.deepEqual(saves[0].notDuplicates, [pairKey(2, 3)]);
+  assert.deepEqual(get('DUP_GROUPS'), []);
+  assert.equal(els.dupCount.textContent, '');
+
+  // Export carries every mark; Restore elsewhere brings them back
+  const imp = await boot({ page: 'import.html', files });
+  const blobs = [];
+  imp.ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
+  imp.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+  imp.els.exportBtn.listeners.click[0]();
+  assert.deepEqual(JSON.parse(blobs[0]).notDuplicates, [ledger]);
+  const backup = { books, seriesInfo: {}, notDuplicates: [ledger, pairKey(2, 3)] };
+  const other = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(books) } });
+  other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  const after = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(books) }, storage: other.storage });
+  assert.deepEqual(after.get('DUP_GROUPS'), []);
+
+  // marks made before they could be saved to the file are saved when the page loads under make serve
+  const early = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(books) }, storage: other.storage, api });
+  await settle();
+  assert.deepEqual(saves[saves.length - 1].notDuplicates, [ledger, pairKey(2, 3)]);
+  assert.equal(early.get('pendingNotDuplicates().length'), 0);
 });
