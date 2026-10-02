@@ -36,7 +36,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `module.exports` it for `catalog.js`. Keep it that way: no `import`/`require`, no Node or DOM APIs,
   so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
-  `readAudible`, `readGoodreads`, `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
+  `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
   `parseExclusions`/`exclusionEntries`, `readBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
 - `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible through `io.fetch` and returns a promise) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
@@ -60,7 +60,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   (the smoke test checks).
 - `app.js` (`index.html`): series overview, all books, the book and series-info forms, global-state
   style (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
-- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Export / Restore of backups.
+- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Export / Restore of backups.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `editionsJoinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).

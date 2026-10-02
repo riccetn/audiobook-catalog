@@ -7,18 +7,31 @@ function refreshPage(){
   document.getElementById('importSeriesOption').style.display = AUDIBLE_LOOKUP ? '' : 'none';
 }
 
-function exportBackup(){
-  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries};
-  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+function download(text, type, name){
+  const blob = new Blob([text], {type});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'audiobook-catalog-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.download = name + '-' + new Date().toISOString().slice(0,10) + (type === 'text/csv' ? '.csv' : '.json');
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function exportBackup(){
+  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries};
+  download(JSON.stringify(backup, null, 2), 'application/json', 'audiobook-catalog-backup');
   showIoStatus('Backup downloaded.');
+}
+
+function exportGoodreads(){
+  const out = CatalogImport.goodreadsCsv(DATA);
+  download(out.csv, 'text/csv', 'goodreads-import');
+  const notes = [];
+  if(out.withoutIds) notes.push(`${out.withoutIds} without a Goodreads id or ISBN, which Goodreads finds by title and author`);
+  if(out.withoutDate) notes.push(`${out.withoutDate} without a full date read`);
+  showIoStatus(`Goodreads CSV with ${out.books} books downloaded${notes.length ? ' (' + notes.join('; ') + ')' : ''}.`);
 }
 
 function importBackup(file){
@@ -269,6 +282,7 @@ document.getElementById('importSeries').addEventListener('change', e=>{
 document.getElementById('importCancel').addEventListener('click', closeImportPreview);
 
 document.getElementById('exportBtn').addEventListener('click', exportBackup);
+document.getElementById('exportGoodreadsBtn').addEventListener('click', exportGoodreads);
 document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
 document.getElementById('importFile').addEventListener('change', e=>{
   const file = e.target.files[0];

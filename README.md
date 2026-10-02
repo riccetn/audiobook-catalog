@@ -40,7 +40,7 @@ data/
   excluded.txt        books your imports must never re-add (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
 index.html, app.js    the catalogue: browse by series or all books, edit books and series info
-import.html, import.js    Audible and Goodreads CSV imports, backups (Export / Restore)
+import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, backups (Export / Restore)
 duplicates.html, duplicates.js    find and merge books entered twice
 store.js              shared by the pages: loads data/books.json (or data/sample/), keeps and saves edits
 styles.css
@@ -247,6 +247,19 @@ so a later export still finds it after you rename it; books already in the catal
 filled in the first time an export matches them. Goodreads puts the series in the title, as
 `The First Adventure (Fantasy Adventures, #1)` or `The First Adventure: Fantasy Adventures, Book 1`; both
 become the title `The First Adventure` in series `Fantasy Adventures`, number `1`.
+
+**Export to Goodreads**: `node catalog.js export-goodreads goodreads.csv` (or **Goodreads CSV** under
+*Export to Goodreads* on the *Import & export* page) writes the catalogue as a Goodreads library export,
+the format Goodreads' [import page](https://www.goodreads.com/review/import) takes. Every book goes on the
+*read* shelf, also those with no date read (a missing date means unknown, not unread), with the series in
+the title (`The First Adventure (Fantasy Adventures, #1)`), the first author as *Author* and the rest as
+*Additional Authors*, its genres as shelves (`Science Fiction` becomes `science-fiction`), and how many
+dates read it has as *Read Count*. Goodreads keeps one date read, so a book gets its latest full date
+(`2024-03-15` becomes `2024/03/15`); one read only in `2024-03` or `2024` goes without. Goodreads finds a
+book by the *Book Id* and ISBN of one of its editions (preferring one with both), else by title and
+author; a box set's edition, shared with its other titles, is left out so Goodreads doesn't file each
+title as the box set. The command says how many books have no id or ISBN and how many no full date.
+Our own Goodreads import reads the file back.
 
 Books imported before titles were split this way (or by hand) are split when the catalogue loads: a book with
 no series gets the one in its title, and a book that already has that series just loses it from the title.
