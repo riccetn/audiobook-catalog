@@ -928,3 +928,46 @@ test('merging keeps editions apart when asked, and books merged that way can be 
   assert.deepEqual(again.get('SPLIT'), []);
   assert.equal(again.els.dupCount.textContent, '');
 });
+
+test('restoring a backup where only the demo is served makes it this device\'s own catalogue', async () => {
+  const backup = { books: [{ t: 'Pocket Edition', a: 'Ann Vale', r: ['2025-06-01'] }], seriesInfo: {}, excluded: ['BGONE3'] };
+  const imp = await boot({ page: 'import.html' });
+  imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  assert.equal(imp.get('ON_DEVICE'), true);
+  assert.match(imp.els.ioStatus.textContent, /This device now keeps its own catalogue\./);
+  assert.deepEqual(JSON.parse(imp.storage.get('audiobook-catalog-device')), backup);
+
+  // it loads instead of the demo, even after the demo data changes, and edits are kept with it
+  const files = { 'data/sample/books.json': '[{"t":"Another Demo","a":"Nobody"}]', 'data/sample/series-info.json': '{}' };
+  const { ctx, els, get, storage } = await boot({ files, storage: new Map(imp.storage) });
+  assert.deepEqual(get('DATA'), backup.books);
+  assert.deepEqual(get('EXCLUSIONS.entries'), ['BGONE3']);
+  ctx.setView('library');
+  removeBook(ctx, 0);
+  assert.equal(els.ioStatus.textContent, 'Removed Pocket Edition; imports will skip it.');
+  const kept = JSON.parse(storage.get('audiobook-catalog-device'));
+  assert.deepEqual(kept.books, []);
+  assert.deepEqual(kept.excluded, ['BGONE3', 'Pocket Edition | Ann Vale']);
+
+  // a page served with its own data/books.json ignores it, and a restore there does not switch
+  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const served = await boot({ page: 'import.html', files: { 'data/books.json': mine }, storage: new Map(storage) });
+  assert.deepEqual(served.get('DATA'), [{ t: 'Mine', a: 'Me' }]);
+  served.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  assert.equal(served.get('ON_DEVICE'), false);
+  assert.doesNotMatch(served.els.ioStatus.textContent, /own catalogue/);
+});
+
+test('the app can be installed: the manifest\'s icons and everything the service worker caches exist', () => {
+  const manifest = JSON.parse(read('manifest.webmanifest'));
+  for (const icon of manifest.icons) assert.ok(fs.existsSync(path.join(root, icon.src)), icon.src);
+  assert.ok(manifest.icons.some(i => i.sizes === '512x512') && manifest.icons.some(i => i.sizes === '192x192'));
+  const cached = JSON.parse(read('sw.js').match(/const APP = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  for (const file of cached.filter(f => f !== './')) assert.ok(fs.existsSync(path.join(root, file)), file);
+  for (const page of PAGES) {
+    assert.ok(cached.includes(page), `sw.js caches ${page}`);
+    assert.ok(read(page).includes('<link rel="manifest" href="manifest.webmanifest">'), page);
+    for (const [, src] of read(page).matchAll(/<script src="([^"]+)">/g)) assert.ok(cached.includes(src), `sw.js caches ${src}`);
+  }
+  assert.ok(!cached.some(f => f.startsWith('data/') && !f.startsWith('data/sample/')), 'never your own data');
+});

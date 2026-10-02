@@ -29,9 +29,12 @@ function importBackup(file){
       DATA = books;
       if(seriesInfo) SERIES_INFO = seriesInfo;     // older backups have no series info: keep the current one
       const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
+      // with no data/books.json to save to (the demo is showing), the restored catalogue becomes this device's own
+      const onDevice = keepOnDevice();
       refreshPage(); persist();
       showIoStatus(`Imported ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series` : '') +
-        (newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
+        (newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.') +
+        (onDevice ? ' This device now keeps its own catalogue.' : ''));
     }catch(err){
       showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
     }
