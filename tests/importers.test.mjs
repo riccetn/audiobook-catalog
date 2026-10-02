@@ -241,6 +241,74 @@ test('Audible: a title holding its series is split when the Series column is emp
   assert.deepEqual(result.records, [{ t: 'Second Wind', a: 'Ann', s: 'Fantasy Adventures', sn: '2', ...ed({ id: 'B2' }) }]);
 });
 
+// -------------------------------------------------------- series from Audible
+// Shaped like answers from Audible's catalogue API, with invented books.
+const product = (...series) => ({ product: { asin: 'X', series: series.map(([title, sequence, asin]) => ({ title, sequence, asin })) } });
+
+test('Audible catalogue answers: a book\'s series and a series\' released total', () => {
+  assert.equal(C.audibleProductUrl('B0SAMPLE01', 'uk', 'series'),
+    'https://api.audible.co.uk/1.0/catalog/products/B0SAMPLE01?response_groups=series');
+  assert.deepEqual(C.audibleSeries(product(['The Lantern  Coast', '2', 'S1'], ['Odd', 'Book 3', 'S2'])), [
+    { name: 'The Lantern Coast', number: '2', asin: 'S1' },
+    { name: 'Odd', number: null, asin: 'S2' },
+  ]);
+  assert.deepEqual(C.audibleSeries({ product: {} }), []);
+  assert.deepEqual(C.audibleSeries(null), []);
+  const children = (...seqs) => ({ product: { relationships: seqs.map(sequence => ({ relationship_to_product: 'child', sequence })) } });
+  assert.equal(C.audibleSeriesTotal(children('1', '2', '2.5', '1-3', '4')), 4);
+  assert.equal(C.audibleSeriesTotal(children('1', '1-6')), 6);
+  assert.equal(C.audibleSeriesTotal(children('', '0.5')), null);
+  assert.equal(C.audibleSeriesTotal({ product: { relationships: [{ relationship_to_product: 'parent', sequence: '9' }] } }), null);
+  assert.equal(C.audibleSeriesTotal(null), null);
+});
+
+test('series lookups: books missing a series or number, and one book per series without release info', () => {
+  const books = [
+    book('Loose', 'Ann', ed({ id: 'B1' })),
+    book('Unnumbered', 'Ann', { s: 'Gull Isle', ...ed({ id: 'B2' }) }),
+    book('Gull 2', 'Ann', { s: 'Gull Isle', sn: '2', ...ed({ id: 'B3' }) }),
+    book('Known 1', 'Ann', { s: 'Known', sn: '1', ...ed({ id: 'B4' }) }),
+    book('No ASIN', 'Ann', ed({ gr: '7' })),
+  ];
+  assert.deepEqual(C.seriesLookups(books, { Known: { total: 3, status: 'ongoing' } }), ['B1', 'B2']);
+  assert.deepEqual(C.seriesLookups(books, {}), ['B1', 'B2', 'B4']);
+});
+
+test('series from Audible fill only what is empty, in the spelling in use', () => {
+  const books = [
+    book('Loose', 'Ann', ed({ id: 'B1' })),
+    book('Unnumbered', 'Ann', { s: 'Gull Isle', ...ed({ id: 'B2' }) }),
+    book('Other number', 'Ann', { s: 'Gull Isle', sn: '5', ...ed({ id: 'B3' }) }),
+    book('Other series', 'Ann', { s: 'My Own Name', ...ed({ id: 'B4' }) }),
+    book('Nested', 'Ann', ed({ id: 'B5' })),
+  ];
+  const found = new Map([
+    ['B1', C.audibleSeries(product(['The Gull Isle Series', '1', 'SG']))],
+    ['B2', C.audibleSeries(product(['Gull Isle', '3', 'SG']))],
+    ['B3', C.audibleSeries(product(['Gull Isle', '4', 'SG']))],
+    ['B4', C.audibleSeries(product(['Theirs', '2', 'ST']))],
+    ['B5', C.audibleSeries(product(['Thornmere: Wardens', '1', 'SW'], ['Thornmere', '6', 'SM']))],
+  ]);
+  const report = C.seriesFromAudible(books, found);
+  assert.deepEqual(books.map(b => [b.s, b.sn]), [
+    ['Gull Isle', '1'], ['Gull Isle', '3'], ['Gull Isle', '5'], ['My Own Name', undefined], ['Thornmere', '6'],
+  ]);
+  assert.deepEqual(report.filled.map(b => b.t), ['Loose', 'Unnumbered', 'Nested']);
+  assert.deepEqual([...report.series], [['Gull Isle', 'SG'], ['Thornmere', 'SM']]);
+  assert.deepEqual(report.warnings, []);
+
+  const twoSeries = [book('Torn', 'Ann', ed({ id: 'B6' }))];
+  const warned = C.seriesFromAudible(twoSeries, new Map([['B6', C.audibleSeries(product(['Red', '1'], ['Blue', '2']))]]));
+  assert.deepEqual([twoSeries[0].s, twoSeries[0].sn], ['Red', '1']);
+  assert.match(warned.warnings[0], /several series/);
+});
+
+test('series from Audible: a box set\'s ASIN gives each title the series, not the set\'s number', () => {
+  const books = [book('First', 'Ann', ed({ id: 'BOX' })), book('Second', 'Ann', ed({ id: 'BOX' }))];
+  C.seriesFromAudible(books, new Map([['BOX', C.audibleSeries(product(['Gull Isle', '1-2', 'SG']))]]));
+  assert.deepEqual(books.map(b => [b.s, b.sn]), [['Gull Isle', undefined], ['Gull Isle', undefined]]);
+});
+
 // --------------------------------------------------------------- Goodreads
 const GR_HEADER = 'Book Id,Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n';
 

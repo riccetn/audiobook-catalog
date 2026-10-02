@@ -881,6 +881,112 @@ function readAudible(text){
   return result;
 }
 
+// ------------------------------------------------------- series from Audible's catalogue
+// Audible's catalogue API answers without a login, one host per store. The CLI does the fetching;
+// these functions only build the addresses and read the answers, so they can be tested offline.
+const AUDIBLE_STORES = {us: 'audible.com', uk: 'audible.co.uk', de: 'audible.de', fr: 'audible.fr', it: 'audible.it',
+  es: 'audible.es', ca: 'audible.ca', au: 'audible.com.au', in: 'audible.in', jp: 'audible.co.jp'};
+
+/** The catalogue address of a product (a book, or a series by its own ASIN) in one store. */
+function audibleProductUrl(asin, store, groups){
+  return `https://api.${AUDIBLE_STORES[store]}/1.0/catalog/products/${encodeURIComponent(asin)}?response_groups=${groups}`;
+}
+
+/** The series a catalogue product belongs to: [{name, number, asin}]; [] when none. */
+function audibleSeries(json){
+  const list = json && json.product && Array.isArray(json.product.series) ? json.product.series : [];
+  return list.filter(isObject).map(x => ({
+    name: tidyText(String(x.title || '')),
+    number: SERIES_NUMBER.test(String(x.sequence || '').trim()) ? String(x.sequence).trim() : null,
+    asin: typeof x.asin === 'string' ? x.asin : null,
+  })).filter(x => x.name);
+}
+
+/**
+ * How many books of a series are out, from the series' own catalogue product: the highest whole
+ * number among its titles (a boxed set "1-3" counts up to 3, a novella "2.5" adds nothing).
+ * Returns null when the answer lists no numbered titles.
+ */
+function audibleSeriesTotal(json){
+  const rels = json && json.product && Array.isArray(json.product.relationships) ? json.product.relationships : [];
+  let total = 0;
+  for(const r of rels){
+    if(!isObject(r) || r.relationship_to_product !== 'child') continue;
+    const m = /^(\d+)(?:-(\d+))?$/.exec(String(r.sequence || '').trim());
+    if(m) total = Math.max(total, parseInt(m[2] || m[1], 10));
+  }
+  return total || null;
+}
+
+/** ASINs that appear on more than one book: box sets, whose series number is the set's, not the title's. */
+function sharedAsins(books){
+  const seen = new Set(), shared = new Set();
+  for(const b of books) for(const id of new Set(bookEditions(b).map(ed => ed.id).filter(Boolean))){
+    (seen.has(id) ? shared : seen).add(id);
+  }
+  return shared;
+}
+
+/**
+ * The ASINs to look up for seriesFromAudible(): every book with no series or no number, and one
+ * book of each series that has no release info yet (to learn the series' own ASIN).
+ */
+function seriesLookups(books, info){
+  const asins = new Set(), covered = new Set();
+  const own = b => bookEditions(b).map(ed => ed.id).filter(Boolean);
+  for(const b of books){
+    if(!b.s || !b.sn) own(b).forEach(id => asins.add(id));
+  }
+  const shared = sharedAsins(books);
+  for(const b of books){
+    if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s)) || covered.has(b.s)) continue;
+    const id = own(b).find(x => !shared.has(x)) || own(b)[0];
+    if(id){ asins.add(id); covered.add(b.s); }
+  }
+  return [...asins];
+}
+
+/**
+ * Fill in series from Audible's answers (`found`: Map of ASIN -> audibleSeries() list), never
+ * changing a value you have: a book with no series gets Audible's (a parent series over its
+ * sub-series, as imports pick it) and its number; a book with a series but no number gets the
+ * number when Audible files it under that series. A number taken from a box set's ASIN is skipped.
+ * Changes `books` in place. Returns {filled: [books], series: Map of your series name -> its Audible
+ * ASIN, warnings}.
+ */
+function seriesFromAudible(books, found){
+  const report = {filled: [], series: new Map(), warnings: []};
+  const canonical = new Map();
+  for(const b of books) if(b.s && !canonical.has(seriesNorm(b.s))) canonical.set(seriesNorm(b.s), b.s);
+  const shared = sharedAsins(books);
+
+  for(const b of books){
+    for(const ed of bookEditions(b)){
+      const list = ed.id && found.get(ed.id);
+      if(!list || !list.length) continue;
+      const boxSet = shared.has(ed.id);
+      if(!b.s){
+        const [name, number, ambiguous] = chooseSeries(list.map(x => [x.name, x.number]));
+        const k = seriesNorm(name);
+        if(!canonical.has(k)) canonical.set(k, name);
+        b.s = canonical.get(k);
+        if(number && !boxSet) b.sn = number;
+        report.filled.push(b);
+        if(ambiguous) report.warnings.push(`${repr(b.t)}: Audible lists several series (${list.map(x => x.name).join(', ')}); using ${repr(b.s)}`);
+      } else if(!b.sn && !boxSet){
+        const same = list.find(x => seriesNorm(x.name) === seriesNorm(b.s) && x.number);
+        if(same){ b.sn = same.number; report.filled.push(b); }
+      }
+      for(const x of list){
+        const name = canonical.get(seriesNorm(x.name));
+        if(name && x.asin && !report.series.has(name)) report.series.set(name, x.asin);
+      }
+      if(b.s && b.sn) break;
+    }
+  }
+  return report;
+}
+
 // ------------------------------------------------------------------ Goodreads
 // Goodreads has no "audiobook" flag; the edition's binding is the best signal there is.
 const AUDIO_BINDINGS = new Set(['Audio CD', 'Audiobook', 'Audible Audio', 'MP3 CD', 'MP3 Book', 'Audio']);
@@ -1238,6 +1344,7 @@ return {
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
+  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
   editionsJoinable, joinEditions, editionsKey, splitEditions,
 };

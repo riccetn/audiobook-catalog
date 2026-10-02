@@ -36,9 +36,9 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `module.exports` it for `catalog.js`. Keep it that way: no `import`/`require`, no Node or DOM APIs,
   so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
-  `readAudible`, `readGoodreads`, `merge`, `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
+  `readAudible`, `readGoodreads`, `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
   `parseExclusions`/`exclusionEntries`, `readBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
-- `catalog.js`: CommonJS CLI (`main(argv, io)`) and the `serve` HTTP server. `serve` exposes a save
+- `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible through `io.fetch` and returns a promise) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
   the same checks as `sync-export`, refuses a save if the file's `fingerprint` changed on disk since
   the page loaded it, and writes atomically (`writeAtomic`). Exports `main`, `createServer` etc. for tests.
