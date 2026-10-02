@@ -253,6 +253,18 @@ test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Good
   assert.match(html, /<div class="edition">ISBN 9780000000002<\/div>/);
 });
 
+test('book cards link an edition\'s Hardcover ids to Hardcover, and the edit form keeps them', async () => {
+  const { ctx, els, get, run } = await boot();
+  run("DATA[0].e = [{id: 'TESTASIN01', hc: '31337', hcb: '808'}]");
+  ctx.setView('library');
+  ctx.render();
+  assert.match(els.results.innerHTML, /Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a>; Hardcover book <a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a>/);
+  ctx.openEditForm(0);
+  assert.equal(els.f_e.value, 'ASIN TESTASIN01; Hardcover 31337; Hardcover book 808');
+  els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  assert.deepEqual(get('DATA[0].e'), [{ id: 'TESTASIN01', hc: '31337', hcb: '808' }]);
+});
+
 test('adding a book appends it', async () => {
   const { ctx, els, get } = await boot();
   const before = get('DATA.length');

@@ -709,3 +709,138 @@ test('narrators: a narrator on the book moves onto its editions', () => {
   C.merge(existing, [book('One', 'Author', ed({ gr: '7', n: 'A guess' }))]);
   assert.deepEqual(existing[0].e, [{ id: 'B1', gr: '7', n: 'Mine' }]);
 });
+
+// ------------------------------------------------------------------ Hardcover
+test('Hardcover ids: an edition id names an edition, the book id only links its editions', () => {
+  assert.ok(C.sameEdition({ hc: '501' }, { hc: '501', id: 'B1' }));
+  assert.ok(!C.sameEdition({ hc: '501', id: 'B1' }, { hc: '502', id: 'B1' }), 'different Hardcover editions conflict');
+  assert.ok(!C.sameEdition({ hcb: '77' }, { hcb: '77' }), 'two editions of one Hardcover book');
+  // an incoming record finds the book by its Hardcover edition, or by another edition of the same Hardcover book
+  const books = [book('Tidewater', 'Ann Vale', ed({ id: 'B1', hc: '501', hcb: '77' }))];
+  const report = C.merge(books, [book('Tidewater (Unabridged)', 'Ann Vale', ed({ hc: '502', hcb: '77', n: 'Hollis Marr' }))]);
+  assert.equal(report.matched, 1);
+  assert.deepEqual(books[0].e, [{ id: 'B1', hc: '501', hcb: '77' }, { hc: '502', hcb: '77', n: 'Hollis Marr' }]);
+  assert.deepEqual(C.findDuplicates([book('One', 'Ann Vale', ed({ hcb: '77' })), book('Two', 'Ann Vale', ed({ hcb: '77' }))]), []);
+});
+
+test('Hardcover ids round-trip through the edit form, are validated and exclude books', () => {
+  const line = C.formatEdition({ id: 'B0X', hc: '501', hcb: '77' });
+  assert.equal(line, 'ASIN B0X; Hardcover 501; Hardcover book 77');
+  assert.deepEqual(C.parseEditions(line + '\nhardcover id: 9').editions, [{ id: 'B0X', hc: '501', hcb: '77' }, { hc: '9' }]);
+  assert.deepEqual(C.parseEditions('Hardcover abc').bad, ['Hardcover abc']);
+  const { errors } = C.validate([book('Tidewater', 'Ann Vale', ed({ hc: 'x1' }))], {});
+  assert.match(errors.join('\n'), /'hc' must be a Hardcover id/);
+  assert.match(C.validate([book('A', 'Ann Vale', ed({ hc: '5' })), book('A', 'Ann Vale', ed({ hc: '5' }))], {}).errors.join('\n'), /duplicate Hardcover id 5/);
+  assert.deepEqual(C.exclusionEntries(book('Gone', 'Ann Vale', ed({ hc: '501', hcb: '77' }))), ['Hardcover 501', 'Gone | Ann Vale']);
+  const ex = C.parseExclusions('Hardcover 501\n');
+  assert.deepEqual(ex.entries, ['Hardcover 501']);
+  const report = C.merge([], [book('Gone Again', 'Ann Vale', ed({ hc: '501' }))], ex);
+  assert.equal(report.excluded.length, 1);
+});
+
+test('merge: allDates adds the reads a book lacks, addable keeps some records from being added', () => {
+  const books = [book('Tidewater', 'Ann Vale', { r: ['2023-04', '2024-01-02'] })];
+  const incoming = [book('Tidewater', 'Ann Vale', { r: ['2023-04-09', '2025-06-30'] }), book('Paper Only', 'Ann Vale')];
+  const report = C.merge(books, incoming, null, { allDates: true, addable: rec => rec !== incoming[1] });
+  assert.deepEqual(books.map(b => b.r), [['2023-04', '2024-01-02', '2025-06-30']], '2023-04-09 is in 2023-04');
+  assert.deepEqual(report.datesFilled, [books[0]]);
+  assert.deepEqual(report.notAdded.map(b => b.t), ['Paper Only']);
+  // without allDates, a book that has dates keeps them
+  const plain = [book('Tidewater', 'Ann Vale', { r: ['2023-04'] })];
+  C.merge(plain, [book('Tidewater', 'Ann Vale', { r: ['2025-06-30'] })]);
+  assert.deepEqual(plain[0].r, ['2023-04']);
+});
+
+// Hardcover answers, as its API gives them (invented books)
+const HC_BOOKS = new Map([
+  [77, { id: 77, title: 'Tidewater', contributions: [{ contribution: null, author: { name: 'Ann  Vale' } }, { contribution: 'Illustrator', author: { name: 'P. Dray' } }],
+    featured_book_series: { position: 2, series: { name: 'Gull Isle' } } }],
+  [78, { id: 78, title: 'The Paper Fen', contributions: [{ contribution: 'Author', author: { name: 'R.T. Hale' } }], featured_book_series: null }],
+  [79, { id: 79, title: 'Someday Maybe', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] }],
+]);
+const HC_EDITIONS = new Map([
+  [501, { id: 501, book_id: 77, asin: 'B0TIDEWAT1', isbn_13: '9780000000002', isbn_10: null, release_date: '2021-05-04', audio_seconds: 38520,
+    reading_format_id: 2, publisher: { name: 'Gullwing Audio' }, contributions: [{ contribution: 'Narrator', author: { name: 'Hollis Marr' } }] }],
+  [601, { id: 601, book_id: 78, asin: null, isbn_13: null, reading_format_id: 1, contributions: [] }],
+]);
+const HC_SHELF = [
+  { id: 1, book_id: 77, edition_id: 501, status_id: 3, user_book_reads: [{ finished_at: '2024-03-15' }, { finished_at: null }, { finished_at: '2022-01-09' }] },
+  { id: 2, book_id: 78, edition_id: 601, status_id: 3, user_book_reads: [] },
+  { id: 3, book_id: 79, edition_id: null, status_id: 1, user_book_reads: [] },
+];
+
+test('readHardcover: the Read shelf as books, with every finished date and the Hardcover ids', () => {
+  const result = C.readHardcover(HC_SHELF, HC_BOOKS, HC_EDITIONS);
+  assert.equal(result.otherShelves, 1);
+  assert.deepEqual(result.records, [
+    { t: 'Tidewater', a: 'Ann Vale', s: 'Gull Isle', sn: '2', r: ['2022-01-09', '2024-03-15'],
+      e: [{ id: 'B0TIDEWAT1', hc: '501', hcb: '77', isbn: ['9780000000002'], n: 'Hollis Marr', p: 'Gullwing Audio', d: '2021-05-04', len: 642 }] },
+    { t: 'The Paper Fen', a: 'R. T. Hale', e: [{ hc: '601', hcb: '78' }] },
+  ]);
+  assert.deepEqual([...result.audio].map(r => r.t), ['Tidewater'], 'only the audiobook edition may be added');
+  assert.deepEqual(C.readHardcover([{ id: 9, book_id: 99, status_id: 3 }], HC_BOOKS, HC_EDITIONS).warnings, ['Hardcover book 99: not found, skipped']);
+});
+
+test('hardcoverFindQuery asks only for the ids there are, and hardcoverMatches reads the answer', () => {
+  assert.equal(C.hardcoverFindQuery({ hc: [], asin: [], isbn: [], gr: [] }), null);
+  const q = C.hardcoverFindQuery({ hc: [], asin: ['B0TIDEWAT1'], isbn: [], gr: ['4242'] });
+  assert.deepEqual(q.variables, { asin: ['B0TIDEWAT1'], gr: ['4242'] });
+  assert.match(q.query, /^query Find\(\$asin: \[String!\], \$gr: \[String!\]\)/);
+  assert.match(q.query, /byAsin: editions\(where: \{asin: \{_in: \$asin\}\}\)/);
+  assert.doesNotMatch(q.query, /byIsbn|byId/);
+  const found = C.hardcoverMatches({
+    byAsin: [{ id: 501, book_id: 77, asin: 'B0TIDEWAT1', reading_format_id: 2 }],
+    byIsbn: [{ id: 601, book_id: 78, isbn_13: '9780000000019', reading_format_id: 1 }],
+    byGoodreads: [{ book_id: 79, external_id: '4242' }],
+  });
+  assert.deepEqual(found.asin.get('B0TIDEWAT1'), { hc: '501', hcb: '77' });
+  assert.deepEqual(found.isbn.get('9780000000019'), { hc: null, hcb: '78' }, 'a print edition only names the book');
+  assert.deepEqual(found.gr.get('4242'), { hc: null, hcb: '79' });
+});
+
+test('addHardcoverIds fills in the ids found (box set copies alike), never changing one you have', () => {
+  const books = [
+    book('Tidewater', 'Ann Vale', ed({ id: 'B0TIDEWAT1' })),
+    book('Box One', 'Ann Vale', ed({ id: 'B0BOXSET01' })), book('Box Two', 'Ann Vale', ed({ id: 'B0BOXSET01' })),
+    book('Fen', 'Ann Vale', ed({ gr: '4242' })),
+    book('Kept', 'Ann Vale', ed({ id: 'B0KEPT0001', hc: '9', hcb: '8' })),
+    book('Nowhere', 'Ann Vale'),
+  ];
+  assert.deepEqual(C.hardcoverLookups(books), { hc: [], asin: ['B0TIDEWAT1', 'B0BOXSET01'], isbn: [], gr: ['4242'] });
+  const found = { hc: new Map(), isbn: new Map(),
+    asin: new Map([['B0TIDEWAT1', { hc: '501', hcb: '77' }], ['B0BOXSET01', { hc: '700', hcb: '70' }], ['B0KEPT0001', { hc: '1', hcb: '2' }]]),
+    gr: new Map([['4242', { hc: null, hcb: '79' }]]) };
+  const filled = C.addHardcoverIds(books, found);
+  assert.deepEqual(filled.map(b => b.t), ['Tidewater', 'Box One', 'Box Two', 'Fen']);
+  assert.deepEqual(books.map(b => b.e && b.e[0]), [
+    { id: 'B0TIDEWAT1', hc: '501', hcb: '77' }, { id: 'B0BOXSET01', hc: '700', hcb: '70' }, { id: 'B0BOXSET01', hc: '700', hcb: '70' },
+    { gr: '4242', hcb: '79' }, { id: 'B0KEPT0001', hc: '9', hcb: '8' }, undefined,
+  ]);
+});
+
+test('planHardcoverExport adds what is missing on Hardcover and leaves everything there alone', () => {
+  const books = [
+    book('Tidewater', 'Ann Vale', { r: ['2022-01-09', '2024-03-15', '2025'], ...ed({ hc: '501', hcb: '77' }) }),
+    book('Fen', 'Ann Vale', ed({ hcb: '78' })),
+    book('Box One', 'Ann Vale', { r: ['2023-02-01'], ...ed({ hc: '700', hcb: '70' }) }),
+    book('Box Two', 'Ann Vale', { r: ['2023-02-01'], ...ed({ hc: '700', hcb: '70' }) }),
+    book('Single Two', 'Ann Vale', ed({ hc: '700', hcb: '70' }, { hc: '711', hcb: '71' })),
+    book('Wanted', 'Ann Vale', ed({ hcb: '79' })),
+    book('Nowhere', 'Ann Vale'),
+  ];
+  const shelf = [
+    { id: 1, book_id: 77, status_id: 3, user_book_reads: [{ finished_at: '2024-03-15' }] },
+    { id: 3, book_id: 79, status_id: 1, user_book_reads: [] },
+  ];
+  const plan = C.planHardcoverExport(books, shelf);
+  assert.deepEqual(plan.add.map(a => [a.book, a.edition, a.dates, a.recs.map(r => r.t)]), [
+    [78, null, [], ['Fen']],                             // no date read: on the Read shelf without one
+    [70, 700, ['2023-02-01'], ['Box One', 'Box Two']],   // a box set is one Hardcover book
+    [71, 711, [], ['Single Two']],                       // a title's own edition before the box set's
+  ]);
+  assert.deepEqual(plan.reads, [{ userBook: 1, edition: 501, dates: ['2022-01-09'], recs: [books[0]] }]);
+  assert.deepEqual(plan.otherShelf.map(([r, s]) => [r.t, s]), [['Wanted', 'Want to Read']]);
+  assert.deepEqual(plan.unknown.map(r => r.t), ['Nowhere']);
+  assert.deepEqual(plan.inexact.map(([r, d]) => [r.t, d]), [['Tidewater', '2025']]);
+  assert.equal(C.hardcoverUrl('edition', '501'), 'https://hardcover.app/id/edition/501');
+});

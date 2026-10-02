@@ -36,9 +36,13 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `module.exports` it for `catalog.js`. Keep it that way: no `import`/`require`, no Node or DOM APIs,
   so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
-  `readAudible`, `readGoodreads`, `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
+  `readAudible`, `readGoodreads`, `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command),
+  `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport` (the `hardcover-*` commands; the
+  GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
   `parseExclusions`/`exclusionEntries`, `readBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
-- `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible through `io.fetch` and returns a promise) and the `serve` HTTP server. `serve` exposes a save
+- `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
+  Hardcover's GraphQL API, both through `io.fetch`, and return a promise; the Hardcover token comes from
+  `HARDCOVER_TOKEN` in `io.env`/`process.env`) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
   the same checks as `sync-export`, refuses a save if the file's `fingerprint` changed on disk since
   the page loaded it, and writes atomically (`writeAtomic`). It also proxies the page's Audible lookups
@@ -74,17 +78,18 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
 ## Data model (short form; full table in the README)
 
 `books.json` is a list of titles with short keys `t a s sn g r e` (title, author, series,
-series number as text, genres, dates read, editions). Each edition in `e` has `id gr isbn n p d len desc`
-(Audible ASIN, Goodreads book id, ISBNs, narrator, publisher, release date, length in minutes, free-text
-description) and must not be empty. A box set is one edition copied onto each of its titles, linked by the shared
+series number as text, genres, dates read, editions). Each edition in `e` has `id gr hc hcb isbn n p d len desc`
+(Audible ASIN, Goodreads book id, Hardcover edition and book ids, ISBNs, narrator, publisher, release date,
+length in minutes, free-text description) and must not be empty. `id`, `gr` and `hc` name an edition
+(`EDITION_IDS`); `hcb` is shared by every edition of a Hardcover book, so it only matches books. A box set is one edition copied onto each of its titles, linked by the shared
 identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn`/`n` on the book) are
 migrated on load by `fixBooks`. A missing `r` means the read date is unknown, not unread. `series-info.json` maps a series
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`.
-`data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345` or `Title | Author` lines that imports must never re-add; code only
+`data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` lines that imports must never re-add; code only
 ever appends to it.
 
 Invariants the code relies on:
-- Imports only add books, never overwrite. Matching order: any edition's `id` or `gr`, then first author + series + number
+- Imports only add books, never overwrite. Matching order: any edition's `id`, `gr` or `hc`, then `hcb`, then first author + series + number
   (spelling-insensitive), then author + title (forgiving Audible's long titles, never mistaking a
   boxed set for book 1). A match may gain dates read and editions: an incoming edition fills in the
   edition it shares an identifier with (and that edition's box-set copies), or the match's only
@@ -92,6 +97,9 @@ Invariants the code relies on:
 - Every text field goes through `tidyBook`; `validate` warns on untidy values.
 - Anything that writes user data (imports, `sync-export`, `serve` saves) validates first and refuses
   to touch `data/sample/`.
+- The Hardcover export only adds to Hardcover (books on the Read shelf, reads); it never changes a
+  status, rating or review or removes anything there. The sandbox can't reach Hardcover: its tests use
+  the fake API in `tests/cli.test.mjs` (`fakeHardcover`), built from Hardcover's published schema.
 
 ## Privacy (hard rule)
 

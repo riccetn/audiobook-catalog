@@ -556,3 +556,162 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
   // and the data files are still served as before
   assert.deepEqual(await (await fetch(`http://localhost:${port}/data/books.json`)).json(), loadBooks(booksPath));
 });
+
+/**
+ * A stand-in for Hardcover's GraphQL API, answering the queries catalog.js sends from `state`: {shelf
+ * (user_books rows), books, editions (rows by id), goodreads ({Goodreads id: Hardcover book id})}.
+ * Mutations change `state.shelf`. Built from Hardcover's published schema; the real API is not reached.
+ */
+function fakeHardcover(state) {
+  const sent = [];
+  const fetch = async (url, init) => {
+    const { query, variables } = JSON.parse(init.body);
+    sent.push({ url, auth: init.headers.authorization, query, variables });
+    const answer = data => ({ ok: true, status: 200, json: async () => ({ data }) });
+    if (init.headers.authorization !== 'Bearer tok-123') return { ok: false, status: 401, json: async () => ({ error: 'invalid_token' }) };
+    const pick = ids => ids.map(id => state.editions[id]).filter(Boolean);
+    if (query.startsWith('query { me')) return answer({ me: [{ id: 42 }] });
+    if (query.startsWith('query Shelf')) {
+      assert.equal(variables.user, 42);
+      return answer({ user_books: state.shelf.slice(variables.offset, variables.offset + 100) });
+    }
+    if (query.startsWith('query Books')) return answer({ books: variables.ids.map(id => state.books[id]).filter(Boolean) });
+    if (query.startsWith('query Editions')) return answer({ editions: pick(variables.ids) });
+    if (query.startsWith('query Find')) {
+      const all = Object.values(state.editions);
+      return answer({
+        ...(variables.hc ? { byId: pick(variables.hc) } : {}),
+        ...(variables.asin ? { byAsin: all.filter(e => variables.asin.includes(e.asin)) } : {}),
+        ...(variables.isbn ? { byIsbn: all.filter(e => variables.isbn.includes(e.isbn_13)) } : {}),
+        ...(variables.gr ? { byGoodreads: variables.gr.filter(g => state.goodreads[g]).map(g => ({ book_id: state.goodreads[g], external_id: g })) } : {}),
+      });
+    }
+    if (query.startsWith('mutation AddBook')) {
+      const { book_id, edition_id, status_id } = variables.object;
+      if (state.shelf.some(ub => ub.book_id === book_id)) return answer({ insert_user_book: { id: null, error: 'already on a shelf' } });
+      const ub = { id: 100 + state.shelf.length, book_id, edition_id: edition_id || null, status_id, user_book_reads: [] };
+      state.shelf.push(ub);
+      return answer({ insert_user_book: { id: ub.id, error: null } });
+    }
+    if (query.startsWith('mutation AddRead')) {
+      state.shelf.find(ub => ub.id === variables.id).user_book_reads.push({ ...variables.read });
+      return answer({ insert_user_book_read: { id: 1, error: null } });
+    }
+    throw new Error('unexpected query ' + query);
+  };
+  return { fetch, sent };
+}
+
+function hardcoverSandbox(t, books, state) {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify(books));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
+  const hc = fakeHardcover(state);
+  const run = async (argv, env = { HARDCOVER_TOKEN: 'Bearer tok-123' }) => {
+    const out = [], err = [];
+    const code = await main(['--root', tmp, ...argv], { out: s => out.push(s), err: s => err.push(s), fetch: hc.fetch, pause: async () => {}, env });
+    return { code, out: out.join('\n'), err: err.join('\n') };
+  };
+  return { dataDir, run, sent: hc.sent, booksPath: path.join(dataDir, 'books.json') };
+}
+
+const hardcoverState = () => ({
+  books: {
+    77: { id: 77, title: 'Tidewater', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }], featured_book_series: { position: 1, series: { name: 'Gull Isle' } } },
+    78: { id: 78, title: 'The Paper Fen', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] },
+    80: { id: 80, title: 'Lantern Hours', contributions: [{ contribution: null, author: { name: 'R. T. Hale' } }] },
+    81: { id: 81, title: 'Brine Songs', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] },
+  },
+  editions: {
+    501: { id: 501, book_id: 77, asin: 'B0TIDEWAT1', reading_format_id: 2, audio_seconds: 36000, contributions: [{ contribution: 'Narrator', author: { name: 'Hollis Marr' } }] },
+    601: { id: 601, book_id: 78, reading_format_id: 1, contributions: [] },
+    801: { id: 801, book_id: 80, asin: 'B0LANTERN1', reading_format_id: 2, contributions: [] },
+    811: { id: 811, book_id: 81, isbn_13: '9780000000002', reading_format_id: 1, contributions: [] },
+  },
+  goodreads: { 4242: 81 },
+  shelf: [
+    { id: 1, book_id: 77, edition_id: 501, status_id: 3, user_book_reads: [{ finished_at: '2024-03-15' }] },
+    { id: 2, book_id: 78, edition_id: 601, status_id: 3, user_book_reads: [] },
+  ],
+});
+
+test('hardcover-sync imports the Read shelf, then puts the rest on it, and --dry-run changes nothing anywhere', async t => {
+  const state = hardcoverState();
+  const { run, sent, booksPath } = hardcoverSandbox(t, [
+    { t: 'Lantern Hours', a: 'R. T. Hale', r: ['2023-07-01', '2024'], e: [{ id: 'B0LANTERN1' }] },
+    { t: 'Brine Songs', a: 'Ann Vale', e: [{ gr: '4242', isbn: ['9780000000002'] }] },
+    { t: 'Handwritten', a: 'Ann Vale' },
+  ], state);
+  const before = fs.readFileSync(booksPath, 'utf8');
+
+  const dry = await run(['hardcover-sync', '--dry-run']);
+  assert.equal(dry.code, 0, dry.err);
+  assert.match(dry.out, /Hardcover: 2 books on your Read shelf/);
+  assert.match(dry.out, /new: 1\n {4}\+ Tidewater - Ann Vale {2}\[Gull Isle #1\]/);
+  assert.match(dry.out, /not added, as Hardcover has no audiobook edition picked for them: 1\n {4}\+ The Paper Fen - Ann Vale/);
+  assert.match(dry.out, /Hardcover ids filled in on your books: 2/);
+  assert.match(dry.out, /books to put on your Read shelf: 2/);
+  assert.match(dry.out, /dates read to add: 1/);
+  assert.match(dry.out, /dates read without a day, not sent .*: 1/);
+  assert.match(dry.out, /not found on Hardcover .*: 1\n {4}\+ Handwritten - Ann Vale/);
+  assert.match(dry.out, /dry run: nothing written/);
+  assert.equal(fs.readFileSync(booksPath, 'utf8'), before);
+  assert.ok(sent.every(s => s.url === 'https://api.hardcover.app/v1/graphql' && s.auth === 'Bearer tok-123'));
+  assert.ok(!sent.some(s => s.query.startsWith('mutation')), 'a dry run sends nothing to Hardcover');
+
+  const real = await run(['hardcover-sync']);
+  assert.equal(real.code, 0, real.err);
+  assert.match(real.out, /put 2 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
+  assert.deepEqual(loadBooks(booksPath), [
+    { t: 'Lantern Hours', a: 'R. T. Hale', r: ['2023-07-01', '2024'], e: [{ id: 'B0LANTERN1', hc: '801', hcb: '80' }] },
+    { t: 'Brine Songs', a: 'Ann Vale', e: [{ gr: '4242', hcb: '81', isbn: ['9780000000002'] }] },
+    { t: 'Handwritten', a: 'Ann Vale' },
+    { t: 'Tidewater', a: 'Ann Vale', s: 'Gull Isle', sn: '1', r: ['2024-03-15'], e: [{ id: 'B0TIDEWAT1', hc: '501', hcb: '77', n: 'Hollis Marr', len: 600 }] },
+  ]);
+  assert.deepEqual(state.shelf.slice(2).map(ub => [ub.book_id, ub.edition_id, ub.status_id, ub.user_book_reads]), [
+    [80, 801, 3, [{ finished_at: '2023-07-01', edition_id: 801 }]],
+    [81, null, 3, []],   // found by a print edition's ISBN or Goodreads id: the book, not that edition
+  ]);
+
+  // a second run finds nothing to do on either side
+  const again = await run(['hardcover-sync']);
+  assert.equal(again.code, 0, again.err);
+  assert.match(again.out, /new: 0/);
+  assert.match(again.out, /books to put on your Read shelf: 0/);
+  assert.equal(state.shelf.length, 4);
+});
+
+test('hardcover-export leaves books on other shelves alone; hardcover-import adds new reads to books you have', async t => {
+  const state = hardcoverState();
+  state.shelf[0].user_book_reads.push({ finished_at: '2025-08-01' });
+  state.shelf.push({ id: 3, book_id: 80, edition_id: null, status_id: 1, user_book_reads: [] });
+  const { run, booksPath } = hardcoverSandbox(t, [
+    { t: 'Tidewater', a: 'Ann Vale', r: ['2024-03'], e: [{ id: 'B0TIDEWAT1' }] },
+    { t: 'Lantern Hours', a: 'R. T. Hale', e: [{ id: 'B0LANTERN1' }] },
+  ], state);
+
+  const exp = await run(['hardcover-export']);
+  assert.equal(exp.code, 0, exp.err);
+  assert.match(exp.out, /on another Hardcover shelf, left alone: 1\n {4}! Lantern Hours - R\. T\. Hale: Want to Read/);
+  assert.doesNotMatch(exp.out, /Hardcover: \d+ books on your Read shelf/, 'export does not import');
+  assert.deepEqual(state.shelf.map(ub => ub.status_id), [3, 3, 1]);
+
+  const imp = await run(['hardcover-import']);
+  assert.equal(imp.code, 0, imp.err);
+  assert.match(imp.out, /dates read filled in on existing books: 1/);
+  assert.deepEqual(loadBooks(booksPath)[0].r, ['2024-03', '2025-08-01'], '2024-03-15 is the 2024-03 you have');
+  assert.doesNotMatch(imp.out, /to Hardcover:/, 'import does not export');
+});
+
+test('hardcover commands need a token, and write nothing when Hardcover says no', async t => {
+  const { run, booksPath } = hardcoverSandbox(t, [{ t: 'Tidewater', a: 'Ann Vale' }], hardcoverState());
+  const before = fs.readFileSync(booksPath, 'utf8');
+  const none = await run(['hardcover-sync'], {});
+  assert.equal(none.code, 2);
+  assert.match(none.err, /set HARDCOVER_TOKEN to your Hardcover API token/);
+  const bad = await run(['hardcover-import'], { HARDCOVER_TOKEN: 'stale' });
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /Hardcover refused the token in \$HARDCOVER_TOKEN .*; nothing written/);
+  assert.equal(fs.readFileSync(booksPath, 'utf8'), before);
+});

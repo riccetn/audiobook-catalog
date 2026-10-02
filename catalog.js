@@ -101,6 +101,25 @@ function preview(records, io, limit = 15){
   if(records.length > limit) io.out(`    ... and ${records.length - limit} more`);
 }
 
+/** What C.merge() did, as the import commands print it. */
+function printMerge(report, warnings, io){
+  io.out(`  already in the catalogue: ${report.matched}`);
+  if(report.backfilled.length) io.out(`  Audible ids filled in on existing books: ${report.backfilled.length}`);
+  if(report.goodreadsFilled.length) io.out(`  Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}`);
+  if(report.hardcoverFilled.length) io.out(`  Hardcover ids filled in on existing books: ${report.hardcoverFilled.length}`);
+  if(report.datesFilled.length) io.out(`  dates read filled in on existing books: ${report.datesFilled.length}`);
+  if(report.isbnsFilled.length) io.out(`  ISBNs added to existing books: ${report.isbnsFilled.length}`);
+  if(report.detailsFilled.length) io.out(`  narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}`);
+  if(report.editionsAdded.length) io.out(`  other editions added to existing books: ${report.editionsAdded.length}`);
+  if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
+  io.out(`  new: ${report.added.length}`);
+  preview(report.added, io);
+  if(warnings.length){
+    io.out(`  needs a look (${warnings.length}):`);
+    for(const w of warnings.slice(0, 15)) io.out('    ! ' + w);
+  }
+}
+
 function runImport(args, io, read, label){
   if(!requireOwnData(args, io)) return 2;
   const [booksPath, infoPath, excludedPath] = paths(args);
@@ -109,20 +128,7 @@ function runImport(args, io, read, label){
   const report = C.merge(books, result.records, loadExclusions(excludedPath));
 
   io.out(`${label}: ${result.records.length} finished books read from ${path.basename(args.file)}`);
-  io.out(`  already in the catalogue: ${report.matched}`);
-  if(report.backfilled.length) io.out(`  Audible ids filled in on existing books: ${report.backfilled.length}`);
-  if(report.goodreadsFilled.length) io.out(`  Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}`);
-  if(report.datesFilled.length) io.out(`  dates read filled in on existing books: ${report.datesFilled.length}`);
-  if(report.isbnsFilled.length) io.out(`  ISBNs added to existing books: ${report.isbnsFilled.length}`);
-  if(report.detailsFilled.length) io.out(`  publisher, release date or length filled in on existing books: ${report.detailsFilled.length}`);
-  if(report.editionsAdded.length) io.out(`  other editions added to existing books: ${report.editionsAdded.length}`);
-  if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
-  io.out(`  new: ${report.added.length}`);
-  preview(report.added, io);
-  if(result.warnings.length){
-    io.out(`  needs a look (${result.warnings.length}):`);
-    for(const w of result.warnings.slice(0, 15)) io.out('    ! ' + w);
-  }
+  printMerge(report, result.warnings, io);
 
   const {errors} = C.validate(books, loadSeriesInfo(infoPath));
   if(errors.length){
@@ -524,6 +530,175 @@ async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
   return 0;
 }
 
+// ------------------------------------------------------------------- Hardcover
+const HARDCOVER_TOKEN_ENV = 'HARDCOVER_TOKEN';
+const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
+
+/**
+ * A function that asks Hardcover's API one query (with its variables) and returns the answer's `data`,
+ * one request a second; null when no token is set. Throws with a short reason when Hardcover says no.
+ */
+function hardcoverClient(io){
+  const env = io.env || process.env;
+  const token = String(env[HARDCOVER_TOKEN_ENV] || '').trim().replace(/^bearer\s+/i, '');
+  if(!token) return null;
+  const get = io.fetch || globalThis.fetch;
+  const pause = io.pause || (() => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS)));
+  let asked = 0;
+  return async (query, variables) => {
+    if(asked++) await pause();
+    const res = await get(C.HARDCOVER_API, {method: 'POST', body: JSON.stringify({query, variables: variables || {}}), headers: {
+      'content-type': 'application/json', authorization: `Bearer ${token}`, 'user-agent': 'audiobook-catalog (personal catalogue sync)'}});
+    let json = null;
+    try{ json = await res.json(); }catch(exc){ /* reported below */ }
+    if(res.status === 401) throw new Error(`Hardcover refused the token in $${HARDCOVER_TOKEN_ENV} (expired, or missing a scope? make a new one at hardcover.app/account/api)`);
+    if(res.status === 429) throw new Error('Hardcover\'s rate limit was reached; try again later');
+    if(!res.ok || !json) throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);
+    if(Array.isArray(json.errors) && json.errors.length) throw new Error(`Hardcover: ${json.errors.map(e => e && e.message).join('; ')}`);
+    return json.data || {};
+  };
+}
+
+/** Every book on your Hardcover shelves (user_books rows, with their reads). */
+async function fetchHardcoverShelf(ask){
+  const me = await ask(C.HARDCOVER_QUERIES.me);
+  const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
+  if(!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
+  const shelf = [];
+  for(let offset = 0; ; offset += C.HARDCOVER_PAGE){
+    const page = (await ask(C.HARDCOVER_QUERIES.shelf, {user, offset})).user_books || [];
+    shelf.push(...page);
+    if(page.length < C.HARDCOVER_PAGE) return shelf;
+  }
+}
+
+/** Hardcover rows (`kind` 'books' or 'editions') by id, asked in batches. */
+async function fetchHardcoverRows(ask, kind, ids){
+  const rows = new Map();
+  for(let i = 0; i < ids.length; i += C.HARDCOVER_BATCH){
+    for(const row of (await ask(C.HARDCOVER_QUERIES[kind], {ids: ids.slice(i, i + C.HARDCOVER_BATCH)}))[kind] || []) rows.set(row.id, row);
+  }
+  return rows;
+}
+
+/** The Hardcover ids of your editions' ASINs, ISBNs and Goodreads ids (see C.hardcoverMatches). */
+async function findOnHardcover(ask, lookups){
+  const found = {hc: new Map(), asin: new Map(), isbn: new Map(), gr: new Map()};
+  const longest = Math.max(0, ...Object.values(lookups).map(l => l.length));
+  for(let i = 0; i < longest; i += C.HARDCOVER_BATCH){
+    const slice = Object.fromEntries(Object.entries(lookups).map(([k, l]) => [k, l.slice(i, i + C.HARDCOVER_BATCH)]));
+    const q = C.hardcoverFindQuery(slice);
+    if(!q) continue;
+    const matches = C.hardcoverMatches(await ask(q.query, q.variables));
+    for(const k of Object.keys(found)) for(const [id, hit] of matches[k]) if(!found[k].has(id)) found[k].set(id, hit);
+  }
+  return found;
+}
+
+/**
+ * hardcover-import, hardcover-export and hardcover-sync (`mode` 'import', 'export' or 'sync': import, then
+ * export). Import adds the books on your Hardcover Read shelf like any import; export puts your books on
+ * that shelf with their dates read. Neither ever changes or removes anything, here or on Hardcover.
+ * Returns a promise of the exit code.
+ */
+async function cmdHardcover(args, io, mode){
+  if(!requireOwnData(args, io)) return 2;
+  const ask = hardcoverClient(io);
+  if(!ask){
+    io.err(`error: set ${HARDCOVER_TOKEN_ENV} to your Hardcover API token (hardcover.app/account/api)`);
+    return 2;
+  }
+  const [booksPath, infoPath, excludedPath] = paths(args);
+  const books = loadBooks(booksPath), info = loadSeriesInfo(infoPath), before = JSON.stringify(books);
+  const stop = exc => { io.err(`error: ${exc.message}; nothing written`); return 1; };
+  let shelf;
+  try{
+    shelf = await fetchHardcoverShelf(ask);
+  }catch(exc){ return stop(exc); }
+
+  if(mode !== 'export'){
+    const read = shelf.filter(ub => ub && ub.status_id === 3);
+    let result;
+    try{
+      const found = await fetchHardcoverRows(ask, 'books', [...new Set(read.map(ub => ub.book_id))]);
+      const editions = await fetchHardcoverRows(ask, 'editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))]);
+      result = C.readHardcover(shelf, found, editions);
+    }catch(exc){ return stop(exc); }
+    const report = C.merge(books, result.records, loadExclusions(excludedPath), {allDates: true, addable: rec => result.audio.has(rec)});
+    io.out(`Hardcover: ${result.records.length} books on your Read shelf`);
+    printMerge(report, result.warnings, io);
+    if(report.notAdded.length) io.out(`  not added, as Hardcover has no audiobook edition picked for them: ${report.notAdded.length}`);
+    preview(report.notAdded, io, 5);
+  }
+
+  let plan = null, filled = [];
+  if(mode !== 'import'){
+    try{
+      filled = C.addHardcoverIds(books, await findOnHardcover(ask, C.hardcoverLookups(books)));
+    }catch(exc){ return stop(exc); }
+    plan = C.planHardcoverExport(books, shelf);
+    const reads = plan.add.reduce((n, a) => n + a.dates.length, 0) + plan.reads.reduce((n, a) => n + a.dates.length, 0);
+    io.out('to Hardcover:');
+    io.out(`  Hardcover ids filled in on your books: ${filled.length}`);
+    io.out(`  books to put on your Read shelf: ${plan.add.length}`);
+    preview(plan.add.flatMap(a => a.recs), io);
+    io.out(`  dates read to add: ${reads}`);
+    if(plan.otherShelf.length){
+      io.out(`  on another Hardcover shelf, left alone: ${plan.otherShelf.length}`);
+      for(const [rec, status] of plan.otherShelf.slice(0, 15)) io.out(`    ! ${rec.t} - ${rec.a}: ${status}`);
+    }
+    if(plan.inexact.length) io.out(`  dates read without a day, not sent (a Hardcover read needs one): ${plan.inexact.length}`);
+    if(plan.unknown.length){
+      io.out(`  not found on Hardcover (no ASIN, ISBN or Goodreads id it knows; add "Hardcover <edition id>" by hand): ${plan.unknown.length}`);
+      preview(plan.unknown, io, 5);
+    }
+  }
+
+  const {errors} = C.validate(books, info);
+  if(errors.length){
+    io.err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
+    return 1;
+  }
+  if(args.dryRun){
+    io.out('(dry run: nothing written)');
+    return 0;
+  }
+  // the ids first, so they are kept even if Hardcover stops answering halfway
+  if(JSON.stringify(books) !== before){
+    dumpBooks(books, booksPath);
+    io.out(`wrote ${shown(booksPath, args.root)}`);
+  }
+  if(!plan) return 0;
+  return pushToHardcover(ask, plan, io);
+}
+
+/** Carry out planHardcoverExport()'s plan on Hardcover. Returns a promise of the exit code. */
+async function pushToHardcover(ask, plan, io){
+  let shelved = 0, reads = 0;
+  const problems = [];
+  const addRead = async (userBook, edition, date, rec) => {
+    const r = (await ask(C.HARDCOVER_QUERIES.addRead, {id: userBook, read: {finished_at: date, ...(edition ? {edition_id: edition} : {})}})).insert_user_book_read;
+    if(!r || r.error) problems.push(`${rec.t}: read ${date} not added (${r && r.error || 'no answer'})`); else reads++;
+  };
+  try{
+    for(const a of plan.add){
+      const object = {book_id: a.book, status_id: 3, ...(a.edition ? {edition_id: a.edition} : {})};
+      const r = (await ask(C.HARDCOVER_QUERIES.addBook, {object})).insert_user_book;
+      if(!r || r.error || !r.id){ problems.push(`${a.recs[0].t}: not added (${r && r.error || 'no answer'})`); continue; }
+      shelved++;
+      for(const d of a.dates) await addRead(r.id, a.edition, d, a.recs[0]);
+    }
+    for(const a of plan.reads) for(const d of a.dates) await addRead(a.userBook, a.edition, d, a.recs[0]);
+  }catch(exc){
+    io.err(`error: ${exc.message}; stopped after putting ${shelved} book(s) on Hardcover and adding ${reads} read(s). ` +
+      'Run it again to carry on: what is already there is not added twice.');
+    return 1;
+  }
+  io.out(`put ${shelved} book(s) on your Hardcover Read shelf and added ${reads} read(s)`);
+  for(const p of problems.slice(0, 15)) io.out('    ! ' + p);
+  return problems.length ? 1 : 0;
+}
+
 /** Serve the project folder to this machine only (it holds your personal data). */
 function cmdServe(args, io){
   const server = createServer(args.root, () => server.address().port);
@@ -546,6 +721,11 @@ const COMMANDS = {
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the current format (e.g. old ids and ISBNs as editions)'},
   'series': {run: cmdSeries, dryRun: true,
     help: 'fill in missing series, numbers and released totals from Audible, by ASIN (--store us, uk, de, ...)'},
+  'hardcover-import': {run: (a, io) => cmdHardcover(a, io, 'import'), dryRun: true,
+    help: `add the books on your Hardcover Read shelf, with their dates read (needs $${HARDCOVER_TOKEN_ENV})`},
+  'hardcover-export': {run: (a, io) => cmdHardcover(a, io, 'export'), dryRun: true,
+    help: 'put your books on your Hardcover Read shelf, with their dates read, and keep their Hardcover ids'},
+  'hardcover-sync': {run: (a, io) => cmdHardcover(a, io, 'sync'), dryRun: true, help: 'hardcover-import, then hardcover-export'},
   'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt)'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},
 };
@@ -555,7 +735,7 @@ const USAGE = `usage: node catalog.js [--root DIR] [--data-dir DIR] <command> [o
 commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
-  --dry-run          (imports, series, sync-export) show what would change without writing
+  --dry-run          (imports, series, hardcover-*, sync-export) show what would change without writing
   --series           (import-audible) then fill in the new books' series from Audible (--store us, uk, ...)
   --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;
@@ -596,7 +776,7 @@ function parseArgs(argv){
   return args;
 }
 
-/** Run a command; returns the exit code (a promise of it for `series`, null while `serve` keeps running). */
+/** Run a command; returns the exit code (a promise of it for `series` and `hardcover-*`, null while `serve` keeps running). */
 function main(argv, io = {out: s => console.log(s), err: s => console.error(s)}){
   let args;
   try{

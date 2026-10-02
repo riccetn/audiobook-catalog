@@ -59,7 +59,7 @@ function matches(b, q, author, genre, read){
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const editions = CatalogImport.bookEditions(b);
-    const hay = [b.t,b.a,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.n, ed.p, ed.desc, ...(Array.isArray(ed.isbn) ? ed.isbn : [])])]
+    const hay = [b.t,b.a,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.hc, ed.n, ed.p, ed.desc, ...(Array.isArray(ed.isbn) ? ed.isbn : [])])]
       .filter(x=> typeof x === 'string').join(' ').toLowerCase();
     // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
     const isbn = CatalogImport.parseIsbn(q);
@@ -438,7 +438,7 @@ let SHARED = new Map();
 
 function sharedEditions(){
   const byKey = new Map();
-  const keys = ed=> [...['id','gr'].filter(k=> ed[k]).map(k=> k + ' ' + ed[k]), ...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
+  const keys = ed=> [...['id','gr','hc'].filter(k=> ed[k]).map(k=> k + ' ' + ed[k]), ...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
   DATA.forEach((b,i)=> CatalogImport.bookEditions(b).forEach(ed=> keys(ed).forEach(k=>{
     if(!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push([i, ed]);
@@ -456,10 +456,13 @@ function sharedEditions(){
 // a visitor to their own store when the title is sold there.
 const AUDIBLE_URL = 'https://www.audible.com/pd/', GOODREADS_URL = 'https://www.goodreads.com/book/show/';
 
-/** An edition as formatEdition() writes it, with its ASIN and Goodreads id linking to the book there. */
+/**
+ * An edition as formatEdition() writes it, with its ASIN, Goodreads id and Hardcover ids linking to the
+ * book there (Hardcover's links by id keep working when it renames the book).
+ */
 function editionHtml(ed){
   const link = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
-  const urls = {id: AUDIBLE_URL, gr: GOODREADS_URL};
+  const urls = {id: AUDIBLE_URL, gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', ''), hcb: CatalogImport.hardcoverUrl('book', '')};
   return CatalogImport.editionParts(ed).map(([k, label, value])=>
     (label ? esc(label) + ' ' : '') + (urls[k] ? link(urls[k], value) : esc(value))).join('; ');
 }
