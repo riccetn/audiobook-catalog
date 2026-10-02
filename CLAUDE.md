@@ -36,12 +36,14 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `module.exports` it for `catalog.js`. Keep it that way: no `import`/`require`, no Node or DOM APIs,
   so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
-  `readAudible`, `readGoodreads`, `merge`, `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
+  `readAudible`, `readGoodreads`, `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
   `parseExclusions`/`exclusionEntries`, `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
-- `catalog.js`: CommonJS CLI (`main(argv, io)`) and the `serve` HTTP server. `serve` exposes a save
+- `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible through `io.fetch` and returns a promise) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
   the same checks as `sync-export`, refuses a save if the file's `fingerprint` changed on disk since
-  the page loaded it, and writes atomically (`writeAtomic`). Exports `main`, `createServer` etc. for tests.
+  the page loaded it, and writes atomically (`writeAtomic`). It also proxies the page's Audible lookups
+  (`handleAudible`, `POST api/audible`, same-origin, batches of 25 ASINs); the page offers them when
+  `GET api/save` says `audible: true` (`AUDIBLE_LOOKUP` in `store.js`). Exports `main`, `createServer` etc. for tests.
 - `store.js`: shared by the pages, loaded after `importers.js`: the globals (`DATA`, `SERIES_INFO`,
   `EXCLUSIONS`, ...), loading (`startPage(init)`: fetches `data/`, then falls back to `data/sample/`),
   `persist` (localStorage `audiobook-catalog-data`, tagged with the fingerprint of the files the edits

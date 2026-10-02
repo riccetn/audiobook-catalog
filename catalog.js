@@ -129,12 +129,16 @@ function runImport(args, io, read, label){
     io.err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
     return 1;
   }
-  if(args.dryRun){
-    io.out('(dry run: nothing written)');
-    return 0;
+  if(!args.dryRun){
+    dumpBooks(books, booksPath);
+    io.out(`wrote ${shown(booksPath, args.root)}`);
   }
-  dumpBooks(books, booksPath);
-  io.out(`wrote ${shown(booksPath, args.root)}`);
+  // --series: the new books' series and numbers, and release info for series new to the catalogue
+  if(args.series && report.added.length){
+    io.out('series of the new books:');
+    return lookUpSeries(args, io, books, loadSeriesInfo(infoPath), booksPath, infoPath, report.added);
+  }
+  if(args.dryRun) io.out('(dry run: nothing written)');
   return 0;
 }
 
@@ -377,7 +381,7 @@ function sameOrigin(req, port){
 
 /**
  * The page's saves: GET says whether saving is possible (only to your own data/books.json, never the
- * demo), PUT {books, seriesInfo, excluded, base, infoBase} writes both files, and adds the entries in
+ * demo) and that Audible lookups are, PUT {books, seriesInfo, excluded, base, infoBase} writes both files, and adds the entries in
  * `excluded` (books removed in the page) to data/excluded.txt. `base` and `infoBase` are the
  * fingerprints of the files the page's edits started from; if either file changed since (an import,
  * sync-export or a hand edit), the save is refused rather than overwriting that change. excluded.txt
@@ -388,7 +392,8 @@ function handleSave(req, res, root, port){
   const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
   const excludedPath = path.join(dir, 'excluded.txt');
   const writable = fs.existsSync(booksPath);
-  if(req.method === 'GET'){ sendJson(res, 200, {writable}); return; }
+  // `audible`: this server can also look books up on Audible for the page (see handleAudible)
+  if(req.method === 'GET'){ sendJson(res, 200, {writable, audible: true}); return; }
   if(req.method !== 'PUT'){ sendJson(res, 405, {error: 'use GET or PUT'}); return; }
   if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'saves are only accepted from this page'}); return; }
   if(!writable){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
@@ -427,8 +432,46 @@ function handleSave(req, res, root, port){
   });
 }
 
-/** The server behind `serve`: the project folder, plus the page's saves (see handleSave). */
-function createServer(root, port){
+const ASIN = /^[A-Z0-9]{10}$/;
+
+/**
+ * The page's Audible lookups, since a browser may not ask Audible itself: POST {store, groups, asins}
+ * with up to AUDIBLE_BATCH ASINs answers {results: {asin: ...}} as fetchFromAudible() finds them.
+ * Same-origin only, like saves, so no other site can use this server to reach Audible.
+ */
+function handleAudible(req, res, port, get, pause){
+  if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use POST'}); return; }
+  if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'lookups are only accepted from this page'}); return; }
+  const chunks = [];
+  let size = 0;
+  req.on('data', chunk => {
+    size += chunk.length;
+    if(size > 64 * 1024){ sendJson(res, 413, {error: 'too large'}); req.destroy(); return; }
+    chunks.push(chunk);
+  });
+  req.on('end', async () => {
+    if(res.headersSent) return;
+    let store, groups, asins;
+    try{
+      ({store, groups, asins} = JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    }catch(exc){ sendJson(res, 400, {error: 'not JSON'}); return; }
+    if(!Object.prototype.hasOwnProperty.call(C.AUDIBLE_STORES, store) || !['series', 'relationships'].includes(groups) ||
+       !Array.isArray(asins) || asins.length > AUDIBLE_BATCH || !asins.every(a => typeof a === 'string' && ASIN.test(a))){
+      sendJson(res, 400, {error: `expected {store, groups: "series" or "relationships", asins: up to ${AUDIBLE_BATCH} ASINs}`});
+      return;
+    }
+    try{
+      sendJson(res, 200, {results: Object.fromEntries(await fetchFromAudible(get, pause, store, asins, groups))});
+    }catch(exc){ sendJson(res, 502, {error: `could not reach ${C.AUDIBLE_STORES[store]} (${exc.message})`}); }
+  });
+}
+
+/**
+ * The server behind `serve`: the project folder, plus the page's saves (see handleSave) and Audible
+ * lookups (handleAudible; `audible` swaps in {fetch, pause} for tests).
+ */
+function createServer(root, port, audible = {}){
+  const get = audible.fetch || globalThis.fetch, pause = audible.pause || defaultPause;
   return http.createServer((req, res) => {
     let file, urlPath;
     try{
@@ -436,6 +479,7 @@ function createServer(root, port){
       file = path.join(root, urlPath.endsWith('/') ? urlPath + 'index.html' : urlPath);
     }catch(e){ res.writeHead(400).end('bad request'); return; }
     if(urlPath === '/api/save'){ handleSave(req, res, root, port()); return; }
+    if(urlPath === '/api/audible'){ handleAudible(req, res, port(), get, pause); return; }
     if(!file.startsWith(root + path.sep) && file !== root){ res.writeHead(403).end('forbidden'); return; }
     fs.readFile(file, (err, body) => {
       if(err){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }
@@ -443,6 +487,95 @@ function createServer(root, port){
       res.end(body);
     });
   });
+}
+
+// ----------------------------------------------------------- Audible's catalogue
+const AUDIBLE_PAUSE_MS = 250;   // between requests, to be gentle with Audible
+const AUDIBLE_BATCH = 25;       // ASINs per api/audible request from the page
+
+/**
+ * Look ASINs up in one Audible store, one after another: for `series` groups, a Map of ASIN ->
+ * audibleSeries() list; for `relationships` (series ASINs), ASIN -> audibleSeriesTotal(). An ASIN
+ * Audible doesn't know maps to null. Throws when Audible can't be reached or answers with an error.
+ */
+async function fetchFromAudible(get, pause, store, asins, groups){
+  const found = new Map();
+  for(const asin of asins){
+    const res = await get(C.audibleProductUrl(asin, store, groups), {headers: {accept: 'application/json'}});
+    let json = null;
+    if(res.status !== 404){
+      if(!res.ok) throw new Error(`Audible answered ${res.status}`);
+      json = await res.json();
+    }
+    const known = json && json.product ? json : null;
+    found.set(asin, known && (groups === 'series' ? C.audibleSeries(known) : C.audibleSeriesTotal(known)));
+    await pause();
+  }
+  return found;
+}
+
+const defaultPause = () => new Promise(done => setTimeout(done, AUDIBLE_PAUSE_MS));
+
+/**
+ * Fill in series, numbers and released totals from Audible's catalogue, looked up by ASIN. Only
+ * empty values are filled: a book's series or number, and series-info for series that have none.
+ * Returns a promise of the exit code.
+ */
+function cmdSeries(args, io){
+  if(!requireOwnData(args, io)) return 2;
+  const [booksPath, infoPath] = paths(args);
+  const books = loadBooks(booksPath), info = loadSeriesInfo(infoPath);
+  return lookUpSeries(args, io, books, info, booksPath, infoPath);
+}
+
+/** `only`: look up just these books (and their series) instead of the whole catalogue. */
+async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
+  const get = io.fetch || globalThis.fetch, pause = io.pause || defaultPause;
+  const store = C.AUDIBLE_STORES[args.store];
+  const asins = C.seriesLookups(books, info, only);
+  io.out(`looking up ${asins.length} book(s) on ${store}`);
+  let found, report, totals;
+  try{
+    found = await fetchFromAudible(get, pause, args.store, asins, 'series');
+    report = C.seriesFromAudible(books, found);
+    const wanted = [...report.series].filter(([name]) => !Object.prototype.hasOwnProperty.call(info, name)).map(([, asin]) => asin);
+    totals = C.addSeriesTotals(info, report.series, await fetchFromAudible(get, pause, args.store, wanted, 'relationships'),
+      args.store, new Date().toISOString().slice(0, 10));
+  }catch(exc){
+    io.err(`error: could not reach ${store} (${exc.message}); no series filled in`);
+    return 1;
+  }
+  const unknown = [...found.values()].filter(x => x === null).length;
+
+  io.out(`  series or number filled in: ${report.filled.length}`);
+  preview(report.filled, io);
+  io.out(`  series given a released total: ${totals.length}`);
+  for(const name of totals.slice(0, 15)) io.out(`    + ${name}: ${info[name].total}`);
+  if(totals.length > 15) io.out(`    ... and ${totals.length - 15} more`);
+  if(unknown) io.out(`  not found on ${store}: ${unknown} (another store? --store uk, de, ...)`);
+  if(report.warnings.length){
+    io.out(`  needs a look (${report.warnings.length}):`);
+    for(const w of report.warnings.slice(0, 15)) io.out('    ! ' + w);
+  }
+
+  const {errors} = C.validate(books, info);
+  if(errors.length){
+    io.err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
+    return 1;
+  }
+  if(args.dryRun){
+    io.out('(dry run: nothing written)');
+    return 0;
+  }
+  if(report.filled.length){
+    dumpBooks(books, booksPath);
+    io.out(`wrote ${shown(booksPath, args.root)}`);
+  }
+  if(totals.length){
+    dumpSeriesInfo(info, infoPath);
+    io.out(`wrote ${shown(infoPath, args.root)}`);
+  }
+  return 0;
 }
 
 /** Serve the project folder to this machine only (it holds your personal data). */
@@ -459,12 +592,14 @@ function cmdServe(args, io){
 
 const COMMANDS = {
   'import-audible': {run: (a, io) => runImport(a, io, C.readAudible, 'Audible'), file: true, dryRun: true,
-    help: 'add new finished books from an Audible Library Extractor CSV'},
+    help: 'add new finished books from an Audible Library Extractor CSV (--series: then look up their series on Audible)'},
   'import-goodreads': {run: (a, io) => runImport(a, io, C.readGoodreads, 'Goodreads'), file: true, dryRun: true,
     help: 'add audiobooks from a Goodreads library export CSV'},
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the current format (e.g. old ids and ISBNs as editions)'},
+  'series': {run: cmdSeries, dryRun: true,
+    help: 'fill in missing series, numbers and released totals from Audible, by ASIN (--store us, uk, de, ...)'},
   'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt)'},
   'merge-backup': {run: cmdMergeBackup, file: true, dryRun: true,
     help: 'merge a JSON backup from another device into data/ when both have changed (--prefer-backup: its edits win)'},
@@ -476,12 +611,13 @@ const USAGE = `usage: node catalog.js [--root DIR] [--data-dir DIR] <command> [o
 commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
-  --dry-run          (imports, sync-export, merge-backup) show what would change without writing
+  --dry-run          (imports, series, sync-export, merge-backup) show what would change without writing
+  --series           (import-audible) then fill in the new books' series from Audible (--store us, uk, ...)
   --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;
 
 function parseArgs(argv){
-  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, preferBackup: false, sample: false, port: 8000};
+  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, preferBackup: false, sample: false, port: 8000, store: null, series: false};
   const rest = [];
   for(let i = 0; i < argv.length; i++){
     const a = argv[i];
@@ -495,6 +631,8 @@ function parseArgs(argv){
     else if(a === '--sample') args.sample = true;
     else if(a === '--prefer-backup') args.preferBackup = true;
     else if(a === '--port') args.port = Number(value());
+    else if(a === '--store') args.store = value().toLowerCase();
+    else if(a === '--series') args.series = true;
     else if(a === '-h' || a === '--help') args.help = true;
     else if(a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else rest.push(a);
@@ -509,10 +647,14 @@ function parseArgs(argv){
   if(args.sample && args.command !== 'init') throw new Error('--sample only goes with init');
   if(args.preferBackup && args.command !== 'merge-backup') throw new Error('--prefer-backup only goes with merge-backup');
   if(!Number.isInteger(args.port) || args.port <= 0) throw new Error('--port needs a port number');
+  if(args.series && args.command !== 'import-audible') throw new Error('--series only goes with import-audible');
+  if(args.store !== null && args.command !== 'series' && !args.series) throw new Error('--store only goes with series and import-audible --series');
+  args.store = args.store || 'us';
+  if(!C.AUDIBLE_STORES[args.store]) throw new Error(`--store must be one of ${Object.keys(C.AUDIBLE_STORES).join(', ')}`);
   return args;
 }
 
-/** Run a command; returns the exit code (null while `serve` keeps running). */
+/** Run a command; returns the exit code (a promise of it for `series`, null while `serve` keeps running). */
 function main(argv, io = {out: s => console.log(s), err: s => console.error(s)}){
   let args;
   try{
@@ -528,21 +670,24 @@ function main(argv, io = {out: s => console.log(s), err: s => console.error(s)})
   try{
     return COMMANDS[args.command].run(args, io);
   }catch(exc){
-    if(exc.code === 'ENOENT'){
-      io.err(`error: no such file: ${exc.path}`);
-      return 1;
-    }
-    if(exc instanceof SyntaxError){
-      io.err(`error: invalid JSON: ${exc.message}`);
-      return 1;
-    }
-    throw exc;
+    return failed(exc, io);
   }
+}
+
+function failed(exc, io){
+  if(exc.code === 'ENOENT'){
+    io.err(`error: no such file: ${exc.path}`);
+    return 1;
+  }
+  if(exc instanceof SyntaxError){
+    io.err(`error: invalid JSON: ${exc.message}`);
+    return 1;
+  }
+  throw exc;
 }
 
 module.exports = {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir, createServer};
 
 if(require.main === module){
-  const code = main(process.argv.slice(2));
-  if(code !== null) process.exitCode = code;
+  Promise.resolve(main(process.argv.slice(2))).then(code => { if(code !== null) process.exitCode = code; });
 }
