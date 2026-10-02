@@ -4,6 +4,7 @@
 function refreshPage(){
   document.getElementById('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
   document.getElementById('audiblePanel').style.display = AUDIBLE_LOOKUP ? '' : 'none';
+  document.getElementById('importSeriesOption').style.display = AUDIBLE_LOOKUP ? '' : 'none';
 }
 
 function exportBackup(){
@@ -119,14 +120,18 @@ function applyImport(){
   const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
   DATA = data;
   refreshPage(); persist();
-  showIoStatus(`Added ${added} book${added === 1 ? '' : 's'}` +
+  const done = `Added ${added} book${added === 1 ? '' : 's'}` +
     (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
     (withGr ? `, filled in ${withGr} Goodreads id${withGr === 1 ? '' : 's'}` : '') +
     (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
     (withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
     (withEditions ? `, added editions to ${withEditions} book${withEditions === 1 ? '' : 's'}` : '') +
-    (withDetails ? `, filled in edition details on ${withDetails} book${withDetails === 1 ? '' : 's'}` : '') +
-    '.' + keepHint('data/books.json'));
+    (withDetails ? `, filled in edition details on ${withDetails} book${withDetails === 1 ? '' : 's'}` : '') + '.';
+  showIoStatus(done + keepHint('data/books.json'));
+  // the option under the import buttons: the new books' series, and release info for series new to the catalogue
+  if(IMPORT_KIND === 'audible' && AUDIBLE_LOOKUP && added && document.getElementById('importSeries').checked){
+    return lookUpSeries(CatalogImport.seriesLookups(DATA, SERIES_INFO, report.added), done);
+  }
 }
 
 // ------------------------------------------------------------ series from Audible
@@ -160,18 +165,19 @@ function seriesIntoCopy({store, found, totals}){
   return {data, info, report, added, errors: CatalogImport.validate(data, info).errors};
 }
 
-async function lookUpSeries(){
+// Look up `asins` (default: every book that needs it); `lead` is said first in the preview.
+async function lookUpSeries(asins, lead){
   if(LOOKING_UP) return;
   LOOKING_UP = true;
   const store = document.getElementById('audibleStore').value;
   const host = CatalogImport.AUDIBLE_STORES[store];
-  const asins = CatalogImport.seriesLookups(DATA, SERIES_INFO).filter(a=> /^[A-Z0-9]{10}$/.test(a));
+  asins = (asins || CatalogImport.seriesLookups(DATA, SERIES_INFO)).filter(a=> /^[A-Z0-9]{10}$/.test(a));
   try{
     const found = await askAudible(store, 'series', asins, i=> showIoStatus(`Looking up books on ${host}: ${i} of ${asins.length}…`));
     const series = CatalogImport.seriesFromAudible(JSON.parse(JSON.stringify(DATA)), found).series;
     const wanted = [...series].filter(([name])=> !Object.prototype.hasOwnProperty.call(SERIES_INFO, name)).map(([, asin])=> asin);
     const totals = await askAudible(store, 'relationships', wanted, i=> showIoStatus(`Looking up series on ${host}: ${i} of ${wanted.length}…`));
-    previewSeries({store, found, totals});
+    previewSeries({store, found, totals}, lead);
     showIoStatus('');
   }catch(e){
     showIoStatus(`Couldn't look up series: ${e.message}`, true);
@@ -180,7 +186,7 @@ async function lookUpSeries(){
   }
 }
 
-function previewSeries(pending){
+function previewSeries(pending, lead){
   const {info, report, added, errors} = seriesIntoCopy(pending);
   const host = CatalogImport.AUDIBLE_STORES[pending.store];
   const unknown = [...pending.found.values()].filter(x=> x === null).length;
@@ -188,7 +194,8 @@ function previewSeries(pending){
   PENDING_SERIES = errors.length || !changes ? null : pending;
   PENDING_IMPORT = null;
 
-  let html = `<p>${pending.found.size} book${pending.found.size === 1 ? '' : 's'} looked up on ${esc(host)}</p>`;
+  let html = lead ? `<p>${esc(lead)} Their series:</p>` : '';
+  html += `<p>${pending.found.size} book${pending.found.size === 1 ? '' : 's'} looked up on ${esc(host)}</p>`;
   html += `<p>Series or number filled in: ${report.filled.length}</p>`;
   if(report.filled.length) html += `<ul>${report.filled.map(b=> `<li>${esc(b.t)} &mdash; ${esc(b.a)}  [${esc(b.s)}${b.sn ? ' #' + esc(b.sn) : ''}]</li>`).join('')}</ul>`;
   html += `<p>Series given a released total: ${added.length}</p>`;
@@ -252,7 +259,13 @@ document.getElementById('importCsvFile').addEventListener('change', e=>{
   e.target.value = '';
 });
 document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_SERIES ? applySeries() : applyImport());
-document.getElementById('audibleSeriesBtn').addEventListener('click', lookUpSeries);
+document.getElementById('audibleSeriesBtn').addEventListener('click', ()=> lookUpSeries());
+// remembered in this browser, like a preference
+const SERIES_AFTER_IMPORT_KEY = 'audiobook-catalog-import-series';
+try{ document.getElementById('importSeries').checked = localStorage.getItem(SERIES_AFTER_IMPORT_KEY) === '1'; }catch(e){}
+document.getElementById('importSeries').addEventListener('change', e=>{
+  try{ localStorage.setItem(SERIES_AFTER_IMPORT_KEY, e.target.checked ? '1' : '0'); }catch(err){}
+});
 document.getElementById('importCancel').addEventListener('click', closeImportPreview);
 
 document.getElementById('exportBtn').addEventListener('click', exportBackup);

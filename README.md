@@ -109,6 +109,9 @@ edition that has none (on a new edition, for a book without any). `make validate
 
 1. Export your library with the Audible Library Extractor and save the CSV in `data/raw/`.
 2. `node catalog.js import-audible data/raw/<file>.csv --dry-run` to preview, then run it without `--dry-run`.
+   Add `--series` (and `--store uk` etc. if needed) to also fill in the new books' series and the release
+   info of series new to the catalogue from Audible, as **Fill in series from Audible** below does for the
+   whole catalogue.
 3. `make test`, then commit `data/books.json`.
 
 Only finished books are imported. The command lists what it added, and anything ambiguous
@@ -178,6 +181,9 @@ Audible**. Pick the store and press **Look up series**; the server asks Audible 
 page shows what would be filled in, the same way the command does. Nothing changes until you press
 **Save series**; then it is saved like any other edit. The panel only shows when the page is served by
 `make serve`.
+The page can also do it after every Audible CSV import: tick **After an Audible import, look up the new
+books' series on Audible** under the import buttons (this browser remembers it). After **Add books**, it
+looks up just the new books and shows their series to confirm.
 
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
 the import exclusion list, `data/excluded.txt`, as the ASINs and Goodreads ids (`Goodreads 4242`) of its

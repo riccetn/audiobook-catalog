@@ -129,12 +129,16 @@ function runImport(args, io, read, label){
     io.err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
     return 1;
   }
-  if(args.dryRun){
-    io.out('(dry run: nothing written)');
-    return 0;
+  if(!args.dryRun){
+    dumpBooks(books, booksPath);
+    io.out(`wrote ${shown(booksPath, args.root)}`);
   }
-  dumpBooks(books, booksPath);
-  io.out(`wrote ${shown(booksPath, args.root)}`);
+  // --series: the new books' series and numbers, and release info for series new to the catalogue
+  if(args.series && report.added.length){
+    io.out('series of the new books:');
+    return lookUpSeries(args, io, books, loadSeriesInfo(infoPath), booksPath, infoPath, report.added);
+  }
+  if(args.dryRun) io.out('(dry run: nothing written)');
   return 0;
 }
 
@@ -470,10 +474,11 @@ function cmdSeries(args, io){
   return lookUpSeries(args, io, books, info, booksPath, infoPath);
 }
 
-async function lookUpSeries(args, io, books, info, booksPath, infoPath){
+/** `only`: look up just these books (and their series) instead of the whole catalogue. */
+async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
   const get = io.fetch || globalThis.fetch, pause = io.pause || defaultPause;
   const store = C.AUDIBLE_STORES[args.store];
-  const asins = C.seriesLookups(books, info);
+  const asins = C.seriesLookups(books, info, only);
   io.out(`looking up ${asins.length} book(s) on ${store}`);
   let found, report, totals;
   try{
@@ -483,7 +488,7 @@ async function lookUpSeries(args, io, books, info, booksPath, infoPath){
     totals = C.addSeriesTotals(info, report.series, await fetchFromAudible(get, pause, args.store, wanted, 'relationships'),
       args.store, new Date().toISOString().slice(0, 10));
   }catch(exc){
-    io.err(`error: could not reach ${store} (${exc.message}); nothing written`);
+    io.err(`error: could not reach ${store} (${exc.message}); no series filled in`);
     return 1;
   }
   const unknown = [...found.values()].filter(x => x === null).length;
@@ -533,7 +538,7 @@ function cmdServe(args, io){
 
 const COMMANDS = {
   'import-audible': {run: (a, io) => runImport(a, io, C.readAudible, 'Audible'), file: true, dryRun: true,
-    help: 'add new finished books from an Audible Library Extractor CSV'},
+    help: 'add new finished books from an Audible Library Extractor CSV (--series: then look up their series on Audible)'},
   'import-goodreads': {run: (a, io) => runImport(a, io, C.readGoodreads, 'Goodreads'), file: true, dryRun: true,
     help: 'add audiobooks from a Goodreads library export CSV'},
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
@@ -551,11 +556,12 @@ commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
   --dry-run          (imports, series, sync-export) show what would change without writing
+  --series           (import-audible) then fill in the new books' series from Audible (--store us, uk, ...)
   --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;
 
 function parseArgs(argv){
-  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, sample: false, port: 8000, store: null};
+  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, sample: false, port: 8000, store: null, series: false};
   const rest = [];
   for(let i = 0; i < argv.length; i++){
     const a = argv[i];
@@ -569,6 +575,7 @@ function parseArgs(argv){
     else if(a === '--sample') args.sample = true;
     else if(a === '--port') args.port = Number(value());
     else if(a === '--store') args.store = value().toLowerCase();
+    else if(a === '--series') args.series = true;
     else if(a === '-h' || a === '--help') args.help = true;
     else if(a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else rest.push(a);
@@ -582,7 +589,8 @@ function parseArgs(argv){
   if(args.dryRun && !cmd.dryRun) throw new Error(`${args.command} has no --dry-run`);
   if(args.sample && args.command !== 'init') throw new Error('--sample only goes with init');
   if(!Number.isInteger(args.port) || args.port <= 0) throw new Error('--port needs a port number');
-  if(args.store !== null && args.command !== 'series') throw new Error('--store only goes with series');
+  if(args.series && args.command !== 'import-audible') throw new Error('--series only goes with import-audible');
+  if(args.store !== null && args.command !== 'series' && !args.series) throw new Error('--store only goes with series and import-audible --series');
   args.store = args.store || 'us';
   if(!C.AUDIBLE_STORES[args.store]) throw new Error(`--store must be one of ${Object.keys(C.AUDIBLE_STORES).join(', ')}`);
   return args;

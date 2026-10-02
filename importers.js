@@ -929,16 +929,18 @@ function sharedAsins(books){
 
 /**
  * The ASINs to look up for seriesFromAudible(): every book with no series or no number, and one
- * book of each series that has no release info yet (to learn the series' own ASIN).
+ * book of each series that has no release info yet (to learn the series' own ASIN). `only` (books
+ * of `books`, e.g. the ones an import just added) limits that to those books and their series.
  */
-function seriesLookups(books, info){
+function seriesLookups(books, info, only){
   const asins = new Set(), covered = new Set();
   const own = b => bookEditions(b).map(ed => ed.id).filter(Boolean);
-  for(const b of books){
+  const wanted = only || books;
+  for(const b of wanted){
     if(!b.s || !b.sn) own(b).forEach(id => asins.add(id));
   }
   const shared = sharedAsins(books);
-  for(const b of books){
+  for(const b of wanted){
     if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s)) || covered.has(b.s)) continue;
     const id = own(b).find(x => !shared.has(x)) || own(b)[0];
     if(id){ asins.add(id); covered.add(b.s); }

@@ -353,11 +353,56 @@ test('series fills in series, numbers and released totals from Audible, and --dr
   assert.equal(info['Gull Isle'].status, 'ongoing');
 });
 
+test('import-audible --series looks up the series of the new books only', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([{ t: 'Old Standalone', a: 'Ann Vale', e: [{ id: 'B0OLD00001' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
+    + 'x,Tidewater,,Ann Vale,,Finished,B0NEW00001\n');
+  const asked = [];
+  const fetch = async url => {
+    const asin = /products\/([^?]+)/.exec(url)[1];
+    asked.push(asin);
+    const body = {
+      B0NEW00001: { product: { series: [{ title: 'Gull Isle', sequence: '1', asin: 'B0GULLISLE' }] } },
+      B0GULLISLE: { product: { relationships: ['1', '2'].map(sequence => ({ relationship_to_product: 'child', sequence })) } },
+    }[asin];
+    return { ok: !!body, status: body ? 200 : 404, json: async () => body };
+  };
+  const run = async (...argv) => {
+    const out = [], err = [];
+    const code = await main(['--root', tmp, ...argv], { out: s => out.push(s), err: s => err.push(s), fetch, pause: async () => {} });
+    return { code, out: out.join('\n'), err: err.join('\n') };
+  };
+  const booksPath = path.join(dataDir, 'books.json');
+  const before = fs.readFileSync(booksPath, 'utf8');
+
+  const dry = await run('import-audible', csv, '--series', '--store', 'uk', '--dry-run');
+  assert.equal(dry.code, 0, dry.err);
+  assert.match(dry.out, /new: 1[\s\S]*series of the new books:[\s\S]*\+ Tidewater - Ann Vale {2}\[Gull Isle #1\][\s\S]*\+ Gull Isle: 2[\s\S]*dry run/);
+  assert.deepEqual(asked, ['B0NEW00001', 'B0GULLISLE']);       // the old standalone book is not asked about again
+  assert.equal(fs.readFileSync(booksPath, 'utf8'), before);
+
+  assert.equal((await run('import-audible', csv, '--series')).code, 0);
+  assert.deepEqual(loadBooks(booksPath).map(b => [b.t, b.s, b.sn]), [['Old Standalone', undefined, undefined], ['Tidewater', 'Gull Isle', '1']]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'series-info.json'), 'utf8'))['Gull Isle'].total, 2);
+
+  // nothing new: nothing to look up
+  asked.length = 0;
+  assert.equal((await run('import-audible', csv, '--series')).code, 0);
+  assert.deepEqual(asked, []);
+});
+
 test('series writes nothing when Audible cannot be reached, and refuses the demo data', async t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('series').code, 2);
   assert.match(run('series', '--store', 'xx').err, /--store must be one of/);
   assert.match(run('validate', '--store', 'uk').err, /--store only goes with series/);
+  assert.match(run('import-goodreads', 'x.csv', '--series').err, /--series only goes with import-audible/);
+  assert.match(run('import-audible', 'x.csv', '--store', 'uk').err, /--store only goes with series and import-audible --series/);
   assert.equal(run('init', '--sample').code, 0);
   const books = path.join(tmp, 'data', 'books.json');
   const before = fs.readFileSync(books, 'utf8');
@@ -365,7 +410,7 @@ test('series writes nothing when Audible cannot be reached, and refuses the demo
   const code = await main(['--root', tmp, 'series'], { out: () => {}, err: s => err.push(s),
     fetch: async () => { throw new Error('offline'); }, pause: async () => {} });
   assert.equal(code, 1);
-  assert.match(err.join('\n'), /could not reach audible.com \(offline\); nothing written/);
+  assert.match(err.join('\n'), /could not reach audible.com \(offline\); no series filled in/);
   assert.equal(fs.readFileSync(books, 'utf8'), before);
 });
 

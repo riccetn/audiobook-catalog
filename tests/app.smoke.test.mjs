@@ -847,6 +847,43 @@ test('with make serve, series can be looked up on Audible, previewed, then saved
   assert.equal(plain.els.audiblePanel.style.display, 'none');
 });
 
+test('with make serve, an Audible import can go on to look up the new books\' series', async () => {
+  const mine = JSON.stringify([{ t: 'Old Standalone', a: 'Ann Vale', e: [{ id: 'B0OLD00001' }] }]);
+  const lookups = [];
+  const api = async (init, url) => {
+    if (!init.method) return { status: 200, body: { writable: true, audible: true } };
+    const body = JSON.parse(init.body);
+    if (url === 'api/save') return { status: 200, body: { base: 'b', infoBase: 'i', books: body.books } };
+    lookups.push(body);
+    const results = Object.fromEntries(body.asins.map(a => [a, body.groups === 'series'
+      ? [{ name: 'Gull Isle', number: '1', asin: 'B0GULLISLE' }] : 2]));
+    return { status: 200, body: { results } };
+  };
+  const storage = new Map();
+  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api, storage });
+  assert.equal(els.importSeriesOption.style.display, '');
+  els.importSeries.checked = true;
+  els.importSeries.listeners.change[0]({ target: els.importSeries });
+  assert.equal(storage.get('audiobook-catalog-import-series'), '1');
+
+  els.importAudibleBtn.listeners.click[0]();
+  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv',
+    text: 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\nx,Tidewater,,Ann Vale,,Finished,B0NEW00001\n' }], value: '' } });
+  await els.importConfirm.listeners.click[0]();
+  assert.deepEqual(lookups.map(l => l.asins), [['B0NEW00001'], ['B0GULLISLE']]);   // only the new book
+  assert.equal(els.importPreviewTitle.textContent, 'Series from Audible');
+  assert.match(els.importPreviewBody.innerHTML, /Added 1 book\. Their series:/);
+  assert.match(els.importPreviewBody.innerHTML, /Tidewater &mdash; Ann Vale {2}\[Gull Isle #1\]/);
+  els.importConfirm.listeners.click[0]();
+  await settle();
+  assert.deepEqual(get('DATA[1]'), { t: 'Tidewater', a: 'Ann Vale', s: 'Gull Isle', sn: '1', e: [{ id: 'B0NEW00001' }] });
+  assert.equal(get('SERIES_INFO["Gull Isle"].total'), 2);
+
+  // the choice is remembered in this browser
+  const again = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api, storage });
+  assert.equal(again.els.importSeries.checked, true);
+});
+
 test('without make serve (or with the demo data) edits stay in the browser', async () => {
   let calls = 0;
   const api = async init => { calls++; assert.equal(init.method, undefined); return { status: 200, body: { writable: true } }; };
