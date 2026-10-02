@@ -27,7 +27,7 @@ node --test --test-name-pattern='merge' tests/importers.test.mjs   # one test
 ```
 
 There is no linter or formatter config; match the surrounding style (see Conventions).
-CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on push and PR.
+CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull requests and on pushes to `main`.
 
 ## Architecture
 

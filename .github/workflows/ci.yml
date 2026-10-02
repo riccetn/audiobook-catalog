@@ -1,5 +1,9 @@
 name: CI
-on: [push, pull_request]
+# Push runs only on main, so a PR branch is tested once (by pull_request) rather than twice.
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   test:
