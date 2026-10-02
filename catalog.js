@@ -392,6 +392,95 @@ function createServer(root, port){
 }
 
 /** Serve the project folder to this machine only (it holds your personal data). */
+/**
+ * Fill in series, numbers and released totals from Audible's catalogue, looked up by ASIN. Only
+ * empty values are filled: a book's series or number, and series-info for series that have none.
+ * Returns a promise of the exit code.
+ */
+function cmdSeries(args, io){
+  if(!requireOwnData(args, io)) return 2;
+  const [booksPath, infoPath] = paths(args);
+  const books = loadBooks(booksPath), info = loadSeriesInfo(infoPath);
+  return lookUpSeries(args, io, books, info, booksPath, infoPath);
+}
+
+async function lookUpSeries(args, io, books, info, booksPath, infoPath){
+  const get = io.fetch || globalThis.fetch;
+  const pause = io.pause || (() => new Promise(done => setTimeout(done, 250)));   // be gentle with Audible
+  const store = C.AUDIBLE_STORES[args.store];
+  // null when Audible doesn't know the ASIN in this store
+  const lookUp = async (asin, groups) => {
+    const res = await get(C.audibleProductUrl(asin, args.store, groups), {headers: {accept: 'application/json'}});
+    if(res.status === 404) return null;
+    if(!res.ok) throw new Error(`Audible answered ${res.status}`);
+    const json = await res.json();
+    return json && json.product ? json : null;
+  };
+
+  const asins = C.seriesLookups(books, info);
+  io.out(`looking up ${asins.length} book(s) on ${store}`);
+  const found = new Map();
+  let unknown = 0;
+  try{
+    for(const asin of asins){
+      const json = await lookUp(asin, 'series');
+      if(json) found.set(asin, C.audibleSeries(json)); else unknown++;
+      await pause();
+    }
+  }catch(exc){
+    io.err(`error: could not reach ${store} (${exc.message}); nothing written`);
+    return 1;
+  }
+  const report = C.seriesFromAudible(books, found);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const totals = [];
+  try{
+    for(const [name, asin] of report.series){
+      if(Object.prototype.hasOwnProperty.call(info, name)) continue;
+      const total = C.audibleSeriesTotal(await lookUp(asin, 'relationships'));
+      await pause();
+      if(!total) continue;
+      // Audible only lists what is out, so whether the series is finished is yours to check
+      info[name] = {total, status: 'ongoing', note: `${total} released on ${store} as of ${today}; is it complete?`};
+      totals.push(name);
+    }
+  }catch(exc){
+    io.err(`error: could not reach ${store} (${exc.message}); nothing written`);
+    return 1;
+  }
+
+  io.out(`  series or number filled in: ${report.filled.length}`);
+  preview(report.filled, io);
+  io.out(`  series given a released total: ${totals.length}`);
+  for(const name of totals.slice(0, 15)) io.out(`    + ${name}: ${info[name].total}`);
+  if(totals.length > 15) io.out(`    ... and ${totals.length - 15} more`);
+  if(unknown) io.out(`  not found on ${store}: ${unknown} (another store? --store uk, de, ...)`);
+  if(report.warnings.length){
+    io.out(`  needs a look (${report.warnings.length}):`);
+    for(const w of report.warnings.slice(0, 15)) io.out('    ! ' + w);
+  }
+
+  const {errors} = C.validate(books, info);
+  if(errors.length){
+    io.err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
+    return 1;
+  }
+  if(args.dryRun){
+    io.out('(dry run: nothing written)');
+    return 0;
+  }
+  if(report.filled.length){
+    dumpBooks(books, booksPath);
+    io.out(`wrote ${shown(booksPath, args.root)}`);
+  }
+  if(totals.length){
+    dumpSeriesInfo(info, infoPath);
+    io.out(`wrote ${shown(infoPath, args.root)}`);
+  }
+  return 0;
+}
+
 function cmdServe(args, io){
   const server = createServer(args.root, () => server.address().port);
   server.listen(args.port, '127.0.0.1', () => {
@@ -411,6 +500,8 @@ const COMMANDS = {
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the current format (e.g. old ids and ISBNs as editions)'},
+  'series': {run: cmdSeries, dryRun: true,
+    help: 'fill in missing series, numbers and released totals from Audible, by ASIN (--store us, uk, de, ...)'},
   'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt)'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},
 };
@@ -420,12 +511,12 @@ const USAGE = `usage: node catalog.js [--root DIR] [--data-dir DIR] <command> [o
 commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
-  --dry-run          (imports, sync-export) show what would change without writing
+  --dry-run          (imports, series, sync-export) show what would change without writing
   --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;
 
 function parseArgs(argv){
-  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, sample: false, port: 8000};
+  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, sample: false, port: 8000, store: null};
   const rest = [];
   for(let i = 0; i < argv.length; i++){
     const a = argv[i];
@@ -438,6 +529,7 @@ function parseArgs(argv){
     else if(a === '--dry-run') args.dryRun = true;
     else if(a === '--sample') args.sample = true;
     else if(a === '--port') args.port = Number(value());
+    else if(a === '--store') args.store = value().toLowerCase();
     else if(a === '-h' || a === '--help') args.help = true;
     else if(a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else rest.push(a);
@@ -451,10 +543,13 @@ function parseArgs(argv){
   if(args.dryRun && !cmd.dryRun) throw new Error(`${args.command} has no --dry-run`);
   if(args.sample && args.command !== 'init') throw new Error('--sample only goes with init');
   if(!Number.isInteger(args.port) || args.port <= 0) throw new Error('--port needs a port number');
+  if(args.store !== null && args.command !== 'series') throw new Error('--store only goes with series');
+  args.store = args.store || 'us';
+  if(!C.AUDIBLE_STORES[args.store]) throw new Error(`--store must be one of ${Object.keys(C.AUDIBLE_STORES).join(', ')}`);
   return args;
 }
 
-/** Run a command; returns the exit code (null while `serve` keeps running). */
+/** Run a command; returns the exit code (a promise of it for `series`, null while `serve` keeps running). */
 function main(argv, io = {out: s => console.log(s), err: s => console.error(s)}){
   let args;
   try{
@@ -470,21 +565,24 @@ function main(argv, io = {out: s => console.log(s), err: s => console.error(s)})
   try{
     return COMMANDS[args.command].run(args, io);
   }catch(exc){
-    if(exc.code === 'ENOENT'){
-      io.err(`error: no such file: ${exc.path}`);
-      return 1;
-    }
-    if(exc instanceof SyntaxError){
-      io.err(`error: invalid JSON: ${exc.message}`);
-      return 1;
-    }
-    throw exc;
+    return failed(exc, io);
   }
+}
+
+function failed(exc, io){
+  if(exc.code === 'ENOENT'){
+    io.err(`error: no such file: ${exc.path}`);
+    return 1;
+  }
+  if(exc instanceof SyntaxError){
+    io.err(`error: invalid JSON: ${exc.message}`);
+    return 1;
+  }
+  throw exc;
 }
 
 module.exports = {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir, createServer};
 
 if(require.main === module){
-  const code = main(process.argv.slice(2));
-  if(code !== null) process.exitCode = code;
+  Promise.resolve(main(process.argv.slice(2))).then(code => { if(code !== null) process.exitCode = code; });
 }

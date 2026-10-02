@@ -162,6 +162,17 @@ the series overview and the series itself list the numbers you don't own (for ex
 doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
+**Fill in series from Audible**: `node catalog.js series --dry-run` looks up your books on Audible by
+their ASIN and shows what it would fill in; run it without `--dry-run` to save it. A book with no series
+gets Audible's series and number (spelled the way your other books spell that series), a book with a
+series but no number gets the number, and a series with no release info gets the number of books Audible
+has out as its total, marked `ongoing` with a note, because Audible can't tell whether a series is finished:
+check it and change it to `complete` in the series form. Nothing you have is ever changed. A box set's ASIN
+gives its titles the series but not a number (the number would be the set's). Books without an ASIN (only
+from Goodreads) are not looked up. It asks audible.com; `--store uk` (or `de`, `fr`, `ca`, `au`, ...)
+asks another store, for books the first one doesn't know. It needs the internet and uses Audible's own
+catalogue API, which needs no account but isn't an official public API, so it could stop working.
+
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
 the import exclusion list, `data/excluded.txt`, as the ASINs and Goodreads ids (`Goodreads 4242`) of its
 editions, and as `Title | Author`, so no later Audible or Goodreads import brings it back. With

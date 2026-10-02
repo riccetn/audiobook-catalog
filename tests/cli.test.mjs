@@ -308,6 +308,67 @@ test('sync-export of an older backup (a plain list of books) leaves series info 
   assert.equal(fs.readFileSync(infoPath, 'utf8'), before);
 });
 
+test('series fills in series, numbers and released totals from Audible, and --dry-run writes nothing', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([
+    { t: 'Loose', a: 'Ann Vale', e: [{ id: 'B1' }] },
+    { t: 'Gull 2', a: 'Ann Vale', s: 'Gull Isle', sn: '2', e: [{ id: 'B2' }] },
+    { t: 'Unknown', a: 'Ann Vale', e: [{ id: 'B9' }] },
+  ]));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
+  const answers = {
+    B1: { product: { series: [{ title: 'The Gull Isle Series', sequence: '1', asin: 'SG' }] } },
+    B2: { product: { series: [{ title: 'Gull Isle', sequence: '2', asin: 'SG' }] } },
+    SG: { product: { relationships: ['1', '2', '3'].map(sequence => ({ relationship_to_product: 'child', sequence })) } },
+  };
+  const asked = [];
+  const fetch = async url => {
+    asked.push(url);
+    const asin = /products\/([^?]+)/.exec(url)[1];
+    const body = answers[asin];
+    return { ok: !!body, status: body ? 200 : 404, json: async () => body };
+  };
+  const run = async (...argv) => {
+    const out = [], err = [];
+    const code = await main(['--root', tmp, ...argv], { out: s => out.push(s), err: s => err.push(s), fetch, pause: async () => {} });
+    return { code, out: out.join('\n'), err: err.join('\n') };
+  };
+
+  const before = fs.readFileSync(path.join(dataDir, 'books.json'), 'utf8');
+  const dry = await run('series', '--store', 'uk', '--dry-run');
+  assert.equal(dry.code, 0, dry.err);
+  assert.match(dry.out, /series or number filled in: 1/);
+  assert.match(dry.out, /\+ Loose - Ann Vale {2}\[Gull Isle #1\]/);
+  assert.match(dry.out, /\+ Gull Isle: 3/);
+  assert.match(dry.out, /not found on audible.co.uk: 1/);
+  assert.ok(asked.every(u => u.startsWith('https://api.audible.co.uk/')));
+  assert.equal(fs.readFileSync(path.join(dataDir, 'books.json'), 'utf8'), before);
+
+  assert.equal((await run('series')).code, 0);
+  assert.deepEqual(loadBooks(path.join(dataDir, 'books.json')).map(b => [b.t, b.s, b.sn]),
+    [['Loose', 'Gull Isle', '1'], ['Gull 2', 'Gull Isle', '2'], ['Unknown', undefined, undefined]]);
+  const info = JSON.parse(fs.readFileSync(path.join(dataDir, 'series-info.json'), 'utf8'));
+  assert.equal(info['Gull Isle'].total, 3);
+  assert.equal(info['Gull Isle'].status, 'ongoing');
+});
+
+test('series writes nothing when Audible cannot be reached, and refuses the demo data', async t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('series').code, 2);
+  assert.match(run('series', '--store', 'xx').err, /--store must be one of/);
+  assert.match(run('validate', '--store', 'uk').err, /--store only goes with series/);
+  assert.equal(run('init', '--sample').code, 0);
+  const books = path.join(tmp, 'data', 'books.json');
+  const before = fs.readFileSync(books, 'utf8');
+  const err = [];
+  const code = await main(['--root', tmp, 'series'], { out: () => {}, err: s => err.push(s),
+    fetch: async () => { throw new Error('offline'); }, pause: async () => {} });
+  assert.equal(code, 1);
+  assert.match(err.join('\n'), /could not reach audible.com \(offline\); nothing written/);
+  assert.equal(fs.readFileSync(books, 'utf8'), before);
+});
+
 test('--data-dir points anywhere', t => {
   const { tmp, run } = sandbox(t);
   const elsewhere = path.join(tmp, 'elsewhere');
