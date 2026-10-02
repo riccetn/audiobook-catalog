@@ -929,16 +929,18 @@ function sharedAsins(books){
 
 /**
  * The ASINs to look up for seriesFromAudible(): every book with no series or no number, and one
- * book of each series that has no release info yet (to learn the series' own ASIN).
+ * book of each series that has no release info yet (to learn the series' own ASIN). `only` (books
+ * of `books`, e.g. the ones an import just added) limits that to those books and their series.
  */
-function seriesLookups(books, info){
+function seriesLookups(books, info, only){
   const asins = new Set(), covered = new Set();
   const own = b => bookEditions(b).map(ed => ed.id).filter(Boolean);
-  for(const b of books){
+  const wanted = only || books;
+  for(const b of wanted){
     if(!b.s || !b.sn) own(b).forEach(id => asins.add(id));
   }
   const shared = sharedAsins(books);
-  for(const b of books){
+  for(const b of wanted){
     if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s)) || covered.has(b.s)) continue;
     const id = own(b).find(x => !shared.has(x)) || own(b)[0];
     if(id){ asins.add(id); covered.add(b.s); }
@@ -985,6 +987,23 @@ function seriesFromAudible(books, found){
     }
   }
   return report;
+}
+
+/**
+ * Give each series in `series` (seriesFromAudible()'s Map of name -> Audible series ASIN) that has no
+ * entry in `info` a released total from `totals` (Map of series ASIN -> audibleSeriesTotal()). Audible
+ * only lists what is out, so the entry says "ongoing" and asks whether the series is finished.
+ * Changes `info` in place; returns the names given a total.
+ */
+function addSeriesTotals(info, series, totals, store, today){
+  const added = [];
+  for(const [name, asin] of series){
+    const total = totals.get(asin);
+    if(Object.prototype.hasOwnProperty.call(info, name) || !total) continue;
+    info[name] = {total, status: 'ongoing', note: `${total} released on ${AUDIBLE_STORES[store]} as of ${today}; is it complete?`};
+    added.push(name);
+  }
+  return added;
 }
 
 // ------------------------------------------------------------------ Goodreads
@@ -1344,7 +1363,7 @@ return {
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible,
+  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible, addSeriesTotals,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
   editionsJoinable, joinEditions, editionsKey, splitEditions,
 };
