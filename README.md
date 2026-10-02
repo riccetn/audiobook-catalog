@@ -40,7 +40,7 @@ data/
   excluded.txt        books your imports must never re-add (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
 index.html, app.js    the catalogue: browse by series or all books, edit books and series info
-import.html, import.js    Audible and Goodreads CSV imports, backups (Export / Restore)
+import.html, import.js    Audible and Goodreads CSV imports, backups (Export / Restore / Merge)
 duplicates.html, duplicates.js    find and merge books entered twice
 store.js              shared by the pages: loads data/books.json (or data/sample/), keeps and saves edits
 styles.css
@@ -148,6 +148,31 @@ An export holds the books, the series info and the list of books imports must sk
 Backups from before series info was exported (a plain list of books), or before the exclusions were,
 still work and leave those files as they are. The app's **Restore** reads all of them the same way,
 adding the backup's exclusions to the ones it already has.
+
+**Merge a backup from another device**: `sync-export` and **Restore** replace the catalogue with the
+backup, which loses any edits made here since. When both sides have changed (books added, read or
+removed on the phone *and* on the PC), merge instead: **Merge** on the *Import & export* page (it
+previews the result first), or on the PC:
+
+```sh
+node catalog.js merge-backup ~/Downloads/audiobook-catalog-backup-2026-01-01.json --dry-run
+node catalog.js merge-backup ~/Downloads/audiobook-catalog-backup-2026-01-01.json
+```
+
+A backup has no record of what the two catalogues last had in common, so the merge works from what each
+side has. Books are matched by title and author first, then by series and number, then by ASIN or
+Goodreads id (so each title of a box set finds its own book).
+- A book only the backup has is added, unless it is excluded here (you removed it here).
+- A book only this side has stays, unless the backup newly excludes it (it was removed there, which
+  always adds it to the exclusions); then it is removed here too.
+- A book both have keeps all the genres, dates read and editions of both.
+- Where the title, author or series differ, and for series info both have but differently, this side's
+  version is kept; choose *the backup's version* in the preview, or `--prefer-backup`, to take
+  the backup's instead. The preview and the command list each such book.
+- The backup's excluded books are added to `data/excluded.txt`.
+
+A book renamed on one side that has no ASIN or Goodreads id, and no series number, can't be matched,
+so both names end up in the catalogue; the *Duplicates* page finds them for you to merge.
 You can also edit `data/books.json` by hand; `make format` rewrites it the way the tools write it.
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
@@ -304,8 +329,9 @@ Then, on the phone:
    browser storage (`audiobook-catalog-device`), loads instead of the demo from then on, and every edit
    and CSV import on the phone is saved there. Restoring another backup replaces it.
 
-The phone's catalogue does not sync with `data/` yet: to bring phone edits back to the PC, Export on the
-phone and run `node catalog.js sync-export` on the PC. A page served with its own `data/books.json`
+The phone's catalogue does not sync with `data/` by itself. To bring phone edits to the PC, Export on
+the phone and run `node catalog.js merge-backup` with that file on the PC (or `sync-export` if nothing
+changed on the PC meanwhile). The other way, Export on the PC and **Merge** it in the phone app. A page served with its own `data/books.json`
 (`make serve`) always uses that and ignores any device catalogue.
 
 The service worker (`sw.js`) fetches everything from the network first and only falls back to its

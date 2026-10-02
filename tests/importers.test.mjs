@@ -641,3 +641,85 @@ test('narrators: a narrator on the book moves onto its editions', () => {
   C.merge(existing, [book('One', 'Author', ed({ gr: '7', n: 'A guess' }))]);
   assert.deepEqual(existing[0].e, [{ id: 'B1', gr: '7', n: 'Mine' }]);
 });
+
+// ------------------------------------------------------------ merge a backup
+test('merging a backup from another device keeps what each side added, edited and removed', () => {
+  const mine = [
+    book('Both Read', 'Ann Vale', { r: ['2024-01-02'], g: ['Mystery'], ...ed({ id: 'B1' }) }),
+    book('Only Here', 'Ann Vale'),
+    book('Removed There', 'Ann Vale', ed({ id: 'BGONE' })),
+    book('Same Both', 'Ann Vale', ed({ n: 'Ivo Brandt' })),
+  ];
+  const before = JSON.stringify(mine);
+  const backup = {
+    books: [
+      book('Both Read', 'Ann Vale', { r: ['2025-06-01'], g: ['Cozy'], ...ed({ id: 'B1', n: 'Dana Whitlock' }) }),
+      book('Only There', 'Ann Vale', { s: 'Tide Saga', sn: '2' }),
+      book('Removed Here', 'Ann Vale'),
+      book('Same Both', 'Ann Vale', ed({ n: 'Ivo Brandt' })),
+    ],
+    seriesInfo: { 'Tide Saga': { total: '3', status: 'ongoing' } },
+    excluded: ['BGONE', 'Removed There | Ann Vale'],
+  };
+  const exclusions = C.parseExclusions('Removed Here | Ann Vale\n');
+  const m = C.mergeBackup(mine, {}, exclusions, backup);
+  assert.deepEqual(m.books, [
+    { t: 'Both Read', a: 'Ann Vale', g: ['Mystery', 'Cozy'], r: ['2024-01-02', '2025-06-01'], e: [{ id: 'B1', n: 'Dana Whitlock' }] },
+    book('Only Here', 'Ann Vale'),
+    book('Same Both', 'Ann Vale', ed({ n: 'Ivo Brandt' })),
+    book('Only There', 'Ann Vale', { s: 'Tide Saga', sn: '2' }),
+  ]);
+  assert.deepEqual(m.added.map(b => b.t), ['Only There']);
+  assert.deepEqual(m.updated.map(b => b.t), ['Both Read']);
+  assert.deepEqual(m.removed.map(b => b.t), ['Removed There']);
+  assert.deepEqual(m.skipped.map(b => b.t), ['Removed Here']);
+  assert.deepEqual(m.excluded, ['BGONE', 'Removed There | Ann Vale']);
+  assert.deepEqual(m.seriesInfo, backup.seriesInfo);
+  assert.deepEqual(m.infoAdded, ['Tide Saga']);
+  assert.deepEqual(m.conflicts, []);
+  assert.equal(JSON.stringify(mine), before, 'the catalogue it was given is unchanged');
+  assert.equal(exclusions.size, 1);
+});
+
+test('merging a backup: where both changed a title or series info, ours wins unless the backup is preferred', () => {
+  const mine = [book('Lantern Road', 'Ann Vale', { s: 'Tide Saga', sn: '1', ...ed({ id: 'B1' }) })];
+  const theirs = book('The Lantern Road', 'Ann Vale', { s: 'Tide Saga', sn: '1', ...ed({ id: 'B1' }) });
+  const info = { 'Tide Saga': { total: '3', status: 'ongoing' } };
+  const backup = { books: [theirs], seriesInfo: { 'Tide Saga': { total: '4', status: 'complete' } }, excluded: [] };
+
+  const keep = C.mergeBackup(mine, info, null, backup);
+  assert.equal(keep.books[0].t, 'Lantern Road');
+  assert.deepEqual(keep.updated, []);
+  assert.equal(keep.conflicts.length, 1);
+  assert.deepEqual(keep.seriesInfo, info);
+  assert.deepEqual(keep.infoKept, ['Tide Saga']);
+
+  const take = C.mergeBackup(mine, info, null, backup, 'backup');
+  assert.equal(take.books[0].t, 'The Lantern Road');
+  assert.deepEqual(take.updated.map(b => b.t), ['The Lantern Road']);
+  assert.deepEqual(take.seriesInfo, backup.seriesInfo);
+  assert.deepEqual(take.infoChanged, ['Tide Saga']);
+});
+
+test('merging a backup: a book the backup still has is not removed, and the same catalogue merges to itself', () => {
+  const mine = [book('Back Again', 'Ann Vale', { r: ['2025-01-01', '2023-05-05'] })];
+  // removed on the other device, then added there again
+  const backup = { books: [book('Back Again', 'Ann Vale')], seriesInfo: {}, excluded: ['Back Again | Ann Vale'] };
+  const m = C.mergeBackup(mine, {}, null, backup);
+  assert.deepEqual(m.books, mine);
+  assert.deepEqual(m.removed, []);
+  // dates read in another order are not a change
+  const same = C.mergeBackup(mine, {}, null, { books: [book('Back Again', 'Ann Vale', { r: ['2023-05-05', '2025-01-01'] })] });
+  assert.deepEqual([same.added, same.updated, same.removed, same.conflicts], [[], [], [], []]);
+});
+
+test('merging a backup: the titles of a box set, which share an edition, each find their own book', () => {
+  const box = { id: 'BBOX', n: 'Dana Whitlock' };
+  const mine = [book('First Tide', 'Ann Vale', { s: 'Tide Saga', sn: '1', ...ed(box) }),
+    book('Second Tide', 'Ann Vale', { s: 'Tide Saga', sn: '2', ...ed(box) })];
+  const backup = { books: [book('Second Tide', 'Ann Vale', { s: 'Tide Saga', sn: '2', r: ['2025-02-02'], ...ed(box) }),
+    book('First Tide', 'Ann Vale', { s: 'Tide Saga', sn: '1', ...ed(box) })] };
+  const m = C.mergeBackup(mine, {}, null, backup);
+  assert.deepEqual(m.conflicts, []);
+  assert.deepEqual(m.books.map(b => [b.t, b.r]), [['First Tide', undefined], ['Second Tide', ['2025-02-02']]]);
+});

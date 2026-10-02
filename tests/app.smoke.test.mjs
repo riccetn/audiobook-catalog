@@ -971,3 +971,32 @@ test('the app can be installed: the manifest\'s icons and everything the service
   }
   assert.ok(!cached.some(f => f.startsWith('data/') && !f.startsWith('data/sample/')), 'never your own data');
 });
+
+test('Merge previews a backup from another device and keeps both sides\' changes', async () => {
+  const mine = JSON.stringify([{ t: 'Here', a: 'Ann Vale' }, { t: 'Renamed', a: 'Ann Vale', e: [{ id: 'B1' }] }]);
+  const backup = { books: [{ t: 'Here', a: 'Ann Vale', r: ['2025-06-01'] }, { t: 'Renamed Twice', a: 'Ann Vale', e: [{ id: 'B1' }] },
+    { t: 'New There', a: 'Ann Vale' }], seriesInfo: {}, excluded: ['BGONE9'] };
+  const { els, get, storage } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
+  assert.equal(els.importPreviewTitle.textContent, 'Merge a backup');
+  assert.ok(els.mergePrefer.classList.contains('show'));
+  assert.match(els.importPreviewBody.innerHTML, /New from the backup: 1<\/p><ul><li>New There &mdash; Ann Vale/);
+  assert.match(els.importPreviewBody.innerHTML, /keeping this catalogue's: 1<\/p><ul><li>Renamed &mdash; Ann Vale \/ backup: Renamed Twice/);
+  assert.equal(get('DATA.length'), 2, 'nothing changes before it is confirmed');
+
+  // preferring the backup's version redraws the preview, and confirming applies it
+  els.mergePreferSelect.value = 'backup';
+  els.mergePreferSelect.listeners.change[0]();
+  assert.match(els.importPreviewBody.innerHTML, /keeping the backup's: 1/);
+  els.importConfirm.listeners.click[0]();
+  assert.deepEqual(get('DATA'), backup.books);
+  assert.deepEqual(get('NEW_EXCLUDED'), ['BGONE9']);
+  assert.match(els.ioStatus.textContent, /^Merged: 1 added, 2 updated, 0 removed\./);
+  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).data, backup.books);
+  assert.ok(!els.importPreview.classList.contains('open'));
+
+  // merging the same backup again has nothing to do
+  els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
+  assert.match(els.importPreviewBody.innerHTML, /Nothing to merge/);
+  assert.equal(els.importConfirm.style.display, 'none');
+});

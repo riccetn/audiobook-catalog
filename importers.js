@@ -1231,6 +1231,95 @@ function mergeBooks(recs, pick){
   return out;
 }
 
+// A book as text that ignores the order of its keys, editions' keys and dates read, for "did it change?".
+function bookText(rec){
+  const pairs = (obj, keys) => keys.filter(k => obj[k] !== undefined).map(k => [k, obj[k]]);
+  return JSON.stringify(BOOK_KEYS.filter(k => rec[k] !== undefined).map(k =>
+    k === 'e' && Array.isArray(rec.e) ? [k, rec.e.map(ed => isObject(ed) ? pairs(ed, EDITION_KEYS) : ed)]
+      : k === 'r' && Array.isArray(rec.r) ? [k, [...rec.r].sort()] : [k, rec[k]]));
+}
+
+/**
+ * Merge a backup made on another device into this catalogue, when both have changed since they were
+ * last the same (there is no common ancestor to compare with, so this works from what each side has):
+ * - a book only the backup has is added, unless this catalogue excludes it (it was removed here);
+ * - a book only this catalogue has stays, unless the backup newly excludes it (it was removed there);
+ * - a book both have (found as imports find books) keeps the union of their genres, dates read and
+ *   editions; where title, author or series differ, `prefer` ('mine', the default, or 'backup') wins,
+ *   and the book is listed in `conflicts`;
+ * - series info both have keeps the preferred side's; the backup's excluded books are added to ours.
+ * Changes nothing it is given. Returns {books, seriesInfo, excluded (entries new to `exclusions`),
+ * added, updated, removed, skipped, conflicts: [{mine, theirs}], infoAdded, infoChanged, infoKept}.
+ */
+function mergeBackup(books, seriesInfo, exclusions, backup, prefer){
+  const takeBackup = prefer === 'backup';
+  const copy = rec => JSON.parse(JSON.stringify(rec));
+  const out = books.map(copy);
+  const result = {added: [], updated: [], removed: [], skipped: [], conflicts: [], infoAdded: [], infoChanged: [], infoKept: []};
+
+  const ours = parseExclusions((exclusions ? exclusions.entries : []).join('\n'));
+  const theirsOnly = new Exclusions();
+  result.excluded = (backup.excluded || []).map(e => ours.add(e)).filter(Boolean);
+  result.excluded.forEach(e => theirsOnly.add(e));
+
+  // Each key leads to every book that has it: a box set's titles share their edition's ASIN.
+  const index = new Map();
+  const indexBook = i => bookKeys(out[i]).forEach(k => { if(!index.has(k)) index.set(k, []); if(!index.get(k).includes(i)) index.get(k).push(i); });
+  out.forEach((rec, i) => indexBook(i));
+  const matched = new Set();
+  const label = rec => JSON.stringify([rec.t, rec.a, rec.s || '', rec.sn || '']);
+  // A book of the backup is one of ours by its title first, then its place in a series, then its ids
+  // (which a box set's titles share), and each of ours matches one book of the backup at most.
+  const findOurs = rec => {
+    const keys = lookupKeys(rec);
+    const rank = k => k.startsWith('["title"') ? 0 : k.startsWith('["series"') ? 1 : 2;
+    for(const k of keys.slice().sort((x, y) => rank(x) - rank(y))){
+      const i = (index.get(k) || []).find(x => !matched.has(x));
+      if(i !== undefined) return i;
+    }
+  };
+
+  for(const theirs of backup.books){
+    const i = findOurs(theirs);
+    if(i === undefined){
+      if(exclusions && exclusions.covers(theirs)){ result.skipped.push(theirs); continue; }
+      out.push(copy(theirs));
+      result.added.push(out[out.length - 1]);
+      indexBook(out.length - 1);
+      continue;
+    }
+    matched.add(i);
+    const mine = out[i];
+    if(label(mine) !== label(theirs)) result.conflicts.push({mine: copy(mine), theirs});
+    const merged = mergeBooks(takeBackup ? [theirs, mine] : [mine, theirs]);
+    // an edition without ids that both sides have is still one edition
+    if(merged.e){
+      const seen = new Set();
+      merged.e = merged.e.filter(x => { const k = JSON.stringify(EDITION_KEYS.map(f => x[f])); return !seen.has(k) && seen.add(k); });
+    }
+    if(bookText(merged) === bookText(mine)) continue;
+    out[i] = merged;
+    if(!result.updated.includes(merged)) result.updated.push(merged);
+    indexBook(i);
+  }
+
+  const kept = out.filter((rec, i) => {
+    const gone = i < books.length && !matched.has(i) && theirsOnly.covers(rec);
+    if(gone) result.removed.push(rec);
+    return !gone;
+  });
+
+  const info = {...(seriesInfo || {})};
+  for(const [name, entry] of Object.entries(backup.seriesInfo || {})){
+    if(!(name in info)){ info[name] = entry; result.infoAdded.push(name); }
+    else if(JSON.stringify(info[name]) !== JSON.stringify(entry)){
+      if(takeBackup){ info[name] = entry; result.infoChanged.push(name); }
+      else result.infoKept.push(name);
+    }
+  }
+  return {...result, books: kept, seriesInfo: info};
+}
+
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   parseIsbn, parseIsbns, fixIsbns, bookIsbns, rowIsbns,
@@ -1239,7 +1328,7 @@ return {
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
-  editionsJoinable, joinEditions, editionsKey, splitEditions,
+  editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup,
 };
 })();
 
