@@ -311,6 +311,25 @@ test('sync-export adds the backup\'s excluded books to excluded.txt', t => {
   assert.match(run('import-audible', csv).out, /skipped \(listed in data\/excluded.txt\): 1/);
 });
 
+test('sync-export adds the backup\'s "Not duplicates" marks to not-duplicates.txt', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const notDupPath = path.join(tmp, 'data', 'not-duplicates.txt');
+  const exported = path.join(tmp, 'export.json');
+  const marks = ['["a","b","",""] ["c","b","",""]', '["editions","gr 7","id B1"]'];
+  fs.writeFileSync(exported, JSON.stringify({ books: [], seriesInfo: {}, notDuplicates: marks }));
+
+  const dry = run('sync-export', exported, '--dry-run');
+  assert.match(dry.out, /marked not duplicates: 2 new/);
+  assert.ok(!fs.existsSync(notDupPath));
+  assert.equal(run('sync-export', exported).code, 0);
+  assert.deepEqual(CatalogImport.parseNotDuplicates(fs.readFileSync(notDupPath, 'utf8')), marks);
+  assert.match(run('sync-export', exported).out, /marked not duplicates: 0 new/);
+  // a backup from before the marks were exported leaves the file alone
+  fs.writeFileSync(exported, JSON.stringify({ books: [], seriesInfo: {} }));
+  assert.doesNotMatch(run('sync-export', exported).out, /not duplicates/);
+});
+
 test('sync-export of an older backup (a plain list of books) leaves series info alone', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init', '--sample').code, 0);
@@ -543,6 +562,17 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
   assert.equal(fs.readFileSync(excludedPath, 'utf8'), excludedText);
   assert.equal((await put({ books: saved.books, seriesInfo, excluded: 'BGONE', base: saved.base, infoBase: saved.infoBase })).status, 400);
 
+  // so are the pairs marked "Not duplicates" on the duplicates page, to not-duplicates.txt
+  const notDupPath = path.join(tmp, 'data', 'not-duplicates.txt');
+  const marks = ['["a","b","",""] ["c","b","",""]', '["editions","gr 7","id B1"]'];
+  assert.equal((await put({ books: saved.books, seriesInfo, notDuplicates: marks, base: saved.base, infoBase: saved.infoBase })).status, 200);
+  const notDupText = fs.readFileSync(notDupPath, 'utf8');
+  assert.match(notDupText, /^# Books the Duplicates page was told are different books/);
+  assert.deepEqual(CatalogImport.parseNotDuplicates(notDupText), marks);
+  assert.equal((await put({ books: saved.books, seriesInfo, notDuplicates: [marks[1]], base: saved.base, infoBase: saved.infoBase })).status, 200);
+  assert.equal(fs.readFileSync(notDupPath, 'utf8'), notDupText);
+  assert.equal((await put({ books: saved.books, seriesInfo, notDuplicates: 'x', base: saved.base, infoBase: saved.infoBase })).status, 400);
+
   // a save based on an older version of the files is refused, and the files stay as they are
   const stale = await put({ books: [], seriesInfo: {}, base, infoBase });
   assert.equal(stale.status, 409);
@@ -583,15 +613,18 @@ test('merge-backup merges a backup from another device into data/', t => {
   const backup = path.join(tmp, 'phone.json');
   fs.writeFileSync(backup, JSON.stringify({
     books: [{ t: 'Here', a: 'Ann Vale', r: ['2025-06-01'] }, { t: 'Renamed Twice', a: 'Ann Vale', e: [{ id: 'B1' }] }, { t: 'New There', a: 'Ann Vale' }],
-    seriesInfo: {}, excluded: ['Gone There | Ann Vale'],
+    seriesInfo: {}, excluded: ['Gone There | Ann Vale'], notDuplicates: ['["editions","id B1"]', '["editions","id B7"]'],
   }));
+  fs.writeFileSync(path.join(dir, 'not-duplicates.txt'), '["editions","id B1"]\n');
   const dry = run('merge-backup', backup, '--dry-run');
   assert.equal(dry.code, 0, dry.err);
   assert.match(dry.out, /new from the backup: 1\n {4}\+ New There - Ann Vale/);
   assert.match(dry.out, /removed \(removed on the other device\): 1\n {4}- Gone There - Ann Vale/);
   assert.match(dry.out, /title, author or series differ, kept ours: 1/);
+  assert.match(dry.out, /marked not duplicates: 1 new/);
   assert.match(dry.out, /dry run/);
   assert.equal(loadBooks(path.join(dir, 'books.json')).length, 3);
+  assert.equal(fs.readFileSync(path.join(dir, 'not-duplicates.txt'), 'utf8'), '["editions","id B1"]\n');
 
   const { code, out, err } = run('merge-backup', backup, '--prefer-backup');
   assert.equal(code, 0, err);
@@ -600,6 +633,7 @@ test('merge-backup merges a backup from another device into data/', t => {
     { t: 'Here', a: 'Ann Vale', r: ['2025-06-01'] }, { t: 'Renamed Twice', a: 'Ann Vale', e: [{ id: 'B1' }] }, { t: 'New There', a: 'Ann Vale' },
   ]);
   assert.match(fs.readFileSync(path.join(dir, 'excluded.txt'), 'utf8'), /^Gone There \| Ann Vale$/m);
+  assert.equal(fs.readFileSync(path.join(dir, 'not-duplicates.txt'), 'utf8'), '["editions","id B1"]\n["editions","id B7"]\n');
   assert.match(run('validate', '--prefer-backup').err, /--prefer-backup only goes with merge-backup/);
 });
 

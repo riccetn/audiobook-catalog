@@ -58,7 +58,9 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   Stale edits are set aside under `audiobook-catalog-data.backup`; `persist` refuses when another
   tab wrote localStorage since this page last did. Each page script defines `refreshPage()` (redraw
   from `DATA`, called after a save to disk tidied the books) and `const READY = startPage(...)`.
-  Pairs marked "Not duplicates" live only in `audiobook-catalog-not-duplicates`.
+  Pairs marked "Not duplicates" (and editions marked "Keep separate") are kept in localStorage
+  `audiobook-catalog-not-duplicates` and, under `make serve`, appended to `data/not-duplicates.txt`
+  with the next save (`notDuplicates` in the save body and in backups).
   With no `data/books.json` served (the demo, e.g. the installed phone app), a Restore makes the
   backup this device's own catalogue (`keepOnDevice`, localStorage `audiobook-catalog-device`), which
   then loads instead of the demo and takes every save (`ON_DEVICE`).
@@ -89,7 +91,8 @@ identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn`/`n
 migrated on load by `fixBooks`. A missing `r` means the read date is unknown, not unread. `series-info.json` maps a series
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`.
 `data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` lines that imports must never re-add; code only
-ever appends to it.
+ever appends to it. `data/not-duplicates.txt` (pairs marked "Not duplicates" on the
+Duplicates page) is append-only too.
 
 Invariants the code relies on:
 - Imports only add books, never overwrite. Matching order: any edition's `id`, `gr` or `hc`, then `hcb`, then first author + series + number
@@ -107,7 +110,7 @@ Invariants the code relies on:
 ## Privacy (hard rule)
 
 The repo is public; the user's library is not.
-- Never commit `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/hardcover-token` or anything in
+- Never commit `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/not-duplicates.txt`, `data/hardcover-token` or anything in
   `data/raw/`. The token must never reach a page, a backup or a log. `tests/data.test.mjs` fails if they become tracked.
 - Only `data/sample/` is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.

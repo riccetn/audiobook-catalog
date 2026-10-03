@@ -737,6 +737,17 @@ test('narrators: a narrator on the book moves onto its editions', () => {
   assert.deepEqual(existing[0].e, [{ id: 'B1', gr: '7', n: 'Mine' }]);
 });
 
+test('backups carry the "Not duplicates" marks, and not-duplicates.txt lists them one per line', () => {
+  const marks = ['["a","b","",""] ["c","b","",""]'];
+  assert.deepEqual(C.readBackup({ books: [], notDuplicates: marks }).notDuplicates, marks);
+  assert.equal(C.readBackup({ books: [] }).notDuplicates, null);
+  assert.equal(C.readBackup([]).notDuplicates, null);
+  assert.throws(() => C.readBackup({ books: [], notDuplicates: [1] }), /notDuplicates is not a list of strings/);
+  assert.deepEqual(C.parseNotDuplicates('# header\n\n' + marks[0] + '\r\n  ' + marks[0] + '  \n["editions","id B1"]'),
+    [marks[0], '["editions","id B1"]']);
+  assert.deepEqual(C.parseNotDuplicates(''), []);
+});
+
 // ------------------------------------------------------------ merge a backup
 test('merging a backup from another device keeps what each side added, edited and removed', () => {
   const mine = [
@@ -774,6 +785,16 @@ test('merging a backup from another device keeps what each side added, edited an
   assert.deepEqual(m.conflicts, []);
   assert.equal(JSON.stringify(mine), before, 'the catalogue it was given is unchanged');
   assert.equal(exclusions.size, 1);
+  assert.deepEqual(m.notDuplicates, [], 'a backup without marks adds none');
+});
+
+test('merging a backup adds the backup\'s "Not duplicates" marks to ours', () => {
+  const marks = ['["editions","id B1"]', '["editions","id B2"]'];
+  const backup = { books: [], seriesInfo: {}, excluded: [], notDuplicates: [marks[1], marks[0], marks[1]] };
+  const ours = new Set([marks[0]]);
+  assert.deepEqual(C.mergeBackup([], {}, null, backup, 'mine', ours).notDuplicates, [marks[1]]);
+  assert.deepEqual([...ours], [marks[0]], 'our marks are unchanged');
+  assert.deepEqual(C.mergeBackup([], {}, null, backup).notDuplicates, [marks[1], marks[0]]);
 });
 
 test('merging a backup: where both changed a title or series info, ours wins unless the backup is preferred', () => {

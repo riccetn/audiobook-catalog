@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -562,7 +563,7 @@ test('Export includes series info, and Import brings it back', async () => {
   first.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
   first.els.exportBtn.listeners.click[0]();
   const backup = JSON.parse(blobs[0]);
-  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), excluded: [] });
+  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), excluded: [], notDuplicates: [] });
 
   // into a page that has no series info: it comes back, and survives a reload
   const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
@@ -1078,16 +1079,63 @@ test('the app can be installed: the manifest\'s icons and everything the service
   assert.ok(!cached.some(f => f.startsWith('data/') && !f.startsWith('data/sample/')), 'never your own data');
 });
 
+test('"Not duplicates" marks come from data/not-duplicates.txt, are saved there by make serve, and travel in backups', async () => {
+  const books = [{ t: 'The Ledger', a: 'Priya Ostrander' }, { t: 'The Ledger, Book 1', a: 'Priya Ostrander' },
+    { t: 'Salt Road', a: 'Marisol Quenby' }, { t: 'Salt Road, Book 1', a: 'Marisol Quenby' }];
+  const pairKey = (x, y) => createRequire(import.meta.url)('../importers.js').duplicatePairKey(books[x], books[y]);
+  const saves = [];
+  const api = async init => {
+    if (!init.method) return { status: 200, body: { writable: true } };
+    const body = JSON.parse(init.body);
+    saves.push(body);
+    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i' + saves.length, books: body.books } };
+  };
+  const ledger = pairKey(0, 1);
+  const files = { 'data/books.json': JSON.stringify(books), 'data/not-duplicates.txt': '# header\n' + ledger + '\n' };
+  const { ctx, get, els } = await boot({ page: 'duplicates.html', files, api });
+  // the file's marks hide that pair; nothing to save yet
+  assert.deepEqual(get('DUP_GROUPS'), [[2, 3]]);
+  assert.equal(saves.length, 0);
+
+  // marking the other pair saves it, and only it, to the file
+  ctx.keepApart(0);
+  await settle();
+  assert.equal(saves.length, 1);
+  assert.deepEqual(saves[0].notDuplicates, [pairKey(2, 3)]);
+  assert.deepEqual(get('DUP_GROUPS'), []);
+  assert.equal(els.dupCount.textContent, '');
+
+  // Export carries every mark; Restore elsewhere brings them back
+  const imp = await boot({ page: 'import.html', files });
+  const blobs = [];
+  imp.ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
+  imp.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+  imp.els.exportBtn.listeners.click[0]();
+  assert.deepEqual(JSON.parse(blobs[0]).notDuplicates, [ledger]);
+  const backup = { books, seriesInfo: {}, notDuplicates: [ledger, pairKey(2, 3)] };
+  const other = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(books) } });
+  other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  const after = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(books) }, storage: other.storage });
+  assert.deepEqual(after.get('DUP_GROUPS'), []);
+
+  // marks made before they could be saved to the file are saved when the page loads under make serve
+  const early = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(books) }, storage: other.storage, api });
+  await settle();
+  assert.deepEqual(saves[saves.length - 1].notDuplicates, [ledger, pairKey(2, 3)]);
+  assert.equal(early.get('pendingNotDuplicates().length'), 0);
+});
+
 test('Merge previews a backup from another device and keeps both sides\' changes', async () => {
   const mine = JSON.stringify([{ t: 'Here', a: 'Ann Vale' }, { t: 'Renamed', a: 'Ann Vale', e: [{ id: 'B1' }] }]);
   const backup = { books: [{ t: 'Here', a: 'Ann Vale', r: ['2025-06-01'] }, { t: 'Renamed Twice', a: 'Ann Vale', e: [{ id: 'B1' }] },
-    { t: 'New There', a: 'Ann Vale' }], seriesInfo: {}, excluded: ['BGONE9'] };
+    { t: 'New There', a: 'Ann Vale' }], seriesInfo: {}, excluded: ['BGONE9'], notDuplicates: ['["editions","id B1"]'] };
   const { els, get, storage } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
   assert.equal(els.importPreviewTitle.textContent, 'Merge a backup');
   assert.ok(els.mergePrefer.classList.contains('show'));
   assert.match(els.importPreviewBody.innerHTML, /New from the backup: 1<\/p><ul><li>New There &mdash; Ann Vale/);
   assert.match(els.importPreviewBody.innerHTML, /keeping this catalogue's: 1<\/p><ul><li>Renamed &mdash; Ann Vale \/ backup: Renamed Twice/);
+  assert.match(els.importPreviewBody.innerHTML, /More books marked "Not duplicates": 1/);
   assert.equal(get('DATA.length'), 2, 'nothing changes before it is confirmed');
 
   // preferring the backup's version redraws the preview, and confirming applies it
@@ -1097,6 +1145,8 @@ test('Merge previews a backup from another device and keeps both sides\' changes
   els.importConfirm.listeners.click[0]();
   assert.deepEqual(get('DATA'), backup.books);
   assert.deepEqual(get('NEW_EXCLUDED'), ['BGONE9']);
+  assert.deepEqual(get('[...NOT_DUPLICATES]'), ['["editions","id B1"]']);
+  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-not-duplicates')), ['["editions","id B1"]']);
   assert.match(els.ioStatus.textContent, /^Merged: 1 added, 2 updated, 0 removed\./);
   assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).data, backup.books);
   assert.ok(!els.importPreview.classList.contains('open'));

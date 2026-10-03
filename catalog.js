@@ -61,6 +61,23 @@ function appendExclusions(file, lines){
   writeAtomic(file, text + lines.map(l => l + '\n').join(''));
 }
 
+/**
+ * Entries of `entries` that data/not-duplicates.txt does not have yet. Like data/excluded.txt, the
+ * file is only ever added to.
+ */
+function newNotDuplicates(file, entries){
+  const have = new Set(fs.existsSync(file) ? C.parseNotDuplicates(readText(file)) : []);
+  return C.parseNotDuplicates((entries || []).join('\n')).filter(e => !have.has(e));
+}
+
+/** Append entries to data/not-duplicates.txt, creating it (with its explanatory header) if needed. */
+function appendNotDuplicates(file, lines){
+  if(!lines.length) return;
+  let text = fs.existsSync(file) ? readText(file) : NOT_DUPLICATES_HEADER;
+  if(text && !text.endsWith('\n')) text += '\n';
+  writeAtomic(file, text + lines.map(l => l + '\n').join(''));
+}
+
 // ---------------------------------------------------------------------- commands
 const DEMO_NOTE = 'note: no data/books.json found, so this is the bundled demo data (data/sample). ' +
   'Run `node catalog.js init` to start your own catalogue.';
@@ -71,6 +88,11 @@ const EXCLUDED_HEADER = `# Books that imports must never re-add (because you rem
 #   ISBN 978-0-00-000000-2      an ISBN (skips every book carrying it, e.g. all books of a boxed set)
 #   Goodreads 12345678          a Goodreads book id (the number in goodreads.com/book/show/...)
 #   Some Title | Some Author    for books with neither id
+`;
+
+const NOT_DUPLICATES_HEADER = `# Books the Duplicates page was told are different books ("Not duplicates"), and books whose
+# editions it was told are different editions ("Keep separate"). One entry per line, written by the
+# page; delete a line to have that pair offered again.
 `;
 
 function paths(args){
@@ -254,9 +276,10 @@ function checkFromApp(newBooks, newInfo, oldInfo){
 function cmdSyncExport(args, io){
   if(!requireOwnData(args, io)) return 2;
   const [booksPath, infoPath, excludedPath] = paths(args);
-  let newBooks, newInfo, excluded;
+  const notDupPath = path.join(args.data, 'not-duplicates.txt');
+  let newBooks, newInfo, excluded, notDuplicates;
   try{
-    ({books: newBooks, seriesInfo: newInfo, excluded} = C.readBackup(JSON.parse(readText(args.file))));
+    ({books: newBooks, seriesInfo: newInfo, excluded, notDuplicates} = C.readBackup(JSON.parse(readText(args.file))));
   }catch(exc){
     io.err(`cannot read ${args.file}: ${exc.message}`);
     return 1;
@@ -291,6 +314,8 @@ function cmdSyncExport(args, io){
     io.out(`excluded from imports: ${addedExcluded.length} new`);
     for(const line of addedExcluded.slice(0, 10)) io.out(`    x ${line}`);
   }
+  const addedNotDup = newNotDuplicates(notDupPath, notDuplicates);
+  if(notDuplicates) io.out(`marked not duplicates: ${addedNotDup.length} new`);
   if(args.dryRun){
     io.out('(dry run: nothing written)');
     return 0;
@@ -305,6 +330,10 @@ function cmdSyncExport(args, io){
     appendExclusions(excludedPath, addedExcluded);
     io.out(`added to ${shown(excludedPath, args.root)}`);
   }
+  if(addedNotDup.length){
+    appendNotDuplicates(notDupPath, addedNotDup);
+    io.out(`added to ${shown(notDupPath, args.root)}`);
+  }
   const orphaned = errors.filter(e => e.startsWith('series-info'));
   if(orphaned.length) io.out('series-info needs attention:\n  ' + orphaned.join('\n  '));
   return 0;
@@ -318,6 +347,7 @@ function cmdSyncExport(args, io){
 function cmdMergeBackup(args, io){
   if(!requireOwnData(args, io)) return 2;
   const [booksPath, infoPath, excludedPath] = paths(args);
+  const notDupPath = path.join(args.data, 'not-duplicates.txt');
   let backup;
   try{
     backup = C.readBackup(JSON.parse(readText(args.file)));
@@ -326,7 +356,8 @@ function cmdMergeBackup(args, io){
     return 1;
   }
   const oldInfo = loadSeriesInfo(infoPath);
-  const m = C.mergeBackup(loadBooks(booksPath), oldInfo, loadExclusions(excludedPath), backup, args.preferBackup ? 'backup' : 'mine');
+  const m = C.mergeBackup(loadBooks(booksPath), oldInfo, loadExclusions(excludedPath), backup, args.preferBackup ? 'backup' : 'mine',
+    fs.existsSync(notDupPath) ? C.parseNotDuplicates(readText(notDupPath)) : []);
   const {books, blocking, errors} = checkFromApp(m.books, m.seriesInfo, oldInfo);
   if(blocking.length){
     io.err('The merged catalogue does not validate, nothing written:\n  ' + blocking.slice(0, 10).join('\n  '));
@@ -347,6 +378,7 @@ function cmdMergeBackup(args, io){
   }
   io.out(`series info: ${m.infoAdded.length} added, ${m.infoChanged.length} taken from the backup, ${m.infoKept.length} differing kept as ours`);
   if(m.excluded.length) io.out(`excluded from imports: ${m.excluded.length} new`);
+  if(m.notDuplicates.length) io.out(`marked not duplicates: ${m.notDuplicates.length} new`);
   if(args.dryRun){
     io.out('(dry run: nothing written)');
     return 0;
@@ -358,6 +390,10 @@ function cmdMergeBackup(args, io){
   if(m.excluded.length){
     appendExclusions(excludedPath, m.excluded);
     io.out(`added to ${shown(excludedPath, args.root)}`);
+  }
+  if(m.notDuplicates.length){
+    appendNotDuplicates(notDupPath, m.notDuplicates);
+    io.out(`added to ${shown(notDupPath, args.root)}`);
   }
   const orphaned = errors.filter(e => e.startsWith('series-info'));
   if(orphaned.length) io.out('series-info needs attention:\n  ' + orphaned.join('\n  '));
@@ -401,16 +437,17 @@ function sameOrigin(req, port){
 
 /**
  * The page's saves: GET says whether saving is possible (only to your own data/books.json, never the
- * demo) and that Audible lookups are, PUT {books, seriesInfo, excluded, base, infoBase} writes both files, and adds the entries in
- * `excluded` (books removed in the page) to data/excluded.txt. `base` and `infoBase` are the
+ * demo) and that Audible lookups are, PUT {books, seriesInfo, excluded, notDuplicates, base, infoBase} writes both files, and adds the entries in
+ * `excluded` (books removed in the page) to data/excluded.txt and those in `notDuplicates` (marked on the
+ * duplicates page) to data/not-duplicates.txt. `base` and `infoBase` are the
  * fingerprints of the files the page's edits started from; if either file changed since (an import,
  * sync-export or a hand edit), the save is refused rather than overwriting that change. excluded.txt
- * is only ever added to, so it needs no such check.
+ * and not-duplicates.txt are only ever added to, so they need no such check.
  */
 function handleSave(req, res, root, port){
   const dir = path.join(root, 'data');
   const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
-  const excludedPath = path.join(dir, 'excluded.txt');
+  const excludedPath = path.join(dir, 'excluded.txt'), notDupPath = path.join(dir, 'not-duplicates.txt');
   const writable = fs.existsSync(booksPath);
   // `audible`: this server can also look books up on Audible for the page (see handleAudible)
   // `hardcover`: the page can save a Hardcover token and import from / export to Hardcover (handleHardcover)
@@ -428,10 +465,10 @@ function handleSave(req, res, root, port){
   });
   req.on('end', () => {
     if(res.headersSent) return;
-    let body, books, seriesInfo, excluded;
+    let body, books, seriesInfo, excluded, notDuplicates;
     try{
       body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      ({books, seriesInfo, excluded} = C.readBackup(body));
+      ({books, seriesInfo, excluded, notDuplicates} = C.readBackup(body));
       if(!seriesInfo) throw new Error('seriesInfo missing');
     }catch(exc){ sendJson(res, 400, {error: `not a catalogue: ${exc.message}`}); return; }
 
@@ -448,6 +485,7 @@ function handleSave(req, res, root, port){
       if(newBooksText !== booksText) writeAtomic(booksPath, newBooksText);
       if(newInfoText !== infoText) writeAtomic(infoPath, newInfoText);
       appendExclusions(excludedPath, newExclusions(excludedPath, excluded));
+      appendNotDuplicates(notDupPath, newNotDuplicates(notDupPath, notDuplicates));
     }catch(exc){ sendJson(res, 500, {error: `could not write: ${exc.message}`}); return; }
     sendJson(res, 200, {base: C.fingerprint(newBooksText), infoBase: C.fingerprint(newInfoText), books: checked.books});
   });
@@ -891,7 +929,7 @@ const COMMANDS = {
   'hardcover-export': {run: (a, io) => cmdHardcover(a, io, 'export'), dryRun: true,
     help: 'put your books on your Hardcover Read shelf, with their dates read, and keep their Hardcover ids'},
   'hardcover-sync': {run: (a, io) => cmdHardcover(a, io, 'sync'), dryRun: true, help: 'hardcover-import, then hardcover-export'},
-  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt)'},
+  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt and data/not-duplicates.txt)'},
   'merge-backup': {run: cmdMergeBackup, file: true, dryRun: true,
     help: 'merge a JSON backup from another device into data/ when both have changed (--prefer-backup: its edits win)'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},

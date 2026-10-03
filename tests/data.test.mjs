@@ -36,7 +36,7 @@ test('your own data validates without errors', { skip: noOwnData }, () => {
   assert.deepEqual(C.validate(loadBooks(path.join(DATA, 'books.json')), loadSeriesInfo(path.join(DATA, 'series-info.json'))).errors, []);
 });
 
-const PRIVATE = ['data/books.json', 'data/series-info.json', 'data/excluded.txt', 'data/hardcover-token', 'data/raw/*'];
+const PRIVATE = ['data/books.json', 'data/series-info.json', 'data/excluded.txt', 'data/not-duplicates.txt', 'data/hardcover-token', 'data/raw/*'];
 
 test('.gitignore covers every personal file', () => {
   const lines = new Set(read(path.join(root, '.gitignore')).split('\n').map(l => l.trim()));

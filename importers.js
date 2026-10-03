@@ -704,22 +704,35 @@ function validate(books, info){
 
 // ---------------------------------------------------------------------- backups
 /**
- * Read a backup exported from the page: {books: [...], seriesInfo: {...}, excluded: [...]}, or a
- * plain array of books from before series info was exported. Returns {books, seriesInfo, excluded};
- * seriesInfo and excluded (the data/excluded.txt entries) are null when the backup predates them,
- * so callers leave theirs alone. Throws if it is neither.
+ * Read a backup exported from the page: {books: [...], seriesInfo: {...}, excluded: [...],
+ * notDuplicates: [...]}, or a plain array of books from before series info was exported. Returns
+ * {books, seriesInfo, excluded, notDuplicates}; seriesInfo, excluded (the data/excluded.txt entries)
+ * and notDuplicates (the data/not-duplicates.txt entries) are null when the backup predates them, so
+ * callers leave theirs alone. Throws if it is neither.
  */
 function readBackup(data){
-  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null, excluded: null};
+  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null, excluded: null, notDuplicates: null};
   if(data && typeof data === 'object' && Array.isArray(data.books)){
-    const {seriesInfo: info, excluded} = data;
+    const {seriesInfo: info, excluded, notDuplicates} = data;
     if(info !== undefined && !(info && typeof info === 'object' && !Array.isArray(info))) throw new Error('seriesInfo is not an object');
-    if(excluded !== undefined && !(Array.isArray(excluded) && excluded.every(x => typeof x === 'string'))){
-      throw new Error('excluded is not a list of strings');
+    for(const [name, list] of [['excluded', excluded], ['notDuplicates', notDuplicates]]){
+      if(list !== undefined && !(Array.isArray(list) && list.every(x => typeof x === 'string'))){
+        throw new Error(`${name} is not a list of strings`);
+      }
     }
-    return {books: fixBooks(data.books), seriesInfo: info === undefined ? null : info, excluded: excluded === undefined ? null : excluded};
+    return {books: fixBooks(data.books), seriesInfo: info === undefined ? null : info, excluded: excluded === undefined ? null : excluded,
+      notDuplicates: notDuplicates === undefined ? null : notDuplicates};
   }
   throw new Error('expected a list of books or {books, seriesInfo, excluded}');
+}
+
+/**
+ * The entries of data/not-duplicates.txt: one duplicatePairKey() or editionsKey() per line, for the
+ * books the duplicates page was told are different books (or have different editions). Lines
+ * starting with '#' are comments.
+ */
+function parseNotDuplicates(text){
+  return [...new Set(String(text || '').split(/\r\n|\r|\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')))];
 }
 
 // ------------------------------------------------------------------------ CSV
@@ -1727,11 +1740,13 @@ function bookText(rec){
  * - a book both have (found as imports find books) keeps the union of their genres, dates read and
  *   editions; where title, author or series differ, `prefer` ('mine', the default, or 'backup') wins,
  *   and the book is listed in `conflicts`;
- * - series info both have keeps the preferred side's; the backup's excluded books are added to ours.
+ * - series info both have keeps the preferred side's; the backup's excluded books, and its "Not duplicates"
+ *   marks, are added to ours (`notDuplicates`, the marks this catalogue has).
  * Changes nothing it is given. Returns {books, seriesInfo, excluded (entries new to `exclusions`),
+ * notDuplicates (marks new to `notDuplicates`),
  * added, updated, removed, skipped, conflicts: [{mine, theirs}], infoAdded, infoChanged, infoKept}.
  */
-function mergeBackup(books, seriesInfo, exclusions, backup, prefer){
+function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicates){
   const takeBackup = prefer === 'backup';
   const copy = rec => JSON.parse(JSON.stringify(rec));
   const out = books.map(copy);
@@ -1741,6 +1756,8 @@ function mergeBackup(books, seriesInfo, exclusions, backup, prefer){
   const theirsOnly = new Exclusions();
   result.excluded = (backup.excluded || []).map(e => ours.add(e)).filter(Boolean);
   result.excluded.forEach(e => theirsOnly.add(e));
+  const ourMarks = new Set(notDuplicates || []);
+  result.notDuplicates = parseNotDuplicates((backup.notDuplicates || []).join('\n')).filter(k => !ourMarks.has(k));
 
   // Each key leads to every book that has it: a box set's titles share their edition's ASIN.
   const index = new Map();
@@ -1811,7 +1828,7 @@ return {
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
   readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, planHardcoverExport, hardcoverUrl, hasReadDate,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
-  editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup,
+  editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup, parseNotDuplicates,
 };
 })();
 

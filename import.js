@@ -21,7 +21,7 @@ function download(text, type, name){
 }
 
 function exportBackup(){
-  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries};
+  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries, notDuplicates: [...NOT_DUPLICATES]};
   download(JSON.stringify(backup, null, 2), 'application/json', 'audiobook-catalog-backup');
   showIoStatus('Backup downloaded.');
 }
@@ -39,12 +39,13 @@ function importBackup(file){
   const reader = new FileReader();
   reader.onload = e=>{
     try{
-      const {books, seriesInfo, excluded} = CatalogImport.readBackup(JSON.parse(e.target.result));
+      const {books, seriesInfo, excluded, notDuplicates} = CatalogImport.readBackup(JSON.parse(e.target.result));
       const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
       if(bad) throw new Error('missing title/author');
       DATA = books;
       if(seriesInfo) SERIES_INFO = seriesInfo;     // older backups have no series info: keep the current one
       const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
+      addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
       // with no data/books.json to save to (the demo is showing), the restored catalogue becomes this device's own
       const onDevice = keepOnDevice();
       refreshPage(); persist();
@@ -263,10 +264,10 @@ let PENDING_MERGE = null;      // {backup, fileName} while its preview is open
 
 function mergeIntoCatalogue(backup){
   const prefer = document.getElementById('mergePreferSelect').value;
-  const m = CatalogImport.mergeBackup(DATA, SERIES_INFO, EXCLUSIONS, backup, prefer);
+  const m = CatalogImport.mergeBackup(DATA, SERIES_INFO, EXCLUSIONS, backup, prefer, NOT_DUPLICATES);
   // series info left without books is expected after a series was renamed; anything else blocks
   const errors = CatalogImport.validate(m.books, m.seriesInfo).errors.filter(e=> !/^series-info: .* matches no series/.test(e));
-  const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length + m.excluded.length;
+  const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length + m.excluded.length + m.notDuplicates.length;
   return {m, errors, changes};
 }
 
@@ -289,6 +290,7 @@ function previewMerge(){
     html += `<p>Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : "this catalogue's"})` : '') + '</p>';
   }
   if(m.excluded.length) html += `<p>More books excluded from imports: ${m.excluded.length}</p>`;
+  if(m.notDuplicates.length) html += `<p>More books marked "Not duplicates": ${m.notDuplicates.length}</p>`;
   if(errors.length){
     html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
   } else if(!changes){
@@ -313,6 +315,7 @@ function applyMerge(){
   DATA = m.books;
   SERIES_INFO = m.seriesInfo;
   addExclusions(m.excluded);
+  addNotDuplicates(m.notDuplicates);
   refreshPage(); persist();
   showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.` +
     keepHint('data/books.json and data/series-info.json'));
