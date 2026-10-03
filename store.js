@@ -263,6 +263,79 @@ async function reloadFromDisk(){
   updateNav();
 }
 
+// ------------------------------------------------------------ Hardcover runs
+// A Hardcover import, export or sync runs on the server (`make serve`, api/hardcover) and can take
+// minutes, one request a second. Every page shows it while it goes (#bgTask), also when it was started
+// in another tab or before a reload, and redraws from data/ when it has changed the catalogue. A page
+// may define onHardcoverJob(job) (each update) and onHardcoverDone(job) (when it ends) to do more.
+let HARDCOVER_JOB = null;      // the run going on, as the server last described it
+let HARDCOVER_POLL_MS = 1000;
+let FOLLOWING = null;          // the promise of following a run, while one is followed
+const HARDCOVER_VERBS = {import: 'Importing from Hardcover', export: 'Exporting to Hardcover', sync: 'Syncing with Hardcover'};
+const HARDCOVER_PREVIEWS = {import: 'Checking what a Hardcover import would do', export: 'Checking what a Hardcover export would do',
+  sync: 'Checking what a Hardcover sync would do'};
+
+const minutes = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+function showHardcoverJob(job){
+  const el = document.getElementById('bgTask');
+  if(el){
+    el.classList.toggle('show', Boolean(job && job.running));
+    if(!job || !job.running) el.innerHTML = '';
+    else {
+      const counted = Number.isInteger(job.total) && job.total > 0;
+      const here = location.pathname.endsWith('import.html');
+      el.innerHTML = `<span class="spinner" aria-hidden="true"></span><div class="bgTaskText">` +
+        `<strong>${esc((job.dryRun ? HARDCOVER_PREVIEWS : HARDCOVER_VERBS)[job.mode] || 'Working with Hardcover')}</strong>` +
+        ` <span class="bgTaskTime">${minutes(job.elapsed)}</span><br>${esc(job.step || '')}` +
+        (counted ? `: ${job.done} of ${job.total} <progress max="${job.total}" value="${job.done}"></progress>` : '') +
+        (job.dryRun ? '' : '<br><small>Please don\'t edit the catalogue until it is done: an edit saved meanwhile stops it before anything is written.</small>') +
+        (here ? '' : ' <a href="import.html">Details</a>') + '</div>';
+    }
+  }
+  if(typeof onHardcoverJob === 'function') onHardcoverJob(job);
+}
+
+// When a run that changed nothing in the page's own view ends on a page with nothing more to say.
+async function hardcoverDoneQuietly(job){
+  if(!job.dryRun && job.base && job.base !== BASELINE && !unsavedEdits()){
+    try{ await reloadFromDisk(); }catch(e){}
+  }
+  showIoStatus(job.code === 0 ? `${HARDCOVER_VERBS[job.mode]}: done.` : `${HARDCOVER_VERBS[job.mode]} did not finish cleanly; see Import & export.`, job.code !== 0);
+}
+
+/**
+ * Show `job` (a run the server described) until it ends, asking the server again every HARDCOVER_POLL_MS,
+ * then hand it to onHardcoverDone. Returns a promise of the ended run (null if the server went away).
+ */
+function followHardcover(job){
+  if(FOLLOWING) return FOLLOWING;
+  FOLLOWING = (async ()=>{
+    HARDCOVER_JOB = job;
+    showHardcoverJob(job);
+    while(job && job.running){
+      await new Promise(resolve => setTimeout(resolve, HARDCOVER_POLL_MS));
+      try{ job = (await (await fetch('api/hardcover', {cache: 'no-cache'})).json()).job; }
+      catch(e){ job = null; showIoStatus('Lost touch with the server (is `make serve` still running?).', true); }
+      HARDCOVER_JOB = job && job.running ? job : null;
+      showHardcoverJob(job);
+    }
+    HARDCOVER_JOB = null;
+    FOLLOWING = null;
+    if(job) await (typeof onHardcoverDone === 'function' ? onHardcoverDone(job) : hardcoverDoneQuietly(job));
+    return job;
+  })();
+  return FOLLOWING;
+}
+
+// A run may be going on already (started in another tab, or before this page was loaded).
+async function checkHardcover(){
+  try{
+    const {job} = await (await fetch('api/hardcover', {cache: 'no-cache'})).json();
+    if(job && job.running) await followHardcover(job);
+  }catch(e){}
+}
+
 // Load the catalogue (with this browser's unsaved edits), then let the page draw itself with `init`.
 async function startPage(init){
   try{
@@ -286,6 +359,7 @@ async function startPage(init){
   const restored = !ON_DEVICE && restoreLocalEdits();
   init();
   updateNav();
+  if(HARDCOVER) checkHardcover();   // not awaited: it follows a run as long as it goes
   if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
   // edits a failed save left in this browser, or marks made before they were saved to a file
   else if(DISK_SAVE && (restored || pendingNotDuplicates().length)) await saveToDisk();

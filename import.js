@@ -342,15 +342,15 @@ function mergeBackupFile(file){
 
 // ------------------------------------------------------------ Hardcover
 // `node catalog.js hardcover-import|export|sync`, run by `make serve` for the page: Hardcover's API must
-// not be called from a browser, and the token stays on the server (data/hardcover-token). A dry run
-// shows what would happen; confirming runs it for real, and the page then reloads data/ from disk.
+// not be called from a browser, and the token stays on the server (data/hardcover-token). It runs in the
+// background, shown on every page while it goes (store.js). A dry run shows what would happen; confirming
+// runs it for real, and the page then reloads data/ from disk.
 const HARDCOVER_MODES = {
   import: {title: 'Import from Hardcover', confirm: 'Import'},
   export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
   sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
 };
 let PENDING_HARDCOVER = null;   // the mode, while its preview is open
-let HARDCOVER_RUNNING = false;
 
 async function showHardcoverToken(){
   let saved = false;
@@ -378,31 +378,42 @@ async function saveHardcoverToken(remove){
   await showHardcoverToken();
 }
 
-// Run `mode` on the server; returns {code, out, err}, or null when it could not (said in the status line).
-async function runHardcover(mode, dryRun){
-  if(HARDCOVER_RUNNING) return null;
-  if(unsavedEdits()){ showIoStatus('Some edits are not saved to data/ yet. Wait for "Saved." (or reload the page), then try again.', true); return null; }
-  HARDCOVER_RUNNING = true;
-  showIoStatus(dryRun ? 'Asking Hardcover…' : 'Working with Hardcover (one request a second, so this can take a few minutes)…');
+// Start `mode` on the server; store.js follows it (the banner on top) and hands it to onHardcoverDone.
+async function startHardcover(mode, dryRun){
+  if(HARDCOVER_JOB) return;
+  if(unsavedEdits()){ showIoStatus('Some edits are not saved to data/ yet. Wait for "Saved." (or reload the page), then try again.', true); return; }
+  let res, body;
   try{
-    const res = await fetch('api/hardcover', {
+    res = await fetch('api/hardcover', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({mode, dryRun, base: BASELINE, infoBase: INFO_BASELINE}),
     });
-    const body = await res.json();
-    if(!res.ok){
-      showIoStatus(body.conflict ? 'data/books.json changed on disk since this page loaded it. Reload the page, then try again.'
-        : `Couldn't run it: ${body.error || 'HTTP ' + res.status}`, true);
-      return null;
-    }
-    showIoStatus('');
-    return body;
+    body = await res.json();
   }catch(e){
     showIoStatus('Couldn\'t reach the server (is `make serve` still running?).', true);
-    return null;
-  }finally{
-    HARDCOVER_RUNNING = false;
+    return;
   }
+  if(res.ok){ await followHardcover(body.job); return; }
+  if(body.job && body.job.running){ showIoStatus('A Hardcover run is already going; it is shown on top.', true); await followHardcover(body.job); return; }
+  showIoStatus(body.conflict ? 'data/books.json changed on disk since this page loaded it. Reload the page, then try again.'
+    : `Couldn't start it: ${body.error || 'HTTP ' + res.status}`, true);
+}
+
+// Each update of a run (store.js): no second run while one goes.
+function onHardcoverJob(job){
+  const busy = Boolean(job && job.running);
+  for(const id of ['hardcoverImportBtn', 'hardcoverExportBtn', 'hardcoverSyncBtn']) document.getElementById(id).disabled = busy;
+}
+
+// A run ended (store.js): a dry run is offered to be run for real; a real one shows what it did, and the
+// page picks up what it wrote.
+async function onHardcoverDone(job){
+  showHardcoverResult(job.mode, job, job.dryRun);
+  if(job.dryRun) return;
+  if(job.base && job.base !== BASELINE){
+    try{ await reloadFromDisk(); }catch(e){ showIoStatus('Done; reload the page to see the catalogue as it is now.', true); return; }
+  }
+  showIoStatus(job.code === 0 ? `${HARDCOVER_MODES[job.mode].title}: done.` : 'Not everything went through; see the details.', job.code !== 0);
 }
 
 function showHardcoverResult(mode, result, pending){
@@ -412,7 +423,8 @@ function showHardcoverResult(mode, result, pending){
   PENDING_MERGE = null;
   document.getElementById('mergePrefer').classList.remove('show');
   const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
-  document.getElementById('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title;
+  const took = Number.isFinite(result.elapsed) ? ` (took ${minutes(result.elapsed)})` : '';
+  document.getElementById('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title + (pending ? ': preview' : took);
   document.getElementById('importPreviewBody').innerHTML = `<pre>${esc(text)}</pre>` +
     (pending && result.code === 0 ? '<p>Nothing has changed yet, here or on Hardcover.</p>' : '');
   const confirmBtn = document.getElementById('importConfirm');
@@ -422,20 +434,16 @@ function showHardcoverResult(mode, result, pending){
   document.getElementById('importPreview').classList.add('open');
 }
 
-async function previewHardcover(mode){
-  const result = await runHardcover(mode, true);
-  if(result) showHardcoverResult(mode, result, true);
+function previewHardcover(mode){
+  closeImportPreview();
+  return startHardcover(mode, true);
 }
 
-async function applyHardcover(){
+function applyHardcover(){
   const mode = PENDING_HARDCOVER;
   if(!mode) return;
   closeImportPreview();
-  const result = await runHardcover(mode, false);
-  if(!result) return;
-  showHardcoverResult(mode, result, false);
-  try{ await reloadFromDisk(); }catch(e){ showIoStatus('Done; reload the page to see the catalogue as it is now.', true); return; }
-  showIoStatus(result.code === 0 ? 'Done.' : 'Not everything went through; see the details.', result.code !== 0);
+  return startHardcover(mode, false);
 }
 
 function closeImportPreview(){
