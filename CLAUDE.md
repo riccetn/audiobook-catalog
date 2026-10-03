@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-Guidance for Claude Code working in this repository. The README is the user-facing manual; read it
-for workflows and the data format. This file covers what you need to change the code safely.
+Guidance for Claude Code working in this repository. The README and `docs/` are the user-facing manual;
+read them for workflows and the data format. This file covers what you need to change the code safely.
 
 ## What this is
 
@@ -71,7 +71,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
     hand-rolled fake DOM and fake `fetch`. When you add elements or DOM APIs to the app, the fake DOM
     may need extending.
 
-## Data model (short form; full table in the README)
+## Data model (short form; full table in `docs/data-format.md`)
 
 `books.json` is a list of titles with short keys `t a s sn g r e` (title, author, series,
 series number as text, genres, dates read, editions). Each edition in `e` has `id gr isbn n p d len desc`
@@ -109,7 +109,7 @@ The repo is public; the user's library is not.
 - CLI output and errors are short, plain English; commands that write support `--dry-run`.
 - The data files are written as compact `JSON.stringify` output; the owner removed the
   one-book-per-line canonical layout on purpose, so don't reintroduce reformatting.
-- Behaviour changes need a test in the matching suite, and a README update when user-visible
-  (the README documents every workflow).
+- Behaviour changes need a test in the matching suite, and a docs update when user-visible
+  (`docs/workflows.md` documents every workflow; keep the README to the essentials).
 - Commit messages: a short imperative summary of the user-visible change
   (e.g. "Exclude removed books from imports, and carry exclusions in exports").
