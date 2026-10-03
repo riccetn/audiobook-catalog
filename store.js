@@ -22,6 +22,7 @@ let LOCAL_SEEN = null;         // what this page last read from or wrote to loca
 let DATA_DIR = '';             // where the data files came from: 'data/', or 'data/sample/' for the demo
 let ON_DEVICE = false;         // the catalogue is this browser's own (DEVICE_KEY), not the files it was served
 let AUDIBLE_LOOKUP = false;    // `make serve` can look books up on Audible for the page (api/audible)
+let HARDCOVER = false;         // `make serve` with your own data can import from and export to Hardcover (api/hardcover)
 
 // Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
 // duplicates page; kept in this browser only.
@@ -171,6 +172,7 @@ async function detectDiskSave(dir){
     const res = await fetch('api/save', {cache: 'no-cache'});
     const body = res.ok ? await res.json() : {};
     AUDIBLE_LOOKUP = body.audible === true;
+    HARDCOVER = dir === 'data/' && body.hardcover === true;
     return dir === 'data/' && body.writable === true;
   }catch(e){ return false; }
 }
@@ -224,6 +226,25 @@ function restoreLocalEdits(){
     }
   }catch(e){}
   return false;
+}
+
+// Whether edits made here have not reached data/ yet (a save on its way, or one that failed).
+function unsavedEdits(){
+  if(SAVING) return true;
+  try{ return localStorage.getItem(LS_KEY) !== null; }catch(e){ return false; }
+}
+
+// Load the catalogue from data/ again, after the server changed it (a Hardcover import), and redraw.
+async function reloadFromDisk(){
+  const {booksText, infoText, excludedText} = await loadData();
+  DATA = CatalogImport.fixBooks(JSON.parse(booksText));
+  SERIES_INFO = JSON.parse(infoText);
+  EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
+  NEW_EXCLUDED = [];
+  BASELINE = CatalogImport.fingerprint(booksText);
+  INFO_BASELINE = CatalogImport.fingerprint(infoText);
+  refreshPage();
+  updateNav();
 }
 
 // Load the catalogue (with this browser's unsaved edits), then let the page draw itself with `init`.

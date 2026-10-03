@@ -1,10 +1,11 @@
-// The import and export page: adding books from Audible and Goodreads exports, and backups.
+// The import and export page: adding books from Audible and Goodreads exports, Hardcover, and backups.
 // Loading and saving live in store.js.
 
 function refreshPage(){
   document.getElementById('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
   document.getElementById('audiblePanel').style.display = AUDIBLE_LOOKUP ? '' : 'none';
   document.getElementById('importSeriesOption').style.display = AUDIBLE_LOOKUP ? '' : 'none';
+  document.getElementById('hardcoverPanel').style.display = HARDCOVER ? '' : 'none';
 }
 
 function download(text, type, name){
@@ -96,7 +97,7 @@ function previewImport(kind, text, fileName){
   if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
   if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
   if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
-  if(report.detailsFilled.length) html += `<p>Publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
+  if(report.detailsFilled.length) html += `<p>Narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
   if(report.editionsAdded.length) html += `<p>Other editions added to existing books: ${report.editionsAdded.length}</p>`;
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
   html += `<p>New: ${report.added.length}</p>`;
@@ -245,9 +246,106 @@ function applySeries(){
     (added.length ? ` and released totals for ${added.length} series` : '') + '.' + keepHint('data/books.json'));
 }
 
+// ------------------------------------------------------------ Hardcover
+// `node catalog.js hardcover-import|export|sync`, run by `make serve` for the page: Hardcover's API must
+// not be called from a browser, and the token stays on the server (data/hardcover-token). A dry run
+// shows what would happen; confirming runs it for real, and the page then reloads data/ from disk.
+const HARDCOVER_MODES = {
+  import: {title: 'Import from Hardcover', confirm: 'Import'},
+  export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
+  sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
+};
+let PENDING_HARDCOVER = null;   // the mode, while its preview is open
+let HARDCOVER_RUNNING = false;
+
+async function showHardcoverToken(){
+  let saved = false;
+  try{ saved = (await (await fetch('api/hardcover/token', {cache: 'no-cache'})).json()).token === true; }catch(e){}
+  document.getElementById('hardcoverTokenState').textContent = saved
+    ? 'Your Hardcover API token is saved with your catalogue (data/hardcover-token, never committed).'
+    : 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it.';
+  document.getElementById('hardcoverTokenRemove').style.display = saved ? '' : 'none';
+}
+
+async function saveHardcoverToken(remove){
+  const input = document.getElementById('hardcoverToken');
+  if(!remove && !input.value.trim()){ showIoStatus('Paste your Hardcover API token first.', true); return; }
+  try{
+    const res = await fetch('api/hardcover/token', remove ? {method: 'DELETE'} : {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token: input.value}),
+    });
+    const body = await res.json();
+    if(!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    input.value = '';
+    showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
+  }catch(e){
+    showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: ${e.message}`, true);
+  }
+  await showHardcoverToken();
+}
+
+// Run `mode` on the server; returns {code, out, err}, or null when it could not (said in the status line).
+async function runHardcover(mode, dryRun){
+  if(HARDCOVER_RUNNING) return null;
+  if(unsavedEdits()){ showIoStatus('Some edits are not saved to data/ yet. Wait for "Saved." (or reload the page), then try again.', true); return null; }
+  HARDCOVER_RUNNING = true;
+  showIoStatus(dryRun ? 'Asking Hardcover…' : 'Working with Hardcover (one request a second, so this can take a few minutes)…');
+  try{
+    const res = await fetch('api/hardcover', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mode, dryRun, base: BASELINE, infoBase: INFO_BASELINE}),
+    });
+    const body = await res.json();
+    if(!res.ok){
+      showIoStatus(body.conflict ? 'data/books.json changed on disk since this page loaded it. Reload the page, then try again.'
+        : `Couldn't run it: ${body.error || 'HTTP ' + res.status}`, true);
+      return null;
+    }
+    showIoStatus('');
+    return body;
+  }catch(e){
+    showIoStatus('Couldn\'t reach the server (is `make serve` still running?).', true);
+    return null;
+  }finally{
+    HARDCOVER_RUNNING = false;
+  }
+}
+
+function showHardcoverResult(mode, result, pending){
+  PENDING_IMPORT = null;
+  PENDING_SERIES = null;
+  PENDING_HARDCOVER = pending && result.code === 0 ? mode : null;
+  const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
+  document.getElementById('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title;
+  document.getElementById('importPreviewBody').innerHTML = `<pre>${esc(text)}</pre>` +
+    (pending && result.code === 0 ? '<p>Nothing has changed yet, here or on Hardcover.</p>' : '');
+  const confirmBtn = document.getElementById('importConfirm');
+  confirmBtn.style.display = PENDING_HARDCOVER ? '' : 'none';
+  confirmBtn.textContent = HARDCOVER_MODES[mode].confirm;
+  document.getElementById('importCancel').textContent = PENDING_HARDCOVER ? 'Cancel' : 'Close';
+  document.getElementById('importPreview').classList.add('open');
+}
+
+async function previewHardcover(mode){
+  const result = await runHardcover(mode, true);
+  if(result) showHardcoverResult(mode, result, true);
+}
+
+async function applyHardcover(){
+  const mode = PENDING_HARDCOVER;
+  if(!mode) return;
+  closeImportPreview();
+  const result = await runHardcover(mode, false);
+  if(!result) return;
+  showHardcoverResult(mode, result, false);
+  try{ await reloadFromDisk(); }catch(e){ showIoStatus('Done; reload the page to see the catalogue as it is now.', true); return; }
+  showIoStatus(result.code === 0 ? 'Done.' : 'Not everything went through; see the details.', result.code !== 0);
+}
+
 function closeImportPreview(){
   PENDING_IMPORT = null;
   PENDING_SERIES = null;
+  PENDING_HARDCOVER = null;
   document.getElementById('importPreview').classList.remove('open');
 }
 
@@ -271,7 +369,12 @@ document.getElementById('importCsvFile').addEventListener('change', e=>{
   if(file) importCsv(IMPORT_KIND, file);
   e.target.value = '';
 });
-document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_SERIES ? applySeries() : applyImport());
+document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_HARDCOVER ? applyHardcover() : PENDING_SERIES ? applySeries() : applyImport());
+for(const mode of Object.keys(HARDCOVER_MODES)){
+  document.getElementById(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
+}
+document.getElementById('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
+document.getElementById('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
 document.getElementById('audibleSeriesBtn').addEventListener('click', ()=> lookUpSeries());
 // remembered in this browser, like a preference
 const SERIES_AFTER_IMPORT_KEY = 'audiobook-catalog-import-series';
@@ -290,4 +393,4 @@ document.getElementById('importFile').addEventListener('change', e=>{
   e.target.value = '';
 });
 
-const READY = startPage(refreshPage);
+const READY = startPage(()=>{ refreshPage(); if(HARDCOVER) return showHardcoverToken(); });

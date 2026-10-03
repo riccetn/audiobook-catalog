@@ -49,9 +49,9 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: k => storage.delete(k),
   };
-  // `api(init, url)` stands in for `make serve`'s api/save and api/audible and returns {status, body}; without it, a plain static server.
+  // `api(init, url)` stands in for `make serve`'s api/ endpoints and returns {status, body}; without it, a plain static server.
   const fetch = async (url, init = {}) => {
-    if ((url === 'api/save' || url === 'api/audible') && api) {
+    if (url.startsWith('api/') && api) {
       const { status, body } = await api(init, url);
       return { ok: status < 300, status, json: async () => body };
     }
@@ -251,6 +251,18 @@ test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Good
   assert.match(html, /ASIN <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a>; Goodreads <a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a>; Publisher Gull Audio; Length 10h 42m/);
   // an edition without either id has no links
   assert.match(html, /<div class="edition">ISBN 9780000000002<\/div>/);
+});
+
+test('book cards link an edition\'s Hardcover ids to Hardcover, and the edit form keeps them', async () => {
+  const { ctx, els, get, run } = await boot();
+  run("DATA[0].e = [{id: 'TESTASIN01', hc: '31337', hcb: '808'}]");
+  ctx.setView('library');
+  ctx.render();
+  assert.match(els.results.innerHTML, /Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a>; Hardcover book <a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a>/);
+  ctx.openEditForm(0);
+  assert.equal(els.f_e.value, 'ASIN TESTASIN01; Hardcover 31337; Hardcover book 808');
+  els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  assert.deepEqual(get('DATA[0].e'), [{ id: 'TESTASIN01', hc: '31337', hcb: '808' }]);
 });
 
 test('adding a book appends it', async () => {
@@ -1064,4 +1076,53 @@ test('the app can be installed: the manifest\'s icons and everything the service
     for (const [, src] of read(page).matchAll(/<script src="([^"]+)">/g)) assert.ok(cached.includes(src), `sw.js caches ${src}`);
   }
   assert.ok(!cached.some(f => f.startsWith('data/') && !f.startsWith('data/sample/')), 'never your own data');
+});
+
+test('with make serve, the Hardcover panel saves the token and previews, then runs, an import', async () => {
+  const mine = JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale' }]);
+  const files = { 'data/books.json': mine };
+  const calls = [];
+  let token = false;
+  const api = async (init, url) => {
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push([url, init.method || 'GET', body]);
+    if (url === 'api/save') return { status: 200, body: { writable: true, audible: true, hardcover: true } };
+    if (url === 'api/hardcover/token') {
+      if (init.method === 'PUT') token = true;
+      if (init.method === 'DELETE') token = false;
+      return { status: 200, body: { token } };
+    }
+    if (body.dryRun) return { status: 200, body: { code: 0, out: 'Hardcover: 1 books on your Read shelf\n  new: 1\n    + Tidewater - Ann Vale\n(dry run: nothing written)', err: '' } };
+    files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: 'Ann Vale' }]);
+    return { status: 200, body: { code: 0, out: 'wrote data/books.json', err: '' } };
+  };
+  const { els, get } = await boot({ page: 'import.html', files, api });
+  await settle();
+  assert.equal(els.hardcoverPanel.style.display, '');
+  assert.match(els.hardcoverTokenState.textContent, /Paste an API token/);
+  els.hardcoverToken.value = 'Bearer tok-123';
+  await els.hardcoverTokenSave.listeners.click[0]();
+  assert.deepEqual(calls.find(c => c[1] === 'PUT'), ['api/hardcover/token', 'PUT', { token: 'Bearer tok-123' }]);
+  assert.equal(els.hardcoverToken.value, '', 'the token is not left in the page');
+  assert.match(els.hardcoverTokenState.textContent, /saved with your catalogue/);
+
+  await els.hardcoverImportBtn.listeners.click[0]();
+  const preview = calls.find(c => c[0] === 'api/hardcover');
+  assert.equal(preview[2].mode, 'import');
+  assert.equal(preview[2].dryRun, true);
+  assert.equal(preview[2].base, get('BASELINE'));
+  assert.equal(els.importPreviewTitle.textContent, 'Import from Hardcover');
+  assert.match(els.importPreviewBody.innerHTML, /<pre>Hardcover: 1 books on your Read shelf\n {2}new: 1\n {4}\+ Tidewater - Ann Vale\n?<\/pre>/);
+  assert.equal(els.importConfirm.textContent, 'Import');
+  assert.equal(get('DATA.length'), 1);
+
+  await els.importConfirm.listeners.click[0]();
+  await settle();
+  assert.equal(calls.filter(c => c[0] === 'api/hardcover').at(-1)[2].dryRun, false);
+  assert.equal(get('DATA.length'), 2, 'the page reloads the catalogue the server wrote');
+  assert.match(els.ioStatus.textContent, /Done\./);
+
+  // without make serve, or with the demo data, there is nothing to show
+  const plain = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  assert.equal(plain.els.hardcoverPanel.style.display, 'none');
 });
