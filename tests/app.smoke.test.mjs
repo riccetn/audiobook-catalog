@@ -245,7 +245,7 @@ test('editing a book keeps its editions', async () => {
 
 test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Goodreads', async () => {
   const { ctx, els, run } = await boot();
-  run("DATA[0].e = [{id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642}, {isbn: ['9780000000002']}]");
+  run("DATA[0].e = [{id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}]");
   ctx.setView('library');
   ctx.render();
   const html = els.results.innerHTML;
@@ -254,16 +254,32 @@ test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Good
   assert.match(html, /<div class="edition">ISBN 9780000000002<\/div>/);
 });
 
-test('book cards link an edition\'s Hardcover ids to Hardcover, and the edit form keeps them', async () => {
+test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardcover, and the edit form keeps them', async () => {
   const { ctx, els, get, run } = await boot();
-  run("DATA[0].e = [{id: 'TESTASIN01', hc: '31337', hcb: '808'}]");
+  run("DATA[0].hcb = '808'; DATA[0].e = [{id: 'TESTASIN01', hc: '31337'}]");
   ctx.setView('library');
   ctx.render();
-  assert.match(els.results.innerHTML, /Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a>; Hardcover book <a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a>/);
+  assert.match(els.results.innerHTML, /<div class="ids">Hardcover book <a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a><\/div>/);
+  assert.match(els.results.innerHTML, /ASIN <a [^>]*>TESTASIN01<\/a>; Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a><\/div>/);
+  els.q.value = '808';
+  ctx.render();
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 1, 'searchable by its Hardcover book id');
+  els.q.value = '';
   ctx.openEditForm(0);
-  assert.equal(els.f_e.value, 'ASIN TESTASIN01; Hardcover 31337; Hardcover book 808');
+  assert.equal(els.f_hcb.value, '808');
+  assert.equal(els.f_e.value, 'ASIN TESTASIN01; Hardcover 31337');
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-  assert.deepEqual(get('DATA[0].e'), [{ id: 'TESTASIN01', hc: '31337', hcb: '808' }]);
+  assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['808', [{ id: 'TESTASIN01', hc: '31337' }]]);
+
+  // a Hardcover book id is a number; one typed on an edition line, as editions used to show it, goes on the book
+  ctx.openEditForm(0);
+  els.f_hcb.value = 'abc';
+  els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  assert.match(els.formError.textContent, /Not a Hardcover book id: abc/);
+  els.f_hcb.value = '';
+  els.f_e.value = 'ASIN TESTASIN01; Hardcover 31337; Hardcover book 909';
+  els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['909', [{ id: 'TESTASIN01', hc: '31337' }]]);
 });
 
 test('adding a book appends it', async () => {
@@ -340,15 +356,16 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
 
   ctx.openEditForm(0);
   assert.equal(els.f_e.value, 'ISBN 9780306406157');
+  // another ISBN is another edition
   els.f_e.value = 'ISBN 9780306406157, 978-0-00-000000-2';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.deepEqual(get('DATA[0].e'), [{ isbn: ['9780306406157', '9780000000002'] }]);
+  assert.deepEqual(get('DATA[0].e'), [{ isbn: '9780306406157' }, { isbn: '9780000000002' }]);
 
   // the same ISBN may go on another book (a boxed set); the cards then say so
   ctx.openEditForm(1);
   els.f_e.value = '0306406152';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.deepEqual(get('DATA[1].e'), [{ isbn: ['9780306406157'] }]);
+  assert.deepEqual(get('DATA[1].e'), [{ isbn: '9780306406157' }]);
   assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=Boxed\+One">Boxed One<\/a>/);
 
   // a mistyped ISBN is refused with a message, and nothing changes
@@ -356,7 +373,7 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
   els.f_e.value = 'ISBN 9780306406158';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.match(els.formError.textContent, /Not understood in editions: ISBN 9780306406158/);
-  assert.deepEqual(get('DATA[1].e'), [{ isbn: ['9780306406157'] }]);
+  assert.deepEqual(get('DATA[1].e'), [{ isbn: '9780306406157' }]);
   els.f_e.value = 'Goodreads 12; second note; third note';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.match(els.formError.textContent, /Not understood in editions: third note/);
@@ -408,8 +425,8 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
   assert.match(els.ioStatus.textContent, /Also updated the shared edition on 1 other book/);
 });
 
-test('a Goodreads import adds the ISBNs to the edition of books already there', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ isbn: ['9780000000002'] }], r: ['2020'] }]);
+test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B1' }], r: ['2020'] }]);
   const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
     + 'Old Favourite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
@@ -418,7 +435,7 @@ test('a Goodreads import adds the ISBNs to the edition of books already there', 
   assert.match(els.importPreviewBody.innerHTML, /ISBNs added to existing books: 1/);
   assert.equal(els.importConfirm.textContent, 'Save ISBNs');
   els.importConfirm.listeners.click[0]();
-  assert.deepEqual(get('DATA[0].e'), [{ isbn: ['9780000000002', '9780306406157'] }]);
+  assert.deepEqual(get('DATA[0].e'), [{ id: 'B1', isbn: '9780306406157' }]);
   assert.match(els.ioStatus.textContent, /added ISBNs to 1 book/);
 });
 
@@ -1005,7 +1022,7 @@ test('merging keeps editions apart when asked, and books merged that way can be 
   const mine = JSON.stringify([
     { t: 'The Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', e: [{ id: 'B1', len: 642 }] },
     { t: 'Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', e: [{ gr: '4242', p: 'Gull Audio' }] },
-    { t: 'Beacons', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '2', e: [{ id: 'B2' }, { gr: '777', isbn: ['9780306406157'] }] },
+    { t: 'Beacons', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '2', e: [{ id: 'B2' }, { gr: '777', isbn: '9780306406157' }] },
     { t: 'The Drowned Chart', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '3', e: [{ id: 'B3' }, { id: 'B3X' }] },
     { t: 'Box Set', a: 'Marisol Quenby', e: [{ id: 'BBOX' }, { gr: '888' }] },
     { t: 'Other In Box', a: 'Marisol Quenby', e: [{ id: 'BBOX' }] },

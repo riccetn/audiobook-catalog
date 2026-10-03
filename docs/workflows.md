@@ -7,7 +7,7 @@
 Edit books in the page (pencil icon, `+ Add a book`). *Editions* takes one edition per line, the way the
 book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goodreads 4242;
 ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts, and
-`Hardcover 501; Hardcover book 77` for the Hardcover ids;
+`Hardcover 501` for the Hardcover edition id; the Hardcover book id has its own field;
 hyphens and ISBN-10s are fine). Text without a label is the edition's description, so a line can be as
 short as `Dramatized adaptation; Narrated by A full cast`. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
@@ -89,9 +89,10 @@ other browsers see them too; a mark made without `make serve` is added to the fi
 the page saves there. Like `data/excluded.txt`, the file is only ever added to: delete a line by
 hand to have that pair offered again. Backups carry the marks as well.
 
-**ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
-Goodreads' `ISBN` and `ISBN13`) on the edition they import. Edit them in the page under *Editions*
-(`ISBN 978-0-00-000000-2, 0-306-40615-2`; stored as ISBN-13). The same ISBN may be on several books, e.g. each
+**ISBNs**: both importers store the ISBN in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
+Goodreads' `ISBN` and `ISBN13`) on the edition they import. An edition has one ISBN: two different ISBNs are two
+editions, so a second one becomes an edition of its own. Edit them in the page under *Editions*
+(`ISBN 978-0-00-000000-2`, or `0-306-40615-2`; stored as ISBN-13; a line with several ISBNs is that many editions). The same ISBN may be on several books, e.g. each
 book of a boxed set. Searching the library for an ISBN, typed any way, finds the books that carry it;
 searching for an ASIN, a Goodreads id or a publisher works too.
 

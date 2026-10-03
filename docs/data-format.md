@@ -10,19 +10,19 @@
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
+| `hcb` | Hardcover's id of the book (`"77"`), the number in `hardcover.app/id/book/…`; every edition of it is an edition of this book |  |
 | `e`  | list of the title's editions (below)                |          |
 
 Each title can have several **editions** (the Audible release, a UK release with another narrator, a
 dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
-the ASIN, Goodreads id, Hardcover id and ISBNs are what imports and box sets go by:
+the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go by:
 
 | key    | meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
 | `id`   | Audible ASIN, so re-imports recognise the book                           |
 | `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
 | `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
-| `hcb`  | Hardcover's id of the book this is an edition of (`"77"`); every edition of that book has the same one |
-| `isbn` | list of this edition's ISBNs, always the 13-digit form without hyphens (`["9780000000002"]`). A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |
+| `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page or `sync-export` saves |
 | `n`    | narrator(s) of this edition                                              |
 | `p`    | publisher                                                                |
 | `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
@@ -30,8 +30,8 @@ the ASIN, Goodreads id, Hardcover id and ISBNs are what imports and box sets go 
 | `desc` | your own description of the edition, free text (`"UK edition"`, `"First edition"`, `"Dramatized adaptation"`, `"Audio CD"`) |
 
 ```json
-{"t":"The Salt Road","a":"Marisol Quenby","s":"The Lantern Coast","sn":"1",
- "e":[{"id":"B0SAMPLE01","gr":"9001","isbn":["9780000000002"],"n":"Tobias Frane","p":"Gullwing Audio","d":"2019-04-02","len":642},
+{"t":"The Salt Road","a":"Marisol Quenby","s":"The Lantern Coast","sn":"1","hcb":"77",
+ "e":[{"id":"B0SAMPLE01","gr":"9001","hc":"501","isbn":"9780000000002","n":"Tobias Frane","p":"Gullwing Audio","d":"2019-04-02","len":642},
       {"id":"B0SAMPLE02","n":"Hollis Marr","desc":"UK edition"}]}
 ```
 
@@ -42,10 +42,13 @@ the others. `make validate` warns when the copies disagree. (A book you only hav
 be one record with a range such as `"sn": "2-3"`.)
 
 **Older files**: before editions, a book held its `id`, `gr` and `isbn` itself, and its narrator (`n`)
-until narrators moved to editions. Such books are still read: the ids become one edition (all its ISBNs
-on it; split them in the edit form if they belong to different editions), and the narrator goes on each
-edition that has none (on a new edition, for a book without any). `make validate` mentions it, and
-`make format`, or any save from the page, an import or `sync-export`, writes them in the new shape.
+until narrators moved to editions. Such books are still read: the ids become one edition, and the
+narrator goes on each edition that has none (on a new edition, for a book without any). Until
+2026-10 an edition could hold a list of ISBNs and the Hardcover book id (`hcb`); an edition with
+several ISBNs is read as one edition per ISBN (the first keeps everything else, each other ISBN becomes
+an edition of its own), and the Hardcover book id moves to the book (a box set's, which is on each of
+its titles, gives way to the book's own). `make validate` mentions both, and `make format`, or any save
+from the page, an import or `sync-export`, writes them in the new shape.
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.

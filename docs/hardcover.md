@@ -32,14 +32,14 @@ node catalog.js hardcover-export                # only catalogue -> Hardcover
 
 - **Import** reads the books on your Hardcover *Read* shelf, like any import (it only adds, see [How imports avoid clobbering your edits](imports.md)).
   A book read as an audiobook edition on Hardcover is added if it is new; a book you read in another
-  format, or without an edition picked, only fills in a book you already have. Each gets an edition with
-  Hardcover's edition and book ids (`hc`, `hcb`), the ASIN, ISBNs, narrator, publisher, release date and
-  length Hardcover has, and every finished date of its reads (Hardcover keeps them all, so a book you have
+  format, or without an edition picked, only fills in a book you already have. Each gets Hardcover's book
+  id (`hcb`) and an edition with Hardcover's edition id (`hc`), the ASIN, ISBN, narrator, publisher, release
+  date and length Hardcover has, and every finished date of its reads (Hardcover keeps them all, so a book you have
   gains the dates it lacks; `2024-03-15` counts as there when you have `2024-03`). A book on Hardcover with
   no finished date gets none, which here means the date is unknown.
-- **Export** finds each of your books on Hardcover by its Hardcover id, ASIN, ISBN or Goodreads id, saves
-  the ids it finds on the book's edition (an ISBN or Goodreads id only gives the book's id, `hcb`, since it
-  is often the print edition), and puts the books that aren't on your Hardcover shelves yet on *Read*, with
+- **Export** finds each of your books without a Hardcover book id by its editions' Hardcover id, ASIN, ISBN
+  or Goodreads id, saves the book's id (`hcb`) on the book and the edition's (`hc`) on the edition (an ISBN or
+  Goodreads id only gives the book's id, since it is often the print edition), and puts the books that aren't on your Hardcover shelves yet on *Read*, with
   each dated read as a Hardcover read. A book already on *Read* gains the reads it lacks. A box set is one
   Hardcover book, so its titles go on Hardcover once. A book with no date read goes on *Read* without a
   read. Dates without a day (`2024-03`) can't be sent and are counted; books Hardcover can't be found by

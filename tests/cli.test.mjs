@@ -128,7 +128,7 @@ const ALE_COLUMNS = ['Added', 'Title', 'Title Short', 'Series', 'Book Numbers', 
   'Sample', 'Web Player', 'Cover', 'Search In Goodreads', 'Subtitle', 'Collection Ids'];
 const row = values => ALE_COLUMNS.map(c => values[c] || '').join(',') + '\n';
 
-test('imports store ISBNs, add other editions\' ISBNs, and skip ISBNs in excluded.txt', t => {
+test('imports store ISBNs, add another ISBN as another edition, and skip ISBNs in excluded.txt', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
   fs.appendFileSync(path.join(tmp, 'data', 'excluded.txt'), 'ISBN 978-1-00-000000-9\n');
@@ -139,14 +139,14 @@ test('imports store ISBNs, add other editions\' ISBNs, and skip ISBNs in exclude
   let { code, out } = run('import-audible', csv);
   assert.equal(code, 0);
   assert.match(out, /skipped \(listed in data\/excluded.txt\): 1/);
-  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [{ t: 'Kept', a: 'Ann', e: [{ id: 'B1', isbn: ['9780306406157'] }] }]);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [{ t: 'Kept', a: 'Ann', e: [{ id: 'B1', isbn: '9780306406157' }] }]);
 
   const gr = path.join(tmp, 'goodreads.csv');
   fs.writeFileSync(gr, 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf\n'
     + 'Kept,Ann,"=""""","=""9780000000002""",Audible Audio,read\n');
   ({ code, out } = run('import-goodreads', gr));
-  assert.match(out, /ISBNs added to existing books: 1/);
-  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ id: 'B1', isbn: ['9780306406157', '9780000000002'] }]);
+  assert.match(out, /other editions added to existing books: 1/);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ id: 'B1', isbn: '9780306406157' }, { isbn: '9780000000002' }]);
 });
 
 test('imports keep editions: publisher, release date and length, and another ASIN as another edition', t => {
@@ -182,13 +182,16 @@ test('books from before editions validate, and format rewrites them with edition
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
   const booksPath = path.join(tmp, 'data', 'books.json');
-  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Old', a: 'Ann', id: 'B1', gr: '7', isbn: ['9780306406157'] }]));
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Old', a: 'Ann', id: 'B1', gr: '7', isbn: ['9780306406157', '9780000000002'] },
+    { t: 'Newer', a: 'Ann', e: [{ id: 'B2', hcb: '9', isbn: ['9781000000009'] }] }]));
   const { code, out } = run('validate');
   assert.equal(code, 0);
   assert.match(out, /from before editions/);
+  assert.match(out, /1 book\(s\) keep a Hardcover book id on an edition or several ISBNs on one edition/);
   assert.equal(run('format').code, 0);
-  assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')), [{ t: 'Old', a: 'Ann', e: [{ id: 'B1', gr: '7', isbn: ['9780306406157'] }] }]);
-  assert.doesNotMatch(run('validate').out, /from before editions/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')), [{ t: 'Old', a: 'Ann', e: [{ id: 'B1', gr: '7', isbn: '9780306406157' }, { isbn: '9780000000002' }] },
+    { t: 'Newer', a: 'Ann', hcb: '9', e: [{ id: 'B2', isbn: '9781000000009' }] }]);
+  assert.doesNotMatch(run('validate').out, /from before editions|several ISBNs/);
 });
 
 test('titles holding their series validate, and format splits them', t => {
@@ -765,7 +768,7 @@ test('hardcover-sync imports the Read shelf, then puts the rest on it, and --dry
   const state = hardcoverState();
   const { run, sent, booksPath } = hardcoverSandbox(t, [
     { t: 'Lantern Hours', a: 'R. T. Hale', r: ['2023-07-01', '2024'], e: [{ id: 'B0LANTERN1' }] },
-    { t: 'Brine Songs', a: 'Ann Vale', e: [{ gr: '4242', isbn: ['9780000000002'] }] },
+    { t: 'Brine Songs', a: 'Ann Vale', e: [{ gr: '4242', isbn: '9780000000002' }] },
     { t: 'Handwritten', a: 'Ann Vale' },
   ], state);
   const before = fs.readFileSync(booksPath, 'utf8');
@@ -789,10 +792,10 @@ test('hardcover-sync imports the Read shelf, then puts the rest on it, and --dry
   assert.equal(real.code, 0, real.err);
   assert.match(real.out, /put 2 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
   assert.deepEqual(loadBooks(booksPath), [
-    { t: 'Lantern Hours', a: 'R. T. Hale', r: ['2023-07-01', '2024'], e: [{ id: 'B0LANTERN1', hc: '801', hcb: '80' }] },
-    { t: 'Brine Songs', a: 'Ann Vale', e: [{ gr: '4242', hcb: '81', isbn: ['9780000000002'] }] },
+    { t: 'Lantern Hours', a: 'R. T. Hale', r: ['2023-07-01', '2024'], hcb: '80', e: [{ id: 'B0LANTERN1', hc: '801' }] },
+    { t: 'Brine Songs', a: 'Ann Vale', hcb: '81', e: [{ gr: '4242', isbn: '9780000000002' }] },
     { t: 'Handwritten', a: 'Ann Vale' },
-    { t: 'Tidewater', a: 'Ann Vale', s: 'Gull Isle', sn: '1', r: ['2024-03-15'], e: [{ id: 'B0TIDEWAT1', hc: '501', hcb: '77', n: 'Hollis Marr', len: 600 }] },
+    { t: 'Tidewater', a: 'Ann Vale', s: 'Gull Isle', sn: '1', r: ['2024-03-15'], hcb: '77', e: [{ id: 'B0TIDEWAT1', hc: '501', n: 'Hollis Marr', len: 600 }] },
   ]);
   assert.deepEqual(state.shelf.slice(2).map(ub => [ub.book_id, ub.edition_id, ub.status_id, ub.user_book_reads]), [
     [80, 801, 3, [{ finished_at: '2023-07-01', edition_id: 801 }]],
