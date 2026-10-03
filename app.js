@@ -59,7 +59,7 @@ function matches(b, q, author, genre, read){
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const editions = CatalogImport.bookEditions(b);
-    const hay = [b.t,b.a,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.hc, ed.n, ed.p, ed.desc, ...(Array.isArray(ed.isbn) ? ed.isbn : [])])]
+    const hay = [b.t,b.a,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.hc, ed.n, ed.p, ed.desc, ed.isbn]), b.hcb]
       .filter(x=> typeof x === 'string').join(' ').toLowerCase();
     // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
     const isbn = CatalogImport.parseIsbn(q);
@@ -460,11 +460,12 @@ const AUDIBLE_URL = 'https://www.audible.com/pd/', GOODREADS_URL = 'https://www.
  * An edition as formatEdition() writes it, with its ASIN, Goodreads id and Hardcover ids linking to the
  * book there (Hardcover's links by id keep working when it renames the book).
  */
+const idLink = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
+
 function editionHtml(ed){
-  const link = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
-  const urls = {id: AUDIBLE_URL, gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', ''), hcb: CatalogImport.hardcoverUrl('book', '')};
+  const urls = {id: AUDIBLE_URL, gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', '')};
   return CatalogImport.editionParts(ed).map(([k, label, value])=>
-    (label ? esc(label) + ' ' : '') + (urls[k] ? link(urls[k], value) : esc(value))).join('; ');
+    (label ? esc(label) + ' ' : '') + (urls[k] ? idLink(urls[k], value) : esc(value))).join('; ');
 }
 
 // The address of a book (or, with kind 'series', a series) shown on its own.
@@ -491,6 +492,7 @@ function bookCard(b){
     <div class="title"><a href="${esc(bookHref(b.t))}">${esc(b.t)}</a></div>
     <div class="meta">${esc(meta)}</div>
     ${read}
+    ${b.hcb ? `<div class="ids">Hardcover book ${idLink(CatalogImport.hardcoverUrl('book', ''), b.hcb)}</div>` : ''}
     ${editions}
     ${genres ? `<div class="genres">${genres}</div>` : ''}
   </div><div class="book-actions">
@@ -554,6 +556,7 @@ function openEditForm(i){
   document.getElementById('f_t').value = b.t || '';
   document.getElementById('f_a').value = b.a || '';
   document.getElementById('f_g').value = (b.g||[]).join(', ');
+  document.getElementById('f_hcb').value = b.hcb || '';
   document.getElementById('f_s').value = b.s || '';
   document.getElementById('f_sn').value = b.sn || '';
   document.getElementById('f_r').value = readDates(b).join(', ');
@@ -583,13 +586,19 @@ document.getElementById('addForm').addEventListener('submit', e=>{
     return;
   }
   if(dates.length) b.r = dates;
-  const {editions, bad: badParts} = CatalogImport.parseEditions(document.getElementById('f_e').value);
+  const {editions, bad: badParts, hcb} = CatalogImport.parseEditions(document.getElementById('f_e').value);
+  const hardcover = document.getElementById('f_hcb').value.trim() || hcb;
+  if(hardcover && !/^\d+$/.test(hardcover)){
+    document.getElementById('formError').textContent = `Not a Hardcover book id: ${hardcover}. It is the number in hardcover.app/id/book/12345.`;
+    return;
+  }
+  if(hardcover) b.hcb = hardcover;
   // "book #0 ('Title') edition #2: needs an ..." -> "edition #2: needs an ..."
   const problems = (editions.length ? CatalogImport.validate([{t: b.t, a: b.a, e: editions}], {}).errors : [])
     .map(e=> e.includes(' edition #') ? e.slice(e.indexOf(' edition #') + 1) : e);
   if(badParts.length || problems.length){
     document.getElementById('formError').textContent = badParts.length
-      ? `Not understood in editions: ${badParts.join('; ')}. Write e.g. "ASIN B0…; Goodreads 4242; ISBN 978…; Publisher …; Released 2021-05; Length 10h 42m", one edition per line.`
+      ? `Not understood in editions: ${badParts.join('; ')}. Write e.g. "ASIN B0…; Goodreads 4242; ISBN 978…; Publisher …; Released 2021-05; Length 10h 42m", one edition (and one ISBN) per line.`
       : problems.join('; ');
     return;
   }

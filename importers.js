@@ -19,13 +19,16 @@ function fingerprint(s){
 // ------------------------------------------------------------------ book records
 // A Goodreads book id, as stored in `gr`: the number in goodreads.com/book/show/12345.
 const GOODREADS_ID = /^\d+$/;
-// Hardcover's own ids, as stored in `hc` (the edition) and `hcb` (the book it is an edition of).
+// Hardcover's own ids, as stored in `hcb` on a book and `hc` on an edition of it.
 const HARDCOVER_ID = /^\d+$/;
-const BOOK_KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'e'];
-// An edition: Audible ASIN, Goodreads id, Hardcover edition and book ids, ISBNs, narrator(s), publisher,
-// release date, length in minutes, and your own description of it ("UK edition", "Dramatized adaptation").
-const EDITION_KEYS = ['id', 'gr', 'hc', 'hcb', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
-// The ids that name one edition. `hcb` is not one: every edition of a Hardcover book carries it.
+// A book: title, author, series and number, genres, dates read, Hardcover book id, editions.
+const BOOK_KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'hcb', 'e'];
+// An edition: Audible ASIN, Goodreads id, Hardcover edition id, ISBN (one: another ISBN is another
+// edition), narrator(s), publisher, release date, length in minutes, and your own description of it
+// ("UK edition", "Dramatized adaptation").
+const EDITION_KEYS = ['id', 'gr', 'hc', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
+// The ids that name one edition (and match books in imports). An ISBN names one edition too, but one
+// ISBN may be on several books (a boxed set's), so it never makes two books the same.
 const EDITION_IDS = ['id', 'gr', 'hc'];
 // Before editions, a book held its ASIN, Goodreads id and ISBNs itself; fixEditions() moves them.
 const LEGACY_KEYS = ['id', 'gr', 'isbn'];
@@ -116,16 +119,24 @@ function parseIsbns(text){
 }
 
 /**
- * Return an edition with its ISBNs as a list, like fixReadDates() for dates: a hand-written "isbn":
- * "978-0-441-01359-3" (or several, comma separated) becomes ["9780441013593"]. An empty string drops
- * the field; text that is not a list of ISBNs is left for validate() to report.
+ * An edition as editions with one ISBN each, since an ISBN names one edition: "isbn": "978-0-441-01359-3"
+ * becomes "9780441013593", and an edition with several (a list, from before one ISBN per edition, or
+ * comma separated) keeps the first, each other one becoming an edition of its own with just that ISBN.
+ * An empty value drops the field; what is not an ISBN is kept, tidied, for validate() to report.
  */
-function fixIsbns(rec){
-  if(!rec || typeof rec !== 'object' || typeof rec.isbn !== 'string') return rec;
-  const {isbn, ...rest} = rec;
-  if(!isbn.trim()) return rest;
-  const {isbns, bad} = parseIsbns(isbn);
-  return {...rest, isbn: bad.length ? [tidyText(isbn)] : isbns};
+function splitIsbns(ed){
+  if(!isObject(ed) || !('isbn' in ed) || (typeof ed.isbn !== 'string' && !Array.isArray(ed.isbn))) return [ed];
+  const {isbn, ...rest} = ed;
+  const parts = [];
+  for(const x of Array.isArray(isbn) ? isbn : [isbn]){
+    if(typeof x !== 'string'){ parts.push(x); continue; }
+    if(!x.trim()) continue;
+    const {isbns, bad} = parseIsbns(x);
+    parts.push(...(bad.length ? [tidyText(x)] : isbns));
+  }
+  const unique = parts.filter((x, i) => typeof x !== 'string' || parts.indexOf(x) === i);
+  if(!unique.length) return Object.keys(rest).length ? [rest] : [];
+  return [orderEdition({...rest, isbn: unique[0]}), ...unique.slice(1).map(x => ({isbn: x}))];
 }
 
 // ---------------------------------------------------------------------- editions
@@ -136,10 +147,10 @@ function bookEditions(rec){
   return rec && Array.isArray(rec.e) ? rec.e.filter(isObject) : [];
 }
 
-/** The ISBNs of an edition, as 13-digit strings; [] when it has none (or none that are valid). */
+/** The ISBN of an edition, as a 13-digit string, in a list; [] when it has none (or not a valid one). */
 function editionIsbns(ed){
-  if(!ed || !Array.isArray(ed.isbn)) return [];
-  return [...new Set(ed.isbn.map(parseIsbn).filter(Boolean))];
+  const isbn = ed && typeof ed.isbn === 'string' ? parseIsbn(ed.isbn) : null;
+  return isbn ? [isbn] : [];
 }
 
 /** The ISBNs of all editions of a book, without repeats. */
@@ -147,19 +158,21 @@ function bookIsbns(rec){
   return [...new Set(bookEditions(rec).flatMap(editionIsbns))];
 }
 
-/** The Audible ASINs (`field` 'id'), Goodreads ids ('gr') or Hardcover ids ('hc', 'hcb') of a book's editions. */
+/** The Audible ASINs (`field` 'id'), Goodreads ids ('gr') or Hardcover edition ids ('hc') of a book's editions. */
 function bookIdsOf(rec, field){
   return [...new Set(bookEditions(rec).map(ed => ed[field]).filter(v => typeof v === 'string' && v))];
 }
 
-/** Whether two editions disagree on their ASIN, Goodreads id or Hardcover id, so they cannot be one edition. */
+/** Whether two editions disagree on their ASIN, Goodreads id, Hardcover id or ISBN, so they cannot be one edition. */
 function editionsConflict(x, y){
-  return EDITION_IDS.some(k => x[k] && y[k] && x[k] !== y[k]);
+  if(EDITION_IDS.some(k => x[k] && y[k] && x[k] !== y[k])) return true;
+  const a = editionIsbns(x), b = editionIsbns(y);
+  return a.length > 0 && b.length > 0 && a[0] !== b[0];
 }
 
 /**
- * Whether two edition records are the same edition: they share an ASIN, a Goodreads id or an ISBN, and
- * do not disagree on the ASIN or Goodreads id. A box set is one edition listed on each of its titles.
+ * Whether two edition records are the same edition: they share an ASIN, a Goodreads id, a Hardcover id
+ * or the ISBN, and disagree on none of them. A box set is one edition listed on each of its titles.
  */
 function sameEdition(x, y){
   if(!isObject(x) || !isObject(y) || editionsConflict(x, y)) return false;
@@ -176,17 +189,12 @@ function orderEdition(ed){
   return out;
 }
 
-/**
- * Give edition `ed` (in place) what `from` has and it lacks; ISBNs it lacks are added to its list.
- * Nothing it has is changed. Returns the keys it gained.
- */
+/** Give edition `ed` (in place) what `from` has and it lacks. Nothing it has is changed. Returns the keys it gained. */
 function fillEdition(ed, from){
   const gained = [];
   for(const k of EDITION_KEYS){
-    if(k !== 'isbn' && from[k] !== undefined && ed[k] === undefined){ ed[k] = from[k]; gained.push(k); }
+    if(from[k] !== undefined && ed[k] === undefined){ ed[k] = from[k]; gained.push(k); }
   }
-  const have = editionIsbns(ed), more = editionIsbns(from).filter(isbn => !have.includes(isbn));
-  if(more.length){ ed.isbn = [...(Array.isArray(ed.isbn) ? ed.isbn : []), ...more]; gained.push('isbn'); }
   if(gained.length){
     const ordered = orderEdition(ed);
     for(const k of Object.keys(ed)) delete ed[k];
@@ -200,20 +208,37 @@ function fillEdition(ed, from){
  * ISBNs itself ("id", "gr", "isbn"); they become its first edition (or fill in the edition that
  * already has that ASIN or Goodreads id). A narrator on the book itself ("n", from before narrators
  * moved to editions) goes on each of its editions that has none, or on a new edition when it has none.
- * ISBNs written as text become lists, and an empty `e` is dropped.
+ * An edition with several ISBNs becomes one edition per ISBN (splitIsbns), and the Hardcover book id
+ * its editions held before it moved to the book ("hcb") goes on the book; when they name different
+ * Hardcover books, `pickHcb(ids)` chooses (by default the first). An empty `e` is dropped.
  */
-function fixEditions(rec){
+function fixEditions(rec, pickHcb){
   if(!isObject(rec)) return rec;
   const legacy = {}, out = {};
   for(const [k, v] of Object.entries(rec)){
     if(LEGACY_KEYS.includes(k)) legacy[k] = v; else if(k !== 'n') out[k] = v;
   }
-  const fixedLegacy = fixIsbns(legacy);
-  let editions = Array.isArray(rec.e) ? rec.e.map(ed => isObject(ed) ? fixIsbns(ed) : ed) : rec.e;
-  if(Object.keys(fixedLegacy).length){
+  let editions = Array.isArray(rec.e) ? rec.e.flatMap(ed => isObject(ed) ? splitIsbns(ed) : [ed]) : rec.e;
+  const fixedLegacy = Object.keys(legacy).length ? splitIsbns(legacy) : [];
+  if(fixedLegacy.length){
     editions = Array.isArray(editions) ? editions.map(ed => isObject(ed) ? {...ed} : ed) : [];
-    const same = editions.find(ed => isObject(ed) && sameEdition(ed, fixedLegacy) && ['id', 'gr'].some(k => ed[k] && ed[k] === fixedLegacy[k]));
-    if(same) fillEdition(same, fixedLegacy); else editions.unshift(orderEdition(fixedLegacy));
+    const [first, ...more] = fixedLegacy;
+    const same = editions.find(ed => isObject(ed) && sameEdition(ed, first) && ['id', 'gr'].some(k => ed[k] && ed[k] === first[k]));
+    if(same) fillEdition(same, first); else editions.unshift(orderEdition(first));
+    editions.push(...more);
+  }
+  // A Hardcover book id an edition carries belongs to the book now.
+  const hcbs = [];
+  if(Array.isArray(editions)){
+    editions = editions.map(ed => {
+      if(!isObject(ed) || typeof ed.hcb !== 'string') return ed;
+      const {hcb, ...rest} = ed;
+      if(hcb.trim() && !hcbs.includes(hcb.trim())) hcbs.push(hcb.trim());
+      return rest;
+    }).filter(ed => !isObject(ed) || Object.keys(ed).length);
+    // an edition that is just an ISBN another edition of the book has is that edition
+    editions = editions.filter((ed, j) => !(isObject(ed) && Object.keys(ed).length === 1 && editionIsbns(ed).length &&
+      editions.some((x, k) => k !== j && isObject(x) && editionIsbns(x)[0] === editionIsbns(ed)[0] && (Object.keys(x).length > 1 || k < j))));
   }
   if('n' in rec && !(typeof rec.n === 'string' && !rec.n.trim())){
     if(editions === undefined || (Array.isArray(editions) && !editions.length)) editions = [{n: rec.n}];
@@ -222,6 +247,7 @@ function fixEditions(rec){
   }
   if(Array.isArray(editions) && !editions.length) editions = undefined;
   if(editions === undefined) delete out.e; else out.e = editions;
+  if(hcbs.length && out.hcb === undefined) setHardcoverBook(out, pickHcb ? pickHcb(hcbs) : hcbs[0]);
   return out;
 }
 
@@ -241,8 +267,7 @@ function editionParts(ed){
   if(ed.id) parts.push(['id', 'ASIN', ed.id]);
   if(ed.gr) parts.push(['gr', 'Goodreads', ed.gr]);
   if(ed.hc) parts.push(['hc', 'Hardcover', ed.hc]);
-  if(ed.hcb) parts.push(['hcb', 'Hardcover book', ed.hcb]);
-  if(Array.isArray(ed.isbn) && ed.isbn.length) parts.push(['isbn', 'ISBN', ed.isbn.join(', ')]);
+  if(typeof ed.isbn === 'string' && ed.isbn) parts.push(['isbn', 'ISBN', ed.isbn]);
   if(ed.p) parts.push(['p', 'Publisher', ed.p]);
   if(ed.d) parts.push(['d', 'Released', ed.d]);
   if(Number.isInteger(ed.len)) parts.push(['len', 'Length', formatLength(ed.len)]);
@@ -263,11 +288,13 @@ const EDITION_PART = /^(asin|goodreads(?:\s+id)?|gr|hardcover(?:\s+book)?(?:\s+i
 /**
  * Read editions written one per line as formatEdition() writes them. Parts are separated by ';' and
  * start with their label; a bare ISBN, date or length is recognised without one, and other text
- * without a label is the edition's description (one per edition).
- * Returns {editions, bad (the parts that could not be read)}.
+ * without a label is the edition's description (one per edition). A line with several ISBNs is that
+ * many editions (splitIsbns). "Hardcover book 123" names the book, not the edition.
+ * Returns {editions, bad (the parts that could not be read), hcb (the Hardcover book id, or null)}.
  */
 function parseEditions(text){
   const editions = [], bad = [];
+  let hcb = null;
   for(const line of String(text || '').split(/\r\n|\r|\n/)){
     const ed = {};
     for(const part of line.split(';').map(x => tidyText(x)).filter(Boolean)){
@@ -290,11 +317,12 @@ function parseEditions(text){
       else if(!label && !ed.desc) [field, v] = ['desc', value];
       if(!v){ bad.push(part); continue; }
       if(field === 'isbn') ed.isbn = [...new Set([...(ed.isbn || []), ...v])];
+      else if(field === 'hcb') hcb = hcb || v;
       else ed[field] = v;
     }
-    if(Object.keys(ed).length) editions.push(orderEdition(ed));
+    if(Object.keys(ed).length) editions.push(...splitIsbns(orderEdition(ed)));
   }
-  return {editions, bad};
+  return {editions, bad, hcb};
 }
 
 /**
@@ -319,7 +347,7 @@ function saveBook(books, index, rec){
       books[k].e = books[k].e.map(x => {
         if(!isObject(x) || !(same(x, befores[j]) || linked(x, ed)) || same(x, ed)) return x;
         changed.add(k);
-        return {...ed, ...(ed.isbn ? {isbn: [...ed.isbn]} : {})};
+        return {...ed};
       });
     }
   });
@@ -327,9 +355,20 @@ function saveBook(books, index, rec){
   return changed.size;
 }
 
-/** fixReadDates(), fixEditions() and fixSeriesTitle() on every book of a list; anything that is not a list is returned as is. */
+/**
+ * fixReadDates(), fixEditions() and fixSeriesTitle() on every book of a list; anything that is not a list
+ * is returned as is. A book whose editions name several Hardcover books keeps the one no other book's
+ * editions name (the others are a box set's, whose edition is on each of its titles).
+ */
 function fixBooks(books){
-  return Array.isArray(books) ? books.map(b => fixSeriesTitle(fixEditions(fixReadDates(b)))) : books;
+  if(!Array.isArray(books)) return books;
+  const owners = new Map();   // Hardcover book id on editions -> how many books have it
+  for(const b of books){
+    const ids = new Set(bookEditions(b).map(ed => ed.hcb).filter(v => typeof v === 'string' && v.trim()).map(v => v.trim()));
+    for(const id of ids) owners.set(id, (owners.get(id) || 0) + 1);
+  }
+  const pickHcb = ids => ids.find(id => owners.get(id) === 1) || ids[0];
+  return books.map(b => fixSeriesTitle(fixEditions(fixReadDates(b), pickHcb)));
 }
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -361,26 +400,23 @@ function normalizeName(name){
   return tidyText(name).replace(RUN_TOGETHER_INITIALS, '$1. ');
 }
 
-/** Return a copy of an edition with tidy text in every field, and its ISBNs in the 13-digit form. */
+/** Return a copy of an edition with tidy text in every field, and its ISBN in the 13-digit form. */
 function tidyEdition(ed){
   if(!isObject(ed)) return ed;
-  const out = {...fixIsbns(ed)};
-  for(const key of ['id', 'gr', 'hc', 'hcb', 'p', 'd', 'desc']){
+  const out = {...ed};
+  for(const key of ['id', 'gr', 'hc', 'p', 'd', 'desc']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
   if(typeof out.n === 'string') out.n = normalizeName(out.n);
-  if(Array.isArray(out.isbn)){
-    // the 13-digit form; anything that is not an ISBN is kept (tidied) for validate() to report
-    const isbns = out.isbn.map(x => typeof x === 'string' ? parseIsbn(x) || tidyText(x) : x);
-    out.isbn = isbns.filter((x, i) => typeof x !== 'string' || isbns.indexOf(x) === i);
-  }
+  // the 13-digit form; anything that is not an ISBN is kept (tidied) for validate() to report
+  if(typeof out.isbn === 'string') out.isbn = parseIsbn(out.isbn) || tidyText(out.isbn);
   return out;
 }
 
 /** Return a copy of a book record, in the edition format, with tidy text in every field. */
 function tidyBook(rec){
   const out = {...fixEditions(fixReadDates(rec))};
-  for(const key of ['t', 's', 'sn']){
+  for(const key of ['t', 's', 'sn', 'hcb']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
   if(typeof out.a === 'string') out.a = normalizeName(out.a);
@@ -402,12 +438,13 @@ function firstAuthor(authors){
 const key = (...parts) => JSON.stringify(parts);
 
 /**
- * Identity keys for a book, strongest first: its editions' ASINs, Goodreads and Hardcover ids, then the
- * Hardcover book (another edition of it), then series, then title.
+ * Identity keys for a book, strongest first: its editions' ASINs, Goodreads and Hardcover ids, then its
+ * Hardcover book id (another edition of it), then series, then title.
  */
 function bookKeys(rec){
   const keys = [];
-  for(const field of [...EDITION_IDS, 'hcb']) for(const id of bookIdsOf(rec, field)) keys.push(key(field, id));
+  for(const field of EDITION_IDS) for(const id of bookIdsOf(rec, field)) keys.push(key(field, id));
+  if(typeof rec.hcb === 'string' && rec.hcb) keys.push(key('hcb', rec.hcb));
   if(rec.s && rec.sn) keys.push(key('series', firstAuthor(rec.a), seriesNorm(rec.s), String(rec.sn).trim()));
   keys.push(key('title', norm(rec.t), firstAuthor(rec.a)));
   return keys;
@@ -551,16 +588,14 @@ function validateEdition(ed, label, errors, warnings){
   for(const k of Object.keys(ed)){
     if(!EDITION_KEYS.includes(k)) errors.push(`${label}: unknown key ${repr(k)}`);
   }
-  for(const k of ['id', 'gr', 'hc', 'hcb', 'n', 'p', 'd', 'desc']){
+  for(const k of ['id', 'gr', 'hc', 'n', 'p', 'd', 'desc']){
     if(k in ed && !nonEmpty(ed[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
   }
   if(!Object.keys(ed).length) errors.push(`${label}: is empty`);
   if(nonEmpty(ed.gr) && !GOODREADS_ID.test(ed.gr.trim())){
     errors.push(`${label}: 'gr' must be a Goodreads book id (digits only), not ${repr(ed.gr)}`);
   }
-  for(const k of ['hc', 'hcb']){
-    if(nonEmpty(ed[k]) && !HARDCOVER_ID.test(ed[k].trim())) errors.push(`${label}: ${repr(k)} must be a Hardcover id (digits only), not ${repr(ed[k])}`);
-  }
+  if(nonEmpty(ed.hc) && !HARDCOVER_ID.test(ed.hc.trim())) errors.push(`${label}: 'hc' must be a Hardcover id (digits only), not ${repr(ed.hc)}`);
   if(nonEmpty(ed.d) && parseReadDate(ed.d) !== ed.d){
     errors.push(`${label}: 'd' must be a release date (YYYY-MM-DD, YYYY-MM or YYYY), not ${repr(ed.d)}`);
   }
@@ -568,18 +603,10 @@ function validateEdition(ed, label, errors, warnings){
     errors.push(`${label}: 'len' must be the length in whole minutes`);
   }
   if('isbn' in ed){
-    if(!(Array.isArray(ed.isbn) && ed.isbn.length && ed.isbn.every(nonEmpty))){
-      errors.push(`${label}: 'isbn' must be a non-empty list of ISBNs`);
-    } else {
-      const seen = new Set();
-      for(const x of ed.isbn){
-        const isbn = parseIsbn(x);
-        if(!isbn) errors.push(`${label}: ${repr(x)} is not a valid ISBN`);
-        else if(isbn !== x) warnings.push(`${label}: write ISBN ${repr(x)} as ${repr(isbn)}`);
-        if(isbn && seen.has(isbn)) warnings.push(`${label}: ISBN ${isbn} is listed twice`);
-        seen.add(isbn);
-      }
-    }
+    const isbn = nonEmpty(ed.isbn) ? parseIsbn(ed.isbn) : null;
+    if(!nonEmpty(ed.isbn)) errors.push(`${label}: 'isbn' must be one ISBN (another ISBN is another edition)`);
+    else if(!isbn) errors.push(`${label}: ${repr(ed.isbn)} is not a valid ISBN`);
+    else if(isbn !== ed.isbn) warnings.push(`${label}: write ISBN ${repr(ed.isbn)} as ${repr(isbn)}`);
   }
 }
 
@@ -602,9 +629,10 @@ function validate(books, info){
     for(const k of ['t', 'a']){
       if(!nonEmpty(b[k])) errors.push(`${label}: missing ${repr(k)}`);
     }
-    for(const k of ['s', 'sn']){
+    for(const k of ['s', 'sn', 'hcb']){
       if(k in b && !nonEmpty(b[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
     }
+    if(nonEmpty(b.hcb) && !HARDCOVER_ID.test(b.hcb.trim())) errors.push(`${label}: 'hcb' must be a Hardcover book id (digits only), not ${repr(b.hcb)}`);
     if('g' in b && !(Array.isArray(b.g) && b.g.every(nonEmpty))){
       errors.push(`${label}: 'g' must be a list of non-empty strings`);
     }
@@ -625,6 +653,8 @@ function validate(books, info){
       warnings.push(`${label}: unusual series number ${repr(b.sn)}`);
     }
     const titleKey = key(norm(b.t), firstAuthor(b.a));
+    const isbns = bookEditions(b).flatMap(editionIsbns);
+    for(const isbn of new Set(isbns.filter((x, j) => isbns.indexOf(x) !== j))) warnings.push(`${label}: lists ISBN ${isbn} on two editions`);
     for(const ed of bookEditions(b)){
       for(const field of EDITION_IDS){
         const v = ed[field];
@@ -1302,17 +1332,13 @@ function hardcoverPeople(contributions, role){
   return [...new Set(names)].join(', ');
 }
 
-/** One of your editions made from a Hardcover edition (or, with none, just the Hardcover book's id). */
-function hardcoverEdition(bookId, edition){
-  const ed = {};
-  if(isObject(edition)){
-    ed.hc = String(edition.id);
-    if(typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim())) ed.id = edition.asin.trim();
-  }
-  ed.hcb = String(bookId);
-  if(!isObject(edition)) return ed;
-  const isbns = [edition.isbn_13, edition.isbn_10].map(parseIsbn).filter(Boolean);
-  if(isbns.length) ed.isbn = [...new Set(isbns)];
+/** One of your editions made from a Hardcover edition. */
+function hardcoverEdition(edition){
+  const ed = {hc: String(edition.id)};
+  if(typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim())) ed.id = edition.asin.trim();
+  // the ISBN-10 and ISBN-13 of an edition are one ISBN; should they differ, the ISBN-13 wins
+  const isbn = [edition.isbn_13, edition.isbn_10].map(parseIsbn).find(Boolean);
+  if(isbn) ed.isbn = isbn;
   const narrators = hardcoverPeople(edition.contributions, 'Narrator');
   if(narrators) ed.n = narrators;
   if(isObject(edition.publisher) && typeof edition.publisher.name === 'string' && tidyText(edition.publisher.name)) ed.p = tidyText(edition.publisher.name);
@@ -1358,7 +1384,8 @@ function readHardcover(userBooks, books, editions){
     const reads = Array.isArray(ub.user_book_reads) ? ub.user_book_reads : [];
     const dates = [...new Set(reads.map(r => isObject(r) && parseReadDate(r.finished_at)).filter(Boolean))].sort();
     if(dates.length) rec.r = dates;
-    rec.e = [hardcoverEdition(ub.book_id, edition)];
+    rec.hcb = String(ub.book_id);
+    if(isObject(edition)) rec.e = [hardcoverEdition(edition)];
     rec = tidyBook(fixSeriesTitle(rec));
     result.records.push(rec);
     if(edition && edition.reading_format_id === HARDCOVER_AUDIO) result.audio.add(rec);
@@ -1383,11 +1410,10 @@ function hardcoverMatches(data){
   return out;
 }
 
-/** The ids of your editions that hardcoverFindQuery() should look up: those without a Hardcover book id. */
+/** The ids that hardcoverFindQuery() should look up: those of the editions of books without a Hardcover book id. */
 function hardcoverLookups(books){
   const ids = {hc: new Set(), asin: new Set(), isbn: new Set(), gr: new Set()};
-  for(const ed of books.flatMap(bookEditions)){
-    if(ed.hcb) continue;
+  for(const ed of books.filter(b => isObject(b) && !b.hcb).flatMap(bookEditions)){
     if(ed.hc && HARDCOVER_ID.test(ed.hc)) ids.hc.add(Number(ed.hc));
     if(ed.id) ids.asin.add(ed.id);
     editionIsbns(ed).forEach(isbn => ids.isbn.add(isbn));
@@ -1397,21 +1423,43 @@ function hardcoverLookups(books){
 }
 
 /**
- * Give your editions the Hardcover ids found for them (`found`: merged hardcoverMatches()), strongest
- * id first: the Hardcover edition id, the ASIN, an ISBN, the Goodreads id. Only empty values are filled,
- * and an edition whose Hardcover id is a different edition keeps it. Changes `books` in place (a box
- * set's copies alike, as they carry the same ids); returns the books that gained an id.
+ * A test of whether an edition is also on another of `books` (a box set's edition, on each of its
+ * titles): it shares an ASIN, Goodreads id, Hardcover id or ISBN with an edition of another book.
+ */
+function sharedEditionTest(books){
+  const ids = ed => [...EDITION_IDS.filter(k => ed[k]).map(k => k + ' ' + ed[k]), ...editionIsbns(ed).map(x => 'isbn ' + x)];
+  const owners = new Map();
+  for(const b of books) for(const id of new Set(bookEditions(b).flatMap(ids))) owners.set(id, (owners.get(id) || 0) + 1);
+  return ed => ids(ed).some(id => owners.get(id) > 1);
+}
+
+/** Give a book (in place) a Hardcover book id, keeping its keys in the usual order. */
+function setHardcoverBook(rec, id){
+  const editions = rec.e;
+  delete rec.e;
+  rec.hcb = id;
+  if(editions !== undefined) rec.e = editions;
+}
+
+/**
+ * Give your books and editions the Hardcover ids found for them (`found`: merged hardcoverMatches()),
+ * strongest id first: the Hardcover edition id, the ASIN, the ISBN, the Goodreads id. A book without a
+ * Hardcover book id gets the one of its editions' Hardcover book (an edition of its own before a box
+ * set's), and its editions their Hardcover edition ids. Only empty values are filled. Changes `books`
+ * in place (a box set's copies alike, as they carry the same ids); returns the books that gained an id.
  */
 function addHardcoverIds(books, found){
-  const filled = [];
+  const filled = [], shared = sharedEditionTest(books);
   for(const b of books){
+    if(!isObject(b) || b.hcb) continue;
     let gained = false;
-    for(const ed of bookEditions(b)){
-      if(ed.hcb) continue;
+    const editions = bookEditions(b);
+    for(const ed of [...editions.filter(x => !shared(x)), ...editions.filter(shared)]){
       const hit = (ed.hc && found.hc.get(ed.hc)) || (ed.id && found.asin.get(ed.id)) ||
         editionIsbns(ed).map(isbn => found.isbn.get(isbn)).find(Boolean) || (ed.gr && found.gr.get(ed.gr));
       if(!hit) continue;
-      if(fillEdition(ed, hit.hc && !ed.hc ? {hc: hit.hc, hcb: hit.hcb} : {hcb: hit.hcb}).length) gained = true;
+      if(hit.hc && !ed.hc && fillEdition(ed, {hc: hit.hc}).length) gained = true;
+      if(!b.hcb){ setHardcoverBook(b, hit.hcb); gained = true; }
     }
     if(gained) filled.push(b);
   }
@@ -1419,8 +1467,9 @@ function addHardcoverIds(books, found){
 }
 
 /**
- * What an export to Hardcover would do: each of your books goes on your Read shelf as the Hardcover book
- * its editions name (an edition of its own before a box set's), with its exact dates read as reads.
+ * What an export to Hardcover would do: each of your books goes on your Read shelf as its Hardcover book,
+ * as the Hardcover edition of an edition of its own (or a box set's, when the box set is the Hardcover
+ * book), with its exact dates read as reads.
  * `shelf` is your user_books rows. Nothing on Hardcover is changed: a book already on another shelf is
  * left alone, and a book already on Read only gains the reads it lacks. Dates you only know to the month
  * or year can't be a Hardcover read, so they are listed instead.
@@ -1431,20 +1480,22 @@ function planHardcoverExport(books, shelf){
   const plan = {add: [], reads: [], otherShelf: [], unknown: [], inexact: []};
   const onShelf = new Map();
   for(const ub of shelf) if(isObject(ub) && !onShelf.has(ub.book_id)) onShelf.set(ub.book_id, ub);
-  const owners = new Map();   // Hardcover book id -> how many of your books have an edition of it
-  for(const b of books) for(const hcb of bookIdsOf(b, 'hcb')) owners.set(hcb, (owners.get(hcb) || 0) + 1);
+  const owners = new Map();   // Hardcover book id -> how many of your books are it
+  for(const b of books) if(isObject(b) && b.hcb) owners.set(b.hcb, (owners.get(b.hcb) || 0) + 1);
+  const shared = sharedEditionTest(books);
   const wanted = new Map();   // Hardcover book id -> {edition, dates, recs}
   for(const b of books){
-    const editions = bookEditions(b).filter(ed => ed.hcb);
-    if(!editions.length){ plan.unknown.push(b); continue; }
-    const ed = editions.find(x => owners.get(x.hcb) === 1) || editions[0];
+    if(!isObject(b)) continue;
+    if(!b.hcb){ plan.unknown.push(b); continue; }
+    const editions = bookEditions(b).filter(ed => ed.hc);
+    const ed = editions.find(x => !shared(x)) || (owners.get(b.hcb) > 1 ? editions[0] : null);
     const exact = (Array.isArray(b.r) ? b.r : []).filter(d => /^\d{4}-\d\d-\d\d$/.test(d));
     for(const d of Array.isArray(b.r) ? b.r : []) if(!exact.includes(d)) plan.inexact.push([b, d]);
-    const w = wanted.get(ed.hcb) || {edition: null, dates: new Set(), recs: []};
-    if(!w.edition && ed.hc) w.edition = ed.hc;
+    const w = wanted.get(b.hcb) || {edition: null, dates: new Set(), recs: []};
+    if(!w.edition && ed) w.edition = ed.hc;
     exact.forEach(d => w.dates.add(d));
     w.recs.push(b);
-    wanted.set(ed.hcb, w);
+    wanted.set(b.hcb, w);
   }
   for(const [hcb, w] of wanted){
     const book = Number(hcb), edition = w.edition ? Number(w.edition) : null, dates = [...w.dates].sort();
@@ -1468,7 +1519,7 @@ function hardcoverUrl(kind, id){
 
 // ---------------------------------------------------------------------- merge
 // Which report list a book goes on when one of its editions gains a field.
-const FILLED_REPORT = {id: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFilled', hcb: 'hardcoverFilled', isbn: 'isbnsFilled', n: 'detailsFilled', p: 'detailsFilled', d: 'detailsFilled', len: 'detailsFilled', desc: 'detailsFilled'};
+const FILLED_REPORT = {id: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFilled', isbn: 'isbnsFilled', n: 'detailsFilled', p: 'detailsFilled', d: 'detailsFilled', len: 'detailsFilled', desc: 'detailsFilled'};
 
 /**
  * Append incoming records that are not in `existing` yet (mutates `existing`). An existing book
@@ -1537,6 +1588,11 @@ function merge(existing, incoming, exclusions, opts){
           book.e = [first];
           for(const field of fillEdition(first, ed)) note(report[FILLED_REPORT[field]], book);
         }
+        indexBook(match);
+      }
+      if(rec.hcb && !book.hcb){
+        setHardcoverBook(book, rec.hcb);
+        note(report.hardcoverFilled, book);
         indexBook(match);
       }
       if(rec.r && rec.r.length && !book.r){
@@ -1652,7 +1708,7 @@ function editionsJoinable(editions){
 
 /** Editions made into one: the first, filled in from the others (nothing it has is changed). */
 function joinEditions(editions){
-  const out = orderEdition({...editions[0], ...(Array.isArray(editions[0].isbn) ? {isbn: [...editions[0].isbn]} : {})});
+  const out = orderEdition({...editions[0]});
   for(const ed of editions.slice(1)) fillEdition(out, ed);
   return out;
 }
@@ -1673,12 +1729,7 @@ function editionsKey(rec){
  */
 function splitEditions(books, keepApart){
   keepApart = keepApart || new Set();
-  const owners = new Map();   // ASIN / Goodreads id / ISBN -> how many books carry it
-  books.forEach(b => {
-    const ids = new Set(bookEditions(b).flatMap(ed => [...EDITION_IDS.filter(k => ed[k]).map(k => k + ' ' + ed[k]), ...editionIsbns(ed)]));
-    for(const id of ids) owners.set(id, (owners.get(id) || 0) + 1);
-  });
-  const shared = ed => [...EDITION_IDS.filter(k => ed[k]).map(k => k + ' ' + ed[k]), ...editionIsbns(ed)].some(id => owners.get(id) > 1);
+  const shared = sharedEditionTest(books);
   return books.map((b, i) => i).filter(i => {
     const editions = bookEditions(books[i]);
     return editionsJoinable(editions) && !editions.some(shared) && !keepApart.has(editionsKey(books[i]));
@@ -1713,11 +1764,13 @@ function mergeBooks(recs, pick){
   if(genres.length) out.g = genres;
   const dates = [...new Set(recs.flatMap(b => Array.isArray(b.r) ? b.r : []))].sort();
   if(dates.length) out.r = dates;
+  const hardcover = from('hcb', b => typeof b.hcb === 'string' && b.hcb !== '');
+  if(hardcover) out.hcb = hardcover.hcb;
   const editions = [];
   for(const ed of recs.flatMap(bookEditions)){
     const same = editions.find(x => sameEdition(x, ed));
     if(same) fillEdition(same, ed);
-    else editions.push(orderEdition({...ed, ...(Array.isArray(ed.isbn) ? {isbn: [...ed.isbn]} : {})}));
+    else editions.push(orderEdition({...ed}));
   }
   if(pick.joinEditions && editionsJoinable(editions)) out.e = [joinEditions(editions)];
   else if(editions.length) out.e = editions;
@@ -1819,7 +1872,7 @@ function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicate
 
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
-  parseIsbn, parseIsbns, fixIsbns, bookIsbns, rowIsbns,
+  parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, saveBook,
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
