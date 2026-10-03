@@ -990,6 +990,28 @@ function audibleSeriesTotal(json){
   return total || null;
 }
 
+/**
+ * A series' own catalogue product as the lookups use it: {total: audibleSeriesTotal(), titles: the title
+ * of each whole-numbered book, {"1": "Spark", ...}, the first listed when Audible has several}.
+ */
+function audibleSeriesListing(json){
+  const rels = json && json.product && Array.isArray(json.product.relationships) ? json.product.relationships : [];
+  const titles = {};
+  for(const r of rels){
+    if(!isObject(r) || r.relationship_to_product !== 'child') continue;
+    const number = String(r.sequence || '').trim(), title = tidyText(String(r.title || ''));
+    if(/^\d+$/.test(number) && title && !(String(Number(number)) in titles)) titles[String(Number(number))] = title;
+  }
+  return {total: audibleSeriesTotal(json), titles};
+}
+
+/** The name an import gives a box set's title it doesn't know yet, until Audible names it: "Ember, Book 2". */
+function boxSetTitle(series, number){
+  return `${series}, Book ${number}`;
+}
+
+const isBoxSetTitle = b => !!(b && b.s && b.sn && b.t === boxSetTitle(b.s, b.sn));
+
 /** ASINs that appear on more than one book: box sets, whose series number is the set's, not the title's. */
 function sharedAsins(books){
   const seen = new Set(), shared = new Set();
@@ -1001,7 +1023,8 @@ function sharedAsins(books){
 
 /**
  * The ASINs to look up for seriesFromAudible(): every book with no series or no number, and one
- * book of each series that has no release info yet (to learn the series' own ASIN). `only` (books
+ * book of each series that has no release info yet or a box set's title still named boxSetTitle() (to
+ * learn the series' own ASIN). `only` (books
  * of `books`, e.g. the ones an import just added) limits that to those books and their series.
  */
 function seriesLookups(books, info, only){
@@ -1013,7 +1036,8 @@ function seriesLookups(books, info, only){
   }
   const shared = sharedAsins(books);
   for(const b of wanted){
-    if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s)) || covered.has(b.s)) continue;
+    // a series with release info is looked up all the same when a box set's title waits for its name
+    if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s) && !isBoxSetTitle(b)) || covered.has(b.s)) continue;
     const id = own(b).find(x => !shared.has(x)) || own(b)[0];
     if(id){ asins.add(id); covered.add(b.s); }
   }
@@ -1062,15 +1086,46 @@ function seriesFromAudible(books, found){
 }
 
 /**
+ * The series ASINs to fetch audibleSeriesListing() for, from seriesFromAudible()'s `series` (Map of name
+ * -> series ASIN): the series with no entry in `info`, and those with a box set's title still named
+ * boxSetTitle().
+ */
+function seriesListingLookups(books, info, series){
+  const unnamed = new Set(books.filter(isBoxSetTitle).map(b => b.s));
+  return [...series].filter(([name]) => !Object.prototype.hasOwnProperty.call(info, name) || unnamed.has(name)).map(([, asin]) => asin);
+}
+
+/**
+ * Name the box sets' titles that an import added as boxSetTitle() ("Ember, Book 2") after the book of
+ * that number in their series' Audible listing (`series`: Map of name -> series ASIN, `listings`: Map of
+ * series ASIN -> audibleSeriesListing()). No other title is changed. Changes `books` in place; returns
+ * [[book, the title it had]].
+ */
+function boxSetTitlesFromAudible(books, series, listings){
+  const renamed = [];
+  for(const b of books){
+    if(!isBoxSetTitle(b) || !series.has(b.s)) continue;
+    const listing = listings.get(series.get(b.s));
+    const title = listing && listing.titles && listing.titles[String(Number(b.sn))];
+    if(!title) continue;
+    const old = b.t, fixed = fixSeriesTitle({...b, t: title});
+    b.t = fixed.s === b.s && fixed.sn === b.sn ? fixed.t : title;
+    renamed.push([b, old]);
+  }
+  return renamed;
+}
+
+/**
  * Give each series in `series` (seriesFromAudible()'s Map of name -> Audible series ASIN) that has no
- * entry in `info` a released total from `totals` (Map of series ASIN -> audibleSeriesTotal()). Audible
+ * entry in `info` a released total from `totals` (Map of series ASIN -> audibleSeriesListing(), or its
+ * total alone). Audible
  * only lists what is out, so the entry says "ongoing" and asks whether the series is finished.
  * Changes `info` in place; returns the names given a total.
  */
 function addSeriesTotals(info, series, totals, store, today){
   const added = [];
   for(const [name, asin] of series){
-    const total = totals.get(asin);
+    const listing = totals.get(asin), total = isObject(listing) ? listing.total : listing;
     if(Object.prototype.hasOwnProperty.call(info, name) || !total) continue;
     info[name] = {total, status: 'ongoing', note: `${total} released on ${AUDIBLE_STORES[store]} as of ${today}; is it complete?`};
     added.push(name);
@@ -1642,7 +1697,7 @@ function merge(existing, incoming, exclusions, opts){
       let i = existing.findIndex(b => ownsSet(b) && titleNumber(b) === n);
       if(i < 0) i = index.has(key('series', author, series, String(n))) ? index.get(key('series', author, series, String(n))) : -1;
       if(i >= 0){ titles.push(i); continue; }
-      const part = {t: `${rec.s}, Book ${n}`, a: rec.a, s: rec.s, sn: String(n)};
+      const part = {t: boxSetTitle(rec.s, n), a: rec.a, s: rec.s, sn: String(n)};
       if(rec.g) part.g = [...rec.g];
       if(rec.r) part.r = [...rec.r];
       if(editions.length) part.e = editions.map(ed => ({...ed}));
@@ -1986,7 +2041,8 @@ return {
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible, addSeriesTotals,
+  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, audibleSeriesListing, seriesLookups, seriesFromAudible, addSeriesTotals,
+  boxSetTitle, seriesListingLookups, boxSetTitlesFromAudible,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
   readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport, hardcoverUrl, hasReadDate,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,

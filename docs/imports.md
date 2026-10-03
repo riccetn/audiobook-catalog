@@ -29,7 +29,9 @@ A box set in an export, one whose series number is a range (Audible's `Ember (bo
 `Ember` each get the set's edition, the same ASIN or Goodreads id on each (see
 [box sets](data-format.md)), with the set's name as the edition's description. A title you already have
 (same first author, series and number) gains the edition beside its own editions, which are never filled
-in from the set's; a title you don't have yet is added as `Ember, Book 2`, for you to rename. Each title
+in from the set's; a title you don't have yet is added as `Ember, Book 2`. The Audible series lookup
+(`--series`, or the option under the import buttons with `make serve`, or `node catalog.js series` later)
+renames it after book 2 in Audible's listing of the series; otherwise rename it yourself. Each title
 gets the set's date read when it has none. The import lists the box sets it split. Importing the same set
 from the other export later fills in that edition on every title (Goodreads' id beside Audible's ASIN).
 

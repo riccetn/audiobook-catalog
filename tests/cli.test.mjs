@@ -409,6 +409,36 @@ test('series fills in series, numbers and released totals from Audible, and --dr
   assert.equal(info['Gull Isle'].status, 'ongoing');
 });
 
+test('import-audible --series names a box set\'s new titles after Audible\'s series listing', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  const booksPath = path.join(dataDir, 'books.json');
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Spark', a: 'Ann Vale', s: 'Ember', sn: '1', e: [{ id: 'B0SPARK001' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), JSON.stringify({ Ember: { total: 3, status: 'complete' } }));
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, 'Title,Title Short,Series,Authors,Progress,ASIN\n'
+    + '"Ember: Books 1-3","Ember: Books 1-3","Ember (books 1-3)",Ann Vale,Finished,B0EMBERBOX\n');
+  const child = (sequence, title) => ({ relationship_to_product: 'child', sequence, title });
+  const fetch = async url => {
+    const asin = /products\/([^?]+)/.exec(url)[1];
+    const body = {
+      B0EMBERBOX: { product: { series: [{ title: 'Ember', sequence: '1-3', asin: 'B0EMBERSER' }] } },
+      B0EMBERSER: { product: { relationships: [child('1', 'Spark'), child('1-3', 'Ember: Books 1-3'), child('2', 'Flame'), child('3', 'Ember Falls')] } },
+    }[asin];
+    return { ok: !!body, status: body ? 200 : 404, json: async () => body };
+  };
+  const out = [], err = [];
+  const code = await main(['--root', tmp, 'import-audible', csv, '--series'], { out: s => out.push(s), err: s => err.push(s), fetch, pause: async () => {} });
+  assert.equal(code, 0, err.join('\n'));
+  assert.match(out.join('\n'), /box sets' titles named: 2\n    Ember, Book 2 -> Flame\n    Ember, Book 3 -> Ember Falls/);
+  const set = { id: 'B0EMBERBOX', desc: 'Ember: Books 1-3' };
+  assert.deepEqual(loadBooks(booksPath).map(b => [b.t, b.sn, b.e]), [
+    ['Spark', '1', [{ id: 'B0SPARK001' }, set]], ['Flame', '2', [set]], ['Ember Falls', '3', [set]],
+  ]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'series-info.json'), 'utf8')), { Ember: { total: 3, status: 'complete' } });
+});
+
 test('import-audible --series looks up the series of the new books only', async t => {
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');
@@ -522,7 +552,7 @@ test('serve looks books up on Audible for the page, and only for the page', asyn
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { results: { B0SERIES01: [{ name: 'Gull Isle', number: '2', asin: 'B0GULLISLE' }], B0UNKNOWN0: null } });
   assert.ok(asked.every(u => u.startsWith('https://api.audible.de/')));
-  assert.deepEqual(await (await ask({ store: 'us', groups: 'relationships', asins: ['B0GULLISLE'] })).json(), { results: { B0GULLISLE: 3 } });
+  assert.deepEqual(await (await ask({ store: 'us', groups: 'relationships', asins: ['B0GULLISLE'] })).json(), { results: { B0GULLISLE: { total: 3, titles: {} } } });
 
   const down = await ask({ store: 'us', groups: 'series', asins: ['B0DOWN0000'] });
   assert.equal(down.status, 502);

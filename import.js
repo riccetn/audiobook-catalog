@@ -110,7 +110,7 @@ function previewImport(kind, text, fileName){
   if(report.boxSets.length){
     html += `<p>Box sets split into their titles, each with the set's edition: ${report.boxSets.length}</p><ul>` +
       report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(b.a)}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
-    if(report.boxSets.some(b=> b.added)) html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo;; rename it on its card.</p>';
+    if(report.boxSets.some(b=> b.added)) html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until the Audible series lookup names it (or you rename it on its card).</p>';
   }
   html += `<p>New: ${report.added.length}</p>`;
   if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
@@ -187,8 +187,9 @@ async function askAudible(store, groups, asins, progress){
 function seriesIntoCopy({store, found, totals}){
   const data = JSON.parse(JSON.stringify(DATA)), info = JSON.parse(JSON.stringify(SERIES_INFO));
   const report = CatalogImport.seriesFromAudible(data, found);
+  const renamed = CatalogImport.boxSetTitlesFromAudible(data, report.series, totals);
   const added = CatalogImport.addSeriesTotals(info, report.series, totals, store, new Date().toISOString().slice(0, 10));
-  return {data, info, report, added, errors: CatalogImport.validate(data, info).errors};
+  return {data, info, report, renamed, added, errors: CatalogImport.validate(data, info).errors};
 }
 
 // Look up `asins` (default: every book that needs it); `lead` is said first in the preview.
@@ -201,7 +202,7 @@ async function lookUpSeries(asins, lead){
   try{
     const found = await askAudible(store, 'series', asins, i=> showIoStatus(`Looking up books on ${host}: ${i} of ${asins.length}…`));
     const series = CatalogImport.seriesFromAudible(JSON.parse(JSON.stringify(DATA)), found).series;
-    const wanted = [...series].filter(([name])=> !Object.prototype.hasOwnProperty.call(SERIES_INFO, name)).map(([, asin])=> asin);
+    const wanted = CatalogImport.seriesListingLookups(DATA, SERIES_INFO, series);
     const totals = await askAudible(store, 'relationships', wanted, i=> showIoStatus(`Looking up series on ${host}: ${i} of ${wanted.length}…`));
     previewSeries({store, found, totals}, lead);
     showIoStatus('');
@@ -213,10 +214,10 @@ async function lookUpSeries(asins, lead){
 }
 
 function previewSeries(pending, lead){
-  const {info, report, added, errors} = seriesIntoCopy(pending);
+  const {info, report, renamed, added, errors} = seriesIntoCopy(pending);
   const host = CatalogImport.AUDIBLE_STORES[pending.store];
   const unknown = [...pending.found.values()].filter(x=> x === null).length;
-  const changes = report.filled.length + added.length;
+  const changes = report.filled.length + renamed.length + added.length;
   PENDING_SERIES = errors.length || !changes ? null : pending;
   PENDING_IMPORT = null;
   PENDING_HARDCOVER = null;
@@ -227,6 +228,7 @@ function previewSeries(pending, lead){
   html += `<p>${pending.found.size} book${pending.found.size === 1 ? '' : 's'} looked up on ${esc(host)}</p>`;
   html += `<p>Series or number filled in: ${report.filled.length}</p>`;
   if(report.filled.length) html += `<ul>${report.filled.map(b=> `<li>${esc(b.t)} &mdash; ${esc(b.a)}  [${esc(b.s)}${b.sn ? ' #' + esc(b.sn) : ''}]</li>`).join('')}</ul>`;
+  if(renamed.length) html += `<p>Box sets' titles named: ${renamed.length}</p><ul>${renamed.map(([b, old])=> `<li>${esc(old)} &rarr; ${esc(b.t)}</li>`).join('')}</ul>`;
   html += `<p>Series given a released total: ${added.length}</p>`;
   if(added.length) html += `<ul>${added.map(name=> `<li>${esc(name)}: ${info[name].total} (marked ongoing; check whether it is complete)</li>`).join('')}</ul>`;
   if(unknown) html += `<p>Not found on ${esc(host)}: ${unknown} (try another store)</p>`;
@@ -250,7 +252,7 @@ function previewSeries(pending, lead){
 function applySeries(){
   if(!PENDING_SERIES) return;
   // applied again, in case books were edited while the preview was open
-  const {data, info, report, added, errors} = seriesIntoCopy(PENDING_SERIES);
+  const {data, info, report, renamed, added, errors} = seriesIntoCopy(PENDING_SERIES);
   closeImportPreview();
   if(errors.length){ showIoStatus('The catalogue changed and the series no longer validate; nothing was changed.', true); return; }
   DATA = data;
@@ -258,6 +260,7 @@ function applySeries(){
   refreshPage(); persist();
   const filled = report.filled.length;
   showIoStatus(`Filled in the series of ${filled} book${filled === 1 ? '' : 's'}` +
+    (renamed.length ? `, named ${renamed.length} box set title${renamed.length === 1 ? '' : 's'}` : '') +
     (added.length ? ` and released totals for ${added.length} series` : '') + '.' + keepHint('data/books.json'));
 }
 

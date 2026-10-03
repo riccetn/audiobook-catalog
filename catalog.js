@@ -137,7 +137,7 @@ function printMerge(report, warnings, io){
   if(report.boxSets.length){
     io.out(`  box sets split into their titles: ${report.boxSets.length}`);
     for(const b of report.boxSets.slice(0, 15)) io.out(`    ${b.t} - ${b.a}: ${b.titles} already here, ${b.added} added`);
-    if(report.boxSets.some(b => b.added)) io.out('    (a title not here yet is named "Series, Book N"; rename it in the page)');
+    if(report.boxSets.some(b => b.added)) io.out('    (a title not here yet is named "Series, Book N" until --series or the `series` command names it)');
   }
   io.out(`  new: ${report.added.length}`);
   preview(report.added, io);
@@ -714,7 +714,7 @@ const AUDIBLE_BATCH = 25;       // ASINs per api/audible request from the page
 
 /**
  * Look ASINs up in one Audible store, one after another: for `series` groups, a Map of ASIN ->
- * audibleSeries() list; for `relationships` (series ASINs), ASIN -> audibleSeriesTotal(). An ASIN
+ * audibleSeries() list; for `relationships` (series ASINs), ASIN -> audibleSeriesListing(). An ASIN
  * Audible doesn't know maps to null. Throws when Audible can't be reached or answers with an error.
  */
 async function fetchFromAudible(get, pause, store, asins, groups){
@@ -727,7 +727,7 @@ async function fetchFromAudible(get, pause, store, asins, groups){
       json = await res.json();
     }
     const known = json && json.product ? json : null;
-    found.set(asin, known && (groups === 'series' ? C.audibleSeries(known) : C.audibleSeriesTotal(known)));
+    found.set(asin, known && (groups === 'series' ? C.audibleSeries(known) : C.audibleSeriesListing(known)));
     await pause();
   }
   return found;
@@ -753,13 +753,13 @@ async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
   const store = C.AUDIBLE_STORES[args.store];
   const asins = C.seriesLookups(books, info, only);
   io.out(`looking up ${asins.length} book(s) on ${store}`);
-  let found, report, totals;
+  let found, report, totals, renamed;
   try{
     found = await fetchFromAudible(get, pause, args.store, asins, 'series');
     report = C.seriesFromAudible(books, found);
-    const wanted = [...report.series].filter(([name]) => !Object.prototype.hasOwnProperty.call(info, name)).map(([, asin]) => asin);
-    totals = C.addSeriesTotals(info, report.series, await fetchFromAudible(get, pause, args.store, wanted, 'relationships'),
-      args.store, new Date().toISOString().slice(0, 10));
+    const listings = await fetchFromAudible(get, pause, args.store, C.seriesListingLookups(books, info, report.series), 'relationships');
+    renamed = C.boxSetTitlesFromAudible(books, report.series, listings);
+    totals = C.addSeriesTotals(info, report.series, listings, args.store, new Date().toISOString().slice(0, 10));
   }catch(exc){
     io.err(`error: could not reach ${store} (${exc.message}); no series filled in`);
     return 1;
@@ -768,6 +768,11 @@ async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
 
   io.out(`  series or number filled in: ${report.filled.length}`);
   preview(report.filled, io);
+  if(renamed.length){
+    io.out(`  box sets' titles named: ${renamed.length}`);
+    for(const [b, old] of renamed.slice(0, 15)) io.out(`    ${old} -> ${b.t}`);
+    if(renamed.length > 15) io.out(`    ... and ${renamed.length - 15} more`);
+  }
   io.out(`  series given a released total: ${totals.length}`);
   for(const name of totals.slice(0, 15)) io.out(`    + ${name}: ${info[name].total}`);
   if(totals.length > 15) io.out(`    ... and ${totals.length - 15} more`);
@@ -786,7 +791,7 @@ async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
     io.out('(dry run: nothing written)');
     return 0;
   }
-  if(report.filled.length){
+  if(report.filled.length || renamed.length){
     dumpBooks(books, booksPath);
     io.out(`wrote ${shown(booksPath, args.root)}`);
   }

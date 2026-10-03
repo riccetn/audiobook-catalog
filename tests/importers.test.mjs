@@ -684,6 +684,27 @@ test('merge: box sets already in the catalogue as one book, without ids, or excl
   assert.deepEqual([kept, report.excluded.length], [[], 3]);
 });
 
+test('series from Audible: a box set\'s titles still named "Series, Book N" get the listing\'s titles', () => {
+  const set = { id: 'BBOX' };
+  const books = [book('Spark', 'Ann', { s: 'Ember', sn: '1', ...ed(set) }), book('Ember, Book 2', 'Ann', { s: 'Ember', sn: '2', ...ed(set) }),
+    book('Ember, Book 3', 'Ann', { s: 'Ember', sn: '3', ...ed(set) }), book('Gull Isle, Book 1', 'Ann', { s: 'Gull Isle', sn: '1' })];
+  const info = { Ember: { total: 3, status: 'complete' } };
+  assert.deepEqual(C.seriesLookups(books, info), ['BBOX'], 'looked up although the series has release info');
+  const listing = C.audibleSeriesListing({ product: { relationships: [
+    { relationship_to_product: 'child', sequence: '1-3', title: 'Ember: Books 1-3' },
+    { relationship_to_product: 'child', sequence: '2', title: ' Flame ' }, { relationship_to_product: 'child', sequence: '2', title: 'Flame (Dramatized)' },
+    { relationship_to_product: 'child', sequence: '3', title: 'Ember Falls: Ember, Book 3' }, { relationship_to_product: 'parent', sequence: '4', title: 'No' },
+  ] } });
+  assert.deepEqual(listing, { total: 3, titles: { 2: 'Flame', 3: 'Ember Falls: Ember, Book 3' } });
+  const series = new Map([['Ember', 'SER']]);
+  assert.deepEqual(C.seriesListingLookups(books, info, series), ['SER']);
+  assert.deepEqual(C.seriesListingLookups(books.slice(0, 1), info, series), [], 'nothing to name, release info known');
+  const renamed = C.boxSetTitlesFromAudible(books, series, new Map([['SER', listing]]));
+  assert.deepEqual(renamed.map(([b, old]) => [old, b.t]), [['Ember, Book 2', 'Flame'], ['Ember, Book 3', 'Ember Falls']]);
+  assert.deepEqual(books.map(b => b.t), ['Spark', 'Flame', 'Ember Falls', 'Gull Isle, Book 1']);
+  assert.deepEqual(C.addSeriesTotals({}, series, new Map([['SER', listing]]), 'us', '2026-10-03'), ['Ember']);
+});
+
 test('Audible and Goodreads exports: a box set is read with its range', () => {
   const audible = C.readAudible('Title,Title Short,Authors,Series,Book Numbers,Progress,ASIN\n' +
     '"Ember: Books 1-3","Ember: Books 1-3",Ann Vale,"Ember (books 1-3)",1-3,Finished,BBOX\n');
