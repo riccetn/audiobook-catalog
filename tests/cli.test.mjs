@@ -832,6 +832,36 @@ test('hardcover-export leaves books on other shelves alone; hardcover-import add
   assert.doesNotMatch(imp.out, /to Hardcover:/, 'import does not export');
 });
 
+test('a box set\'s edition on its titles: exported as their own books, and reading the box set reads each', async t => {
+  const state = hardcoverState();
+  state.books[82] = { id: 82, title: 'Salt Ledger', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] };
+  state.books[90] = { id: 90, title: 'Gull Isle: Books 1-2', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] };
+  state.editions[821] = { id: 821, book_id: 82, reading_format_id: 2, contributions: [] };
+  state.editions[900] = { id: 900, book_id: 90, asin: 'B0BOXSET01', reading_format_id: 2, contributions: [] };
+  // each title is its own Hardcover book; the box set's edition (900) is an edition of the box set (90)
+  const box = { id: 'B0BOXSET01', hc: '900' };
+  const { run, booksPath } = hardcoverSandbox(t, [
+    { t: 'Tidewater', a: 'Ann Vale', r: ['2024-05-01'], hcb: '77', e: [{ ...box }] },
+    { t: 'Salt Ledger', a: 'Ann Vale', r: ['2024-06-01'], hcb: '82', e: [{ ...box }, { hc: '821' }] },
+  ], state);
+
+  const exp = await run(['hardcover-export']);
+  assert.equal(exp.code, 0, exp.err);
+  assert.deepEqual(state.shelf.slice(2).map(ub => [ub.book_id, ub.edition_id, ub.user_book_reads]), [
+    [82, 821, [{ finished_at: '2024-06-01', edition_id: 821 }]],   // its own edition, not the box set's
+  ]);
+  assert.deepEqual(state.shelf[0].user_book_reads.at(-1), { finished_at: '2024-05-01' }, 'Tidewater gains a read without the box set\'s edition');
+
+  // the box set itself read on Hardcover: each of its titles was read
+  state.shelf.push({ id: 9, book_id: 90, edition_id: 900, status_id: 3, user_book_reads: [{ finished_at: '2025-02-02' }] });
+  const imp = await run(['hardcover-import']);
+  assert.equal(imp.code, 0, imp.err);
+  assert.deepEqual(loadBooks(booksPath).map(b => [b.t, b.hcb, b.r]), [
+    ['Tidewater', '77', ['2024-03-15', '2024-05-01', '2025-02-02']],
+    ['Salt Ledger', '82', ['2024-06-01', '2025-02-02']],
+  ]);
+});
+
 test('hardcover commands need a token, and write nothing when Hardcover says no', async t => {
   const { run, booksPath } = hardcoverSandbox(t, [{ t: 'Tidewater', a: 'Ann Vale' }], hardcoverState());
   const before = fs.readFileSync(booksPath, 'utf8');
@@ -972,6 +1002,7 @@ test('hardcover commands say what they are doing through io.progress', async t =
     'Reading the books on your Read shelf: 0 of 2',
     'Reading the editions on your Read shelf: 0 of 2',
     'Finding your books on Hardcover: 0 of 1',
+    'Checking your editions on Hardcover: 0 of 2',
     'Putting books on your Hardcover Read shelf: 0 of 1',
   ]);
 });

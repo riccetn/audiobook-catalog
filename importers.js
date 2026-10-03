@@ -1410,6 +1410,12 @@ function hardcoverMatches(data){
   return out;
 }
 
+/** The Hardcover edition ids planHardcoverExport() may send, as numbers: those of books with a Hardcover book id. */
+function hardcoverExportEditions(books){
+  const ids = books.filter(b => isObject(b) && b.hcb).flatMap(bookEditions).map(ed => ed.hc).filter(hc => typeof hc === 'string' && HARDCOVER_ID.test(hc));
+  return [...new Set(ids)].map(Number);
+}
+
 /** The ids that hardcoverFindQuery() should look up: those of the editions of books without a Hardcover book id. */
 function hardcoverLookups(books){
   const ids = {hc: new Set(), asin: new Set(), isbn: new Set(), gr: new Set()};
@@ -1473,10 +1479,14 @@ function addHardcoverIds(books, found){
  * `shelf` is your user_books rows. Nothing on Hardcover is changed: a book already on another shelf is
  * left alone, and a book already on Read only gains the reads it lacks. Dates you only know to the month
  * or year can't be a Hardcover read, so they are listed instead.
+ * `editionBooks`, when given, maps your editions' Hardcover edition ids to the Hardcover book each is an
+ * edition of (as Hardcover says): only an edition of the book's own Hardcover book is sent, since a box
+ * set's edition can be on a title whose Hardcover book is that title. Without it, a box set's edition
+ * (one on several of your books) is only sent for a box set (a Hardcover book several books are).
  * Returns {add: [{book (Hardcover book id), edition (or null), dates, recs}], reads: [{userBook, edition,
  * dates, recs}], otherShelf: [[rec, status name]], unknown: [recs without a Hardcover book], inexact: [[rec, date]]}.
  */
-function planHardcoverExport(books, shelf){
+function planHardcoverExport(books, shelf, editionBooks){
   const plan = {add: [], reads: [], otherShelf: [], unknown: [], inexact: []};
   const onShelf = new Map();
   for(const ub of shelf) if(isObject(ub) && !onShelf.has(ub.book_id)) onShelf.set(ub.book_id, ub);
@@ -1488,7 +1498,8 @@ function planHardcoverExport(books, shelf){
     if(!isObject(b)) continue;
     if(!b.hcb){ plan.unknown.push(b); continue; }
     const editions = bookEditions(b).filter(ed => ed.hc);
-    const ed = editions.find(x => !shared(x)) || (owners.get(b.hcb) > 1 ? editions[0] : null);
+    const ed = editionBooks ? editions.find(x => editionBooks.get(x.hc) === b.hcb)
+      : editions.find(x => !shared(x)) || (owners.get(b.hcb) > 1 ? editions[0] : null);
     const exact = (Array.isArray(b.r) ? b.r : []).filter(d => /^\d{4}-\d\d-\d\d$/.test(d));
     for(const d of Array.isArray(b.r) ? b.r : []) if(!exact.includes(d)) plan.inexact.push([b, d]);
     const w = wanted.get(b.hcb) || {edition: null, dates: new Set(), recs: []};
@@ -1529,8 +1540,10 @@ const FILLED_REPORT = {id: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFi
  * - otherwise, when the book has one edition of its own that does not disagree on the ASIN or
  *   Goodreads id, that edition is filled in (a Goodreads export finding the book an Audible import added);
  * - otherwise the incoming edition is added as another edition of the book.
- * Series names are folded onto the spelling already in use. ISBNs never make two books the same:
- * one ISBN may be on several books (a boxed set's ISBN on each book in it).
+ * A record of another Hardcover book that finds a book by a box set's edition is the box set: its dates
+ * read go to every title the edition is on. Series names are folded onto the spelling already in use.
+ * ISBNs never make two books the same: one ISBN may be on several books (a boxed set's ISBN on each
+ * book in it).
  * Options: `allDates` adds every incoming date read the book lacks, not only to a book with none (for
  * sources that keep every read, like Hardcover; a date counts as there when the book has it or the month
  * or year it falls in); `addable(rec)` says whether an unmatched record may be added (others only fill
@@ -1571,12 +1584,17 @@ function merge(existing, incoming, exclusions, opts){
     if(hit !== undefined){
       const match = index.get(hit), book = existing[match];
       report.matched++;
+      // A Hardcover book other than this one, found by a box set's edition, is the box set: reading it
+      // was reading each of its titles.
+      const boxSet = !!(rec.hcb && book.hcb && rec.hcb !== book.hcb);
+      const readers = new Set([match]);
       for(const ed of bookEditions(rec)){
         const own = bookEditions(book);
         let target = own.find(x => sameEdition(x, ed));
         if(!target && own.length === 1 && !editionsConflict(own[0], ed) && !copiesOf(own[0]).length) target = own[0];
         if(target){
           const copies = copiesOf(target);
+          if(boxSet) copies.forEach(([i]) => readers.add(i));
           for(const field of fillEdition(target, ed)) note(report[FILLED_REPORT[field]], book);
           for(const [i, copy] of copies){ fillEdition(copy, target); indexBook(i); }
         } else if(own.length){
@@ -1595,14 +1613,17 @@ function merge(existing, incoming, exclusions, opts){
         note(report.hardcoverFilled, book);
         indexBook(match);
       }
-      if(rec.r && rec.r.length && !book.r){
-        book.r = [...rec.r];
-        report.datesFilled.push(book);
-      } else if(opts.allDates && Array.isArray(rec.r) && Array.isArray(book.r)){
-        const more = rec.r.filter(d => !hasReadDate(book.r, d));
-        if(more.length){
-          book.r = [...new Set([...book.r, ...more])].sort();
-          note(report.datesFilled, book);
+      for(const i of readers){
+        const reader = existing[i];
+        if(rec.r && rec.r.length && !reader.r){
+          reader.r = [...rec.r];
+          note(report.datesFilled, reader);
+        } else if(opts.allDates && Array.isArray(rec.r) && Array.isArray(reader.r)){
+          const more = rec.r.filter(d => !hasReadDate(reader.r, d));
+          if(more.length){
+            reader.r = [...new Set([...reader.r, ...more])].sort();
+            note(report.datesFilled, reader);
+          }
         }
       }
       continue;
@@ -1879,7 +1900,7 @@ return {
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible, addSeriesTotals,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
-  readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, planHardcoverExport, hardcoverUrl, hasReadDate,
+  readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport, hardcoverUrl, hasReadDate,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
   editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup, parseNotDuplicates,
 };
