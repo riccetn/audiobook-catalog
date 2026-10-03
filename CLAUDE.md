@@ -50,7 +50,9 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `GET api/save` says `audible: true` (`AUDIBLE_LOOKUP` in `store.js`). For the page's Hardcover panel it keeps
   the token (`handleHardcoverToken`, `api/hardcover/token`: GET says whether one is saved, never what it is)
   and runs `cmdHardcover` (`handleHardcover`, `POST api/hardcover`, same-origin, fingerprint-checked like a
-  save); the static server never serves the token file. Exports `main`, `createServer` etc. for tests.
+  save); the static server never serves the token file. `serve` logs (`createServer`'s `log`, timestamped by `serveLogger`) each `api/` call, each
+  request to Audible/Hardcover (`loggedFetch`: method, URL, GraphQL operation, status; never headers or bodies) and long
+  tasks' start and finish (`startTask`). Exports `main`, `createServer` etc. for tests.
 - `store.js`: shared by the pages, loaded after `importers.js`: the globals (`DATA`, `SERIES_INFO`,
   `EXCLUSIONS`, ...), loading (`startPage(init)`: fetches `data/`, then falls back to `data/sample/`),
   `persist` (localStorage `audiobook-catalog-data`, tagged with the fingerprint of the files the edits

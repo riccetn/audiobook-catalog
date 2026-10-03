@@ -15,6 +15,21 @@ on disk since the page loaded it (an import, a `sync-export`, a hand edit), so i
 those; reload the page to pick them up. A refused or failed save (for example with the server stopped)
 says so under the buttons.
 
+While it runs, `make serve` logs to the terminal, each line stamped with the time: every call the pages
+make to its API (method, path, the answer's status, why it refused if it did, and how long it took),
+every request it sends to Audible or Hardcover (the address, the Hardcover query's name, the answer's
+status), and when a long task (an Audible lookup, a Hardcover import, export or sync) starts and
+finishes, with how it went:
+
+```
+[21:04:12] started: Hardcover sync (dry run)
+[21:04:12] external: POST https://api.hardcover.app/v1/graphql (me) -> 200 (310 ms)
+[21:04:19] finished: Hardcover sync (dry run), exit code 0 (7.2 s)
+[21:04:19] POST /api/hardcover 200 (7.2 s)
+```
+
+It never logs what is sent (your books, your Hardcover token), and not the pages and files it serves.
+
 Until the disk has them, edits also live in that browser's `localStorage`, and with any other static
 server they only live there: use **Export** and `sync-export`. **Export / Restore** JSON also make real
 backups (books, series info and the import exclusion list). Local edits are tagged with a fingerprint of the `books.json` and
