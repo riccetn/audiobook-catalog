@@ -1,0 +1,68 @@
+# Data format
+
+`data/books.json` is a list of titles, with short keys to keep the file small:
+
+| key  | meaning                                             | required |
+|------|-----------------------------------------------------|----------|
+| `t`  | title                                               | yes      |
+| `a`  | author                                              | yes      |
+| `s`  | series name                                         |          |
+| `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
+| `g`  | list of genre/tag strings                           |          |
+| `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
+| `e`  | list of the title's editions (below)                |          |
+
+Each title can have several **editions** (the Audible release, a UK release with another narrator, a
+dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
+the ASIN, Goodreads id, Hardcover id and ISBNs are what imports and box sets go by:
+
+| key    | meaning                                                                  |
+|--------|--------------------------------------------------------------------------|
+| `id`   | Audible ASIN, so re-imports recognise the book                           |
+| `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
+| `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
+| `hcb`  | Hardcover's id of the book this is an edition of (`"77"`); every edition of that book has the same one |
+| `isbn` | list of this edition's ISBNs, always the 13-digit form without hyphens (`["9780000000002"]`). A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |
+| `n`    | narrator(s) of this edition                                              |
+| `p`    | publisher                                                                |
+| `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
+| `len`  | length in whole minutes (`642`)                                          |
+| `desc` | your own description of the edition, free text (`"UK edition"`, `"First edition"`, `"Dramatized adaptation"`, `"Audio CD"`) |
+
+```json
+{"t":"The Salt Road","a":"Marisol Quenby","s":"The Lantern Coast","sn":"1",
+ "e":[{"id":"B0SAMPLE01","gr":"9001","isbn":["9780000000002"],"n":"Tobias Frane","p":"Gullwing Audio","d":"2019-04-02","len":642},
+      {"id":"B0SAMPLE02","n":"Hollis Marr","desc":"UK edition"}]}
+```
+
+**Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
+titles, with the same ASIN, Goodreads id or ISBN; that shared identifier is what ties them together.
+The page shows "Also in this edition: …" on each of them, and editing the edition on one updates it on
+the others. `make validate` warns when the copies disagree. (A book you only have as a box set can still
+be one record with a range such as `"sn": "2-3"`.)
+
+**Older files**: before editions, a book held its `id`, `gr` and `isbn` itself, and its narrator (`n`)
+until narrators moved to editions. Such books are still read: the ids become one edition (all its ISBNs
+on it; split them in the edit form if they belong to different editions), and the narrator goes on each
+edition that has none (on a new edition, for a book without any). `make validate` mentions it, and
+`make format`, or any save from the page, an import or `sync-export`, writes them in the new shape.
+
+`data/series-info.json` maps a series name (it must match `s` exactly) to
+`{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
+`total` is the number of books released so far; `url` (an author or publisher site) is optional.
+
+`make validate` checks all of this and warns about suspicious entries.
+
+## Tidy names and spacing
+
+Authors and narrators keep a space between initials (`A. B. Quill`, not `A.B. Quill`), so the filters
+never list one person twice. Every text field also has stray spacing removed: runs of spaces, tabs,
+non-breaking or invisible characters, and leading/trailing whitespace. Both importers and
+`sync-export` apply this automatically (`tidyBook` in `importers.js`), and `make validate` warns
+about any value that is not tidy. Capitalisation and quote styles are left alone.
+
+## Known data quirks
+
+`make validate` may warn about entries carried over from an Audible export, for example a series
+name such as `Some Series (book ), Other Series` when Audible lists several series for one book, or
+`∞` as a series number. Fix them with the edit form or in `data/books.json`.
