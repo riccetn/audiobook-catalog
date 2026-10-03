@@ -310,6 +310,60 @@ function cmdSyncExport(args, io){
   return 0;
 }
 
+/**
+ * Merge a backup exported on another device into data/, when both have changed since they were last
+ * the same (see mergeBackup). Where both changed the same book or series info, ours is kept unless
+ * --prefer-backup.
+ */
+function cmdMergeBackup(args, io){
+  if(!requireOwnData(args, io)) return 2;
+  const [booksPath, infoPath, excludedPath] = paths(args);
+  let backup;
+  try{
+    backup = C.readBackup(JSON.parse(readText(args.file)));
+  }catch(exc){
+    io.err(`cannot read ${args.file}: ${exc.message}`);
+    return 1;
+  }
+  const oldInfo = loadSeriesInfo(infoPath);
+  const m = C.mergeBackup(loadBooks(booksPath), oldInfo, loadExclusions(excludedPath), backup, args.preferBackup ? 'backup' : 'mine');
+  const {books, blocking, errors} = checkFromApp(m.books, m.seriesInfo, oldInfo);
+  if(blocking.length){
+    io.err('The merged catalogue does not validate, nothing written:\n  ' + blocking.slice(0, 10).join('\n  '));
+    return 1;
+  }
+  const side = args.preferBackup ? 'the backup\'s' : 'ours';
+  io.out(`${backup.books.length} books in ${path.basename(args.file)}; ${books.length} after merging`);
+  io.out(`  new from the backup: ${m.added.length}`);
+  preview(m.added, io);
+  io.out(`  updated (genres, dates read, editions${args.preferBackup ? ', or the backup\'s title, author or series' : ''}): ${m.updated.length}`);
+  io.out(`  removed (removed on the other device): ${m.removed.length}`);
+  for(const rec of m.removed.slice(0, 15)) io.out(`    - ${rec.t} - ${rec.a}`);
+  if(m.skipped.length) io.out(`  not added back (listed in excluded.txt): ${m.skipped.length}`);
+  if(m.conflicts.length){
+    io.out(`  title, author or series differ, kept ${side}: ${m.conflicts.length}`);
+    const label = r => `${r.t} - ${r.a}${r.s ? ` [${r.s}${r.sn ? ' #' + r.sn : ''}]` : ''}`;
+    for(const {mine, theirs} of m.conflicts.slice(0, 15)) io.out(`    ~ ${label(mine)}  /  backup: ${label(theirs)}`);
+  }
+  io.out(`series info: ${m.infoAdded.length} added, ${m.infoChanged.length} taken from the backup, ${m.infoKept.length} differing kept as ours`);
+  if(m.excluded.length) io.out(`excluded from imports: ${m.excluded.length} new`);
+  if(args.dryRun){
+    io.out('(dry run: nothing written)');
+    return 0;
+  }
+  dumpBooks(books, booksPath);
+  io.out(`wrote ${shown(booksPath, args.root)}`);
+  dumpSeriesInfo(m.seriesInfo, infoPath);
+  io.out(`wrote ${shown(infoPath, args.root)}`);
+  if(m.excluded.length){
+    appendExclusions(excludedPath, m.excluded);
+    io.out(`added to ${shown(excludedPath, args.root)}`);
+  }
+  const orphaned = errors.filter(e => e.startsWith('series-info'));
+  if(orphaned.length) io.out('series-info needs attention:\n  ' + orphaned.join('\n  '));
+  return 0;
+}
+
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
@@ -838,6 +892,8 @@ const COMMANDS = {
     help: 'put your books on your Hardcover Read shelf, with their dates read, and keep their Hardcover ids'},
   'hardcover-sync': {run: (a, io) => cmdHardcover(a, io, 'sync'), dryRun: true, help: 'hardcover-import, then hardcover-export'},
   'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt)'},
+  'merge-backup': {run: cmdMergeBackup, file: true, dryRun: true,
+    help: 'merge a JSON backup from another device into data/ when both have changed (--prefer-backup: its edits win)'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},
 };
 
@@ -846,13 +902,13 @@ const USAGE = `usage: node catalog.js [--root DIR] [--data-dir DIR] <command> [o
 commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
-  --dry-run          (imports, series, hardcover-*, sync-export, export-goodreads) show what would change without writing
+  --dry-run          (imports, series, hardcover-*, sync-export, merge-backup, export-goodreads) show what would change without writing
   --series           (import-audible) then fill in the new books' series from Audible (--store us, uk, ...)
   --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;
 
 function parseArgs(argv){
-  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, sample: false, port: 8000, store: null, series: false};
+  const args = {root: ROOT, dataDir: null, command: null, file: null, dryRun: false, preferBackup: false, sample: false, port: 8000, store: null, series: false};
   const rest = [];
   for(let i = 0; i < argv.length; i++){
     const a = argv[i];
@@ -864,6 +920,7 @@ function parseArgs(argv){
     else if(a === '--data-dir') args.dataDir = value();
     else if(a === '--dry-run') args.dryRun = true;
     else if(a === '--sample') args.sample = true;
+    else if(a === '--prefer-backup') args.preferBackup = true;
     else if(a === '--port') args.port = Number(value());
     else if(a === '--store') args.store = value().toLowerCase();
     else if(a === '--series') args.series = true;
@@ -879,6 +936,7 @@ function parseArgs(argv){
   if(rest.length > (cmd.file ? 2 : 1)) throw new Error(`unexpected argument ${rest[rest.length - 1]}`);
   if(args.dryRun && !cmd.dryRun) throw new Error(`${args.command} has no --dry-run`);
   if(args.sample && args.command !== 'init') throw new Error('--sample only goes with init');
+  if(args.preferBackup && args.command !== 'merge-backup') throw new Error('--prefer-backup only goes with merge-backup');
   if(!Number.isInteger(args.port) || args.port <= 0) throw new Error('--port needs a port number');
   if(args.series && args.command !== 'import-audible') throw new Error('--series only goes with import-audible');
   if(args.store !== null && args.command !== 'series' && !args.series) throw new Error('--store only goes with series and import-audible --series');

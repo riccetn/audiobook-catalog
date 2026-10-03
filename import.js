@@ -77,6 +77,12 @@ function mergeIntoCopy(records){
   return {data, report, errors};
 }
 
+// A book in a preview list: title, author and series, escaped.
+function bookLine(rec){
+  const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
+  return `${esc(rec.t)} &mdash; ${esc(rec.a)}${esc(series)}`;
+}
+
 function previewImport(kind, text, fileName){
   const importer = IMPORTERS[kind];
   const result = importer.read(text);
@@ -85,11 +91,11 @@ function previewImport(kind, text, fileName){
     report.isbnsFilled.length + report.detailsFilled.length + report.editionsAdded.length;
   PENDING_IMPORT = errors.length || !changes ? null : result.records;
   PENDING_SERIES = null;
+  PENDING_HARDCOVER = null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
 
-  const li = rec => {
-    const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
-    return `<li>${esc(rec.t)} &mdash; ${esc(rec.a)}${esc(series)}</li>`;
-  };
+  const li = rec => `<li>${bookLine(rec)}</li>`;
   let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
   html += `<p>Already in the catalogue: ${report.matched}</p>`;
   if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
@@ -207,6 +213,9 @@ function previewSeries(pending, lead){
   const changes = report.filled.length + added.length;
   PENDING_SERIES = errors.length || !changes ? null : pending;
   PENDING_IMPORT = null;
+  PENDING_HARDCOVER = null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
 
   let html = lead ? `<p>${esc(lead)} Their series:</p>` : '';
   html += `<p>${pending.found.size} book${pending.found.size === 1 ? '' : 's'} looked up on ${esc(host)}</p>`;
@@ -244,6 +253,88 @@ function applySeries(){
   const filled = report.filled.length;
   showIoStatus(`Filled in the series of ${filled} book${filled === 1 ? '' : 's'}` +
     (added.length ? ` and released totals for ${added.length} series` : '') + '.' + keepHint('data/books.json'));
+}
+
+// ------------------------------------------------------------ Merge a backup from another device
+// Restore replaces the catalogue; Merge is for two catalogues that have both changed since they were
+// last the same (the phone and the PC, say), so neither side's edits are lost (CatalogImport.mergeBackup).
+// Like a CSV import it is previewed first, and only applied when confirmed.
+let PENDING_MERGE = null;      // {backup, fileName} while its preview is open
+
+function mergeIntoCatalogue(backup){
+  const prefer = document.getElementById('mergePreferSelect').value;
+  const m = CatalogImport.mergeBackup(DATA, SERIES_INFO, EXCLUSIONS, backup, prefer);
+  // series info left without books is expected after a series was renamed; anything else blocks
+  const errors = CatalogImport.validate(m.books, m.seriesInfo).errors.filter(e=> !/^series-info: .* matches no series/.test(e));
+  const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length + m.excluded.length;
+  return {m, errors, changes};
+}
+
+function previewMerge(){
+  const {backup, fileName} = PENDING_MERGE;
+  const {m, errors, changes} = mergeIntoCatalogue(backup);
+  const list = recs => recs.length ? `<ul>${recs.map(r=> `<li>${bookLine(r)}</li>`).join('')}</ul>` : '';
+  let html = `<p>${backup.books.length} books in ${esc(fileName)}; ${m.books.length} after merging.</p>`;
+  html += `<p>New from the backup: ${m.added.length}</p>` + list(m.added);
+  html += `<p>Gaining genres, dates read or editions${m.conflicts.length ? ', or the version kept below' : ''}: ${m.updated.length}</p>`;
+  html += `<p>Removed (removed on the other device): ${m.removed.length}</p>` + list(m.removed);
+  if(m.skipped.length) html += `<p>Not added back (removed here): ${m.skipped.length}</p>`;
+  if(m.conflicts.length){
+    const kept = document.getElementById('mergePreferSelect').value === 'backup' ? "the backup's" : "this catalogue's";
+    html += `<p>Title, author or series differ, keeping ${kept}: ${m.conflicts.length}</p><ul>` +
+      m.conflicts.map(c=> `<li>${bookLine(c.mine)} / backup: ${bookLine(c.theirs)}</li>`).join('') + '</ul>';
+  }
+  const infoDiffer = m.infoChanged.length + m.infoKept.length;
+  if(m.infoAdded.length || infoDiffer){
+    html += `<p>Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : "this catalogue's"})` : '') + '</p>';
+  }
+  if(m.excluded.length) html += `<p>More books excluded from imports: ${m.excluded.length}</p>`;
+  if(errors.length){
+    html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
+  } else if(!changes){
+    html += '<p>Nothing to merge: this catalogue already has everything in the backup.</p>';
+  }
+  const ok = !errors.length && changes;
+  document.getElementById('importPreviewTitle').textContent = 'Merge a backup';
+  document.getElementById('importPreviewBody').innerHTML = html;
+  document.getElementById('mergePrefer').classList.add('show');
+  const confirmBtn = document.getElementById('importConfirm');
+  confirmBtn.style.display = ok ? '' : 'none';
+  confirmBtn.textContent = 'Merge';
+  document.getElementById('importCancel').textContent = ok ? 'Cancel' : 'Close';
+  document.getElementById('importPreview').classList.add('open');
+}
+
+function applyMerge(){
+  // merged again, in case books were edited while the preview was open
+  const {m, errors, changes} = mergeIntoCatalogue(PENDING_MERGE.backup);
+  closeImportPreview();
+  if(errors.length || !changes){ showIoStatus('The catalogue changed and the merge no longer applies; nothing was changed.', true); return; }
+  DATA = m.books;
+  SERIES_INFO = m.seriesInfo;
+  addExclusions(m.excluded);
+  refreshPage(); persist();
+  showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.` +
+    keepHint('data/books.json and data/series-info.json'));
+}
+
+function mergeBackupFile(file){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const backup = CatalogImport.readBackup(JSON.parse(e.target.result));
+      if(backup.books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a)) throw new Error('missing title/author');
+      PENDING_IMPORT = null;
+      PENDING_SERIES = null;
+      PENDING_HARDCOVER = null;
+      PENDING_MERGE = {backup, fileName: file.name};
+      previewMerge();
+    }catch(err){
+      closeImportPreview();
+      showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
+    }
+  };
+  reader.readAsText(file);
 }
 
 // ------------------------------------------------------------ Hardcover
@@ -315,6 +406,8 @@ function showHardcoverResult(mode, result, pending){
   PENDING_IMPORT = null;
   PENDING_SERIES = null;
   PENDING_HARDCOVER = pending && result.code === 0 ? mode : null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
   const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
   document.getElementById('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title;
   document.getElementById('importPreviewBody').innerHTML = `<pre>${esc(text)}</pre>` +
@@ -345,6 +438,8 @@ async function applyHardcover(){
 function closeImportPreview(){
   PENDING_IMPORT = null;
   PENDING_SERIES = null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
   PENDING_HARDCOVER = null;
   document.getElementById('importPreview').classList.remove('open');
 }
@@ -369,7 +464,7 @@ document.getElementById('importCsvFile').addEventListener('change', e=>{
   if(file) importCsv(IMPORT_KIND, file);
   e.target.value = '';
 });
-document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_HARDCOVER ? applyHardcover() : PENDING_SERIES ? applySeries() : applyImport());
+document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : PENDING_SERIES ? applySeries() : applyImport());
 for(const mode of Object.keys(HARDCOVER_MODES)){
   document.getElementById(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
 }
@@ -387,6 +482,13 @@ document.getElementById('importCancel').addEventListener('click', closeImportPre
 document.getElementById('exportBtn').addEventListener('click', exportBackup);
 document.getElementById('exportGoodreadsBtn').addEventListener('click', exportGoodreads);
 document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
+document.getElementById('mergeBtn').addEventListener('click', ()=> document.getElementById('mergeFile').click());
+document.getElementById('mergeFile').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(file) mergeBackupFile(file);
+  e.target.value = '';
+});
+document.getElementById('mergePreferSelect').addEventListener('change', ()=>{ if(PENDING_MERGE) previewMerge(); });
 document.getElementById('importFile').addEventListener('change', e=>{
   const file = e.target.files[0];
   if(file) importBackup(file);

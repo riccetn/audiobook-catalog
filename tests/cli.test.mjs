@@ -35,7 +35,7 @@ test('a fresh checkout validates the demo data', t => {
 
 test('commands that write refuse to touch the demo data', t => {
   const { run } = sandbox(t);
-  for (const argv of [['format'], ['import-audible', 'x.csv'], ['import-goodreads', 'x.csv'], ['sync-export', 'x.json']]) {
+  for (const argv of [['format'], ['import-audible', 'x.csv'], ['import-goodreads', 'x.csv'], ['sync-export', 'x.json'], ['merge-backup', 'x.json']]) {
     const { code, err } = run(...argv);
     assert.equal(code, 2, argv.join(' '));
     assert.match(err, /init/);
@@ -571,6 +571,36 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
 
   // and the data files are still served as before
   assert.deepEqual(await (await fetch(`http://localhost:${port}/data/books.json`)).json(), loadBooks(booksPath));
+});
+
+test('merge-backup merges a backup from another device into data/', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const dir = path.join(tmp, 'data');
+  fs.writeFileSync(path.join(dir, 'books.json'), JSON.stringify([
+    { t: 'Here', a: 'Ann Vale' }, { t: 'Gone There', a: 'Ann Vale' }, { t: 'Renamed', a: 'Ann Vale', e: [{ id: 'B1' }] },
+  ]));
+  const backup = path.join(tmp, 'phone.json');
+  fs.writeFileSync(backup, JSON.stringify({
+    books: [{ t: 'Here', a: 'Ann Vale', r: ['2025-06-01'] }, { t: 'Renamed Twice', a: 'Ann Vale', e: [{ id: 'B1' }] }, { t: 'New There', a: 'Ann Vale' }],
+    seriesInfo: {}, excluded: ['Gone There | Ann Vale'],
+  }));
+  const dry = run('merge-backup', backup, '--dry-run');
+  assert.equal(dry.code, 0, dry.err);
+  assert.match(dry.out, /new from the backup: 1\n {4}\+ New There - Ann Vale/);
+  assert.match(dry.out, /removed \(removed on the other device\): 1\n {4}- Gone There - Ann Vale/);
+  assert.match(dry.out, /title, author or series differ, kept ours: 1/);
+  assert.match(dry.out, /dry run/);
+  assert.equal(loadBooks(path.join(dir, 'books.json')).length, 3);
+
+  const { code, out, err } = run('merge-backup', backup, '--prefer-backup');
+  assert.equal(code, 0, err);
+  assert.match(out, /kept the backup's: 1/);
+  assert.deepEqual(loadBooks(path.join(dir, 'books.json')), [
+    { t: 'Here', a: 'Ann Vale', r: ['2025-06-01'] }, { t: 'Renamed Twice', a: 'Ann Vale', e: [{ id: 'B1' }] }, { t: 'New There', a: 'Ann Vale' },
+  ]);
+  assert.match(fs.readFileSync(path.join(dir, 'excluded.txt'), 'utf8'), /^Gone There \| Ann Vale$/m);
+  assert.match(run('validate', '--prefer-backup').err, /--prefer-backup only goes with merge-backup/);
 });
 
 /**

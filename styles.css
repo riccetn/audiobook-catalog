@@ -114,6 +114,9 @@ h1{
 .importPreview ul{margin:.3rem 0 .6rem; padding-left:1.2rem; max-height:16rem; overflow-y:auto; overflow-wrap:anywhere;}
 .importPreview .warn{color:#b0453f;}
 .importPreview pre{margin:.3rem 0 .6rem; max-height:22rem; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:.78rem;}
+.mergePrefer{display:none; margin:0 0 .5rem;}
+.mergePrefer.show{display:block;}
+.mergePrefer select{margin-left:.3rem; padding:.3rem .4rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink); font-size:.85rem; max-width:100%;}
 .dup-group{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.8rem; margin-bottom:1rem; font-size:.85rem;}
 .dup-note{margin:0 0 .5rem; color:var(--moss); font-weight:600; font-size:.8rem;}
 .dup-books{display:flex; gap:.5rem; flex-wrap:wrap;}
