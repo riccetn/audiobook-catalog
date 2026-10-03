@@ -18,6 +18,40 @@ test('series names: spelling variants are one series, different series stay apar
   assert.notEqual(C.seriesNorm('The Harbor Guild'), C.seriesNorm('The Ridge Guild'));
 });
 
+test('titles, authors and series in other scripts are told apart, and accents are forgiven', () => {
+  assert.notEqual(C.norm('Серый маяк'), C.norm('Тихая гавань'));
+  assert.equal(C.norm('Тихая  Гавань!'), 'тихая гавань');
+  assert.equal(C.norm('Café Éclair'), C.norm('Cafe Eclair'));
+  assert.notEqual(C.seriesNorm('Ледяной путь'), C.seriesNorm('Звёздный берег'));
+  assert.equal(C.seriesNorm('Ледяной путь series'), C.seriesNorm('Ледяной-путь'));
+  assert.notEqual(C.firstAuthor('Ивана Полярная'), C.firstAuthor('Олег Северный'));
+
+  // an import adds a second book in another script, keeps its own series, and sees no duplicates
+  const books = [{ t: 'Серый маяк', a: 'Ивана Полярная', s: 'Ледяной путь', sn: '1' }];
+  const report = C.merge(books, [{ t: 'Тихая гавань', a: 'Олег Северный', s: 'Звёздный берег', sn: '1' },
+    { t: 'Серый маяк', a: 'Ивана Полярная' }]);
+  assert.equal(report.added.length, 1);
+  assert.equal(report.matched, 1);
+  assert.deepEqual(books.map(b => b.s), ['Ледяной путь', 'Звёздный берег']);
+  assert.deepEqual(C.findDuplicates(books), []);
+  assert.deepEqual(C.findDuplicates([{ t: '漂流する灯台', a: '北村 灯' }, { t: '静かな港', a: '北村 灯' }]), []);
+});
+
+test('a title of only symbols matches nothing', () => {
+  const books = [{ t: '???', a: 'Ann Vale' }];
+  assert.equal(C.merge(books, [{ t: '!!!', a: 'Ann Vale' }]).added.length, 1);
+  assert.deepEqual(C.findDuplicates(books), []);
+  assert.ok(!C.parseExclusions('?? | Ann Vale').covers({ t: '!!', a: 'Ann Vale' }));
+});
+
+test('"Not duplicates" marks made before other scripts were told apart still count', () => {
+  const books = [{ t: 'Sömnens hamn', a: 'Åsa Ek' }, { t: 'Sömnens  hamn', a: 'Åsa Ek', s: 'Ö' }];
+  assert.equal(C.findDuplicates(books).length, 1);
+  const old = C.duplicatePairKey(books[0], books[1], t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim());
+  assert.notEqual(old, C.duplicatePairKey(books[0], books[1]));
+  assert.deepEqual(C.findDuplicates(books, new Set([old])), []);
+});
+
 test('first author ignores co-authors', () => {
   assert.equal(C.firstAuthor('R.T. Hale, C.J. Marsh'), C.firstAuthor('R.T. Hale'));
   assert.equal(C.firstAuthor('Ann Vale and P.T. Vale'), C.norm('Ann Vale'));

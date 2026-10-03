@@ -9,6 +9,9 @@ already present if any of these match, strongest first:
 3. same author and title, also forgiving of the long Audible form: `A Crown of Embers 5: A Spark of Dawn`
    finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
 
+Titles, authors and series are compared ignoring case, punctuation and accents (`Café` = `Cafe`), in any
+script: two books in Cyrillic or Japanese are told apart by their titles like any others.
+
 The imported edition then goes into the match without replacing anything:
 - if one of the match's editions has the same ASIN, Goodreads id or ISBN, that edition gets whatever it is
   missing (ASIN, Goodreads id, ISBN, publisher, release date, length), and so do its copies on a box set's other titles;

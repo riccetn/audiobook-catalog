@@ -267,7 +267,9 @@ function render(){
       if(el.dataset.confirm === '1'){
         const [removed] = DATA.splice(i,1);
         addExclusions(CatalogImport.exclusionEntries(removed));   // so the next import does not bring it back
+        // the book being edited moves up one when a book before it goes, and Save must still find it
         if(EDIT_INDEX === i){ closeForm(); }
+        else if(EDIT_INDEX !== null && EDIT_INDEX > i) EDIT_INDEX--;
         populateFilters(); render(); persist();
         showIoStatus(`Removed ${removed.t}; imports will skip it.` + keepHint('data/books.json and data/excluded.txt'));
       } else {
