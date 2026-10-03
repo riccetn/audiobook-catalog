@@ -656,6 +656,28 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
   assert.match(other.els.ioStatus.textContent, /2 more excluded from imports/);
 });
 
+test('removing a book while another is being edited saves the edit to the right book', async () => {
+  const mine = JSON.stringify([{ t: 'First', a: 'Ann Vale' }, { t: 'Second', a: 'Ann Vale' }, { t: 'Third', a: 'Ann Vale' }]);
+  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  ctx.setView('library');
+  ctx.openEditForm(1);
+  removeBook(ctx, 0);
+  assert.ok(els.addForm.classList.contains('open'), 'the form stays open on its book');
+  els.f_t.value = 'Second, Edited';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get('DATA.map(b => b.t)'), ['Second, Edited', 'Third']);
+
+  // removing the book being edited closes the form, and removing a later one leaves it be
+  ctx.openEditForm(0);
+  removeBook(ctx, 1);
+  els.f_t.value = 'Second, Again';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get('DATA.map(b => b.t)'), ['Second, Again']);
+  ctx.openEditForm(0);
+  removeBook(ctx, 0);
+  assert.ok(!els.addForm.classList.contains('open'));
+});
+
 test('series show which books are missing, and can be filtered to those', async () => {
   const { els, get } = await boot();
   const info = JSON.parse(DEMO_INFO);
