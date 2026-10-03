@@ -1,23 +1,6 @@
 # Everyday workflows
 
-**Add new Audible purchases**
-
-1. Export your library with the Audible Library Extractor and save the CSV in `data/raw/`.
-2. `node catalog.js import-audible data/raw/<file>.csv --dry-run` to preview, then run it without `--dry-run`.
-   Add `--series` (and `--store uk` etc. if needed) to also fill in the new books' series and the release
-   info of series new to the catalogue from Audible, as **Fill in series from Audible** below does for the
-   whole catalogue.
-3. `make test`, then commit `data/books.json`.
-
-Only finished books are imported. The command lists what it added, and anything ambiguous
-(for example a book Audible files under several series). Each book gets its Audible edition: the ASIN,
-the ISBNs, the narrators, the publisher, the release date and the length, as far as the export has them.
-
-**Or import in the app**: on the *Import & export* page, press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
-runs the same importer and merge as the command line (both use `importers.js`), honours
-`data/excluded.txt`, and shows the same preview: what is already there, which Audible and Goodreads ids get filled
-in, what is new and what needs a look. Nothing changes until you press **Add books**; then, like any
-edit in the page, it is saved to `data/books.json` (see [Running the app and saving edits](saving.md)).
+**Add new Audible purchases or Goodreads books**: see [Audible](audible.md) and [Goodreads](goodreads.md).
 
 **Edit in the app**
 
@@ -67,25 +50,7 @@ the series overview and the series itself list the numbers you don't own (for ex
 doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
-**Fill in series from Audible**: `node catalog.js series --dry-run` looks up your books on Audible by
-their ASIN and shows what it would fill in; run it without `--dry-run` to save it. A book with no series
-gets Audible's series and number (spelled the way your other books spell that series), a book with a
-series but no number gets the number, and a series with no release info gets the number of books Audible
-has out as its total, marked `ongoing` with a note, because Audible can't tell whether a series is finished:
-check it and change it to `complete` in the series form. Nothing you have is ever changed. A box set's ASIN
-gives its titles the series but not a number (the number would be the set's). Books without an ASIN (only
-from Goodreads) are not looked up. It asks audible.com; `--store uk` (or `de`, `fr`, `ca`, `au`, ...)
-asks another store, for books the first one doesn't know. It needs the internet and uses Audible's own
-catalogue API, which needs no account but isn't an official public API, so it could stop working.
-
-**Or in the app**: with `make serve` running, the *Import & export* page has **Fill in series from
-Audible**. Pick the store and press **Look up series**; the server asks Audible (a browser may not), and the
-page shows what would be filled in, the same way the command does. Nothing changes until you press
-**Save series**; then it is saved like any other edit. The panel only shows when the page is served by
-`make serve`.
-The page can also do it after every Audible CSV import: tick **After an Audible import, look up the new
-books' series on Audible** under the import buttons (this browser remembers it). After **Add books**, it
-looks up just the new books and shows their series to confirm.
+**Fill in series from Audible**: see [Audible](audible.md#fill-in-series-from-audible).
 
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
 the import exclusion list, `data/excluded.txt`, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
@@ -146,32 +111,6 @@ for a re-read), or press **+ Read today**. The date shows on the book, and in **
 fills in its *Date Read* on books that have no dates yet (Goodreads keeps only the latest one); it never
 changes dates you already have. Audible imports do not set dates read.
 
-**Goodreads**: `node catalog.js import-goodreads data/raw/goodreads_library_export.csv`, or
-**Goodreads CSV** in the app. Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
-MP3...) and the *read* shelf. The edition's narrator comes from the "Additional Authors" column, which is a guess
-(it never replaces a narrator you already have).
-Each book keeps Goodreads' *Book Id* as its edition's `gr`, with the edition's *Publisher* and *Year Published*,
-so a later export still finds it after you rename it; books already in the catalogue get their Goodreads id
-filled in the first time an export matches them. Goodreads puts the series in the title, as
-`The First Adventure (Fantasy Adventures, #1)` or `The First Adventure: Fantasy Adventures, Book 1`; both
-become the title `The First Adventure` in series `Fantasy Adventures`, number `1`.
-
-**Export to Goodreads**: `node catalog.js export-goodreads goodreads.csv` (or **Goodreads CSV** under
-*Export to Goodreads* on the *Import & export* page) writes the catalogue as a Goodreads library export,
-the format Goodreads' [import page](https://www.goodreads.com/review/import) takes. Every book goes on the
-*read* shelf, also those with no date read (a missing date means unknown, not unread), with the series in
-the title (`The First Adventure (Fantasy Adventures, #1)`), the first author as *Author* and the rest as
-*Additional Authors*, its genres as shelves (`Science Fiction` becomes `science-fiction`), and how many
-dates read it has as *Read Count*. Goodreads keeps one date read, so a book gets its latest full date
-(`2024-03-15` becomes `2024/03/15`); one read only in `2024-03` or `2024` goes without. Goodreads finds a
-book by the *Book Id* and ISBN of one of its editions (preferring one with both), else by title and
-author; a box set's edition, shared with its other titles, is left out so Goodreads doesn't file each
-title as the box set. The command says how many books have no id or ISBN and how many no full date.
-Our own Goodreads import reads the file back.
-
-Books imported before titles were split this way (or by hand) are split when the catalogue loads: a book with
-no series gets the one in its title, and a book that already has that series just loses it from the title.
-A book whose title names a different series or number than the one it has is left alone. `make validate`
-says how many titles still hold their series, and `make format`, or any save, writes them split.
+**Goodreads**: import from and export to Goodreads; see [Goodreads](goodreads.md).
 
 **Hardcover**: import from, export to and sync with your Hardcover shelves; see [Hardcover](hardcover.md).

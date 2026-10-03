@@ -33,7 +33,7 @@ Commands that write refuse to touch the demo data.
 ## Using it
 
 - The catalogue page browses by series or all books and edits books and series info; *Import & export*
-  imports Audible and Goodreads CSVs, makes backups and merges them; *Duplicates* merges books entered twice.
+  imports [Audible](docs/audible.md) and [Goodreads](docs/goodreads.md) CSVs, makes backups and merges them; *Duplicates* merges books entered twice.
 - With `make serve` and your own `data/books.json`, every edit in the pages is saved to `data/` as you
   make it. With any other server, or the demo data, edits stay in the browser: **Export** them and run
   `node catalog.js sync-export <file>`.
@@ -42,12 +42,14 @@ Commands that write refuse to touch the demo data.
 
 ## Documentation
 
-- [Everyday workflows](docs/workflows.md): imports, editing, series info, missing books, removing and
-  merging books, dates read, Goodreads import and export, links
+- [Everyday workflows](docs/workflows.md): editing, series info, missing books, removing and merging
+  books, ISBNs, dates read, links
 - [Data format](docs/data-format.md): `books.json`, editions, box sets, `series-info.json`, tidy names
   and known data quirks
-- [Merge a backup from another device](docs/backups.md): combining two catalogues that both changed
+- [Audible](docs/audible.md): importing your Audible library and filling in series from Audible
+- [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads
 - [Hardcover](docs/hardcover.md): importing, exporting and syncing with Hardcover
+- [Merge a backup from another device](docs/backups.md): combining two catalogues that both changed
 - [How imports avoid clobbering your edits](docs/imports.md): how imported books are matched and merged
 - [Running the app and saving edits](docs/saving.md): `make serve`, browser storage, backups
 - [On your phone](docs/phone.md): installing the app and keeping a catalogue on the device

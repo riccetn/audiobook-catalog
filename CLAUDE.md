@@ -124,6 +124,6 @@ The repo is public; the user's library is not.
 - The data files are written as compact `JSON.stringify` output; the owner removed the
   one-book-per-line canonical layout on purpose, so don't reintroduce reformatting.
 - Behaviour changes need a test in the matching suite, and a docs update when user-visible
-  (`docs/workflows.md` documents every workflow; keep the README to the essentials).
+  (`docs/` documents every workflow; keep the README to the essentials).
 - Commit messages: a short imperative summary of the user-visible change
   (e.g. "Exclude removed books from imports, and carry exclusions in exports").
