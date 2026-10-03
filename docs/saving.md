@@ -19,13 +19,15 @@ While it runs, `make serve` logs to the terminal, each line stamped with the tim
 make to its API (method, path, the answer's status, why it refused if it did, and how long it took),
 every request it sends to Audible or Hardcover (the address, the Hardcover query's name, the answer's
 status), and when a long task (an Audible lookup, a Hardcover import, export or sync) starts and
-finishes, with how it went:
+finishes, with how it went. While a Hardcover run goes, each open page asks for its progress once a
+second, and each of those asks is logged too:
 
 ```
 [21:04:12] started: Hardcover sync (dry run)
+[21:04:12] POST /api/hardcover 202 (3 ms)
 [21:04:12] external: POST https://api.hardcover.app/v1/graphql (me) -> 200 (310 ms)
+[21:04:13] GET /api/hardcover 200 (1 ms)
 [21:04:19] finished: Hardcover sync (dry run), exit code 0 (7.2 s)
-[21:04:19] POST /api/hardcover 200 (7.2 s)
 ```
 
 It never logs what is sent (your books, your Hardcover token), and not the pages and files it serves.

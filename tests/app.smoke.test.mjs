@@ -34,7 +34,7 @@ function makeElement(id) {
  * (default: no data/books.json yet, so the demo). `storage` is a Map standing in for localStorage.
  */
 async function boot({ page = 'index.html', files = { 'data/sample/books.json': DEMO_BOOKS, 'data/sample/series-info.json': DEMO_INFO },
-                      storage = new Map(), api = null, hash = '' } = {}) {
+                      storage = new Map(), api = null, hash = '', setTimeout = () => 0 } = {}) {
   const html = read(page);
   const els = {};
   for (const [, id] of html.matchAll(/id="([^"]+)"/g)) els[id] = makeElement(id);
@@ -80,7 +80,7 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
   };
   const addEventListener = (type, fn) => (windowListeners[type] ||= []).push(fn);
   const ctx = vm.createContext({ document, localStorage, fetch, FileReader, location, history, addEventListener,
-    console, setTimeout: () => 0, clearTimeout() {} });
+    console, setTimeout, clearTimeout() {} });
   // the page's own scripts, in order
   for (const [, src] of html.matchAll(/<script src="([^"]+)">/g)) vm.runInContext(read(src), ctx);
   await vm.runInContext('READY', ctx);
@@ -1157,11 +1157,14 @@ test('Merge previews a backup from another device and keeps both sides\' changes
   assert.equal(els.importConfirm.style.display, 'none');
 });
 
-test('with make serve, the Hardcover panel saves the token and previews, then runs, an import', async () => {
-  const mine = JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale' }]);
-  const files = { 'data/books.json': mine };
-  const calls = [];
-  let token = false;
+/**
+ * A stand-in for `make serve`'s Hardcover endpoints: POST api/hardcover starts a run, and each GET after
+ * that answers with the next of `steps` (progress updates, then the finished run). `ticks` holds the page's
+ * pending polls (its setTimeout(…, 1000)); tick() runs them, as time passing would.
+ */
+function fakeHardcoverServer(steps) {
+  const calls = [], ticks = [];
+  let token = false, job = null, queue = [];
   const api = async (init, url) => {
     const body = init.body ? JSON.parse(init.body) : null;
     calls.push([url, init.method || 'GET', body]);
@@ -1171,37 +1174,102 @@ test('with make serve, the Hardcover panel saves the token and previews, then ru
       if (init.method === 'DELETE') token = false;
       return { status: 200, body: { token } };
     }
-    if (body.dryRun) return { status: 200, body: { code: 0, out: 'Hardcover: 1 books on your Read shelf\n  new: 1\n    + Tidewater - Ann Vale\n(dry run: nothing written)', err: '' } };
-    files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: 'Ann Vale' }]);
-    return { status: 200, body: { code: 0, out: 'wrote data/books.json', err: '' } };
+    if (init.method === 'POST') {
+      job = { id: calls.length, mode: body.mode, dryRun: body.dryRun, running: true, elapsed: 0, step: 'Starting' };
+      queue = steps(body).map(x => ({ ...job, ...x }));
+      return { status: 202, body: { job } };
+    }
+    if (queue.length) job = queue.shift();
+    return { status: 200, body: { job } };
   };
-  const { els, get } = await boot({ page: 'import.html', files, api });
+  const setTimeout = (fn, ms) => { if (ms === 1000) ticks.push(fn); return 0; };
+  const tick = async () => { while (ticks.length) { ticks.shift()(); await settle(); await settle(); } };
+  return { api, calls, ticks, setTimeout, tick };
+}
+
+test('with make serve, the Hardcover panel saves the token and previews, then runs, an import in the background', async () => {
+  const mine = JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale' }]);
+  const files = { 'data/books.json': mine };
+  const server = fakeHardcoverServer(body => body.dryRun
+    ? [{ running: false, elapsed: 2000, step: 'Done', code: 0, out: 'Hardcover: 1 books on your Read shelf\n  new: 1\n    + Tidewater - Ann Vale\n(dry run: nothing written)', err: '' }]
+    : [{ step: 'Putting books on your Hardcover Read shelf', done: 3, total: 10, elapsed: 65000 },
+       (files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: 'Ann Vale' }]),
+        { running: false, elapsed: 70000, step: 'Done', code: 0, out: 'wrote data/books.json', err: '', base: 'new' })]);
+  const { els, get } = await boot({ page: 'import.html', files, api: server.api, setTimeout: server.setTimeout });
   await settle();
   assert.equal(els.hardcoverPanel.style.display, '');
   assert.match(els.hardcoverTokenState.textContent, /Paste an API token/);
   els.hardcoverToken.value = 'Bearer tok-123';
   await els.hardcoverTokenSave.listeners.click[0]();
-  assert.deepEqual(calls.find(c => c[1] === 'PUT'), ['api/hardcover/token', 'PUT', { token: 'Bearer tok-123' }]);
+  assert.deepEqual(server.calls.find(c => c[1] === 'PUT'), ['api/hardcover/token', 'PUT', { token: 'Bearer tok-123' }]);
   assert.equal(els.hardcoverToken.value, '', 'the token is not left in the page');
   assert.match(els.hardcoverTokenState.textContent, /saved with your catalogue/);
 
-  await els.hardcoverImportBtn.listeners.click[0]();
-  const preview = calls.find(c => c[0] === 'api/hardcover');
-  assert.equal(preview[2].mode, 'import');
-  assert.equal(preview[2].dryRun, true);
-  assert.equal(preview[2].base, get('BASELINE'));
-  assert.equal(els.importPreviewTitle.textContent, 'Import from Hardcover');
+  // the preview runs in the background too: the banner shows it, the buttons wait
+  const previewing = els.hardcoverImportBtn.listeners.click[0]();
+  await settle(); await settle();
+  const preview = server.calls.find(c => c[0] === 'api/hardcover' && c[1] === 'POST');
+  assert.deepEqual([preview[2].mode, preview[2].dryRun, preview[2].base], ['import', true, get('BASELINE')]);
+  assert.ok(els.bgTask.classList.contains('show'));
+  assert.match(els.bgTask.innerHTML, /<span class="spinner" aria-hidden="true"><\/span>.*<strong>Checking what a Hardcover import would do<\/strong> <span class="bgTaskTime">0:00<\/span><br>Starting/);
+  assert.doesNotMatch(els.bgTask.innerHTML, /Details/, 'no link to the page it is on');
+  assert.equal(els.hardcoverSyncBtn.disabled, true);
+  await server.tick();
+  await previewing;
+  assert.ok(!els.bgTask.classList.contains('show'));
+  assert.equal(els.hardcoverSyncBtn.disabled, false);
+  assert.equal(els.importPreviewTitle.textContent, 'Import from Hardcover: preview');
   assert.match(els.importPreviewBody.innerHTML, /<pre>Hardcover: 1 books on your Read shelf\n {2}new: 1\n {4}\+ Tidewater - Ann Vale\n?<\/pre>/);
   assert.equal(els.importConfirm.textContent, 'Import');
   assert.equal(get('DATA.length'), 1);
 
-  await els.importConfirm.listeners.click[0]();
+  // the real run: the banner counts along, then the page picks up what it wrote
+  const applying = els.importConfirm.listeners.click[0]();
+  await settle(); await settle();
+  assert.equal(server.calls.filter(c => c[1] === 'POST' && c[0] === 'api/hardcover').at(-1)[2].dryRun, false);
+  assert.match(els.bgTask.innerHTML, /<strong>Importing from Hardcover<\/strong>.*Please don't edit the catalogue until it is done/);
+  server.ticks.splice(1);   // just the next poll
+  const first = server.ticks.shift(); first(); await settle(); await settle();
+  assert.match(els.bgTask.innerHTML, /<span class="bgTaskTime">1:05<\/span><br>Putting books on your Hardcover Read shelf: 3 of 10 <progress max="10" value="3"><\/progress>/);
+  await server.tick();
+  await applying;
   await settle();
-  assert.equal(calls.filter(c => c[0] === 'api/hardcover').at(-1)[2].dryRun, false);
+  assert.ok(!els.bgTask.classList.contains('show'));
   assert.equal(get('DATA.length'), 2, 'the page reloads the catalogue the server wrote');
-  assert.match(els.ioStatus.textContent, /Done\./);
+  assert.equal(els.importPreviewTitle.textContent, 'Import from Hardcover (took 1:10)');
+  assert.match(els.ioStatus.textContent, /Import from Hardcover: done\./);
 
   // without make serve, or with the demo data, there is nothing to show
   const plain = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   assert.equal(plain.els.hardcoverPanel.style.display, 'none');
+});
+
+test('every page shows a Hardcover run already going, and picks up what it wrote', async () => {
+  const mine = JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale' }]);
+  const files = { 'data/books.json': mine };
+  const server = fakeHardcoverServer(() => []);
+  let gets = 0;
+  const api = async (init, url) => {
+    if (url !== 'api/hardcover') return server.api(init, url);
+    gets++;
+    if (gets === 1) return { status: 200, body: { job: { id: 7, mode: 'sync', dryRun: false, running: true, elapsed: 3000, step: 'Finding your books on Hardcover', done: 50, total: 200 } } };
+    files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: 'Ann Vale' }]);
+    return { status: 200, body: { job: { id: 7, mode: 'sync', dryRun: false, running: false, elapsed: 9000, step: 'Done', code: 0, out: '', err: '', base: 'new' } } };
+  };
+  const { els, get } = await boot({ files, api, setTimeout: server.setTimeout });
+  await settle(); await settle();
+  assert.ok(els.bgTask.classList.contains('show'));
+  assert.match(els.bgTask.innerHTML, /<strong>Syncing with Hardcover<\/strong> <span class="bgTaskTime">0:03<\/span><br>Finding your books on Hardcover: 50 of 200/);
+  assert.match(els.bgTask.innerHTML, /<a href="import.html">Details<\/a>/);
+  await server.tick();
+  await settle();
+  assert.ok(!els.bgTask.classList.contains('show'));
+  assert.equal(get('DATA.length'), 2);
+  assert.match(els.ioStatus.textContent, /Syncing with Hardcover: done\./);
+
+  // a run that ended before the page loaded shows nothing
+  const later = await boot({ files, api: async (init, url) => url === 'api/hardcover'
+    ? { status: 200, body: { job: { id: 7, mode: 'sync', running: false, code: 0 } } } : server.api(init, url) });
+  await settle();
+  assert.ok(!later.els.bgTask.classList.contains('show'));
 });

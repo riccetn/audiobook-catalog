@@ -576,40 +576,46 @@ function handleHardcoverToken(req, res, root, port){
   });
 }
 
+/** What the page sees of a Hardcover run. */
+const jobView = job => job && {id: job.id, mode: job.mode, dryRun: job.dryRun, running: job.running, started: job.started,
+  elapsed: (job.finished || Date.now()) - job.started, step: job.step, done: job.done, total: job.total,
+  out: job.out.join('\n'), err: job.err.join('\n'), code: job.code, base: job.base, infoBase: job.infoBase};
+
 /**
- * The page's Hardcover import, export and sync: POST {mode: "import", "export" or "sync", dryRun, base,
- * infoBase} runs `node catalog.js hardcover-<mode>` on your own data and answers {code, out, err} with
- * what it printed. Like a save, it is refused when the files changed on disk since the page loaded them,
- * so the page's edits and the run never overwrite each other. `net` swaps in {fetch, pause, env} for tests.
+ * The page's Hardcover import, export and sync, run in the background: POST {mode: "import", "export" or
+ * "sync", dryRun, base, infoBase} starts `node catalog.js hardcover-<mode>` on your own data and answers 202
+ * {job} at once; GET answers {job} (the run going on, or the last one, or null) with its progress and,
+ * once done, what it printed and its exit code. Like a save, a run is refused when the files changed on
+ * disk since the page loaded them, and one runs at a time. `net` swaps in {fetch, pause, env} for tests.
  */
-function handleHardcover(req, res, root, port, net, running, log){
-  if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use POST'}); return; }
+function handleHardcover(req, res, root, port, net, runs, log){
+  if(req.method === 'GET'){ sendJson(res, 200, {job: jobView(runs.job)}); return; }
+  if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use GET or POST'}); return; }
   if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'only accepted from this page'}); return; }
   const dir = path.join(root, 'data');
   const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
   if(!fs.existsSync(booksPath)){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
-  readJson(req, res, 4 * 1024, async body => {
+  readJson(req, res, 4 * 1024, body => {
     if(!body || !['import', 'export', 'sync'].includes(body.mode)){ sendJson(res, 400, {error: 'expected {mode: "import", "export" or "sync", dryRun}'}); return; }
+    if(runs.job && runs.job.running){ sendJson(res, 409, {error: 'a Hardcover run is still going', job: jobView(runs.job)}); return; }
     const infoText = () => fs.existsSync(infoPath) ? readText(infoPath) : '{}';
     if(body.base !== C.fingerprint(readText(booksPath)) || body.infoBase !== C.fingerprint(infoText())){
       sendJson(res, 409, {error: 'data/books.json or data/series-info.json changed on disk since the page loaded it', conflict: true});
       return;
     }
-    if(running.now){ sendJson(res, 409, {error: 'a Hardcover run is still going'}); return; }
-    running.now = true;
-    const out = [], err = [];
-    const io = {out: s => out.push(s), err: s => err.push(s), fetch: net.fetch, pause: net.pause, env: net.env};
-    const finish = startTask(log, `Hardcover ${body.mode}${body.dryRun ? ' (dry run)' : ''}`);
-    let code;
-    try{
-      code = await cmdHardcover({root, data: dir, dryRun: Boolean(body.dryRun)}, io, body.mode);
-    }catch(exc){
-      code = 1;
-      err.push(`error: ${exc.message}`);
-    }finally{ running.now = false; }
-    finish(`exit code ${code}${err.length ? `: ${err[0]}` : ''}`);
-    sendJson(res, 200, {code, out: out.join('\n'), err: err.join('\n'),
-      base: C.fingerprint(readText(booksPath)), infoBase: C.fingerprint(infoText())});
+    const job = runs.job = {id: runs.next++, mode: body.mode, dryRun: Boolean(body.dryRun), running: true, started: Date.now(),
+      finished: null, step: 'Starting', done: null, total: null, out: [], err: [], code: null, base: null, infoBase: null};
+    const io = {out: s => job.out.push(s), err: s => job.err.push(s), fetch: net.fetch, pause: net.pause, env: net.env,
+      progress: (text, done, total) => Object.assign(job, {step: text, done: total ? done : null, total: total || null})};
+    const finish = startTask(log, `Hardcover ${job.mode}${job.dryRun ? ' (dry run)' : ''}`);
+    sendJson(res, 202, {job: jobView(job)});
+    Promise.resolve().then(() => cmdHardcover({root, data: dir, dryRun: job.dryRun}, io, job.mode))
+      .catch(exc => { job.err.push(`error: ${exc.message}`); return 1; })
+      .then(code => {
+        Object.assign(job, {code, running: false, finished: Date.now(), step: 'Done', done: null, total: null});
+        try{ Object.assign(job, {base: C.fingerprint(readText(booksPath)), infoBase: C.fingerprint(infoText())}); }catch(exc){ /* left null */ }
+        finish(`exit code ${code}${job.err.length ? `: ${job.err[0]}` : ''}`);
+      });
   });
 }
 
@@ -665,7 +671,7 @@ function createServer(root, port, audible = {}, hardcover = {}, log = () => {}){
   const fetchNow = (...a) => globalThis.fetch(...a);
   const get = loggedFetch(audible.fetch || fetchNow, log), pause = audible.pause || defaultPause;
   const net = {...hardcover, fetch: loggedFetch(hardcover.fetch || fetchNow, log)};
-  const running = {now: false};   // one Hardcover run at a time
+  const runs = {job: null, next: 1};   // the Hardcover run going on, or the last one (one at a time)
   return http.createServer((req, res) => {
     let file, urlPath;
     try{
@@ -680,7 +686,7 @@ function createServer(root, port, audible = {}, hardcover = {}, log = () => {}){
     if(urlPath === '/api/save'){ handleSave(req, res, root, port()); return; }
     if(urlPath === '/api/audible'){ handleAudible(req, res, port(), get, pause, log); return; }
     if(urlPath === '/api/hardcover/token'){ handleHardcoverToken(req, res, root, port()); return; }
-    if(urlPath === '/api/hardcover'){ handleHardcover(req, res, root, port(), net, running, log); return; }
+    if(urlPath === '/api/hardcover'){ handleHardcover(req, res, root, port(), net, runs, log); return; }
     if(!file.startsWith(root + path.sep) && file !== root){ res.writeHead(403).end('forbidden'); return; }
     // the token gives access to your Hardcover account: no page gets to read it
     if(path.basename(file).toLowerCase().includes(HARDCOVER_TOKEN_FILE)){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }
@@ -822,7 +828,7 @@ function hardcoverClient(io, dir){
 }
 
 /** Every book on your Hardcover shelves (user_books rows, with their reads). */
-async function fetchHardcoverShelf(ask){
+async function fetchHardcoverShelf(ask, step){
   const me = await ask(C.HARDCOVER_QUERIES.me);
   const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
   if(!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
@@ -830,24 +836,27 @@ async function fetchHardcoverShelf(ask){
   for(let offset = 0; ; offset += C.HARDCOVER_PAGE){
     const page = (await ask(C.HARDCOVER_QUERIES.shelf, {user, offset})).user_books || [];
     shelf.push(...page);
+    step(`Reading your Hardcover shelves: ${shelf.length} books`);
     if(page.length < C.HARDCOVER_PAGE) return shelf;
   }
 }
 
 /** Hardcover rows (`kind` 'books' or 'editions') by id, asked in batches. */
-async function fetchHardcoverRows(ask, kind, ids){
+async function fetchHardcoverRows(ask, kind, ids, step){
   const rows = new Map();
   for(let i = 0; i < ids.length; i += C.HARDCOVER_BATCH){
+    step(`Reading the ${kind} on your Read shelf`, i, ids.length);
     for(const row of (await ask(C.HARDCOVER_QUERIES[kind], {ids: ids.slice(i, i + C.HARDCOVER_BATCH)}))[kind] || []) rows.set(row.id, row);
   }
   return rows;
 }
 
 /** The Hardcover ids of your editions' ASINs, ISBNs and Goodreads ids (see C.hardcoverMatches). */
-async function findOnHardcover(ask, lookups){
+async function findOnHardcover(ask, lookups, step){
   const found = {hc: new Map(), asin: new Map(), isbn: new Map(), gr: new Map()};
   const longest = Math.max(0, ...Object.values(lookups).map(l => l.length));
   for(let i = 0; i < longest; i += C.HARDCOVER_BATCH){
+    step('Finding your books on Hardcover', i, longest);
     const slice = Object.fromEntries(Object.entries(lookups).map(([k, l]) => [k, l.slice(i, i + C.HARDCOVER_BATCH)]));
     const q = C.hardcoverFindQuery(slice);
     if(!q) continue;
@@ -861,9 +870,11 @@ async function findOnHardcover(ask, lookups){
  * hardcover-import, hardcover-export and hardcover-sync (`mode` 'import', 'export' or 'sync': import, then
  * export). Import adds the books on your Hardcover Read shelf like any import; export puts your books on
  * that shelf with their dates read. Neither ever changes or removes anything, here or on Hardcover.
+ * `io.progress(text, done, total)`, when given, hears what it is doing (`serve` shows it in the page).
  * Returns a promise of the exit code.
  */
 async function cmdHardcover(args, io, mode){
+  const step = io.progress || (() => {});
   if(!requireOwnData(args, io)) return 2;
   const ask = hardcoverClient(io, args.data);
   if(!ask){
@@ -872,19 +883,21 @@ async function cmdHardcover(args, io, mode){
     return 2;
   }
   const [booksPath, infoPath, excludedPath] = paths(args);
-  const books = loadBooks(booksPath), info = loadSeriesInfo(infoPath), before = JSON.stringify(books);
+  const booksText = readText(booksPath);
+  const books = C.fixBooks(JSON.parse(booksText)), info = loadSeriesInfo(infoPath), before = JSON.stringify(books);
   const stop = exc => { io.err(`error: ${exc.message}; nothing written`); return 1; };
   let shelf;
   try{
-    shelf = await fetchHardcoverShelf(ask);
+    step('Reading your Hardcover shelves');
+    shelf = await fetchHardcoverShelf(ask, step);
   }catch(exc){ return stop(exc); }
 
   if(mode !== 'export'){
     const read = shelf.filter(ub => ub && ub.status_id === 3);
     let result;
     try{
-      const found = await fetchHardcoverRows(ask, 'books', [...new Set(read.map(ub => ub.book_id))]);
-      const editions = await fetchHardcoverRows(ask, 'editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))]);
+      const found = await fetchHardcoverRows(ask, 'books', [...new Set(read.map(ub => ub.book_id))], step);
+      const editions = await fetchHardcoverRows(ask, 'editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
       result = C.readHardcover(shelf, found, editions);
     }catch(exc){ return stop(exc); }
     const report = C.merge(books, result.records, loadExclusions(excludedPath), {allDates: true, addable: rec => result.audio.has(rec)});
@@ -897,7 +910,7 @@ async function cmdHardcover(args, io, mode){
   let plan = null, filled = [];
   if(mode !== 'import'){
     try{
-      filled = C.addHardcoverIds(books, await findOnHardcover(ask, C.hardcoverLookups(books)));
+      filled = C.addHardcoverIds(books, await findOnHardcover(ask, C.hardcoverLookups(books), step));
     }catch(exc){ return stop(exc); }
     plan = C.planHardcoverExport(books, shelf);
     const reads = plan.add.reduce((n, a) => n + a.dates.length, 0) + plan.reads.reduce((n, a) => n + a.dates.length, 0);
@@ -926,18 +939,25 @@ async function cmdHardcover(args, io, mode){
     io.out('(dry run: nothing written)');
     return 0;
   }
+  // an edit saved meanwhile (from the page) would be lost by writing, and the export plan made from an old catalogue
+  if(readText(booksPath) !== booksText){
+    io.err(`error: ${shown(booksPath, args.root)} changed while this ran (an edit in the page?); nothing written, ` +
+      'nothing sent to Hardcover. Run it again.');
+    return 1;
+  }
   // the ids first, so they are kept even if Hardcover stops answering halfway
   if(JSON.stringify(books) !== before){
     dumpBooks(books, booksPath);
     io.out(`wrote ${shown(booksPath, args.root)}`);
   }
   if(!plan) return 0;
-  return pushToHardcover(ask, plan, io);
+  return pushToHardcover(ask, plan, io, step);
 }
 
 /** Carry out planHardcoverExport()'s plan on Hardcover. Returns a promise of the exit code. */
-async function pushToHardcover(ask, plan, io){
-  let shelved = 0, reads = 0;
+async function pushToHardcover(ask, plan, io, step){
+  let shelved = 0, reads = 0, done = 0;
+  const total = plan.add.length + plan.reads.length;
   const problems = [];
   const addRead = async (userBook, edition, date, rec) => {
     const r = (await ask(C.HARDCOVER_QUERIES.addRead, {id: userBook, read: {finished_at: date, ...(edition ? {edition_id: edition} : {})}})).insert_user_book_read;
@@ -945,13 +965,17 @@ async function pushToHardcover(ask, plan, io){
   };
   try{
     for(const a of plan.add){
+      step('Putting books on your Hardcover Read shelf', done++, total);
       const object = {book_id: a.book, status_id: 3, ...(a.edition ? {edition_id: a.edition} : {})};
       const r = (await ask(C.HARDCOVER_QUERIES.addBook, {object})).insert_user_book;
       if(!r || r.error || !r.id){ problems.push(`${a.recs[0].t}: not added (${r && r.error || 'no answer'})`); continue; }
       shelved++;
       for(const d of a.dates) await addRead(r.id, a.edition, d, a.recs[0]);
     }
-    for(const a of plan.reads) for(const d of a.dates) await addRead(a.userBook, a.edition, d, a.recs[0]);
+    for(const a of plan.reads){
+      step('Adding reads to books on your Read shelf', done++, total);
+      for(const d of a.dates) await addRead(a.userBook, a.edition, d, a.recs[0]);
+    }
   }catch(exc){
     io.err(`error: ${exc.message}; stopped after putting ${shelved} book(s) on Hardcover and adding ${reads} read(s). ` +
       'Run it again to carry on: what is already there is not added twice.');
