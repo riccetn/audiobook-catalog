@@ -516,6 +516,51 @@ test('serve looks books up on Audible for the page, and only for the page', asyn
   assert.equal(asked.length, before);
 });
 
+test('serve logs API calls, requests to Audible and Hardcover, and long tasks, never the token', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale', e: [{ id: 'B0LANTERN1' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
+  const fetchAudible = async u => u.includes('B0DOWN0000') ? { ok: false, status: 503 }
+    : { ok: true, status: 200, json: async () => ({ product: { series: [{ title: 'Gull Isle', sequence: '2', asin: 'B0GULLISLE' }] } }) };
+  const hc = fakeHardcover(hardcoverState());
+  const lines = [];
+  const server = createServer(tmp, () => server.address().port, { fetch: fetchAudible, pause: async () => {} },
+    { fetch: hc.fetch, pause: async () => {}, env: {} }, line => lines.push(line));
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  t.after(() => server.close());
+  const base = `http://localhost:${server.address().port}`;
+  const send = (url, method, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const until = async test => { while (!lines.some(test)) await new Promise(done => setTimeout(done, 5)); };
+
+  await send('/api/audible', 'POST', { store: 'us', groups: 'series', asins: ['B0SERIES01'] });
+  await send('/api/audible', 'POST', { store: 'us', groups: 'series', asins: ['B0DOWN0000'] });
+  await fetch(base + '/index.html');
+  await send('/api/hardcover/token', 'PUT', { token: 'Bearer tok-123' });
+  await send('/api/hardcover', 'POST', { mode: 'import', dryRun: true, base: CatalogImport.fingerprint(fs.readFileSync(path.join(dataDir, 'books.json'), 'utf8')),
+    infoBase: CatalogImport.fingerprint('{}') });
+  await until(l => l.startsWith('finished: Hardcover'));
+  await send('/api/hardcover', 'POST', { mode: 'import', base: 'old', infoBase: 'old' });
+  await until(l => l.startsWith('POST /api/hardcover 409'));
+
+  const log = lines.join('\n');
+  assert.match(log, /^started: Audible series lookup of 1 ASIN\(s\) on audible\.com$/m);
+  assert.match(log, /^external: GET https:\/\/api\.audible\.com\/1\.0\/catalog\/products\/B0SERIES01\?response_groups=series -> 200 \(\d+ ms\)$/m);
+  assert.match(log, /^finished: Audible series lookup of 1 ASIN\(s\) on audible\.com, 1 found \(\d+ ms\)$/m);
+  assert.match(log, /^POST \/api\/audible 200 \(\d+ ms\)$/m);
+  assert.match(log, /^external: GET \S+B0DOWN0000\S+ -> 503/m);
+  assert.match(log, /^finished: \S+ series lookup .*, failed: Audible answered 503/m);
+  assert.match(log, /^POST \/api\/audible 502 \(could not reach audible\.com \(Audible answered 503\)\) \(\d+ ms\)$/m);
+  assert.match(log, /^PUT \/api\/hardcover\/token 200 /m);
+  assert.match(log, /^started: Hardcover import \(dry run\)$/m);
+  assert.match(log, /^external: POST https:\/\/api\.hardcover\.app\/v1\/graphql \(me\) -> 200 /m);
+  assert.match(log, /^external: POST https:\/\/api\.hardcover\.app\/v1\/graphql \(Shelf\) -> 200 /m);
+  assert.match(log, /^finished: Hardcover import \(dry run\), exit code 0 \(\d+ ms\)$/m);
+  assert.match(log, /^POST \/api\/hardcover 409 \(data\/books\.json or data\/series-info\.json changed on disk since the page loaded it\)/m);
+  assert.doesNotMatch(log, /index\.html/, 'only API calls, not the pages');
+  assert.doesNotMatch(log, /tok-123/, 'never the token');
+});
+
 test('serve saves the page\'s edits to your own data, and nothing else', async t => {
   const { tmp, run } = sandbox(t);
   const server = createServer(tmp, () => server.address().port);

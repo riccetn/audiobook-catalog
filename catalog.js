@@ -418,6 +418,7 @@ function writeAtomic(file, text, mode){
 }
 
 function sendJson(res, status, body){
+  if(status >= 400 && body && body.error) res.logNote = body.error;   // for serve's log (see createServer)
   res.writeHead(status, {'Content-Type': CONTENT_TYPES['.json'], 'Cache-Control': 'no-store'});
   res.end(JSON.stringify(body));
 }
@@ -498,7 +499,7 @@ const ASIN = /^[A-Z0-9]{10}$/;
  * with up to AUDIBLE_BATCH ASINs answers {results: {asin: ...}} as fetchFromAudible() finds them.
  * Same-origin only, like saves, so no other site can use this server to reach Audible.
  */
-function handleAudible(req, res, port, get, pause){
+function handleAudible(req, res, port, get, pause, log){
   if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use POST'}); return; }
   if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'lookups are only accepted from this page'}); return; }
   const chunks = [];
@@ -519,9 +520,17 @@ function handleAudible(req, res, port, get, pause){
       sendJson(res, 400, {error: `expected {store, groups: "series" or "relationships", asins: up to ${AUDIBLE_BATCH} ASINs}`});
       return;
     }
+    const finish = startTask(log, `Audible ${groups} lookup of ${asins.length} ASIN(s) on ${C.AUDIBLE_STORES[store]}`);
+    let found;
     try{
-      sendJson(res, 200, {results: Object.fromEntries(await fetchFromAudible(get, pause, store, asins, groups))});
-    }catch(exc){ sendJson(res, 502, {error: `could not reach ${C.AUDIBLE_STORES[store]} (${exc.message})`}); }
+      found = await fetchFromAudible(get, pause, store, asins, groups);
+    }catch(exc){
+      finish(`failed: ${exc.message}`);
+      sendJson(res, 502, {error: `could not reach ${C.AUDIBLE_STORES[store]} (${exc.message})`});
+      return;
+    }
+    finish(`${[...found.values()].filter(x => x !== null).length} found`);
+    sendJson(res, 200, {results: Object.fromEntries(found)});
   });
 }
 
@@ -579,7 +588,7 @@ const jobView = job => job && {id: job.id, mode: job.mode, dryRun: job.dryRun, r
  * once done, what it printed and its exit code. Like a save, a run is refused when the files changed on
  * disk since the page loaded them, and one runs at a time. `net` swaps in {fetch, pause, env} for tests.
  */
-function handleHardcover(req, res, root, port, net, runs){
+function handleHardcover(req, res, root, port, net, runs, log){
   if(req.method === 'GET'){ sendJson(res, 200, {job: jobView(runs.job)}); return; }
   if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use GET or POST'}); return; }
   if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'only accepted from this page'}); return; }
@@ -598,22 +607,70 @@ function handleHardcover(req, res, root, port, net, runs){
       finished: null, step: 'Starting', done: null, total: null, out: [], err: [], code: null, base: null, infoBase: null};
     const io = {out: s => job.out.push(s), err: s => job.err.push(s), fetch: net.fetch, pause: net.pause, env: net.env,
       progress: (text, done, total) => Object.assign(job, {step: text, done: total ? done : null, total: total || null})};
+    const finish = startTask(log, `Hardcover ${job.mode}${job.dryRun ? ' (dry run)' : ''}`);
     sendJson(res, 202, {job: jobView(job)});
     Promise.resolve().then(() => cmdHardcover({root, data: dir, dryRun: job.dryRun}, io, job.mode))
       .catch(exc => { job.err.push(`error: ${exc.message}`); return 1; })
       .then(code => {
         Object.assign(job, {code, running: false, finished: Date.now(), step: 'Done', done: null, total: null});
         try{ Object.assign(job, {base: C.fingerprint(readText(booksPath)), infoBase: C.fingerprint(infoText())}); }catch(exc){ /* left null */ }
+        finish(`exit code ${code}${job.err.length ? `: ${job.err[0]}` : ''}`);
       });
   });
 }
 
+// ----------------------------------------------------------- serve's log
+/** serve's log: each line goes to `write` (the terminal) stamped with the local time. */
+function serveLogger(write){
+  return line => write(`[${new Date().toTimeString().slice(0, 8)}] ${line}`);
+}
+
+const took = ms => ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+
+/**
+ * Log that a long task (an Audible lookup, a Hardcover run) started, and return a function that logs it
+ * finished, with what came of it and how long it took.
+ */
+function startTask(log, what){
+  const started = Date.now();
+  log(`started: ${what}`);
+  return outcome => log(`finished: ${what}${outcome ? `, ${outcome}` : ''} (${took(Date.now() - started)})`);
+}
+
+/**
+ * `get` (a fetch) that logs each request to Audible or Hardcover: method, address, the GraphQL operation,
+ * status and time. Never headers or bodies: they carry the Hardcover token and your books.
+ */
+function loggedFetch(get, log){
+  return async (url, init = {}) => {
+    const started = Date.now();
+    let op = '';
+    try{
+      // its name, or for an unnamed one ("query { me { id } }") what it asks for
+      const m = /^\s*(?:query|mutation)\s*(\w*)[^{]*\{\s*(\w+)/.exec(JSON.parse(init.body).query);
+      if(m) op = ` (${m[1] || m[2]})`;
+    }catch(exc){ /* not GraphQL */ }
+    const what = `${init.method || 'GET'} ${url}${op}`;
+    try{
+      const res = await get(url, init);
+      log(`external: ${what} -> ${res.status} (${took(Date.now() - started)})`);
+      return res;
+    }catch(exc){
+      log(`external: ${what} -> failed: ${exc.message} (${took(Date.now() - started)})`);
+      throw exc;
+    }
+  };
+}
+
 /**
  * The server behind `serve`: the project folder, plus the page's saves (see handleSave) and Audible
- * lookups (handleAudible; `audible` swaps in {fetch, pause} for tests).
+ * lookups (handleAudible; `audible` swaps in {fetch, pause} for tests). `log` hears each API call, each
+ * request to Audible or Hardcover and each long task (cmdServe prints them in the terminal).
  */
-function createServer(root, port, audible = {}, hardcover = {}){
-  const get = audible.fetch || globalThis.fetch, pause = audible.pause || defaultPause;
+function createServer(root, port, audible = {}, hardcover = {}, log = () => {}){
+  const fetchNow = (...a) => globalThis.fetch(...a);
+  const get = loggedFetch(audible.fetch || fetchNow, log), pause = audible.pause || defaultPause;
+  const net = {...hardcover, fetch: loggedFetch(hardcover.fetch || fetchNow, log)};
   const runs = {job: null, next: 1};   // the Hardcover run going on, or the last one (one at a time)
   return http.createServer((req, res) => {
     let file, urlPath;
@@ -621,10 +678,15 @@ function createServer(root, port, audible = {}, hardcover = {}){
       urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       file = path.join(root, urlPath.endsWith('/') ? urlPath + 'index.html' : urlPath);
     }catch(e){ res.writeHead(400).end('bad request'); return; }
+    if(urlPath.startsWith('/api/')){
+      // the path only: request bodies carry your books and the Hardcover token
+      const started = Date.now();
+      res.on('close', () => log(`${req.method} ${urlPath} ${res.statusCode}${res.logNote ? ` (${res.logNote})` : ''} (${took(Date.now() - started)})`));
+    }
     if(urlPath === '/api/save'){ handleSave(req, res, root, port()); return; }
-    if(urlPath === '/api/audible'){ handleAudible(req, res, port(), get, pause); return; }
+    if(urlPath === '/api/audible'){ handleAudible(req, res, port(), get, pause, log); return; }
     if(urlPath === '/api/hardcover/token'){ handleHardcoverToken(req, res, root, port()); return; }
-    if(urlPath === '/api/hardcover'){ handleHardcover(req, res, root, port(), hardcover, runs); return; }
+    if(urlPath === '/api/hardcover'){ handleHardcover(req, res, root, port(), net, runs, log); return; }
     if(!file.startsWith(root + path.sep) && file !== root){ res.writeHead(403).end('forbidden'); return; }
     // the token gives access to your Hardcover account: no page gets to read it
     if(path.basename(file).toLowerCase().includes(HARDCOVER_TOKEN_FILE)){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }
@@ -926,7 +988,7 @@ async function pushToHardcover(ask, plan, io, step){
 
 /** Serve the project folder to this machine only (it holds your personal data). */
 function cmdServe(args, io){
-  const server = createServer(args.root, () => server.address().port);
+  const server = createServer(args.root, () => server.address().port, {}, {}, serveLogger(io.out));
   server.listen(args.port, '127.0.0.1', () => {
     io.out(`serving ${args.root} at http://localhost:${args.port}/ (Ctrl+C to stop)`);
     io.out(fs.existsSync(path.join(args.root, 'data', 'books.json'))
