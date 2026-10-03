@@ -107,6 +107,11 @@ function previewImport(kind, text, fileName){
   if(report.detailsFilled.length) html += `<p>Narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
   if(report.editionsAdded.length) html += `<p>Other editions added to existing books: ${report.editionsAdded.length}</p>`;
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
+  if(report.boxSets.length){
+    html += `<p>Box sets split into their titles, each with the set's edition: ${report.boxSets.length}</p><ul>` +
+      report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(b.a)}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
+    if(report.boxSets.some(b=> b.added)) html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo;; rename it on its card.</p>';
+  }
   html += `<p>New: ${report.added.length}</p>`;
   if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
   if(result.warnings.length){

@@ -21,3 +21,18 @@ ISBNs are *not* used to decide that two books are the same, because one ISBN can
 an incoming book whose ISBN is already on another book is still added if nothing else matches. New books get the series spelling already in use. If Audible lists a book under
 several series, a parent series wins over its sub-series (`Thornmere` over `Thornmere: Wardens`);
 otherwise the first is used and the book is flagged in the import output.
+
+## Box sets
+
+A box set in an export, one whose series number is a range (Audible's `Ember (books 1-3)`, Goodreads'
+`The Ember Trilogy (Ember, #1-3)`), is added as its titles rather than as one book: books 1, 2 and 3 of
+`Ember` each get the set's edition, the same ASIN or Goodreads id on each (see
+[box sets](data-format.md)), with the set's name as the edition's description. A title you already have
+(same first author, series and number) gains the edition beside its own editions, which are never filled
+in from the set's; a title you don't have yet is added as `Ember, Book 2`, for you to rename. Each title
+gets the set's date read when it has none. The import lists the box sets it split. Importing the same set
+from the other export later fills in that edition on every title (Goodreads' id beside Audible's ASIN).
+
+A box set stays one book when it is already in your catalogue as one book, when its export names no range
+(an "omnibus" with no numbers: the export doesn't say which titles it holds), or when it has no ASIN,
+Goodreads id or ISBN to tie its titles together.

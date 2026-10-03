@@ -207,6 +207,7 @@ test('Audible titles lose a trailing series number only when it matches', () => 
   assert.equal(C.cleanTitle('Marsh Kisses', '1'), 'Marsh Kisses');
   assert.equal(C.cleanTitle('Mort', null), 'Mort');
   assert.equal(C.cleanTitle('7', '7'), '7');
+  assert.equal(C.cleanTitle('Ember: Books 1-3', '1-3'), 'Ember: Books 1-3', 'a box set keeps its range');
 });
 
 test('Audible rows', () => {
@@ -319,6 +320,8 @@ test('Goodreads series formats', () => {
     'Ballads and Brigands (Red Harbor #3)': ['Ballads and Brigands', 'Red Harbor', '3'],
     'Rift Clash: A LitRPG Adventure (Rift Universe, Book 8)': ['Rift Clash: A LitRPG Adventure', 'Rift Universe', '8'],
     'Parallel (Parallel, #1)': ['Parallel', 'Parallel', '1'],
+    'The Ember Trilogy (Ember, #1-3)': ['The Ember Trilogy', 'Ember', '1-3'],
+    'Gull Isle Omnibus (Gull Isle #4\u20136)': ['Gull Isle Omnibus', 'Gull Isle', '4-6'],
     'The Lamplighter': ['The Lamplighter', null, null],
   };
   for (const [raw, expected] of Object.entries(cases)) assert.deepEqual(C.parseGoodreadsTitle(raw), expected, raw);
@@ -624,13 +627,69 @@ test('merge: a box set edition on several titles matches them, and is filled in 
   const existing = [book('Two', 'Author', { s: 'S', sn: '2', ...ed(box()) }), book('Three', 'Author', { s: 'S', sn: '3', ...ed(box()) })];
   const report = C.merge(existing, [book('S: Books 2-3', 'Author', { s: 'S', sn: '2-3', ...ed({ id: 'BBOX', p: 'Gull Audio' }) })]);
   assert.deepEqual([report.added.length, report.matched], [0, 1]);
-  assert.deepEqual(existing.map(b => b.e), [[{ id: 'BBOX', p: 'Gull Audio' }], [{ id: 'BBOX', p: 'Gull Audio' }]]);
+  const filled = { id: 'BBOX', p: 'Gull Audio', desc: 'S: Books 2-3' };
+  assert.deepEqual(existing.map(b => b.e), [[filled], [filled]]);
   assert.notEqual(existing[0].e[0], existing[1].e[0], 'copies, not one shared object');
 
   // a book whose only edition is the box set gets its own edition rather than filling in the box set
   C.merge(existing, [book('Three', 'Author', ed({ gr: '33' }))]);
-  assert.deepEqual(existing[1].e, [{ id: 'BBOX', p: 'Gull Audio' }, { gr: '33' }]);
-  assert.deepEqual(existing[0].e, [{ id: 'BBOX', p: 'Gull Audio' }]);
+  assert.deepEqual(existing[1].e, [filled, { gr: '33' }]);
+  assert.deepEqual(existing[0].e, [filled]);
+});
+
+test('merge: a box set becomes its titles, each with the same edition', () => {
+  const existing = [
+    book('Spark', 'Ann Vale', { s: 'Ember', sn: '1', ...ed({ id: 'B1', n: 'Tobias Frane' }) }),
+    book('Flame', 'Ann Vale', { s: 'Ember', sn: '2', r: ['2023'] }),
+    book('Other', 'Ann Vale', { s: 'Gull Isle', sn: '3' }),
+  ];
+  const box = book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember Series', sn: '1-3', g: ['Fantasy'], r: ['2024-05-01'], ...ed({ id: 'BBOX', n: 'Hollis Marr' }) });
+  const report = C.merge(existing, [box]);
+  const set = { id: 'BBOX', n: 'Hollis Marr', desc: 'Ember: Books 1-3' };
+  assert.deepEqual(existing.map(b => [b.t, b.sn, b.e, b.r]), [
+    ['Spark', '1', [{ id: 'B1', n: 'Tobias Frane' }, set], ['2024-05-01']],
+    ['Flame', '2', [set], ['2023']],
+    ['Other', '3', undefined, undefined],
+    ['Ember, Book 3', '3', [set], ['2024-05-01']],
+  ]);
+  assert.deepEqual(existing[3], { t: 'Ember, Book 3', a: 'Ann Vale', s: 'Ember', sn: '3', g: ['Fantasy'], r: ['2024-05-01'], e: [set] });
+  assert.deepEqual([report.added.map(b => b.t), report.editionsAdded.map(b => b.t), report.datesFilled.map(b => b.t), report.matched],
+    [['Ember, Book 3'], ['Spark', 'Flame'], ['Spark'], 1]);
+  assert.deepEqual(report.boxSets, [{ t: 'Ember: Books 1-3', a: 'Ann Vale', titles: 2, added: 1 }]);
+  assert.deepEqual(C.validate(existing, {}), { errors: [], warnings: [] });
+
+  // the same set again changes nothing; Goodreads' copy of it fills in the edition on every title
+  assert.deepEqual(C.merge(existing, [structuredClone(box)]).added, []);
+  const gr = C.merge(existing, [book('The Ember Trilogy', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ gr: '99' }) })]);
+  assert.deepEqual(gr.added, []);
+  assert.deepEqual([0, 1, 3].map(i => existing[i].e.at(-1)), Array(3).fill({ ...set, gr: '99' }));
+  assert.equal(existing[0].e.length, 2, 'the title\'s own edition is left alone');
+
+  // a single title imported later finds the title the set added
+  assert.equal(C.merge(existing, [book('Ember Falls', 'Ann Vale', { s: 'Ember', sn: '3', ...ed({ id: 'B3' }) })]).added.length, 0);
+  assert.deepEqual(existing[3].e, [{ ...set, gr: '99' }, { id: 'B3' }]);
+});
+
+test('merge: box sets already in the catalogue as one book, without ids, or excluded stay as they are', () => {
+  const whole = [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ id: 'BBOX' }) })];
+  C.merge(whole, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ id: 'BBOX', p: 'Gull Audio' }) })]);
+  assert.deepEqual(whole, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ id: 'BBOX', p: 'Gull Audio' }) })]);
+
+  const none = [];
+  C.merge(none, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ n: 'Hollis Marr' }) })]);
+  assert.deepEqual(none.map(b => b.sn), ['1-3'], 'nothing would tie the titles together');
+
+  const kept = [];
+  const report = C.merge(kept, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ id: 'BBOX' }) })], C.parseExclusions('BBOX\n'));
+  assert.deepEqual([kept, report.excluded.length], [[], 3]);
+});
+
+test('Audible and Goodreads exports: a box set is read with its range', () => {
+  const audible = C.readAudible('Title,Title Short,Authors,Series,Book Numbers,Progress,ASIN\n' +
+    '"Ember: Books 1-3","Ember: Books 1-3",Ann Vale,"Ember (books 1-3)",1-3,Finished,BBOX\n');
+  assert.deepEqual(audible.records, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ id: 'BBOX' }) })]);
+  const goodreads = C.readGoodreads(GR_HEADER + '99,"The Ember Trilogy (Ember, #1-3)",Ann Vale,,Audible Audio,read,,2024/05/01\n');
+  assert.deepEqual(goodreads.records, [book('The Ember Trilogy', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ gr: '99' }), r: ['2024-05-01'] })]);
 });
 
 test('editions as text: formatted for the card and read back from the form', () => {

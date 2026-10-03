@@ -38,8 +38,9 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
 titles, with the same ASIN, Goodreads id or ISBN; that shared identifier is what ties them together.
 The page shows "Also in this edition: …" on each of them, and editing the edition on one updates it on
-the others. `make validate` warns when the copies disagree. (A book you only have as a box set can still
-be one record with a range such as `"sn": "2-3"`.)
+the others. `make validate` warns when the copies disagree. Imports split a box set into its titles this
+way ([Box sets](imports.md#box-sets)). (A book you only have as a box set can still be one record with a
+range such as `"sn": "2-3"`.)
 
 **Older files**: before editions, a book held its `id`, `gr` and `isbn` itself, and its narrator (`n`)
 until narrators moved to editions. Such books are still read: the ids become one edition, and the

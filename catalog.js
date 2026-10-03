@@ -134,6 +134,11 @@ function printMerge(report, warnings, io){
   if(report.detailsFilled.length) io.out(`  narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}`);
   if(report.editionsAdded.length) io.out(`  other editions added to existing books: ${report.editionsAdded.length}`);
   if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
+  if(report.boxSets.length){
+    io.out(`  box sets split into their titles: ${report.boxSets.length}`);
+    for(const b of report.boxSets.slice(0, 15)) io.out(`    ${b.t} - ${b.a}: ${b.titles} already here, ${b.added} added`);
+    if(report.boxSets.some(b => b.added)) io.out('    (a title not here yet is named "Series, Book N"; rename it in the page)');
+  }
   io.out(`  new: ${report.added.length}`);
   preview(report.added, io);
   if(warnings.length){

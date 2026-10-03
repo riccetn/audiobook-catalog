@@ -162,6 +162,24 @@ test('imports keep editions: publisher, release date and length, and another ASI
     [{ t: 'Kept', a: 'Ann', e: [{ id: 'B1', p: 'Gull Audio', d: '2021-05-04', len: 642 }, { id: 'B1UK' }] }]);
 });
 
+test('import-audible splits a box set into its titles, each with the set\'s edition', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, ALE_COLUMNS.join(',') + '\n'
+    + row({ Title: 'Spark', Authors: 'Ann', Series: 'Ember (book 1)', Progress: 'Finished', ASIN: 'B1' })
+    + row({ Title: 'Ember: Books 1-2', Authors: 'Ann', Series: 'Ember (books 1-2)', Progress: 'Finished', ASIN: 'BBOX' }));
+  const { code, out } = run('import-audible', csv);
+  assert.equal(code, 0);
+  assert.match(out, /box sets split into their titles: 1\n    Ember: Books 1-2 - Ann: 1 already here, 1 added/);
+  const set = { id: 'BBOX', desc: 'Ember: Books 1-2' };
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [
+    { t: 'Spark', a: 'Ann', s: 'Ember', sn: '1', e: [{ id: 'B1' }, set] },
+    { t: 'Ember, Book 2', a: 'Ann', s: 'Ember', sn: '2', e: [set] },
+  ]);
+  assert.doesNotMatch(run('import-audible', csv).out, /box sets/, 'nothing new the second time');
+});
+
 test('export-goodreads writes a CSV Goodreads imports, and --dry-run writes nothing', t => {
   const { tmp, run } = sandbox(t);
   const file = path.join(tmp, 'goodreads.csv');
