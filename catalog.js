@@ -171,6 +171,19 @@ function cmdValidate(args, io){
   return errors.length ? 1 : 0;
 }
 
+/** Write the catalogue as a CSV for Goodreads' import (goodreads.com/review/import). Reads data/, writes only FILE. */
+function cmdExportGoodreads(args, io){
+  const [booksPath] = paths(args);
+  if(isDemo(args.root, args.data)) io.out(DEMO_NOTE);
+  const out = C.goodreadsCsv(loadBooks(booksPath));
+  if(!args.dryRun) fs.writeFileSync(args.file, out.csv, 'utf8');
+  io.out(`${out.books} books for Goodreads' "read" shelf`);
+  if(out.withoutIds) io.out(`  without a Goodreads id or ISBN (Goodreads goes by title and author): ${out.withoutIds}`);
+  if(out.withoutDate) io.out(`  without a full date read: ${out.withoutDate}`);
+  io.out(args.dryRun ? '(dry run: nothing written)' : `wrote ${shown(args.file, args.root)}; import it at https://www.goodreads.com/review/import`);
+  return 0;
+}
+
 /** Create your own (git-ignored) data files, empty or copied from the demo data. */
 function cmdInit(args, io){
   const target = liveDataDir(args.root, args.dataDir);
@@ -716,6 +729,8 @@ const COMMANDS = {
     help: 'add new finished books from an Audible Library Extractor CSV (--series: then look up their series on Audible)'},
   'import-goodreads': {run: (a, io) => runImport(a, io, C.readGoodreads, 'Goodreads'), file: true, dryRun: true,
     help: 'add audiobooks from a Goodreads library export CSV'},
+  'export-goodreads': {run: cmdExportGoodreads, file: true, dryRun: true,
+    help: 'write the catalogue to FILE as a CSV that Goodreads imports (goodreads.com/review/import)'},
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the current format (e.g. old ids and ISBNs as editions)'},
@@ -735,7 +750,7 @@ const USAGE = `usage: node catalog.js [--root DIR] [--data-dir DIR] <command> [o
 commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
-  --dry-run          (imports, series, hardcover-*, sync-export) show what would change without writing
+  --dry-run          (imports, series, hardcover-*, sync-export, export-goodreads) show what would change without writing
   --series           (import-audible) then fill in the new books' series from Audible (--store us, uk, ...)
   --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;

@@ -1146,6 +1146,80 @@ function readGoodreads(text){
   return result;
 }
 
+// The columns of a Goodreads library export, which is also what goodreads.com/review/import takes.
+const GOODREADS_COLUMNS = ['Book Id', 'Title', 'Author', 'Additional Authors', 'ISBN', 'ISBN13', 'Publisher', 'Binding',
+  'Year Published', 'Date Read', 'Bookshelves', 'Exclusive Shelf', 'Read Count'];
+
+const csvField = v => /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+
+// Goodreads shelf names are lower case with hyphens: "Science Fiction" -> "science-fiction".
+const goodreadsShelf = g => String(g).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+
+/** The 10-digit form of a 978 ISBN, or '' (979 ISBNs have none). */
+function isbn10Of(isbn13){
+  if(!isbn13.startsWith('978')) return '';
+  const nine = isbn13.slice(3, 12);
+  const check = (11 - [...nine].reduce((sum, c, i) => sum + (10 - i) * Number(c), 0) % 11) % 11;
+  return nine + (check === 10 ? 'X' : String(check));
+}
+
+/**
+ * The edition Goodreads should find a book by: one of its own (a box set's edition is on several titles,
+ * and its ids would make Goodreads file every one of them as the box set), with a Goodreads id and an
+ * ISBN if possible. `shared` tells whether an id or ISBN is on another book too.
+ */
+function goodreadsEdition(rec, shared){
+  const own = bookEditions(rec).filter(ed => !shared(ed));
+  const rank = ed => (ed.gr ? 2 : 0) + (editionIsbns(ed).length ? 1 : 0);
+  return own.reduce((best, ed) => (!best || rank(ed) > rank(best) ? ed : best), null);
+}
+
+/**
+ * Write the catalogue as a Goodreads library export CSV, which Goodreads' import accepts: every book on
+ * the "read" shelf, with its series in the title as Goodreads writes it, its genres as shelves, and the
+ * Goodreads id and ISBNs of one edition so Goodreads picks that edition (without them it goes by title and
+ * author). Goodreads keeps one date read, so a book gets its latest full date; a book without one (no `r`,
+ * or only "2024-03") goes on the shelf with no date. Returns {csv, books, withoutIds, withoutDate}.
+ */
+function goodreadsCsv(books){
+  const owners = new Map();   // "gr:123" / "id:B0..." / "isbn:978..." -> books carrying it
+  const edKeys = ed => [...['id', 'gr'].filter(k => ed[k]).map(k => k + ':' + ed[k]), ...editionIsbns(ed).map(i => 'isbn:' + i)];
+  books.forEach(rec => bookEditions(rec).forEach(ed => edKeys(ed).forEach(k => {
+    if(!owners.has(k)) owners.set(k, new Set());
+    owners.get(k).add(rec);
+  })));
+  const report = {books: 0, withoutIds: 0, withoutDate: 0};
+  const lines = [GOODREADS_COLUMNS.join(',')];
+  for(const rec of books){
+    if(!isObject(rec) || !rec.t || !rec.a) continue;
+    const ed = goodreadsEdition(rec, x => edKeys(x).some(k => owners.get(k).size > 1)) || {};
+    const isbn = editionIsbns(ed)[0] || '';
+    const authors = rec.a.split(/,| and | & /).map(s => s.trim()).filter(Boolean);
+    const series = rec.s ? ` (${rec.s}${rec.sn ? ', #' + rec.sn : ''})` : '';
+    const dates = (Array.isArray(rec.r) ? rec.r : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+    const row = {
+      'Book Id': ed.gr || '',
+      'Title': rec.t + series,
+      'Author': authors[0] || rec.a,
+      'Additional Authors': authors.slice(1).join(', '),
+      'ISBN': isbn10Of(isbn),
+      'ISBN13': isbn,
+      'Publisher': ed.p || '',
+      'Binding': ed.id ? 'Audible Audio' : 'Audiobook',
+      'Year Published': ed.d ? String(ed.d).slice(0, 4) : '',
+      'Date Read': dates.length ? dates[dates.length - 1].replace(/-/g, '/') : '',
+      'Bookshelves': (Array.isArray(rec.g) ? rec.g : []).map(goodreadsShelf).filter(Boolean).join(', '),
+      'Exclusive Shelf': 'read',
+      'Read Count': Array.isArray(rec.r) && rec.r.length ? String(rec.r.length) : '',
+    };
+    lines.push(GOODREADS_COLUMNS.map(c => csvField(row[c])).join(','));
+    report.books++;
+    if(!ed.gr && !isbn) report.withoutIds++;
+    if(!dates.length) report.withoutDate++;
+  }
+  return {csv: lines.join('\n') + '\n', ...report};
+}
+
 // ------------------------------------------------------------------ Hardcover
 // Hardcover's GraphQL API needs your personal token and must not be called from a browser, so the CLI
 // does the asking (catalog.js). These functions only write the queries and read the answers, so they
@@ -1647,7 +1721,7 @@ return {
   AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible, addSeriesTotals,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
   readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, planHardcoverExport, hardcoverUrl, hasReadDate,
-  parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
+  parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
   editionsJoinable, joinEditions, editionsKey, splitEditions,
 };
 })();

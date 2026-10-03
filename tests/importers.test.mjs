@@ -376,6 +376,33 @@ test('Goodreads export: only read audio editions, with tidy names', () => {
   assert.equal(result.skippedUnfinished, 1);
 });
 
+test('Goodreads CSV: every book on the read shelf, one own edition\'s ids, the latest full date read', () => {
+  const box = { id: 'BBOX', isbn: ['9781000000009'] };
+  const books = [
+    book('Kept', 'Ann Vale and Bo Reed', { s: 'Saga, Told', sn: '2', g: ['Science Fiction', 'Witches'],
+      ...ed({ id: 'B1', p: 'Pub', d: '2019-04-02' }, { gr: '4242', isbn: ['9780306406157'], d: '2020' }), r: ['2024-03-15', '2025-01', '2023-06-02'] }),
+    book('Boxed One', 'Cy', { ...ed(box), r: ['2024'] }),
+    book('Boxed Two', 'Cy', { ...ed(box, { gr: '9' }) }),
+    book('Say "hi"', 'Dee'),
+  ];
+  const out = C.goodreadsCsv(books);
+  assert.deepEqual([out.books, out.withoutIds, out.withoutDate], [4, 2, 3]);
+  const rows = C.parseCsv(out.csv);
+  assert.deepEqual(rows[0], { 'Book Id': '4242', Title: 'Kept (Saga, Told, #2)', Author: 'Ann Vale', 'Additional Authors': 'Bo Reed',
+    ISBN: '0306406152', ISBN13: '9780306406157', Publisher: '', Binding: 'Audiobook', 'Year Published': '2020',
+    'Date Read': '2024/03/15', Bookshelves: 'science-fiction, witches', 'Exclusive Shelf': 'read', 'Read Count': '3' });
+  // a box set's edition is on several titles, so its ids would file them all as the box set
+  assert.deepEqual([rows[1]['ISBN13'], rows[1]['Binding'], rows[1]['Date Read'], rows[1]['Read Count']], ['', 'Audiobook', '', '1']);
+  assert.equal(rows[2]['Book Id'], '9');
+  // a missing date read is unknown, not unread: the book still goes on the read shelf
+  assert.deepEqual([rows[3].Title, rows[3]['Exclusive Shelf'], rows[3]['Date Read']], ['Say "hi"', 'read', '']);
+
+  // Goodreads' own import format, so our Goodreads import reads it back
+  const back = C.readGoodreads(out.csv).records;
+  assert.deepEqual(back.map(b => [b.t, b.s, b.sn]), [['Kept', 'Saga, Told', '2'], ['Boxed One', undefined, undefined],
+    ['Boxed Two', undefined, undefined], ['Say "hi"', undefined, undefined]]);
+});
+
 // ------------------------------------------------------------------- merge
 test('merge: new books are appended and the merge is idempotent', () => {
   const existing = [book('One')];

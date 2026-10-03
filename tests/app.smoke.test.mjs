@@ -544,6 +544,17 @@ test('importing a Goodreads CSV can be cancelled', async () => {
   assert.equal(get('DATA.length'), before);
 });
 
+test('Goodreads CSV downloads every book for Goodreads\' import', async () => {
+  const { ctx, els, get } = await boot({ page: 'import.html' });
+  const blobs = [];
+  ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
+  ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+  els.exportGoodreadsBtn.listeners.click[0]();
+  assert.equal(blobs[0], get('CatalogImport.goodreadsCsv(DATA).csv'));
+  assert.match(blobs[0], /^Book Id,Title,Author,/);
+  assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
+});
+
 test('Export includes series info, and Import brings it back', async () => {
   const first = await boot({ page: 'import.html' });
   const blobs = [];
