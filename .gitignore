@@ -4,6 +4,8 @@ data/books.json
 data/series-info.json
 data/excluded.txt
 data/not-duplicates.txt
+# Your Hardcover API token: it gives access to your Hardcover account.
+data/hardcover-token
 # Left behind only if `make serve` is stopped in the middle of saving.
 data/.*.tmp
 

@@ -1,24 +1,38 @@
-// The import and export page: adding books from Audible and Goodreads exports, and backups.
+// The import and export page: adding books from Audible and Goodreads exports, Hardcover, and backups.
 // Loading and saving live in store.js.
 
 function refreshPage(){
   document.getElementById('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
   document.getElementById('audiblePanel').style.display = AUDIBLE_LOOKUP ? '' : 'none';
   document.getElementById('importSeriesOption').style.display = AUDIBLE_LOOKUP ? '' : 'none';
+  document.getElementById('hardcoverPanel').style.display = HARDCOVER ? '' : 'none';
 }
 
-function exportBackup(){
-  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries, notDuplicates: [...NOT_DUPLICATES]};
-  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+function download(text, type, name){
+  const blob = new Blob([text], {type});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'audiobook-catalog-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.download = name + '-' + new Date().toISOString().slice(0,10) + (type === 'text/csv' ? '.csv' : '.json');
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function exportBackup(){
+  const backup = {books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries, notDuplicates: [...NOT_DUPLICATES]};
+  download(JSON.stringify(backup, null, 2), 'application/json', 'audiobook-catalog-backup');
   showIoStatus('Backup downloaded.');
+}
+
+function exportGoodreads(){
+  const out = CatalogImport.goodreadsCsv(DATA);
+  download(out.csv, 'text/csv', 'goodreads-import');
+  const notes = [];
+  if(out.withoutIds) notes.push(`${out.withoutIds} without a Goodreads id or ISBN, which Goodreads finds by title and author`);
+  if(out.withoutDate) notes.push(`${out.withoutDate} without a full date read`);
+  showIoStatus(`Goodreads CSV with ${out.books} books downloaded${notes.length ? ' (' + notes.join('; ') + ')' : ''}.`);
 }
 
 function importBackup(file){
@@ -64,6 +78,12 @@ function mergeIntoCopy(records){
   return {data, report, errors};
 }
 
+// A book in a preview list: title, author and series, escaped.
+function bookLine(rec){
+  const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
+  return `${esc(rec.t)} &mdash; ${esc(rec.a)}${esc(series)}`;
+}
+
 function previewImport(kind, text, fileName){
   const importer = IMPORTERS[kind];
   const result = importer.read(text);
@@ -72,11 +92,11 @@ function previewImport(kind, text, fileName){
     report.isbnsFilled.length + report.detailsFilled.length + report.editionsAdded.length;
   PENDING_IMPORT = errors.length || !changes ? null : result.records;
   PENDING_SERIES = null;
+  PENDING_HARDCOVER = null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
 
-  const li = rec => {
-    const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
-    return `<li>${esc(rec.t)} &mdash; ${esc(rec.a)}${esc(series)}</li>`;
-  };
+  const li = rec => `<li>${bookLine(rec)}</li>`;
   let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
   html += `<p>Already in the catalogue: ${report.matched}</p>`;
   if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
@@ -84,7 +104,7 @@ function previewImport(kind, text, fileName){
   if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
   if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
   if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
-  if(report.detailsFilled.length) html += `<p>Publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
+  if(report.detailsFilled.length) html += `<p>Narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
   if(report.editionsAdded.length) html += `<p>Other editions added to existing books: ${report.editionsAdded.length}</p>`;
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
   html += `<p>New: ${report.added.length}</p>`;
@@ -194,6 +214,9 @@ function previewSeries(pending, lead){
   const changes = report.filled.length + added.length;
   PENDING_SERIES = errors.length || !changes ? null : pending;
   PENDING_IMPORT = null;
+  PENDING_HARDCOVER = null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
 
   let html = lead ? `<p>${esc(lead)} Their series:</p>` : '';
   html += `<p>${pending.found.size} book${pending.found.size === 1 ? '' : 's'} looked up on ${esc(host)}</p>`;
@@ -233,9 +256,194 @@ function applySeries(){
     (added.length ? ` and released totals for ${added.length} series` : '') + '.' + keepHint('data/books.json'));
 }
 
+// ------------------------------------------------------------ Merge a backup from another device
+// Restore replaces the catalogue; Merge is for two catalogues that have both changed since they were
+// last the same (the phone and the PC, say), so neither side's edits are lost (CatalogImport.mergeBackup).
+// Like a CSV import it is previewed first, and only applied when confirmed.
+let PENDING_MERGE = null;      // {backup, fileName} while its preview is open
+
+function mergeIntoCatalogue(backup){
+  const prefer = document.getElementById('mergePreferSelect').value;
+  const m = CatalogImport.mergeBackup(DATA, SERIES_INFO, EXCLUSIONS, backup, prefer, NOT_DUPLICATES);
+  // series info left without books is expected after a series was renamed; anything else blocks
+  const errors = CatalogImport.validate(m.books, m.seriesInfo).errors.filter(e=> !/^series-info: .* matches no series/.test(e));
+  const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length + m.excluded.length + m.notDuplicates.length;
+  return {m, errors, changes};
+}
+
+function previewMerge(){
+  const {backup, fileName} = PENDING_MERGE;
+  const {m, errors, changes} = mergeIntoCatalogue(backup);
+  const list = recs => recs.length ? `<ul>${recs.map(r=> `<li>${bookLine(r)}</li>`).join('')}</ul>` : '';
+  let html = `<p>${backup.books.length} books in ${esc(fileName)}; ${m.books.length} after merging.</p>`;
+  html += `<p>New from the backup: ${m.added.length}</p>` + list(m.added);
+  html += `<p>Gaining genres, dates read or editions${m.conflicts.length ? ', or the version kept below' : ''}: ${m.updated.length}</p>`;
+  html += `<p>Removed (removed on the other device): ${m.removed.length}</p>` + list(m.removed);
+  if(m.skipped.length) html += `<p>Not added back (removed here): ${m.skipped.length}</p>`;
+  if(m.conflicts.length){
+    const kept = document.getElementById('mergePreferSelect').value === 'backup' ? "the backup's" : "this catalogue's";
+    html += `<p>Title, author or series differ, keeping ${kept}: ${m.conflicts.length}</p><ul>` +
+      m.conflicts.map(c=> `<li>${bookLine(c.mine)} / backup: ${bookLine(c.theirs)}</li>`).join('') + '</ul>';
+  }
+  const infoDiffer = m.infoChanged.length + m.infoKept.length;
+  if(m.infoAdded.length || infoDiffer){
+    html += `<p>Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : "this catalogue's"})` : '') + '</p>';
+  }
+  if(m.excluded.length) html += `<p>More books excluded from imports: ${m.excluded.length}</p>`;
+  if(m.notDuplicates.length) html += `<p>More books marked "Not duplicates": ${m.notDuplicates.length}</p>`;
+  if(errors.length){
+    html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
+  } else if(!changes){
+    html += '<p>Nothing to merge: this catalogue already has everything in the backup.</p>';
+  }
+  const ok = !errors.length && changes;
+  document.getElementById('importPreviewTitle').textContent = 'Merge a backup';
+  document.getElementById('importPreviewBody').innerHTML = html;
+  document.getElementById('mergePrefer').classList.add('show');
+  const confirmBtn = document.getElementById('importConfirm');
+  confirmBtn.style.display = ok ? '' : 'none';
+  confirmBtn.textContent = 'Merge';
+  document.getElementById('importCancel').textContent = ok ? 'Cancel' : 'Close';
+  document.getElementById('importPreview').classList.add('open');
+}
+
+function applyMerge(){
+  // merged again, in case books were edited while the preview was open
+  const {m, errors, changes} = mergeIntoCatalogue(PENDING_MERGE.backup);
+  closeImportPreview();
+  if(errors.length || !changes){ showIoStatus('The catalogue changed and the merge no longer applies; nothing was changed.', true); return; }
+  DATA = m.books;
+  SERIES_INFO = m.seriesInfo;
+  addExclusions(m.excluded);
+  addNotDuplicates(m.notDuplicates);
+  refreshPage(); persist();
+  showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.` +
+    keepHint('data/books.json and data/series-info.json'));
+}
+
+function mergeBackupFile(file){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const backup = CatalogImport.readBackup(JSON.parse(e.target.result));
+      if(backup.books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a)) throw new Error('missing title/author');
+      PENDING_IMPORT = null;
+      PENDING_SERIES = null;
+      PENDING_HARDCOVER = null;
+      PENDING_MERGE = {backup, fileName: file.name};
+      previewMerge();
+    }catch(err){
+      closeImportPreview();
+      showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ------------------------------------------------------------ Hardcover
+// `node catalog.js hardcover-import|export|sync`, run by `make serve` for the page: Hardcover's API must
+// not be called from a browser, and the token stays on the server (data/hardcover-token). A dry run
+// shows what would happen; confirming runs it for real, and the page then reloads data/ from disk.
+const HARDCOVER_MODES = {
+  import: {title: 'Import from Hardcover', confirm: 'Import'},
+  export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
+  sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
+};
+let PENDING_HARDCOVER = null;   // the mode, while its preview is open
+let HARDCOVER_RUNNING = false;
+
+async function showHardcoverToken(){
+  let saved = false;
+  try{ saved = (await (await fetch('api/hardcover/token', {cache: 'no-cache'})).json()).token === true; }catch(e){}
+  document.getElementById('hardcoverTokenState').textContent = saved
+    ? 'Your Hardcover API token is saved with your catalogue (data/hardcover-token, never committed).'
+    : 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it.';
+  document.getElementById('hardcoverTokenRemove').style.display = saved ? '' : 'none';
+}
+
+async function saveHardcoverToken(remove){
+  const input = document.getElementById('hardcoverToken');
+  if(!remove && !input.value.trim()){ showIoStatus('Paste your Hardcover API token first.', true); return; }
+  try{
+    const res = await fetch('api/hardcover/token', remove ? {method: 'DELETE'} : {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token: input.value}),
+    });
+    const body = await res.json();
+    if(!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    input.value = '';
+    showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
+  }catch(e){
+    showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: ${e.message}`, true);
+  }
+  await showHardcoverToken();
+}
+
+// Run `mode` on the server; returns {code, out, err}, or null when it could not (said in the status line).
+async function runHardcover(mode, dryRun){
+  if(HARDCOVER_RUNNING) return null;
+  if(unsavedEdits()){ showIoStatus('Some edits are not saved to data/ yet. Wait for "Saved." (or reload the page), then try again.', true); return null; }
+  HARDCOVER_RUNNING = true;
+  showIoStatus(dryRun ? 'Asking Hardcover…' : 'Working with Hardcover (one request a second, so this can take a few minutes)…');
+  try{
+    const res = await fetch('api/hardcover', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mode, dryRun, base: BASELINE, infoBase: INFO_BASELINE}),
+    });
+    const body = await res.json();
+    if(!res.ok){
+      showIoStatus(body.conflict ? 'data/books.json changed on disk since this page loaded it. Reload the page, then try again.'
+        : `Couldn't run it: ${body.error || 'HTTP ' + res.status}`, true);
+      return null;
+    }
+    showIoStatus('');
+    return body;
+  }catch(e){
+    showIoStatus('Couldn\'t reach the server (is `make serve` still running?).', true);
+    return null;
+  }finally{
+    HARDCOVER_RUNNING = false;
+  }
+}
+
+function showHardcoverResult(mode, result, pending){
+  PENDING_IMPORT = null;
+  PENDING_SERIES = null;
+  PENDING_HARDCOVER = pending && result.code === 0 ? mode : null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
+  const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
+  document.getElementById('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title;
+  document.getElementById('importPreviewBody').innerHTML = `<pre>${esc(text)}</pre>` +
+    (pending && result.code === 0 ? '<p>Nothing has changed yet, here or on Hardcover.</p>' : '');
+  const confirmBtn = document.getElementById('importConfirm');
+  confirmBtn.style.display = PENDING_HARDCOVER ? '' : 'none';
+  confirmBtn.textContent = HARDCOVER_MODES[mode].confirm;
+  document.getElementById('importCancel').textContent = PENDING_HARDCOVER ? 'Cancel' : 'Close';
+  document.getElementById('importPreview').classList.add('open');
+}
+
+async function previewHardcover(mode){
+  const result = await runHardcover(mode, true);
+  if(result) showHardcoverResult(mode, result, true);
+}
+
+async function applyHardcover(){
+  const mode = PENDING_HARDCOVER;
+  if(!mode) return;
+  closeImportPreview();
+  const result = await runHardcover(mode, false);
+  if(!result) return;
+  showHardcoverResult(mode, result, false);
+  try{ await reloadFromDisk(); }catch(e){ showIoStatus('Done; reload the page to see the catalogue as it is now.', true); return; }
+  showIoStatus(result.code === 0 ? 'Done.' : 'Not everything went through; see the details.', result.code !== 0);
+}
+
 function closeImportPreview(){
   PENDING_IMPORT = null;
   PENDING_SERIES = null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
+  PENDING_HARDCOVER = null;
   document.getElementById('importPreview').classList.remove('open');
 }
 
@@ -259,7 +467,12 @@ document.getElementById('importCsvFile').addEventListener('change', e=>{
   if(file) importCsv(IMPORT_KIND, file);
   e.target.value = '';
 });
-document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_SERIES ? applySeries() : applyImport());
+document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : PENDING_SERIES ? applySeries() : applyImport());
+for(const mode of Object.keys(HARDCOVER_MODES)){
+  document.getElementById(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
+}
+document.getElementById('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
+document.getElementById('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
 document.getElementById('audibleSeriesBtn').addEventListener('click', ()=> lookUpSeries());
 // remembered in this browser, like a preference
 const SERIES_AFTER_IMPORT_KEY = 'audiobook-catalog-import-series';
@@ -270,11 +483,19 @@ document.getElementById('importSeries').addEventListener('change', e=>{
 document.getElementById('importCancel').addEventListener('click', closeImportPreview);
 
 document.getElementById('exportBtn').addEventListener('click', exportBackup);
+document.getElementById('exportGoodreadsBtn').addEventListener('click', exportGoodreads);
 document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
+document.getElementById('mergeBtn').addEventListener('click', ()=> document.getElementById('mergeFile').click());
+document.getElementById('mergeFile').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(file) mergeBackupFile(file);
+  e.target.value = '';
+});
+document.getElementById('mergePreferSelect').addEventListener('change', ()=>{ if(PENDING_MERGE) previewMerge(); });
 document.getElementById('importFile').addEventListener('change', e=>{
   const file = e.target.files[0];
   if(file) importBackup(file);
   e.target.value = '';
 });
 
-const READY = startPage(refreshPage);
+const READY = startPage(()=>{ refreshPage(); if(HARDCOVER) return showHardcoverToken(); });
