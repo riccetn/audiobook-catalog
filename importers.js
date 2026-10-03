@@ -373,18 +373,30 @@ function fixBooks(books){
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-/** Lower-case and collapse everything that is not a letter or digit. */
+/**
+ * Lower-case, drop accents ("é" -> "e") and collapse everything that is not a letter or digit, in any
+ * script: "Сёмга" stays a word, so two books in Cyrillic or Japanese are told apart by their titles.
+ */
 function norm(text){
-  return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return String(text || '').normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/**
+ * norm() as it was before it knew other scripts: everything but a-z and 0-9 dropped. Only for reading
+ * "Not duplicates" marks written then (see duplicatePairKey).
+ */
+function asciiNorm(text){
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 /** Key under which two series names count as the same series ('Ember Coast' == 'The Ember-Coast series'). */
 function seriesNorm(name){
-  let n = norm(name);
-  n = n.replace(/^the\s+/, '');
-  n = n.replace(/\bseries\b/g, '');
-  return n.replace(/[^a-z0-9]/g, '');
+  return seriesKey(norm(name));
 }
+
+// The series key of a name already normalised: no leading "the", no word "series", no spaces.
+const seriesKey = n => n.replace(/^the /, '').replace(/(^| )series(?= |$)/g, ' ').replace(/ /g, '');
 
 const RUN_TOGETHER_INITIALS = new RegExp(WORD_START + '([A-Z])\\.(?=[A-Z]\\.)', 'gu');
 const INVISIBLE = /[\u200b\ufeff]/g;
@@ -431,8 +443,10 @@ function tidyBook(rec){
 }
 
 function firstAuthor(authors){
-  return norm((authors || '').split(/,| and | & /)[0]);
+  return norm(firstName(authors));
 }
+
+const firstName = authors => (authors || '').split(/,| and | & /)[0];
 
 // Keys are JSON-encoded arrays so they work as Map and Set keys.
 const key = (...parts) => JSON.stringify(parts);
@@ -445,8 +459,9 @@ function bookKeys(rec){
   const keys = [];
   for(const field of EDITION_IDS) for(const id of bookIdsOf(rec, field)) keys.push(key(field, id));
   if(typeof rec.hcb === 'string' && rec.hcb) keys.push(key('hcb', rec.hcb));
-  if(rec.s && rec.sn) keys.push(key('series', firstAuthor(rec.a), seriesNorm(rec.s), String(rec.sn).trim()));
-  keys.push(key('title', norm(rec.t), firstAuthor(rec.a)));
+  // a title or series of only punctuation or symbols has an empty key, which must not match anything
+  if(rec.s && rec.sn && seriesNorm(rec.s)) keys.push(key('series', firstAuthor(rec.a), seriesNorm(rec.s), String(rec.sn).trim()));
+  if(norm(rec.t)) keys.push(key('title', norm(rec.t), firstAuthor(rec.a)));
   return keys;
 }
 
@@ -535,7 +550,7 @@ class Exclusions {
   covers(rec){
     return bookIdsOf(rec, 'id').some(id => this.ids.has(id)) || bookIdsOf(rec, 'gr').some(gr => this.grs.has(gr)) ||
       bookIdsOf(rec, 'hc').some(hc => this.hcs.has(hc)) ||
-      this.titles.has(key(norm(rec.t), firstAuthor(rec.a))) || bookIsbns(rec).some(isbn => this.isbns.has(isbn));
+      (norm(rec.t) !== '' && this.titles.has(key(norm(rec.t), firstAuthor(rec.a)))) || bookIsbns(rec).some(isbn => this.isbns.has(isbn));
   }
   /** The entries, one per line as in data/excluded.txt, without comments. */
   get entries(){ return [...this.lines.values()]; }
@@ -1675,10 +1690,17 @@ function missingNumbers(books, total){
 /**
  * Key for "these two books are different books", so a pair you dismissed is not offered again.
  * Built from what identifies a title (not from list positions, which change), in either order.
+ * With `normalize` asciiNorm, the key as marks made before norm() knew other scripts have it.
  */
-function duplicatePairKey(x, y){
-  const id = b => key(norm(b.t), firstAuthor(b.a), seriesNorm(b.s), String(b.sn || '').trim());
+function duplicatePairKey(x, y, normalize){
+  const n = normalize || norm;
+  const id = b => key(n(b.t), n(firstName(b.a)), seriesKey(n(b.s)), String(b.sn || '').trim());
   return [id(x), id(y)].sort().join(' ');
+}
+
+/** Whether `notSame` has the pair x, y marked as different books, under its key now or as marked before. */
+function markedNotSame(notSame, x, y){
+  return notSame.has(duplicatePairKey(x, y)) || notSame.has(duplicatePairKey(x, y, asciiNorm));
 }
 
 /**
@@ -1705,7 +1727,7 @@ function findDuplicates(books, notSame){
     if(!isObject(b) || typeof b.t !== 'string') return;
     for(const k of lookupKeys(b).filter(k => !isId(k))){
       for(const j of byKey.get(k) || []){
-        if(j !== i && !notSame.has(duplicatePairKey(b, books[j]))) parent[root(j)] = root(i);
+        if(j !== i && !markedNotSame(notSame, b, books[j])) parent[root(j)] = root(i);
       }
     }
   });
