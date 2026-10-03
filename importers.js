@@ -34,6 +34,9 @@ const EDITION_IDS = ['id', 'gr', 'hc'];
 const LEGACY_KEYS = ['id', 'gr', 'isbn'];
 const STATUSES = ['ongoing', 'complete'];
 const SERIES_NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
+// A box set's range of whole numbers, "1-3"; more than BOX_MAX titles is taken for a typo.
+const BOX_RANGE = /^(\d+)-(\d+)$/;
+const BOX_MAX = 30;
 // JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
 const WORD_START = '(?<![\\p{L}\\p{N}_])';
 
@@ -880,7 +883,8 @@ function chooseSeries(pairs){
 /** Drop a trailing series number that Audible bakes into short titles ("Lantern of the Deep 10"). */
 function cleanTitle(title, number){
   title = title.trim();
-  if(number){
+  // a box set's range stays: "Ember: Books 1-3" is the set's name, which the merge keeps on its edition
+  if(number && !BOX_RANGE.test(number)){
     const stripped = title.replace(new RegExp('[\\s:,\\-]+' + escapeRegExp(number.trim()) + '\\s*$'), '');
     if(stripped) return stripped;
   }
@@ -1001,6 +1005,28 @@ function audibleSeriesTotal(json){
   return total || null;
 }
 
+/**
+ * A series' own catalogue product as the lookups use it: {total: audibleSeriesTotal(), titles: the title
+ * of each whole-numbered book, {"1": "Spark", ...}, the first listed when Audible has several}.
+ */
+function audibleSeriesListing(json){
+  const rels = json && json.product && Array.isArray(json.product.relationships) ? json.product.relationships : [];
+  const titles = {};
+  for(const r of rels){
+    if(!isObject(r) || r.relationship_to_product !== 'child') continue;
+    const number = String(r.sequence || '').trim(), title = tidyText(String(r.title || ''));
+    if(/^\d+$/.test(number) && title && !(String(Number(number)) in titles)) titles[String(Number(number))] = title;
+  }
+  return {total: audibleSeriesTotal(json), titles};
+}
+
+/** The name an import gives a box set's title it doesn't know yet, until Audible names it: "Ember, Book 2". */
+function boxSetTitle(series, number){
+  return `${series}, Book ${number}`;
+}
+
+const isBoxSetTitle = b => !!(b && b.s && b.sn && b.t === boxSetTitle(b.s, b.sn));
+
 /** ASINs that appear on more than one book: box sets, whose series number is the set's, not the title's. */
 function sharedAsins(books){
   const seen = new Set(), shared = new Set();
@@ -1012,7 +1038,8 @@ function sharedAsins(books){
 
 /**
  * The ASINs to look up for seriesFromAudible(): every book with no series or no number, and one
- * book of each series that has no release info yet (to learn the series' own ASIN). `only` (books
+ * book of each series that has no release info yet or a box set's title still named boxSetTitle() (to
+ * learn the series' own ASIN). `only` (books
  * of `books`, e.g. the ones an import just added) limits that to those books and their series.
  */
 function seriesLookups(books, info, only){
@@ -1024,7 +1051,8 @@ function seriesLookups(books, info, only){
   }
   const shared = sharedAsins(books);
   for(const b of wanted){
-    if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s)) || covered.has(b.s)) continue;
+    // a series with release info is looked up all the same when a box set's title waits for its name
+    if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s) && !isBoxSetTitle(b)) || covered.has(b.s)) continue;
     const id = own(b).find(x => !shared.has(x)) || own(b)[0];
     if(id){ asins.add(id); covered.add(b.s); }
   }
@@ -1073,15 +1101,46 @@ function seriesFromAudible(books, found){
 }
 
 /**
+ * The series ASINs to fetch audibleSeriesListing() for, from seriesFromAudible()'s `series` (Map of name
+ * -> series ASIN): the series with no entry in `info`, and those with a box set's title still named
+ * boxSetTitle().
+ */
+function seriesListingLookups(books, info, series){
+  const unnamed = new Set(books.filter(isBoxSetTitle).map(b => b.s));
+  return [...series].filter(([name]) => !Object.prototype.hasOwnProperty.call(info, name) || unnamed.has(name)).map(([, asin]) => asin);
+}
+
+/**
+ * Name the box sets' titles that an import added as boxSetTitle() ("Ember, Book 2") after the book of
+ * that number in their series' Audible listing (`series`: Map of name -> series ASIN, `listings`: Map of
+ * series ASIN -> audibleSeriesListing()). No other title is changed. Changes `books` in place; returns
+ * [[book, the title it had]].
+ */
+function boxSetTitlesFromAudible(books, series, listings){
+  const renamed = [];
+  for(const b of books){
+    if(!isBoxSetTitle(b) || !series.has(b.s)) continue;
+    const listing = listings.get(series.get(b.s));
+    const title = listing && listing.titles && listing.titles[String(Number(b.sn))];
+    if(!title) continue;
+    const old = b.t, fixed = fixSeriesTitle({...b, t: title});
+    b.t = fixed.s === b.s && fixed.sn === b.sn ? fixed.t : title;
+    renamed.push([b, old]);
+  }
+  return renamed;
+}
+
+/**
  * Give each series in `series` (seriesFromAudible()'s Map of name -> Audible series ASIN) that has no
- * entry in `info` a released total from `totals` (Map of series ASIN -> audibleSeriesTotal()). Audible
+ * entry in `info` a released total from `totals` (Map of series ASIN -> audibleSeriesListing(), or its
+ * total alone). Audible
  * only lists what is out, so the entry says "ongoing" and asks whether the series is finished.
  * Changes `info` in place; returns the names given a total.
  */
 function addSeriesTotals(info, series, totals, store, today){
   const added = [];
   for(const [name, asin] of series){
-    const total = totals.get(asin);
+    const listing = totals.get(asin), total = isObject(listing) ? listing.total : listing;
     if(Object.prototype.hasOwnProperty.call(info, name) || !total) continue;
     info[name] = {total, status: 'ongoing', note: `${total} released on ${AUDIBLE_STORES[store]} as of ${today}; is it complete?`};
     added.push(name);
@@ -1095,7 +1154,11 @@ const AUDIO_BINDINGS = new Set(['Audio CD', 'Audiobook', 'Audible Audio', 'MP3 C
 const PAREN = /^(.*?)\s*\(([^()]+)\)\s*$/;
 const SERIES_MARKER = new RegExp('(#|' + WORD_START + 'book(?![\\p{L}\\p{N}_])|' + WORD_START + 'vol(?![\\p{L}\\p{N}_]))', 'iu');
 
-/** "Frosted (Blaze, #6; Dana O'Hare, #1)" -> ["Frosted", "Blaze", "6"]. */
+// A series number, or a box set's range ("#1-3", "#1–3").
+const GOODREADS_NUMBER = /\d+(?:\.\d+)?(?:\s*[-\u2013]\s*\d+(?:\.\d+)?)?/;
+const goodreadsNumber = text => text.replace(/\s*[-\u2013]\s*/, '-');
+
+/** "Frosted (Blaze, #6; Dana O'Hare, #1)" -> ["Frosted", "Blaze", "6"]; a box set's "(Ember, #1-3)" gives "1-3". */
 function parseGoodreadsTitle(raw){
   const m = PAREN.exec(raw.trim());
   if(!m) return [raw.trim(), null, null];
@@ -1105,11 +1168,11 @@ function parseGoodreadsTitle(raw){
   const name = comma >= 0 ? first.slice(0, comma) : '';
   const tail = comma >= 0 ? first.slice(comma + 1) : first;
   if(name && SERIES_MARKER.test(tail)){
-    const num = /\d+(?:\.\d+)?/.exec(tail);
-    return [clean, name.trim(), num ? num[0] : null];
+    const num = GOODREADS_NUMBER.exec(tail);
+    return [clean, name.trim(), num ? goodreadsNumber(num[0]) : null];
   }
-  const m2 = /^(.*?)\s*#\s*(\d+(?:\.\d+)?)$/.exec(first);
-  if(m2) return [clean, m2[1].trim(), m2[2]];
+  const m2 = new RegExp('^(.*?)\\s*#\\s*(' + GOODREADS_NUMBER.source + ')$').exec(first);
+  if(m2) return [clean, m2[1].trim(), goodreadsNumber(m2[2])];
   return [clean, first, null];
 }
 
@@ -1544,6 +1607,14 @@ function hardcoverUrl(kind, id){
 }
 
 // ---------------------------------------------------------------------- merge
+/** [first, last] of a box set's series range ("1-3" -> [1, 3]), or null for a single title or no series. */
+function boxRange(rec){
+  const m = rec && rec.s && BOX_RANGE.exec(String(rec.sn || '').trim());
+  if(!m) return null;
+  const lo = Number(m[1]), hi = Number(m[2]);
+  return lo < hi && hi - lo < BOX_MAX ? [lo, hi] : null;
+}
+
 // Which report list a book goes on when one of its editions gains a field.
 const FILLED_REPORT = {id: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFilled', isbn: 'isbnsFilled', n: 'detailsFilled', p: 'detailsFilled', d: 'detailsFilled', len: 'detailsFilled', desc: 'detailsFilled'};
 
@@ -1563,15 +1634,18 @@ const FILLED_REPORT = {id: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFi
  * sources that keep every read, like Hardcover; a date counts as there when the book has it or the month
  * or year it falls in); `addable(rec)` says whether an unmatched record may be added (others only fill
  * in a book they match, and go on `notAdded`).
+ * A box set with a series range ("1-3") and an id or ISBN becomes its titles (see mergeBoxSet below),
+ * unless it is in `existing` as one book already.
  * Returns {added, backfilled, goodreadsFilled, hardcoverFilled, isbnsFilled, detailsFilled, editionsAdded,
- * datesFilled, excluded, notAdded, matched}: books that gained an Audible id, a Goodreads id, a Hardcover
- * id, ISBNs, a narrator, publisher, release date or length, a new edition, dates read.
+ * datesFilled, excluded, notAdded, boxSets, matched}: books that gained an Audible id, a Goodreads id, a Hardcover
+ * id, ISBNs, a narrator, publisher, release date or length, a new edition, dates read; box sets
+ * split into their titles ({t, a, titles: how many you had, added: how many were added}).
  */
 function merge(existing, incoming, exclusions, opts){
   exclusions = exclusions || new Exclusions();
   opts = opts || {};
   const report = {added: [], backfilled: [], goodreadsFilled: [], hardcoverFilled: [], isbnsFilled: [], detailsFilled: [], editionsAdded: [],
-    datesFilled: [], excluded: [], notAdded: [], matched: 0};
+    datesFilled: [], excluded: [], notAdded: [], boxSets: [], matched: 0};
 
   const index = new Map();
   const indexKey = (k, i) => { if(!index.has(k)) index.set(k, i); };
@@ -1586,6 +1660,85 @@ function merge(existing, incoming, exclusions, opts){
   // [book index, edition] of every copy of an edition, on any book, other than the edition itself
   const copiesOf = ed => existing.flatMap((rec, i) => bookEditions(rec).filter(x => x !== ed && sameEdition(x, ed)).map(x => [i, x]));
   const note = (list, rec) => { if(!list.includes(rec) && !report.added.includes(rec)) list.push(rec); };
+  const giveDates = (reader, rec) => {
+    if(rec.r && rec.r.length && !reader.r){
+      reader.r = [...rec.r];
+      note(report.datesFilled, reader);
+    } else if(opts.allDates && Array.isArray(rec.r) && Array.isArray(reader.r)){
+      const more = rec.r.filter(d => !hasReadDate(reader.r, d));
+      if(more.length){
+        reader.r = [...new Set([...reader.r, ...more])].sort();
+        note(report.datesFilled, reader);
+      }
+    }
+  };
+  // Give book `i` (one title of a box set, whose titles are `set`) the set's edition `ed`: it fills in
+  // the copy the book has (by an id, or the one edition it shares with another title of the set that
+  // does not disagree, as when Goodreads' box set finds the one an Audible import split), else is added
+  // beside the book's own editions, which are other editions and never filled in.
+  const giveBoxEdition = (i, ed, set) => {
+    const book = existing[i];
+    const shared = bookEditions(book).filter(x => !editionsConflict(x, ed) && copiesOf(x).some(([j]) => j !== i && set.includes(j)));
+    const target = bookEditions(book).find(x => sameEdition(x, ed)) || (shared.length === 1 ? shared[0] : undefined);
+    if(target){
+      for(const field of fillEdition(target, ed)) note(report[FILLED_REPORT[field]], book);
+    } else {
+      book.e = [...bookEditions(book), orderEdition({...ed})];
+      note(report.editionsAdded, book);
+    }
+    indexBook(i);
+  };
+
+  /**
+   * An incoming box set (a series and a range, "1-3"): each number is a title, found by author, series
+   * and number (or by already holding the set's edition), or else added. Every title gets the set's
+   * edition, and the set's dates read when it has none. Returns false when the set is in the catalogue
+   * as one book, which then merges as any other record.
+   */
+  const mergeBoxSet = (rec, original, [lo, hi]) => {
+    // without an id or ISBN there is nothing to tie the titles together, so the set stays one book
+    if(!bookEditions(rec).some(ed => EDITION_IDS.some(k => ed[k]) || editionIsbns(ed).length)) return false;
+    const editions = bookEditions(rec).map(ed => orderEdition({...ed, desc: ed.desc || rec.t}));
+    const author = firstAuthor(rec.a), series = seriesNorm(rec.s);
+    const ownsSet = b => bookEditions(b).some(x => editions.some(ed => EDITION_IDS.some(k => x[k] && x[k] === ed[k]) && sameEdition(x, ed)));
+    const titleNumber = b => firstAuthor(b.a) === author && seriesNorm(b.s || '') === series && /^\d+$/.test(String(b.sn || '').trim()) ?
+      Number(String(b.sn).trim()) : null;
+    const whole = existing.some(b => (ownsSet(b) && titleNumber(b) === null) ||
+      (norm(b.t) === norm(rec.t) && firstAuthor(b.a) === author));
+    if(whole) return false;
+    const titles = [], excluded = exclusions.covers(rec);
+    let added = 0;
+    for(let n = lo; n <= hi; n++){
+      let i = existing.findIndex(b => ownsSet(b) && titleNumber(b) === n);
+      if(i < 0) i = index.has(key('series', author, series, String(n))) ? index.get(key('series', author, series, String(n))) : -1;
+      if(i >= 0){ titles.push(i); continue; }
+      const part = {t: boxSetTitle(rec.s, n), a: rec.a, s: rec.s, sn: String(n)};
+      if(rec.g) part.g = [...rec.g];
+      if(rec.r) part.r = [...rec.r];
+      if(editions.length) part.e = editions.map(ed => ({...ed}));
+      if(excluded || exclusions.covers(part)){ report.excluded.push(part); continue; }
+      if(opts.addable && !opts.addable(original)){ report.notAdded.push(part); continue; }
+      existing.push(part);
+      report.added.push(part);
+      indexBook(existing.length - 1);
+      added++;
+    }
+    if(titles.length) report.matched++;
+    const before = titles.map(i => JSON.stringify(existing[i]));
+    for(const i of titles){
+      for(const ed of editions) giveBoxEdition(i, ed, titles);
+      giveDates(existing[i], rec);
+    }
+    // every copy of the set's edition ends up with all it is known by
+    for(const ed of editions){
+      const copies = existing.flatMap((b, i) => bookEditions(b).filter(x => sameEdition(x, ed)).map(x => [i, x]));
+      for(const [, x] of copies) for(const [, y] of copies) fillEdition(x, y);
+      copies.forEach(([i]) => indexBook(i));
+    }
+    const changed = titles.filter((i, j) => JSON.stringify(existing[i]) !== before[j]).length;
+    if(added || changed) report.boxSets.push({t: rec.t, a: rec.a, titles: titles.length, added});
+    return true;
+  };
 
   for(const original of incoming){
     const rec = {...original};
@@ -1594,6 +1747,8 @@ function merge(existing, incoming, exclusions, opts){
       if(!canonical.has(k)) canonical.set(k, rec.s);
       rec.s = canonical.get(k);
     }
+    const range = boxRange(rec);
+    if(range && mergeBoxSet(rec, original, range)) continue;
 
     const hit = lookupKeys(rec).find(k => index.has(k));
     if(hit !== undefined){
@@ -1628,19 +1783,7 @@ function merge(existing, incoming, exclusions, opts){
         note(report.hardcoverFilled, book);
         indexBook(match);
       }
-      for(const i of readers){
-        const reader = existing[i];
-        if(rec.r && rec.r.length && !reader.r){
-          reader.r = [...rec.r];
-          note(report.datesFilled, reader);
-        } else if(opts.allDates && Array.isArray(rec.r) && Array.isArray(reader.r)){
-          const more = rec.r.filter(d => !hasReadDate(reader.r, d));
-          if(more.length){
-            reader.r = [...new Set([...reader.r, ...more])].sort();
-            note(report.datesFilled, reader);
-          }
-        }
-      }
+      for(const i of readers) giveDates(existing[i], rec);
       continue;
     }
     if(exclusions.covers(rec)){
@@ -1920,7 +2063,8 @@ return {
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, seriesLookups, seriesFromAudible, addSeriesTotals,
+  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, audibleSeriesListing, seriesLookups, seriesFromAudible, addSeriesTotals,
+  boxSetTitle, seriesListingLookups, boxSetTitlesFromAudible,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
   readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport, hardcoverUrl, hasReadDate,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,

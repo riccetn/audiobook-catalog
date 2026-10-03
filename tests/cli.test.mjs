@@ -162,6 +162,24 @@ test('imports keep editions: publisher, release date and length, and another ASI
     [{ t: 'Kept', a: 'Ann', e: [{ id: 'B1', p: 'Gull Audio', d: '2021-05-04', len: 642 }, { id: 'B1UK' }] }]);
 });
 
+test('import-audible splits a box set into its titles, each with the set\'s edition', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, ALE_COLUMNS.join(',') + '\n'
+    + row({ Title: 'Spark', Authors: 'Ann', Series: 'Ember (book 1)', Progress: 'Finished', ASIN: 'B1' })
+    + row({ Title: 'Ember: Books 1-2', Authors: 'Ann', Series: 'Ember (books 1-2)', Progress: 'Finished', ASIN: 'BBOX' }));
+  const { code, out } = run('import-audible', csv);
+  assert.equal(code, 0);
+  assert.match(out, /box sets split into their titles: 1\n    Ember: Books 1-2 - Ann: 1 already here, 1 added/);
+  const set = { id: 'BBOX', desc: 'Ember: Books 1-2' };
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [
+    { t: 'Spark', a: 'Ann', s: 'Ember', sn: '1', e: [{ id: 'B1' }, set] },
+    { t: 'Ember, Book 2', a: 'Ann', s: 'Ember', sn: '2', e: [set] },
+  ]);
+  assert.doesNotMatch(run('import-audible', csv).out, /box sets/, 'nothing new the second time');
+});
+
 test('export-goodreads writes a CSV Goodreads imports, and --dry-run writes nothing', t => {
   const { tmp, run } = sandbox(t);
   const file = path.join(tmp, 'goodreads.csv');
@@ -391,6 +409,36 @@ test('series fills in series, numbers and released totals from Audible, and --dr
   assert.equal(info['Gull Isle'].status, 'ongoing');
 });
 
+test('import-audible --series names a box set\'s new titles after Audible\'s series listing', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  const booksPath = path.join(dataDir, 'books.json');
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Spark', a: 'Ann Vale', s: 'Ember', sn: '1', e: [{ id: 'B0SPARK001' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), JSON.stringify({ Ember: { total: 3, status: 'complete' } }));
+  const csv = path.join(tmp, 'library.csv');
+  fs.writeFileSync(csv, 'Title,Title Short,Series,Authors,Progress,ASIN\n'
+    + '"Ember: Books 1-3","Ember: Books 1-3","Ember (books 1-3)",Ann Vale,Finished,B0EMBERBOX\n');
+  const child = (sequence, title) => ({ relationship_to_product: 'child', sequence, title });
+  const fetch = async url => {
+    const asin = /products\/([^?]+)/.exec(url)[1];
+    const body = {
+      B0EMBERBOX: { product: { series: [{ title: 'Ember', sequence: '1-3', asin: 'B0EMBERSER' }] } },
+      B0EMBERSER: { product: { relationships: [child('1', 'Spark'), child('1-3', 'Ember: Books 1-3'), child('2', 'Flame'), child('3', 'Ember Falls')] } },
+    }[asin];
+    return { ok: !!body, status: body ? 200 : 404, json: async () => body };
+  };
+  const out = [], err = [];
+  const code = await main(['--root', tmp, 'import-audible', csv, '--series'], { out: s => out.push(s), err: s => err.push(s), fetch, pause: async () => {} });
+  assert.equal(code, 0, err.join('\n'));
+  assert.match(out.join('\n'), /box sets' titles named: 2\n    Ember, Book 2 -> Flame\n    Ember, Book 3 -> Ember Falls/);
+  const set = { id: 'B0EMBERBOX', desc: 'Ember: Books 1-3' };
+  assert.deepEqual(loadBooks(booksPath).map(b => [b.t, b.sn, b.e]), [
+    ['Spark', '1', [{ id: 'B0SPARK001' }, set]], ['Flame', '2', [set]], ['Ember Falls', '3', [set]],
+  ]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'series-info.json'), 'utf8')), { Ember: { total: 3, status: 'complete' } });
+});
+
 test('import-audible --series looks up the series of the new books only', async t => {
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');
@@ -504,7 +552,7 @@ test('serve looks books up on Audible for the page, and only for the page', asyn
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { results: { B0SERIES01: [{ name: 'Gull Isle', number: '2', asin: 'B0GULLISLE' }], B0UNKNOWN0: null } });
   assert.ok(asked.every(u => u.startsWith('https://api.audible.de/')));
-  assert.deepEqual(await (await ask({ store: 'us', groups: 'relationships', asins: ['B0GULLISLE'] })).json(), { results: { B0GULLISLE: 3 } });
+  assert.deepEqual(await (await ask({ store: 'us', groups: 'relationships', asins: ['B0GULLISLE'] })).json(), { results: { B0GULLISLE: { total: 3, titles: {} } } });
 
   const down = await ask({ store: 'us', groups: 'series', asins: ['B0DOWN0000'] });
   assert.equal(down.status, 502);
