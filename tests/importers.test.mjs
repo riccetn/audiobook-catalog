@@ -1014,4 +1014,23 @@ test('planHardcoverExport adds what is missing on Hardcover and leaves everythin
   assert.deepEqual(plan.unknown.map(r => r.t), ['Nowhere']);
   assert.deepEqual(plan.inexact.map(([r, d]) => [r.t, d]), [['Tidewater', '2025']]);
   assert.equal(C.hardcoverUrl('edition', '501'), 'https://hardcover.app/id/edition/501');
+
+  // told which Hardcover book each edition is of, only an edition of the book's own is sent
+  const lone = [book('Lone', 'Ann Vale', { hcb: '72', ...ed({ hc: '700' }) }), book('Mixed', 'Ann Vale', { hcb: '73', ...ed({ hc: '700' }, { hc: '731' }) })];
+  assert.deepEqual(C.hardcoverExportEditions(lone), [700, 731]);
+  const editionBooks = new Map([['700', '70'], ['731', '73']]);
+  assert.deepEqual(C.planHardcoverExport(lone, [], editionBooks).add.map(a => [a.book, a.edition]), [[72, null], [73, 731]]);
+  assert.deepEqual(C.planHardcoverExport(lone.slice(0, 1), []).add.map(a => [a.book, a.edition]), [[72, 700]], 'without it, a lone box set edition is taken as the book\'s');
+});
+
+test('merge: another Hardcover book found by a box set\'s edition is the box set, and its reads go to every title', () => {
+  const box = () => ({ id: 'BBOX', hc: '700' });
+  const books = [book('One', 'Ann Vale', { hcb: '71', r: ['2024'], ...ed(box()) }), book('Two', 'Ann Vale', { hcb: '72', ...ed(box()) }),
+    book('Three', 'Ann Vale', { hcb: '73', ...ed({ id: 'B3' }) })];
+  const report = C.merge(books, [book('One and Two', 'Ann Vale', { hcb: '70', r: ['2025-02-02'], ...ed(box()) })], null, { allDates: true });
+  assert.deepEqual(books.map(b => [b.hcb, b.r]), [['71', ['2024', '2025-02-02']], ['72', ['2025-02-02']], ['73', undefined]]);
+  assert.equal(report.datesFilled.length, 2);
+  // the title's own Hardcover book, found by the same edition, reads only that title
+  C.merge(books, [book('One', 'Ann Vale', { hcb: '71', r: ['2026-01-01'], ...ed(box()) })], null, { allDates: true });
+  assert.deepEqual(books.map(b => b.r && b.r.at(-1)), ['2026-01-01', '2025-02-02', undefined]);
 });

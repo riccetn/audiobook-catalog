@@ -846,11 +846,11 @@ async function fetchHardcoverShelf(ask, step){
   }
 }
 
-/** Hardcover rows (`kind` 'books' or 'editions') by id, asked in batches. */
-async function fetchHardcoverRows(ask, kind, ids, step){
+/** Hardcover rows (`kind` 'books' or 'editions') by id, asked in batches; `doing` is the progress step's text. */
+async function fetchHardcoverRows(ask, kind, ids, step, doing = `Reading the ${kind} on your Read shelf`){
   const rows = new Map();
   for(let i = 0; i < ids.length; i += C.HARDCOVER_BATCH){
-    step(`Reading the ${kind} on your Read shelf`, i, ids.length);
+    step(doing, i, ids.length);
     for(const row of (await ask(C.HARDCOVER_QUERIES[kind], {ids: ids.slice(i, i + C.HARDCOVER_BATCH)}))[kind] || []) rows.set(row.id, row);
   }
   return rows;
@@ -914,10 +914,14 @@ async function cmdHardcover(args, io, mode){
 
   let plan = null, filled = [];
   if(mode !== 'import'){
+    // which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
+    const editionBooks = new Map();
     try{
       filled = C.addHardcoverIds(books, await findOnHardcover(ask, C.hardcoverLookups(books), step));
+      const rows = await fetchHardcoverRows(ask, 'editions', C.hardcoverExportEditions(books), step, 'Checking your editions on Hardcover');
+      for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
     }catch(exc){ return stop(exc); }
-    plan = C.planHardcoverExport(books, shelf);
+    plan = C.planHardcoverExport(books, shelf, editionBooks);
     const reads = plan.add.reduce((n, a) => n + a.dates.length, 0) + plan.reads.reduce((n, a) => n + a.dates.length, 0);
     io.out('to Hardcover:');
     io.out(`  Hardcover ids filled in on your books: ${filled.length}`);

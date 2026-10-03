@@ -36,12 +36,15 @@ node catalog.js hardcover-export                # only catalogue -> Hardcover
   id (`hcb`) and an edition with Hardcover's edition id (`hc`), the ASIN, ISBN, narrator, publisher, release
   date and length Hardcover has, and every finished date of its reads (Hardcover keeps them all, so a book you have
   gains the dates it lacks; `2024-03-15` counts as there when you have `2024-03`). A book on Hardcover with
-  no finished date gets none, which here means the date is unknown.
+  no finished date gets none, which here means the date is unknown. A box set you read on Hardcover, found
+  by its edition on your titles, gives its dates to each of those titles.
 - **Export** finds each of your books without a Hardcover book id by its editions' Hardcover id, ASIN, ISBN
   or Goodreads id, saves the book's id (`hcb`) on the book and the edition's (`hc`) on the edition (an ISBN or
   Goodreads id only gives the book's id, since it is often the print edition), and puts the books that aren't on your Hardcover shelves yet on *Read*, with
   each dated read as a Hardcover read. A book already on *Read* gains the reads it lacks. A box set is one
-  Hardcover book, so its titles go on Hardcover once. A book with no date read goes on *Read* without a
+  Hardcover book, so titles that share its id go on Hardcover once; a title with its own Hardcover book
+  id goes on as that book. An edition is only sent with a book when Hardcover says it is an edition of
+  that book, so a box set's edition on a title with its own book id is left out. A book with no date read goes on *Read* without a
   read. Dates without a day (`2024-03`) can't be sent and are counted; books Hardcover can't be found by
   are listed: give them a `Hardcover <edition id>` in the edit form (the number in the edition's address).
 - **Sync** imports, then exports.
