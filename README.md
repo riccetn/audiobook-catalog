@@ -38,9 +38,10 @@ data/
   books.json          YOUR catalogue (git-ignored)
   series-info.json    YOUR researched release info per series (git-ignored)
   excluded.txt        books your imports must never re-add (git-ignored)
+  hardcover-token     YOUR Hardcover API token, if you saved one (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
 index.html, app.js    the catalogue: browse by series or all books, edit books and series info
-import.html, import.js    Audible and Goodreads CSV imports, backups (Export / Restore / Merge)
+import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, backups (Export / Restore / Merge)
 duplicates.html, duplicates.js    find and merge books entered twice
 store.js              shared by the pages: loads data/books.json (or data/sample/), keeps and saves edits
 styles.css
@@ -66,12 +67,14 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 
 Each title can have several **editions** (the Audible release, a UK release with another narrator, a
 dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
-the ASIN, Goodreads id and ISBNs are what imports and box sets go by:
+the ASIN, Goodreads id, Hardcover id and ISBNs are what imports and box sets go by:
 
 | key    | meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
 | `id`   | Audible ASIN, so re-imports recognise the book                           |
 | `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
+| `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
+| `hcb`  | Hardcover's id of the book this is an edition of (`"77"`); every edition of that book has the same one |
 | `isbn` | list of this edition's ISBNs, always the 13-digit form without hyphens (`["9780000000002"]`). A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |
 | `n`    | narrator(s) of this edition                                              |
 | `p`    | publisher                                                                |
@@ -128,14 +131,17 @@ edit in the page, it is saved to `data/books.json` (see below).
 
 Edit books in the page (pencil icon, `+ Add a book`). *Editions* takes one edition per line, the way the
 book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goodreads 4242;
-ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts;
+ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts, and
+`Hardcover 501; Hardcover book 77` for the Hardcover ids;
 hyphens and ISBN-10s are fine). Text without a label is the edition's description, so a line can be as
 short as `Dramatized adaptation; Narrated by A full cast`. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
 searching finds narrators and descriptions. To tie a box set to
-its titles, give the edition the same ASIN (or Goodreads id) on each title: the details you typed on one
+its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on each title: the details you typed on one
 are copied to the others. On the card, an edition's ASIN links to the book on Audible (audible.com,
-which sends you on to your own store) and its Goodreads id to the book on Goodreads. With `make serve` and your own `data/books.json`,
+which sends you on to your own store), its Goodreads id to the book on Goodreads, and its Hardcover ids
+to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
+when Hardcover renames the book). With `make serve` and your own `data/books.json`,
 every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other
 server, or the demo data, edits stay in the browser: press **Export** on the *Import & export* page, then:
 
@@ -163,8 +169,8 @@ node catalog.js merge-backup ~/Downloads/audiobook-catalog-backup-2026-01-01.jso
 ```
 
 A backup has no record of what the two catalogues last had in common, so the merge works from what each
-side has. Books are matched by title and author first, then by series and number, then by ASIN or
-Goodreads id (so each title of a box set finds its own book).
+side has. Books are matched by title and author first, then by series and number, then by ASIN,
+Goodreads or Hardcover id (so each title of a box set finds its own book).
 - A book only the backup has is added, unless it is excluded here (you removed it here).
 - A book only this side has stays, unless the backup newly excludes it (it was removed there, which
   always adds it to the exclusions); then it is removed here too.
@@ -211,8 +217,9 @@ books' series on Audible** under the import buttons (this browser remembers it).
 looks up just the new books and shows their series to confirm.
 
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
-the import exclusion list, `data/excluded.txt`, as the ASINs and Goodreads ids (`Goodreads 4242`) of its
-editions, and as `Title | Author`, so no later Audible or Goodreads import brings it back. With
+the import exclusion list, `data/excluded.txt`, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
+ids (`Hardcover 501`) of its editions, and as `Title | Author`, so no later Audible, Goodreads or Hardcover
+import brings it back. With
 `make serve` that is saved to `data/excluded.txt` along with the removal; otherwise it goes into
 **Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN,
 `Goodreads 4242` or `Title | Author` to `data/excluded.txt` yourself (a Goodreads id needs its `Goodreads`
@@ -273,10 +280,69 @@ filled in the first time an export matches them. Goodreads puts the series in th
 `The First Adventure (Fantasy Adventures, #1)` or `The First Adventure: Fantasy Adventures, Book 1`; both
 become the title `The First Adventure` in series `Fantasy Adventures`, number `1`.
 
+**Export to Goodreads**: `node catalog.js export-goodreads goodreads.csv` (or **Goodreads CSV** under
+*Export to Goodreads* on the *Import & export* page) writes the catalogue as a Goodreads library export,
+the format Goodreads' [import page](https://www.goodreads.com/review/import) takes. Every book goes on the
+*read* shelf, also those with no date read (a missing date means unknown, not unread), with the series in
+the title (`The First Adventure (Fantasy Adventures, #1)`), the first author as *Author* and the rest as
+*Additional Authors*, its genres as shelves (`Science Fiction` becomes `science-fiction`), and how many
+dates read it has as *Read Count*. Goodreads keeps one date read, so a book gets its latest full date
+(`2024-03-15` becomes `2024/03/15`); one read only in `2024-03` or `2024` goes without. Goodreads finds a
+book by the *Book Id* and ISBN of one of its editions (preferring one with both), else by title and
+author; a box set's edition, shared with its other titles, is left out so Goodreads doesn't file each
+title as the box set. The command says how many books have no id or ISBN and how many no full date.
+Our own Goodreads import reads the file back.
+
 Books imported before titles were split this way (or by hand) are split when the catalogue loads: a book with
 no series gets the one in its title, and a book that already has that series just loses it from the title.
 A book whose title names a different series or number than the one it has is left alone. `make validate`
 says how many titles still hold their series, and `make format`, or any save, writes them split.
+
+**Hardcover**: the catalogue can import from and export to your shelves on [Hardcover](https://hardcover.app),
+through Hardcover's API. Make a token on Hardcover (**Settings → Hardcover API**, `hardcover.app/account/api`)
+with the scopes `read:me`, `read:catalog`, `read:library` and, for exports, `write:library`.
+
+**In the app**: with `make serve` and your own catalogue, the *Import & export* page has a **Hardcover**
+panel. Paste the token and press **Save token**: it is kept with your catalogue in `data/hardcover-token`
+(git-ignored like your other data, readable only by you, never sent to the page, and not in backups).
+Then press **Import**, **Export** or **Sync**: the server runs the same command as below as a dry run and
+shows what it would do, and nothing changes, here or on Hardcover, until you confirm. Afterwards the page
+reloads the catalogue. It only runs when every edit in the page is saved, and like a save it refuses if
+`data/books.json` changed on disk since the page loaded it. **Remove token** deletes the file.
+
+**Or on the command line**, with the token saved as above (or written to `data/hardcover-token` by hand,
+or, taking precedence, in the `HARDCOVER_TOKEN` environment variable):
+
+```sh
+node catalog.js hardcover-sync --dry-run        # what it would do, on both sides
+node catalog.js hardcover-sync                  # import, then export
+node catalog.js hardcover-import                # only Hardcover -> catalogue
+node catalog.js hardcover-export                # only catalogue -> Hardcover
+```
+
+- **Import** reads the books on your Hardcover *Read* shelf, like any import (it only adds, see below).
+  A book read as an audiobook edition on Hardcover is added if it is new; a book you read in another
+  format, or without an edition picked, only fills in a book you already have. Each gets an edition with
+  Hardcover's edition and book ids (`hc`, `hcb`), the ASIN, ISBNs, narrator, publisher, release date and
+  length Hardcover has, and every finished date of its reads (Hardcover keeps them all, so a book you have
+  gains the dates it lacks; `2024-03-15` counts as there when you have `2024-03`). A book on Hardcover with
+  no finished date gets none, which here means the date is unknown.
+- **Export** finds each of your books on Hardcover by its Hardcover id, ASIN, ISBN or Goodreads id, saves
+  the ids it finds on the book's edition (an ISBN or Goodreads id only gives the book's id, `hcb`, since it
+  is often the print edition), and puts the books that aren't on your Hardcover shelves yet on *Read*, with
+  each dated read as a Hardcover read. A book already on *Read* gains the reads it lacks. A box set is one
+  Hardcover book, so its titles go on Hardcover once. A book with no date read goes on *Read* without a
+  read. Dates without a day (`2024-03`) can't be sent and are counted; books Hardcover can't be found by
+  are listed: give them a `Hardcover <edition id>` in the edit form (the number in the edition's address).
+- **Sync** imports, then exports.
+
+Nothing is ever changed or removed on either side: a book on another Hardcover shelf (*Want to Read*,
+*Did Not Finish*, ...) is listed and left alone, and ratings and reviews are not touched. Running it again
+only does what is still missing. Hardcover allows 60 requests a minute, so the commands ask once a second;
+a first export of a large catalogue takes a few minutes. Hardcover doesn't allow its API to be called from a
+web page, so the app's buttons need `make serve`, which asks Hardcover for the page; the installed phone app
+has none. With `--data-dir`, the commands use the token in that folder: if it is a git repository, keep
+`hardcover-token` out of it.
 
 ## Tidy names and spacing
 
@@ -291,7 +357,8 @@ about any value that is not tidy. Capitalisation and quote styles are left alone
 Imports only ever *add* books; an existing book is never overwritten. An incoming book counts as
 already present if any of these match, strongest first:
 
-1. the Audible `id` or Goodreads id (`gr`) of any of its editions
+1. the Audible `id`, Goodreads id (`gr`) or Hardcover id (`hc`) of any of its editions, then the Hardcover
+   book (`hcb`, another edition of the same book on Hardcover)
 2. same first author + same series (spelling-insensitive: `Ember Coast` = `Ember Coast Series`) + same number
 3. same author and title, also forgiving of the long Audible form: `A Crown of Embers 5: A Spark of Dawn`
    finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
@@ -373,7 +440,7 @@ the demo data, never your own `data/` files or the save endpoint.
 
 This repository is meant to be public, so nothing personal is tracked:
 
-- `data/books.json`, `data/series-info.json`, `data/excluded.txt` and `data/raw/*` are in
+- `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/hardcover-token` and `data/raw/*` are in
   `.gitignore`. `tests/data.test.mjs` fails if any of them stops being ignored or a
   file under `data/` other than the demo data becomes tracked.
 - The demo data and every example in the tests and docs are invented.
