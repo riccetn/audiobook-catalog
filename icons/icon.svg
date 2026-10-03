@@ -1,11 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#3F5D4B"/>
-  <g transform="translate(256 276) scale(.85) translate(-256 -256)">
-  <path d="M136 152h104c22 0 16 18 16 28v196c0-14-10-24-28-24H136z" fill="#F6F2E9"/>
-  <path d="M376 152H272c-22 0-16 18-16 28v196c0-14 10-24 28-24h92z" fill="#F6F2E9"/>
-  <path d="M256 180v196" stroke="#2c4235" stroke-width="6"/>
-  <path d="M176 120a80 80 0 0 1 160 0" fill="none" stroke="#B08D3E" stroke-width="18" stroke-linecap="round"/>
-  <rect x="150" y="108" width="30" height="58" rx="12" fill="#B08D3E"/>
-  <rect x="332" y="108" width="30" height="58" rx="12" fill="#B08D3E"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="34 34 444 444">
+<!-- An open book lying flat, seen from above, with headphones resting on it. Transparent: this is the browser tab icon. -->
+<g transform="translate(0 256) scale(1 1.3) translate(0 -290)">
+<path d="M40 392 L112 214 L256 226 L400 214 L472 392 L256 420 Z" fill="#4B3A5E"/>
+<path d="M52 376 L118 206 Q190 192 256 214 L256 404 Q160 380 52 376 Z" fill="#E4DCC8"/>
+<path d="M460 376 L394 206 Q322 192 256 214 L256 404 Q352 380 460 376 Z" fill="#E4DCC8"/>
+<path d="M60 362 L122 196 Q192 180 256 204 L256 392 Q164 364 60 362 Z" fill="#F6F2E9"/>
+<path d="M452 362 L390 196 Q320 180 256 204 L256 392 Q348 364 452 362 Z" fill="#F6F2E9"/>
+<path d="M256 206 L256 392" stroke="#24332A" stroke-width="5" stroke-linecap="round" opacity=".55"/>
+<path d="M146 232 Q182 222 236 238 M137.7 253.3 Q177.8 243.3 236 260.3 M129.3 274.7 Q173.7 264.7 236 282.7 M121 296 Q169.5 286 236 305 M112.7 317.3 Q165.3 307.3 236 327.3 M104.3 338.7 Q161.2 328.7 236 349.7 M366 232 Q330 222 276 238 M374.3 253.3 Q334.2 243.3 276 260.3 M382.7 274.7 Q338.3 264.7 276 282.7 M391 296 Q342.5 286 276 305 M399.3 317.3 Q346.7 307.3 276 327.3 M407.7 338.7 Q350.8 328.7 276 349.7" fill="none" stroke="#24332A" stroke-width="5" stroke-linecap="round" opacity=".18"/>
+<g transform="rotate(-8 256 300)">
+<path d="M150 318 C130 200 382 200 362 318" fill="none" stroke="#5F7391" stroke-width="38" stroke-linecap="round" transform="translate(0 6)"/>
+<path d="M150 318 C130 200 382 200 362 318" fill="none" stroke="#94A7C2" stroke-width="30" stroke-linecap="round"/>
+<ellipse cx="146" cy="336" rx="48" ry="30" fill="#5F7391" transform="translate(0 12)"/>
+<ellipse cx="146" cy="336" rx="48" ry="30" fill="#94A7C2"/>
+<ellipse cx="146" cy="332" rx="30" ry="17" fill="#2B2433"/>
+<ellipse cx="366" cy="336" rx="48" ry="30" fill="#5F7391" transform="translate(0 12)"/>
+<ellipse cx="366" cy="336" rx="48" ry="30" fill="#94A7C2"/>
+<ellipse cx="366" cy="332" rx="30" ry="17" fill="#2B2433"/>
+</g>
+</g>
 </svg>
