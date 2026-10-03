@@ -688,9 +688,9 @@ function hardcoverSandbox(t, books, state) {
   fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify(books));
   fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
   const hc = fakeHardcover(state);
-  const run = async (argv, env = { HARDCOVER_TOKEN: 'Bearer tok-123' }) => {
+  const run = async (argv, env = { HARDCOVER_TOKEN: 'Bearer tok-123' }, more = {}) => {
     const out = [], err = [];
-    const code = await main(['--root', tmp, ...argv], { out: s => out.push(s), err: s => err.push(s), fetch: hc.fetch, pause: async () => {}, env });
+    const code = await main(['--root', tmp, ...argv], { out: s => out.push(s), err: s => err.push(s), fetch: hc.fetch, pause: async () => {}, env, ...more });
     return { code, out: out.join('\n'), err: err.join('\n') };
   };
   return { dataDir, run, sent: hc.sent, booksPath: path.join(dataDir, 'books.json') };
@@ -832,9 +832,21 @@ test('serve keeps the Hardcover token for the page, never shows it, and runs Har
   assert.equal((await fetch(base + '/data/hardcover-token')).status, 404, 'no page can read the token');
   assert.equal((await fetch(base + '/data/../data/HARDCOVER-TOKEN')).status, 404);
 
+  // a run goes on in the background: POST starts it, GET follows it until it is done
+  const follow = async res => {
+    assert.equal(res.status, 202);
+    let { job } = await res.json();
+    while (job.running) {
+      await new Promise(done => setTimeout(done, 5));
+      ({ job } = await (await fetch(base + '/api/hardcover')).json());
+    }
+    return job;
+  };
+  assert.deepEqual(await (await fetch(base + '/api/hardcover')).json(), { job: null });
   // a dry run changes nothing anywhere; the real run writes data/books.json and Hardcover
-  const dry = await (await send('/api/hardcover', 'POST', { mode: 'sync', dryRun: true, ...fingerprints() })).json();
+  const dry = await follow(await send('/api/hardcover', 'POST', { mode: 'sync', dryRun: true, ...fingerprints() }));
   assert.equal(dry.code, 0, dry.err);
+  assert.equal(dry.dryRun, true);
   assert.match(dry.out, /books to put on your Read shelf: 1[\s\S]*dry run: nothing written/);
   assert.equal(state.shelf.length, 2);
   assert.equal((await send('/api/hardcover', 'POST', { mode: 'sync', ...fingerprints() }, { Origin: 'http://evil.example' })).status, 403);
@@ -842,16 +854,76 @@ test('serve keeps the Hardcover token for the page, never shows it, and runs Har
   const stale = await send('/api/hardcover', 'POST', { mode: 'sync', base: 'old', infoBase: 'old' });
   assert.equal(stale.status, 409);
   assert.equal((await stale.json()).conflict, true);
-  const real = await (await send('/api/hardcover', 'POST', { mode: 'sync', ...fingerprints() })).json();
+  const real = await follow(await send('/api/hardcover', 'POST', { mode: 'sync', ...fingerprints() }));
   assert.equal(real.code, 0, real.err);
   assert.match(real.out, /put 1 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
   assert.equal(state.shelf.length, 3);
   assert.equal(real.base, fingerprints().base);
+  assert.ok(real.elapsed >= 0);
   assert.equal(loadBooks(booksPath).length, 2, 'Tidewater was imported');
 
   assert.equal((await send('/api/hardcover/token', 'DELETE')).status, 200);
   assert.ok(!fs.existsSync(tokenPath));
-  const none = await (await send('/api/hardcover', 'POST', { mode: 'import', dryRun: true, ...fingerprints() })).json();
+  const none = await follow(await send('/api/hardcover', 'POST', { mode: 'import', dryRun: true, ...fingerprints() }));
   assert.equal(none.code, 2);
   assert.match(none.err, /no Hardcover API token/);
+});
+
+test('serve shows a Hardcover run while it goes, runs one at a time, and an edit saved meanwhile stops it', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  const booksPath = path.join(dataDir, 'books.json');
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale', e: [{ id: 'B0LANTERN1' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
+  fs.writeFileSync(path.join(dataDir, 'hardcover-token'), 'tok-123');
+  const state = hardcoverState(), hc = fakeHardcover(state);
+  let release = null, gate = null;
+  const hold = () => { gate = new Promise(done => { release = done; }); };
+  const server = createServer(tmp, () => server.address().port, {}, { fetch: hc.fetch, pause: () => gate || Promise.resolve(), env: {} });
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  t.after(() => server.close());
+  const base = `http://localhost:${server.address().port}`;
+  const start = body => fetch(base + '/api/hardcover', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base: CatalogImport.fingerprint(fs.readFileSync(booksPath, 'utf8')), infoBase: CatalogImport.fingerprint('{}'), ...body }) });
+  const now = async () => (await (await fetch(base + '/api/hardcover')).json()).job;
+  const until = async test => { for (let job = await now(); ; job = await now()) { if (test(job)) return job; await new Promise(done => setTimeout(done, 5)); } };
+
+  hold();
+  const first = await start({ mode: 'sync' });
+  assert.equal(first.status, 202);
+  const going = await until(job => job.step !== 'Starting');
+  assert.equal(going.running, true);
+  assert.equal(going.mode, 'sync');
+  assert.equal(going.dryRun, false);
+  assert.match(going.step, /^Reading your Hardcover shelves/);
+  const second = await start({ mode: 'import', dryRun: true });
+  assert.equal(second.status, 409, 'one run at a time');
+  assert.equal((await second.json()).job.id, going.id);
+
+  // an edit saved from the page while it runs: the run writes nothing and sends nothing
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale', g: ['Edited'], e: [{ id: 'B0LANTERN1' }] }]));
+  gate = null;
+  release();
+  const done = await until(job => !job.running);
+  assert.equal(done.code, 1);
+  assert.match(done.err, /data[\/\\]books\.json changed while this ran .*nothing written, nothing sent to Hardcover/);
+  assert.deepEqual(loadBooks(booksPath)[0].g, ['Edited']);
+  assert.equal(state.shelf.length, 2);
+  assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
+});
+
+test('hardcover commands say what they are doing through io.progress', async t => {
+  const state = hardcoverState();
+  const { run } = hardcoverSandbox(t, [{ t: 'Lantern Hours', a: 'R. T. Hale', r: ['2023-07-01'], e: [{ id: 'B0LANTERN1' }] }], state);
+  const steps = [];
+  const res = await run(['hardcover-sync'], undefined, { progress: (text, done, total) => steps.push(total ? `${text}: ${done} of ${total}` : text) });
+  assert.equal(res.code, 0, res.err);
+  assert.deepEqual(steps, [
+    'Reading your Hardcover shelves',
+    'Reading your Hardcover shelves: 2 books',
+    'Reading the books on your Read shelf: 0 of 2',
+    'Reading the editions on your Read shelf: 0 of 2',
+    'Finding your books on Hardcover: 0 of 1',
+    'Putting books on your Hardcover Read shelf: 0 of 1',
+  ]);
 });

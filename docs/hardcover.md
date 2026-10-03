@@ -12,6 +12,14 @@ shows what it would do, and nothing changes, here or on Hardcover, until you con
 reloads the catalogue. It only runs when every edit in the page is saved, and like a save it refuses if
 `data/books.json` changed on disk since the page loaded it. **Remove token** deletes the file.
 
+A run goes on in the background on the server, one at a time. While it does, every page of the app shows
+a banner on top with what it is doing (reading your shelves, finding your books on Hardcover, putting
+them on your shelf...), how far it has got (`12 of 40`) and how long it has been going; the other pages
+link to *Import & export* for the details. It keeps going if you reload, close the tab or open another
+page, and the banner picks it up again. When it ends, *Import & export* shows what it did, and every page
+open on the catalogue reloads it. Don't edit the catalogue while a real run goes: an edit saved meanwhile
+stops the run before it writes anything or sends anything to Hardcover (run it again afterwards).
+
 **Or on the command line**, with the token saved as above (or written to `data/hardcover-token` by hand,
 or, taking precedence, in the `HARDCOVER_TOKEN` environment variable):
 
