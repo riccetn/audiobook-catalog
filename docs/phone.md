@@ -14,8 +14,9 @@ Then, on the phone:
    browser storage (`audiobook-catalog-device`), loads instead of the demo from then on, and every edit
    and CSV import on the phone is saved there. Restoring another backup replaces it.
 
-The phone's catalogue does not sync with `data/` yet: to bring phone edits back to the PC, Export on the
-phone and run `node catalog.js sync-export` on the PC. A page served with its own `data/books.json`
+The phone's catalogue does not sync with `data/` by itself. To bring phone edits to the PC, Export on
+the phone and run `node catalog.js merge-backup` with that file ([Merge a backup from another device](backups.md)) on the PC (or `sync-export` if nothing
+changed on the PC meanwhile). The other way, Export on the PC and **Merge** it in the phone app. A page served with its own `data/books.json`
 (`make serve`) always uses that and ignores any device catalogue.
 
 The service worker (`sw.js`) fetches everything from the network first and only falls back to its

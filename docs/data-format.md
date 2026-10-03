@@ -14,12 +14,14 @@
 
 Each title can have several **editions** (the Audible release, a UK release with another narrator, a
 dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
-the ASIN, Goodreads id and ISBNs are what imports and box sets go by:
+the ASIN, Goodreads id, Hardcover id and ISBNs are what imports and box sets go by:
 
 | key    | meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
 | `id`   | Audible ASIN, so re-imports recognise the book                           |
 | `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
+| `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
+| `hcb`  | Hardcover's id of the book this is an edition of (`"77"`); every edition of that book has the same one |
 | `isbn` | list of this edition's ISBNs, always the 13-digit form without hyphens (`["9780000000002"]`). A single ISBN may be written as a plain string, with hyphens or as an ISBN-10; it is read as a list, and tidied to the 13-digit form when the page or `sync-export` saves |
 | `n`    | narrator(s) of this edition                                              |
 | `p`    | publisher                                                                |

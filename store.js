@@ -22,15 +22,30 @@ let LOCAL_SEEN = null;         // what this page last read from or wrote to loca
 let DATA_DIR = '';             // where the data files came from: 'data/', or 'data/sample/' for the demo
 let ON_DEVICE = false;         // the catalogue is this browser's own (DEVICE_KEY), not the files it was served
 let AUDIBLE_LOOKUP = false;    // `make serve` can look books up on Audible for the page (api/audible)
+let HARDCOVER = false;         // `make serve` with your own data can import from and export to Hardcover (api/hardcover)
 
 // Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
-// duplicates page; kept in this browser only.
+// duplicates page. Kept in this browser, and with `make serve` in data/not-duplicates.txt (only ever
+// added to, like data/excluded.txt); backups carry them too.
 const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
 let NOT_DUPLICATES = new Set();
+let NOT_DUP_ON_DISK = new Set();   // the entries data/not-duplicates.txt has
 try{
   const saved = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || '[]');
   if(Array.isArray(saved)) NOT_DUPLICATES = new Set(saved.filter(x=> typeof x === 'string'));
 }catch(e){}
+
+// Add marks to NOT_DUPLICATES (and this browser's copy); returns how many were new. They reach
+// data/not-duplicates.txt with the next save to disk.
+function addNotDuplicates(entries){
+  const before = NOT_DUPLICATES.size;
+  entries.forEach(e=> NOT_DUPLICATES.add(e));
+  try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...NOT_DUPLICATES])); }catch(e){}
+  return NOT_DUPLICATES.size - before;
+}
+
+// Marks data/not-duplicates.txt does not have yet.
+const pendingNotDuplicates = () => [...NOT_DUPLICATES].filter(k=> !NOT_DUP_ON_DISK.has(k));
 
 // Dates read of a book; [] when it has none (or something that is not a list of dates).
 const readDates = b => Array.isArray(b.r) ? b.r.filter(d => typeof d === 'string') : [];
@@ -100,11 +115,11 @@ async function saveToDisk(){
   SAVING = true;
   SAVE_AGAIN = false;
   let res, body;
-  const excluded = NEW_EXCLUDED.slice();
+  const excluded = NEW_EXCLUDED.slice(), notDuplicates = pendingNotDuplicates();
   try{
     res = await fetch('api/save', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, excluded, base: BASELINE, infoBase: INFO_BASELINE}),
+      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, excluded, notDuplicates, base: BASELINE, infoBase: INFO_BASELINE}),
     });
     body = await res.json();
   }catch(e){
@@ -123,6 +138,7 @@ async function saveToDisk(){
   BASELINE = body.base;
   INFO_BASELINE = body.infoBase;
   NEW_EXCLUDED = NEW_EXCLUDED.slice(excluded.length);   // data/excluded.txt has those now
+  notDuplicates.forEach(k=> NOT_DUP_ON_DISK.add(k));    // and data/not-duplicates.txt these
   if(SAVE_AGAIN){ saveLocally(); saveToDisk(); return; }
   // the disk has everything now (tidied the way sync-export tidies); the browser copy is no longer needed
   if(JSON.stringify(body.books) !== JSON.stringify(DATA)){ DATA = body.books; refreshPage(); updateNav(); }
@@ -171,6 +187,7 @@ async function detectDiskSave(dir){
     const res = await fetch('api/save', {cache: 'no-cache'});
     const body = res.ok ? await res.json() : {};
     AUDIBLE_LOOKUP = body.audible === true;
+    HARDCOVER = dir === 'data/' && body.hardcover === true;
     return dir === 'data/' && body.writable === true;
   }catch(e){ return false; }
 }
@@ -195,9 +212,10 @@ async function loadData(){
     try{ booksText = await fetchText(dir + 'books.json'); }catch(e){ continue; }
     let infoText = '{}';
     try{ infoText = await fetchText(dir + 'series-info.json'); }catch(e){}
-    let excludedText = '';
+    let excludedText = '', notDupText = '';
     try{ excludedText = await fetchText(dir + 'excluded.txt'); }catch(e){}
-    return {dir, booksText, infoText, excludedText};
+    try{ notDupText = await fetchText(dir + 'not-duplicates.txt'); }catch(e){}
+    return {dir, booksText, infoText, excludedText, notDupText};
   }
   throw new Error('no books.json found');
 }
@@ -226,13 +244,34 @@ function restoreLocalEdits(){
   return false;
 }
 
+// Whether edits made here have not reached data/ yet (a save on its way, or one that failed).
+function unsavedEdits(){
+  if(SAVING) return true;
+  try{ return localStorage.getItem(LS_KEY) !== null; }catch(e){ return false; }
+}
+
+// Load the catalogue from data/ again, after the server changed it (a Hardcover import), and redraw.
+async function reloadFromDisk(){
+  const {booksText, infoText, excludedText} = await loadData();
+  DATA = CatalogImport.fixBooks(JSON.parse(booksText));
+  SERIES_INFO = JSON.parse(infoText);
+  EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
+  NEW_EXCLUDED = [];
+  BASELINE = CatalogImport.fingerprint(booksText);
+  INFO_BASELINE = CatalogImport.fingerprint(infoText);
+  refreshPage();
+  updateNav();
+}
+
 // Load the catalogue (with this browser's unsaved edits), then let the page draw itself with `init`.
 async function startPage(init){
   try{
-    const {dir, booksText, infoText, excludedText} = await loadData();
+    const {dir, booksText, infoText, excludedText, notDupText} = await loadData();
     DATA = CatalogImport.fixBooks(JSON.parse(booksText));   // "r": "2024-03-15" -> ["2024-03-15"]
     SERIES_INFO = JSON.parse(infoText);
     EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
+    NOT_DUP_ON_DISK = new Set(CatalogImport.parseNotDuplicates(notDupText));
+    NOT_DUP_ON_DISK.forEach(k=> NOT_DUPLICATES.add(k));
     BASELINE = CatalogImport.fingerprint(booksText);
     INFO_BASELINE = CatalogImport.fingerprint(infoText);
     DATA_DIR = dir;
@@ -248,7 +287,8 @@ async function startPage(init){
   init();
   updateNav();
   if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
-  else if(restored && DISK_SAVE) await saveToDisk();     // edits a failed save left in this browser
+  // edits a failed save left in this browser, or marks made before they were saved to a file
+  else if(DISK_SAVE && (restored || pendingNotDuplicates().length)) await saveToDisk();
 }
 
 // Installable as an app (on a phone, say), and usable offline once it is: see sw.js.

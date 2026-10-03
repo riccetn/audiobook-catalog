@@ -23,14 +23,17 @@ edit in the page, it is saved to `data/books.json` (see [Running the app and sav
 
 Edit books in the page (pencil icon, `+ Add a book`). *Editions* takes one edition per line, the way the
 book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goodreads 4242;
-ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts;
+ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts, and
+`Hardcover 501; Hardcover book 77` for the Hardcover ids;
 hyphens and ISBN-10s are fine). Text without a label is the edition's description, so a line can be as
 short as `Dramatized adaptation; Narrated by A full cast`. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
 searching finds narrators and descriptions. To tie a box set to
-its titles, give the edition the same ASIN (or Goodreads id) on each title: the details you typed on one
+its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on each title: the details you typed on one
 are copied to the others. On the card, an edition's ASIN links to the book on Audible (audible.com,
-which sends you on to your own store) and its Goodreads id to the book on Goodreads. With `make serve` and your own `data/books.json`,
+which sends you on to your own store), its Goodreads id to the book on Goodreads, and its Hardcover ids
+to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
+when Hardcover renames the book). With `make serve` and your own `data/books.json`,
 every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other
 server, or the demo data, edits stay in the browser: press **Export** on the *Import & export* page, then:
 
@@ -40,12 +43,16 @@ node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json
 ```
 
 It refuses files that are not valid catalogue exports and prints what changed before writing.
-An export holds the books, the series info and the list of books imports must skip
-(`{"books": [...], "seriesInfo": {...}, "excluded": [...]}`), so `sync-export` updates
-`data/series-info.json` too and adds any new entries to `data/excluded.txt` (it never removes one).
+An export holds the books, the series info, the list of books imports must skip and the pairs marked
+**Not duplicates** (`{"books": [...], "seriesInfo": {...}, "excluded": [...], "notDuplicates": [...]}`),
+so `sync-export` updates `data/series-info.json` too and adds any new entries to `data/excluded.txt` and
+`data/not-duplicates.txt` (it never removes one).
 Backups from before series info was exported (a plain list of books), or before the exclusions were,
 still work and leave those files as they are. The app's **Restore** reads all of them the same way,
-adding the backup's exclusions to the ones it already has.
+adding the backup's exclusions and **Not duplicates** marks to the ones it already has.
+
+When both catalogues have changed, merge the backup instead: see
+[Merge a backup from another device](backups.md).
 You can also edit `data/books.json` by hand; `make format` rewrites it the way the tools write it.
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
@@ -81,8 +88,9 @@ books' series on Audible** under the import buttons (this browser remembers it).
 looks up just the new books and shows their series to confirm.
 
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
-the import exclusion list, `data/excluded.txt`, as the ASINs and Goodreads ids (`Goodreads 4242`) of its
-editions, and as `Title | Author`, so no later Audible or Goodreads import brings it back. With
+the import exclusion list, `data/excluded.txt`, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
+ids (`Hardcover 501`) of its editions, and as `Title | Author`, so no later Audible, Goodreads or Hardcover
+import brings it back. With
 `make serve` that is saved to `data/excluded.txt` along with the removal; otherwise it goes into
 **Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN,
 `Goodreads 4242` or `Title | Author` to `data/excluded.txt` yourself (a Goodreads id needs its `Goodreads`
@@ -99,7 +107,7 @@ are not duplicates. For each pair, pick the title, author and series to keep whe
 differ; genres, dates read and editions are combined (an edition with the same ASIN, Goodreads id or ISBN
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
 adding them to `data/excluded.txt`, since the kept book carries their ids and imports find it. **Not
-duplicates** stops offering that pair in this browser. To merge two books the list misses (say, an
+duplicates** stops offering that pair. To merge two books the list misses (say, an
 author spelled two ways), press &#8644; on one book in the catalogue and then on the other; the
 duplicates page opens with the two. Like any edit, a merge is saved to `data/books.json`.
 
@@ -109,7 +117,12 @@ with both ids; untick *Make the editions one edition* to keep them separate. Whe
 detail such as the length, the first entry's value is kept. A box set's shared edition is never
 joined this way. Books merged before this, or that got two such editions some other way, are listed
 under *Editions that look like one*: **Make one edition** joins them, **Keep separate** stops
-listing that book in this browser. The *Duplicates* link counts both.
+listing that book. The *Duplicates* link counts both.
+
+Both marks are kept in the browser, and with `make serve` also in `data/not-duplicates.txt`, so
+other browsers see them too; a mark made without `make serve` is added to the file the next time
+the page saves there. Like `data/excluded.txt`, the file is only ever added to: delete a line by
+hand to have that pair offered again. Backups carry the marks as well.
 
 **ISBNs**: both importers store the ISBNs in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the edition they import. Edit them in the page under *Editions*
@@ -160,3 +173,5 @@ Books imported before titles were split this way (or by hand) are split when the
 no series gets the one in its title, and a book that already has that series just loses it from the title.
 A book whose title names a different series or number than the one it has is left alone. `make validate`
 says how many titles still hold their series, and `make format`, or any save, writes them split.
+
+**Hardcover**: import from, export to and sync with your Hardcover shelves; see [Hardcover](hardcover.md).

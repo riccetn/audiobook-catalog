@@ -8,9 +8,11 @@ data/
   books.json          YOUR catalogue (git-ignored)
   series-info.json    YOUR researched release info per series (git-ignored)
   excluded.txt        books your imports must never re-add (git-ignored)
+  not-duplicates.txt  books the Duplicates page was told are different (git-ignored)
+  hardcover-token     YOUR Hardcover API token, if you saved one (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
 index.html, app.js    the catalogue: browse by series or all books, edit books and series info
-import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, backups (Export / Restore)
+import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, backups (Export / Restore / Merge)
 duplicates.html, duplicates.js    find and merge books entered twice
 store.js              shared by the pages: loads data/books.json (or data/sample/), keeps and saves edits
 styles.css

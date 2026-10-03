@@ -3,7 +3,8 @@
 Imports only ever *add* books; an existing book is never overwritten. An incoming book counts as
 already present if any of these match, strongest first:
 
-1. the Audible `id` or Goodreads id (`gr`) of any of its editions
+1. the Audible `id`, Goodreads id (`gr`) or Hardcover id (`hc`) of any of its editions, then the Hardcover
+   book (`hcb`, another edition of the same book on Hardcover)
 2. same first author + same series (spelling-insensitive: `Ember Coast` = `Ember Coast Series`) + same number
 3. same author and title, also forgiving of the long Audible form: `A Crown of Embers 5: A Spark of Dawn`
    finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
