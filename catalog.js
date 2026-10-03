@@ -320,9 +320,10 @@ const CONTENT_TYPES = {
 const MAX_SAVE_BYTES = 32 * 1024 * 1024;
 
 /** Write a file in one step, so a crash or a full disk never leaves half a catalogue behind. */
-function writeAtomic(file, text){
+function writeAtomic(file, text, mode){
   const tmp = path.join(path.dirname(file), '.' + path.basename(file) + '.tmp');
-  fs.writeFileSync(tmp, text, 'utf8');
+  fs.writeFileSync(tmp, text, {encoding: 'utf8', ...(mode ? {mode} : {})});
+  if(mode) fs.chmodSync(tmp, mode);   // a file left over from an earlier write keeps its own mode
   fs.renameSync(tmp, file);
 }
 
@@ -358,7 +359,8 @@ function handleSave(req, res, root, port){
   const excludedPath = path.join(dir, 'excluded.txt');
   const writable = fs.existsSync(booksPath);
   // `audible`: this server can also look books up on Audible for the page (see handleAudible)
-  if(req.method === 'GET'){ sendJson(res, 200, {writable, audible: true}); return; }
+  // `hardcover`: the page can save a Hardcover token and import from / export to Hardcover (handleHardcover)
+  if(req.method === 'GET'){ sendJson(res, 200, {writable, audible: true, hardcover: writable}); return; }
   if(req.method !== 'PUT'){ sendJson(res, 405, {error: 'use GET or PUT'}); return; }
   if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'saves are only accepted from this page'}); return; }
   if(!writable){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
@@ -431,12 +433,90 @@ function handleAudible(req, res, port, get, pause){
   });
 }
 
+/** Read a JSON request body of up to `limit` bytes, then call `done(body)`; answers 413 or 400 itself. */
+function readJson(req, res, limit, done){
+  const chunks = [];
+  let size = 0;
+  req.on('data', chunk => {
+    size += chunk.length;
+    if(size > limit){ sendJson(res, 413, {error: 'too large'}); req.destroy(); return; }
+    chunks.push(chunk);
+  });
+  req.on('end', () => {
+    if(res.headersSent) return;
+    let body;
+    try{ body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }catch(exc){ sendJson(res, 400, {error: 'not JSON'}); return; }
+    done(body);
+  });
+}
+
+/**
+ * The page's Hardcover token, kept in data/hardcover-token: GET says whether one is saved (never what
+ * it is), PUT {token} saves it, DELETE removes it. Same-origin only, and only with your own data/books.json.
+ */
+function handleHardcoverToken(req, res, root, port){
+  const dir = path.join(root, 'data'), file = path.join(dir, HARDCOVER_TOKEN_FILE);
+  if(req.method === 'GET'){ sendJson(res, 200, {token: Boolean(savedHardcoverToken(dir))}); return; }
+  if(!['PUT', 'DELETE'].includes(req.method)){ sendJson(res, 405, {error: 'use GET, PUT or DELETE'}); return; }
+  if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'only accepted from this page'}); return; }
+  if(!fs.existsSync(path.join(dir, 'books.json'))){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
+  if(req.method === 'DELETE'){
+    try{ fs.rmSync(file, {force: true}); }catch(exc){ sendJson(res, 500, {error: `could not remove it: ${exc.message}`}); return; }
+    sendJson(res, 200, {token: false});
+    return;
+  }
+  readJson(req, res, 16 * 1024, body => {
+    const token = cleanToken(body && body.token);
+    if(!token || /\s/.test(token)){ sendJson(res, 400, {error: 'that is not a Hardcover API token'}); return; }
+    try{
+      writeAtomic(file, token + '\n', 0o600);   // readable by you alone
+    }catch(exc){ sendJson(res, 500, {error: `could not save it: ${exc.message}`}); return; }
+    sendJson(res, 200, {token: true});
+  });
+}
+
+/**
+ * The page's Hardcover import, export and sync: POST {mode: "import", "export" or "sync", dryRun, base,
+ * infoBase} runs `node catalog.js hardcover-<mode>` on your own data and answers {code, out, err} with
+ * what it printed. Like a save, it is refused when the files changed on disk since the page loaded them,
+ * so the page's edits and the run never overwrite each other. `net` swaps in {fetch, pause, env} for tests.
+ */
+function handleHardcover(req, res, root, port, net, running){
+  if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use POST'}); return; }
+  if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'only accepted from this page'}); return; }
+  const dir = path.join(root, 'data');
+  const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
+  if(!fs.existsSync(booksPath)){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
+  readJson(req, res, 4 * 1024, async body => {
+    if(!body || !['import', 'export', 'sync'].includes(body.mode)){ sendJson(res, 400, {error: 'expected {mode: "import", "export" or "sync", dryRun}'}); return; }
+    const infoText = () => fs.existsSync(infoPath) ? readText(infoPath) : '{}';
+    if(body.base !== C.fingerprint(readText(booksPath)) || body.infoBase !== C.fingerprint(infoText())){
+      sendJson(res, 409, {error: 'data/books.json or data/series-info.json changed on disk since the page loaded it', conflict: true});
+      return;
+    }
+    if(running.now){ sendJson(res, 409, {error: 'a Hardcover run is still going'}); return; }
+    running.now = true;
+    const out = [], err = [];
+    const io = {out: s => out.push(s), err: s => err.push(s), fetch: net.fetch, pause: net.pause, env: net.env};
+    let code;
+    try{
+      code = await cmdHardcover({root, data: dir, dryRun: Boolean(body.dryRun)}, io, body.mode);
+    }catch(exc){
+      code = 1;
+      err.push(`error: ${exc.message}`);
+    }finally{ running.now = false; }
+    sendJson(res, 200, {code, out: out.join('\n'), err: err.join('\n'),
+      base: C.fingerprint(readText(booksPath)), infoBase: C.fingerprint(infoText())});
+  });
+}
+
 /**
  * The server behind `serve`: the project folder, plus the page's saves (see handleSave) and Audible
  * lookups (handleAudible; `audible` swaps in {fetch, pause} for tests).
  */
-function createServer(root, port, audible = {}){
+function createServer(root, port, audible = {}, hardcover = {}){
   const get = audible.fetch || globalThis.fetch, pause = audible.pause || defaultPause;
+  const running = {now: false};   // one Hardcover run at a time
   return http.createServer((req, res) => {
     let file, urlPath;
     try{
@@ -445,7 +525,11 @@ function createServer(root, port, audible = {}){
     }catch(e){ res.writeHead(400).end('bad request'); return; }
     if(urlPath === '/api/save'){ handleSave(req, res, root, port()); return; }
     if(urlPath === '/api/audible'){ handleAudible(req, res, port(), get, pause); return; }
+    if(urlPath === '/api/hardcover/token'){ handleHardcoverToken(req, res, root, port()); return; }
+    if(urlPath === '/api/hardcover'){ handleHardcover(req, res, root, port(), hardcover, running); return; }
     if(!file.startsWith(root + path.sep) && file !== root){ res.writeHead(403).end('forbidden'); return; }
+    // the token gives access to your Hardcover account: no page gets to read it
+    if(path.basename(file).toLowerCase().includes(HARDCOVER_TOKEN_FILE)){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }
     fs.readFile(file, (err, body) => {
       if(err){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }
       res.writeHead(200, {'Content-Type': CONTENT_TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache'});
@@ -545,15 +629,26 @@ async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
 
 // ------------------------------------------------------------------- Hardcover
 const HARDCOVER_TOKEN_ENV = 'HARDCOVER_TOKEN';
+// Your Hardcover API token, kept with your catalogue (git-ignored, and never served to a page).
+const HARDCOVER_TOKEN_FILE = 'hardcover-token';
 const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
+
+/** A token as Hardcover shows it ("Bearer eyJ..."), without the "Bearer" and spacing; '' when there is none. */
+const cleanToken = t => String(t || '').trim().replace(/^bearer\s+/i, '').trim();
+
+/** The token saved in `dir` (data/hardcover-token), or ''. */
+function savedHardcoverToken(dir){
+  const file = path.join(dir, HARDCOVER_TOKEN_FILE);
+  return fs.existsSync(file) ? cleanToken(readText(file)) : '';
+}
 
 /**
  * A function that asks Hardcover's API one query (with its variables) and returns the answer's `data`,
- * one request a second; null when no token is set. Throws with a short reason when Hardcover says no.
+ * one request a second; null when there is no token: $HARDCOVER_TOKEN, else the one saved in `dir`.
+ * Throws with a short reason when Hardcover says no.
  */
-function hardcoverClient(io){
-  const env = io.env || process.env;
-  const token = String(env[HARDCOVER_TOKEN_ENV] || '').trim().replace(/^bearer\s+/i, '');
+function hardcoverClient(io, dir){
+  const token = cleanToken((io.env || process.env)[HARDCOVER_TOKEN_ENV]) || savedHardcoverToken(dir);
   if(!token) return null;
   const get = io.fetch || globalThis.fetch;
   const pause = io.pause || (() => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS)));
@@ -564,7 +659,7 @@ function hardcoverClient(io){
       'content-type': 'application/json', authorization: `Bearer ${token}`, 'user-agent': 'audiobook-catalog (personal catalogue sync)'}});
     let json = null;
     try{ json = await res.json(); }catch(exc){ /* reported below */ }
-    if(res.status === 401) throw new Error(`Hardcover refused the token in $${HARDCOVER_TOKEN_ENV} (expired, or missing a scope? make a new one at hardcover.app/account/api)`);
+    if(res.status === 401) throw new Error(`Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)`);
     if(res.status === 429) throw new Error('Hardcover\'s rate limit was reached; try again later');
     if(!res.ok || !json) throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);
     if(Array.isArray(json.errors) && json.errors.length) throw new Error(`Hardcover: ${json.errors.map(e => e && e.message).join('; ')}`);
@@ -616,9 +711,10 @@ async function findOnHardcover(ask, lookups){
  */
 async function cmdHardcover(args, io, mode){
   if(!requireOwnData(args, io)) return 2;
-  const ask = hardcoverClient(io);
+  const ask = hardcoverClient(io, args.data);
   if(!ask){
-    io.err(`error: set ${HARDCOVER_TOKEN_ENV} to your Hardcover API token (hardcover.app/account/api)`);
+    io.err('error: no Hardcover API token (make one at hardcover.app/account/api): save it on the Import & export ' +
+      `page under make serve, put it in ${shown(path.join(args.data, HARDCOVER_TOKEN_FILE), args.root)} or set $${HARDCOVER_TOKEN_ENV}`);
     return 2;
   }
   const [booksPath, infoPath, excludedPath] = paths(args);
@@ -737,7 +833,7 @@ const COMMANDS = {
   'series': {run: cmdSeries, dryRun: true,
     help: 'fill in missing series, numbers and released totals from Audible, by ASIN (--store us, uk, de, ...)'},
   'hardcover-import': {run: (a, io) => cmdHardcover(a, io, 'import'), dryRun: true,
-    help: `add the books on your Hardcover Read shelf, with their dates read (needs $${HARDCOVER_TOKEN_ENV})`},
+    help: `add the books on your Hardcover Read shelf, with their dates read (needs your Hardcover API token)`},
   'hardcover-export': {run: (a, io) => cmdHardcover(a, io, 'export'), dryRun: true,
     help: 'put your books on your Hardcover Read shelf, with their dates read, and keep their Hardcover ids'},
   'hardcover-sync': {run: (a, io) => cmdHardcover(a, io, 'sync'), dryRun: true, help: 'hardcover-import, then hardcover-export'},

@@ -38,6 +38,7 @@ data/
   books.json          YOUR catalogue (git-ignored)
   series-info.json    YOUR researched release info per series (git-ignored)
   excluded.txt        books your imports must never re-add (git-ignored)
+  hardcover-token     YOUR Hardcover API token, if you saved one (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
 index.html, app.js    the catalogue: browse by series or all books, edit books and series info
 import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, backups (Export / Restore)
@@ -274,11 +275,20 @@ says how many titles still hold their series, and `make format`, or any save, wr
 
 **Hardcover**: the catalogue can import from and export to your shelves on [Hardcover](https://hardcover.app),
 through Hardcover's API. Make a token on Hardcover (**Settings → Hardcover API**, `hardcover.app/account/api`)
-with the scopes `read:me`, `read:catalog`, `read:library` and, for exports, `write:library`, and put it in the `HARDCOVER_TOKEN` environment variable. Keep it
-out of the repository: it gives access to your Hardcover account.
+with the scopes `read:me`, `read:catalog`, `read:library` and, for exports, `write:library`.
+
+**In the app**: with `make serve` and your own catalogue, the *Import & export* page has a **Hardcover**
+panel. Paste the token and press **Save token**: it is kept with your catalogue in `data/hardcover-token`
+(git-ignored like your other data, readable only by you, never sent to the page, and not in backups).
+Then press **Import**, **Export** or **Sync**: the server runs the same command as below as a dry run and
+shows what it would do, and nothing changes, here or on Hardcover, until you confirm. Afterwards the page
+reloads the catalogue. It only runs when every edit in the page is saved, and like a save it refuses if
+`data/books.json` changed on disk since the page loaded it. **Remove token** deletes the file.
+
+**Or on the command line**, with the token saved as above (or written to `data/hardcover-token` by hand,
+or, taking precedence, in the `HARDCOVER_TOKEN` environment variable):
 
 ```sh
-export HARDCOVER_TOKEN='Bearer eyJ...'          # with or without the "Bearer "
 node catalog.js hardcover-sync --dry-run        # what it would do, on both sides
 node catalog.js hardcover-sync                  # import, then export
 node catalog.js hardcover-import                # only Hardcover -> catalogue
@@ -304,8 +314,10 @@ node catalog.js hardcover-export                # only catalogue -> Hardcover
 Nothing is ever changed or removed on either side: a book on another Hardcover shelf (*Want to Read*,
 *Did Not Finish*, ...) is listed and left alone, and ratings and reviews are not touched. Running it again
 only does what is still missing. Hardcover allows 60 requests a minute, so the commands ask once a second;
-a first export of a large catalogue takes a few minutes. Hardcover only allows its API from your own
-machine, not from a web page, so this is a command, not a button in the app.
+a first export of a large catalogue takes a few minutes. Hardcover doesn't allow its API to be called from a
+web page, so the app's buttons need `make serve`, which asks Hardcover for the page; the installed phone app
+has none. With `--data-dir`, the commands use the token in that folder: if it is a git repository, keep
+`hardcover-token` out of it.
 
 ## Tidy names and spacing
 
@@ -402,7 +414,7 @@ the demo data, never your own `data/` files or the save endpoint.
 
 This repository is meant to be public, so nothing personal is tracked:
 
-- `data/books.json`, `data/series-info.json`, `data/excluded.txt` and `data/raw/*` are in
+- `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/hardcover-token` and `data/raw/*` are in
   `.gitignore`. `tests/data.test.mjs` fails if any of them stops being ignored or a
   file under `data/` other than the demo data becomes tracked.
 - The demo data and every example in the tests and docs are invented.

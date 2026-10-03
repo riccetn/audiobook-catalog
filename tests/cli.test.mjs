@@ -510,12 +510,12 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
   });
 
   // demo data only: not writable, and a save is refused
-  assert.deepEqual(await (await fetch(url)).json(), { writable: false, audible: true });
+  assert.deepEqual(await (await fetch(url)).json(), { writable: false, audible: true, hardcover: false });
   assert.equal((await put({ books: [], seriesInfo: {} })).status, 409);
 
   assert.equal(run('init').code, 0);
   const booksPath = path.join(tmp, 'data', 'books.json'), infoPath = path.join(tmp, 'data', 'series-info.json');
-  assert.deepEqual(await (await fetch(url)).json(), { writable: true, audible: true });
+  assert.deepEqual(await (await fetch(url)).json(), { writable: true, audible: true, hardcover: true });
   const base = fp(fs.readFileSync(booksPath, 'utf8')), infoBase = fp(fs.readFileSync(infoPath, 'utf8'));
 
   // a save writes both files, tidied like sync-export, and returns the new fingerprints
@@ -725,9 +725,69 @@ test('hardcover commands need a token, and write nothing when Hardcover says no'
   const before = fs.readFileSync(booksPath, 'utf8');
   const none = await run(['hardcover-sync'], {});
   assert.equal(none.code, 2);
-  assert.match(none.err, /set HARDCOVER_TOKEN to your Hardcover API token/);
+  assert.match(none.err, /no Hardcover API token .*: save it on the Import & export page under make serve, put it in data[\/\\]hardcover-token or set \$HARDCOVER_TOKEN/);
   const bad = await run(['hardcover-import'], { HARDCOVER_TOKEN: 'stale' });
   assert.equal(bad.code, 1);
-  assert.match(bad.err, /Hardcover refused the token in \$HARDCOVER_TOKEN .*; nothing written/);
+  assert.match(bad.err, /Hardcover refused your token .*; nothing written/);
   assert.equal(fs.readFileSync(booksPath, 'utf8'), before);
+});
+
+test('hardcover commands use the token saved with the catalogue when $HARDCOVER_TOKEN is not set', async t => {
+  const { run, dataDir, sent } = hardcoverSandbox(t, [{ t: 'Tidewater', a: 'Ann Vale' }], hardcoverState());
+  fs.writeFileSync(path.join(dataDir, 'hardcover-token'), 'Bearer tok-123\n');
+  const res = await run(['hardcover-import', '--dry-run'], {});
+  assert.equal(res.code, 0, res.err);
+  assert.ok(sent.length && sent.every(s => s.auth === 'Bearer tok-123'));
+  // the environment wins over the file
+  const env = await run(['hardcover-import', '--dry-run'], { HARDCOVER_TOKEN: 'other' });
+  assert.equal(env.code, 1);
+});
+
+test('serve keeps the Hardcover token for the page, never shows it, and runs Hardcover imports and exports', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  const booksPath = path.join(dataDir, 'books.json'), tokenPath = path.join(dataDir, 'hardcover-token');
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale', r: ['2023-07-01'], e: [{ id: 'B0LANTERN1' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
+  const state = hardcoverState(), hc = fakeHardcover(state);
+  const server = createServer(tmp, () => server.address().port, {}, { fetch: hc.fetch, pause: async () => {}, env: {} });
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  t.after(() => server.close());
+  const base = `http://localhost:${server.address().port}`;
+  const send = (url, method, body, headers = {}) => fetch(base + url, {
+    method, headers: { 'Content-Type': 'application/json', ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const fingerprints = () => ({ base: CatalogImport.fingerprint(fs.readFileSync(booksPath, 'utf8')), infoBase: CatalogImport.fingerprint('{}') });
+
+  assert.deepEqual(await (await fetch(base + '/api/hardcover/token')).json(), { token: false });
+  assert.equal((await send('/api/hardcover/token', 'PUT', { token: 'tok-123' }, { Origin: 'http://evil.example' })).status, 403);
+  assert.equal((await send('/api/hardcover/token', 'PUT', { token: '' })).status, 400);
+  assert.equal((await send('/api/hardcover/token', 'PUT', { token: 'Bearer tok-123' })).status, 200);
+  assert.equal(fs.readFileSync(tokenPath, 'utf8'), 'tok-123\n');
+  if (process.platform !== 'win32') assert.equal(fs.statSync(tokenPath).mode & 0o777, 0o600);
+  assert.deepEqual(await (await fetch(base + '/api/hardcover/token')).json(), { token: true });
+  assert.equal((await fetch(base + '/data/hardcover-token')).status, 404, 'no page can read the token');
+  assert.equal((await fetch(base + '/data/../data/HARDCOVER-TOKEN')).status, 404);
+
+  // a dry run changes nothing anywhere; the real run writes data/books.json and Hardcover
+  const dry = await (await send('/api/hardcover', 'POST', { mode: 'sync', dryRun: true, ...fingerprints() })).json();
+  assert.equal(dry.code, 0, dry.err);
+  assert.match(dry.out, /books to put on your Read shelf: 1[\s\S]*dry run: nothing written/);
+  assert.equal(state.shelf.length, 2);
+  assert.equal((await send('/api/hardcover', 'POST', { mode: 'sync', ...fingerprints() }, { Origin: 'http://evil.example' })).status, 403);
+  assert.equal((await send('/api/hardcover', 'POST', { mode: 'all', ...fingerprints() })).status, 400);
+  const stale = await send('/api/hardcover', 'POST', { mode: 'sync', base: 'old', infoBase: 'old' });
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).conflict, true);
+  const real = await (await send('/api/hardcover', 'POST', { mode: 'sync', ...fingerprints() })).json();
+  assert.equal(real.code, 0, real.err);
+  assert.match(real.out, /put 1 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
+  assert.equal(state.shelf.length, 3);
+  assert.equal(real.base, fingerprints().base);
+  assert.equal(loadBooks(booksPath).length, 2, 'Tidewater was imported');
+
+  assert.equal((await send('/api/hardcover/token', 'DELETE')).status, 200);
+  assert.ok(!fs.existsSync(tokenPath));
+  const none = await (await send('/api/hardcover', 'POST', { mode: 'import', dryRun: true, ...fingerprints() })).json();
+  assert.equal(none.code, 2);
+  assert.match(none.err, /no Hardcover API token/);
 });

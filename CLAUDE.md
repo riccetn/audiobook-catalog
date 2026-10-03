@@ -42,12 +42,15 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `parseExclusions`/`exclusionEntries`, `readBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
 - `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
   Hardcover's GraphQL API, both through `io.fetch`, and return a promise; the Hardcover token comes from
-  `HARDCOVER_TOKEN` in `io.env`/`process.env`) and the `serve` HTTP server. `serve` exposes a save
+  `HARDCOVER_TOKEN` in `io.env`/`process.env`, else `data/hardcover-token`) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
   the same checks as `sync-export`, refuses a save if the file's `fingerprint` changed on disk since
   the page loaded it, and writes atomically (`writeAtomic`). It also proxies the page's Audible lookups
   (`handleAudible`, `POST api/audible`, same-origin, batches of 25 ASINs); the page offers them when
-  `GET api/save` says `audible: true` (`AUDIBLE_LOOKUP` in `store.js`). Exports `main`, `createServer` etc. for tests.
+  `GET api/save` says `audible: true` (`AUDIBLE_LOOKUP` in `store.js`). For the page's Hardcover panel it keeps
+  the token (`handleHardcoverToken`, `api/hardcover/token`: GET says whether one is saved, never what it is)
+  and runs `cmdHardcover` (`handleHardcover`, `POST api/hardcover`, same-origin, fingerprint-checked like a
+  save); the static server never serves the token file. Exports `main`, `createServer` etc. for tests.
 - `store.js`: shared by the pages, loaded after `importers.js`: the globals (`DATA`, `SERIES_INFO`,
   `EXCLUSIONS`, ...), loading (`startPage(init)`: fetches `data/`, then falls back to `data/sample/`),
   `persist` (localStorage `audiobook-catalog-data`, tagged with the fingerprint of the files the edits
@@ -64,7 +67,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   (the smoke test checks).
 - `app.js` (`index.html`): series overview, all books, the book and series-info forms, global-state
   style (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
-- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Export / Restore of backups.
+- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, the Hardcover panel (under `make serve`), Export / Restore of backups.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `editionsJoinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
@@ -104,8 +107,8 @@ Invariants the code relies on:
 ## Privacy (hard rule)
 
 The repo is public; the user's library is not.
-- Never commit `data/books.json`, `data/series-info.json`, `data/excluded.txt` or anything in
-  `data/raw/`. `tests/data.test.mjs` fails if they become tracked.
+- Never commit `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/hardcover-token` or anything in
+  `data/raw/`. The token must never reach a page, a backup or a log. `tests/data.test.mjs` fails if they become tracked.
 - Only `data/sample/` is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.
 
