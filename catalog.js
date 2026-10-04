@@ -116,35 +116,12 @@ function requireOwnData(args, io){
 }
 
 function preview(records, io, limit = 15){
-  for(const rec of records.slice(0, limit)){
-    const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
-    io.out(`    + ${rec.t} - ${C.namesText(rec.a)}${series}`);
-  }
-  if(records.length > limit) io.out(`    ... and ${records.length - limit} more`);
+  C.recordLines(records, limit).forEach(line => io.out(line));
 }
 
 /** What C.merge() did, as the import commands print it. */
 function printMerge(report, warnings, io){
-  io.out(`  already in the catalogue: ${report.matched}`);
-  if(report.backfilled.length) io.out(`  Audible ids filled in on existing books: ${report.backfilled.length}`);
-  if(report.goodreadsFilled.length) io.out(`  Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}`);
-  if(report.hardcoverFilled.length) io.out(`  Hardcover ids filled in on existing books: ${report.hardcoverFilled.length}`);
-  if(report.datesFilled.length) io.out(`  dates read filled in on existing books: ${report.datesFilled.length}`);
-  if(report.isbnsFilled.length) io.out(`  ISBNs added to existing books: ${report.isbnsFilled.length}`);
-  if(report.detailsFilled.length) io.out(`  narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}`);
-  if(report.editionsAdded.length) io.out(`  other editions added to existing books: ${report.editionsAdded.length}`);
-  if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
-  if(report.boxSets.length){
-    io.out(`  box sets split into their titles: ${report.boxSets.length}`);
-    for(const b of report.boxSets.slice(0, 15)) io.out(`    ${b.t} - ${C.namesText(b.a)}: ${b.titles} already here, ${b.added} added`);
-    if(report.boxSets.some(b => b.added)) io.out('    (a title not here yet is named "Series, Book N" until --series or the `series` command names it)');
-  }
-  io.out(`  new: ${report.added.length}`);
-  preview(report.added, io);
-  if(warnings.length){
-    io.out(`  needs a look (${warnings.length}):`);
-    for(const w of warnings.slice(0, 15)) io.out('    ! ' + w);
-  }
+  C.mergeLines(report, warnings).forEach(line => io.out(line));
 }
 
 function runImport(args, io, read, label){
@@ -814,8 +791,7 @@ const HARDCOVER_TOKEN_ENV = 'HARDCOVER_TOKEN';
 const HARDCOVER_TOKEN_FILE = 'hardcover-token';
 const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
 
-/** A token as Hardcover shows it ("Bearer eyJ..."), without the "Bearer" and spacing; '' when there is none. */
-const cleanToken = t => String(t || '').trim().replace(/^bearer\s+/i, '').trim();
+const cleanToken = C.cleanHardcoverToken;
 
 /** The token saved in `dir` (data/hardcover-token), or ''. */
 function savedHardcoverToken(dir){
@@ -824,78 +800,22 @@ function savedHardcoverToken(dir){
 }
 
 /**
- * A function that asks Hardcover's API one query (with its variables) and returns the answer's `data`,
- * one request a second; null when there is no token: $HARDCOVER_TOKEN, else the one saved in `dir`.
- * Throws with a short reason when Hardcover says no.
+ * A function that asks Hardcover's API one query (see C.hardcoverAsker), one request a second; null when
+ * there is no token: $HARDCOVER_TOKEN, else the one saved in `dir`.
  */
 function hardcoverClient(io, dir){
   const token = cleanToken((io.env || process.env)[HARDCOVER_TOKEN_ENV]) || savedHardcoverToken(dir);
   if(!token) return null;
-  const get = io.fetch || globalThis.fetch;
   const pause = io.pause || (() => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS)));
-  let asked = 0;
-  return async (query, variables) => {
-    if(asked++) await pause();
-    const res = await get(C.HARDCOVER_API, {method: 'POST', body: JSON.stringify({query, variables: variables || {}}), headers: {
-      'content-type': 'application/json', authorization: `Bearer ${token}`, 'user-agent': 'audiobook-catalog (personal catalogue sync)'}});
-    let json = null;
-    try{ json = await res.json(); }catch(exc){ /* reported below */ }
-    if(res.status === 401) throw new Error(`Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)`);
-    if(res.status === 429) throw new Error('Hardcover\'s rate limit was reached; try again later');
-    if(!res.ok || !json) throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);
-    if(Array.isArray(json.errors) && json.errors.length) throw new Error(`Hardcover: ${json.errors.map(e => e && e.message).join('; ')}`);
-    return json.data || {};
-  };
-}
-
-/** Every book on your Hardcover shelves (user_books rows, with their reads). */
-async function fetchHardcoverShelf(ask, step){
-  const me = await ask(C.HARDCOVER_QUERIES.me);
-  const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
-  if(!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
-  const shelf = [];
-  for(let offset = 0; ; offset += C.HARDCOVER_PAGE){
-    const page = (await ask(C.HARDCOVER_QUERIES.shelf, {user, offset})).user_books || [];
-    shelf.push(...page);
-    step(`Reading your Hardcover shelves: ${shelf.length} books`);
-    if(page.length < C.HARDCOVER_PAGE) return shelf;
-  }
-}
-
-/** Hardcover rows (`kind` 'books' or 'editions') by id, asked in batches; `doing` is the progress step's text. */
-async function fetchHardcoverRows(ask, kind, ids, step, doing = `Reading the ${kind} on your Read shelf`){
-  const rows = new Map();
-  for(let i = 0; i < ids.length; i += C.HARDCOVER_BATCH){
-    step(doing, i, ids.length);
-    for(const row of (await ask(C.HARDCOVER_QUERIES[kind], {ids: ids.slice(i, i + C.HARDCOVER_BATCH)}))[kind] || []) rows.set(row.id, row);
-  }
-  return rows;
-}
-
-/** The Hardcover ids of your editions' ASINs, ISBNs and Goodreads ids (see C.hardcoverMatches). */
-async function findOnHardcover(ask, lookups, step){
-  const found = {hc: new Map(), asin: new Map(), isbn: new Map(), gr: new Map()};
-  const longest = Math.max(0, ...Object.values(lookups).map(l => l.length));
-  for(let i = 0; i < longest; i += C.HARDCOVER_BATCH){
-    step('Finding your books on Hardcover', i, longest);
-    const slice = Object.fromEntries(Object.entries(lookups).map(([k, l]) => [k, l.slice(i, i + C.HARDCOVER_BATCH)]));
-    const q = C.hardcoverFindQuery(slice);
-    if(!q) continue;
-    const matches = C.hardcoverMatches(await ask(q.query, q.variables));
-    for(const k of Object.keys(found)) for(const [id, hit] of matches[k]) if(!found[k].has(id)) found[k].set(id, hit);
-  }
-  return found;
+  return C.hardcoverAsker(token, io.fetch || globalThis.fetch, pause, {'user-agent': 'audiobook-catalog (personal catalogue sync)'});
 }
 
 /**
- * hardcover-import, hardcover-export and hardcover-sync (`mode` 'import', 'export' or 'sync': import, then
- * export). Import adds the books on your Hardcover Read shelf like any import; export puts your books on
- * that shelf with their dates read. Neither ever changes or removes anything, here or on Hardcover.
- * `io.progress(text, done, total)`, when given, hears what it is doing (`serve` shows it in the page).
- * Returns a promise of the exit code.
+ * hardcover-import, hardcover-export and hardcover-sync (`mode` 'import', 'export' or 'sync'; see
+ * C.runHardcover). `io.progress(text, done, total)`, when given, hears what it is doing (`serve` shows it
+ * in the page). Returns a promise of the exit code.
  */
 async function cmdHardcover(args, io, mode){
-  const step = io.progress || (() => {});
   if(!requireOwnData(args, io)) return 2;
   const ask = hardcoverClient(io, args.data);
   if(!ask){
@@ -905,113 +825,24 @@ async function cmdHardcover(args, io, mode){
   }
   const [booksPath, infoPath, excludedPath] = paths(args);
   const booksText = readText(booksPath);
-  const books = C.fixBooks(JSON.parse(booksText)), info = loadSeriesInfo(infoPath), before = JSON.stringify(books);
-  const stop = exc => { io.err(`error: ${exc.message}; nothing written`); return 1; };
-  let shelf;
-  try{
-    step('Reading your Hardcover shelves');
-    shelf = await fetchHardcoverShelf(ask, step);
-  }catch(exc){ return stop(exc); }
-
-  if(mode !== 'export'){
-    const read = shelf.filter(ub => ub && ub.status_id === 3);
-    let result;
-    try{
-      const found = await fetchHardcoverRows(ask, 'books', [...new Set(read.map(ub => ub.book_id))], step);
-      const editions = await fetchHardcoverRows(ask, 'editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
-      result = C.readHardcover(shelf, found, editions);
-    }catch(exc){ return stop(exc); }
-    const report = C.merge(books, result.records, loadExclusions(excludedPath), {allDates: true, addable: rec => result.audio.has(rec)});
-    io.out(`Hardcover: ${result.records.length} books on your Read shelf`);
-    printMerge(report, result.warnings, io);
-    if(report.notAdded.length) io.out(`  not added, as Hardcover has no audiobook edition picked for them: ${report.notAdded.length}`);
-    preview(report.notAdded, io, 5);
-  }
-
-  let plan = null, filled = [];
-  if(mode !== 'import'){
-    // which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
-    const editionBooks = new Map();
-    try{
-      filled = C.addHardcoverIds(books, await findOnHardcover(ask, C.hardcoverLookups(books), step));
-      const rows = await fetchHardcoverRows(ask, 'editions', C.hardcoverExportEditions(books), step, 'Checking your editions on Hardcover');
-      for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
-    }catch(exc){ return stop(exc); }
-    plan = C.planHardcoverExport(books, shelf, editionBooks);
-    const reads = plan.add.reduce((n, a) => n + a.dates.length, 0) + plan.reads.reduce((n, a) => n + a.dates.length, 0);
-    io.out('to Hardcover:');
-    io.out(`  Hardcover ids filled in on your books: ${filled.length}`);
-    io.out(`  books to put on your Read shelf: ${plan.add.length}`);
-    preview(plan.add.flatMap(a => a.recs), io);
-    io.out(`  dates read to add: ${reads}`);
-    if(plan.otherShelf.length){
-      io.out(`  on another Hardcover shelf, left alone: ${plan.otherShelf.length}`);
-      for(const [rec, status] of plan.otherShelf.slice(0, 15)) io.out(`    ! ${rec.t} - ${C.namesText(rec.a)}: ${status}`);
+  const books = C.fixBooks(JSON.parse(booksText));
+  const save = async changed => {
+    // an edit saved meanwhile (from the page) would be lost by writing, and the export plan made from an old catalogue
+    if(readText(booksPath) !== booksText){
+      io.err(`error: ${shown(booksPath, args.root)} changed while this ran (an edit in the page?); nothing written, ` +
+        'nothing sent to Hardcover. Run it again.');
+      return false;
     }
-    if(plan.inexact.length) io.out(`  dates read without a day, not sent (a Hardcover read needs one): ${plan.inexact.length}`);
-    if(plan.unknown.length){
-      io.out(`  not found on Hardcover (no ASIN, ISBN or Goodreads id it knows; add "Hardcover <edition id>" by hand): ${plan.unknown.length}`);
-      preview(plan.unknown, io, 5);
+    if(changed){
+      dumpBooks(books, booksPath);
+      io.out(`wrote ${shown(booksPath, args.root)}`);
     }
-  }
-
-  const {errors} = C.validate(books, info);
-  if(errors.length){
-    io.err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
-    return 1;
-  }
-  if(args.dryRun){
-    io.out('(dry run: nothing written)');
-    return 0;
-  }
-  // an edit saved meanwhile (from the page) would be lost by writing, and the export plan made from an old catalogue
-  if(readText(booksPath) !== booksText){
-    io.err(`error: ${shown(booksPath, args.root)} changed while this ran (an edit in the page?); nothing written, ` +
-      'nothing sent to Hardcover. Run it again.');
-    return 1;
-  }
-  // the ids first, so they are kept even if Hardcover stops answering halfway
-  if(JSON.stringify(books) !== before){
-    dumpBooks(books, booksPath);
-    io.out(`wrote ${shown(booksPath, args.root)}`);
-  }
-  if(!plan) return 0;
-  return pushToHardcover(ask, plan, io, step);
-}
-
-/** Carry out planHardcoverExport()'s plan on Hardcover. Returns a promise of the exit code. */
-async function pushToHardcover(ask, plan, io, step){
-  let shelved = 0, reads = 0, done = 0;
-  const total = plan.add.length + plan.reads.length;
-  const problems = [];
-  const addRead = async (userBook, edition, date, rec) => {
-    const r = (await ask(C.HARDCOVER_QUERIES.addRead, {id: userBook, read: {finished_at: date, ...(edition ? {edition_id: edition} : {})}})).insert_user_book_read;
-    if(!r || r.error) problems.push(`${rec.t}: read ${date} not added (${r && r.error || 'no answer'})`); else reads++;
+    return true;
   };
-  try{
-    for(const a of plan.add){
-      step('Putting books on your Hardcover Read shelf', done++, total);
-      const object = {book_id: a.book, status_id: 3, ...(a.edition ? {edition_id: a.edition} : {})};
-      const r = (await ask(C.HARDCOVER_QUERIES.addBook, {object})).insert_user_book;
-      if(!r || r.error || !r.id){ problems.push(`${a.recs[0].t}: not added (${r && r.error || 'no answer'})`); continue; }
-      shelved++;
-      for(const d of a.dates) await addRead(r.id, a.edition, d, a.recs[0]);
-    }
-    for(const a of plan.reads){
-      step('Adding reads to books on your Read shelf', done++, total);
-      for(const d of a.dates) await addRead(a.userBook, a.edition, d, a.recs[0]);
-    }
-  }catch(exc){
-    io.err(`error: ${exc.message}; stopped after putting ${shelved} book(s) on Hardcover and adding ${reads} read(s). ` +
-      'Run it again to carry on: what is already there is not added twice.');
-    return 1;
-  }
-  io.out(`put ${shelved} book(s) on your Hardcover Read shelf and added ${reads} read(s)`);
-  for(const p of problems.slice(0, 15)) io.out('    ! ' + p);
-  return problems.length ? 1 : 0;
+  return C.runHardcover(books, mode, ask, {exclusions: loadExclusions(excludedPath), info: loadSeriesInfo(infoPath),
+    dryRun: args.dryRun, out: io.out, err: io.err, step: io.progress, save});
 }
 
-/** Serve the project folder to this machine only (it holds your personal data). */
 function cmdServe(args, io){
   const server = createServer(args.root, () => server.address().port, {}, {}, serveLogger(io.out));
   server.listen(args.port, '127.0.0.1', () => {

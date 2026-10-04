@@ -5,7 +5,6 @@ function refreshPage(){
   document.getElementById('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
   document.getElementById('audiblePanel').style.display = AUDIBLE_LOOKUP ? '' : 'none';
   document.getElementById('importSeriesOption').style.display = AUDIBLE_LOOKUP ? '' : 'none';
-  document.getElementById('hardcoverPanel').style.display = HARDCOVER ? '' : 'none';
 }
 
 function download(text, type, name){
@@ -349,29 +348,55 @@ function mergeBackupFile(file){
 }
 
 // ------------------------------------------------------------ Hardcover
-// `node catalog.js hardcover-import|export|sync`, run by `make serve` for the page: Hardcover's API must
-// not be called from a browser, and the token stays on the server (data/hardcover-token). It runs in the
-// background, shown on every page while it goes (store.js). A dry run shows what would happen; confirming
-// runs it for real, and the page then reloads data/ from disk.
+// Under `make serve`, `node catalog.js hardcover-import|export|sync` runs on the server with the token it
+// keeps (data/hardcover-token), in the background, shown on every page while it goes (store.js); the page
+// then reloads data/ from disk. Anywhere else (the installed app, another server) the page runs it itself,
+// as Hardcover's API allows browser requests, with a token kept in this browser only (never in a backup);
+// it stops if you leave the page, so the browser asks first. Either way a dry run shows what would
+// happen, and confirming runs it for real.
 const HARDCOVER_MODES = {
   import: {title: 'Import from Hardcover', confirm: 'Import'},
   export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
   sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
 };
 let PENDING_HARDCOVER = null;   // the mode, while its preview is open
+const HARDCOVER_TOKEN_KEY = 'audiobook-catalog-hardcover-token';   // the token, for runs in the page
+const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
+let PAGE_RUN = null;           // a run going on in this page, described like the server's (showHardcoverJob)
+
+function browserHardcoverToken(){
+  try{ return CatalogImport.cleanHardcoverToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch(e){ return ''; }
+}
 
 async function showHardcoverToken(){
   let saved = false;
-  try{ saved = (await (await fetch('api/hardcover/token', {cache: 'no-cache'})).json()).token === true; }catch(e){}
+  if(HARDCOVER){
+    try{ saved = (await (await fetch('api/hardcover/token', {cache: 'no-cache'})).json()).token === true; }catch(e){}
+  } else saved = Boolean(browserHardcoverToken());
+  const where = HARDCOVER ? 'with your catalogue (data/hardcover-token, never committed)' : 'in this browser only (never in a backup)';
   document.getElementById('hardcoverTokenState').textContent = saved
-    ? 'Your Hardcover API token is saved with your catalogue (data/hardcover-token, never committed).'
-    : 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it.';
+    ? `Your Hardcover API token is saved ${where}.`
+    : `Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept ${where}.`;
   document.getElementById('hardcoverTokenRemove').style.display = saved ? '' : 'none';
+  document.getElementById('hardcoverTokenSave').title = HARDCOVER ? 'Keep this token with your catalogue, in data/hardcover-token' : 'Keep this token in this browser';
+  document.getElementById('hardcoverTokenRemove').title = HARDCOVER ? 'Delete data/hardcover-token' : 'Forget the token in this browser';
 }
 
 async function saveHardcoverToken(remove){
   const input = document.getElementById('hardcoverToken');
   if(!remove && !input.value.trim()){ showIoStatus('Paste your Hardcover API token first.', true); return; }
+  if(!HARDCOVER){
+    try{
+      if(remove) localStorage.removeItem(HARDCOVER_TOKEN_KEY);
+      else localStorage.setItem(HARDCOVER_TOKEN_KEY, CatalogImport.cleanHardcoverToken(input.value));
+      input.value = '';
+      showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
+    }catch(e){
+      showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: this browser refused to store it.`, true);
+    }
+    await showHardcoverToken();
+    return;
+  }
   try{
     const res = await fetch('api/hardcover/token', remove ? {method: 'DELETE'} : {
       method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token: input.value}),
@@ -388,6 +413,7 @@ async function saveHardcoverToken(remove){
 
 // Start `mode` on the server; store.js follows it (the banner on top) and hands it to onHardcoverDone.
 async function startHardcover(mode, dryRun){
+  if(!HARDCOVER) return runHardcoverHere(mode, dryRun);
   if(HARDCOVER_JOB) return;
   if(unsavedEdits()){ showIoStatus('Some edits are not saved to data/ yet. Wait for "Saved." (or reload the page), then try again.', true); return; }
   let res, body;
@@ -406,6 +432,68 @@ async function startHardcover(mode, dryRun){
   showIoStatus(body.conflict ? 'data/books.json changed on disk since this page loaded it. Reload the page, then try again.'
     : `Couldn't start it: ${body.error || 'HTTP ' + res.status}`, true);
 }
+
+// Asks Hardcover from this page, saying plainly when the browser can't reach it at all.
+async function fetchHardcover(url, opts){
+  try{ return await fetch(url, opts); }
+  catch(e){ throw new Error('this browser could not reach Hardcover (offline, or Hardcover refused a request from a web page; then run it under make serve)'); }
+}
+
+/**
+ * Run `mode` in this page (CatalogImport.runHardcover) on a copy of the catalogue, shown like a server run
+ * (the banner on top). A real run keeps its changes (persist) before sending anything to Hardcover, unless
+ * the catalogue was edited meanwhile. Returns a promise of the ended run.
+ */
+async function runHardcoverHere(mode, dryRun){
+  if(PAGE_RUN) return;
+  const token = browserHardcoverToken();
+  if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
+  const started = Date.now(), lines = {out: [], err: []};
+  const job = PAGE_RUN = {mode, dryRun, running: true, elapsed: 0, step: 'Starting'};
+  const show = () => { job.elapsed = Date.now() - started; showHardcoverJob(job); };
+  const ticker = setInterval(show, 1000);
+  show();
+  const before = JSON.stringify(DATA), seen = LOCAL_SEEN;
+  const books = JSON.parse(before);
+  const save = async changed => {
+    if(JSON.stringify(DATA) !== before || localNow() !== seen){
+      lines.err.push('error: the catalogue was edited while this ran (here or in another tab); nothing written, nothing sent to Hardcover. Run it again.');
+      return false;
+    }
+    if(changed){
+      DATA = books;
+      persist();
+      refreshPage();
+      lines.out.push('saved the catalogue');
+    }
+    return true;
+  };
+  const pause = () => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS));
+  let code;
+  try{
+    code = await CatalogImport.runHardcover(books, mode, CatalogImport.hardcoverAsker(token, fetchHardcover, pause), {
+      exclusions: EXCLUSIONS, info: SERIES_INFO, dryRun, save,
+      out: line => lines.out.push(line), err: line => lines.err.push(line),
+      step: (text, done, total) => { Object.assign(job, {step: text, done, total}); show(); },
+    });
+  }catch(e){
+    lines.err.push(`error: ${e.message}`);
+    code = 1;
+  }
+  clearInterval(ticker);
+  Object.assign(job, {running: false, code, out: lines.out.join('\n'), err: lines.err.join('\n'), elapsed: Date.now() - started});
+  PAGE_RUN = null;
+  showHardcoverJob(job);
+  showHardcoverResult(mode, job, dryRun);
+  if(!dryRun) showIoStatus(code === 0 ? `${HARDCOVER_MODES[mode].title}: done.` : 'Not everything went through; see the details.', code !== 0);
+  return job;
+}
+
+// Leaving the page stops a run going on in it: the browser asks first. (Nothing is lost by stopping
+// early: a run again carries on, as nothing already on Hardcover is added twice.)
+addEventListener('beforeunload', e => {
+  if(PAGE_RUN && !PAGE_RUN.dryRun){ e.preventDefault(); e.returnValue = ''; }
+});
 
 // Each update of a run (store.js): no second run while one goes.
 function onHardcoverJob(job){
@@ -514,4 +602,4 @@ document.getElementById('importFile').addEventListener('change', e=>{
   e.target.value = '';
 });
 
-const READY = startPage(()=>{ refreshPage(); if(HARDCOVER) return showHardcoverToken(); });
+const READY = startPage(()=>{ refreshPage(); return showHardcoverToken(); });

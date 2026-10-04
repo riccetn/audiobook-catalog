@@ -1673,6 +1673,217 @@ function hardcoverUrl(kind, id){
   return `https://hardcover.app/id/${kind}/${encodeURIComponent(id)}`;
 }
 
+// --------------------------------------------------------------- Hardcover runs
+// The import, export and sync themselves, shared by the command line and the page: Hardcover allows
+// browser requests (its API answers with open CORS headers), so the page can run them without
+// `make serve`. They only ever reach Hardcover through `ask`, and write only through `save`.
+
+/** A token as Hardcover shows it ("Bearer eyJ..."), without the "Bearer" and spacing; '' when there is none. */
+function cleanHardcoverToken(t){
+  return String(t || '').trim().replace(/^bearer\s+/i, '').trim();
+}
+
+/**
+ * A function that asks Hardcover's API one query (with its variables) and returns the answer's `data`,
+ * through `get` (a fetch), calling `pause()` between requests (Hardcover allows 60 a minute). `headers`
+ * are added to each request. Throws with a short reason when Hardcover says no.
+ */
+function hardcoverAsker(token, get, pause, headers){
+  let asked = 0;
+  return async (query, variables) => {
+    if(asked++) await pause();
+    const res = await get(HARDCOVER_API, {method: 'POST', body: JSON.stringify({query, variables: variables || {}}), headers: {
+      'content-type': 'application/json', authorization: `Bearer ${cleanHardcoverToken(token)}`, ...(headers || {})}});
+    let json = null;
+    try{ json = await res.json(); }catch(exc){ /* reported below */ }
+    if(res.status === 401) throw new Error('Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)');
+    if(res.status === 429) throw new Error('Hardcover\'s rate limit was reached; try again later');
+    if(!res.ok || !json) throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);
+    if(Array.isArray(json.errors) && json.errors.length) throw new Error(`Hardcover: ${json.errors.map(e => e && e.message).join('; ')}`);
+    return json.data || {};
+  };
+}
+
+/** Every book on your Hardcover shelves (user_books rows, with their reads). */
+async function fetchHardcoverShelf(ask, step){
+  const me = await ask(HARDCOVER_QUERIES.me);
+  const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
+  if(!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
+  const shelf = [];
+  for(let offset = 0; ; offset += HARDCOVER_PAGE){
+    const page = (await ask(HARDCOVER_QUERIES.shelf, {user, offset})).user_books || [];
+    shelf.push(...page);
+    step(`Reading your Hardcover shelves: ${shelf.length} books`);
+    if(page.length < HARDCOVER_PAGE) return shelf;
+  }
+}
+
+/** Hardcover rows (`kind` 'books' or 'editions') by id, asked in batches; `doing` is the progress step's text. */
+async function fetchHardcoverRows(ask, kind, ids, step, doing){
+  const rows = new Map();
+  for(let i = 0; i < ids.length; i += HARDCOVER_BATCH){
+    step(doing || `Reading the ${kind} on your Read shelf`, i, ids.length);
+    for(const row of (await ask(HARDCOVER_QUERIES[kind], {ids: ids.slice(i, i + HARDCOVER_BATCH)}))[kind] || []) rows.set(row.id, row);
+  }
+  return rows;
+}
+
+/** The Hardcover ids of your editions' ASINs, ISBNs and Goodreads ids (see hardcoverMatches()). */
+async function findOnHardcover(ask, lookups, step){
+  const found = {hc: new Map(), asin: new Map(), isbn: new Map(), gr: new Map()};
+  const longest = Math.max(0, ...Object.values(lookups).map(l => l.length));
+  for(let i = 0; i < longest; i += HARDCOVER_BATCH){
+    step('Finding your books on Hardcover', i, longest);
+    const slice = Object.fromEntries(Object.entries(lookups).map(([k, l]) => [k, l.slice(i, i + HARDCOVER_BATCH)]));
+    const q = hardcoverFindQuery(slice);
+    if(!q) continue;
+    const matches = hardcoverMatches(await ask(q.query, q.variables));
+    for(const k of Object.keys(found)) for(const [id, hit] of matches[k]) if(!found[k].has(id)) found[k].set(id, hit);
+  }
+  return found;
+}
+
+/** Records as the import commands list them: "    + Title - Author  [Series #3]", at most `limit` of them. */
+function recordLines(records, limit = 15){
+  const lines = records.slice(0, limit).map(rec =>
+    `    + ${rec.t} - ${namesText(rec.a)}${rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : ''}`);
+  if(records.length > limit) lines.push(`    ... and ${records.length - limit} more`);
+  return lines;
+}
+
+/** What merge() did, as lines the import commands print. */
+function mergeLines(report, warnings){
+  const lines = [`  already in the catalogue: ${report.matched}`];
+  const counts = [['backfilled', 'Audible ids filled in on existing books'], ['goodreadsFilled', 'Goodreads ids filled in on existing books'],
+    ['hardcoverFilled', 'Hardcover ids filled in on existing books'], ['datesFilled', 'dates read filled in on existing books'],
+    ['isbnsFilled', 'ISBNs added to existing books'], ['detailsFilled', 'narrator, publisher, release date or length filled in on existing books'],
+    ['editionsAdded', 'other editions added to existing books'], ['excluded', 'skipped (listed in data/excluded.txt)']];
+  for(const [k, label] of counts) if(report[k] && report[k].length) lines.push(`  ${label}: ${report[k].length}`);
+  if(report.boxSets && report.boxSets.length){
+    lines.push(`  box sets split into their titles: ${report.boxSets.length}`);
+    for(const b of report.boxSets.slice(0, 15)) lines.push(`    ${b.t} - ${namesText(b.a)}: ${b.titles} already here, ${b.added} added`);
+    if(report.boxSets.some(b => b.added)) lines.push('    (a title not here yet is named "Series, Book N" until --series or the `series` command names it)');
+  }
+  lines.push(`  new: ${report.added.length}`, ...recordLines(report.added));
+  if(warnings && warnings.length){
+    lines.push(`  needs a look (${warnings.length}):`);
+    for(const w of warnings.slice(0, 15)) lines.push('    ! ' + w);
+  }
+  return lines;
+}
+
+/**
+ * A Hardcover import, export or sync (`mode` 'import', 'export' or 'sync': import, then export) of
+ * `books` (fixBooks() output, changed in place), asking Hardcover through `ask`. Import adds the books on
+ * your Hardcover Read shelf like any import; export puts your books on that shelf with their dates read.
+ * Neither ever changes or removes anything, here or on Hardcover. Options: `exclusions`, `info` (series
+ * info, for validating), `dryRun`, `out(line)` and `err(line)` (what it has to say), `step(text, done,
+ * total)` (progress) and `save()`, which keeps the changed `books` before anything is sent to Hardcover
+ * and returns false (having said why) when it can't. Returns a promise of the exit code.
+ */
+async function runHardcover(books, mode, ask, opts){
+  const {exclusions, info, dryRun, save} = opts;
+  const out = opts.out || (() => {}), err = opts.err || (() => {}), step = opts.step || (() => {});
+  const before = JSON.stringify(books);
+  const stop = exc => { err(`error: ${exc.message}; nothing written`); return 1; };
+  let shelf;
+  try{
+    step('Reading your Hardcover shelves');
+    shelf = await fetchHardcoverShelf(ask, step);
+  }catch(exc){ return stop(exc); }
+
+  if(mode !== 'export'){
+    const read = shelf.filter(ub => ub && ub.status_id === HARDCOVER_READ);
+    let result;
+    try{
+      const found = await fetchHardcoverRows(ask, 'books', [...new Set(read.map(ub => ub.book_id))], step);
+      const editions = await fetchHardcoverRows(ask, 'editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
+      result = readHardcover(shelf, found, editions);
+    }catch(exc){ return stop(exc); }
+    const report = merge(books, result.records, exclusions, {allDates: true, addable: rec => result.audio.has(rec)});
+    out(`Hardcover: ${result.records.length} books on your Read shelf`);
+    mergeLines(report, result.warnings).forEach(line => out(line));
+    if(report.notAdded.length){
+      out(`  not added, as Hardcover has no audiobook edition picked for them: ${report.notAdded.length}`);
+      recordLines(report.notAdded, 5).forEach(line => out(line));
+    }
+  }
+
+  let plan = null;
+  if(mode !== 'import'){
+    // which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
+    const editionBooks = new Map();
+    let filled;
+    try{
+      filled = addHardcoverIds(books, await findOnHardcover(ask, hardcoverLookups(books), step));
+      const rows = await fetchHardcoverRows(ask, 'editions', hardcoverExportEditions(books), step, 'Checking your editions on Hardcover');
+      for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
+    }catch(exc){ return stop(exc); }
+    plan = planHardcoverExport(books, shelf, editionBooks);
+    const reads = plan.add.reduce((n, a) => n + a.dates.length, 0) + plan.reads.reduce((n, a) => n + a.dates.length, 0);
+    out('to Hardcover:');
+    out(`  Hardcover ids filled in on your books: ${filled.length}`);
+    out(`  books to put on your Read shelf: ${plan.add.length}`);
+    recordLines(plan.add.flatMap(a => a.recs)).forEach(line => out(line));
+    out(`  dates read to add: ${reads}`);
+    if(plan.otherShelf.length){
+      out(`  on another Hardcover shelf, left alone: ${plan.otherShelf.length}`);
+      for(const [rec, status] of plan.otherShelf.slice(0, 15)) out(`    ! ${rec.t} - ${namesText(rec.a)}: ${status}`);
+    }
+    if(plan.inexact.length) out(`  dates read without a day, not sent (a Hardcover read needs one): ${plan.inexact.length}`);
+    if(plan.unknown.length){
+      out(`  not found on Hardcover (no ASIN, ISBN or Goodreads id it knows; add "Hardcover <edition id>" by hand): ${plan.unknown.length}`);
+      recordLines(plan.unknown, 5).forEach(line => out(line));
+    }
+  }
+
+  const {errors} = validate(books, info || {});
+  if(errors.length){
+    err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
+    return 1;
+  }
+  if(dryRun){
+    out('(dry run: nothing written)');
+    return 0;
+  }
+  // the ids first, so they are kept even if Hardcover stops answering halfway
+  if(!(await save(JSON.stringify(books) !== before))) return 1;
+  if(!plan) return 0;
+  return pushToHardcover(ask, plan, out, err, step);
+}
+
+/** Carry out planHardcoverExport()'s plan on Hardcover. Returns a promise of the exit code. */
+async function pushToHardcover(ask, plan, out, err, step){
+  let shelved = 0, reads = 0, done = 0;
+  const total = plan.add.length + plan.reads.length;
+  const problems = [];
+  const addRead = async (userBook, edition, date, rec) => {
+    const r = (await ask(HARDCOVER_QUERIES.addRead, {id: userBook, read: {finished_at: date, ...(edition ? {edition_id: edition} : {})}})).insert_user_book_read;
+    if(!r || r.error) problems.push(`${rec.t}: read ${date} not added (${r && r.error || 'no answer'})`); else reads++;
+  };
+  try{
+    for(const a of plan.add){
+      step('Putting books on your Hardcover Read shelf', done++, total);
+      const object = {book_id: a.book, status_id: HARDCOVER_READ, ...(a.edition ? {edition_id: a.edition} : {})};
+      const r = (await ask(HARDCOVER_QUERIES.addBook, {object})).insert_user_book;
+      if(!r || r.error || !r.id){ problems.push(`${a.recs[0].t}: not added (${r && r.error || 'no answer'})`); continue; }
+      shelved++;
+      for(const d of a.dates) await addRead(r.id, a.edition, d, a.recs[0]);
+    }
+    for(const a of plan.reads){
+      step('Adding reads to books on your Read shelf', done++, total);
+      for(const d of a.dates) await addRead(a.userBook, a.edition, d, a.recs[0]);
+    }
+  }catch(exc){
+    err(`error: ${exc.message}; stopped after putting ${shelved} book(s) on Hardcover and adding ${reads} read(s). ` +
+      'Run it again to carry on: what is already there is not added twice.');
+    return 1;
+  }
+  out(`put ${shelved} book(s) on your Hardcover Read shelf and added ${reads} read(s)`);
+  for(const p of problems.slice(0, 15)) out('    ! ' + p);
+  return problems.length ? 1 : 0;
+}
+
 // ---------------------------------------------------------------------- merge
 /** [first, last] of a box set's series range ("1-3" -> [1, 3]), or null for a single title or no series. */
 function boxRange(rec){
@@ -2134,7 +2345,8 @@ return {
   AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, audibleSeriesListing, seriesLookups, seriesFromAudible, addSeriesTotals,
   boxSetTitle, seriesListingLookups, boxSetTitlesFromAudible,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
-  readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport, hardcoverUrl, hasReadDate,
+  readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport,
+  cleanHardcoverToken, hardcoverAsker, runHardcover, recordLines, mergeLines, hardcoverUrl, hasReadDate,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
   editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup, parseNotDuplicates,
 };
