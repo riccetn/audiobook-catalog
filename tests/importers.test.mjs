@@ -1194,3 +1194,28 @@ test('merge: another Hardcover book found by a box set\'s edition is the box set
   C.merge(books, [book('One', 'Ann Vale', { hcb: '71', r: ['2026-01-01'], ...ed(box()) })], null, { allDates: true });
   assert.deepEqual(books.map(b => b.r && b.r.at(-1)), ['2026-01-01', '2025-02-02', undefined]);
 });
+
+test('hardcoverAsker asks one query a request, pausing between them, and says plainly when Hardcover says no', async () => {
+  const sent = [];
+  let paused = 0, answer = { ok: true, status: 200, json: async () => ({ data: { me: [{ id: 42 }] } }) };
+  const get = async (url, init) => { sent.push([url, init]); return answer; };
+  const ask = C.hardcoverAsker(' Bearer tok-123 ', get, async () => { paused++; });
+  assert.deepEqual(await ask('query { me { id } }'), { me: [{ id: 42 }] });
+  assert.equal(paused, 0, 'no pause before the first request');
+  const [url, init] = sent[0];
+  assert.equal(url, 'https://api.hardcover.app/v1/graphql');
+  assert.equal(init.method, 'POST');
+  // only the headers a browser may send to another site (no user-agent unless asked for)
+  assert.deepEqual(init.headers, { 'content-type': 'application/json', authorization: 'Bearer tok-123' });
+  assert.deepEqual(JSON.parse(init.body), { query: 'query { me { id } }', variables: {} });
+  answer = { ok: false, status: 401, json: async () => ({ error: 'invalid_token' }) };
+  await assert.rejects(ask('query { me { id } }'), /Hardcover refused your token/);
+  assert.equal(paused, 1);
+  answer = { ok: true, status: 200, json: async () => ({ errors: [{ message: 'field "x" not found' }] }) };
+  await assert.rejects(ask('query { x }'), /^Error: Hardcover: field "x" not found$/);
+  const named = C.hardcoverAsker('t', get, async () => {}, { 'user-agent': 'test' });
+  answer = { ok: true, status: 200, json: async () => ({ data: {} }) };
+  await named('query { me { id } }');
+  assert.equal(sent.at(-1)[1].headers['user-agent'], 'test');
+  assert.equal(C.cleanHardcoverToken('  bearer abc '), 'abc');
+});

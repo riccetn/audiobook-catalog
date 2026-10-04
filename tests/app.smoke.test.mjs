@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -36,7 +37,7 @@ function makeElement(id) {
  * (default: no data/books.json yet, so the demo). `storage` is a Map standing in for localStorage.
  */
 async function boot({ page = 'index.html', files = { 'data/sample/books.json': DEMO_BOOKS, 'data/sample/series-info.json': DEMO_INFO },
-                      storage = new Map(), api = null, hash = '', setTimeout = () => 0 } = {}) {
+                      storage = new Map(), api = null, hash = '', setTimeout = () => 0, hardcover = null } = {}) {
   const html = read(page);
   const els = {};
   for (const [, id] of html.matchAll(/id="([^"]+)"/g)) els[id] = makeElement(id);
@@ -55,6 +56,10 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
   };
   // `api(init, url)` stands in for `make serve`'s api/ endpoints and returns {status, body}; without it, a plain static server.
   const fetch = async (url, init = {}) => {
+    if (url.startsWith('https://api.hardcover.app/')) {
+      if (!hardcover) throw new TypeError('Failed to fetch');
+      return hardcover(url, init);
+    }
     if (url.startsWith('api/') && api) {
       const { status, body } = await api(init, url);
       return { ok: status < 300, status, json: async () => body };
@@ -68,7 +73,7 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
   // The session history: `entries` of {hash, state}, `at` the current one; back() and forward() fire popstate.
   const location = { href: page, hash, pathname: '/' + page };
   const windowListeners = {};
-  const fire = type => (windowListeners[type] || []).forEach(fn => fn({}));
+  const fire = (type, event = {}) => (windowListeners[type] || []).forEach(fn => fn(event));
   const entries = [{ hash, state: null }];
   let at = 0;
   const hashOf = url => (String(url).includes('#') ? String(url).slice(String(url).indexOf('#')) : '');
@@ -83,14 +88,14 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
   };
   const addEventListener = (type, fn) => (windowListeners[type] ||= []).push(fn);
   const ctx = vm.createContext({ document, localStorage, fetch, FileReader, location, history, addEventListener,
-    console, setTimeout, clearTimeout() {} });
+    console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
   // the page's own scripts, in order
   for (const [, src] of html.matchAll(/<script src="([^"]+)">/g)) vm.runInContext(read(src), ctx);
   await vm.runInContext('READY', ctx);
   const run = code => vm.runInContext(code, ctx);
   // Values cross the VM boundary as JSON so deepEqual is not confused by a different Object.prototype.
   const get = expr => JSON.parse(vm.runInContext(`JSON.stringify(${expr})`, ctx));
-  return { ctx, els, storage, get, run };
+  return { ctx, els, storage, get, run, fire };
 }
 
 for (const page of PAGES) {
@@ -1297,7 +1302,7 @@ test('with make serve, the Hardcover panel saves the token and previews, then ru
         { running: false, elapsed: 70000, step: 'Done', code: 0, out: 'wrote data/books.json', err: '', base: 'new' })]);
   const { els, get } = await boot({ page: 'import.html', files, api: server.api, setTimeout: server.setTimeout });
   await settle();
-  assert.equal(els.hardcoverPanel.style.display, '');
+  assert.notEqual(els.hardcoverPanel.style.display, 'none');
   assert.match(els.hardcoverTokenState.textContent, /Paste an API token/);
   els.hardcoverToken.value = 'Bearer tok-123';
   await els.hardcoverTokenSave.listeners.click[0]();
@@ -1338,10 +1343,87 @@ test('with make serve, the Hardcover panel saves the token and previews, then ru
   assert.equal(get('DATA.length'), 2, 'the page reloads the catalogue the server wrote');
   assert.equal(els.importPreviewTitle.textContent, 'Import from Hardcover (took 1:10)');
   assert.match(els.ioStatus.textContent, /Import from Hardcover: done\./);
+});
 
-  // without make serve, or with the demo data, there is nothing to show
-  const plain = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
-  assert.equal(plain.els.hardcoverPanel.style.display, 'none');
+test('without make serve, the page runs a Hardcover sync itself, with a token kept in this browser', async () => {
+  const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ id: 'B0LANTERN1' }] }];
+  const state = hardcoverState();
+  const hc = fakeHardcover(state);
+  let leaving = null;   // what leaving the page during the run would do
+  const hardcover = async (url, init) => {
+    if (JSON.parse(init.body).query.startsWith('mutation') && !leaving) {
+      leaving = { preventDefault() { this.prevented = true; } };
+      page.fire('beforeunload', leaving);
+    }
+    return hc.fetch(url, init);
+  };
+  const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };   // the pause between requests
+  const page = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(mine) }, hardcover, setTimeout });
+  const { els, get, storage } = page;
+  assert.notEqual(els.hardcoverPanel.style.display, 'none');
+  assert.match(els.hardcoverTokenState.textContent, /Paste an API token .* kept in this browser only/);
+  await els.hardcoverSyncBtn.listeners.click[0]();
+  assert.match(els.ioStatus.textContent, /Save your Hardcover API token first/);
+  assert.equal(hc.sent.length, 0);
+
+  els.hardcoverToken.value = 'Bearer tok-123';
+  await els.hardcoverTokenSave.listeners.click[0]();
+  assert.equal(storage.get('audiobook-catalog-hardcover-token'), 'tok-123');
+  assert.equal(els.hardcoverToken.value, '', 'the token is not left in the page');
+  assert.match(els.hardcoverTokenState.textContent, /saved in this browser only/);
+
+  // the preview: asked from the page, nothing changed anywhere
+  await els.hardcoverSyncBtn.listeners.click[0]();
+  assert.ok(hc.sent.every(s => s.auth === 'Bearer tok-123' && s.url === 'https://api.hardcover.app/v1/graphql'));
+  assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
+  assert.ok(!els.bgTask.classList.contains('show'));
+  assert.equal(els.importPreviewTitle.textContent, 'Sync with Hardcover: preview');
+  assert.match(els.importPreviewBody.innerHTML, /\+ Tidewater - Ann Vale/);
+  assert.match(els.importPreviewBody.innerHTML, /books to put on your Read shelf: 1\n {4}\+ Lantern Hours - R\. T\. Hale/);
+  assert.doesNotMatch(els.importPreviewBody.innerHTML, /dry run/);
+  assert.equal(get('DATA.length'), 1);
+  assert.equal(state.shelf.length, 2);
+
+  // the real run keeps the catalogue before sending, and the browser asks before leaving the page meanwhile
+  await els.importConfirm.listeners.click[0]();
+  assert.deepEqual(get('DATA.map(b => b.t)'), ['Lantern Hours', 'Tidewater']);
+  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).data.map(b => b.t), ['Lantern Hours', 'Tidewater']);
+  assert.equal(get('DATA[0].hcb'), '80', 'the Hardcover ids found are kept');
+  assert.deepEqual(state.shelf.at(-1), { id: 102, book_id: 80, edition_id: 801, status_id: 3, user_book_reads: [{ finished_at: '2024-05-01', edition_id: 801 }] });
+  assert.ok(leaving.prevented, 'leaving during the run is asked about');
+  const after = { preventDefault() { this.prevented = true; } };
+  page.fire('beforeunload', after);
+  assert.ok(!after.prevented, 'not once it is done');
+  assert.match(els.importPreviewBody.innerHTML, /put 1 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
+  assert.match(els.ioStatus.textContent, /Sync with Hardcover: done\./);
+  assert.ok(!JSON.stringify(get('DATA')).includes('tok-123') && ![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-hardcover-token' && v.includes('tok-123')));
+});
+
+test('a Hardcover run in the page writes and sends nothing when the catalogue is edited meanwhile, or Hardcover cannot be reached', async () => {
+  const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ id: 'B0LANTERN1' }] }];
+  const state = hardcoverState();
+  const hc = fakeHardcover(state);
+  let edit = true;
+  const hardcover = async (url, init) => {
+    if (edit && JSON.parse(init.body).query.startsWith('query Find')) { edit = false; page.run("DATA[0].g = ['Fantasy']"); }
+    return hc.fetch(url, init);
+  };
+  const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };
+  const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+  const page = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(mine) }, hardcover, setTimeout, storage });
+  const { els, get, run } = page;
+  assert.match(els.hardcoverTokenState.textContent, /saved in this browser only/);
+  run("PENDING_HARDCOVER = 'export'");
+  await els.importConfirm.listeners.click[0]();
+  assert.match(els.importPreviewBody.innerHTML, /the catalogue was edited while this ran .*nothing written, nothing sent to Hardcover/);
+  assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
+  assert.equal(get('DATA[0].hcb || null'), null);
+  assert.match(els.ioStatus.textContent, /Not everything went through/);
+
+  const offline = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(mine) }, setTimeout, storage });
+  await offline.els.hardcoverImportBtn.listeners.click[0]();
+  assert.match(offline.els.importPreviewBody.innerHTML, /this browser could not reach Hardcover .*make serve/);
+  assert.equal(offline.els.importConfirm.style.display, 'none');
 });
 
 test('every page shows a Hardcover run already going, and picks up what it wrote', async () => {

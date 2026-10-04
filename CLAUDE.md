@@ -37,7 +37,8 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
   `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command),
-  `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport` (the `hardcover-*` commands; the
+  `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, run by `runHardcover` through
+  `hardcoverAsker` (the `hardcover-*` commands and the page's own runs; fetch and pause are passed in; the
   GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
   `parseExclusions`/`exclusionEntries`, `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
 - `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
@@ -73,7 +74,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   (the smoke test checks).
 - `app.js` (`index.html`): series overview, all books, the book and series-info forms, global-state
   style (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
-- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, the Hardcover panel (under `make serve`), Export / Restore / Merge of backups.
+- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, the Hardcover panel (under `make serve` the server runs it; elsewhere the page calls Hardcover itself, `runHardcoverHere`, with the token in localStorage `audiobook-catalog-hardcover-token`), Export / Restore / Merge of backups.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `editionsJoinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
@@ -119,7 +120,7 @@ Invariants the code relies on:
 
 The repo is public; the user's library is not.
 - Never commit `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/not-duplicates.txt`, `data/hardcover-token` or anything in
-  `data/raw/`. The token must never reach a page, a backup or a log. `tests/data.test.mjs` fails if they become tracked.
+  `data/raw/`. The token file must never reach a page, a backup or a log; a token saved in the page stays in that browser's localStorage and is only ever sent to Hardcover. `tests/data.test.mjs` fails if they become tracked.
 - Only `data/sample/` is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.
 
