@@ -822,6 +822,60 @@ test('series info can be edited, added and removed in the page', async () => {
   assert.equal(get(`${JSON.stringify(bare)} in SERIES_INFO`), true);
 });
 
+test('a series can be renamed from its series info form, on every book in it', async () => {
+  const { ctx, els, get, storage } = await boot();
+  const info = JSON.parse(DEMO_INFO);
+  const [name] = Object.keys(info);
+  const count = demoBooks.filter(b => b.s === name).length;
+  assert.ok(count > 0);
+
+  // shown from the series itself: the page follows the new name
+  ctx.openSeries(name);
+  ctx.openSeriesForm(name);
+  assert.equal(els.sf_name.value, name);
+  Object.assign(els.sf_name, { value: '  The Renamed   Saga ' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.ok(!els.seriesForm.classList.contains('open'));
+  assert.equal(get(`DATA.filter(b => b.s === 'The Renamed Saga').length`), count);
+  assert.equal(get(`DATA.some(b => b.s === ${JSON.stringify(name)})`), false);
+  assert.deepEqual(get(`SERIES_INFO['The Renamed Saga']`), info[name]);
+  assert.equal(get(`${JSON.stringify(name)} in SERIES_INFO`), false);
+  assert.equal(get('SERIES_FILTER'), 'The Renamed Saga');
+  assert.match(els.ioStatus.textContent, new RegExp(`Renamed .* on ${count} book`));
+  const saved = JSON.parse(storage.get('audiobook-catalog-data'));
+  assert.ok(saved.info['The Renamed Saga']);
+  assert.equal(saved.data.filter(b => b.s === 'The Renamed Saga').length, count);
+
+  // a series without info is renamed without having to add some
+  const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
+  const bareCount = demoBooks.filter(b => b.s === bare).length;
+  ctx.openSeriesForm(bare);
+  Object.assign(els.sf_name, { value: 'Plain Renamed' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.equal(els.seriesFormError.textContent, '');
+  assert.equal(get(`DATA.filter(b => b.s === 'Plain Renamed').length`), bareCount);
+  assert.equal(get(`'Plain Renamed' in SERIES_INFO`), false);
+
+  // an empty name is refused
+  ctx.openSeriesForm('Plain Renamed');
+  Object.assign(els.sf_name, { value: '   ' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.match(els.seriesFormError.textContent, /Give the series a name/);
+  els.cancelSeries.listeners.click[0]();
+
+  // joining another series takes a second Save, and its info gives way to this form's
+  ctx.openSeriesForm('Plain Renamed');
+  Object.assign(els.sf_name, { value: 'The Renamed Saga' });
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.ok(els.seriesForm.classList.contains('open'));
+  assert.match(els.seriesFormError.textContent, /already a series called The Renamed Saga\. Press Save again/);
+  assert.equal(get(`DATA.filter(b => b.s === 'Plain Renamed').length`), bareCount);
+  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+  assert.ok(!els.seriesForm.classList.contains('open'));
+  assert.equal(get(`DATA.filter(b => b.s === 'The Renamed Saga').length`), count + bareCount);
+  assert.deepEqual(get(`SERIES_INFO['The Renamed Saga']`), info[name]);
+});
+
 // Lets pending promises (a save on its way to the fake server) settle.
 const settle = () => new Promise(resolve => setImmediate(resolve));
 

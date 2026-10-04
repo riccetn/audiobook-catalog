@@ -44,7 +44,11 @@ You can also edit `data/books.json` by hand; `make format` rewrites it the way t
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
 the author site, or to add or remove that info. The form checks the same rules as `make validate`.
-Like book edits, the change is saved to `data/series-info.json`. Or edit
+Like book edits, the change is saved to `data/series-info.json`.
+The same form renames the series: change its name and every book in the series gets the new name
+(a series without info is renamed without adding any). Renaming it to a series you already have
+moves its books into that one; the first **Save** says so and the second does it, and if the form has
+info it replaces the other series' info. Or edit
 `data/series-info.json` by hand, then `make validate`.
 
 **Find books missing from a series**: when a series has a released total in `data/series-info.json`,

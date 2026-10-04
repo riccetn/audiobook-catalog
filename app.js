@@ -5,6 +5,7 @@ let SERIES_FILTER = null;      // series name, '__standalone__', or null
 let BOOK_FILTER = null;        // title of the book linked to (#book=...), or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
+let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
 let MERGE_FROM = null;         // index of the first book picked with its merge button, or null
 
 // Filter value for books with no date read, in the "Read any time" select.
@@ -367,8 +368,9 @@ function renderSeriesOverview(){
 }
 
 // ------------------------------------------------------------------ series info
-// Edits the series' entry in series-info.json (released total, status, note, author site). Like book
-// edits, it is saved to disk by `make serve` (see persist).
+// Edits the series' entry in series-info.json (released total, status, note, author site) and its name,
+// which is renamed on every book in the series. Like book edits, it is saved to disk by `make serve`
+// (see persist).
 function seriesEditButton(name){
   const label = SERIES_INFO[name] ? 'Edit series info' : 'Add series info';
   return `<button class="iconbtn sedit" data-series="${esc(name)}" title="${label}" aria-label="${label}">&#9998;</button>`;
@@ -383,7 +385,8 @@ function bindSeriesEditButtons(){
 function openSeriesForm(name){
   closeForm();
   const info = SERIES_INFO[name];
-  EDIT_SERIES = name;
+  EDIT_SERIES = name; JOIN_SERIES = null;
+  document.getElementById('sf_name').value = name;
   document.getElementById('seriesFormTitle').textContent = (info ? 'Series info: ' : 'Add series info: ') + name;
   document.getElementById('sf_total').value = info ? String(info.total) : '';
   document.getElementById('sf_status').value = info ? info.status : 'ongoing';
@@ -397,7 +400,7 @@ function openSeriesForm(name){
 }
 
 function closeSeriesForm(){
-  EDIT_SERIES = null;
+  EDIT_SERIES = null; JOIN_SERIES = null;
   document.getElementById('seriesForm').classList.remove('open');
   document.getElementById('seriesForm').reset();
   document.getElementById('seriesFormError').textContent = '';
@@ -406,24 +409,44 @@ function closeSeriesForm(){
 function saveSeriesForm(){
   const name = EDIT_SERIES;
   if(name === null) return;
+  const showError = text=> { document.getElementById('seriesFormError').textContent = text; };
+  const newName = CatalogImport.tidyText(document.getElementById('sf_name').value);
+  if(!newName) return showError('Give the series a name.');
+  const renamed = newName !== name;
   const totalText = document.getElementById('sf_total').value.trim();
-  const entry = {
-    total: /^\d+$/.test(totalText) ? parseInt(totalText, 10) : totalText.toLowerCase(),
-    status: document.getElementById('sf_status').value,
-    note: CatalogImport.tidyText(document.getElementById('sf_note').value),
-  };
+  const note = CatalogImport.tidyText(document.getElementById('sf_note').value);
   const url = document.getElementById('sf_url').value.trim();
-  if(url) entry.url = url;
-  // the same rules as `make validate`, applied to just this series
-  const {errors} = CatalogImport.validate(DATA, {[name]: entry});
-  const problems = errors.filter(e=> e.startsWith('series-info')).map(e=> e.replace(/^series-info(\[[^\]]*\])?: /, ''));
-  if(problems.length){
-    document.getElementById('seriesFormError').textContent = problems.join('; ');
-    return;
+  // a rename of a series without info doesn't have to add some
+  const keepInfo = !renamed || SERIES_INFO[name] || totalText || note || url;
+  let entry = null;
+  if(keepInfo){
+    entry = {total: /^\d+$/.test(totalText) ? parseInt(totalText, 10) : totalText.toLowerCase(),
+      status: document.getElementById('sf_status').value, note};
+    if(url) entry.url = url;
+    // the same rules as `make validate`, applied to just this series (checked before the rename,
+    // under the name its books have now)
+    const {errors} = CatalogImport.validate(DATA, {[name]: entry});
+    const problems = errors.filter(e=> e.startsWith('series-info')).map(e=> e.replace(/^series-info(\[[^\]]*\])?: /, ''));
+    if(problems.length) return showError(problems.join('; '));
   }
-  SERIES_INFO = {...SERIES_INFO, [name]: entry};
-  closeSeriesForm(); render(); persist();
-  showIoStatus(`Saved series info for ${name}.` + keepHint('data/series-info.json'));
+  // Joining another series is easy to do by mistake (and replaces its info), so the first Save says so.
+  const exists = DATA.some(b=> b.s === newName) || newName in SERIES_INFO;
+  if(renamed && exists && JOIN_SERIES !== newName){
+    JOIN_SERIES = newName;
+    return showError(`There is already a series called ${newName}. Press Save again to move these books into it` +
+      (entry && SERIES_INFO[newName] ? '; its series info will be replaced by this.' : '.'));
+  }
+
+  let count = 0;
+  if(renamed) DATA.forEach(b=>{ if(b.s === name){ b.s = newName; count++; } });
+  const {[name]: _old, ...rest} = SERIES_INFO;
+  SERIES_INFO = entry ? {...rest, [newName]: entry} : rest;
+  closeSeriesForm();
+  if(renamed && SERIES_FILTER === name) navigate({series: newName}, 'replace');
+  render(); persist();
+  showIoStatus(renamed
+    ? `Renamed ${name} to ${newName} on ${count} book${count === 1 ? '' : 's'}.` + keepHint('data/books.json')
+    : `Saved series info for ${name}.` + keepHint('data/series-info.json'));
 }
 
 function removeSeriesInfo(){
