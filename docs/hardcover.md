@@ -23,7 +23,9 @@ stops the run before it writes anything or sends anything to Hardcover (run it a
 
 **Anywhere else** (the installed phone app, the demo, or any other web server), the page asks Hardcover
 itself. **Save token** keeps the token in this browser only: it is never put in a backup or sent anywhere
-but to Hardcover, and **Remove token** forgets it. Only save it on a device that is yours. **Import**,
+but to Hardcover, and **Remove token** forgets it. Only save it on a device that is yours. Any other page on the same site can read it too: on GitHub Pages every
+project site of an account (`<name>.github.io/...`) shares one site, so host the app on its own (sub)domain
+if you publish other pages there. **Import**,
 **Export** and **Sync** first show what would happen, as above, and confirming runs it. The catalogue is
 saved before anything is sent to Hardcover, where your edits are usually kept (this browser, or the
 device's own catalogue). The banner on top shows the progress. Stay on the page until it is done: leaving
