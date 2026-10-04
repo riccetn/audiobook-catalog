@@ -203,6 +203,7 @@ document.getElementById('results').addEventListener('click', e=>{
 });
 
 function render(){
+  homeBookForm();   // out of the list before it is redrawn, which would drop it
   if(VIEW === 'series'){ renderSeriesOverview(); return; }
 
   const q = document.getElementById('q').value.trim();
@@ -299,6 +300,7 @@ function render(){
     btn.addEventListener('click', e=> pickMergeBook(parseInt(e.currentTarget.dataset.i,10)));
   });
   bindSeriesEditButtons();
+  placeBookForm();
 }
 
 function renderSeriesOverview(){
@@ -493,7 +495,7 @@ function bookCard(b){
   }).join('');
   const picked = MERGE_FROM === b._i;
   const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${DATA[MERGE_FROM].t}`;
-  return `<div class="book${picked ? ' picked' : ''}">${num}<div class="info">
+  return `<div class="book${picked ? ' picked' : ''}" data-i="${b._i}">${num}<div class="info">
     <div class="title"><a href="${esc(bookHref(b.t))}">${esc(b.t)}</a></div>
     <div class="meta">${esc(meta)}</div>
     ${read}
@@ -529,6 +531,7 @@ document.getElementById('toggleAdd').addEventListener('click', ()=>{
     document.getElementById('formSaveBtn').textContent = 'Add book';
     document.getElementById('formError').textContent = '';
     form.reset();
+    placeBookForm();
     form.classList.add('open');
   }
 });
@@ -552,6 +555,24 @@ function closeForm(){
   document.getElementById('formError').textContent = '';
   document.getElementById('addForm').classList.remove('open');
   document.getElementById('addForm').reset();
+  placeBookForm();
+}
+
+// The book form, kept in a variable as it is out of the page while the list is redrawn.
+const BOOK_FORM = document.getElementById('addForm');
+// Its own place, under the toolbar, where a new book is added.
+function homeBookForm(){ document.getElementById('seriesForm').before(BOOK_FORM); }
+
+/**
+ * Put the book form where it belongs: in place of the card of the book being edited, so the book is
+ * edited where it is in the list, else (adding a book, or the edited book not shown) under the toolbar.
+ */
+function placeBookForm(){
+  document.querySelectorAll('#results .book.editing').forEach(card=> card.classList.remove('editing'));
+  const card = EDIT_INDEX === null ? null : document.querySelector(`#results .book[data-i="${EDIT_INDEX}"]`);
+  if(!card){ homeBookForm(); return; }
+  card.classList.add('editing');
+  card.after(BOOK_FORM);
 }
 
 function openEditForm(i){
@@ -569,6 +590,7 @@ function openEditForm(i){
   document.getElementById('formError').textContent = '';
   document.getElementById('formTitle').textContent = 'Edit book';
   document.getElementById('formSaveBtn').textContent = 'Save changes';
+  placeBookForm();
   document.getElementById('addForm').classList.add('open');
   document.getElementById('addForm').scrollIntoView({behavior:'smooth', block:'center'});
 }

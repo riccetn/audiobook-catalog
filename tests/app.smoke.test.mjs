@@ -26,6 +26,8 @@ function makeElement(id) {
     },
     addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
     reset() {}, scrollIntoView() {}, click() {},
+    // where an element was last moved to, as 'before <id>' or 'after <id>'
+    before(node) { node.place = `before ${id}`; }, after(node) { node.place = `after ${id}`; },
   };
 }
 
@@ -41,6 +43,7 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
   const document = {
     getElementById: id => els[id],
     querySelectorAll: () => [],
+    querySelector: () => null,
     createElement: () => makeElement('created'),
     body: { appendChild() {}, removeChild() {} },
     title: '',
@@ -684,6 +687,34 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
   assert.deepEqual(other.get('EXCLUSIONS.entries'), ['BOLD', 'Other', 'BGONE2', 'Gone | Ann Vale']);
   assert.deepEqual(other.get('NEW_EXCLUDED'), ['BGONE2', 'Gone | Ann Vale']);
   assert.match(other.els.ioStatus.textContent, /2 more excluded from imports/);
+});
+
+test('the edit form takes the place of the book card, and adding a book opens it at the top', async () => {
+  const { ctx, els } = await boot();
+  ctx.setView('library');
+  // the list as drawn: a card for each book, found by its data-i
+  const cards = {};
+  ctx.document.querySelector = sel => {
+    const m = /^#results \.book\[data-i="(\d+)"\]$/.exec(sel);
+    return m ? (cards[m[1]] ||= makeElement(`card${m[1]}`)) : null;
+  };
+  ctx.openEditForm(2);
+  assert.equal(els.addForm.place, 'after card2');
+  assert.ok(cards[2].classList.contains('editing'), 'the card is hidden while its form is open');
+  ctx.render();
+  assert.equal(els.addForm.place, 'after card2', 'redrawing the list keeps the form on its book');
+  els.cancelAdd.listeners.click[0]();
+  assert.equal(els.addForm.place, 'before seriesForm');
+
+  els.toggleAdd.listeners.click[0]();
+  assert.ok(els.addForm.classList.contains('open'));
+  assert.equal(els.addForm.place, 'before seriesForm');
+
+  // a book not shown in the list is edited at the top
+  ctx.document.querySelector = () => null;
+  ctx.openEditForm(1);
+  assert.equal(els.addForm.place, 'before seriesForm');
+  assert.equal(els.formTitle.textContent, 'Edit book');
 });
 
 test('removing a book while another is being edited saves the edit to the right book', async () => {
