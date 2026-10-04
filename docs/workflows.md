@@ -4,7 +4,8 @@
 
 **Edit in the app**
 
-Edit books in the page (pencil icon, `+ Add a book`). *Editions* takes one edition per line, the way the
+Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
+list; `+ Add a book` opens it at the top. *Editions* takes one edition per line, the way the
 book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goodreads 4242;
 ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts, and
 `Hardcover 501` for the Hardcover edition id; the Hardcover book id has its own field;

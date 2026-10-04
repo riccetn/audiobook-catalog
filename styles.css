@@ -95,6 +95,8 @@ h1{
   padding:1rem; margin-bottom:1.5rem;
 }
 #addForm.open{display:block;}
+#results #addForm{margin:0 0 .45rem;}
+.book.editing{display:none;}
 #addForm h3{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
 #addForm label{display:block; font-size:.78rem; color:var(--ink-soft); margin:.5rem 0 .2rem;}
 #addForm input, #addForm textarea{
