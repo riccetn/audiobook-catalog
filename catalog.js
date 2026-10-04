@@ -118,7 +118,7 @@ function requireOwnData(args, io){
 function preview(records, io, limit = 15){
   for(const rec of records.slice(0, limit)){
     const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
-    io.out(`    + ${rec.t} - ${rec.a}${series}`);
+    io.out(`    + ${rec.t} - ${C.namesText(rec.a)}${series}`);
   }
   if(records.length > limit) io.out(`    ... and ${records.length - limit} more`);
 }
@@ -136,7 +136,7 @@ function printMerge(report, warnings, io){
   if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
   if(report.boxSets.length){
     io.out(`  box sets split into their titles: ${report.boxSets.length}`);
-    for(const b of report.boxSets.slice(0, 15)) io.out(`    ${b.t} - ${b.a}: ${b.titles} already here, ${b.added} added`);
+    for(const b of report.boxSets.slice(0, 15)) io.out(`    ${b.t} - ${C.namesText(b.a)}: ${b.titles} already here, ${b.added} added`);
     if(report.boxSets.some(b => b.added)) io.out('    (a title not here yet is named "Series, Book N" until --series or the `series` command names it)');
   }
   io.out(`  new: ${report.added.length}`);
@@ -189,6 +189,12 @@ function cmdValidate(args, io){
   if(oldEditions){
     io.out(`note: ${oldEditions} book(s) keep a Hardcover book id on an edition or several ISBNs on one edition; they are read ` +
       'with the id on the book and one edition per ISBN, and `make format` (or any save) writes them that way');
+  }
+  const textNames = Array.isArray(raw) ? raw.filter(b => b && typeof b === 'object' &&
+    (typeof b.a === 'string' || typeof b.n === 'string' || C.bookEditions(b).some(ed => typeof ed.n === 'string'))).length : 0;
+  if(textNames){
+    io.out(`note: ${textNames} book(s) keep their authors or narrators as one comma separated text; they are read as lists, ` +
+      'and `make format` (or any save) writes them that way');
   }
   const retitled = Array.isArray(raw) ? raw.filter(b => b && typeof b === 'object' && C.fixSeriesTitle(b) !== b).length : 0;
   if(retitled){
@@ -303,7 +309,7 @@ function cmdSyncExport(args, io){
   newBooks = tidiedBooks;
   if(tidied) io.out(`tidied stray spacing / run-together initials on ${tidied} book(s)`);
   const oldBooks = loadBooks(booksPath);
-  const label = b => JSON.stringify([b.t, b.a]);
+  const label = b => JSON.stringify([b.t, C.namesText(b.a)]);
   const before = oldBooks.map(label), after = newBooks.map(label);
   const gone = multisetMinus(before, after).map(x => JSON.parse(x));
   const added = multisetMinus(after, before).map(x => JSON.parse(x));
@@ -379,11 +385,11 @@ function cmdMergeBackup(args, io){
   preview(m.added, io);
   io.out(`  updated (genres, dates read, editions${args.preferBackup ? ', or the backup\'s title, author or series' : ''}): ${m.updated.length}`);
   io.out(`  removed (removed on the other device): ${m.removed.length}`);
-  for(const rec of m.removed.slice(0, 15)) io.out(`    - ${rec.t} - ${rec.a}`);
+  for(const rec of m.removed.slice(0, 15)) io.out(`    - ${rec.t} - ${C.namesText(rec.a)}`);
   if(m.skipped.length) io.out(`  not added back (listed in excluded.txt): ${m.skipped.length}`);
   if(m.conflicts.length){
     io.out(`  title, author or series differ, kept ${side}: ${m.conflicts.length}`);
-    const label = r => `${r.t} - ${r.a}${r.s ? ` [${r.s}${r.sn ? ' #' + r.sn : ''}]` : ''}`;
+    const label = r => `${r.t} - ${C.namesText(r.a)}${r.s ? ` [${r.s}${r.sn ? ' #' + r.sn : ''}]` : ''}`;
     for(const {mine, theirs} of m.conflicts.slice(0, 15)) io.out(`    ~ ${label(mine)}  /  backup: ${label(theirs)}`);
   }
   io.out(`series info: ${m.infoAdded.length} added, ${m.infoChanged.length} taken from the backup, ${m.infoKept.length} differing kept as ours`);
@@ -940,7 +946,7 @@ async function cmdHardcover(args, io, mode){
     io.out(`  dates read to add: ${reads}`);
     if(plan.otherShelf.length){
       io.out(`  on another Hardcover shelf, left alone: ${plan.otherShelf.length}`);
-      for(const [rec, status] of plan.otherShelf.slice(0, 15)) io.out(`    ! ${rec.t} - ${rec.a}: ${status}`);
+      for(const [rec, status] of plan.otherShelf.slice(0, 15)) io.out(`    ! ${rec.t} - ${C.namesText(rec.a)}: ${status}`);
     }
     if(plan.inexact.length) io.out(`  dates read without a day, not sent (a Hardcover read needs one): ${plan.inexact.length}`);
     if(plan.unknown.length){

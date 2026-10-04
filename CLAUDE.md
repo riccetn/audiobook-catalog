@@ -86,15 +86,17 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
 
 ## Data model (short form; full table in `docs/data-format.md`)
 
-`books.json` is a list of titles with short keys `t a s sn g r hcb e` (title, author, series,
+`books.json` is a list of titles with short keys `t a s sn g r hcb e` (title, list of authors, series,
 series number as text, genres, dates read, Hardcover book id, editions). Each edition in `e` has `id gr hc isbn n p d len desc`
-(Audible ASIN, Goodreads book id, Hardcover edition id, one ISBN, narrator, publisher, release date,
+(Audible ASIN, Goodreads book id, Hardcover edition id, one ISBN, list of narrators, publisher, release date,
 length in minutes, free-text description) and must not be empty. `id`, `gr` and `hc` name an edition
 (`EDITION_IDS`) and match books; the ISBN names an edition too (`editionsConflict`: another ISBN is another
 edition) but never matches books. Editions with an ISBN list or an `hcb`, from before, are split and the
 id lifted to the book on load (`splitIsbns`, `fixBooks`). A box set is one edition copied onto each of its titles, linked by the shared
 identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn`/`n` on the book) are
-migrated on load by `fixBooks`. A missing `r` means the read date is unknown, not unread. `series-info.json` maps a series
+migrated on load by `fixBooks`, and so are authors and narrators written as one comma separated
+string (`fixPeople`/`splitNames`; `namesText` joins a list back for display). Matching and "Not duplicates"
+keys use the first author (`firstAuthor`/`firstName`). A missing `r` means the read date is unknown, not unread. `series-info.json` maps a series
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`.
 `data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` lines that imports must never re-add; code only
 ever appends to it. `data/not-duplicates.txt` (pairs marked "Not duplicates" on the

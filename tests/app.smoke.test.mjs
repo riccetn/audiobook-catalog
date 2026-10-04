@@ -292,7 +292,7 @@ test('adding a book appends it', async () => {
   Object.assign(els.f_g, { value: 'Fantasy, Cozy' });
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.equal(get('DATA.length'), before + 1);
-  assert.deepEqual(get('DATA[DATA.length-1]'), { t: 'Brand New', a: 'Some Author', g: ['Fantasy', 'Cozy'] });
+  assert.deepEqual(get('DATA[DATA.length-1]'), { t: 'Brand New', a: ['Some Author'], g: ['Fantasy', 'Cozy'] });
 });
 
 test('dates read: shown on the card, edited in the form, and filterable by year', async () => {
@@ -343,7 +343,7 @@ test('dates read: shown on the card, edited in the form, and filterable by year'
 
 test('ISBNs: shown on the card, searchable however typed, edited in the form', async () => {
   // written before editions: read as the book's first edition
-  const mine = JSON.stringify([{ t: 'Boxed One', a: 'Ann Vale', isbn: ['9780306406157'] }, { t: 'Other', a: 'Ann Vale' }]);
+  const mine = JSON.stringify([{ t: 'Boxed One', a: ['Ann Vale'], isbn: ['9780306406157'] }, { t: 'Other', a: ['Ann Vale'] }]);
   const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
   ctx.setView('library');
   assert.match(els.results.innerHTML, /ISBN 9780306406157/);
@@ -402,7 +402,7 @@ test('narrators and descriptions live on editions: shown on the card, searchable
   assert.match(els.f_e.value, /^Narrated by Tobias Frane; ASIN SAMPLE0001/);
   els.f_e.value += '\nDramatized adaptation; Narrated by A full cast; Goodreads 777';
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.deepEqual(get(`DATA[${salt}].e[2]`), { gr: '777', n: 'A full cast', desc: 'Dramatized adaptation' });
+  assert.deepEqual(get(`DATA[${salt}].e[2]`), { gr: '777', n: ['A full cast'], desc: 'Dramatized adaptation' });
 });
 
 test('box sets: the edition shows on each of its books, and editing it on one edits it on all', async () => {
@@ -426,7 +426,7 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 });
 
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B1' }], r: ['2020'] }]);
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ id: 'B1' }], r: ['2020'] }]);
   const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
     + 'Old Favourite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
@@ -439,10 +439,40 @@ test('a Goodreads import adds the ISBN to the edition of books already there', a
   assert.match(els.ioStatus.textContent, /added ISBNs to 1 book/);
 });
 
+test('authors are lists: the author filter offers each author on its own, and the form edits them as text', async () => {
+  const { ctx, els, get } = await boot();
+  ctx.setView('library');
+  const nine = demoBooks.findIndex(b => b.t === 'Nine Ways to Lose a Kingdom');
+  assert.deepEqual(demoBooks[nine].a, ['Ferran Doyle', 'Priya Ostrander'], 'the demo data has a book with two authors');
+  assert.match(els.authorFilter.innerHTML, /<option value="Priya Ostrander">Priya Ostrander<\/option>/);
+  assert.doesNotMatch(els.authorFilter.innerHTML, /Ferran Doyle, Priya Ostrander/);
+  assert.equal((els.authorFilter.innerHTML.match(/<option value="Priya Ostrander">/g) || []).length, 1);
+  assert.match(els.results.innerHTML, /<div class="meta">Ferran Doyle, Priya Ostrander<\/div>/);
+  els.authorFilter.value = 'Priya Ostrander';
+  ctx.render();
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 3, 'her two books and the one she co-wrote');
+  els.authorFilter.value = '';
+
+  ctx.openEditForm(nine);
+  assert.equal(els.f_a.value, 'Ferran Doyle, Priya Ostrander');
+  els.f_a.value = 'Ferran Doyle & Cass Merriweather';
+  els.addForm.listeners.submit[0]({ preventDefault() {} });
+  assert.deepEqual(get(`DATA[${nine}].a`), ['Ferran Doyle', 'Cass Merriweather']);
+});
+
+test('authors and narrators written as comma separated text load as lists', async () => {
+  const mine = JSON.stringify([{ t: 'Old Style', a: 'Ann Vale, Bo Reed', e: [{ id: 'B1', n: 'Cy Hale, Di Moss' }] }]);
+  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  assert.deepEqual(get('DATA'), [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ id: 'B1', n: ['Cy Hale', 'Di Moss'] }] }]);
+  ctx.setView('library');
+  assert.match(els.authorFilter.innerHTML, /<option value="Bo Reed">/);
+  assert.match(els.results.innerHTML, /Ann Vale, Bo Reed — narr\. Cy Hale, Di Moss/);
+});
+
 test('your own data/books.json wins over the demo', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
   const { get } = await boot({ files: { 'data/books.json': mine, 'data/sample/books.json': DEMO_BOOKS } });
-  assert.deepEqual(get('DATA'), [{ t: 'Mine', a: 'Me' }]);
+  assert.deepEqual(get('DATA'), [{ t: 'Mine', a: ['Me'] }]);
   assert.deepEqual(get('SERIES_INFO'), {});
 });
 
@@ -471,13 +501,13 @@ test('local edits are kept for the same data, and set aside when books.json chan
   assert.match(newer.els.ioStatus.textContent, /set aside/);
 
   // 4. a save from the old, pre-baseline format is also treated as stale, never trusted blindly
-  const legacy = await boot({ storage: new Map([['audiobook-catalog-data', JSON.stringify([{ t: 'Old', a: 'Format' }])]]) });
+  const legacy = await boot({ storage: new Map([['audiobook-catalog-data', JSON.stringify([{ t: 'Old', a: ['Format'] }])]]) });
   assert.equal(legacy.get('DATA[0].t'), demoBooks[0].t);
   assert.ok(legacy.storage.has('audiobook-catalog-data.backup'));
 });
 
 test('importing an Audible CSV previews first, then adds only new books', async () => {
-  const mine = JSON.stringify([{ t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5' }]);
+  const mine = JSON.stringify([{ t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5' }]);
   const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine, 'data/excluded.txt': 'BGONE\n' } });
   const csv = 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
     + 'x,A Crown of Embers 5: A Spark of Dawn,A Crown of Embers Series (book 5),Ilse Marlowe,,Finished,B5\n'
@@ -501,8 +531,8 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   els.importConfirm.listeners.click[0]();
   assert.ok(!els.importPreview.classList.contains('open'));
   assert.deepEqual(get('DATA'), [
-    { t: 'A Spark of Dawn', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
-    { t: 'A Crown of Embers 6: Ashfall', a: 'Ilse Marlowe', s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6', n: 'A. B. Quill' }] },
+    { t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
+    { t: 'A Crown of Embers 6: Ashfall', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6', n: ['A. B. Quill'] }] },
   ]);
   assert.match(els.ioStatus.textContent, /Added 1 book, filled in 1 Audible id/);
 
@@ -513,19 +543,19 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 });
 
 test('a date read written as a plain string loads, renders, and round-trips through Export / Import', async () => {
-  const mine = JSON.stringify([{ t: 'Hand Edited', a: 'Ann Vale', r: '2024-03-15' }, { t: 'Odd', a: 'Ann Vale', r: 5 }]);
+  const mine = JSON.stringify([{ t: 'Hand Edited', a: ['Ann Vale'], r: '2024-03-15' }, { t: 'Odd', a: ['Ann Vale'], r: 5 }]);
   const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
   assert.deepEqual(get('DATA[0].r'), ['2024-03-15']);
   ctx.setView('library');
   assert.match(els.results.innerHTML, /Read 2024-03-15/);
   assert.match(els.readFilter.innerHTML, /Read in 2024/);
 
-  const backup = JSON.stringify({ books: [{ t: 'From Backup', a: 'Ann Vale', r: '2023-01-05' }], seriesInfo: {} });
+  const backup = JSON.stringify({ books: [{ t: 'From Backup', a: ['Ann Vale'], r: '2023-01-05' }], seriesInfo: {} });
   const storage = new Map();
   const imp = await boot({ page: 'import.html', files: { 'data/books.json': mine }, storage });
   imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: backup }], value: '' } });
   assert.doesNotMatch(imp.els.ioStatus.textContent, /Couldn't read/);
-  assert.deepEqual(imp.get('DATA'), [{ t: 'From Backup', a: 'Ann Vale', r: ['2023-01-05'] }]);
+  assert.deepEqual(imp.get('DATA'), [{ t: 'From Backup', a: ['Ann Vale'], r: ['2023-01-05'] }]);
   // back on the catalogue page
   const back = await boot({ files: { 'data/books.json': mine }, storage });
   back.ctx.setView('library');
@@ -533,7 +563,7 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 });
 
 test('a Goodreads import fills in dates read on books that have none', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B1' }] }]);
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ id: 'B1' }] }]);
   const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
     + 'Old Favourite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
@@ -542,7 +572,7 @@ test('a Goodreads import fills in dates read on books that have none', async () 
   assert.match(els.importPreviewBody.innerHTML, /Dates read filled in on existing books: 1/);
   assert.equal(els.importConfirm.textContent, 'Save dates read');
   els.importConfirm.listeners.click[0]();
-  assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B1' }], r: ['2023-11-04'] }]);
+  assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ id: 'B1' }], r: ['2023-11-04'] }]);
   assert.match(els.ioStatus.textContent, /filled in dates read on 1 book/);
 });
 
@@ -583,7 +613,7 @@ test('Export includes series info, and Import brings it back', async () => {
   assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), excluded: [], notDuplicates: [] });
 
   // into a page that has no series info: it comes back, and survives a reload
-  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
   const files = { 'data/books.json': mine };
   const other = await boot({ page: 'import.html', files });
   assert.deepEqual(other.get('SERIES_INFO'), {});
@@ -596,7 +626,7 @@ test('Export includes series info, and Import brings it back', async () => {
   // an older backup (a plain list of books) still imports and keeps the current series info
   const legacy = await boot({ page: 'import.html' });
   legacy.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: mine }], value: '' } });
-  assert.deepEqual(legacy.get('DATA'), [{ t: 'Mine', a: 'Me' }]);
+  assert.deepEqual(legacy.get('DATA'), [{ t: 'Mine', a: ['Me'] }]);
   assert.deepEqual(legacy.get('SERIES_INFO'), JSON.parse(DEMO_INFO));
 
   // locally saved series info is set aside when series-info.json changes on disk
@@ -617,12 +647,12 @@ function removeBook(ctx, i) {
 }
 
 test('removing a book excludes it from imports, and Export / Import carry the exclusions', async () => {
-  const mine = JSON.stringify([{ t: 'Keep', a: 'Ann Vale' }, { t: 'Gone', a: 'Ann Vale', id: 'BGONE2' }]);
+  const mine = JSON.stringify([{ t: 'Keep', a: ['Ann Vale'] }, { t: 'Gone', a: ['Ann Vale'], id: 'BGONE2' }]);
   const files = { 'data/books.json': mine, 'data/excluded.txt': '# header\nBOLD\n' };
   const { ctx, els, get, storage } = await boot({ files });
   ctx.setView('library');
   removeBook(ctx, 1);
-  assert.deepEqual(get('DATA'), [{ t: 'Keep', a: 'Ann Vale' }]);
+  assert.deepEqual(get('DATA'), [{ t: 'Keep', a: ['Ann Vale'] }]);
   assert.deepEqual(get('NEW_EXCLUDED'), ['BGONE2', 'Gone | Ann Vale']);
   assert.match(els.ioStatus.textContent, /Removed Gone; imports will skip it\. Export it on the Import & export page and run sync-export/);
   assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).excluded, ['BGONE2', 'Gone | Ann Vale']);
@@ -657,7 +687,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 });
 
 test('removing a book while another is being edited saves the edit to the right book', async () => {
-  const mine = JSON.stringify([{ t: 'First', a: 'Ann Vale' }, { t: 'Second', a: 'Ann Vale' }, { t: 'Third', a: 'Ann Vale' }]);
+  const mine = JSON.stringify([{ t: 'First', a: ['Ann Vale'] }, { t: 'Second', a: ['Ann Vale'] }, { t: 'Third', a: ['Ann Vale'] }]);
   const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
   ctx.setView('library');
   ctx.openEditForm(1);
@@ -760,7 +790,7 @@ test('series info can be edited, added and removed in the page', async () => {
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 test('with make serve, edits are saved to disk and the browser copy is dropped', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
   const saves = [];
   const api = async init => {
     if (!init.method) return { status: 200, body: { writable: true } };
@@ -781,11 +811,11 @@ test('with make serve, edits are saved to disk and the browser copy is dropped',
   assert.equal(saves.length, 1);
   assert.equal(saves[0].method, 'PUT');
   assert.equal(saves[0].headers['Content-Type'], 'application/json');
-  assert.deepEqual(saves[0].body.books, [{ t: 'Mine', a: 'Me' }, { t: 'New', a: 'Me', s: 'Mine Saga' }]);
+  assert.deepEqual(saves[0].body.books, [{ t: 'Mine', a: ['Me'] }, { t: 'New', a: ['Me'], s: 'Mine Saga' }]);
   assert.equal(saves[0].body.base, get('CatalogImport.fingerprint(' + JSON.stringify(mine) + ')'));
   assert.deepEqual(saves[0].body.seriesInfo, {});
   assert.equal(get('BASELINE'), 'b1');                  // the next save starts from the file just written
-  assert.deepEqual(get('DATA[1]'), { t: 'New', a: 'Me', s: 'Mine Saga' });
+  assert.deepEqual(get('DATA[1]'), { t: 'New', a: ['Me'], s: 'Mine Saga' });
   assert.ok(!storage.has('audiobook-catalog-data'));
   assert.equal(els.ioStatus.textContent, 'Saved.');
 
@@ -802,7 +832,7 @@ test('with make serve, edits are saved to disk and the browser copy is dropped',
 });
 
 test('with make serve, a removed book\'s exclusions are sent with the save, once', async () => {
-  const mine = JSON.stringify([{ t: 'Keep', a: 'Me' }, { t: 'Gone', a: 'Me' }]);
+  const mine = JSON.stringify([{ t: 'Keep', a: ['Me'] }, { t: 'Gone', a: ['Me'] }]);
   const saves = [];
   const api = async init => {
     if (!init.method) return { status: 200, body: { writable: true } };
@@ -823,7 +853,7 @@ test('with make serve, a removed book\'s exclusions are sent with the save, once
 });
 
 test('edits made while a save is on its way are saved right after it', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
   const saves = [];
   let release;
   const api = async init => {
@@ -846,7 +876,7 @@ test('edits made while a save is on its way are saved right after it', async () 
 });
 
 test('a refused save keeps the edits in the browser and says why', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
   let answer = { status: 409, body: { error: 'changed', conflict: true } };
   const api = async init => (init.method ? answer : { status: 200, body: { writable: true } });
   const { get, run, els, storage } = await boot({ files: { 'data/books.json': mine }, api });
@@ -857,7 +887,7 @@ test('a refused save keeps the edits in the browser and says why', async () => {
 
   // after a reload against the same file, the kept edits are saved again
   let saved = null;
-  answer = { status: 200, body: { base: 'b', infoBase: 'i', books: [{ t: 'Edited', a: 'Me' }] } };
+  answer = { status: 200, body: { base: 'b', infoBase: 'i', books: [{ t: 'Edited', a: ['Me'] }] } };
   const again = await boot({ files: { 'data/books.json': mine }, storage: new Map(storage),
     api: async init => { if (init.method) saved = JSON.parse(init.body); return init.method ? answer : { status: 200, body: { writable: true } }; } });
   await settle();
@@ -868,8 +898,8 @@ test('a refused save keeps the edits in the browser and says why', async () => {
 
 test('with make serve, series can be looked up on Audible, previewed, then saved', async () => {
   const mine = JSON.stringify([
-    { t: 'Loose', a: 'Ann Vale', e: [{ id: 'B0LOOSE001' }] },
-    { t: 'Gull 2', a: 'Ann Vale', s: 'Gull Isle', sn: '2', e: [{ id: 'B0GULL0002' }] },
+    { t: 'Loose', a: ['Ann Vale'], e: [{ id: 'B0LOOSE001' }] },
+    { t: 'Gull 2', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ id: 'B0GULL0002' }] },
   ]);
   const lookups = [], saves = [];
   const api = async (init, url) => {
@@ -898,7 +928,7 @@ test('with make serve, series can be looked up on Audible, previewed, then saved
 
   els.importConfirm.listeners.click[0]();
   await settle();
-  assert.deepEqual(get('DATA[0]'), { t: 'Loose', a: 'Ann Vale', s: 'Gull Isle', sn: '1', e: [{ id: 'B0LOOSE001' }] });
+  assert.deepEqual(get('DATA[0]'), { t: 'Loose', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ id: 'B0LOOSE001' }] });
   assert.equal(get('SERIES_INFO["Gull Isle"].total'), 4);
   assert.equal(get('SERIES_INFO["Gull Isle"].status'), 'ongoing');
   assert.equal(saves.length, 1);
@@ -911,7 +941,7 @@ test('with make serve, series can be looked up on Audible, previewed, then saved
 });
 
 test('with make serve, an Audible import can go on to look up the new books\' series', async () => {
-  const mine = JSON.stringify([{ t: 'Old Standalone', a: 'Ann Vale', e: [{ id: 'B0OLD00001' }] }]);
+  const mine = JSON.stringify([{ t: 'Old Standalone', a: ['Ann Vale'], e: [{ id: 'B0OLD00001' }] }]);
   const lookups = [];
   const api = async (init, url) => {
     if (!init.method) return { status: 200, body: { writable: true, audible: true } };
@@ -939,7 +969,7 @@ test('with make serve, an Audible import can go on to look up the new books\' se
   assert.match(els.importPreviewBody.innerHTML, /Tidewater &mdash; Ann Vale {2}\[Gull Isle #1\]/);
   els.importConfirm.listeners.click[0]();
   await settle();
-  assert.deepEqual(get('DATA[1]'), { t: 'Tidewater', a: 'Ann Vale', s: 'Gull Isle', sn: '1', e: [{ id: 'B0NEW00001' }] });
+  assert.deepEqual(get('DATA[1]'), { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ id: 'B0NEW00001' }] });
   assert.equal(get('SERIES_INFO["Gull Isle"].total'), 2);
 
   // the choice is remembered in this browser
@@ -955,7 +985,7 @@ test('without make serve (or with the demo data) edits stay in the browser', asy
   demo.run("DATA[0].t = 'Edited'; persist();");
   await settle();
   assert.equal(calls, 1);
-  const plain = await boot({ files: { 'data/books.json': JSON.stringify([{ t: 'Mine', a: 'Me' }]) } });
+  const plain = await boot({ files: { 'data/books.json': JSON.stringify([{ t: 'Mine', a: ['Me'] }]) } });
   assert.equal(plain.get('DISK_SAVE'), false);
   plain.run("DATA[0].t = 'Edited'; persist();");
   await settle();
@@ -964,12 +994,12 @@ test('without make serve (or with the demo data) edits stay in the browser', asy
 
 test('duplicates page: found, merged with the picked title, or kept apart', async () => {
   const mine = JSON.stringify([
-    { t: 'The Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ id: 'B1' }] },
-    { t: 'Beacons', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '2', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
-    { t: 'Salt Road', a: 'Marisol Quenby', n: 'Tobias Frane', s: 'Lantern Coast', sn: '1', r: ['2023-06-02'], e: [{ gr: '4242' }] },
-    { t: 'The Drowned Chart', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '3', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
-    { t: 'The Ledger', a: 'Priya Ostrander' },
-    { t: 'The Ledger, Book 1', a: 'Priya Ostrander' },
+    { t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ id: 'B1' }] },
+    { t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
+    { t: 'Salt Road', a: ['Marisol Quenby'], n: ['Tobias Frane'], s: 'Lantern Coast', sn: '1', r: ['2023-06-02'], e: [{ gr: '4242' }] },
+    { t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
+    { t: 'The Ledger', a: ['Priya Ostrander'] },
+    { t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
   ]);
   const files = { 'data/books.json': mine };
   // every page's link says how many there are; a box set's titles share an edition but are not duplicates
@@ -987,8 +1017,8 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
   assert.match(els.dupBody.innerHTML, /Becomes: Salt Road/);
   ctx.mergeGroup(0);
   assert.equal(get('DATA.length'), 5);
-  assert.deepEqual(get('DATA[0]'), { t: 'Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1',
-    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1', gr: '4242', n: 'Tobias Frane' }] });   // Audible's and Goodreads' records of one edition
+  assert.deepEqual(get('DATA[0]'), { t: 'Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1',
+    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1', gr: '4242', n: ['Tobias Frane'] }] });   // Audible's and Goodreads' records of one edition
   assert.match(els.ioStatus.textContent, /^Merged 2 entries into Salt Road\./);
   assert.equal(get('EXCLUSIONS.size'), 0);              // the removed entry's ids live on in the kept book
   assert.deepEqual(get('DUP_GROUPS'), [[3, 4]]);
@@ -1004,7 +1034,7 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
 });
 
 test('the merge button pairs two books by hand and opens them on the duplicates page', async () => {
-  const mine = JSON.stringify([{ t: 'Ledger', a: 'Priya Ostrander' }, { t: 'Other', a: 'Ann Vale' }, { t: 'The Ledger', a: 'P. Ostrander', r: ['2024'] }]);
+  const mine = JSON.stringify([{ t: 'Ledger', a: ['Priya Ostrander'] }, { t: 'Other', a: ['Ann Vale'] }, { t: 'The Ledger', a: ['P. Ostrander'], r: ['2024'] }]);
   const files = { 'data/books.json': mine };
   const home = await boot({ files });
   home.ctx.setView('library');
@@ -1018,7 +1048,7 @@ test('the merge button pairs two books by hand and opens them on the duplicates 
   assert.deepEqual(get('DUP_GROUPS'), [[0, 2]]);
   assert.match(els.dupBody.innerHTML, /Picked by hand/);
   ctx.mergeGroup(0);
-  assert.deepEqual(get('DATA'), [{ t: 'Ledger', a: 'Priya Ostrander', r: ['2024'] }, { t: 'Other', a: 'Ann Vale' }]);
+  assert.deepEqual(get('DATA'), [{ t: 'Ledger', a: ['Priya Ostrander'], r: ['2024'] }, { t: 'Other', a: ['Ann Vale'] }]);
   assert.equal(get('DUP_MANUAL'), null);
   assert.equal(ctx.location.hash, '');
 
@@ -1028,7 +1058,7 @@ test('the merge button pairs two books by hand and opens them on the duplicates 
 });
 
 test('an edit is not saved over changes another tab made meanwhile', async () => {
-  const files = { 'data/books.json': JSON.stringify([{ t: 'Mine', a: 'Me' }, { t: 'Yours', a: 'You' }]) };
+  const files = { 'data/books.json': JSON.stringify([{ t: 'Mine', a: ['Me'] }, { t: 'Yours', a: ['You'] }]) };
   const storage = new Map();
   const one = await boot({ files, storage });
   const two = await boot({ page: 'duplicates.html', files, storage });
@@ -1042,12 +1072,12 @@ test('an edit is not saved over changes another tab made meanwhile', async () =>
 
 test('merging keeps editions apart when asked, and books merged that way can be joined later', async () => {
   const mine = JSON.stringify([
-    { t: 'The Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', e: [{ id: 'B1', len: 642 }] },
-    { t: 'Salt Road', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '1', e: [{ gr: '4242', p: 'Gull Audio' }] },
-    { t: 'Beacons', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '2', e: [{ id: 'B2' }, { gr: '777', isbn: '9780306406157' }] },
-    { t: 'The Drowned Chart', a: 'Marisol Quenby', s: 'Lantern Coast', sn: '3', e: [{ id: 'B3' }, { id: 'B3X' }] },
-    { t: 'Box Set', a: 'Marisol Quenby', e: [{ id: 'BBOX' }, { gr: '888' }] },
-    { t: 'Other In Box', a: 'Marisol Quenby', e: [{ id: 'BBOX' }] },
+    { t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ id: 'B1', len: 642 }] },
+    { t: 'Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ gr: '4242', p: 'Gull Audio' }] },
+    { t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ id: 'B2' }, { gr: '777', isbn: '9780306406157' }] },
+    { t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ id: 'B3' }, { id: 'B3X' }] },
+    { t: 'Box Set', a: ['Marisol Quenby'], e: [{ id: 'BBOX' }, { gr: '888' }] },
+    { t: 'Other In Box', a: ['Marisol Quenby'], e: [{ id: 'BBOX' }] },
   ]);
   const files = { 'data/books.json': mine };
   const { ctx, els, get, run, storage } = await boot({ page: 'duplicates.html', files });
@@ -1076,7 +1106,7 @@ test('merging keeps editions apart when asked, and books merged that way can be 
 });
 
 test('restoring a backup where only the demo is served makes it this device\'s own catalogue', async () => {
-  const backup = { books: [{ t: 'Pocket Edition', a: 'Ann Vale', r: ['2025-06-01'] }], seriesInfo: {}, excluded: ['BGONE3'] };
+  const backup = { books: [{ t: 'Pocket Edition', a: ['Ann Vale'], r: ['2025-06-01'] }], seriesInfo: {}, excluded: ['BGONE3'] };
   const imp = await boot({ page: 'import.html' });
   imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
   assert.equal(imp.get('ON_DEVICE'), true);
@@ -1096,9 +1126,9 @@ test('restoring a backup where only the demo is served makes it this device\'s o
   assert.deepEqual(kept.excluded, ['BGONE3', 'Pocket Edition | Ann Vale']);
 
   // a page served with its own data/books.json ignores it, and a restore there does not switch
-  const mine = JSON.stringify([{ t: 'Mine', a: 'Me' }]);
+  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
   const served = await boot({ page: 'import.html', files: { 'data/books.json': mine }, storage: new Map(storage) });
-  assert.deepEqual(served.get('DATA'), [{ t: 'Mine', a: 'Me' }]);
+  assert.deepEqual(served.get('DATA'), [{ t: 'Mine', a: ['Me'] }]);
   served.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
   assert.equal(served.get('ON_DEVICE'), false);
   assert.doesNotMatch(served.els.ioStatus.textContent, /own catalogue/);
@@ -1119,8 +1149,8 @@ test('the app can be installed: the manifest\'s icons and everything the service
 });
 
 test('"Not duplicates" marks come from data/not-duplicates.txt, are saved there by make serve, and travel in backups', async () => {
-  const books = [{ t: 'The Ledger', a: 'Priya Ostrander' }, { t: 'The Ledger, Book 1', a: 'Priya Ostrander' },
-    { t: 'Salt Road', a: 'Marisol Quenby' }, { t: 'Salt Road, Book 1', a: 'Marisol Quenby' }];
+  const books = [{ t: 'The Ledger', a: ['Priya Ostrander'] }, { t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
+    { t: 'Salt Road', a: ['Marisol Quenby'] }, { t: 'Salt Road, Book 1', a: ['Marisol Quenby'] }];
   const pairKey = (x, y) => createRequire(import.meta.url)('../importers.js').duplicatePairKey(books[x], books[y]);
   const saves = [];
   const api = async init => {
@@ -1165,9 +1195,9 @@ test('"Not duplicates" marks come from data/not-duplicates.txt, are saved there 
 });
 
 test('Merge previews a backup from another device and keeps both sides\' changes', async () => {
-  const mine = JSON.stringify([{ t: 'Here', a: 'Ann Vale' }, { t: 'Renamed', a: 'Ann Vale', e: [{ id: 'B1' }] }]);
-  const backup = { books: [{ t: 'Here', a: 'Ann Vale', r: ['2025-06-01'] }, { t: 'Renamed Twice', a: 'Ann Vale', e: [{ id: 'B1' }] },
-    { t: 'New There', a: 'Ann Vale' }], seriesInfo: {}, excluded: ['BGONE9'], notDuplicates: ['["editions","id B1"]'] };
+  const mine = JSON.stringify([{ t: 'Here', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ id: 'B1' }] }]);
+  const backup = { books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ id: 'B1' }] },
+    { t: 'New There', a: ['Ann Vale'] }], seriesInfo: {}, excluded: ['BGONE9'], notDuplicates: ['["editions","id B1"]'] };
   const { els, get, storage } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
   assert.equal(els.importPreviewTitle.textContent, 'Merge a backup');
@@ -1227,12 +1257,12 @@ function fakeHardcoverServer(steps) {
 }
 
 test('with make serve, the Hardcover panel saves the token and previews, then runs, an import in the background', async () => {
-  const mine = JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale' }]);
+  const mine = JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'] }]);
   const files = { 'data/books.json': mine };
   const server = fakeHardcoverServer(body => body.dryRun
     ? [{ running: false, elapsed: 2000, step: 'Done', code: 0, out: 'Hardcover: 1 books on your Read shelf\n  new: 1\n    + Tidewater - Ann Vale\n(dry run: nothing written)', err: '' }]
     : [{ step: 'Putting books on your Hardcover Read shelf', done: 3, total: 10, elapsed: 65000 },
-       (files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: 'Ann Vale' }]),
+       (files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: ['Ann Vale'] }]),
         { running: false, elapsed: 70000, step: 'Done', code: 0, out: 'wrote data/books.json', err: '', base: 'new' })]);
   const { els, get } = await boot({ page: 'import.html', files, api: server.api, setTimeout: server.setTimeout });
   await settle();
@@ -1284,7 +1314,7 @@ test('with make serve, the Hardcover panel saves the token and previews, then ru
 });
 
 test('every page shows a Hardcover run already going, and picks up what it wrote', async () => {
-  const mine = JSON.stringify([{ t: 'Lantern Hours', a: 'R. T. Hale' }]);
+  const mine = JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'] }]);
   const files = { 'data/books.json': mine };
   const server = fakeHardcoverServer(() => []);
   let gets = 0;
@@ -1292,7 +1322,7 @@ test('every page shows a Hardcover run already going, and picks up what it wrote
     if (url !== 'api/hardcover') return server.api(init, url);
     gets++;
     if (gets === 1) return { status: 200, body: { job: { id: 7, mode: 'sync', dryRun: false, running: true, elapsed: 3000, step: 'Finding your books on Hardcover', done: 50, total: 200 } } };
-    files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: 'Ann Vale' }]);
+    files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: ['Ann Vale'] }]);
     return { status: 200, body: { job: { id: 7, mode: 'sync', dryRun: false, running: false, elapsed: 9000, step: 'Done', code: 0, out: '', err: '', base: 'new' } } };
   };
   const { els, get } = await boot({ files, api, setTimeout: server.setTimeout });
