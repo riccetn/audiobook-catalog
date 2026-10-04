@@ -9,7 +9,9 @@ book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goo
 ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts, and
 `Hardcover 501` for the Hardcover edition id; the Hardcover book id has its own field;
 hyphens and ISBN-10s are fine). Text without a label is the edition's description, so a line can be as
-short as `Dramatized adaptation; Narrated by A full cast`. The narrator is on the edition too: the card
+short as `Dramatized adaptation; Narrated by A full cast`. Several authors, or several narrators of an
+edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
+filter. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
 searching finds narrators and descriptions. To tie a box set to
 its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on each title: the details you typed on one

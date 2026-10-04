@@ -14,6 +14,8 @@ const UNDATED = '__undated__';
 const readYears = b => readDates(b).map(d => d.slice(0, 4));
 
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
+// A book's authors, one name each: the author filter offers each of them on its own.
+function authorsOf(b){ return Array.isArray(b.a) ? b.a.filter(x=> typeof x === 'string') : []; }
 
 // Series numbers you don't own yet, from series-info.json's released total; null when that is unknown.
 function seriesMissing(name){
@@ -32,7 +34,7 @@ function numberList(nums){
 }
 
 function populateFilters(){
-  const authors = uniqueSorted(DATA.map(b=>b.a));
+  const authors = uniqueSorted(DATA.flatMap(authorsOf));
   const genres = uniqueSorted(DATA.flatMap(b=>b.g||[]));
   const aSel = document.getElementById('authorFilter');
   const gSel = document.getElementById('genreFilter');
@@ -53,13 +55,13 @@ function matches(b, q, author, genre, read){
     if(SERIES_FILTER === '__standalone__'){ if(b.s) return false; }
     else if(b.s !== SERIES_FILTER) return false;
   }
-  if(author && b.a !== author) return false;
+  if(author && !authorsOf(b).includes(author)) return false;
   if(genre && !(b.g||[]).includes(genre)) return false;
   if(read === UNDATED){ if(readDates(b).length) return false; }
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const editions = CatalogImport.bookEditions(b);
-    const hay = [b.t,b.a,b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.hc, ed.n, ed.p, ed.desc, ed.isbn]), b.hcb]
+    const hay = [b.t,...authorsOf(b),b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.hc, CatalogImport.namesText(ed.n), ed.p, ed.desc, ed.isbn]), b.hcb]
       .filter(x=> typeof x === 'string').join(' ').toLowerCase();
     // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
     const isbn = CatalogImport.parseIsbn(q);
@@ -312,7 +314,7 @@ function renderSeriesOverview(){
   if(q){
     seriesNames = seriesNames.filter(name=>{
       const books = groups[name];
-      const hay = [name, ...books.map(b=>b.a)].join(' ').toLowerCase();
+      const hay = [name, ...books.flatMap(authorsOf)].join(' ').toLowerCase();
       return hay.includes(q);
     });
   }
@@ -331,7 +333,7 @@ function renderSeriesOverview(){
 
   seriesNames.forEach(name=>{
     const books = groups[name];
-    const authors = uniqueSorted(books.map(b=>b.a));
+    const authors = uniqueSorted(books.flatMap(authorsOf));
     const info = SERIES_INFO[name];
     html += `<div class="srow"><div class="srow-head">
       <a class="srow-title" href="${esc(stateHash({view: 'library', series: name, book: null}))}">${esc(name)}</a>
@@ -477,15 +479,16 @@ function bookHref(name, kind = 'book'){
 
 function bookCard(b){
   const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
-  // the narrators of all its editions; each edition line names its own only when they differ
-  const narrators = CatalogImport.bookNarrators(b);
-  const meta = [b.a, narrators.length ? 'narr. '+narrators.join(' / ') : null].filter(Boolean).join(' \u2014 ');
+  // the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
+  const narrators = [...new Set(CatalogImport.bookEditions(b).map(ed=> CatalogImport.namesText(ed.n)).filter(Boolean))];
+  const differ = narrators.length > 1;
+  const meta = [authorsOf(b).join(', '), narrators.length ? 'narr. '+narrators.join(' / ') : null].filter(Boolean).join(' \u2014 ');
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
   const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
   const editions = CatalogImport.bookEditions(b).map(ed=>{
     const also = (SHARED.get(ed) || []).map(k=>
       `<a href="${esc(bookHref(DATA[k].t))}">${esc(DATA[k].t + (DATA[k].sn ? ` #${DATA[k].sn}` : ''))}</a>`);
-    return `<div class="edition">${editionHtml(narrators.length > 1 ? ed : {...ed, n: undefined})}` +
+    return `<div class="edition">${editionHtml(differ ? ed : {...ed, n: undefined})}` +
       (also.length ? `<br><span class="also">Also in this edition: ${also.join(', ')}</span>` : '') + '</div>';
   }).join('');
   const picked = MERGE_FROM === b._i;
@@ -556,7 +559,7 @@ function openEditForm(i){
   closeSeriesForm();
   EDIT_INDEX = i;
   document.getElementById('f_t').value = b.t || '';
-  document.getElementById('f_a').value = b.a || '';
+  document.getElementById('f_a').value = authorsOf(b).join(', ');
   document.getElementById('f_g').value = (b.g||[]).join(', ');
   document.getElementById('f_hcb').value = b.hcb || '';
   document.getElementById('f_s').value = b.s || '';
@@ -574,13 +577,13 @@ document.getElementById('addForm').addEventListener('submit', e=>{
   e.preventDefault();
   const b = {
     t: document.getElementById('f_t').value.trim(),
-    a: document.getElementById('f_a').value.trim(),
+    a: CatalogImport.splitNames(document.getElementById('f_a').value),
   };
   const s = document.getElementById('f_s').value.trim(); if(s) b.s = s;
   const sn = document.getElementById('f_sn').value.trim(); if(sn) b.sn = sn;
   const g = document.getElementById('f_g').value.trim();
   if(g) b.g = g.split(',').map(x=>x.trim()).filter(Boolean);
-  if(!b.t || !b.a) return;
+  if(!b.t || !b.a.length) return;
   const {dates, bad} = CatalogImport.parseReadDates(document.getElementById('f_r').value);
   if(bad.length){
     document.getElementById('formError').textContent =

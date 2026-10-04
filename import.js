@@ -81,7 +81,7 @@ function mergeIntoCopy(records){
 // A book in a preview list: title, author and series, escaped.
 function bookLine(rec){
   const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
-  return `${esc(rec.t)} &mdash; ${esc(rec.a)}${esc(series)}`;
+  return `${esc(rec.t)} &mdash; ${esc(CatalogImport.namesText(rec.a))}${esc(series)}`;
 }
 
 function previewImport(kind, text, fileName){
@@ -109,7 +109,7 @@ function previewImport(kind, text, fileName){
   if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
   if(report.boxSets.length){
     html += `<p>Box sets split into their titles, each with the set's edition: ${report.boxSets.length}</p><ul>` +
-      report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(b.a)}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
+      report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
     if(report.boxSets.some(b=> b.added)) html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until the Audible series lookup names it (or you rename it on its card).</p>';
   }
   html += `<p>New: ${report.added.length}</p>`;
@@ -227,7 +227,7 @@ function previewSeries(pending, lead){
   let html = lead ? `<p>${esc(lead)} Their series:</p>` : '';
   html += `<p>${pending.found.size} book${pending.found.size === 1 ? '' : 's'} looked up on ${esc(host)}</p>`;
   html += `<p>Series or number filled in: ${report.filled.length}</p>`;
-  if(report.filled.length) html += `<ul>${report.filled.map(b=> `<li>${esc(b.t)} &mdash; ${esc(b.a)}  [${esc(b.s)}${b.sn ? ' #' + esc(b.sn) : ''}]</li>`).join('')}</ul>`;
+  if(report.filled.length) html += `<ul>${report.filled.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}  [${esc(b.s)}${b.sn ? ' #' + esc(b.sn) : ''}]</li>`).join('')}</ul>`;
   if(renamed.length) html += `<p>Box sets' titles named: ${renamed.length}</p><ul>${renamed.map(([b, old])=> `<li>${esc(old)} &rarr; ${esc(b.t)}</li>`).join('')}</ul>`;
   html += `<p>Series given a released total: ${added.length}</p>`;
   if(added.length) html += `<ul>${added.map(name=> `<li>${esc(name)}: ${info[name].total} (marked ongoing; check whether it is complete)</li>`).join('')}</ul>`;

@@ -5,7 +5,7 @@
 | key  | meaning                                             | required |
 |------|-----------------------------------------------------|----------|
 | `t`  | title                                               | yes      |
-| `a`  | author                                              | yes      |
+| `a`  | list of authors, one name each (`["Ann Vale", "Bo Reed"]`) | yes |
 | `s`  | series name                                         |          |
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
 | `g`  | list of genre/tag strings                           |          |
@@ -23,16 +23,16 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 | `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
 | `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
 | `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page or `sync-export` saves |
-| `n`    | narrator(s) of this edition                                              |
+| `n`    | list of this edition's narrators, one name each (`["Tobias Frane"]`)     |
 | `p`    | publisher                                                                |
 | `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
 | `len`  | length in whole minutes (`642`)                                          |
 | `desc` | your own description of the edition, free text (`"UK edition"`, `"First edition"`, `"Dramatized adaptation"`, `"Audio CD"`) |
 
 ```json
-{"t":"The Salt Road","a":"Marisol Quenby","s":"The Lantern Coast","sn":"1","hcb":"77",
- "e":[{"id":"B0SAMPLE01","gr":"9001","hc":"501","isbn":"9780000000002","n":"Tobias Frane","p":"Gullwing Audio","d":"2019-04-02","len":642},
-      {"id":"B0SAMPLE02","n":"Hollis Marr","desc":"UK edition"}]}
+{"t":"The Salt Road","a":["Marisol Quenby"],"s":"The Lantern Coast","sn":"1","hcb":"77",
+ "e":[{"id":"B0SAMPLE01","gr":"9001","hc":"501","isbn":"9780000000002","n":["Tobias Frane"],"p":"Gullwing Audio","d":"2019-04-02","len":642},
+      {"id":"B0SAMPLE02","n":["Hollis Marr","Dana Whitlock"],"desc":"UK edition"}]}
 ```
 
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
@@ -48,8 +48,10 @@ narrator goes on each edition that has none (on a new edition, for a book withou
 2026-10 an edition could hold a list of ISBNs and the Hardcover book id (`hcb`); an edition with
 several ISBNs is read as one edition per ISBN (the first keeps everything else, each other ISBN becomes
 an edition of its own), and the Hardcover book id moves to the book (a box set's, which is on each of
-its titles, gives way to the book's own). `make validate` mentions both, and `make format`, or any save
-from the page, an import or `sync-export`, writes them in the new shape.
+its titles, gives way to the book's own). Until 2026-10 the authors and narrators were one comma
+separated text (`"a": "Ann Vale, Bo Reed"`); that is read as a list, split at commas, semicolons, `&`
+and `and` (a suffix such as `Jr.` stays with its name). `make validate` mentions all of these, and
+`make format`, or any save from the page, an import or `sync-export`, writes them in the new shape.
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.

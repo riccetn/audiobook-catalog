@@ -14,7 +14,7 @@ let DUP_FOUND = 0;             // how many of DUP_GROUPS findDuplicates found (t
 let SPLIT = [];                // indexes of books whose editions look like one edition recorded twice
 
 const DUP_FIELDS = [['t', 'Title'], ['a', 'Author'], ['series', 'Series']];   // narrators are on the editions, which are all kept
-const dupValue = (b, f)=> f === 'series' ? (b.s ? b.s + (b.sn ? ` #${b.sn}` : '') : '') : (b[f] || '');
+const dupValue = (b, f)=> f === 'series' ? (b.s ? b.s + (b.sn ? ` #${b.sn}` : '') : '') : f === 'a' ? CatalogImport.namesText(b.a) : (b[f] || '');
 
 // The pair in the address (#merge=3,7), if it names two books.
 function manualPair(){
@@ -67,7 +67,7 @@ function renderSplit(){
     const joined = CatalogImport.joinEditions(CatalogImport.bookEditions(b));
     html += `<div class="dup-group"><div class="dup-books"><div class="dup-book">` +
       `<div class="dup-field"><span class="dup-label">Title</span> ${esc(b.t)}</div>` +
-      `<div class="dup-field"><span class="dup-label">Author</span> ${esc(b.a)}</div>${editionLines(b)}</div></div>` +
+      `<div class="dup-field"><span class="dup-label">Author</span> ${esc(CatalogImport.namesText(b.a))}</div>${editionLines(b)}</div></div>` +
       `<p class="dup-result">Becomes one edition: ${esc(CatalogImport.formatEdition(joined))}</p>` +
       `<div class="formbtns"><button type="button" class="save split-join" data-i="${i}">Make one edition</button>` +
       `<button type="button" class="split-apart" data-i="${i}">Keep separate</button></div></div>`;
@@ -106,7 +106,7 @@ function renderDuplicates(){
       html += extra.map(x=> `<div class="dup-extra">${x}</div>`).join('') + '</div>';
     });
     const editions = CatalogImport.bookEditions(merged).length;
-    html += `</div><p class="dup-result">Becomes: ${esc(merged.t)} — ${esc(merged.a)}` +
+    html += `</div><p class="dup-result">Becomes: ${esc(merged.t)} — ${esc(CatalogImport.namesText(merged.a))}` +
       (merged.s ? ` — ${esc(dupValue(merged, 'series'))}` : '') +
       (editions ? `, ${editions} edition${editions === 1 ? '' : 's'}` : '') +
       (readDates(merged).length ? `, read ${esc(readDates(merged).join(', '))}` : '') + '</p>' + editionLines(merged);

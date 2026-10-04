@@ -21,10 +21,10 @@ function fingerprint(s){
 const GOODREADS_ID = /^\d+$/;
 // Hardcover's own ids, as stored in `hcb` on a book and `hc` on an edition of it.
 const HARDCOVER_ID = /^\d+$/;
-// A book: title, author, series and number, genres, dates read, Hardcover book id, editions.
+// A book: title, authors, series and number, genres, dates read, Hardcover book id, editions.
 const BOOK_KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'hcb', 'e'];
 // An edition: Audible ASIN, Goodreads id, Hardcover edition id, ISBN (one: another ISBN is another
-// edition), narrator(s), publisher, release date, length in minutes, and your own description of it
+// edition), narrators, publisher, release date, length in minutes, and your own description of it
 // ("UK edition", "Dramatized adaptation").
 const EDITION_KEYS = ['id', 'gr', 'hc', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
 // The ids that name one edition (and match books in imports). An ISBN names one edition too, but one
@@ -81,6 +81,59 @@ function fixReadDates(rec){
   if(!r.trim()) return rest;
   const {dates, bad} = parseReadDates(r);
   return {...rest, r: bad.length ? [tidyText(r)] : dates};
+}
+
+// ------------------------------------------------------------------------ people
+// What follows a comma without being a name of its own: "Ann Vale, Jr.".
+const NAME_SUFFIX = /^(jr|sr|i{2,3}|iv|phd|md)\.?$/i;
+
+/**
+ * Split names written as text into a list: "Ann Vale, R. T. Hale" or "Ann Vale & R. T. Hale" ->
+ * ["Ann Vale", "R. T. Hale"]. Commas, semicolons, "&" and "and" separate names; a suffix stays with its
+ * name ("Ann Vale, Jr."). Names are trimmed, and repeats and empty parts dropped.
+ */
+function splitNames(text){
+  const names = [];
+  for(const part of String(text || '').split(/[,;]|\s&\s|\sand\s/).map(x => tidyText(x)).filter(Boolean)){
+    if(NAME_SUFFIX.test(part) && names.length) names[names.length - 1] += ', ' + part;
+    else names.push(part);
+  }
+  return names.filter((x, i) => names.indexOf(x) === i);
+}
+
+/** Names as one line of text: ["Ann Vale", "R. T. Hale"] -> "Ann Vale, R. T. Hale" (a string is returned as is). */
+function namesText(names){
+  return Array.isArray(names) ? names.join(', ') : String(names || '');
+}
+
+/**
+ * Names as a list. Before they were lists, the authors ("a") and an edition's narrators ("n") were one
+ * comma separated string; that is split (splitNames). A list keeps its names as they are, without
+ * repeats or empty ones; anything else is left for validate() to report. Returns null for no names.
+ */
+function fixNames(v){
+  if(typeof v === 'string') return splitNames(v).length ? splitNames(v) : null;
+  if(!Array.isArray(v)) return v;
+  const names = v.filter((x, i) => !(typeof x === 'string' && (!x.trim() || v.indexOf(x) !== i)));
+  return !names.length ? null : names.length === v.length ? v : names;
+}
+
+/** A book (or edition) with its authors ("a") and narrators ("n") as lists; see fixNames(). */
+function fixPeople(rec){
+  if(!isObject(rec)) return rec;
+  let out = rec;
+  for(const k of ['a', 'n']){
+    if(!(k in rec)) continue;
+    const names = fixNames(rec[k]);
+    if(names === rec[k]) continue;
+    if(out === rec) out = {...rec};
+    if(names === null) delete out[k]; else out[k] = names;
+  }
+  if(Array.isArray(rec.e) && rec.e.some(ed => fixPeople(ed) !== ed)){
+    if(out === rec) out = {...rec};
+    out.e = rec.e.map(fixPeople);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------------ ISBNs
@@ -196,7 +249,7 @@ function orderEdition(ed){
 function fillEdition(ed, from){
   const gained = [];
   for(const k of EDITION_KEYS){
-    if(from[k] !== undefined && ed[k] === undefined){ ed[k] = from[k]; gained.push(k); }
+    if(from[k] !== undefined && ed[k] === undefined){ ed[k] = Array.isArray(from[k]) ? [...from[k]] : from[k]; gained.push(k); }
   }
   if(gained.length){
     const ordered = orderEdition(ed);
@@ -256,7 +309,7 @@ function fixEditions(rec, pickHcb){
 
 /** The narrators of a book's editions, without repeats, e.g. ["Ann Vale", "R. T. Hale"]. */
 function bookNarrators(rec){
-  return [...new Set(bookEditions(rec).map(ed => ed.n).filter(n => typeof n === 'string' && n))];
+  return [...new Set(bookEditions(rec).flatMap(ed => fixNames(ed.n) || []).filter(n => typeof n === 'string' && n))];
 }
 
 /**
@@ -266,7 +319,7 @@ function bookNarrators(rec){
 function editionParts(ed){
   const parts = [];
   if(ed.desc) parts.push(['desc', '', ed.desc]);
-  if(ed.n) parts.push(['n', 'Narrated by', ed.n]);
+  if(ed.n && namesText(ed.n)) parts.push(['n', 'Narrated by', namesText(ed.n)]);
   if(ed.id) parts.push(['id', 'ASIN', ed.id]);
   if(ed.gr) parts.push(['gr', 'Goodreads', ed.gr]);
   if(ed.hc) parts.push(['hc', 'Hardcover', ed.hc]);
@@ -310,7 +363,7 @@ function parseEditions(text){
       else if(label === 'goodreads' || label === 'gr') [field, v] = ['gr', GOODREADS_ID.test(value) ? value : null];
       else if(label.startsWith('hardcover')) [field, v] = [/book$/.test(label) ? 'hcb' : 'hc', HARDCOVER_ID.test(value) ? value : null];
       else if(label === 'publisher') [field, v] = ['p', value];
-      else if(label.startsWith('narrat')) [field, v] = ['n', value];
+      else if(label.startsWith('narrat')) [field, v] = ['n', splitNames(value).length ? splitNames(value) : null];
       else if(label === 'description') [field, v] = ['desc', ed.desc ? null : value];
       else if(label.startsWith('releas')) [field, v] = ['d', date];
       else if(label === 'length') [field, v] = ['len', minutes];
@@ -359,7 +412,7 @@ function saveBook(books, index, rec){
 }
 
 /**
- * fixReadDates(), fixEditions() and fixSeriesTitle() on every book of a list; anything that is not a list
+ * fixReadDates(), fixEditions(), fixPeople() and fixSeriesTitle() on every book of a list; anything that is not a list
  * is returned as is. A book whose editions name several Hardcover books keeps the one no other book's
  * editions name (the others are a box set's, whose edition is on each of its titles).
  */
@@ -371,7 +424,7 @@ function fixBooks(books){
     for(const id of ids) owners.set(id, (owners.get(id) || 0) + 1);
   }
   const pickHcb = ids => ids.find(id => owners.get(id) === 1) || ids[0];
-  return books.map(b => fixSeriesTitle(fixEditions(fixReadDates(b), pickHcb)));
+  return books.map(b => fixSeriesTitle(fixPeople(fixEditions(fixReadDates(b), pickHcb))));
 }
 
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -415,14 +468,20 @@ function normalizeName(name){
   return tidyText(name).replace(RUN_TOGETHER_INITIALS, '$1. ');
 }
 
+// Names tidied (normalizeName), without the repeats that tidying reveals.
+const tidyNames = names => {
+  const out = names.map(x => typeof x === 'string' ? normalizeName(x) : x);
+  return out.filter((x, i) => typeof x !== 'string' || out.indexOf(x) === i);
+};
+
 /** Return a copy of an edition with tidy text in every field, and its ISBN in the 13-digit form. */
 function tidyEdition(ed){
   if(!isObject(ed)) return ed;
-  const out = {...ed};
+  const out = fixPeople({...ed});
   for(const key of ['id', 'gr', 'hc', 'p', 'd', 'desc']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
-  if(typeof out.n === 'string') out.n = normalizeName(out.n);
+  if(Array.isArray(out.n)) out.n = tidyNames(out.n);
   // the 13-digit form; anything that is not an ISBN is kept (tidied) for validate() to report
   if(typeof out.isbn === 'string') out.isbn = parseIsbn(out.isbn) || tidyText(out.isbn);
   return out;
@@ -430,11 +489,11 @@ function tidyEdition(ed){
 
 /** Return a copy of a book record, in the edition format, with tidy text in every field. */
 function tidyBook(rec){
-  const out = {...fixEditions(fixReadDates(rec))};
+  const out = {...fixPeople(fixEditions(fixReadDates(rec)))};
   for(const key of ['t', 's', 'sn', 'hcb']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
   }
-  if(typeof out.a === 'string') out.a = normalizeName(out.a);
+  if(Array.isArray(out.a)) out.a = tidyNames(out.a);
   if(Array.isArray(out.g)){
     out.g = out.g.map(x => typeof x === 'string' ? tidyText(x) : x).filter(x => x !== '');
   }
@@ -449,7 +508,9 @@ function firstAuthor(authors){
   return norm(firstName(authors));
 }
 
-const firstName = authors => (authors || '').split(/,| and | & /)[0];
+// The first author, cut as before authors were a list (a name with a comma in it is cut there), so keys
+// made from it, like those of "Not duplicates" marks, stay the same.
+const firstName = authors => String((Array.isArray(authors) ? authors[0] : authors) || '').split(/,| and | & /)[0];
 
 // Keys are JSON-encoded arrays so they work as Map and Set keys.
 const key = (...parts) => JSON.stringify(parts);
@@ -586,7 +647,7 @@ function exclusionEntries(rec){
   for(const id of bookIdsOf(rec, 'id')) if(clean(id)) entries.push(clean(id));
   for(const gr of bookIdsOf(rec, 'gr')) if(GOODREADS_ID.test(gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
   for(const hc of bookIdsOf(rec, 'hc')) if(HARDCOVER_ID.test(hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
-  if(clean(rec.t) && clean(rec.a)) entries.push(`${clean(rec.t)} | ${clean(rec.a)}`);
+  if(clean(rec.t) && clean(namesText(rec.a))) entries.push(`${clean(rec.t)} | ${clean(namesText(rec.a))}`);
   return entries;
 }
 
@@ -599,6 +660,9 @@ function repr(v){
   return q + (q === "'" ? body.replace(/'/g, "\\'") : body) + q;
 }
 
+// A list of names, as `a` and `n` hold them.
+const nameList = v => Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string' && x.trim() !== '');
+
 /** Check one edition of a book; adds to `errors` and `warnings`. */
 function validateEdition(ed, label, errors, warnings){
   const nonEmpty = v => typeof v === 'string' && v.trim() !== '';
@@ -606,9 +670,10 @@ function validateEdition(ed, label, errors, warnings){
   for(const k of Object.keys(ed)){
     if(!EDITION_KEYS.includes(k)) errors.push(`${label}: unknown key ${repr(k)}`);
   }
-  for(const k of ['id', 'gr', 'hc', 'n', 'p', 'd', 'desc']){
+  for(const k of ['id', 'gr', 'hc', 'p', 'd', 'desc']){
     if(k in ed && !nonEmpty(ed[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
   }
+  if('n' in ed && !nameList(ed.n)) errors.push(`${label}: 'n' must be a non-empty list of narrators' names`);
   if(!Object.keys(ed).length) errors.push(`${label}: is empty`);
   if(nonEmpty(ed.gr) && !GOODREADS_ID.test(ed.gr.trim())){
     errors.push(`${label}: 'gr' must be a Goodreads book id (digits only), not ${repr(ed.gr)}`);
@@ -644,9 +709,9 @@ function validate(books, info){
     for(const k of Object.keys(b)){
       if(!BOOK_KEYS.includes(k)) errors.push(`${label}: unknown key ${repr(k)}`);
     }
-    for(const k of ['t', 'a']){
-      if(!nonEmpty(b[k])) errors.push(`${label}: missing ${repr(k)}`);
-    }
+    if(!nonEmpty(b.t)) errors.push(`${label}: missing 't'`);
+    if(!('a' in b)) errors.push(`${label}: missing 'a'`);
+    else if(!nameList(b.a)) errors.push(`${label}: 'a' must be a non-empty list of authors' names`);
     for(const k of ['s', 'sn', 'hcb']){
       if(k in b && !nonEmpty(b[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
     }
@@ -708,7 +773,9 @@ function validate(books, info){
   }
   for(const ed of books.flatMap(bookEditions)){
     if(typeof ed.p === 'string' && tidyText(ed.p) !== ed.p) untidy.set(key('publisher', ed.p), ['publisher', ed.p, tidyText(ed.p)]);
-    if(typeof ed.n === 'string' && normalizeName(ed.n) !== ed.n) untidy.set(key('narrator', ed.n), ['narrator', ed.n, normalizeName(ed.n)]);
+    for(const n of Array.isArray(ed.n) ? ed.n : []){
+      if(typeof n === 'string' && normalizeName(n) !== n) untidy.set(key('narrator', n), ['narrator', n, normalizeName(n)]);
+    }
     if(typeof ed.desc === 'string' && tidyText(ed.desc) !== ed.desc) untidy.set(key('description', ed.desc), ['description', ed.desc, tidyText(ed.desc)]);
   }
   const byText = (x, y) => x < y ? -1 : x > y ? 1 : 0;
@@ -922,7 +989,7 @@ function audibleRowToRecord(row){
   }
 
   const title = (row['Title Short'] || row.Title || '').trim();
-  let rec = {t: cleanTitle(title, series ? number : null), a: cell(row, 'Authors')};
+  let rec = {t: cleanTitle(title, series ? number : null), a: splitNames(cell(row, 'Authors'))};
   if(series){
     rec.s = series;
     if(number) rec.sn = number;
@@ -932,7 +999,7 @@ function audibleRowToRecord(row){
   if(tags.length) rec.g = tags;
   const edition = {};
   if(asin) edition.id = asin;
-  if(cell(row, 'Narrators')) edition.n = cell(row, 'Narrators');
+  if(splitNames(cell(row, 'Narrators')).length) edition.n = splitNames(cell(row, 'Narrators'));
   const isbns = rowIsbns(row);
   if(isbns.length) edition.isbn = isbns;
   if(cell(row, 'Publishers')) edition.p = cell(row, 'Publishers');
@@ -1240,7 +1307,7 @@ function readGoodreads(text){
     if(!AUDIO_BINDINGS.has(cell(row, 'Binding'))) continue;
     if(cell(row, 'Exclusive Shelf') !== 'read'){ result.skippedUnfinished++; continue; }
     const [title, series, number] = readGoodreadsTitle(row.Title || '');
-    let rec = {t: title, a: cell(row, 'Author')};
+    let rec = {t: title, a: splitNames(cell(row, 'Author'))};
     if(series){
       rec.s = series;
       if(number) rec.sn = number;
@@ -1252,7 +1319,7 @@ function readGoodreads(text){
     const gr = cell(row, 'Book Id').replace(/[="\s]/g, '');
     if(GOODREADS_ID.test(gr)) edition.gr = gr;
     // Goodreads files narrators under "Additional Authors"; treat that as a best guess.
-    if(cell(row, 'Additional Authors')) edition.n = cell(row, 'Additional Authors');
+    if(splitNames(cell(row, 'Additional Authors')).length) edition.n = splitNames(cell(row, 'Additional Authors'));
     const isbns = rowIsbns(row);
     if(isbns.length) edition.isbn = isbns;
     if(cell(row, 'Publisher')) edition.p = cell(row, 'Publisher');
@@ -1312,16 +1379,16 @@ function goodreadsCsv(books){
   const report = {books: 0, withoutIds: 0, withoutDate: 0};
   const lines = [GOODREADS_COLUMNS.join(',')];
   for(const rec of books){
-    if(!isObject(rec) || !rec.t || !rec.a) continue;
+    const authors = (fixNames(rec && rec.a) || []).filter(x => typeof x === 'string');
+    if(!isObject(rec) || !rec.t || !authors.length) continue;
     const ed = goodreadsEdition(rec, x => edKeys(x).some(k => owners.get(k).size > 1)) || {};
     const isbn = editionIsbns(ed)[0] || '';
-    const authors = rec.a.split(/,| and | & /).map(s => s.trim()).filter(Boolean);
     const series = rec.s ? ` (${rec.s}${rec.sn ? ', #' + rec.sn : ''})` : '';
     const dates = (Array.isArray(rec.r) ? rec.r : []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
     const row = {
       'Book Id': ed.gr || '',
       'Title': rec.t + series,
-      'Author': authors[0] || rec.a,
+      'Author': authors[0],
       'Additional Authors': authors.slice(1).join(', '),
       'ISBN': isbn10Of(isbn),
       'ISBN13': isbn,
@@ -1402,12 +1469,12 @@ function hardcoverFindQuery(ids){
   return {query: `query Find(${vars.join(', ')}) {\n  ${parts.join('\n  ')}\n}`, variables};
 }
 
-/** Names from a Hardcover contributions list: the authors (no role, or "Author"), or those with `role`. */
+/** Names from a Hardcover contributions list, as a list: the authors (no role, or "Author"), or those with `role`. */
 function hardcoverPeople(contributions, role){
   const names = (Array.isArray(contributions) ? contributions : []).filter(c => isObject(c) &&
     (role ? c.contribution === role : !c.contribution || c.contribution === 'Author'))
     .map(c => isObject(c.author) && typeof c.author.name === 'string' ? tidyText(c.author.name) : '').filter(Boolean);
-  return [...new Set(names)].join(', ');
+  return [...new Set(names)];
 }
 
 /** One of your editions made from a Hardcover edition. */
@@ -1418,7 +1485,7 @@ function hardcoverEdition(edition){
   const isbn = [edition.isbn_13, edition.isbn_10].map(parseIsbn).find(Boolean);
   if(isbn) ed.isbn = isbn;
   const narrators = hardcoverPeople(edition.contributions, 'Narrator');
-  if(narrators) ed.n = narrators;
+  if(narrators.length) ed.n = narrators;
   if(isObject(edition.publisher) && typeof edition.publisher.name === 'string' && tidyText(edition.publisher.name)) ed.p = tidyText(edition.publisher.name);
   const released = parseReadDate(edition.release_date);
   if(released) ed.d = released;
@@ -1449,7 +1516,7 @@ function readHardcover(userBooks, books, editions){
     }
     const edition = ub.edition_id ? editions.get(ub.edition_id) : null;
     let rec = {t: tidyText(book.title), a: hardcoverPeople(book.contributions)};
-    if(!rec.a){
+    if(!rec.a.length){
       result.warnings.push(`${repr(rec.t)}: no author on Hardcover, skipped`);
       continue;
     }
@@ -1712,7 +1779,7 @@ function merge(existing, incoming, exclusions, opts){
       let i = existing.findIndex(b => ownsSet(b) && titleNumber(b) === n);
       if(i < 0) i = index.has(key('series', author, series, String(n))) ? index.get(key('series', author, series, String(n))) : -1;
       if(i >= 0){ titles.push(i); continue; }
-      const part = {t: boxSetTitle(rec.s, n), a: rec.a, s: rec.s, sn: String(n)};
+      const part = {t: boxSetTitle(rec.s, n), a: [...rec.a], s: rec.s, sn: String(n)};
       if(rec.g) part.g = [...rec.g];
       if(rec.r) part.r = [...rec.r];
       if(editions.length) part.e = editions.map(ed => ({...ed}));
@@ -1741,7 +1808,7 @@ function merge(existing, incoming, exclusions, opts){
   };
 
   for(const original of incoming){
-    const rec = {...original};
+    const rec = {...fixPeople(original)};   // authors and narrators as lists, even from a caller that wrote text
     if(rec.s){
       const k = seriesNorm(rec.s);
       if(!canonical.has(k)) canonical.set(k, rec.s);
@@ -1937,10 +2004,10 @@ function mergeBooks(recs, pick){
     return Number.isInteger(i) && recs[i] && has(recs[i]) ? recs[i] : recs.find(has);
   };
   const out = {};
-  for(const k of ['t', 'a']){
-    const rec = from(k, b => typeof b[k] === 'string' && b[k] !== '');
-    if(rec) out[k] = rec[k];
-  }
+  const title = from('t', b => typeof b.t === 'string' && b.t !== '');
+  if(title) out.t = title.t;
+  const authors = from('a', b => Array.isArray(b.a) && b.a.length > 0);
+  if(authors) out.a = [...authors.a];
   const series = from('series', b => typeof b.s === 'string' && b.s !== '');
   if(series){
     out.s = series.s;
@@ -2058,6 +2125,7 @@ function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicate
 
 return {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
+  splitNames, namesText, fixNames, fixPeople,
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, saveBook,
   bookNarrators,
