@@ -1,5 +1,11 @@
 // The import and export page: adding books from Audible and Goodreads exports, Hardcover, and backups.
 // Loading and saving live in store.js.
+import * as CatalogImport from './importers.js';
+import {
+  DATA, SERIES_INFO, setData, setSeriesInfo, BASELINE, INFO_BASELINE, EXCLUSIONS, LOCAL_SEEN, AUDIBLE_LOOKUP, HARDCOVER, NOT_DUPLICATES,
+  addNotDuplicates, esc, localNow, persist, addExclusions, keepHint, keepOnDevice, showIoStatus, unsavedEdits, reloadFromDisk,
+  HARDCOVER_JOB, minutes, showHardcoverJob, followHardcover, startPage
+} from './store.js';
 
 function refreshPage(){
   document.getElementById('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
@@ -41,8 +47,8 @@ function importBackup(file){
       const {books, seriesInfo, excluded, notDuplicates} = CatalogImport.readBackup(JSON.parse(e.target.result));
       const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
       if(bad) throw new Error('missing title/author');
-      DATA = books;
-      if(seriesInfo) SERIES_INFO = seriesInfo;     // older backups have no series info: keep the current one
+      setData(books);
+      if(seriesInfo) setSeriesInfo(seriesInfo);     // older backups have no series info: keep the current one
       const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
       addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
       // with no data/books.json to save to (the demo is showing), the restored catalogue becomes this device's own
@@ -67,6 +73,7 @@ const IMPORTERS = {
   goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},
 };
 let IMPORT_KIND = 'audible';
+export let PENDING_IMPORT = null;   // the records of the import previewed, until it is applied or cancelled
 
 // Merge into a copy of DATA, so nothing changes until the result is known to be valid.
 function mergeIntoCopy(records){
@@ -143,7 +150,7 @@ function applyImport(){
   const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
   const withIsbns = report.isbnsFilled.length, withGr = report.goodreadsFilled.length;
   const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
-  DATA = data;
+  setData(data);
   refreshPage(); persist();
   const done = `Added ${added} book${added === 1 ? '' : 's'}` +
     (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
@@ -254,8 +261,8 @@ function applySeries(){
   const {data, info, report, renamed, added, errors} = seriesIntoCopy(PENDING_SERIES);
   closeImportPreview();
   if(errors.length){ showIoStatus('The catalogue changed and the series no longer validate; nothing was changed.', true); return; }
-  DATA = data;
-  SERIES_INFO = info;
+  setData(data);
+  setSeriesInfo(info);
   refreshPage(); persist();
   const filled = report.filled.length;
   showIoStatus(`Filled in the series of ${filled} book${filled === 1 ? '' : 's'}` +
@@ -319,8 +326,8 @@ function applyMerge(){
   const {m, errors, changes} = mergeIntoCatalogue(PENDING_MERGE.backup);
   closeImportPreview();
   if(errors.length || !changes){ showIoStatus('The catalogue changed and the merge no longer applies; nothing was changed.', true); return; }
-  DATA = m.books;
-  SERIES_INFO = m.seriesInfo;
+  setData(m.books);
+  setSeriesInfo(m.seriesInfo);
   addExclusions(m.excluded);
   addNotDuplicates(m.notDuplicates);
   refreshPage(); persist();
@@ -359,7 +366,7 @@ const HARDCOVER_MODES = {
   export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
   sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
 };
-let PENDING_HARDCOVER = null;   // the mode, while its preview is open
+export let PENDING_HARDCOVER = null;   // the mode, while its preview is open
 const HARDCOVER_TOKEN_KEY = 'audiobook-catalog-hardcover-token';   // the token, for runs in the page
 const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
 let PAGE_RUN = null;           // a run going on in this page, described like the server's (showHardcoverJob)
@@ -461,7 +468,7 @@ async function runHardcoverHere(mode, dryRun){
       return false;
     }
     if(changed){
-      DATA = books;
+      setData(books);
       persist();
       refreshPage();
       lines.out.push('saved the catalogue');
@@ -602,4 +609,4 @@ document.getElementById('importFile').addEventListener('change', e=>{
   e.target.value = '';
 });
 
-const READY = startPage(()=>{ refreshPage(); return showHardcoverToken(); });
+export const READY = startPage(()=>{ refreshPage(); return showHardcoverToken(); }, {refresh: refreshPage, onHardcoverJob, onHardcoverDone});

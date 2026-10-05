@@ -2,9 +2,7 @@
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-
-const C = createRequire(import.meta.url)('../importers.js');
+import * as C from '../importers.js';
 
 const book = (t, a = 'Author', extra = {}) => ({ t, a: [a], ...extra });
 // A book's editions: ed({ id: 'B1' }, { gr: '7' }) -> { e: [{ id: 'B1' }, { gr: '7' }] }

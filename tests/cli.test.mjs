@@ -2,18 +2,16 @@
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
+import { main, loadBooks, createServer } from '../catalog.js';
+import * as CatalogImport from '../importers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const require = createRequire(import.meta.url);
-const { main, loadBooks, createServer } = require('../catalog.js');
-const CatalogImport = require('../importers.js');
 
 function sandbox(t) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-cli-'));

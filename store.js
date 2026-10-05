@@ -1,6 +1,8 @@
 // What every page shares: loading the catalogue, keeping edits (in this browser and, with `make serve`,
-// on disk), the status line and the page links. Each page's own script defines refreshPage(), which
-// redraws it from DATA, and starts with startPage().
+// on disk), the status line and the page links. Each page's own module starts with startPage(), handing
+// it a refresh() that redraws the page from DATA.
+import * as CatalogImport from './importers.js';
+
 const LS_KEY = 'audiobook-catalog-data';
 // A catalogue kept in this browser alone, for a copy of the app with no data/books.json of its own (the
 // app installed on a phone from a static host): {books, seriesInfo, excluded}. It starts with a Restore.
@@ -8,27 +10,35 @@ const DEVICE_KEY = 'audiobook-catalog-device';
 // Served from the project root: your own catalogue in data/ if it exists, otherwise the bundled demo.
 const DATA_DIRS = ['data/', 'data/sample/'];
 
-let DATA = [];
-let SERIES_INFO = {};
-let BASELINE = '';
-let INFO_BASELINE = '';        // same, for series-info.json
+export let DATA = [];
+export let SERIES_INFO = {};
+export let BASELINE = '';
+export let INFO_BASELINE = '';        // same, for series-info.json
 let STARTUP_NOTICE = '';
-let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
-let NEW_EXCLUDED = [];         // entries added to EXCLUSIONS in the page that data/excluded.txt does not have yet
-let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
+export let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
+export let NEW_EXCLUDED = [];         // entries added to EXCLUSIONS in the page that data/excluded.txt does not have yet
+export let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
 let SAVING = false;            // a save to disk is on its way
 let SAVE_AGAIN = false;        // more edits came in while it was
-let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[storeKey()]
+export let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[storeKey()]
 let DATA_DIR = '';             // where the data files came from: 'data/', or 'data/sample/' for the demo
-let ON_DEVICE = false;         // the catalogue is this browser's own (DEVICE_KEY), not the files it was served
-let AUDIBLE_LOOKUP = false;    // `make serve` can look books up on Audible for the page (api/audible)
-let HARDCOVER = false;         // `make serve` with your own data can import from and export to Hardcover (api/hardcover)
+export let ON_DEVICE = false;         // the catalogue is this browser's own (DEVICE_KEY), not the files it was served
+export let AUDIBLE_LOOKUP = false;    // `make serve` can look books up on Audible for the page (api/audible)
+export let HARDCOVER = false;         // `make serve` with your own data can import from and export to Hardcover (api/hardcover)
+
+// A module's bindings can only be assigned in the module itself, so the pages replace these through here.
+export function setData(books){ DATA = books; }
+export function setSeriesInfo(info){ SERIES_INFO = info; }
+
+// The page's own hooks, from startPage(): refreshPage() redraws it from DATA; onHardcoverJob(job) and
+// onHardcoverDone(job), when the page has them, do more with a Hardcover run (see followHardcover).
+let refreshPage = ()=>{}, onHardcoverJob = null, onHardcoverDone = null;
 
 // Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
 // duplicates page. Kept in this browser, and with `make serve` in data/not-duplicates.txt (only ever
 // added to, like data/excluded.txt); backups carry them too.
 const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
-let NOT_DUPLICATES = new Set();
+export let NOT_DUPLICATES = new Set();
 let NOT_DUP_ON_DISK = new Set();   // the entries data/not-duplicates.txt has
 try{
   const saved = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || '[]');
@@ -37,7 +47,7 @@ try{
 
 // Add marks to NOT_DUPLICATES (and this browser's copy); returns how many were new. They reach
 // data/not-duplicates.txt with the next save to disk.
-function addNotDuplicates(entries){
+export function addNotDuplicates(entries){
   const before = NOT_DUPLICATES.size;
   entries.forEach(e=> NOT_DUPLICATES.add(e));
   try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...NOT_DUPLICATES])); }catch(e){}
@@ -45,23 +55,23 @@ function addNotDuplicates(entries){
 }
 
 // Marks data/not-duplicates.txt does not have yet.
-const pendingNotDuplicates = () => [...NOT_DUPLICATES].filter(k=> !NOT_DUP_ON_DISK.has(k));
+export const pendingNotDuplicates = () => [...NOT_DUPLICATES].filter(k=> !NOT_DUP_ON_DISK.has(k));
 
 // Dates read of a book; [] when it has none (or something that is not a list of dates).
-const readDates = b => Array.isArray(b.r) ? b.r.filter(d => typeof d === 'string') : [];
+export const readDates = b => Array.isArray(b.r) ? b.r.filter(d => typeof d === 'string') : [];
 
-function esc(s){
+export function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 const storeKey = () => ON_DEVICE ? DEVICE_KEY : LS_KEY;
 
-function localNow(){
+export function localNow(){
   try{ return localStorage.getItem(storeKey()); }catch(e){ return null; }
 }
 
 // The page links: the duplicates link says how many duplicates and books with split editions there are.
-function updateNav(){
+export function updateNav(){
   const n = CatalogImport.findDuplicates(DATA, NOT_DUPLICATES).length + CatalogImport.splitEditions(DATA, NOT_DUPLICATES).length;
   document.getElementById('dupCount').textContent = n ? ` (${n})` : '';
 }
@@ -71,7 +81,7 @@ function updateNav(){
 // (server stopped, or the files changed on disk meanwhile); with any other server, or the demo data,
 // localStorage is all there is, and Export + `node catalog.js sync-export` bring edits back to data/.
 // Another page or tab that saved meanwhile would be overwritten, so then nothing is saved.
-function persist(){
+export function persist(){
   updateNav();
   if(localNow() !== LOCAL_SEEN){
     showIoStatus('The catalogue was changed in another tab. Reload this page to see that; this change was not saved.', true);
@@ -99,14 +109,14 @@ function saveLocally(){
 }
 
 // Add entries (an ASIN, "ISBN 978...", "Goodreads 12345" or "Title | Author") to the books imports skip; returns how many were new.
-function addExclusions(entries){
+export function addExclusions(entries){
   const added = entries.map(e=> EXCLUSIONS.add(e)).filter(Boolean);
   NEW_EXCLUDED.push(...added);
   return added.length;
 }
 
 // The end of a status message about an edit: how to get it into the data file, unless that happens anyway.
-function keepHint(file){
+export function keepHint(file){
   return DISK_SAVE || ON_DEVICE ? '' : ` Export it on the Import & export page and run sync-export to keep it in ${file}.`;
 }
 
@@ -151,7 +161,7 @@ async function saveToDisk(){
  * demo is showing): from now on it loads from and saves to DEVICE_KEY, and no update of the demo data
  * can set it aside. Returns whether it did. Called when a backup is restored.
  */
-function keepOnDevice(){
+export function keepOnDevice(){
   if(ON_DEVICE || DATA_DIR === 'data/') return false;
   ON_DEVICE = true;
   LOCAL_SEEN = localNow();
@@ -192,7 +202,7 @@ async function detectDiskSave(dir){
   }catch(e){ return false; }
 }
 
-function showIoStatus(msg, isErr){
+export function showIoStatus(msg, isErr){
   const el = document.getElementById('ioStatus');
   el.textContent = msg;
   el.classList.toggle('err', !!isErr);
@@ -245,13 +255,13 @@ function restoreLocalEdits(){
 }
 
 // Whether edits made here have not reached data/ yet (a save on its way, or one that failed).
-function unsavedEdits(){
+export function unsavedEdits(){
   if(SAVING) return true;
   try{ return localStorage.getItem(LS_KEY) !== null; }catch(e){ return false; }
 }
 
 // Load the catalogue from data/ again, after the server changed it (a Hardcover import), and redraw.
-async function reloadFromDisk(){
+export async function reloadFromDisk(){
   const {booksText, infoText, excludedText} = await loadData();
   DATA = CatalogImport.fixBooks(JSON.parse(booksText));
   SERIES_INFO = JSON.parse(infoText);
@@ -267,17 +277,17 @@ async function reloadFromDisk(){
 // A Hardcover import, export or sync runs on the server (`make serve`, api/hardcover) and can take
 // minutes, one request a second. Every page shows it while it goes (#bgTask), also when it was started
 // in another tab or before a reload, and redraws from data/ when it has changed the catalogue. A page
-// may define onHardcoverJob(job) (each update) and onHardcoverDone(job) (when it ends) to do more.
-let HARDCOVER_JOB = null;      // the run going on, as the server last described it
+// may pass onHardcoverJob(job) (each update) and onHardcoverDone(job) (when it ends) to startPage to do more.
+export let HARDCOVER_JOB = null;      // the run going on, as the server last described it
 let HARDCOVER_POLL_MS = 1000;
 let FOLLOWING = null;          // the promise of following a run, while one is followed
 const HARDCOVER_VERBS = {import: 'Importing from Hardcover', export: 'Exporting to Hardcover', sync: 'Syncing with Hardcover'};
 const HARDCOVER_PREVIEWS = {import: 'Checking what a Hardcover import would do', export: 'Checking what a Hardcover export would do',
   sync: 'Checking what a Hardcover sync would do'};
 
-const minutes = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+export const minutes = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
-function showHardcoverJob(job){
+export function showHardcoverJob(job){
   const el = document.getElementById('bgTask');
   if(el){
     el.classList.toggle('show', Boolean(job && job.running));
@@ -293,7 +303,7 @@ function showHardcoverJob(job){
         (here ? '' : ' <a href="import.html">Details</a>') + '</div>';
     }
   }
-  if(typeof onHardcoverJob === 'function') onHardcoverJob(job);
+  if(onHardcoverJob) onHardcoverJob(job);
 }
 
 // When a run that changed nothing in the page's own view ends on a page with nothing more to say.
@@ -308,7 +318,7 @@ async function hardcoverDoneQuietly(job){
  * Show `job` (a run the server described) until it ends, asking the server again every HARDCOVER_POLL_MS,
  * then hand it to onHardcoverDone. Returns a promise of the ended run (null if the server went away).
  */
-function followHardcover(job){
+export function followHardcover(job){
   if(FOLLOWING) return FOLLOWING;
   FOLLOWING = (async ()=>{
     HARDCOVER_JOB = job;
@@ -322,7 +332,7 @@ function followHardcover(job){
     }
     HARDCOVER_JOB = null;
     FOLLOWING = null;
-    if(job) await (typeof onHardcoverDone === 'function' ? onHardcoverDone(job) : hardcoverDoneQuietly(job));
+    if(job) await (onHardcoverDone ? onHardcoverDone(job) : hardcoverDoneQuietly(job));
     return job;
   })();
   return FOLLOWING;
@@ -336,8 +346,13 @@ async function checkHardcover(){
   }catch(e){}
 }
 
-// Load the catalogue (with this browser's unsaved edits), then let the page draw itself with `init`.
-async function startPage(init){
+/**
+ * Load the catalogue (with this browser's unsaved edits), then let the page draw itself with `init`.
+ * `page.refresh` redraws the page from DATA after a save to disk tidied the books or a Hardcover run
+ * changed them; `page.onHardcoverJob` and `page.onHardcoverDone` are optional (see followHardcover).
+ */
+export async function startPage(init, page){
+  ({refresh: refreshPage, onHardcoverJob = null, onHardcoverDone = null} = page);
   try{
     const {dir, booksText, infoText, excludedText, notDupText} = await loadData();
     DATA = CatalogImport.fixBooks(JSON.parse(booksText));   // "r": "2024-03-15" -> ["2024-03-15"]

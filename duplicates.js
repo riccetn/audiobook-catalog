@@ -7,11 +7,14 @@
 // The editions of the merged entries become one edition when none disagree on an ASIN or Goodreads id
 // (one book imported from both Audible and Goodreads), unless you untick that. Books merged before
 // that, whose editions still look like one, are listed below the duplicates to be joined the same way.
-let DUP_GROUPS = [];           // groups of DATA indexes shown
-let DUP_PICKS = [];            // per group: which book's title, author and series to keep
-let DUP_MANUAL = null;         // the pair picked by hand, until it is merged or kept apart
+import * as CatalogImport from './importers.js';
+import { DATA, SERIES_INFO, setData, DISK_SAVE, NOT_DUPLICATES, addNotDuplicates, readDates, esc, updateNav, persist, keepHint, showIoStatus, startPage } from './store.js';
+
+export let DUP_GROUPS = [];           // groups of DATA indexes shown
+export let DUP_PICKS = [];            // per group: which book's title, author and series to keep
+export let DUP_MANUAL = null;         // the pair picked by hand, until it is merged or kept apart
 let DUP_FOUND = 0;             // how many of DUP_GROUPS findDuplicates found (the rest is DUP_MANUAL)
-let SPLIT = [];                // indexes of books whose editions look like one edition recorded twice
+export let SPLIT = [];                // indexes of books whose editions look like one edition recorded twice
 
 const DUP_FIELDS = [['t', 'Title'], ['a', 'Author'], ['series', 'Series']];   // narrators are on the editions, which are all kept
 const dupValue = (b, f)=> f === 'series' ? (b.s ? b.s + (b.sn ? ` #${b.sn}` : '') : '') : f === 'a' ? CatalogImport.namesText(b.a) : (b[f] || '');
@@ -75,7 +78,7 @@ function renderSplit(){
   return html;
 }
 
-function renderDuplicates(){
+export function renderDuplicates(){
   document.getElementById('subtitle').textContent = (DUP_FOUND
     ? `${DUP_FOUND} possible duplicate${DUP_FOUND === 1 ? '' : 's'} among ${DATA.length} audiobooks`
     : `No duplicates among ${DATA.length} audiobooks`) +
@@ -147,7 +150,7 @@ function renderDuplicates(){
 }
 
 // Merge group `g` into its first book: on a copy of DATA, so nothing changes unless the result validates.
-function mergeGroup(g){
+export function mergeGroup(g){
   const idx = DUP_GROUPS[g];
   if(!idx) return;
   const merged = CatalogImport.mergeBooks(idx.map(i=> DATA[i]), groupPicks(g));
@@ -161,14 +164,14 @@ function mergeGroup(g){
     showIoStatus(`Couldn't merge ${merged.t}: ${errors[0]}`, true);
     return;
   }
-  DATA = data;
+  setData(data);
   forgetManualPair();            // its indexes are stale now
   refreshPage(); persist();
   showIoStatus(`Merged ${idx.length} entries into ${merged.t}.` + keepHint('data/books.json'));
 }
 
 // Remember that the books of group `g` are different books (see addNotDuplicates).
-function keepApart(g){
+export function keepApart(g){
   const books = (DUP_GROUPS[g] || []).map(i=> DATA[i]);
   addNotDuplicates(books.flatMap((x, k)=> books.slice(k + 1).map(y=> CatalogImport.duplicatePairKey(x, y))));
   if(DUP_MANUAL && DUP_MANUAL.join() === (DUP_GROUPS[g] || []).join()) forgetManualPair();
@@ -177,7 +180,7 @@ function keepApart(g){
 }
 
 // Make the editions of book `i` one edition (it is in SPLIT).
-function joinBookEditions(i){
+export function joinBookEditions(i){
   const b = DATA[i];
   if(!b || !CatalogImport.editionsJoinable(CatalogImport.bookEditions(b))) return;
   const data = JSON.parse(JSON.stringify(DATA));
@@ -187,18 +190,18 @@ function joinBookEditions(i){
     showIoStatus(`Couldn't join the editions of ${b.t}: ${errors[0]}`, true);
     return;
   }
-  DATA = data;
+  setData(data);
   forgetManualPair();
   refreshPage(); persist();
   showIoStatus(`${b.t} now has one edition.` + keepHint('data/books.json'));
 }
 
 // Remember that the editions of book `i` are different editions (see addNotDuplicates).
-function keepEditionsApart(i){
+export function keepEditionsApart(i){
   if(!DATA[i]) return;
   addNotDuplicates([CatalogImport.editionsKey(DATA[i])]);
   if(DISK_SAVE) persist(); else updateNav();      // a save takes the mark to data/not-duplicates.txt
   refreshPage();
 }
 
-const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); });
+export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); }, {refresh: refreshPage});
