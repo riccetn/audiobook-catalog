@@ -8,8 +8,13 @@ Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form 
 list; `+ Add a book` opens it at the top. *Editions* takes one edition per line, the way the
 book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goodreads 4242;
 ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts, and
-`Hardcover 501` for the Hardcover edition id; the Hardcover book id has its own field;
-hyphens and ISBN-10s are fine). Text without a label is the edition's description, so a line can be as
+`Hardcover 501` for the Hardcover edition id, or just the address of the edition's page on Hardcover,
+`https://hardcover.app/books/the-salt-road/editions/501`; hyphens and ISBN-10s are fine).
+The Hardcover book has its own field, which takes the book's id or, since the Hardcover app doesn't show
+it, the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions'
+pages: the page looks the book up on Hardcover and puts its id in the field (when you leave the field, or
+when you save). That needs your Hardcover API token, saved on the *Import & export* page (see
+[Hardcover](hardcover.md)). Text without a label is the edition's description, so a line can be as
 short as `Dramatized adaptation; Narrated by A full cast`. Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. The narrator is on the edition too: the card

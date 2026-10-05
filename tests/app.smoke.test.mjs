@@ -328,6 +328,58 @@ test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardc
   assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['909', [{ id: 'TESTASIN01', hc: '31337' }]]);
 });
 
+test('the Hardcover book field takes the address of a book or edition on Hardcover, and looks up its id', async () => {
+  // without make serve the page asks Hardcover, with the token saved in this browser
+  const hc = fakeHardcover(hardcoverState());
+  const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };   // the pause between requests
+  const storage = new Map();
+  const { ctx, els, get } = await boot({ hardcover: hc.fetch, setTimeout, storage });
+  const submit = () => els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  ctx.openEditForm(0);
+  els.f_hcb.value = 'https://hardcover.app/books/tidewater';
+  await submit();
+  assert.match(els.formError.textContent, /Couldn't find the Hardcover book: to look it up on Hardcover, save your Hardcover API token/);
+  assert.equal(get("DATA[0].hcb || null"), null);
+  assert.equal(hc.sent.length, 0);
+
+  storage.set('audiobook-catalog-hardcover-token', 'tok-123');
+  await submit();
+  assert.equal(get('DATA[0].hcb'), '77');
+  assert.match(els.ioStatus.textContent, /Found on Hardcover: Tidewater \(book 77\)/);
+  // pasting an edition's address fills in its book's id as soon as the field is left
+  ctx.openEditForm(0);
+  els.f_hcb.value = 'https://hardcover.app/books/lantern-hours/editions/801';
+  await els.f_hcb.listeners.change[0]();
+  await settle(); await settle();
+  assert.equal(els.f_hcb.value, '80');
+  // a book's /id/ address holds its id: nothing to ask
+  els.f_hcb.value = 'hardcover.app/id/book/81';
+  const asked = hc.sent.length;
+  await submit();
+  assert.equal(get('DATA[0].hcb'), '81');
+  assert.equal(hc.sent.length, asked);
+
+  // with make serve, the server asks Hardcover with the token it keeps
+  const calls = [];
+  const api = async (init, url) => {
+    const body = init.body && JSON.parse(init.body);
+    calls.push([url, body]);
+    if (url === 'api/save') return { status: 200, body: init.method === 'PUT' ? { base: 'b', infoBase: 'i', books: body.books } : { writable: true, audible: true, hardcover: true } };
+    if (url === 'api/hardcover/book') return JSON.parse(init.body).address.includes('missing')
+      ? { status: 404, body: { error: 'Hardcover has no book at hardcover.app/books/missing' } } : { status: 200, body: { id: '78', title: 'The Paper Fen' } };
+    return { status: 200, body: {} };
+  };
+  const served = await boot({ files: { 'data/books.json': JSON.stringify([{ t: 'The Paper Fen', a: ['Ann Vale'] }]) }, api });
+  served.ctx.openEditForm(0);
+  served.els.f_hcb.value = 'https://hardcover.app/books/missing';
+  await served.els.addForm.listeners.submit[0]({ preventDefault() {}, target: served.els.addForm });
+  assert.match(served.els.formError.textContent, /Couldn't find the Hardcover book: Hardcover has no book at hardcover\.app\/books\/missing/);
+  served.els.f_hcb.value = 'https://hardcover.app/books/the-paper-fen';
+  await served.els.addForm.listeners.submit[0]({ preventDefault() {}, target: served.els.addForm });
+  assert.equal(served.get('DATA[0].hcb'), '78');
+  assert.deepEqual(calls.filter(c => c[0] === 'api/hardcover/book').map(c => c[1]), [{ address: 'https://hardcover.app/books/missing' }, { address: 'https://hardcover.app/books/the-paper-fen' }]);
+});
+
 test('adding a book appends it', async () => {
   const { ctx, els, get } = await boot();
   const before = get('DATA.length');

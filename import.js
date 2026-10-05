@@ -4,7 +4,8 @@ import * as CatalogImport from './importers.js';
 import {
   DATA, SERIES_INFO, setData, setSeriesInfo, BASELINE, INFO_BASELINE, EXCLUSIONS, LOCAL_SEEN, AUDIBLE_LOOKUP, HARDCOVER, NOT_DUPLICATES,
   addNotDuplicates, esc, localNow, persist, addExclusions, keepHint, keepOnDevice, showIoStatus, unsavedEdits, reloadFromDisk,
-  HARDCOVER_JOB, minutes, showHardcoverJob, followHardcover, startPage
+  HARDCOVER_JOB, minutes, showHardcoverJob, followHardcover, HARDCOVER_TOKEN_KEY, HARDCOVER_PAUSE_MS, browserHardcoverToken,
+  fetchHardcover, startPage
 } from './store.js';
 
 function refreshPage(){
@@ -367,13 +368,7 @@ const HARDCOVER_MODES = {
   sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
 };
 export let PENDING_HARDCOVER = null;   // the mode, while its preview is open
-const HARDCOVER_TOKEN_KEY = 'audiobook-catalog-hardcover-token';   // the token, for runs in the page
-const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
 let PAGE_RUN = null;           // a run going on in this page, described like the server's (showHardcoverJob)
-
-function browserHardcoverToken(){
-  try{ return CatalogImport.cleanHardcoverToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch(e){ return ''; }
-}
 
 async function showHardcoverToken(){
   let saved = false;
@@ -438,12 +433,6 @@ async function startHardcover(mode, dryRun){
   if(body.job && body.job.running){ showIoStatus('A Hardcover run is already going; it is shown on top.', true); await followHardcover(body.job); return; }
   showIoStatus(body.conflict ? 'data/books.json changed on disk since this page loaded it. Reload the page, then try again.'
     : `Couldn't start it: ${body.error || 'HTTP ' + res.status}`, true);
-}
-
-// Asks Hardcover from this page, saying plainly when the browser can't reach it at all.
-async function fetchHardcover(url, opts){
-  try{ return await fetch(url, opts); }
-  catch(e){ throw new Error('this browser could not reach Hardcover (offline, or Hardcover refused a request from a web page; then run it under make serve)'); }
 }
 
 /**

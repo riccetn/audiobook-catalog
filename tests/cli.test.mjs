@@ -943,6 +943,32 @@ test('serve keeps the Hardcover token for the page, never shows it, and runs Har
   assert.match(none.err, /no Hardcover API token/);
 });
 
+test('serve looks up a Hardcover book by its address for the page, with the token it keeps', async t => {
+  const { tmp } = sandbox(t);
+  const dataDir = path.join(tmp, 'data');
+  const hc = fakeHardcover(hardcoverState());
+  const server = createServer(tmp, () => server.address().port, {}, { fetch: hc.fetch, pause: async () => {}, env: {} });
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  t.after(() => server.close());
+  const base = `http://localhost:${server.address().port}`;
+  const lookup = async (address, headers = {}) => {
+    const res = await fetch(base + '/api/hardcover/book', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ address }) });
+    return [res.status, await res.json()];
+  };
+  const address = 'https://hardcover.app/books/tidewater';
+  assert.deepEqual(await lookup(address), [409, { error: 'no data/books.json: run `node catalog.js init` first' }]);
+  fs.writeFileSync(path.join(dataDir, 'books.json'), '[]');
+  assert.match((await lookup(address))[1].error, /no Hardcover API token/);
+  fs.writeFileSync(path.join(dataDir, 'hardcover-token'), 'tok-123\n');
+  assert.equal((await lookup(address, { Origin: 'http://evil.example' }))[0], 403);
+  assert.equal((await lookup('Tidewater'))[0], 400);
+  assert.deepEqual(await lookup(address), [200, { id: '77', title: 'Tidewater' }]);
+  assert.deepEqual(await lookup('https://hardcover.app/books/whatever/editions/801'), [200, { id: '80', title: 'Lantern Hours' }]);
+  assert.deepEqual(await lookup('https://hardcover.app/books/no-such-book'), [404, { error: 'Hardcover has no book at hardcover.app/books/no-such-book' }]);
+  assert.ok(hc.sent.every(s => s.auth === 'Bearer tok-123'));
+  assert.equal((await fetch(base + '/api/hardcover/book')).status, 405);
+});
+
 test('serve shows a Hardcover run while it goes, runs one at a time, and an edit saved meanwhile stops it', async t => {
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');

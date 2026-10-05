@@ -21,6 +21,11 @@ export function fakeHardcover(state) {
     }
     if (query.startsWith('query Books')) return answer({ books: variables.ids.map(id => state.books[id]).filter(Boolean) });
     if (query.startsWith('query Editions')) return answer({ editions: pick(variables.ids) });
+    if (query.startsWith('query BookBySlug')) return answer({ books: Object.values(state.books).filter(b => b.slug === variables.slug).slice(0, 1) });
+    if (query.startsWith('query EditionBook')) {
+      const e = state.editions[variables.id];
+      return answer({ editions: e ? [{ book_id: e.book_id, book: { title: state.books[e.book_id].title } }] : [] });
+    }
     if (query.startsWith('query Find')) {
       const all = Object.values(state.editions);
       return answer({
@@ -46,11 +51,12 @@ export function fakeHardcover(state) {
   return { fetch, sent };
 }
 
-/** A small invented Hardcover library: four books, two of them on the Read shelf. */
+/** A small invented Hardcover library: four books (and one merged into another), two of them on the Read shelf. */
 export const hardcoverState = () => ({
   books: {
-    77: { id: 77, title: 'Tidewater', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }], featured_book_series: { position: 1, series: { name: 'Gull Isle' } } },
-    78: { id: 78, title: 'The Paper Fen', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] },
+    77: { id: 77, slug: 'tidewater', title: 'Tidewater', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }], featured_book_series: { position: 1, series: { name: 'Gull Isle' } } },
+    78: { id: 78, slug: 'the-paper-fen', title: 'The Paper Fen', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] },
+    79: { id: 79, slug: 'tidewater-2', canonical_id: 77, title: 'Tidewater', contributions: [] },   // merged into 77
     80: { id: 80, title: 'Lantern Hours', contributions: [{ contribution: null, author: { name: 'R. T. Hale' } }] },
     81: { id: 81, title: 'Brine Songs', contributions: [{ contribution: null, author: { name: 'Ann Vale' } }] },
   },

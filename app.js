@@ -1,7 +1,7 @@
 // The catalogue page: the series overview, all books, and editing books and series info.
 // Loading and saving live in store.js.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, keepHint, showIoStatus, startPage } from './store.js';
+import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, keepHint, showIoStatus, lookupHardcoverBook, startPage } from './store.js';
 
 export let VIEW = 'series';           // 'series' | 'library'
 export let SERIES_FILTER = null;      // series name, '__standalone__', or null
@@ -621,8 +621,43 @@ export function openEditForm(i){
   document.getElementById('addForm').scrollIntoView({behavior:'smooth', block:'center'});
 }
 
-document.getElementById('addForm').addEventListener('submit', e=>{
+// The Hardcover book field also takes the address of the book's or an edition's page on hardcover.app (the
+// app shows no ids), which Hardcover turns into the book's id. Returns the id, or null when it was not
+// found (the form says why); for anything else (an id, nothing, not an address) what was typed.
+let HARDCOVER_LOOKUP = null;   // the field's lookup on its way, as a promise
+function resolveHardcoverField(){
+  const field = document.getElementById('f_hcb'), text = field.value.trim();
+  if(!CatalogImport.parseHardcoverUrl(text)) return Promise.resolve(text);
+  if(HARDCOVER_LOOKUP && HARDCOVER_LOOKUP.text === text) return HARDCOVER_LOOKUP;
+  const lookup = (async ()=>{
+    try{
+      const found = await lookupHardcoverBook(text);
+      if(field.value.trim() === text) field.value = found.id;
+      document.getElementById('formError').textContent = '';
+      if(found.title) showIoStatus(`Found on Hardcover: ${found.title} (book ${found.id}).`);
+      return found.id;
+    }catch(err){
+      document.getElementById('formError').textContent = `Couldn't find the Hardcover book: ${err.message}. ` +
+        'Paste the address of its page, or of one of its editions, on hardcover.app, or the number in hardcover.app/id/book/12345.';
+      return null;
+    }finally{
+      if(HARDCOVER_LOOKUP === lookup) HARDCOVER_LOOKUP = null;
+    }
+  })();
+  lookup.text = text;
+  HARDCOVER_LOOKUP = lookup;
+  return lookup;
+}
+document.getElementById('f_hcb').addEventListener('change', ()=>{ resolveHardcoverField(); });
+
+document.getElementById('addForm').addEventListener('submit', async e=>{
   e.preventDefault();
+  if(CatalogImport.parseHardcoverUrl(document.getElementById('f_hcb').value)){
+    // look the address up first, unless the form was closed or moved to another book meanwhile
+    const index = EDIT_INDEX;
+    const id = await resolveHardcoverField();
+    if(id === null || EDIT_INDEX !== index || !document.getElementById('addForm').classList.contains('open')) return;
+  }
   const b = {
     t: document.getElementById('f_t').value.trim(),
     a: CatalogImport.splitNames(document.getElementById('f_a').value),
@@ -642,7 +677,7 @@ document.getElementById('addForm').addEventListener('submit', e=>{
   const {editions, bad: badParts, hcb} = CatalogImport.parseEditions(document.getElementById('f_e').value);
   const hardcover = document.getElementById('f_hcb').value.trim() || hcb;
   if(hardcover && !/^\d+$/.test(hardcover)){
-    document.getElementById('formError').textContent = `Not a Hardcover book id: ${hardcover}. It is the number in hardcover.app/id/book/12345.`;
+    document.getElementById('formError').textContent = `Not a Hardcover book id: ${hardcover}. It is the number in hardcover.app/id/book/12345, or paste the address of the book's page on hardcover.app in the Hardcover book field.`;
     return;
   }
   if(hardcover) b.hcb = hardcover;
