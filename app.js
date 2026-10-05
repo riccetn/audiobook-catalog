@@ -1,8 +1,11 @@
 // The catalogue page: the series overview, all books, and editing books and series info.
 // Loading and saving live in store.js.
-let VIEW = 'series';           // 'series' | 'library'
-let SERIES_FILTER = null;      // series name, '__standalone__', or null
-let BOOK_FILTER = null;        // title of the book linked to (#book=...), or null
+import * as CatalogImport from './importers.js';
+import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, keepHint, showIoStatus, startPage } from './store.js';
+
+export let VIEW = 'series';           // 'series' | 'library'
+export let SERIES_FILTER = null;      // series name, '__standalone__', or null
+export let BOOK_FILTER = null;        // title of the book linked to (#book=...), or null
 let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
 let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
@@ -177,8 +180,8 @@ function navigate(change, how = 'push', data = null){
   if(moved && how !== 'replace' && typeof scrollTo === 'function') scrollTo(0, 0);
 }
 
-function setView(v){ navigate({view: v, series: null, book: null}); }
-function openSeries(name){ navigate({view: 'library', series: name, book: null}); }
+export function setView(v){ navigate({view: v, series: null, book: null}); }
+export function openSeries(name){ navigate({view: 'library', series: name, book: null}); }
 // A book is shown on its own, without the filters, which might hide it.
 function openBook(title){ navigate({view: 'library', series: null, book: title, q: '', author: '', genre: '', read: ''}); }
 
@@ -203,7 +206,7 @@ document.getElementById('results').addEventListener('click', e=>{
   if(st.book !== null) openBook(st.book); else navigate({view: st.view, series: st.series, book: null});
 });
 
-function render(){
+export function render(){
   homeBookForm();   // out of the list before it is redrawn, which would drop it
   if(VIEW === 'series'){ renderSeriesOverview(); return; }
 
@@ -382,7 +385,7 @@ function bindSeriesEditButtons(){
   });
 }
 
-function openSeriesForm(name){
+export function openSeriesForm(name){
   closeForm();
   const info = SERIES_INFO[name];
   EDIT_SERIES = name; JOIN_SERIES = null;
@@ -440,7 +443,7 @@ function saveSeriesForm(){
   let count = 0;
   if(renamed) DATA.forEach(b=>{ if(b.s === name){ b.s = newName; count++; } });
   const {[name]: _old, ...rest} = SERIES_INFO;
-  SERIES_INFO = entry ? {...rest, [newName]: entry} : rest;
+  setSeriesInfo(entry ? {...rest, [newName]: entry} : rest);
   closeSeriesForm();
   if(renamed && SERIES_FILTER === name) navigate({series: newName}, 'replace');
   render(); persist();
@@ -453,7 +456,7 @@ function removeSeriesInfo(){
   const name = EDIT_SERIES;
   if(name === null || !SERIES_INFO[name]) return;
   const {[name]: _removed, ...rest} = SERIES_INFO;
-  SERIES_INFO = rest;
+  setSeriesInfo(rest);
   closeSeriesForm(); render(); persist();
   showIoStatus(`Removed series info for ${name}.`);
 }
@@ -561,7 +564,7 @@ document.getElementById('toggleAdd').addEventListener('click', ()=>{
 document.getElementById('cancelAdd').addEventListener('click', closeForm);
 
 // Today in the viewer's time zone, as YYYY-MM-DD.
-function today(){
+export function today(){
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -598,7 +601,7 @@ function placeBookForm(){
   card.after(BOOK_FORM);
 }
 
-function openEditForm(i){
+export function openEditForm(i){
   const b = DATA[i];
   closeSeriesForm();
   EDIT_INDEX = i;
@@ -663,7 +666,7 @@ document.getElementById('addForm').addEventListener('submit', e=>{
 
 // The merge button on a book: the first press picks it, a press on another book opens the two on the
 // duplicates page (which checks they are still the same books).
-function pickMergeBook(i){
+export function pickMergeBook(i){
   if(MERGE_FROM === null){
     MERGE_FROM = i;
     showIoStatus(`Now press \u21c4 on the book to merge ${DATA[i].t} with.`);
@@ -684,4 +687,5 @@ function refreshPage(){
 }
 
 // The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
-const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); });
+export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); },
+  {refresh: refreshPage});

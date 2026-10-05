@@ -1,9 +1,8 @@
 // The catalogue's data pipeline: tidying and identity of book records, validation, the Audible and
 // Goodreads readers, and the merge that adds imported books without clobbering hand edits.
 //
-// Shared by the page (index.html loads it as a plain script, defining the global CatalogImport) and
-// the command line (catalog.js require()s it), so both import exactly the same way.
-const CatalogImport = (() => {
+// An ES module shared by the pages (store.js and each page's script import it) and the command line
+// (catalog.js), so both import exactly the same way.
 
 // ------------------------------------------------------------------ fingerprints
 /**
@@ -2334,7 +2333,7 @@ function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicate
   return {...result, books: kept, seriesInfo: info};
 }
 
-return {
+export {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   splitNames, namesText, fixNames, fixPeople,
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
@@ -2350,6 +2349,3 @@ return {
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
   editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup, parseNotDuplicates,
 };
-})();
-
-if(typeof module !== 'undefined' && module.exports) module.exports = CatalogImport;

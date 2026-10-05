@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 // Command line tools for the catalogue:  node catalog.js <command>
 // The importers, merge and validation live in importers.js, which the page uses too.
-'use strict';
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as C from './importers.js';
 
-const fs = require('node:fs');
-const http = require('node:http');
-const os = require('node:os');
-const path = require('node:path');
-const C = require('./importers.js');
-
-const ROOT = __dirname;
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR_ENV = 'CATALOG_DATA_DIR';
 
 // ------------------------------------------------------------------ data location
@@ -957,8 +956,9 @@ function failed(exc, io){
   throw exc;
 }
 
-module.exports = {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir, createServer};
+export {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir, createServer};
 
-if(require.main === module){
+// Run as a command (node catalog.js ...), not imported by the tests.
+if(process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fileURLToPath(import.meta.url)){
   Promise.resolve(main(process.argv.slice(2))).then(code => { if(code !== null) process.exitCode = code; });
 }

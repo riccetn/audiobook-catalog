@@ -10,19 +10,21 @@ A personal audiobook catalogue: static pages (`index.html`, `import.html`, `dupl
 `data/books.json` and `data/series-info.json`, plus a Node command line (`catalog.js`) for imports,
 validation and a local server that saves edits made in the page.
 
-- Vanilla JavaScript, no framework, no bundler, **no npm packages** (there is no `package.json`).
-  Don't add dependencies; use Node built-ins.
+- Vanilla JavaScript, no framework, no bundler, **no npm packages**. `package.json` only says
+  `"type": "module"`; don't add dependencies to it, use Node built-ins.
+- ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
+  its own script with `<script type="module">`; that imports `store.js` and `importers.js`.
 - Node 18+ (CI uses 22).
 
 ## Commands
 
 ```sh
-make test       # node --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
+make test       # node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
 make validate   # node catalog.js validate      (CI runs this too)
 make serve      # app at http://127.0.0.1:8000/, saves page edits to data/
 make format     # node catalog.js format
 node catalog.js --help
-node --test tests/importers.test.mjs          # one suite
+node --test tests/importers.test.mjs          # one suite (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/importers.test.mjs   # one test
 ```
 
@@ -31,17 +33,16 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
 
 ## Architecture
 
-- `importers.js`: the data pipeline, shared by the page and the CLI. It is written as a plain
-  script defining the global `CatalogImport` (loaded by every page via `<script>`) and also
-  `module.exports` it for `catalog.js`. Keep it that way: no `import`/`require`, no Node or DOM APIs,
-  so the page and the CLI import, tidy, validate and merge identically.
+- `importers.js`: the data pipeline, shared by the page and the CLI: a module that exports its functions
+  by name (`import * as CatalogImport from './importers.js'` in the pages, `as C` in `catalog.js`). Keep
+  it free of imports and of Node or DOM APIs, so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
   `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command),
   `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, run by `runHardcover` through
   `hardcoverAsker` (the `hardcover-*` commands and the page's own runs; fetch and pause are passed in; the
   GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
   `parseExclusions`/`exclusionEntries`, `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
-- `catalog.js`: CommonJS CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
+- `catalog.js`: the CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
   Hardcover's GraphQL API, both through `io.fetch`, and return a promise; the Hardcover token comes from
   `HARDCOVER_TOKEN` in `io.env`/`process.env`, else `data/hardcover-token`) and the `serve` HTTP server. `serve` exposes a save
   endpoint (`handleSave`) that only accepts same-origin requests, never writes the demo data, runs
@@ -56,13 +57,15 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   if `books.json` changed while it ran. The static server never serves the token file. `serve` logs (`createServer`'s `log`, timestamped by `serveLogger`) each `api/` call, each
   request to Audible/Hardcover (`loggedFetch`: method, URL, GraphQL operation, status; never headers or bodies) and long
   tasks' start and finish (`startTask`). Exports `main`, `createServer` etc. for tests.
-- `store.js`: shared by the pages, loaded after `importers.js`: the globals (`DATA`, `SERIES_INFO`,
-  `EXCLUSIONS`, ...), loading (`startPage(init)`: fetches `data/`, then falls back to `data/sample/`),
+- `store.js`: shared by the pages: the shared state (`DATA`, `SERIES_INFO`, `EXCLUSIONS`, ..., exported;
+  a page replaces `DATA` and `SERIES_INFO` with `setData`/`setSeriesInfo`, since only the module that
+  declares a binding can assign it), loading (`startPage(init, page)`: fetches `data/`, then falls back to `data/sample/`),
   `persist` (localStorage `audiobook-catalog-data`, tagged with the fingerprint of the files the edits
   were made against, plus `saveToDisk` under `make serve`), the status line and the page links.
   Stale edits are set aside under `audiobook-catalog-data.backup`; `persist` refuses when another
   tab wrote localStorage since this page last did. Each page script defines `refreshPage()` (redraw
-  from `DATA`, called after a save to disk tidied the books) and `const READY = startPage(...)`.
+  from `DATA`, called after a save to disk tidied the books) and `export const READY = startPage(init,
+  {refresh: refreshPage})` (the import page also passes `onHardcoverJob`/`onHardcoverDone`).
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are kept in localStorage
   `audiobook-catalog-not-duplicates` and, under `make serve`, appended to `data/not-duplicates.txt`
   with the next save (`notDuplicates` in the save body and in backups).
@@ -70,10 +73,10 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   backup this device's own catalogue (`keepOnDevice`, localStorage `audiobook-catalog-device`), which
   then loads instead of the demo and takes every save (`ON_DEVICE`).
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
-  only the app and `data/sample/`, never `data/` or `api/`; add new page scripts to its `APP` list
-  (the smoke test checks).
-- `app.js` (`index.html`): series overview, all books, the book and series-info forms, global-state
-  style (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
+  only the app and `data/sample/`, never `data/` or `api/`; add new modules to its `APP` list
+  (the smoke test checks every module a page imports).
+- `app.js` (`index.html`): series overview, all books, the book and series-info forms, module-level
+  state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
 - `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, the Hardcover panel (under `make serve` the server runs it; elsewhere the page calls Hardcover itself, `runHardcoverHere`, with the token in localStorage `audiobook-catalog-hardcover-token`), Export / Restore / Merge of backups.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `editionsJoinable`), and books whose editions look like one (`splitEditions`).
@@ -81,9 +84,11 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   - `importers.test.mjs`: pipeline unit tests.
   - `cli.test.mjs`: CLI commands and the `serve` save endpoint, in temp directories.
   - `data.test.mjs`: validates the data files and enforces the privacy rules below.
-  - `app.smoke.test.mjs`: runs a page's real HTML and its scripts (`boot({page})`) in `node:vm` with a
-    hand-rolled fake DOM and fake `fetch`. When you add elements or DOM APIs to the app, the fake DOM
-    may need extending.
+  - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
+    (hence `--experimental-vm-modules`) with a hand-rolled fake DOM and fake `fetch`. Tests reach what the
+    modules export (`ctx.render()`, `get('DATA')`, `run(...)`), so export what a test needs; a module's
+    own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
+    to the app, the fake DOM may need extending.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 

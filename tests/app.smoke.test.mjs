@@ -1,5 +1,6 @@
-// Smoke test for the browser app. Runs the real index.html + app.js in Node against a tiny fake
-// DOM and a fake fetch serving the demo data, so it needs no dependencies and no browser.
+// Smoke test for the browser app. Runs the real index.html + app.js (and the modules it imports) in
+// Node against a tiny fake DOM and a fake fetch serving the demo data, so it needs no dependencies and
+// no browser. The modules run as ES modules in node:vm, which needs --experimental-vm-modules.
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,14 +8,36 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
+import * as CatalogImport from '../importers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const PAGES = ['index.html', 'import.html', 'duplicates.html'];
 const DEMO_BOOKS = read('data/sample/books.json');
 const DEMO_INFO = read('data/sample/series-info.json');
+
+// The module a page loads with <script type="module">, and the modules it imports, in load order.
+const entryOf = page => [...read(page).matchAll(/<script type="module" src="([^"]+)">/g)].map(m => m[1]);
+function modulesOf(file, seen = new Set()) {
+  seen.add(file);
+  for (const [, dep] of read(file).matchAll(/^import [^;]* from '\.\/([^']+)';$/gm)) if (!seen.has(dep)) modulesOf(dep, seen);
+  return [...seen];
+}
+
+/** Run the page's module and the modules it imports in `context`; returns their namespaces by file. */
+async function runModules(entry, context) {
+  if (!vm.SourceTextModule) throw new Error('the smoke test needs node --experimental-vm-modules (make test passes it)');
+  const modules = new Map();
+  const load = file => {
+    if (!modules.has(file)) modules.set(file, new vm.SourceTextModule(read(file), { context, identifier: file }));
+    return modules.get(file);
+  };
+  const main = load(entry);
+  await main.link(specifier => load(path.posix.normalize(specifier)));
+  await main.evaluate();
+  return new Map([...modules].map(([file, m]) => [file, m.namespace]));
+}
 
 function makeElement(id) {
   const classes = new Set();
@@ -87,21 +110,36 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
     back() { this.go(-1); }, forward() { this.go(1); },
   };
   const addEventListener = (type, fn) => (windowListeners[type] ||= []).push(fn);
-  const ctx = vm.createContext({ document, localStorage, fetch, FileReader, location, history, addEventListener,
+  const context = vm.createContext({ document, localStorage, fetch, FileReader, location, history, addEventListener,
     console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
-  // the page's own scripts, in order
-  for (const [, src] of html.matchAll(/<script src="([^"]+)">/g)) vm.runInContext(read(src), ctx);
-  await vm.runInContext('READY', ctx);
-  const run = code => vm.runInContext(code, ctx);
+  const [entry] = entryOf(page);
+  const namespaces = await runModules(entry, context);
+  // What the modules export (CatalogImport for importers.js), live: DATA is whatever store.js holds now.
+  const exported = {};
+  for (const [file, ns] of namespaces) {
+    const names = file === 'importers.js' ? { CatalogImport: () => ns } : Object.fromEntries(Object.keys(ns).map(k => [k, () => ns[k]]));
+    for (const [name, value] of Object.entries(names)) {
+      const set = () => { throw new TypeError(`${name} is a module's binding: only ${file} can assign it`); };
+      Object.defineProperty(exported, name, { get: value, set, enumerable: true });
+    }
+  }
+  await exported.READY;
+  // Test code runs in the page's context with the exports in scope; the modules themselves only see
+  // what they import, so a missing import still fails here as it would in a browser.
+  const inScope = vm.runInContext('(function (code) { with (this) return eval(code); })', context);
+  const run = code => inScope.call(exported, code);
   // Values cross the VM boundary as JSON so deepEqual is not confused by a different Object.prototype.
-  const get = expr => JSON.parse(vm.runInContext(`JSON.stringify(${expr})`, ctx));
+  const get = expr => JSON.parse(run(`JSON.stringify(${expr})`));
+  // ctx.render(), ctx.DATA etc. are the exports; anything else (ctx.location, ctx.Blob = ...) the page's globals.
+  const ctx = new Proxy(context, { get: (target, key) => (key in exported ? exported[key] : target[key]) });
   return { ctx, els, storage, get, run, fire };
 }
 
 for (const page of PAGES) {
   const html = read(page);
-  const scripts = [...html.matchAll(/<script src="([^"]+)">/g)].map(m => m[1]);
-  assert.deepEqual(scripts.slice(0, 2), ['importers.js', 'store.js'], page);
+  assert.equal(entryOf(page).length, 1, `${page} loads one module`);
+  assert.ok(!/<script(?! type="module")/.test(html), `${page} loads no plain scripts`);
+  for (const shared of ['importers.js', 'store.js']) assert.ok(modulesOf(entryOf(page)[0]).includes(shared), `${page} imports ${shared}`);
   assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'), page);
   for (const other of PAGES) assert.ok(html.includes(`href="${other}"`), `${page} links to ${other}`);
 }
@@ -1233,7 +1271,7 @@ test('the app can be installed: the manifest\'s icons and everything the service
   for (const page of PAGES) {
     assert.ok(cached.includes(page), `sw.js caches ${page}`);
     assert.ok(read(page).includes('<link rel="manifest" href="manifest.webmanifest">'), page);
-    for (const [, src] of read(page).matchAll(/<script src="([^"]+)">/g)) assert.ok(cached.includes(src), `sw.js caches ${src}`);
+    for (const file of modulesOf(entryOf(page)[0])) assert.ok(cached.includes(file), `sw.js caches ${file}`);
   }
   assert.ok(!cached.some(f => f.startsWith('data/') && !f.startsWith('data/sample/')), 'never your own data');
 });
@@ -1241,7 +1279,7 @@ test('the app can be installed: the manifest\'s icons and everything the service
 test('"Not duplicates" marks come from data/not-duplicates.txt, are saved there by make serve, and travel in backups', async () => {
   const books = [{ t: 'The Ledger', a: ['Priya Ostrander'] }, { t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
     { t: 'Salt Road', a: ['Marisol Quenby'] }, { t: 'Salt Road, Book 1', a: ['Marisol Quenby'] }];
-  const pairKey = (x, y) => createRequire(import.meta.url)('../importers.js').duplicatePairKey(books[x], books[y]);
+  const pairKey = (x, y) => CatalogImport.duplicatePairKey(books[x], books[y]);
   const saves = [];
   const api = async init => {
     if (!init.method) return { status: 200, body: { writable: true } };
@@ -1457,7 +1495,7 @@ test('a Hardcover run in the page writes and sends nothing when the catalogue is
   const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ id: 'B0LANTERN1' }] }];
   const state = hardcoverState();
   const hc = fakeHardcover(state);
-  let edit = true;
+  let edit = false;
   const hardcover = async (url, init) => {
     if (edit && JSON.parse(init.body).query.startsWith('query Find')) { edit = false; page.run("DATA[0].g = ['Fantasy']"); }
     return hc.fetch(url, init);
@@ -1465,9 +1503,11 @@ test('a Hardcover run in the page writes and sends nothing when the catalogue is
   const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };
   const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
   const page = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(mine) }, hardcover, setTimeout, storage });
-  const { els, get, run } = page;
+  const { els, get } = page;
   assert.match(els.hardcoverTokenState.textContent, /saved in this browser only/);
-  run("PENDING_HARDCOVER = 'export'");
+  await els.hardcoverExportBtn.listeners.click[0]();   // the preview, then the run, edited while it goes
+  assert.equal(get('PENDING_HARDCOVER'), 'export');
+  edit = true;
   await els.importConfirm.listeners.click[0]();
   assert.match(els.importPreviewBody.innerHTML, /the catalogue was edited while this ran .*nothing written, nothing sent to Hardcover/);
   assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));

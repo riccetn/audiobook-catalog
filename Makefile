@@ -6,7 +6,7 @@ help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
 
 test:            ## run the tests: importers, command line, data checks and the browser smoke test
-	$(NODE) --test tests/*.test.mjs
+	$(NODE) --experimental-vm-modules --test tests/*.test.mjs
 
 validate:        ## check data/ for errors and suspicious entries
 	$(NODE) catalog.js validate
