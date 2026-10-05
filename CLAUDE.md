@@ -14,7 +14,7 @@ validation and a local server that saves edits made in the page.
   `"type": "module"`; don't add dependencies to it, use Node built-ins.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` and `importers.js`.
-- Node 18+ (CI uses 22).
+- Node 18+ (CI uses 24).
 
 ## Commands
 
