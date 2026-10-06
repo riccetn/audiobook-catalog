@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
-import { main, loadBooks, createServer } from '../catalog.js';
+import { main, loadBooks, loadAuthors, createServer } from '../catalog.js';
 import * as CatalogImport from '../importers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -60,6 +60,33 @@ test('init --sample copies the demo data', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init', '--sample').code, 0);
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), loadBooks(path.join(tmp, 'data', 'sample', 'books.json')));
+  assert.deepEqual(loadAuthors(path.join(tmp, 'data', 'authors.json')), loadAuthors(path.join(tmp, 'data', 'sample', 'authors.json')));
+});
+
+test('validate checks author info: bad entries are errors, a link to another site or an author without books a warning', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const dir = path.join(tmp, 'data');
+  fs.writeFileSync(path.join(dir, 'books.json'), JSON.stringify([{ t: 'Here', a: ['Ann Vale'] }]));
+  // a catalogue from before authors.json validates without one
+  fs.unlinkSync(path.join(dir, 'authors.json'));
+  assert.match(run('validate').out, /1 books, 0 series, 0 with release info, 0 authors with info; 0 error\(s\), 0 warning\(s\)/);
+
+  fs.writeFileSync(path.join(dir, 'authors.json'), JSON.stringify({
+    'Ann Vale': { bio: 'Writes.', url: 'https://example.com/', goodreads: 'https://www.audible.com/author/Ann-Vale/X' },
+    'Bo Reed': { bio: 'Renamed since.' },
+  }));
+  const warned = run('validate');
+  assert.equal(warned.code, 0);
+  assert.match(warned.out, /warning: authors\['Ann Vale'\]: 'goodreads' should be an address on Goodreads/);
+  assert.match(warned.out, /warning: authors: 'Bo Reed' matches no author in books.json/);
+  assert.match(warned.out, /2 authors with info/);
+
+  fs.writeFileSync(path.join(dir, 'authors.json'), JSON.stringify({ 'Ann Vale': { url: 'example.com', age: 40 } }));
+  const bad = run('validate');
+  assert.equal(bad.code, 1);
+  assert.match(bad.out, /error: authors\['Ann Vale'\]: unknown keys \['age'\]/);
+  assert.match(bad.out, /error: authors\['Ann Vale'\]: 'url' must be a web address/);
 });
 
 test('import-audible previews with --dry-run, then adds, fills in ids and honours excluded.txt', t => {
@@ -319,6 +346,28 @@ test('sync-export restores series info from the backup', t => {
   fs.writeFileSync(exported, JSON.stringify({ books, seriesInfo: { [series]: { total: 0, status: 'maybe' } } }));
   assert.equal(run('sync-export', exported).code, 1);
   assert.equal(fs.readFileSync(infoPath, 'utf8'), JSON.stringify(seriesInfo));
+});
+
+test('sync-export restores author info from the backup, tidied, and leaves it alone for an older backup', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init', '--sample').code, 0);
+  const authorsPath = path.join(tmp, 'data', 'authors.json');
+  const books = loadBooks(path.join(tmp, 'data', 'books.json'));
+  const exported = path.join(tmp, 'export.json');
+  fs.writeFileSync(exported, JSON.stringify({ books, seriesInfo: {}, authors: { 'Wendell Ashcombe': { bio: '  Builds   clocks.  ', hardcover: ' https://hardcover.app/authors/wa ' } } }));
+  const { code, out } = run('sync-export', exported);
+  assert.equal(code, 0);
+  assert.match(out, /author info: 1 added, 0 changed, 2 removed/);
+  assert.match(out, /wrote data[\/\\]authors\.json/);
+  assert.equal(fs.readFileSync(authorsPath, 'utf8'), JSON.stringify({ 'Wendell Ashcombe': { bio: 'Builds clocks.', hardcover: 'https://hardcover.app/authors/wa' } }));
+
+  // a malformed entry blocks the whole sync
+  fs.writeFileSync(exported, JSON.stringify({ books, seriesInfo: {}, authors: { 'Wendell Ashcombe': { url: 'nowhere' } } }));
+  assert.equal(run('sync-export', exported).code, 1);
+  // a backup from before author info leaves authors.json as it is
+  fs.writeFileSync(exported, JSON.stringify({ books, seriesInfo: {} }));
+  assert.match(run('sync-export', exported).out, /author info: not in this backup/);
+  assert.match(fs.readFileSync(authorsPath, 'utf8'), /Builds clocks/);
 });
 
 test('sync-export adds the backup\'s excluded books to excluded.txt', t => {
@@ -708,6 +757,22 @@ test('serve saves the page\'s edits to your own data, and nothing else', async t
   wrongHost.resume();
   assert.equal(loadBooks(booksPath).length, 1);
 
+  // author info is saved to authors.json, tidied, when the page sends it, checked like the other files
+  const authorsPath = path.join(tmp, 'data', 'authors.json');
+  const authorsBase = fp(fs.readFileSync(authorsPath, 'utf8'));
+  const withAuthors = await put({ books: saved.books, seriesInfo, authors: { 'A. B. Quill': { bio: ' Quill  writes. ' } }, base: saved.base, infoBase: saved.infoBase, authorsBase });
+  assert.equal(withAuthors.status, 200);
+  const savedAuthors = await withAuthors.json();
+  assert.deepEqual(savedAuthors.authors, { 'A. B. Quill': { bio: 'Quill writes.' } });
+  assert.equal(fs.readFileSync(authorsPath, 'utf8'), JSON.stringify(savedAuthors.authors));
+  assert.equal(savedAuthors.authorsBase, fp(fs.readFileSync(authorsPath, 'utf8')));
+  const staleAuthors = await put({ books: saved.books, seriesInfo, authors: {}, base: saved.base, infoBase: saved.infoBase, authorsBase });
+  assert.equal(staleAuthors.status, 409);
+  const badAuthors = await put({ books: saved.books, seriesInfo, authors: { 'A. B. Quill': { url: 'x' } }, base: saved.base, infoBase: saved.infoBase, authorsBase: savedAuthors.authorsBase });
+  assert.equal(badAuthors.status, 400);
+  assert.match((await badAuthors.json()).errors.join(), /'url' must be a web address/);
+  assert.equal(fs.readFileSync(authorsPath, 'utf8'), JSON.stringify(savedAuthors.authors));
+
   // and the data files are still served as before
   assert.deepEqual(await (await fetch(`http://localhost:${port}/data/books.json`)).json(), loadBooks(booksPath));
 });
@@ -723,7 +788,9 @@ test('merge-backup merges a backup from another device into data/', t => {
   fs.writeFileSync(backup, JSON.stringify({
     books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ id: 'B1' }] }, { t: 'New There', a: ['Ann Vale'] }],
     seriesInfo: {}, excluded: ['Gone There | Ann Vale'], notDuplicates: ['["editions","id B1"]', '["editions","id B7"]'],
+    authors: { 'Ann Vale': { bio: 'From the phone.' } },
   }));
+  fs.writeFileSync(path.join(dir, 'authors.json'), JSON.stringify({ 'Ann Vale': { bio: 'From the PC.' } }));
   fs.writeFileSync(path.join(dir, 'not-duplicates.txt'), '["editions","id B1"]\n');
   const dry = run('merge-backup', backup, '--dry-run');
   assert.equal(dry.code, 0, dry.err);
@@ -731,6 +798,7 @@ test('merge-backup merges a backup from another device into data/', t => {
   assert.match(dry.out, /removed \(removed on the other device\): 1\n {4}- Gone There - Ann Vale/);
   assert.match(dry.out, /title, author or series differ, kept ours: 1/);
   assert.match(dry.out, /marked not duplicates: 1 new/);
+  assert.match(dry.out, /author info: 0 added, 0 taken from the backup, 1 differing kept as ours/);
   assert.match(dry.out, /dry run/);
   assert.equal(loadBooks(path.join(dir, 'books.json')).length, 3);
   assert.equal(fs.readFileSync(path.join(dir, 'not-duplicates.txt'), 'utf8'), '["editions","id B1"]\n');
@@ -738,6 +806,7 @@ test('merge-backup merges a backup from another device into data/', t => {
   const { code, out, err } = run('merge-backup', backup, '--prefer-backup');
   assert.equal(code, 0, err);
   assert.match(out, /kept the backup's: 1/);
+  assert.deepEqual(loadAuthors(path.join(dir, 'authors.json')), { 'Ann Vale': { bio: 'From the phone.' } });
   assert.deepEqual(loadBooks(path.join(dir, 'books.json')), [
     { t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ id: 'B1' }] }, { t: 'New There', a: ['Ann Vale'] },
   ]);

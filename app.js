@@ -20,6 +20,8 @@ const readYears = b => readDates(b).map(d => d.slice(0, 4));
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
 // A book's authors, one name each: the author filter offers each of them on its own.
 function authorsOf(b){ return Array.isArray(b.a) ? b.a.filter(x=> typeof x === 'string') : []; }
+// Authors' names, each a link to their page on the authors page.
+const authorLinks = names => names.map(x=> `<a href="authors.html#a=${esc(encodeURIComponent(x).replace(/%20/g, '+'))}">${esc(x)}</a>`).join(', ');
 
 // Series numbers you don't own yet, from series-info.json's released total; null when that is unknown.
 function seriesMissing(name){
@@ -346,7 +348,7 @@ function renderSeriesOverview(){
       <span class="srow-owned">${books.length} owned${info ? ' of ' + esc(info.total) : ''}</span>
       ${seriesEditButton(name)}
     </div>`;
-    let foot = `<div class="srow-foot"><span class="tag">${esc(authors.join(', '))}</span>`;
+    let foot = `<div class="srow-foot"><span class="tag">${authorLinks(authors)}</span>`;
     if(info){
       foot += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
       if(info.url) foot += ` <a class="authorlink" href="${esc(info.url)}" target="_blank" rel="noopener">author site \u2197</a>`;
@@ -510,7 +512,7 @@ function bookCard(b){
   // the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
   const narrators = [...new Set(CatalogImport.bookEditions(b).map(ed=> CatalogImport.namesText(ed.n)).filter(Boolean))];
   const differ = narrators.length > 1;
-  const meta = [authorsOf(b).join(', '), narrators.length ? 'narr. '+narrators.join(' / ') : null].filter(Boolean).join(' \u2014 ');
+  const meta = [authorLinks(authorsOf(b)), narrators.length ? esc('narr. '+narrators.join(' / ')) : null].filter(Boolean).join(' \u2014 ');
   const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
   const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
   const editions = CatalogImport.bookEditions(b).map(ed=>{
@@ -523,7 +525,7 @@ function bookCard(b){
   const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${DATA[MERGE_FROM].t}`;
   return `<div class="book${picked ? ' picked' : ''}" data-i="${b._i}">${num}<div class="info">
     <div class="title"><a href="${esc(bookHref(b.t))}">${esc(b.t)}</a></div>
-    <div class="meta">${esc(meta)}</div>
+    <div class="meta">${meta}</div>
     ${read}
     ${b.hcb ? `<div class="ids">Hardcover book ${idLink(CatalogImport.hardcoverUrl('book', ''), b.hcb)}</div>` : ''}
     ${editions}

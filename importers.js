@@ -826,25 +826,130 @@ function validate(books, info){
   return {errors, warnings};
 }
 
+// ---------------------------------------------------------------------- authors
+// data/authors.json maps an author's name, as books write it in `a`, to what you keep about them:
+// a short bio and links to their own site and their pages on Audible, Goodreads and Hardcover. Their
+// series and titles are not stored there: they come from books.json (authorWorks).
+const AUTHOR_KEYS = ['bio', 'url', 'audible', 'goodreads', 'hardcover'];
+// Each link field, and a test of the site it should point at (Audible has a store per country).
+const AUTHOR_SITES = {
+  audible: ['Audible', host => /(^|\.)audible\.[a-z.]+$/.test(host)],
+  goodreads: ['Goodreads', host => /(^|\.)goodreads\.com$/.test(host)],
+  hardcover: ['Hardcover', host => /(^|\.)hardcover\.app$/.test(host)],
+};
+
+/**
+ * An author's entry with tidy text: a bio keeps its paragraphs (lines) but loses stray spacing, links
+ * are trimmed, and empty fields are left out. Returns null when nothing is left.
+ */
+function tidyAuthor(entry){
+  if(!isObject(entry)) return null;
+  const out = {};
+  for(const k of AUTHOR_KEYS){
+    if(typeof entry[k] !== 'string') continue;
+    const v = k === 'bio'
+      ? entry[k].split(/\r\n|\r|\n/).map(tidyText).join('\n').replace(/\n{3,}/g, '\n\n').trim()
+      : entry[k].trim();
+    if(v) out[k] = v;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Check data/authors.json against the books. Returns {errors, warnings}: a malformed entry is an
+ * error; an entry for a name no book has (an author renamed on their books) and a link to another
+ * site than its field says are warnings.
+ */
+function validateAuthors(books, authors){
+  const errors = [], warnings = [];
+  if(authors === undefined || authors === null) return {errors, warnings};
+  if(!isObject(authors)) return {errors: ['authors: must map author names to their info'], warnings};
+  const names = new Set((Array.isArray(books) ? books : []).flatMap(b => isObject(b) && Array.isArray(b.a) ? b.a : []));
+  for(const [name, entry] of Object.entries(authors)){
+    const label = `authors[${repr(name)}]`;
+    if(!names.has(name)) warnings.push(`authors: ${repr(name)} matches no author in books.json`);
+    if(!isObject(entry)){ errors.push(`${label}: not an object`); continue; }
+    const unknown = Object.keys(entry).filter(k => !AUTHOR_KEYS.includes(k)).sort();
+    if(unknown.length) errors.push(`${label}: unknown keys ${repr(unknown)}`);
+    for(const k of AUTHOR_KEYS){
+      if(!(k in entry)) continue;
+      const v = entry[k];
+      if(typeof v !== 'string' || !v.trim()){ errors.push(`${label}: ${repr(k)} must be a non-empty string when present`); continue; }
+      if(k === 'bio') continue;
+      const host = webHost(v.trim());
+      if(!host){ errors.push(`${label}: ${repr(k)} must be a web address starting with http:// or https://`); continue; }
+      const site = AUTHOR_SITES[k];
+      if(site && !site[1](host)) warnings.push(`${label}: ${repr(k)} should be an address on ${site[0]}, not ${repr(v)}`);
+    }
+  }
+  return {errors, warnings};
+}
+
+// The host of a web address ('www.audible.com' from 'https://www.audible.com/author/...'), or null when
+// it is not one. A pattern rather than URL(), so this module needs nothing but the language itself.
+function webHost(text){
+  const m = /^https?:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)*)(?::\d+)?(?:[\/?#]\S*)?$/i.exec(text);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Order of books in a series: by number ("2", "4-6" by its first), unnumbered ones last, then by title.
+const bySeriesNumber = (x, y) => {
+  const n = b => { const v = parseFloat(b.sn); return Number.isFinite(v) ? v : Infinity; };
+  return n(x) - n(y) || String(x.t).localeCompare(String(y.t));
+};
+
+/**
+ * What `name` wrote (alone or with others), from the books: {series: [{name, books}], titles} with each
+ * series' books in series order and the books outside a series by title. Each book carries `_i`, its
+ * index in `books`.
+ */
+function authorWorks(books, name){
+  const own = books.map((b, i) => ({...b, _i: i})).filter(b => Array.isArray(b.a) && b.a.includes(name));
+  const bySeries = new Map();
+  for(const b of own.filter(b => b.s)){
+    if(!bySeries.has(b.s)) bySeries.set(b.s, []);
+    bySeries.get(b.s).push(b);
+  }
+  const series = [...bySeries].sort((x, y) => x[0].localeCompare(y[0])).map(([s, list]) => ({name: s, books: list.sort(bySeriesNumber)}));
+  const titles = own.filter(b => !b.s).sort((x, y) => String(x.t).localeCompare(String(y.t)));
+  return {series, titles};
+}
+
+/** Every author of the books, as [{name, books (how many), series (how many)}], by name. */
+function authorList(books){
+  const seen = new Map();
+  for(const b of books){
+    for(const name of new Set(Array.isArray(b.a) ? b.a.filter(x => typeof x === 'string') : [])){
+      if(!seen.has(name)) seen.set(name, {name, books: 0, series: new Set()});
+      const entry = seen.get(name);
+      entry.books++;
+      if(b.s) entry.series.add(b.s);
+    }
+  }
+  return [...seen.values()].map(x => ({...x, series: x.series.size})).sort((x, y) => x.name.localeCompare(y.name));
+}
+
 // ---------------------------------------------------------------------- backups
 /**
- * Read a backup exported from the page: {books: [...], seriesInfo: {...}, excluded: [...],
+ * Read a backup exported from the page: {books: [...], seriesInfo: {...}, authors: {...}, excluded: [...],
  * notDuplicates: [...]}, or a plain array of books from before series info was exported. Returns
- * {books, seriesInfo, excluded, notDuplicates}; seriesInfo, excluded (the data/excluded.txt entries)
- * and notDuplicates (the data/not-duplicates.txt entries) are null when the backup predates them, so
- * callers leave theirs alone. Throws if it is neither.
+ * {books, seriesInfo, authors, excluded, notDuplicates}; seriesInfo, authors (data/authors.json), excluded
+ * (the data/excluded.txt entries) and notDuplicates (the data/not-duplicates.txt entries) are null when
+ * the backup predates them, so callers leave theirs alone. Throws if it is neither.
  */
 function readBackup(data){
-  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null, excluded: null, notDuplicates: null};
+  if(Array.isArray(data)) return {books: fixBooks(data), seriesInfo: null, authors: null, excluded: null, notDuplicates: null};
   if(data && typeof data === 'object' && Array.isArray(data.books)){
-    const {seriesInfo: info, excluded, notDuplicates} = data;
+    const {seriesInfo: info, authors, excluded, notDuplicates} = data;
     if(info !== undefined && !(info && typeof info === 'object' && !Array.isArray(info))) throw new Error('seriesInfo is not an object');
+    if(authors !== undefined && !isObject(authors)) throw new Error('authors is not an object');
     for(const [name, list] of [['excluded', excluded], ['notDuplicates', notDuplicates]]){
       if(list !== undefined && !(Array.isArray(list) && list.every(x => typeof x === 'string'))){
         throw new Error(`${name} is not a list of strings`);
       }
     }
-    return {books: fixBooks(data.books), seriesInfo: info === undefined ? null : info, excluded: excluded === undefined ? null : excluded,
+    return {books: fixBooks(data.books), seriesInfo: info === undefined ? null : info, authors: authors === undefined ? null : authors,
+      excluded: excluded === undefined ? null : excluded,
       notDuplicates: notDuplicates === undefined ? null : notDuplicates};
   }
   throw new Error('expected a list of books or {books, seriesInfo, excluded}');
@@ -2318,17 +2423,18 @@ function bookText(rec){
  * - a book both have (found as imports find books) keeps the union of their genres, dates read and
  *   editions; where title, author or series differ, `prefer` ('mine', the default, or 'backup') wins,
  *   and the book is listed in `conflicts`;
- * - series info both have keeps the preferred side's; the backup's excluded books, and its "Not duplicates"
- *   marks, are added to ours (`notDuplicates`, the marks this catalogue has).
- * Changes nothing it is given. Returns {books, seriesInfo, excluded (entries new to `exclusions`),
- * notDuplicates (marks new to `notDuplicates`),
- * added, updated, removed, skipped, conflicts: [{mine, theirs}], infoAdded, infoChanged, infoKept}.
+ * - series info and author info (`authors`) both have keep the preferred side's; the backup's excluded
+ *   books, and its "Not duplicates" marks, are added to ours (`notDuplicates`, the marks this catalogue has).
+ * Changes nothing it is given. Returns {books, seriesInfo, authors, excluded (entries new to `exclusions`),
+ * notDuplicates (marks new to `notDuplicates`), added, updated, removed, skipped, conflicts: [{mine, theirs}],
+ * infoAdded, infoChanged, infoKept, and the same for authors: authorsAdded, authorsChanged, authorsKept}.
  */
-function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicates){
+function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicates, authors){
   const takeBackup = prefer === 'backup';
   const copy = rec => JSON.parse(JSON.stringify(rec));
   const out = books.map(copy);
-  const result = {added: [], updated: [], removed: [], skipped: [], conflicts: [], infoAdded: [], infoChanged: [], infoKept: []};
+  const result = {added: [], updated: [], removed: [], skipped: [], conflicts: [], infoAdded: [], infoChanged: [], infoKept: [],
+    authorsAdded: [], authorsChanged: [], authorsKept: []};
 
   const ours = parseExclusions((exclusions ? exclusions.entries : []).join('\n'));
   const theirsOnly = new Exclusions();
@@ -2384,15 +2490,21 @@ function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicate
     return !gone;
   });
 
-  const info = {...(seriesInfo || {})};
-  for(const [name, entry] of Object.entries(backup.seriesInfo || {})){
-    if(!(name in info)){ info[name] = entry; result.infoAdded.push(name); }
-    else if(JSON.stringify(info[name]) !== JSON.stringify(entry)){
-      if(takeBackup){ info[name] = entry; result.infoChanged.push(name); }
-      else result.infoKept.push(name);
+  // entries only the backup has are added; where both differ, the preferred side's is kept
+  const mergeEntries = (ours, theirs, added, changed, keptOurs) => {
+    const out = {...(ours || {})};
+    for(const [name, entry] of Object.entries(theirs || {})){
+      if(!(name in out)){ out[name] = entry; added.push(name); }
+      else if(JSON.stringify(out[name]) !== JSON.stringify(entry)){
+        if(takeBackup){ out[name] = entry; changed.push(name); }
+        else keptOurs.push(name);
+      }
     }
-  }
-  return {...result, books: kept, seriesInfo: info};
+    return out;
+  };
+  const info = mergeEntries(seriesInfo, backup.seriesInfo, result.infoAdded, result.infoChanged, result.infoKept);
+  const people = mergeEntries(authors, backup.authors, result.authorsAdded, result.authorsChanged, result.authorsKept);
+  return {...result, books: kept, seriesInfo: info, authors: people};
 }
 
 export {
@@ -2402,6 +2514,7 @@ export {
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, saveBook,
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
+  AUTHOR_KEYS, tidyAuthor, validateAuthors, authorWorks, authorList,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
   AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, audibleSeriesListing, seriesLookups, seriesFromAudible, addSeriesTotals,
   boxSetTitle, seriesListingLookups, boxSetTitlesFromAudible,

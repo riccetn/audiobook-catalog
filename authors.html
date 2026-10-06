@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Authors · Audiobook Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#3F5D4B">
+</head>
+<body>
+<div class="wrap">
+  <h1>Audiobook Catalogue</h1>
+  <nav class="pages">
+    <a href="index.html">Catalogue</a>
+    <a href="authors.html" class="current" aria-current="page">Authors</a>
+    <a href="import.html">Import &amp; export</a>
+    <a href="duplicates.html">Duplicates<span id="dupCount"></span></a>
+  </nav>
+  <p class="sub" id="subtitle">Loading&hellip;</p>
+
+  <div class="crumb" id="crumb">
+    <a href="authors.html" id="backToAuthors">&larr; All authors</a>
+  </div>
+
+  <div class="controls" id="authorControls">
+    <input type="text" id="q" placeholder="Search authors&hellip;">
+  </div>
+
+  <div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
+  <p id="ioStatus" class="ioStatus"></p>
+
+  <form id="authorForm" class="infoForm">
+    <h3 id="authorFormTitle">Author info</h3>
+    <div><label>Short bio</label><textarea id="af_bio" rows="4"></textarea></div>
+    <div><label>Personal website</label><input id="af_url" placeholder="https://"></div>
+    <div class="formrow">
+      <div><label>Audible author page</label><input id="af_audible" placeholder="https://www.audible.com/author/..."></div>
+      <div><label>Goodreads author page</label><input id="af_goodreads" placeholder="https://www.goodreads.com/author/show/..."></div>
+    </div>
+    <div><label>Hardcover author page</label><input id="af_hardcover" placeholder="https://hardcover.app/authors/..."></div>
+    <p id="authorFormError" class="formError"></p>
+    <div class="formbtns">
+      <button type="submit" class="save" id="authorSaveBtn">Save author info</button>
+      <button type="button" id="authorRemoveBtn">Remove info</button>
+      <button type="button" id="cancelAuthor">Cancel</button>
+    </div>
+  </form>
+
+  <div id="authorBody"></div>
+</div>
+
+<script type="module" src="authors.js"></script>
+</body>
+</html>

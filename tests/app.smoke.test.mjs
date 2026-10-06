@@ -13,9 +13,10 @@ import * as CatalogImport from '../importers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
-const PAGES = ['index.html', 'import.html', 'duplicates.html'];
+const PAGES = ['index.html', 'import.html', 'duplicates.html', 'authors.html'];
 const DEMO_BOOKS = read('data/sample/books.json');
 const DEMO_INFO = read('data/sample/series-info.json');
+const DEMO_AUTHORS = read('data/sample/authors.json');
 
 // The module a page loads with <script type="module">, and the modules it imports, in load order.
 const entryOf = page => [...read(page).matchAll(/<script type="module" src="([^"]+)">/g)].map(m => m[1]);
@@ -59,7 +60,7 @@ function makeElement(id) {
  * Load the page into a fresh fake browser. `files` maps URLs to what the fake server returns
  * (default: no data/books.json yet, so the demo). `storage` is a Map standing in for localStorage.
  */
-async function boot({ page = 'index.html', files = { 'data/sample/books.json': DEMO_BOOKS, 'data/sample/series-info.json': DEMO_INFO },
+async function boot({ page = 'index.html', files = { 'data/sample/books.json': DEMO_BOOKS, 'data/sample/series-info.json': DEMO_INFO, 'data/sample/authors.json': DEMO_AUTHORS },
                       storage = new Map(), api = null, hash = '', setTimeout = () => 0, hardcover = null } = {}) {
   const html = read(page);
   const els = {};
@@ -545,7 +546,8 @@ test('authors are lists: the author filter offers each author on its own, and th
   assert.match(els.authorFilter.innerHTML, /<option value="Priya Ostrander">Priya Ostrander<\/option>/);
   assert.doesNotMatch(els.authorFilter.innerHTML, /Ferran Doyle, Priya Ostrander/);
   assert.equal((els.authorFilter.innerHTML.match(/<option value="Priya Ostrander">/g) || []).length, 1);
-  assert.match(els.results.innerHTML, /<div class="meta">Ferran Doyle, Priya Ostrander<\/div>/);
+  // each author's name links to their page
+  assert.match(els.results.innerHTML, /<div class="meta"><a href="authors\.html#a=Ferran\+Doyle">Ferran Doyle<\/a>, <a href="authors\.html#a=Priya\+Ostrander">Priya Ostrander<\/a><\/div>/);
   els.authorFilter.value = 'Priya Ostrander';
   ctx.render();
   assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 3, 'her two books and the one she co-wrote');
@@ -564,7 +566,7 @@ test('authors and narrators written as comma separated text load as lists', asyn
   assert.deepEqual(get('DATA'), [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ id: 'B1', n: ['Cy Hale', 'Di Moss'] }] }]);
   ctx.setView('library');
   assert.match(els.authorFilter.innerHTML, /<option value="Bo Reed">/);
-  assert.match(els.results.innerHTML, /Ann Vale, Bo Reed — narr\. Cy Hale, Di Moss/);
+  assert.match(els.results.innerHTML, /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. Cy Hale, Di Moss/);
 });
 
 test('your own data/books.json wins over the demo', async () => {
@@ -701,36 +703,44 @@ test('Goodreads CSV downloads every book for Goodreads\' import', async () => {
   assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
 });
 
-test('Export includes series info, and Import brings it back', async () => {
+test('Export includes series and author info, and Import brings them back', async () => {
   const first = await boot({ page: 'import.html' });
   const blobs = [];
   first.ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
   first.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
   first.els.exportBtn.listeners.click[0]();
   const backup = JSON.parse(blobs[0]);
-  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), excluded: [], notDuplicates: [] });
+  assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), authors: JSON.parse(DEMO_AUTHORS), excluded: [], notDuplicates: [] });
 
   // into a page that has no series info: it comes back, and survives a reload
   const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
   const files = { 'data/books.json': mine };
   const other = await boot({ page: 'import.html', files });
-  assert.deepEqual(other.get('SERIES_INFO'), {});
+  assert.deepEqual(other.get('[SERIES_INFO, AUTHORS]'), [{}, {}]);
   other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
   assert.deepEqual(other.get('DATA'), demoBooks);
   assert.deepEqual(other.get('SERIES_INFO'), backup.seriesInfo);
+  assert.deepEqual(other.get('AUTHORS'), backup.authors);
   const reloaded = await boot({ files, storage: new Map(other.storage) });
   assert.deepEqual(reloaded.get('SERIES_INFO'), backup.seriesInfo);
+  assert.deepEqual(reloaded.get('AUTHORS'), backup.authors);
 
   // an older backup (a plain list of books) still imports and keeps the current series info
   const legacy = await boot({ page: 'import.html' });
   legacy.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: mine }], value: '' } });
   assert.deepEqual(legacy.get('DATA'), [{ t: 'Mine', a: ['Me'] }]);
   assert.deepEqual(legacy.get('SERIES_INFO'), JSON.parse(DEMO_INFO));
+  // (restored over the demo, it is this device's own catalogue now, which the demo's author info is not part of)
+  assert.deepEqual(legacy.get('AUTHORS'), {});
 
   // locally saved series info is set aside when series-info.json changes on disk
   const changedInfo = await boot({ files: { 'data/books.json': mine, 'data/series-info.json': '{}\n' }, storage: new Map(other.storage) });
   assert.deepEqual(changedInfo.get('SERIES_INFO'), {});
   assert.ok(changedInfo.storage.has('audiobook-catalog-data.backup'));
+  // and so is author info when authors.json changes
+  const changedAuthors = await boot({ files: { ...files, 'data/authors.json': '{"Me":{"bio":"Hand edited."}}' }, storage: new Map(other.storage) });
+  assert.deepEqual(changedAuthors.get('AUTHORS'), { Me: { bio: 'Hand edited.' } });
+  assert.ok(changedAuthors.storage.has('audiobook-catalog-data.backup'));
 });
 
 // Press a book's remove button twice (the second press confirms), as in the library view.
@@ -1062,7 +1072,7 @@ test('a refused save keeps the edits in the browser and says why', async () => {
   const { get, run, els, storage } = await boot({ files: { 'data/books.json': mine }, api });
   run("DATA[0].t = 'Edited'; persist();");
   await settle();
-  assert.match(els.ioStatus.textContent, /Not saved to disk: data\/books\.json changed on disk/);
+  assert.match(els.ioStatus.textContent, /Not saved to disk: the data files changed on disk/);
   assert.equal(JSON.parse(storage.get('audiobook-catalog-data')).data[0].t, 'Edited');
 
   // after a reload against the same file, the kept edits are saved again
@@ -1291,7 +1301,7 @@ test('restoring a backup where only the demo is served makes it this device\'s o
   imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
   assert.equal(imp.get('ON_DEVICE'), true);
   assert.match(imp.els.ioStatus.textContent, /This device now keeps its own catalogue\./);
-  assert.deepEqual(JSON.parse(imp.storage.get('audiobook-catalog-device')), backup);
+  assert.deepEqual(JSON.parse(imp.storage.get('audiobook-catalog-device')), { ...backup, authors: {} });
 
   // it loads instead of the demo, even after the demo data changes, and edits are kept with it
   const files = { 'data/sample/books.json': '[{"t":"Another Demo","a":"Nobody"}]', 'data/sample/series-info.json': '{}' };
@@ -1600,4 +1610,126 @@ test('every page shows a Hardcover run already going, and picks up what it wrote
     ? { status: 200, body: { job: { id: 7, mode: 'sync', running: false, code: 0 } } } : server.api(init, url) });
   await settle();
   assert.ok(!later.els.bgTask.classList.contains('show'));
+});
+
+// ------------------------------------------------------------------ the authors page
+test('the authors page lists every author, with their books and series, and a search narrows it', async () => {
+  const { els } = await boot({ page: 'authors.html' });
+  const authors = new Set(demoBooks.flatMap(b => b.a));
+  assert.equal((els.authorBody.innerHTML.match(/class="srow-title"/g) || []).length, authors.size);
+  assert.match(els.subtitle.textContent, new RegExp(`^${authors.size} authors across ${demoBooks.length} audiobooks`));
+  assert.match(els.authorBody.innerHTML, /<a class="srow-title" href="authors\.html#a=Priya\+Ostrander">Priya Ostrander<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
+  // the first line of a bio, when there is one
+  assert.match(els.authorBody.innerHTML, /Priya Ostrander writes cozy mysteries/);
+  assert.ok(!els.crumb.classList.contains('show'));
+  els.q.value = 'ferran';
+  els.q.listeners.input[0]();
+  assert.equal((els.authorBody.innerHTML.match(/class="srow-title"/g) || []).length, 1);
+  els.q.value = 'zzzz';
+  els.q.listeners.input[0]();
+  assert.match(els.authorBody.innerHTML, /No authors match/);
+});
+
+test('an author\'s page shows their bio, their links, and their series and titles from the catalogue', async () => {
+  const { ctx, els, fire } = await boot({ page: 'authors.html', hash: '#a=Marisol+Quenby' });
+  const html = els.authorBody.innerHTML;
+  assert.equal(ctx.document.title, 'Marisol Quenby · Audiobook Catalogue');
+  assert.ok(els.crumb.classList.contains('show'));
+  assert.equal(els.authorControls.style.display, 'none');
+  assert.match(html, /<h2 class="author-name">Marisol Quenby<\/h2>/);
+  assert.match(html, /<div class="author-bio"><p>Marisol Quenby writes seafaring fantasy[^<]*<\/p><p>The Lantern Coast began/);
+  for (const [label, url] of [['Website', 'https://example.com/'], ['Audible', 'https://www.audible.com/author/'], ['Goodreads', 'https://www.goodreads.com/author/show/'], ['Hardcover', 'https://hardcover.app/authors/']]) {
+    assert.match(html, new RegExp(`<a class="authorlink" href="${url.replace(/[./]/g, '\\$&')}[^"]*" target="_blank" rel="noopener">${label} ↗</a>`));
+  }
+  // the series, with how many are owned of the released total, its books in order, each a link to it in the catalogue
+  assert.match(html, /<a href="index\.html#series=The\+Lantern\+Coast">The Lantern Coast<\/a> <span class="n">4 owned of 5<\/span> <span class="status ongoing">ongoing<\/span>/);
+  assert.match(html, /#1<\/span> <a href="index\.html#book=The\+Salt\+Road">The Salt Road<\/a><\/li><li>.*#2<\/span> <a href="index\.html#book=Beacons\+at\+Low\+Tide">/);
+  assert.equal(els.subtitle.textContent, '4 audiobooks in 1 series');
+
+  // another author's page, by its address: her series, and a book outside it she wrote with someone else
+  ctx.location.hash = '#a=Priya+Ostrander';
+  fire('hashchange');
+  const priya = els.authorBody.innerHTML;
+  assert.match(priya, /Halloway &amp; Finch<\/a> <span class="n">2 owned of 2<\/span> <span class="status complete">/);
+  assert.match(priya, /Outside a series <span class="n">1 book<\/span>/);
+  assert.match(priya, /Nine Ways to Lose a Kingdom<\/a> <span class="with">with <a href="authors\.html#a=Ferran\+Doyle">Ferran Doyle<\/a><\/span>/);
+  assert.equal(els.subtitle.textContent, '3 audiobooks in 1 series and 1 outside a series');
+
+  // an author without info or series
+  ctx.location.hash = '#a=Odalys+Rennick';
+  fire('hashchange');
+  assert.match(els.authorBody.innerHTML, /No bio or links yet/);
+  assert.match(els.authorBody.innerHTML, /Titles <span class="n">1 book<\/span>/);
+  ctx.location.hash = '#a=Nobody+Here';
+  fire('hashchange');
+  assert.equal(els.subtitle.textContent, 'No books by this author in the catalogue.');
+  ctx.location.hash = '';
+  fire('hashchange');
+  assert.equal(ctx.AUTHOR, null);
+  assert.match(els.authorBody.innerHTML, /class="srow-title"/);
+});
+
+test('author info can be added, edited and removed on the author\'s page, and links are checked', async () => {
+  const { els, get, storage } = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe' });
+  const editClick = () => els.authorBody.listeners.click[0]({ target: { closest: sel => (sel === '[data-edit-author]' ? {} : null) } });
+  const submit = () => els.authorForm.listeners.submit[0]({ preventDefault() {} });
+  editClick();
+  assert.ok(els.authorForm.classList.contains('open'));
+  assert.equal(els.authorFormTitle.textContent, 'Add author info: Wendell Ashcombe');
+  assert.equal(els.authorRemoveBtn.style.display, 'none');
+  els.af_bio.value = '  Builds   clockwork worlds.\n\nLives by a canal. ';
+  els.af_url.value = 'wendell.example';
+  submit();
+  assert.match(els.authorFormError.textContent, /'url' must be a web address/);
+  els.af_url.value = 'https://wendell.example/';
+  els.af_goodreads.value = 'https://hardcover.app/authors/wendell';   // pasted into the wrong field
+  submit();
+  assert.match(els.authorFormError.textContent, /'goodreads' should be an address on Goodreads/);
+  assert.equal(get("AUTHORS['Wendell Ashcombe'] || null"), null);
+  els.af_goodreads.value = '';
+  els.af_hardcover.value = 'https://hardcover.app/authors/wendell';
+  submit();
+  assert.ok(!els.authorForm.classList.contains('open'));
+  const entry = { bio: 'Builds clockwork worlds.\n\nLives by a canal.', url: 'https://wendell.example/', hardcover: 'https://hardcover.app/authors/wendell' };
+  assert.deepEqual(get("AUTHORS['Wendell Ashcombe']"), entry);
+  assert.match(els.authorBody.innerHTML, /<p>Builds clockwork worlds\.<\/p><p>Lives by a canal\.<\/p>/);
+  assert.match(els.ioStatus.textContent, /Saved author info for Wendell Ashcombe\. Export it/);
+  // kept in this browser, and loaded again with the page
+  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).authors['Wendell Ashcombe'], entry);
+  const again = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', storage: new Map(storage) });
+  assert.deepEqual(again.get("AUTHORS['Wendell Ashcombe']"), entry);
+
+  // editing shows what is there; emptying every field, or Remove, removes the entry
+  editClick();
+  assert.equal(els.authorFormTitle.textContent, 'Author info: Wendell Ashcombe');
+  assert.equal(els.af_hardcover.value, entry.hardcover);
+  assert.equal(els.authorRemoveBtn.style.display, '');
+  els.authorRemoveBtn.listeners.click[0]();
+  assert.equal(get("AUTHORS['Wendell Ashcombe'] || null"), null);
+  assert.match(els.ioStatus.textContent, /Removed author info for Wendell Ashcombe/);
+  assert.ok(get("'Marisol Quenby' in AUTHORS"), 'the other authors keep theirs');
+});
+
+test('with make serve, author info is saved to data/authors.json with the books', async () => {
+  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
+  const saves = [];
+  const api = async init => {
+    if (!init.method) return { status: 200, body: { writable: true } };
+    const body = JSON.parse(init.body);
+    saves.push(body);
+    return { status: 200, body: { base: 'b', infoBase: 'i', authorsBase: 'a' + saves.length, books: body.books, authors: body.authors } };
+  };
+  const authorsText = '{"Me":{"bio":"On disk."}}';
+  const { els, get, storage } = await boot({ page: 'authors.html', hash: '#a=Me', files: { 'data/books.json': mine, 'data/authors.json': authorsText }, api });
+  assert.match(els.authorBody.innerHTML, /On disk\./);
+  els.authorBody.listeners.click[0]({ target: { closest: () => ({}) } });
+  els.af_url.value = 'https://me.example/';
+  els.authorForm.listeners.submit[0]({ preventDefault() {} });
+  await settle();
+  assert.equal(saves.length, 1);
+  assert.deepEqual(saves[0].authors, { Me: { bio: 'On disk.', url: 'https://me.example/' } });
+  assert.equal(saves[0].authorsBase, get('CatalogImport.fingerprint(' + JSON.stringify(authorsText) + ')'));
+  assert.equal(get('AUTHORS_BASELINE'), 'a1');
+  assert.ok(!storage.has('audiobook-catalog-data'));
+  assert.equal(els.ioStatus.textContent, 'Saved author info for Me.');
 });

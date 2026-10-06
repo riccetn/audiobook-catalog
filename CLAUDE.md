@@ -5,9 +5,9 @@ read them for workflows and the data format. This file covers what you need to c
 
 ## What this is
 
-A personal audiobook catalogue: static pages (`index.html`, `import.html`, `duplicates.html`, sharing
-`styles.css`) that read
-`data/books.json` and `data/series-info.json`, plus a Node command line (`catalog.js`) for imports,
+A personal audiobook catalogue: static pages (`index.html`, `import.html`, `duplicates.html`, `authors.html`,
+sharing `styles.css`) that read
+`data/books.json`, `data/series-info.json` and `data/authors.json`, plus a Node command line (`catalog.js`) for imports,
 validation and a local server that saves edits made in the page.
 
 - Vanilla JavaScript, no framework, no bundler, **no npm packages**. `package.json` only says
@@ -41,7 +41,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, `parseHardcoverUrl`/`hardcoverBookId` (a book's id from its hardcover.app address), run by `runHardcover` through
   `hardcoverAsker` (the `hardcover-*` commands and the page's own runs; fetch and pause are passed in; the
   GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
-  `parseExclusions`/`exclusionEntries`, `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
+  `parseExclusions`/`exclusionEntries`, `tidyAuthor`/`validateAuthors`/`authorWorks`/`authorList` (the authors page and `data/authors.json`), `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
 - `catalog.js`: the CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
   Hardcover's GraphQL API, both through `io.fetch`, and return a promise; the Hardcover token comes from
   `HARDCOVER_TOKEN` in `io.env`/`process.env`, else `data/hardcover-token`) and the `serve` HTTP server. `serve` exposes a save
@@ -57,8 +57,8 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   if `books.json` changed while it ran. The static server never serves the token file. `serve` logs (`createServer`'s `log`, timestamped by `serveLogger`) each `api/` call, each
   request to Audible/Hardcover (`loggedFetch`: method, URL, GraphQL operation, status; never headers or bodies) and long
   tasks' start and finish (`startTask`). Exports `main`, `createServer` etc. for tests.
-- `store.js`: shared by the pages: the shared state (`DATA`, `SERIES_INFO`, `EXCLUSIONS`, ..., exported;
-  a page replaces `DATA` and `SERIES_INFO` with `setData`/`setSeriesInfo`, since only the module that
+- `store.js`: shared by the pages: the shared state (`DATA`, `SERIES_INFO`, `AUTHORS`, `EXCLUSIONS`, ..., exported;
+  a page replaces `DATA`, `SERIES_INFO` and `AUTHORS` with `setData`/`setSeriesInfo`/`setAuthors`, since only the module that
   declares a binding can assign it), loading (`startPage(init, page)`: fetches `data/`, then falls back to `data/sample/`),
   `persist` (localStorage `audiobook-catalog-data`, tagged with the fingerprint of the files the edits
   were made against, plus `saveToDisk` under `make serve`), the status line and the page links.
@@ -78,6 +78,9 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
 - `app.js` (`index.html`): series overview, all books, the book and series-info forms, module-level
   state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
 - `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, the Hardcover panel (under `make serve` the server runs it; elsewhere the page calls Hardcover itself, `runHardcoverHere`, with the token in localStorage `audiobook-catalog-hardcover-token`), Export / Restore / Merge of backups.
+- `authors.js` (`authors.html`): the list of authors and an author's page (`#a=Name`): bio and links from
+  `AUTHORS`, their series and titles from the books (`authorWorks`), and the author info form. Author
+  names on the catalogue's book cards link here.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `editionsJoinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
@@ -103,7 +106,10 @@ identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn`/`n
 migrated on load by `fixBooks`, and so are authors and narrators written as one comma separated
 string (`fixPeople`/`splitNames`; `namesText` joins a list back for display). Matching and "Not duplicates"
 keys use the first author (`firstAuthor`/`firstName`). A missing `r` means the read date is unknown, not unread. `series-info.json` maps a series
-name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`.
+name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`. `authors.json` (optional;
+missing means `{}`) maps an author's name (as in `a`) to `{bio, url, audible, goodreads, hardcover}` (links as
+full addresses); it travels like series info (saves with `authorsBase`, backups' `authors`, device copy), and an
+entry whose name no book has is a warning, not an error.
 `data/excluded.txt` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` lines that imports must never re-add; code only
 ever appends to it. `data/not-duplicates.txt` (pairs marked "Not duplicates" on the
 Duplicates page) is append-only too.
@@ -124,7 +130,7 @@ Invariants the code relies on:
 ## Privacy (hard rule)
 
 The repo is public; the user's library is not.
-- Never commit `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/not-duplicates.txt`, `data/hardcover-token` or anything in
+- Never commit `data/books.json`, `data/series-info.json`, `data/authors.json`, `data/excluded.txt`, `data/not-duplicates.txt`, `data/hardcover-token` or anything in
   `data/raw/`. The token file must never reach a page, a backup or a log; a token saved in the page stays in that browser's localStorage and is only ever sent to Hardcover. `tests/data.test.mjs` fails if they become tracked.
 - Only `data/sample/` is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.
