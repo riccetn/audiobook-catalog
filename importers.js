@@ -390,6 +390,42 @@ function parseEditions(text){
   return {editions, bad, hcb};
 }
 
+// The fields of the page's edition editor: [key, the label parseEditions() reads, the label the page shows].
+const EDITION_FIELDS = [
+  ['desc', 'Description', 'Description'], ['n', 'Narrated by', 'Narrators'],
+  ['id', 'ASIN', 'ASIN'], ['gr', 'Goodreads', 'Goodreads id'], ['hc', 'Hardcover', 'Hardcover edition'],
+  ['isbn', 'ISBN', 'ISBN'], ['p', 'Publisher', 'Publisher'], ['d', 'Released', 'Released'], ['len', 'Length', 'Length'],
+];
+
+/** An edition as the text of each of the editor's fields, e.g. {id: 'B0X', len: '10h 42m', n: 'Ann Vale, Bo Reed', ...}. */
+function editionFields(ed){
+  return Object.fromEntries(editionParts(ed).map(([k, , value]) => [k, value]));
+}
+
+/**
+ * Read one edition from the editor's fields (as editionFields() gives them), checking each the way
+ * parseEditions() checks a part with that label. Each field is read on its own, so a description or
+ * narrator list may hold a ';'. Several ISBNs make that many editions (splitIsbns); a Hardcover book's
+ * address in the Hardcover field names the book. Returns {editions (none when every field is empty),
+ * bad (the fields that could not be read, as "Label value"), hcb (or null)}.
+ */
+function editionFromFields(fields){
+  const ed = {}, bad = [];
+  let hcb = null;
+  for(const [k, label, shown] of EDITION_FIELDS){
+    const value = tidyText(String(fields[k] || ''));
+    if(!value) continue;
+    if(k === 'desc'){ ed.desc = value; continue; }
+    if(k === 'n'){ ed.n = splitNames(value); if(!ed.n.length) delete ed.n; continue; }
+    const read = parseEditions(k === 'hc' && parseHardcoverUrl(value) ? value : `${label} ${value.replace(/;/g, ',')}`);
+    const got = read.editions.flatMap(x => k === 'isbn' ? editionIsbns(x) : x[k] ? [x[k]] : []);
+    if(read.hcb && k === 'hc') hcb = read.hcb;
+    else if(read.bad.length || !got.length) bad.push(`${shown} ${value}`);
+    else ed[k] = k === 'isbn' ? got : got[0];
+  }
+  return {editions: Object.keys(ed).length ? splitIsbns(orderEdition(ed)) : [], bad, hcb};
+}
+
 /**
  * Put `rec` at `books[index]` (or add it, when `index` is null) and keep the editions it shares with
  * other books in step: a copy that was identical to the edition before the edit gets the edit, and an
@@ -2399,7 +2435,7 @@ export {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   splitNames, namesText, fixNames, fixPeople,
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
-  bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, saveBook,
+  bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, EDITION_FIELDS, editionFields, editionFromFields, saveBook,
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,

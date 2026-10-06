@@ -761,6 +761,21 @@ test('editions as text: formatted for the card and read back from the form', () 
   });
 });
 
+test('editions as fields: one field per part in the book form, each checked on its own', () => {
+  const edition = { id: 'B0X', gr: '4242', hc: '31337', isbn: ISBN_A, n: ['Ann Vale', 'Bo Reed'], p: 'Gull Audio', d: '2021-05', len: 642, desc: 'UK edition; abridged' };
+  const fields = C.editionFields(edition);
+  assert.deepEqual(fields, { desc: 'UK edition; abridged', n: 'Ann Vale, Bo Reed', id: 'B0X', gr: '4242', hc: '31337', isbn: ISBN_A, p: 'Gull Audio', d: '2021-05', len: '10h 42m' });
+  assert.deepEqual(C.editionFromFields(fields), { editions: [edition], bad: [], hcb: null });
+  // empty fields are no edition; a second ISBN is another edition; an edition's address gives its id, a book's the book
+  assert.deepEqual(C.editionFromFields({ desc: '  ', p: '' }), { editions: [], bad: [], hcb: null });
+  assert.deepEqual(C.editionFromFields({ isbn: '978-0-00-000000-2, 0306406152', hc: 'https://hardcover.app/books/the-salt-road/editions/501' }),
+    { editions: [{ hc: '501', isbn: ISBN_A }, { isbn: ISBN_BOX }], bad: [], hcb: null });
+  assert.deepEqual(C.editionFromFields({ id: 'B1', hc: 'https://hardcover.app/id/book/909' }), { editions: [{ id: 'B1' }], bad: [], hcb: '909' });
+  // what can't be read is reported with the field's name, and left out
+  assert.deepEqual(C.editionFromFields({ id: 'B1', gr: 'x', d: '2021-13', len: 'long', isbn: '978' }),
+    { editions: [{ id: 'B1' }], bad: ['Goodreads id x', 'ISBN 978', 'Released 2021-13', 'Length long'], hcb: null });
+});
+
 test('saving a book keeps the copies of a shared edition in step', () => {
   const books = [
     book('Two', 'A', ed({ id: 'BBOX', p: 'Gull Audio' }, { id: 'B2' })),
