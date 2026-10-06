@@ -344,7 +344,8 @@ const EDITION_PART = /^(asin|goodreads(?:\s+id)?|gr|hardcover(?:\s+book)?(?:\s+i
  * Read editions written one per line as formatEdition() writes them. Parts are separated by ';' and
  * start with their label; a bare ISBN, date or length is recognised without one, and other text
  * without a label is the edition's description (one per edition). A line with several ISBNs is that
- * many editions (splitIsbns). "Hardcover book 123" names the book, not the edition.
+ * many editions (splitIsbns). "Hardcover book 123" names the book, not the edition. An edition's address
+ * on Hardcover (hardcover.app/books/the-salt-road/editions/501, with or without the label) gives its id.
  * Returns {editions, bad (the parts that could not be read), hcb (the Hardcover book id, or null)}.
  */
 function parseEditions(text){
@@ -353,6 +354,12 @@ function parseEditions(text){
   for(const line of String(text || '').split(/\r\n|\r|\n/)){
     const ed = {};
     for(const part of line.split(';').map(x => tidyText(x)).filter(Boolean)){
+      // an edition's address on Hardcover names the edition, a book's /id/ address the book
+      const url = parseHardcoverUrl(part);
+      if(url){
+        if(url.edition) ed.hc = url.edition; else if(url.book) hcb = hcb || url.book; else bad.push(part);
+        continue;
+      }
       const m = EDITION_PART.exec(part);
       const label = m ? m[1].toLowerCase().replace(/\s+id$/, '') : '', value = m ? m[2].trim() : part;
       const isbns = parseIsbns(value), date = parseReadDate(value), minutes = parseLength(value);
@@ -360,7 +367,10 @@ function parseEditions(text){
       let field = null, v = null;
       if(label === 'asin') [field, v] = ['id', value];
       else if(label === 'goodreads' || label === 'gr') [field, v] = ['gr', GOODREADS_ID.test(value) ? value : null];
-      else if(label.startsWith('hardcover')) [field, v] = [/book$/.test(label) ? 'hcb' : 'hc', HARDCOVER_ID.test(value) ? value : null];
+      else if(label.startsWith('hardcover')){
+        const kind = /book$/.test(label) ? 'book' : 'edition', url = parseHardcoverUrl(value);
+        [field, v] = [kind === 'book' ? 'hcb' : 'hc', HARDCOVER_ID.test(value) ? value : url && url[kind] || null];
+      }
       else if(label === 'publisher') [field, v] = ['p', value];
       else if(label.startsWith('narrat')) [field, v] = ['n', splitNames(value).length ? splitNames(value) : null];
       else if(label === 'description') [field, v] = ['desc', ed.desc ? null : value];
@@ -1442,6 +1452,12 @@ const HARDCOVER_QUERIES = {
   }
 }`,
   addBook: `mutation AddBook($object: UserBookCreateInput!) { insert_user_book(object: $object) { id error } }`,
+  bookBySlug: `query BookBySlug($slug: String!) {
+  books(where: {slug: {_eq: $slug}}, limit: 1) { id canonical_id title }
+}`,
+  editionBook: `query EditionBook($id: Int!) {
+  editions(where: {id: {_eq: $id}}) { book_id book { title } }
+}`,
   addRead: `mutation AddRead($id: Int!, $read: DatesReadInput!) { insert_user_book_read(user_book_id: $id, user_book_read: $read) { id error } }`,
 };
 
@@ -1665,6 +1681,52 @@ function planHardcoverExport(books, shelf, editionBooks){
     if(missing.length) plan.reads.push({userBook: ub.id, edition, dates: missing, recs: w.recs});
   }
   return plan;
+}
+
+/**
+ * What an address on Hardcover names: {book} for hardcover.app/id/book/77; {edition, slug} for an
+ * edition's page, hardcover.app/books/the-salt-road/editions/501 (or {edition} for /id/edition/501); {slug}
+ * for a book's page, hardcover.app/books/the-salt-road, which only Hardcover can turn into the book's id
+ * (hardcoverBookId). The ids are text, like `hc` and `hcb`. The scheme, "www." and anything after the id
+ * may be there or not. null when it is not such an address.
+ */
+function parseHardcoverUrl(text){
+  const m = /^(?:https?:\/\/)?(?:www\.)?hardcover\.app(\/[^?#\s]*)?(?:[?#]\S*)?$/i.exec(String(text || '').trim());
+  if(!m) return null;
+  const [first, second, third, fourth] = (m[1] || '').split('/').filter(Boolean);
+  const id = x => HARDCOVER_ID.test(x || '') ? x : null;
+  if(first === 'id' && id(third)){
+    if(/^books?$/.test(second)) return {book: third};
+    if(/^editions?$/.test(second)) return {edition: third};
+  }
+  if(first === 'books' && second){
+    if(third === 'editions') return id(fourth) ? {edition: fourth, slug: second} : null;
+    return {slug: second};
+  }
+  return null;
+}
+
+/**
+ * The Hardcover book that `text` names (a book id, or an address as parseHardcoverUrl reads it), asking
+ * Hardcover through `ask` (hardcoverAsker) only when the address doesn't hold the book's id: a book's page
+ * by its slug, an edition by the edition's book. Returns {id, title (when Hardcover was asked)}; throws with a
+ * short reason when it is not an address of a book or edition, or Hardcover has no such book.
+ */
+async function hardcoverBookId(ask, text){
+  const value = String(text || '').trim();
+  if(HARDCOVER_ID.test(value)) return {id: value};
+  const url = parseHardcoverUrl(value);
+  if(!url) throw new Error('not a Hardcover book id, or the address of a book or edition on hardcover.app');
+  if(url.book) return {id: url.book};
+  if(url.edition){
+    const [edition] = (await ask(HARDCOVER_QUERIES.editionBook, {id: Number(url.edition)})).editions || [];
+    if(!isObject(edition) || !Number.isInteger(edition.book_id)) throw new Error(`Hardcover has no edition ${url.edition}`);
+    return {id: String(edition.book_id), title: isObject(edition.book) && typeof edition.book.title === 'string' ? edition.book.title : ''};
+  }
+  const [book] = (await ask(HARDCOVER_QUERIES.bookBySlug, {slug: url.slug})).books || [];
+  if(!isObject(book) || !Number.isInteger(book.id)) throw new Error(`Hardcover has no book at hardcover.app/books/${url.slug}`);
+  // a book merged into another one lives on as that one
+  return {id: String(Number.isInteger(book.canonical_id) ? book.canonical_id : book.id), title: typeof book.title === 'string' ? book.title : ''};
 }
 
 /** A book's or an edition's page on Hardcover, by its id (Hardcover redirects to the current address). */
@@ -2345,7 +2407,7 @@ export {
   boxSetTitle, seriesListingLookups, boxSetTitlesFromAudible,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
   readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport,
-  cleanHardcoverToken, hardcoverAsker, runHardcover, recordLines, mergeLines, hardcoverUrl, hasReadDate,
+  cleanHardcoverToken, hardcoverAsker, runHardcover, recordLines, mergeLines, hardcoverUrl, parseHardcoverUrl, hardcoverBookId, hasReadDate,
   parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
   editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup, parseNotDuplicates,
 };

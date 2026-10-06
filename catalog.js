@@ -611,6 +611,29 @@ function handleHardcover(req, res, root, port, net, runs, log){
   });
 }
 
+/**
+ * The page's lookup of a Hardcover book by an address on hardcover.app (C.hardcoverBookId), asked with
+ * the token the server keeps: POST {address} answers {id, title}, or {error} (404 when Hardcover has no
+ * such book). Same-origin only, and only with your own data/books.json, like the token.
+ */
+function handleHardcoverBook(req, res, root, port, net){
+  if(req.method !== 'POST'){ sendJson(res, 405, {error: 'use POST'}); return; }
+  if(!sameOrigin(req, port)){ sendJson(res, 403, {error: 'only accepted from this page'}); return; }
+  const dir = path.join(root, 'data');
+  if(!fs.existsSync(path.join(dir, 'books.json'))){ sendJson(res, 409, {error: 'no data/books.json: run `node catalog.js init` first'}); return; }
+  readJson(req, res, 4 * 1024, async body => {
+    const address = body && typeof body.address === 'string' ? body.address : '';
+    if(!C.parseHardcoverUrl(address)){ sendJson(res, 400, {error: 'not the address of a book or edition on hardcover.app'}); return; }
+    const ask = hardcoverClient({fetch: net.fetch, pause: net.pause, env: net.env}, dir);
+    if(!ask){ sendJson(res, 409, {error: 'no Hardcover API token: save one on the Import & export page first'}); return; }
+    try{
+      sendJson(res, 200, await C.hardcoverBookId(ask, address));
+    }catch(exc){
+      sendJson(res, /^Hardcover has no /.test(exc.message) ? 404 : 502, {error: exc.message});
+    }
+  });
+}
+
 // ----------------------------------------------------------- serve's log
 /** serve's log: each line goes to `write` (the terminal) stamped with the local time. */
 function serveLogger(write){
@@ -679,6 +702,7 @@ function createServer(root, port, audible = {}, hardcover = {}, log = () => {}){
     if(urlPath === '/api/audible'){ handleAudible(req, res, port(), get, pause, log); return; }
     if(urlPath === '/api/hardcover/token'){ handleHardcoverToken(req, res, root, port()); return; }
     if(urlPath === '/api/hardcover'){ handleHardcover(req, res, root, port(), net, runs, log); return; }
+    if(urlPath === '/api/hardcover/book'){ handleHardcoverBook(req, res, root, port(), net); return; }
     if(!file.startsWith(root + path.sep) && file !== root){ res.writeHead(403).end('forbidden'); return; }
     // the token gives access to your Hardcover account: no page gets to read it
     if(path.basename(file).toLowerCase().includes(HARDCOVER_TOKEN_FILE)){ res.writeHead(404, {'Content-Type': 'text/plain'}).end('not found'); return; }

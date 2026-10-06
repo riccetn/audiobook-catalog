@@ -273,6 +273,46 @@ export async function reloadFromDisk(){
   updateNav();
 }
 
+// ------------------------------------------------------------ Hardcover from the page
+// Anywhere but `make serve` with your own catalogue, the page asks Hardcover itself (its API allows
+// browser requests), with a token kept in this browser only (never in a backup), saved on Import & export.
+export const HARDCOVER_TOKEN_KEY = 'audiobook-catalog-hardcover-token';
+export const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
+
+export function browserHardcoverToken(){
+  try{ return CatalogImport.cleanHardcoverToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch(e){ return ''; }
+}
+
+// Asks Hardcover from this page, saying plainly when the browser can't reach it at all.
+export async function fetchHardcover(url, opts){
+  try{ return await fetch(url, opts); }
+  catch(e){ throw new Error('this browser could not reach Hardcover (offline, or Hardcover refused a request from a web page; then run it under make serve)'); }
+}
+
+/**
+ * The Hardcover book that `text` names: its id, or the address of the book's or one of its editions'
+ * pages on hardcover.app (CatalogImport.hardcoverBookId), as {id, title}. An address without the book's id
+ * is looked up on Hardcover: under `make serve` by the server, with the token it keeps (api/hardcover/book),
+ * elsewhere by this page, with the token saved in this browser. Throws with a short reason.
+ */
+export async function lookupHardcoverBook(text){
+  const url = CatalogImport.parseHardcoverUrl(text);
+  if(!url || url.book) return CatalogImport.hardcoverBookId(null, text);
+  if(HARDCOVER){
+    let res, body;
+    try{
+      res = await fetch('api/hardcover/book', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({address: text})});
+      body = await res.json();
+    }catch(e){ throw new Error('couldn\'t reach the server (is `make serve` still running?)'); }
+    if(!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    return body;
+  }
+  const token = browserHardcoverToken();
+  if(!token) throw new Error('to look it up on Hardcover, save your Hardcover API token on the Import & export page first');
+  const pause = () => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS));
+  return CatalogImport.hardcoverBookId(CatalogImport.hardcoverAsker(token, fetchHardcover, pause), text);
+}
+
 // ------------------------------------------------------------ Hardcover runs
 // A Hardcover import, export or sync runs on the server (`make serve`, api/hardcover) and can take
 // minutes, one request a second. Every page shows it while it goes (#bgTask), also when it was started

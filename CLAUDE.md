@@ -38,7 +38,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   it free of imports and of Node or DOM APIs, so the page and the CLI import, tidy, validate and merge identically.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
   `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command),
-  `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, run by `runHardcover` through
+  `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, `parseHardcoverUrl`/`hardcoverBookId` (a book's id from its hardcover.app address), run by `runHardcover` through
   `hardcoverAsker` (the `hardcover-*` commands and the page's own runs; fetch and pause are passed in; the
   GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
   `parseExclusions`/`exclusionEntries`, `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
@@ -50,7 +50,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   the page loaded it, and writes atomically (`writeAtomic`). It also proxies the page's Audible lookups
   (`handleAudible`, `POST api/audible`, same-origin, batches of 25 ASINs); the page offers them when
   `GET api/save` says `audible: true` (`AUDIBLE_LOOKUP` in `store.js`). For the page's Hardcover panel it keeps
-  the token (`handleHardcoverToken`, `api/hardcover/token`: GET says whether one is saved, never what it is)
+  the token (`handleHardcoverToken`, `api/hardcover/token`: GET says whether one is saved, never what it is), looks a book up by its hardcover.app address with it (`handleHardcoverBook`, `POST api/hardcover/book`; the book form's `lookupHardcoverBook` in `store.js`)
   and runs `cmdHardcover` in the background (`handleHardcover`: `POST api/hardcover` starts a run, same-origin,
   fingerprint-checked like a save, one at a time; `GET` describes it, with `io.progress` steps, while it goes);
   `store.js` shows a running one on every page (`followHardcover`, `#bgTask`). `cmdHardcover` writes nothing

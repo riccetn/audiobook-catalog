@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as C from '../importers.js';
+import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 
 const book = (t, a = 'Author', extra = {}) => ({ t, a: [a], ...extra });
 // A book's editions: ed({ id: 'B1' }, { gr: '7' }) -> { e: [{ id: 'B1' }, { gr: '7' }] }
@@ -1191,6 +1192,39 @@ test('merge: another Hardcover book found by a box set\'s edition is the box set
   // the title's own Hardcover book, found by the same edition, reads only that title
   C.merge(books, [book('One', 'Ann Vale', { hcb: '71', r: ['2026-01-01'], ...ed(box()) })], null, { allDates: true });
   assert.deepEqual(books.map(b => b.r && b.r.at(-1)), ['2026-01-01', '2025-02-02', undefined]);
+});
+
+test('Hardcover addresses name a book or an edition, and editions take an edition\'s address', async () => {
+  assert.deepEqual(C.parseHardcoverUrl('https://hardcover.app/books/tidewater/editions/501'), { edition: '501', slug: 'tidewater' });
+  assert.deepEqual(C.parseHardcoverUrl(' hardcover.app/books/tidewater '), { slug: 'tidewater' });
+  assert.deepEqual(C.parseHardcoverUrl('https://hardcover.app/books/tidewater/reviews/@ann?ref=x'), { slug: 'tidewater' });
+  assert.deepEqual(C.parseHardcoverUrl('http://www.hardcover.app/id/book/77#top'), { book: '77' });
+  assert.deepEqual(C.parseHardcoverUrl('https://hardcover.app/id/editions/501'), { edition: '501' });
+  for (const other of ['77', 'https://hardcover.app/authors/ann-vale', 'https://hardcover.app/books/tidewater/editions/abc',
+    'https://example.com/hardcover.app/id/book/1', 'https://hardcover.app.example.com/id/book/1', 'https://hardcover.app/', ''])
+    assert.equal(C.parseHardcoverUrl(other), null, other);
+
+  assert.deepEqual(C.parseEditions('Hardcover https://hardcover.app/books/tidewater/editions/501; ASIN B0X\nhardcover.app/books/tidewater/editions/9'),
+    { editions: [{ id: 'B0X', hc: '501' }, { hc: '9' }], bad: [], hcb: null });
+  assert.deepEqual(C.parseEditions('ASIN B0X; https://hardcover.app/id/book/77'), { editions: [{ id: 'B0X' }], bad: [], hcb: '77' });
+  // a book's page has no id in it: that goes in the book's own field
+  assert.deepEqual(C.parseEditions('ASIN B0X; https://hardcover.app/books/tidewater').bad, ['https://hardcover.app/books/tidewater']);
+  assert.deepEqual(C.parseEditions('Hardcover book https://hardcover.app/books/tidewater/editions/501').bad, ['Hardcover book https://hardcover.app/books/tidewater/editions/501']);
+});
+
+test('hardcoverBookId finds the book an address names, asking Hardcover only when the address lacks its id', async () => {
+  const hc = fakeHardcover(hardcoverState());
+  const ask = C.hardcoverAsker('tok-123', hc.fetch, async () => {});
+  assert.deepEqual(await C.hardcoverBookId(ask, ' 77 '), { id: '77' });
+  assert.deepEqual(await C.hardcoverBookId(ask, 'https://hardcover.app/id/book/78'), { id: '78' });
+  assert.equal(hc.sent.length, 0);
+  assert.deepEqual(await C.hardcoverBookId(ask, 'https://hardcover.app/books/tidewater'), { id: '77', title: 'Tidewater' });
+  assert.deepEqual(await C.hardcoverBookId(ask, 'https://hardcover.app/books/whatever/editions/801'), { id: '80', title: 'Lantern Hours' });
+  assert.deepEqual(await C.hardcoverBookId(ask, 'https://hardcover.app/books/tidewater-2'), { id: '77', title: 'Tidewater' }, 'a merged book is the one it was merged into');
+  assert.deepEqual(hc.sent.map(s => s.variables), [{ slug: 'tidewater' }, { id: 801 }, { slug: 'tidewater-2' }]);
+  await assert.rejects(C.hardcoverBookId(ask, 'https://hardcover.app/books/no-such-book'), /Hardcover has no book at hardcover\.app\/books\/no-such-book/);
+  await assert.rejects(C.hardcoverBookId(ask, 'https://hardcover.app/id/edition/999'), /Hardcover has no edition 999/);
+  await assert.rejects(C.hardcoverBookId(ask, 'Tidewater'), /not a Hardcover book id, or the address/);
 });
 
 test('hardcoverAsker asks one query a request, pausing between them, and says plainly when Hardcover says no', async () => {

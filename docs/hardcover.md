@@ -35,6 +35,11 @@ nothing already there is added twice. An edit made meanwhile, here or in another
 it saves or sends anything. If the browser can't reach Hardcover at all (offline, or Hardcover refusing a
 request from a web page), it says so; run it under `make serve` then.
 
+**A book's Hardcover id from its address.** The Hardcover app doesn't show ids. In a book's edit form,
+paste the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages into the *Hardcover book* field, and the page asks Hardcover for the
+book's id with the same token (under `make serve` the server asks, with the token it keeps). An edition's
+address in *Editions* needs no lookup: it holds the edition's id.
+
 **Or on the command line**, with the token saved as above (or written to `data/hardcover-token` by hand,
 or, taking precedence, in the `HARDCOVER_TOKEN` environment variable):
 
