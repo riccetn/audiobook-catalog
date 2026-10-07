@@ -28,16 +28,32 @@ otherwise the first is used and the book is flagged in the import output.
 ## Box sets
 
 A box set in an export, one whose series number is a range (Audible's `Ember (books 1-3)`, Goodreads'
-`The Ember Trilogy (Ember, #1-3)`), is added as its titles rather than as one book: books 1, 2 and 3 of
-`Ember` each get the set's edition, the same ASIN or Goodreads id on each (see
-[box sets](data-format.md)), with the set's name as the edition's description. A title you already have
+`The Ember Trilogy (Ember, #1-3)`), is kept both as its own book and as its titles: the set is a book of
+the series numbered `1-3`, and books 1, 2 and 3 of `Ember` each get the set's edition too, the same ASIN
+or Goodreads id on each (see [box sets](data-format.md)), with the set's name as the edition's
+description. The set's own book is found again by that edition, by its title, or by author, series and
+range, so the other export's copy of it fills it in rather than adding it twice. A title you already have
 (same first author, series and number) gains the edition beside its own editions, which are never filled
 in from the set's; a title you don't have yet is added as `Ember, Book 2`. The Audible series lookup
 (`--series`, or the option under the import buttons with `make serve`, or `node catalog.js series` later)
 renames it after book 2 in Audible's listing of the series; otherwise rename it yourself. Each title
-gets the set's date read when it has none. The import lists the box sets it split. Importing the same set
-from the other export later fills in that edition on every title (Goodreads' id beside Audible's ASIN).
+gets the set's date read when it has none. The import lists the box sets it kept. Importing the same set
+from the other export later fills in that edition on the set and every title (Goodreads' id beside
+Audible's ASIN). A box set you already have as one book gains its titles the same way.
 
-A box set stays one book when it is already in your catalogue as one book, when its export names no range
-(an "omnibus" with no numbers: the export doesn't say which titles it holds), or when it has no ASIN,
-Goodreads id or ISBN to tie its titles together.
+A Hardcover box set has no range, but when its edition is on titles you have that are numbers in a row
+of one series (books 1 and 2 of `Gull Isle`), the Hardcover import adds the set as their collection
+(`Gull Isle`, `1-2`); reading it on Hardcover counts as reading each of those titles.
+
+A box set stays one book when its export names no range (an "omnibus" with no numbers: the export doesn't
+say which titles it holds), or when it has no ASIN, Goodreads id or ISBN to tie its titles together.
+
+In a series, a box set (any book whose number is a range) is listed after the titles, and the series
+counts its titles, not the set: "3 owned + 1 box set".
+
+**Box sets already in your catalogue**: `node catalog.js box-sets` (`--dry-run` to see what it would do
+first) brings the box sets you imported before this up to date: a set kept as one book (a range and an
+ASIN, Goodreads id, Hardcover id or ISBN) gains its titles as an import would add them, and titles that
+share an edition and are numbers in a row of one series gain the set as its own book, named by the
+edition's description (the set's name, from an import) or else `Series, Books 1-3`, with the dates read
+all its titles have. Nothing in `data/excluded.txt` is added, so a title or set you removed stays away.

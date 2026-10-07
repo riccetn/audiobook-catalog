@@ -1072,11 +1072,39 @@ function webHost(text){
   return m ? m[1].toLowerCase() : null;
 }
 
-// Order of books in a series: by number ("2", "4-6" by its first), unnumbered ones last, then by title.
+/** [first, last] of a series number that is a range ("4-6" -> [4, 6]), or null for one number or none. */
+function seriesRange(sn){
+  const m = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(String(sn || '').trim());
+  return m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : null;
+}
+
+/** Whether a book is a collection of several titles of its series (a box set): its number is a range. */
+const isCollection = b => !!(isObject(b) && b.s && seriesRange(b.sn));
+
+/**
+ * Order of books in a series: by number ("2", "2.5"), unnumbered ones after them, and collections ("4-6")
+ * last, by their first and then last number; then by title.
+ */
 const bySeriesNumber = (x, y) => {
   const n = b => { const v = parseFloat(b.sn); return Number.isFinite(v) ? v : Infinity; };
-  return n(x) - n(y) || String(x.t).localeCompare(String(y.t));
+  const last = b => (seriesRange(b.sn) || [0, 0])[1];
+  return (isCollection(x) - isCollection(y)) || n(x) - n(y) || last(x) - last(y) || String(x.t).localeCompare(String(y.t));
 };
+
+/**
+ * How many titles of a series `books` (the series' books) hold: a box set kept as its own book beside
+ * its titles adds none, and one without them adds the numbers it covers that no title has.
+ */
+function seriesOwned(books){
+  const titles = books.filter(b => !isCollection(b));
+  const numbers = new Set(titles.map(b => String(b.sn || '').trim()));
+  let count = titles.length;
+  for(const b of books.filter(isCollection)){
+    const [from, to] = seriesRange(b.sn);
+    for(let n = Math.ceil(from); n <= to; n++) if(!numbers.has(String(n))){ numbers.add(String(n)); count++; }
+  }
+  return count;
+}
 
 /**
  * What `name` wrote (alone or with others), from the books: {series: [{name, books}], titles} with each
@@ -1674,11 +1702,11 @@ function isbn10Of(isbn13){
 
 /**
  * The edition Goodreads should find a book by: one of its own (a box set's edition is on several titles,
- * and its ids would make Goodreads file every one of them as the box set), with a Goodreads id and an
+ * and its ids would make Goodreads file every one of them as the box set; the set's own book may use it), with a Goodreads id and an
  * ISBN if possible. `shared` tells whether an id or ISBN is on another book too.
  */
 function goodreadsEdition(rec, shared){
-  const own = bookEditions(rec).filter(ed => !shared(ed));
+  const own = bookEditions(rec).filter(ed => isCollection(rec) || !shared(ed));   // a box set's own book is the set
   const rank = ed => (ed.gr ? 2 : 0) + (editionIsbns(ed).length ? 1 : 0);
   return own.reduce((best, ed) => (!best || rank(ed) > rank(best) ? ed : best), null);
 }
@@ -1955,7 +1983,8 @@ function addHardcoverIds(books, found){
  * `editionBooks`, when given, maps your editions' Hardcover edition ids to the Hardcover book each is an
  * edition of (as Hardcover says): only an edition of the book's own Hardcover book is sent, since a box
  * set's edition can be on a title whose Hardcover book is that title. Without it, a box set's edition
- * (one on several of your books) is only sent for a box set (a Hardcover book several books are).
+ * (one on several of your books) is only sent for a box set (a Hardcover book several books are, or a
+ * book whose series number is a range).
  * Returns {add: [{book (Hardcover book id), edition (or null), dates, recs}], reads: [{userBook, edition,
  * dates, recs}], otherShelf: [[rec, status name]], unknown: [recs without a Hardcover book], inexact: [[rec, date]]}.
  */
@@ -1972,7 +2001,7 @@ function planHardcoverExport(books, shelf, editionBooks){
     if(!b.hcb){ plan.unknown.push(b); continue; }
     const editions = bookEditions(b).filter(ed => ed.hc);
     const ed = editionBooks ? editions.find(x => editionBooks.get(x.hc) === b.hcb)
-      : editions.find(x => !shared(x)) || (owners.get(b.hcb) > 1 ? editions[0] : null);
+      : editions.find(x => !shared(x)) || (owners.get(b.hcb) > 1 || isCollection(b) ? editions[0] : null);
     const exact = (Array.isArray(b.r) ? b.r : []).filter(d => /^\d{4}-\d\d-\d\d$/.test(d));
     for(const d of Array.isArray(b.r) ? b.r : []) if(!exact.includes(d)) plan.inexact.push([b, d]);
     const w = wanted.get(b.hcb) || {edition: null, dates: new Set(), recs: []};
@@ -2134,7 +2163,7 @@ function mergeLines(report, warnings){
     ['editionsAdded', 'other editions added to existing books'], ['excluded', 'skipped (listed in data/excluded.txt)']];
   for(const [k, label] of counts) if(report[k] && report[k].length) lines.push(`  ${label}: ${report[k].length}`);
   if(report.boxSets && report.boxSets.length){
-    lines.push(`  box sets split into their titles: ${report.boxSets.length}`);
+    lines.push(`  box sets kept as their own book and as their titles: ${report.boxSets.length}`);
     for(const b of report.boxSets.slice(0, 15)) lines.push(`    ${b.t} - ${namesText(b.a)}: ${b.titles} already here, ${b.added} added`);
     if(report.boxSets.some(b => b.added)) lines.push('    (a title not here yet is named "Series, Book N" until --series or the `series` command names it)');
   }
@@ -2267,6 +2296,16 @@ function boxRange(rec){
   return lo < hi && hi - lo < BOX_MAX ? [lo, hi] : null;
 }
 
+/** "1-3" when `books` are titles 1, 2 and 3 of one series, by one first author; else null. */
+function collectionNumber(books){
+  if(books.length < 2) return null;
+  const series = seriesNorm(books[0].s || ''), author = firstAuthor(books[0].a);
+  const numbers = books.map(b => series && seriesNorm(b.s || '') === series && firstAuthor(b.a) === author &&
+    /^\d+$/.test(String(b.sn || '').trim()) ? Number(String(b.sn).trim()) : NaN).sort((x, y) => x - y);
+  if(numbers.some((n, i) => Number.isNaN(n) || (i && n !== numbers[i - 1] + 1))) return null;
+  return `${numbers[0]}-${numbers[numbers.length - 1]}`;
+}
+
 // Which report list a book goes on when one of its editions gains a field.
 const FILLED_REPORT = {asin: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFilled', isbn: 'isbnsFilled', n: 'detailsFilled', p: 'detailsFilled', d: 'detailsFilled', len: 'detailsFilled', desc: 'detailsFilled'};
 
@@ -2286,12 +2325,12 @@ const FILLED_REPORT = {asin: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcover
  * sources that keep every read, like Hardcover; a date counts as there when the book has it or the month
  * or year it falls in); `addable(rec)` says whether an unmatched record may be added (others only fill
  * in a book they match, and go on `notAdded`).
- * A box set with a series range ("1-3") and an id or ISBN becomes its titles (see mergeBoxSet below),
- * unless it is in `existing` as one book already.
+ * A box set with a series range ("1-3") and an id or ISBN is kept as its own book and becomes its titles
+ * too (see mergeBoxSet below); so is a record of another Hardcover book found by a box set's edition.
  * Returns {added, backfilled, goodreadsFilled, hardcoverFilled, isbnsFilled, detailsFilled, editionsAdded,
  * datesFilled, excluded, notAdded, boxSets, matched}: books that gained an ASIN, a Goodreads id, a Hardcover
  * id, ISBNs, a narrator, publisher, release date or length, a new edition, dates read; box sets
- * split into their titles ({t, a, titles: how many you had, added: how many were added}).
+ * kept as their own book and their titles ({t, a, titles: how many you had, added: how many were added}).
  */
 function merge(existing, incoming, exclusions, opts){
   exclusions = exclusions || new Exclusions();
@@ -2342,10 +2381,12 @@ function merge(existing, incoming, exclusions, opts){
   };
 
   /**
-   * An incoming box set (a series and a range, "1-3"): each number is a title, found by author, series
-   * and number (or by already holding the set's edition), or else added. Every title gets the set's
-   * edition, and the set's dates read when it has none. Returns false when the set is in the catalogue
-   * as one book, which then merges as any other record.
+   * An incoming box set (a series and a range, "1-3") is kept as its own title, and each number is a title
+   * too, found by author, series and number (or by already holding the set's edition), or else added. The
+   * set and every title get the set's edition, and the set's dates read when they have none. The set is
+   * found by holding its edition without being one title of the series, by its title, or by author, series
+   * and range. Returns false
+   * when nothing ties the titles together, and the set then merges as any other record.
    */
   const mergeBoxSet = (rec, original, [lo, hi]) => {
     // without an id or ISBN there is nothing to tie the titles together, so the set stays one book
@@ -2355,30 +2396,39 @@ function merge(existing, incoming, exclusions, opts){
     const ownsSet = b => bookEditions(b).some(x => editions.some(ed => EDITION_IDS.some(k => shareId(x, ed, k)) && sameEdition(x, ed)));
     const titleNumber = b => firstAuthor(b.a) === author && seriesNorm(b.s || '') === series && /^\d+$/.test(String(b.sn || '').trim()) ?
       Number(String(b.sn).trim()) : null;
-    const whole = existing.some(b => (ownsSet(b) && titleNumber(b) === null) ||
-      (norm(b.t) === norm(rec.t) && firstAuthor(b.a) === author));
-    if(whole) return false;
     const titles = [], excluded = exclusions.covers(rec);
     let added = 0;
+    // whether `book` (the set or one of its titles) may be added; a refused one goes on its report list
+    const add = (book, isSet) => {
+      if(excluded || (!isSet && exclusions.covers(book))){ report.excluded.push(book); return false; }
+      if(opts.addable && !opts.addable(original)){ report.notAdded.push(book); return false; }
+      existing.push(book);
+      report.added.push(book);
+      indexBook(existing.length - 1);
+      return true;
+    };
+    const copy = book => {
+      if(rec.g) book.g = [...rec.g];
+      if(rec.r) book.r = [...rec.r];
+      if(editions.length) book.e = editions.map(ed => ({...ed}));
+      return book;
+    };
+    const rangeKey = key('series', author, series, String(rec.sn).trim());
+    let setIndex = existing.findIndex(b => (ownsSet(b) && titleNumber(b) === null) || (norm(b.t) === norm(rec.t) && firstAuthor(b.a) === author));
+    if(setIndex < 0 && index.has(rangeKey)) setIndex = index.get(rangeKey);
+    const setFound = setIndex >= 0;
     for(let n = lo; n <= hi; n++){
       let i = existing.findIndex(b => ownsSet(b) && titleNumber(b) === n);
       if(i < 0) i = index.has(key('series', author, series, String(n))) ? index.get(key('series', author, series, String(n))) : -1;
-      if(i >= 0){ titles.push(i); continue; }
-      const part = {t: boxSetTitle(rec.s, n), a: [...rec.a], s: rec.s, sn: String(n)};
-      if(rec.g) part.g = [...rec.g];
-      if(rec.r) part.r = [...rec.r];
-      if(editions.length) part.e = editions.map(ed => ({...ed}));
-      if(excluded || exclusions.covers(part)){ report.excluded.push(part); continue; }
-      if(opts.addable && !opts.addable(original)){ report.notAdded.push(part); continue; }
-      existing.push(part);
-      report.added.push(part);
-      indexBook(existing.length - 1);
-      added++;
+      if(i >= 0 && i !== setIndex){ titles.push(i); continue; }
+      if(add(copy({t: boxSetTitle(rec.s, n), a: [...rec.a], s: rec.s, sn: String(n)}), false)) added++;
     }
-    if(titles.length) report.matched++;
-    const before = titles.map(i => JSON.stringify(existing[i]));
-    for(const i of titles){
-      for(const ed of editions) giveBoxEdition(i, ed, titles);
+    if(!setFound && add(copy({t: rec.t, a: [...rec.a], s: rec.s, sn: String(rec.sn).trim()}), true)) setIndex = existing.length - 1;
+    const found = setFound ? [...titles, setIndex] : titles;
+    if(found.length) report.matched++;
+    const before = found.map(i => JSON.stringify(existing[i]));
+    for(const i of found){
+      for(const ed of editions) giveBoxEdition(i, ed, found);
       giveDates(existing[i], rec);
     }
     // every copy of the set's edition ends up with all it is known by
@@ -2387,8 +2437,8 @@ function merge(existing, incoming, exclusions, opts){
       for(const [, x] of copies) for(const [, y] of copies) fillEdition(x, y);
       copies.forEach(([i]) => indexBook(i));
     }
-    const changed = titles.filter((i, j) => JSON.stringify(existing[i]) !== before[j]).length;
-    if(added || changed) report.boxSets.push({t: rec.t, a: rec.a, titles: titles.length, added});
+    const changed = found.filter((i, j) => JSON.stringify(existing[i]) !== before[j]).length;
+    if(added || changed || (!setFound && setIndex >= 0)) report.boxSets.push({t: rec.t, a: rec.a, titles: titles.length, added});
     return true;
   };
 
@@ -2404,19 +2454,28 @@ function merge(existing, incoming, exclusions, opts){
 
     const hit = lookupKeys(rec).find(k => index.has(k));
     if(hit !== undefined){
-      const match = index.get(hit), book = existing[match];
+      let match = index.get(hit), book = existing[match];
       report.matched++;
+      // A record of another Hardcover book that finds a book by a box set's edition finds the book that is
+      // that Hardcover book, when there is one: the set kept as its own book, or another of its titles.
+      if(rec.hcb && book.hcb !== rec.hcb){
+        const set = existing.findIndex((b, i) => i !== match && b.hcb === rec.hcb &&
+          bookEditions(b).some(x => bookEditions(rec).some(ed => sameEdition(x, ed))));
+        if(set >= 0){ match = set; book = existing[set]; }
+      }
+      const isSet = isCollection(book);
       // A Hardcover book other than this one, found by a box set's edition, is the box set: reading it
-      // was reading each of its titles.
+      // was reading each of its titles, and so is reading a set kept as its own book.
       const boxSet = !!(rec.hcb && book.hcb && rec.hcb !== book.hcb);
-      const readers = new Set([match]);
+      const readers = new Set([match]), setEditions = [];
       for(const ed of bookEditions(rec)){
         const own = bookEditions(book);
         let target = own.find(x => sameEdition(x, ed));
         if(!target && own.length === 1 && !editionsConflict(own[0], ed) && !copiesOf(own[0]).length) target = own[0];
         if(target){
           const copies = copiesOf(target);
-          if(boxSet) copies.forEach(([i]) => readers.add(i));
+          if(boxSet || isSet) copies.forEach(([i]) => readers.add(i));
+          if(boxSet && copies.length) setEditions.push(target);
           for(const field of fillEdition(target, ed)) note(report[FILLED_REPORT[field]], book);
           for(const [i, copy] of copies){ fillEdition(copy, target); indexBook(i); }
         } else if(own.length){
@@ -2436,6 +2495,22 @@ function merge(existing, incoming, exclusions, opts){
         indexBook(match);
       }
       for(const i of readers) giveDates(existing[i], rec);
+      // the box set is kept as its own book beside its titles when they are numbers in a row of one
+      // series, so it can be their collection ("1-3")
+      const titles = [...readers].map(i => existing[i]), number = setEditions.length ? collectionNumber(titles) : null;
+      if(number && (!rec.s || seriesNorm(rec.s) === seriesNorm(titles[0].s))){
+        const set = {...rec, s: titles[0].s, sn: number, e: setEditions.map(ed => orderEdition({...ed, desc: ed.desc || rec.t}))};
+        if(rec.r) set.r = [...rec.r];
+        for(const k of BOOK_KEYS) if(k in set){ const v = set[k]; delete set[k]; set[k] = v; }   // keys in the usual order
+        if(exclusions.covers(set)) report.excluded.push(set);
+        else if(opts.addable && !opts.addable(original)) report.notAdded.push(set);
+        else {
+          existing.push(set);
+          report.added.push(set);
+          indexBook(existing.length - 1);
+          report.boxSets.push({t: set.t, a: set.a, titles: titles.length, added: 0});
+        }
+      }
       continue;
     }
     if(exclusions.covers(rec)){
@@ -2450,6 +2525,40 @@ function merge(existing, incoming, exclusions, opts){
     existing.push(rec);
     report.added.push(rec);
     indexBook(existing.length - 1);
+  }
+  return report;
+}
+
+/**
+ * Keep each box set in `books` both as its own book and as its titles (changes `books` in place, never
+ * changing a value it has): a set kept as one book (a series range, "1-3", and an id or ISBN) gains its
+ * titles the way an import of it would add them, and titles that share an edition, numbers in a row of one
+ * series, gain the set as its own book (named by the edition's description, else "Series, Books 1-3"),
+ * with the dates read they all have. Nothing `exclusions` covers is added.
+ * Returns merge()'s report, whose `added` are the titles and sets added.
+ */
+function boxSetBooks(books, exclusions){
+  exclusions = exclusions || new Exclusions();
+  const report = merge(books, books.filter(isCollection).map(b => JSON.parse(JSON.stringify(b))), exclusions);
+  const done = new Set();
+  for(const b of [...books]){
+    for(const ed of bookEditions(b)){
+      if(done.has(ed) || !EDITION_IDS.some(k => editionIds(ed, k).length)) continue;
+      const copies = books.flatMap(x => bookEditions(x).filter(y => sameEdition(y, ed)).map(y => [x, y]));
+      copies.forEach(([, y]) => done.add(y));
+      const holders = [...new Set(copies.map(([x]) => x))];
+      const number = holders.some(isCollection) ? null : collectionNumber(holders);
+      if(!number) continue;
+      const first = holders.find(x => x.sn === number.split('-')[0]) || holders[0];
+      const dates = holders.every(x => Array.isArray(x.r)) ? first.r.filter(d => holders.every(x => x.r.includes(d))) : [];
+      const set = {t: ed.desc || `${first.s}, Books ${number}`, a: [...first.a], s: first.s, sn: number};
+      if(dates.length) set.r = dates;
+      set.e = [orderEdition({...ed})];
+      if(exclusions.covers(set)){ report.excluded.push(set); continue; }
+      books.push(set);
+      report.added.push(set);
+      report.boxSets.push({t: set.t, a: set.a, titles: holders.length, added: 0});
+    }
   }
   return report;
 }
@@ -2724,7 +2833,7 @@ export {
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
   ASIN_SITE, AUDIBLE_SITE, AMAZON_SITE, editionAsins, asinOn, asinsText, parseAsins,
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, EDITION_FIELDS, ASIN_SITES, editionFields, editionFromFields, saveBook,
-  bookNarrators,
+  bookNarrators, seriesRange, isCollection, bySeriesNumber, seriesOwned, boxSetBooks,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   AUTHOR_KEYS, tidyAuthor, validateAuthors, authorWorks, authorList,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,

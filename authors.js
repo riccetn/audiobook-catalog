@@ -79,7 +79,7 @@ function renderAuthor(name){
 
   series.forEach(s=>{
     const si = SERIES_INFO[s.name];
-    const owned = `${s.books.length} owned${si ? ' of ' + esc(si.total) : ''}`;
+    const owned = `${CatalogImport.seriesOwned(s.books)} owned${si ? ' of ' + esc(si.total) : ''}`;
     html += `<div class="series-group"><p class="series-title"><a href="${esc(seriesHref(s.name))}">${esc(s.name)}</a>` +
       ` <span class="n">${owned}</span>` +
       (si ? ` <span class="status ${si.status}">${si.status === 'complete' ? 'complete' : 'ongoing'}</span>` : '') + '</p>' +

@@ -188,7 +188,7 @@ test('imports keep editions: publisher, release date and length, and another ASI
     [{ t: 'Kept', a: ['Ann'], e: [{ asin: { 'audible.com': 'B1' }, p: 'Gull Audio', d: '2021-05-04', len: 642 }, { asin: { 'audible.com': 'B1UK' } }] }]);
 });
 
-test('import-audible splits a box set into its titles, each with the set\'s edition', t => {
+test('import-audible keeps a box set as its own book and splits it into its titles, each with the set\'s edition', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
   const csv = path.join(tmp, 'library.csv');
@@ -197,13 +197,31 @@ test('import-audible splits a box set into its titles, each with the set\'s edit
     + row({ Title: 'Ember: Books 1-2', Authors: 'Ann', Series: 'Ember (books 1-2)', Progress: 'Finished', ASIN: 'BBOX' }));
   const { code, out } = run('import-audible', csv);
   assert.equal(code, 0);
-  assert.match(out, /box sets split into their titles: 1\n    Ember: Books 1-2 - Ann: 1 already here, 1 added/);
+  assert.match(out, /box sets kept as their own book and as their titles: 1\n    Ember: Books 1-2 - Ann: 1 already here, 1 added/);
   const set = { asin: { 'audible.com': 'BBOX' }, desc: 'Ember: Books 1-2' };
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [
     { t: 'Spark', a: ['Ann'], s: 'Ember', sn: '1', e: [{ asin: { 'audible.com': 'B1' } }, set] },
     { t: 'Ember, Book 2', a: ['Ann'], s: 'Ember', sn: '2', e: [set] },
+    { t: 'Ember: Books 1-2', a: ['Ann'], s: 'Ember', sn: '1-2', e: [set] },
   ]);
   assert.doesNotMatch(run('import-audible', csv).out, /box sets/, 'nothing new the second time');
+});
+
+test('box-sets keeps each box set in the catalogue as its own book and as its titles', t => {
+  const { tmp, run } = sandbox(t);
+  assert.equal(run('init').code, 0);
+  const booksPath = path.join(tmp, 'data', 'books.json');
+  const box = { asin: { 'audible.com': 'BBOX' }, desc: 'Ember: Books 1-2' };
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Spark', a: ['Ann'], s: 'Ember', sn: '1', e: [box] }, { t: 'Flame', a: ['Ann'], s: 'Ember', sn: '2', e: [box] }]));
+  const before = fs.readFileSync(booksPath, 'utf8');
+  let { code, out } = run('box-sets', '--dry-run');
+  assert.equal(code, 0);
+  assert.match(out, /box sets: 1\n    Ember: Books 1-2 - Ann: 2 title\(s\) already here\n  new: 1\n    \+ Ember: Books 1-2 - Ann  \[Ember #1-2\]\n\(dry run/);
+  assert.equal(fs.readFileSync(booksPath, 'utf8'), before);
+  ({ code, out } = run('box-sets'));
+  assert.equal(code, 0);
+  assert.deepEqual(loadBooks(booksPath)[2], { t: 'Ember: Books 1-2', a: ['Ann'], s: 'Ember', sn: '1-2', e: [box] });
+  assert.match(run('box-sets').out, /box sets: 0\n  new: 0$/);
 });
 
 test('export-goodreads writes a CSV Goodreads imports, and --dry-run writes nothing', t => {
@@ -498,6 +516,7 @@ test('import-audible --series names a box set\'s new titles after Audible\'s ser
   const set = { asin: { 'audible.com': 'B0EMBERBOX' }, desc: 'Ember: Books 1-3' };
   assert.deepEqual(loadBooks(booksPath).map(b => [b.t, b.sn, b.e]), [
     ['Spark', '1', [{ asin: { 'audible.com': 'B0SPARK001' } }, set]], ['Flame', '2', [set]], ['Ember Falls', '3', [set]],
+    ['Ember: Books 1-3', '1-3', [set]],
   ]);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'series-info.json'), 'utf8')), { Ember: { total: 3, status: 'complete' } });
 });

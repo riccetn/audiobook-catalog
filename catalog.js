@@ -269,6 +269,32 @@ function cmdFormat(args, io){
   return 0;
 }
 
+/**
+ * Keep every box set both as its own book and as its titles: a set kept as one book gains its titles, and
+ * titles sharing a set's edition gain the set (C.boxSetBooks). Skips what data/excluded.txt lists.
+ */
+function cmdBoxSets(args, io){
+  if(!requireOwnData(args, io)) return 2;
+  const [booksPath, infoPath, excludedPath] = paths(args);
+  const books = loadBooks(booksPath);
+  const report = C.boxSetBooks(books, loadExclusions(excludedPath));
+  io.out(`box sets: ${report.boxSets.length}`);
+  for(const b of report.boxSets.slice(0, 15)) io.out(`    ${b.t} - ${C.namesText(b.a)}: ${b.titles} title(s) already here`);
+  if(report.excluded.length) io.out(`  skipped (listed in data/excluded.txt): ${report.excluded.length}`);
+  io.out(`  new: ${report.added.length}`);
+  preview(report.added, io);
+  if(!report.added.length && !report.boxSets.length) return 0;
+  const {errors} = C.validate(books, loadSeriesInfo(infoPath));
+  if(errors.length){
+    io.err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
+    return 1;
+  }
+  if(args.dryRun){ io.out('(dry run: nothing written)'); return 0; }
+  dumpBooks(books, booksPath);
+  io.out(`wrote ${shown(booksPath, args.root)}`);
+  return 0;
+}
+
 /** Items of `a` missing from `b`, counting duplicates (like Python's Counter subtraction). */
 function multisetMinus(a, b){
   const count = new Map();
@@ -947,6 +973,8 @@ const COMMANDS = {
   'init': {run: cmdInit, help: 'create your own git-ignored data files (--sample: start from the demo data)'},
   'validate': {run: cmdValidate, help: 'check data/ for problems'},
   'format': {run: cmdFormat, help: 'rewrite data/*.json in the current format (e.g. old ids and ISBNs as editions)'},
+  'box-sets': {run: cmdBoxSets, dryRun: true,
+    help: 'keep each box set as its own book and as its titles (adds a set\'s missing titles, and the set beside titles sharing its edition)'},
   'series': {run: cmdSeries, dryRun: true,
     help: 'fill in missing series, numbers and released totals from Audible, by ASIN (--store us, uk, de, ...)'},
   'hardcover-import': {run: (a, io) => cmdHardcover(a, io, 'import'), dryRun: true,
@@ -965,7 +993,7 @@ const USAGE = `usage: node catalog.js [--root DIR] [--data-dir DIR] <command> [o
 commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
-  --dry-run          (imports, series, hardcover-*, sync-export, merge-backup, export-goodreads) show what would change without writing
+  --dry-run          (imports, box-sets, series, hardcover-*, sync-export, merge-backup, export-goodreads) show what would change without writing
   --series           (import-audible) then fill in the new books' series from Audible
   --store us|uk|...  (import-audible, series) the Audible store: the site the export's ASINs are from,
                      and the one asked for series (default us, audible.com)

@@ -64,8 +64,8 @@ info it replaces the other series' info. Or edit
 
 **Find books missing from a series**: when a series has a released total in `data/series-info.json`,
 the series overview and the series itself list the numbers you don't own (for example
-"missing #3, #5–7"). A boxed set (`"4-6"`) counts for every number in it; a novella such as `"2.5"`
-doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
+"missing #3, #5–7"). A boxed set (`"4-6"`) counts for every number in it, but not as one more book owned; a
+novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
 **Fill in series from Audible**: see [Audible](audible.md#fill-in-series-from-audible).

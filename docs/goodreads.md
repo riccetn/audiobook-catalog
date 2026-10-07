@@ -24,7 +24,7 @@ dates read it has as *Read Count*. Goodreads keeps one date read, so a book gets
 (`2024-03-15` becomes `2024/03/15`); one read only in `2024-03` or `2024` goes without. Goodreads finds a
 book by the *Book Id* and ISBN of one of its editions (preferring one with both), else by title and
 author; a box set's edition, shared with its other titles, is left out so Goodreads doesn't file each
-title as the box set. The command says how many books have no id or ISBN and how many no full date.
+title as the box set (the box set's own book, whose number is a range, goes by it). The command says how many books have no id or ISBN and how many no full date.
 Our own Goodreads import reads the file back.
 
 Books imported before titles were split this way (or by hand) are split when the catalogue loads: a book with

@@ -29,6 +29,19 @@ function seriesMissing(name){
   return info ? CatalogImport.missingNumbers(DATA.filter(b=> b.s === name), info.total) : null;
 }
 
+// A series' books by number, unnumbered ones first, and its collections (box sets, "1-3") last.
+function seriesOrder(a, b){
+  const last = x=> (CatalogImport.seriesRange(x.sn) || [0, 0])[1];
+  return (CatalogImport.isCollection(a) - CatalogImport.isCollection(b)) ||
+    (parseFloat(a.sn)||0) - (parseFloat(b.sn)||0) || last(a) - last(b);
+}
+
+// "3 owned + 1 box set": a box set kept as its own book is not one more title.
+function ownedText(books){
+  const sets = books.filter(CatalogImport.isCollection).length;
+  return `${CatalogImport.seriesOwned(books)} owned` + (sets ? ` + ${sets} box set${sets > 1 ? 's' : ''}` : '');
+}
+
 // [3, 5, 6, 7] -> "#3, #5-7"
 function numberList(nums){
   const runs = [];
@@ -238,9 +251,9 @@ export function render(){
   }
 
   seriesNames.forEach(name=>{
-    const books = groups[name].sort((a,b)=> (parseFloat(a.sn)||0) - (parseFloat(b.sn)||0));
+    const books = groups[name].sort(seriesOrder);
     const info = SERIES_INFO[name];
-    let head = `<p class="series-title"><a href="${esc(bookHref(name, 'series'))}">${esc(name)}</a> <span class="n">${books.length} owned</span>`;
+    let head = `<p class="series-title"><a href="${esc(bookHref(name, 'series'))}">${esc(name)}</a> <span class="n">${ownedText(books)}</span>`;
     head += ` ${seriesEditButton(name)}`;
     if(info){
       head += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
@@ -345,7 +358,7 @@ function renderSeriesOverview(){
     const info = SERIES_INFO[name];
     html += `<div class="srow"><div class="srow-head">
       <a class="srow-title" href="${esc(stateHash({view: 'library', series: name, book: null}))}">${esc(name)}</a>
-      <span class="srow-owned">${books.length} owned${info ? ' of ' + esc(info.total) : ''}</span>
+      <span class="srow-owned">${CatalogImport.seriesOwned(books)} owned${info ? ' of ' + esc(info.total) : ''}</span>
       ${seriesEditButton(name)}
     </div>`;
     let foot = `<div class="srow-foot"><span class="tag">${authorLinks(authors)}</span>`;
