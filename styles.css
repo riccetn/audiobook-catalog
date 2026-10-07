@@ -177,6 +177,32 @@ h1{
 .dup-heading{font-family:'Lora',Georgia,serif; font-size:1.05rem; font-weight:600; margin:1.5rem 0 .3rem;}
 .book.picked{border-color:var(--moss); box-shadow:0 0 0 1px var(--moss);}
 .book.picked .iconbtn.merge{color:var(--moss);}
+.editionsEditor{display:flex; flex-direction:column; gap:.5rem;}
+.editionCard{border:1px solid var(--line); border-radius:8px; padding:.5rem .65rem .65rem; background:var(--paper);}
+.editionCardHead{display:flex; justify-content:space-between; align-items:center; font-size:.82rem; font-weight:600;}
+.editionAlso{margin:.25rem 0 0; font-size:.75rem; font-style:italic; color:var(--ink-soft);}
+.editionFields{display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:0 .5rem;}
+.editionFields > div{grid-column:span 2;}
+.editionFields > .ef-desc, .editionFields > .ef-n{grid-column:span 3;}
+.editionFields > .ef-asin{grid-column:1 / -1;}
+.editionFields > .ef-d, .editionFields > .ef-len{grid-column:span 1;}
+/* one field per site the edition has an ASIN on, and the list that adds another */
+.asinSites{display:grid; grid-template-columns:repeat(auto-fill, minmax(10rem, 1fr)); gap:0 .5rem;}
+.asinSites label{font-weight:normal;}
+#addForm .asinSites select{width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink-soft); font-family:inherit; font-size:.9rem;}
+#addForm .editionFields input{background:var(--card);}
+.removeEdition, .addEdition{
+  padding:.3rem .7rem; border-radius:6px; border:1px solid var(--line); cursor:pointer;
+  font-size:.8rem; background:var(--paper); color:var(--ink);
+}
+.removeEdition{padding:.2rem .55rem; font-weight:normal;}
+.addEdition{margin-top:.5rem;}
+.removeEdition:hover, .addEdition:hover{border-color:var(--moss);}
+@media (max-width:600px){
+  .editionFields{grid-template-columns:repeat(2, minmax(0, 1fr));}
+  .editionFields > div, .editionFields > .ef-d, .editionFields > .ef-len{grid-column:span 1;}
+  .editionFields > .ef-desc, .editionFields > .ef-n, .editionFields > .ef-asin{grid-column:span 2;}
+}
 .formrow{display:flex; gap:.6rem;}
 .formrow > div{flex:1;}
 .formrow > .formrow-btn{flex:0 0 auto; display:flex; align-items:flex-end;}

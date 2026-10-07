@@ -40,7 +40,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command),
   `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, `parseHardcoverUrl`/`hardcoverBookId` (a book's id from its hardcover.app address), run by `runHardcover` through
   `hardcoverAsker` (the `hardcover-*` commands and the page's own runs; fetch and pause are passed in; the
-  GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
+  GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`, `editionFields`/`editionFromFields` (the book form's edition cards), `parseAsins`/`asinsText` (ASINs by site as text),
   `parseExclusions`/`exclusionEntries`, `tidyAuthor`/`validateAuthors`/`authorWorks`/`authorList` (the authors page and `data/authors.json`), `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
 - `catalog.js`: the CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
   Hardcover's GraphQL API, both through `io.fetch`, and return a promise; the Hardcover token comes from
@@ -96,12 +96,13 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
 ## Data model (short form; full table in `docs/data-format.md`)
 
 `books.json` is a list of titles with short keys `t a s sn g r hcb e` (title, list of authors, series,
-series number as text, genres, dates read, Hardcover book id, editions). Each edition in `e` has `id gr hc isbn n p d len desc`
-(Audible ASIN, Goodreads book id, Hardcover edition id, one ISBN, list of narrators, publisher, release date,
-length in minutes, free-text description) and must not be empty. `id`, `gr` and `hc` name an edition
-(`EDITION_IDS`) and match books; the ISBN names an edition too (`editionsConflict`: another ISBN is another
+series number as text, genres, dates read, Hardcover book id, editions). Each edition in `e` has `asin gr hc isbn n p d len desc`
+(ASINs by site, `{"audible.com": "B0…", "amazon.com": "B0…"}`, Goodreads book id, Hardcover edition id, one ISBN, list of narrators, publisher, release date,
+length in minutes, free-text description) and must not be empty. `asin`, `gr` and `hc` name an edition
+(`EDITION_IDS`; `editionIds` gives an ASIN of any site, and only another ASIN on the same site disagrees) and match books; the ISBN names an edition too (`editionsConflict`: another ISBN is another
 edition) but never matches books. Editions with an ISBN list or an `hcb`, from before, are split and the
-id lifted to the book on load (`splitIsbns`, `fixBooks`). A box set is one edition copied onto each of its titles, linked by the shared
+id lifted to the book on load (`splitIsbns`, `fixBooks`); an edition's old one-ASIN `id` becomes its audible.com ASIN (`fixAsin`).
+Audible imports' ASINs are the picked Audible site's (audible.com by default), Hardcover's and Goodreads' amazon.com's. A box set is one edition copied onto each of its titles, linked by the shared
 identifier (`sameEdition`). Books from before editions (with `id`/`gr`/`isbn`/`n` on the book) are
 migrated on load by `fixBooks`, and so are authors and narrators written as one comma separated
 string (`fixPeople`/`splitNames`; `namesText` joins a list back for display). Matching and "Not duplicates"
@@ -115,7 +116,7 @@ ever appends to it. `data/not-duplicates.txt` (pairs marked "Not duplicates" on 
 Duplicates page) is append-only too.
 
 Invariants the code relies on:
-- Imports only add books, never overwrite. Matching order: any edition's `id`, `gr` or `hc`, then the book's `hcb`, then first author + series + number
+- Imports only add books, never overwrite. Matching order: any edition's ASIN (any site), `gr` or `hc`, then the book's `hcb`, then first author + series + number
   (spelling-insensitive), then author + title (forgiving Audible's long titles, never mistaking a
   boxed set for book 1). A match may gain dates read and editions: an incoming edition fills in the
   edition it shares an identifier with (and that edition's box-set copies), or the match's only

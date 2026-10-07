@@ -10,10 +10,12 @@
 3. `make test`, then commit `data/books.json`.
 
 Only finished books are imported. The command lists what it added, and anything ambiguous
-(for example a book Audible files under several series). Each book gets its Audible edition: the ASIN,
+(for example a book Audible files under several series). Each book gets its Audible edition: the ASIN
+(audible.com's; add `--store uk` etc. when the export is from another Audible site),
 the ISBNs, the narrators, the publisher, the release date and the length, as far as the export has them.
 
-**Or import in the app**: on the *Import & export* page, press **Audible CSV** (or **Goodreads CSV**) and pick the export. The page
+**Or import in the app**: on the *Import & export* page, press **Audible CSV** (or **Goodreads CSV**) and pick the export (an Audible export
+from another site than audible.com: pick the site under the buttons first, so its ASINs are kept as that site's). The page
 runs the same importer and merge as the command line (both use `importers.js`), honours
 `data/excluded.txt`, and shows the same preview: what is already there, which Audible and Goodreads ids get filled
 in, what is new and what needs a look. Nothing changes until you press **Add books**; then, like any
@@ -30,7 +32,8 @@ check it and change it to `complete` in the series form. Nothing you have is eve
 gives its titles the series but not a number (the number would be the set's). A box set's title an
 import added as `Ember, Book 2` ([Box sets](imports.md#box-sets)) gets the title of book 2 in Audible's
 listing of the series; no other title is changed. Books without an ASIN (only
-from Goodreads) are not looked up. It asks audible.com; `--store uk` (or `de`, `fr`, `ca`, `au`, ...)
+from Goodreads) are not looked up. It asks about an edition's ASIN on that Audible site, else on the matching
+Amazon site (amazon.com for audible.com), else on another site. It asks audible.com; `--store uk` (or `de`, `fr`, `ca`, `au`, ...)
 asks another store, for books the first one doesn't know. It needs the internet and uses Audible's own
 catalogue API, which needs no account but isn't an official public API, so it could stop working.
 
