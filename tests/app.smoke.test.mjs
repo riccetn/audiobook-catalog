@@ -284,46 +284,68 @@ test('back and forward step through series, books, filters and searches', async 
 
 test('editing a book keeps its editions', async () => {
   const { ctx, els, get, run } = await boot();
-  run("DATA[0].e = [{id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642}, {id: 'TESTASIN02'}]");
+  run("DATA[0].e = [{asin: { 'audible.com': 'TESTASIN01' }, gr: '4242', p: 'Gull Audio', len: 642}, {asin: { 'audible.com': 'TESTASIN02' }}]");
   ctx.setView('library');
   ctx.openEditForm(0);
   assert.equal(els.formTitle.textContent, 'Edit book');
-  assert.deepEqual(formEditions(get), [{ id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: '10h 42m' }, { id: 'TESTASIN02' }]);
+  assert.deepEqual(formEditions(get), [{ asin: 'audible.com TESTASIN01', gr: '4242', p: 'Gull Audio', len: '10h 42m' }, { asin: 'audible.com TESTASIN02' }]);
   assert.match(els.f_editions.innerHTML, /Edition 2/);
   assert.match(els.f_editions.innerHTML, /<input data-i="0" data-k="len" value="10h 42m"/);
   els.f_t.value = 'Renamed In The App';
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.deepEqual(get('({t: DATA[0].t, e: DATA[0].e})'),
-    { t: 'Renamed In The App', e: [{ id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642 }, { id: 'TESTASIN02' }] });
+    { t: 'Renamed In The App', e: [{ asin: { 'audible.com': 'TESTASIN01' }, gr: '4242', p: 'Gull Audio', len: 642 }, { asin: { 'audible.com': 'TESTASIN02' } }] });
 });
 
 test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Goodreads', async () => {
   const { ctx, els, run } = await boot();
-  run("DATA[0].e = [{id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}]");
+  run("DATA[0].e = [{asin: { 'audible.com': 'TESTASIN01' }, gr: '4242', p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}]");
   ctx.setView('library');
   ctx.render();
   const html = els.results.innerHTML;
-  assert.match(html, /ASIN <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a>; Goodreads <a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a>; Publisher Gull Audio; Length 10h 42m/);
+  assert.match(html, /ASIN audible\.com <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a>; Goodreads <a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a>; Publisher Gull Audio; Length 10h 42m/);
   // an edition without either id has no links
   assert.match(html, /<div class="edition">ISBN 9780000000002<\/div>/);
+  // each site's ASIN links to the book on that site
+  run("DATA[0].e = [{asin: { 'audible.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' }}]");
+  ctx.render();
+  assert.match(els.results.innerHTML, /ASIN audible\.co\.uk <a href="https:\/\/www\.audible\.co\.uk\/pd\/TESTASIN02"[^>]*>TESTASIN02<\/a>, amazon\.com <a href="https:\/\/www\.amazon\.com\/dp\/TESTASIN03"[^>]*>TESTASIN03<\/a><\/div>/);
+});
+
+test('the book form keeps an edition\'s ASINs by site, and an ASIN typed without one is audible.com\'s', async () => {
+  const { ctx, els, get, run } = await boot();
+  run("DATA[0].e = [{asin: { 'audible.com': 'TESTASIN01' }}]");
+  ctx.setView('library');
+  ctx.openEditForm(0);
+  typeEdition(els, 0, 'asin', 'audible.com TESTASIN01, amazon.co.uk TESTASIN02, https://www.amazon.com/dp/TESTASIN03?ref=x');
+  addEdition(els);
+  typeEdition(els, 1, 'asin', 'testasin04');
+  els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  assert.deepEqual(get('DATA[0].e'), [{ asin: { 'audible.com': 'TESTASIN01', 'amazon.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' } },
+    { asin: { 'audible.com': 'TESTASIN04' } }]);
+  // two ASINs for one site can't be read
+  ctx.openEditForm(0);
+  typeEdition(els, 1, 'asin', 'audible.com TESTASIN04, audible.com TESTASIN05');
+  els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  assert.match(els.formError.textContent, /Not understood: edition 2: ASINs audible.com TESTASIN04, audible.com TESTASIN05/);
 });
 
 test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardcover, and the edit form keeps them', async () => {
   const { ctx, els, get, run } = await boot();
-  run("DATA[0].hcb = '808'; DATA[0].e = [{id: 'TESTASIN01', hc: '31337'}]");
+  run("DATA[0].hcb = '808'; DATA[0].e = [{asin: { 'audible.com': 'TESTASIN01' }, hc: '31337'}]");
   ctx.setView('library');
   ctx.render();
   assert.match(els.results.innerHTML, /<div class="ids">Hardcover book <a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a><\/div>/);
-  assert.match(els.results.innerHTML, /ASIN <a [^>]*>TESTASIN01<\/a>; Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a><\/div>/);
+  assert.match(els.results.innerHTML, /ASIN audible\.com <a [^>]*>TESTASIN01<\/a>; Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a><\/div>/);
   els.q.value = '808';
   ctx.render();
   assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 1, 'searchable by its Hardcover book id');
   els.q.value = '';
   ctx.openEditForm(0);
   assert.equal(els.f_hcb.value, '808');
-  assert.deepEqual(formEditions(get), [{ id: 'TESTASIN01', hc: '31337' }]);
+  assert.deepEqual(formEditions(get), [{ asin: 'audible.com TESTASIN01', hc: '31337' }]);
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-  assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['808', [{ id: 'TESTASIN01', hc: '31337' }]]);
+  assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['808', [{ asin: { 'audible.com': 'TESTASIN01' }, hc: '31337' }]]);
 
   // a Hardcover book id is a number; a book's address in an edition's Hardcover field goes on the book
   ctx.openEditForm(0);
@@ -334,7 +356,7 @@ test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardc
   addEdition(els);
   typeEdition(els, 1, 'hc', 'https://hardcover.app/id/book/909');
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-  assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['909', [{ id: 'TESTASIN01', hc: '31337' }]]);
+  assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['909', [{ asin: { 'audible.com': 'TESTASIN01' }, hc: '31337' }]]);
 });
 
 test('the Hardcover book field takes the address of a book or edition on Hardcover, and looks up its id', async () => {
@@ -511,7 +533,7 @@ test('narrators and descriptions live on editions: shown on the card, searchable
 
   ctx.openEditForm(salt);
   assert.equal(formEditions(get)[0].n, 'Tobias Frane');
-  assert.equal(formEditions(get)[0].id, 'SAMPLE0001');
+  assert.equal(formEditions(get)[0].asin, 'audible.com SAMPLE0001, amazon.com SAMPLE0201');
   addEdition(els);
   typeEdition(els, 2, 'desc', 'Dramatized adaptation; unabridged');
   typeEdition(els, 2, 'n', 'A full cast');
@@ -525,7 +547,7 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
   ctx.setView('library');
   const two = demoBooks.findIndex(b => b.t === 'The Copper Graft'), three = demoBooks.findIndex(b => b.t === 'Harvest of Gears');
   assert.ok(two >= 0 && three >= 0, 'the demo data has a box set');
-  assert.match(els.results.innerHTML, /ASIN <a [^>]*>SAMPLE0008<\/a>; ISBN 9780306406157; Publisher Kestrel Row Audio; Released 2022-11; Length 23h 5m/);
+  assert.match(els.results.innerHTML, /ASIN audible.com <a [^>]*>SAMPLE0008<\/a>; ISBN 9780306406157; Publisher Kestrel Row Audio; Released 2022-11; Length 23h 5m/);
   assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=Harvest\+of\+Gears">Harvest of Gears #3<\/a>/);
   assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=The\+Copper\+Graft">The Copper Graft #2<\/a>/);
   els.q.value = 'kestrel row';
@@ -542,7 +564,7 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 });
 
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ id: 'B1' }], r: ['2020'] }]);
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2020'] }]);
   const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
     + 'Old Favourite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
@@ -551,7 +573,7 @@ test('a Goodreads import adds the ISBN to the edition of books already there', a
   assert.match(els.importPreviewBody.innerHTML, /ISBNs added to existing books: 1/);
   assert.equal(els.importConfirm.textContent, 'Save ISBNs');
   els.importConfirm.listeners.click[0]();
-  assert.deepEqual(get('DATA[0].e'), [{ id: 'B1', isbn: '9780306406157' }]);
+  assert.deepEqual(get('DATA[0].e'), [{ asin: { 'audible.com': 'B1' }, isbn: '9780306406157' }]);
   assert.match(els.ioStatus.textContent, /added ISBNs to 1 book/);
 });
 
@@ -577,9 +599,9 @@ test('authors are lists: the author filter offers each author on its own, and th
 });
 
 test('authors and narrators written as comma separated text load as lists', async () => {
-  const mine = JSON.stringify([{ t: 'Old Style', a: 'Ann Vale, Bo Reed', e: [{ id: 'B1', n: 'Cy Hale, Di Moss' }] }]);
+  const mine = JSON.stringify([{ t: 'Old Style', a: 'Ann Vale, Bo Reed', e: [{ asin: { 'audible.com': 'B1' }, n: 'Cy Hale, Di Moss' }] }]);
   const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
-  assert.deepEqual(get('DATA'), [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ id: 'B1', n: ['Cy Hale', 'Di Moss'] }] }]);
+  assert.deepEqual(get('DATA'), [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ asin: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }]);
   ctx.setView('library');
   assert.match(els.authorFilter.innerHTML, /<option value="Bo Reed">/);
   assert.match(els.results.innerHTML, /Ann Vale, Bo Reed — narr\. Cy Hale, Di Moss/);
@@ -637,7 +659,7 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   assert.ok(els.importPreview.classList.contains('open'));
   assert.equal(els.importPreviewTitle.textContent, 'Audible import');
   assert.match(els.importPreviewBody.innerHTML, /Already in the catalogue: 1/);
-  assert.match(els.importPreviewBody.innerHTML, /Audible ids filled in on existing books: 1/);
+  assert.match(els.importPreviewBody.innerHTML, /ASINs filled in on existing books: 1/);
   assert.match(els.importPreviewBody.innerHTML, /excluded\.txt\): 1/);
   assert.match(els.importPreviewBody.innerHTML, /New: 1/);
   assert.match(els.importPreviewBody.innerHTML, /Ashfall/);
@@ -647,10 +669,10 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   els.importConfirm.listeners.click[0]();
   assert.ok(!els.importPreview.classList.contains('open'));
   assert.deepEqual(get('DATA'), [
-    { t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
-    { t: 'A Crown of Embers 6: Ashfall', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6', n: ['A. B. Quill'] }] },
+    { t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5', e: [{ asin: { 'audible.com': 'B5' } }] },
+    { t: 'A Crown of Embers 6: Ashfall', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '6', e: [{ asin: { 'audible.com': 'B6' }, n: ['A. B. Quill'] }] },
   ]);
-  assert.match(els.ioStatus.textContent, /Added 1 book, filled in 1 Audible id/);
+  assert.match(els.ioStatus.textContent, /Added 1 book, filled in 1 ASIN/);
 
   // the same file again: nothing to add, nothing to confirm
   els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
@@ -679,7 +701,7 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 });
 
 test('a Goodreads import fills in dates read on books that have none', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ id: 'B1' }] }]);
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
   const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
     + 'Old Favourite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
@@ -688,7 +710,7 @@ test('a Goodreads import fills in dates read on books that have none', async () 
   assert.match(els.importPreviewBody.innerHTML, /Dates read filled in on existing books: 1/);
   assert.equal(els.importConfirm.textContent, 'Save dates read');
   els.importConfirm.listeners.click[0]();
-  assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ id: 'B1' }], r: ['2023-11-04'] }]);
+  assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2023-11-04'] }]);
   assert.match(els.ioStatus.textContent, /filled in dates read on 1 book/);
 });
 
@@ -1096,8 +1118,8 @@ test('a refused save keeps the edits in the browser and says why', async () => {
 
 test('with make serve, series can be looked up on Audible, previewed, then saved', async () => {
   const mine = JSON.stringify([
-    { t: 'Loose', a: ['Ann Vale'], e: [{ id: 'B0LOOSE001' }] },
-    { t: 'Gull 2', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ id: 'B0GULL0002' }] },
+    { t: 'Loose', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0LOOSE001' } }] },
+    { t: 'Gull 2', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ asin: { 'audible.com': 'B0GULL0002' } }] },
   ]);
   const lookups = [], saves = [];
   const api = async (init, url) => {
@@ -1126,7 +1148,7 @@ test('with make serve, series can be looked up on Audible, previewed, then saved
 
   els.importConfirm.listeners.click[0]();
   await settle();
-  assert.deepEqual(get('DATA[0]'), { t: 'Loose', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ id: 'B0LOOSE001' }] });
+  assert.deepEqual(get('DATA[0]'), { t: 'Loose', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ asin: { 'audible.com': 'B0LOOSE001' } }] });
   assert.equal(get('SERIES_INFO["Gull Isle"].total'), 4);
   assert.equal(get('SERIES_INFO["Gull Isle"].status'), 'ongoing');
   assert.equal(saves.length, 1);
@@ -1139,7 +1161,7 @@ test('with make serve, series can be looked up on Audible, previewed, then saved
 });
 
 test('with make serve, an Audible import can go on to look up the new books\' series', async () => {
-  const mine = JSON.stringify([{ t: 'Old Standalone', a: ['Ann Vale'], e: [{ id: 'B0OLD00001' }] }]);
+  const mine = JSON.stringify([{ t: 'Old Standalone', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
   const lookups = [];
   const api = async (init, url) => {
     if (!init.method) return { status: 200, body: { writable: true, audible: true } };
@@ -1167,7 +1189,7 @@ test('with make serve, an Audible import can go on to look up the new books\' se
   assert.match(els.importPreviewBody.innerHTML, /Tidewater &mdash; Ann Vale {2}\[Gull Isle #1\]/);
   els.importConfirm.listeners.click[0]();
   await settle();
-  assert.deepEqual(get('DATA[1]'), { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ id: 'B0NEW00001' }] });
+  assert.deepEqual(get('DATA[1]'), { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ asin: { 'audible.com': 'B0NEW00001' } }] });
   assert.equal(get('SERIES_INFO["Gull Isle"].total'), 2);
 
   // the choice is remembered in this browser
@@ -1192,10 +1214,10 @@ test('without make serve (or with the demo data) edits stay in the browser', asy
 
 test('duplicates page: found, merged with the picked title, or kept apart', async () => {
   const mine = JSON.stringify([
-    { t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ id: 'B1' }] },
-    { t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
+    { t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ asin: { 'audible.com': 'B1' } }] },
+    { t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }] },
     { t: 'Salt Road', a: ['Marisol Quenby'], n: ['Tobias Frane'], s: 'Lantern Coast', sn: '1', r: ['2023-06-02'], e: [{ gr: '4242' }] },
-    { t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ id: 'BBOX', p: 'Gull Audio' }] },
+    { t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }] },
     { t: 'The Ledger', a: ['Priya Ostrander'] },
     { t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
   ]);
@@ -1216,7 +1238,7 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
   ctx.mergeGroup(0);
   assert.equal(get('DATA.length'), 5);
   assert.deepEqual(get('DATA[0]'), { t: 'Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1',
-    g: ['Fantasy'], r: ['2023-06-02'], e: [{ id: 'B1', gr: '4242', n: ['Tobias Frane'] }] });   // Audible's and Goodreads' records of one edition
+    g: ['Fantasy'], r: ['2023-06-02'], e: [{ asin: { 'audible.com': 'B1' }, gr: '4242', n: ['Tobias Frane'] }] });   // Audible's and Goodreads' records of one edition
   assert.match(els.ioStatus.textContent, /^Merged 2 entries into Salt Road\./);
   assert.equal(get('EXCLUSIONS.size'), 0);              // the removed entry's ids live on in the kept book
   assert.deepEqual(get('DUP_GROUPS'), [[3, 4]]);
@@ -1270,12 +1292,12 @@ test('an edit is not saved over changes another tab made meanwhile', async () =>
 
 test('merging keeps editions apart when asked, and books merged that way can be joined later', async () => {
   const mine = JSON.stringify([
-    { t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ id: 'B1', len: 642 }] },
+    { t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ asin: { 'audible.com': 'B1' }, len: 642 }] },
     { t: 'Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ gr: '4242', p: 'Gull Audio' }] },
-    { t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ id: 'B2' }, { gr: '777', isbn: '9780306406157' }] },
-    { t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ id: 'B3' }, { id: 'B3X' }] },
-    { t: 'Box Set', a: ['Marisol Quenby'], e: [{ id: 'BBOX' }, { gr: '888' }] },
-    { t: 'Other In Box', a: ['Marisol Quenby'], e: [{ id: 'BBOX' }] },
+    { t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ asin: { 'audible.com': 'B2' } }, { gr: '777', isbn: '9780306406157' }] },
+    { t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ asin: { 'audible.com': 'B3' } }, { asin: { 'audible.com': 'B3X' } }] },
+    { t: 'Box Set', a: ['Marisol Quenby'], e: [{ asin: { 'audible.com': 'BBOX' } }, { gr: '888' }] },
+    { t: 'Other In Box', a: ['Marisol Quenby'], e: [{ asin: { 'audible.com': 'BBOX' } }] },
   ]);
   const files = { 'data/books.json': mine };
   const { ctx, els, get, run, storage } = await boot({ page: 'duplicates.html', files });
@@ -1289,11 +1311,11 @@ test('merging keeps editions apart when asked, and books merged that way can be 
   run('DUP_PICKS[0].joinEditions = false; renderDuplicates()');
   assert.match(els.dupBody.innerHTML, /class="dup-joinbox" data-g="0">/);
   ctx.mergeGroup(0);
-  assert.deepEqual(get('DATA[0].e'), [{ id: 'B1', len: 642 }, { gr: '4242', p: 'Gull Audio' }]);
+  assert.deepEqual(get('DATA[0].e'), [{ asin: { 'audible.com': 'B1' }, len: 642 }, { gr: '4242', p: 'Gull Audio' }]);
   // ...and the merged book is now offered for joining, like Beacons
   assert.deepEqual(get('SPLIT'), [0, 1]);
   ctx.joinBookEditions(0);
-  assert.deepEqual(get('DATA[0].e'), [{ id: 'B1', gr: '4242', p: 'Gull Audio', len: 642 }]);
+  assert.deepEqual(get('DATA[0].e'), [{ asin: { 'audible.com': 'B1' }, gr: '4242', p: 'Gull Audio', len: 642 }]);
   assert.match(els.ioStatus.textContent, /^The Salt Road now has one edition\./);
   // "Keep separate" is remembered in this browser
   ctx.keepEditionsApart(get('SPLIT[0]'));
@@ -1393,8 +1415,8 @@ test('"Not duplicates" marks come from data/not-duplicates.txt, are saved there 
 });
 
 test('Merge previews a backup from another device and keeps both sides\' changes', async () => {
-  const mine = JSON.stringify([{ t: 'Here', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ id: 'B1' }] }]);
-  const backup = { books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ id: 'B1' }] },
+  const mine = JSON.stringify([{ t: 'Here', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
+  const backup = { books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] },
     { t: 'New There', a: ['Ann Vale'] }], seriesInfo: {}, excluded: ['BGONE9'], notDuplicates: ['["editions","id B1"]'] };
   const { els, get, storage } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
   els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
@@ -1508,7 +1530,7 @@ test('with make serve, the Hardcover panel saves the token and previews, then ru
 });
 
 test('without make serve, the page runs a Hardcover sync itself, with a token kept in this browser', async () => {
-  const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ id: 'B0LANTERN1' }] }];
+  const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }];
   const state = hardcoverState();
   const hc = fakeHardcover(state);
   let leaving = null;   // what leaving the page during the run would do
@@ -1562,7 +1584,7 @@ test('without make serve, the page runs a Hardcover sync itself, with a token ke
 });
 
 test('a Hardcover run in the page writes and sends nothing when the catalogue is edited meanwhile, or Hardcover cannot be reached', async () => {
-  const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ id: 'B0LANTERN1' }] }];
+  const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }];
   const state = hardcoverState();
   const hc = fakeHardcover(state);
   let edit = false;

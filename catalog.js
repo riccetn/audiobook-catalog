@@ -83,7 +83,7 @@ const DEMO_NOTE = 'note: no data/books.json found, so this is the bundled demo d
 
 const EXCLUDED_HEADER = `# Books that imports must never re-add (because you removed them on purpose).
 # One entry per line; anything after '#' is a comment. Either:
-#   B0XXXXXXXX                  an Audible ASIN
+#   B0XXXXXXXX                  an ASIN (of any Amazon or Audible site)
 #   ISBN 978-0-00-000000-2      an ISBN (skips every book carrying it, e.g. all books of a boxed set)
 #   Goodreads 12345678          a Goodreads book id (the number in goodreads.com/book/show/...)
 #   Some Title | Some Author    for books with neither id
@@ -160,6 +160,11 @@ function cmdValidate(args, io){
   if(Array.isArray(raw) && raw.some(b => b && typeof b === 'object' && ['id', 'gr', 'isbn', 'n'].some(k => k in b))){
     io.out('note: some books keep their ids, ISBNs or narrator on the book, from before editions; they are read as editions, ' +
       'and `make format` (or any save) writes them that way');
+  }
+  const oldAsins = Array.isArray(raw) ? raw.filter(b => C.bookEditions(b).some(ed => 'id' in ed)).length : 0;
+  if(oldAsins){
+    io.out(`note: ${oldAsins} book(s) keep an edition's ASIN as "id", from before ASINs were kept by site; it is read as the ` +
+      'audible.com ASIN, and `make format` (or any save) writes it that way');
   }
   const oldEditions = Array.isArray(raw) ? raw.filter(b => C.bookEditions(b).some(ed => 'hcb' in ed || Array.isArray(ed.isbn))).length : 0;
   if(oldEditions){
@@ -757,7 +762,7 @@ function cmdSeries(args, io){
 async function lookUpSeries(args, io, books, info, booksPath, infoPath, only){
   const get = io.fetch || globalThis.fetch, pause = io.pause || defaultPause;
   const store = C.AUDIBLE_STORES[args.store];
-  const asins = C.seriesLookups(books, info, only);
+  const asins = C.seriesLookups(books, info, only, args.store);
   io.out(`looking up ${asins.length} book(s) on ${store}`);
   let found, report, totals, renamed;
   try{
@@ -878,7 +883,7 @@ function cmdServe(args, io){
 }
 
 const COMMANDS = {
-  'import-audible': {run: (a, io) => runImport(a, io, C.readAudible, 'Audible'), file: true, dryRun: true,
+  'import-audible': {run: (a, io) => runImport(a, io, text => C.readAudible(text, C.AUDIBLE_STORES[a.store]), 'Audible'), file: true, dryRun: true,
     help: 'add new finished books from an Audible Library Extractor CSV (--series: then look up their series on Audible)'},
   'import-goodreads': {run: (a, io) => runImport(a, io, C.readGoodreads, 'Goodreads'), file: true, dryRun: true,
     help: 'add audiobooks from a Goodreads library export CSV'},
@@ -906,7 +911,9 @@ commands:
 ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).join('\n')}
 
   --dry-run          (imports, series, hardcover-*, sync-export, merge-backup, export-goodreads) show what would change without writing
-  --series           (import-audible) then fill in the new books' series from Audible (--store us, uk, ...)
+  --series           (import-audible) then fill in the new books' series from Audible
+  --store us|uk|...  (import-audible, series) the Audible store: the site the export's ASINs are from,
+                     and the one asked for series (default us, audible.com)
   --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;
 
@@ -942,7 +949,7 @@ function parseArgs(argv){
   if(args.preferBackup && args.command !== 'merge-backup') throw new Error('--prefer-backup only goes with merge-backup');
   if(!Number.isInteger(args.port) || args.port <= 0) throw new Error('--port needs a port number');
   if(args.series && args.command !== 'import-audible') throw new Error('--series only goes with import-audible');
-  if(args.store !== null && args.command !== 'series' && !args.series) throw new Error('--store only goes with series and import-audible --series');
+  if(args.store !== null && !['series', 'import-audible'].includes(args.command)) throw new Error('--store only goes with series and import-audible');
   args.store = args.store || 'us';
   if(!C.AUDIBLE_STORES[args.store]) throw new Error(`--store must be one of ${Object.keys(C.AUDIBLE_STORES).join(', ')}`);
   return args;

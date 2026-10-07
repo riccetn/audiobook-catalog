@@ -65,7 +65,7 @@ function matches(b, q, author, genre, read){
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const editions = CatalogImport.bookEditions(b);
-    const hay = [b.t,...authorsOf(b),b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.hc, CatalogImport.namesText(ed.n), ed.p, ed.desc, ed.isbn]), b.hcb]
+    const hay = [b.t,...authorsOf(b),b.s,...(b.g||[]),...editions.flatMap(ed=>[...CatalogImport.editionAsins(ed).map(([, asin])=> asin), ed.gr, ed.hc, CatalogImport.namesText(ed.n), ed.p, ed.desc, ed.isbn]), b.hcb]
       .filter(x=> typeof x === 'string').join(' ').toLowerCase();
     // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
     const isbn = CatalogImport.parseIsbn(q);
@@ -470,7 +470,8 @@ let SHARED = new Map();
 
 function sharedEditions(){
   const byKey = new Map();
-  const keys = ed=> [...['id','gr','hc'].filter(k=> ed[k]).map(k=> k + ' ' + ed[k]), ...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
+  const keys = ed=> [...CatalogImport.editionAsins(ed).map(([, asin])=> 'asin ' + asin), ...['gr','hc'].filter(k=> ed[k]).map(k=> k + ' ' + ed[k]),
+    ...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
   DATA.forEach((b,i)=> CatalogImport.bookEditions(b).forEach(ed=> keys(ed).forEach(k=>{
     if(!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push([i, ed]);
@@ -484,20 +485,22 @@ function sharedEditions(){
   return shared;
 }
 
-// Audible's US store: the catalogue has no notion of a store region, and audible.com redirects
-// a visitor to their own store when the title is sold there.
-const AUDIBLE_URL = 'https://www.audible.com/pd/', GOODREADS_URL = 'https://www.goodreads.com/book/show/';
+const GOODREADS_URL = 'https://www.goodreads.com/book/show/';
+
+// An ASIN's page on its site: audible.co.uk/pd/B0X, amazon.com/dp/B0X.
+const asinUrl = site=> `https://www.${site}/${site.startsWith('audible.') ? 'pd' : 'dp'}/`;
 
 /**
- * An edition as formatEdition() writes it, with its ASIN, Goodreads id and Hardcover ids linking to the
- * book there (Hardcover's links by id keep working when it renames the book).
+ * An edition as formatEdition() writes it, with each ASIN linking to the book on its site, and the
+ * Goodreads id and Hardcover ids to the book there (Hardcover's links by id keep working when it renames the book).
  */
 const idLink = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
 
 function editionHtml(ed){
-  const urls = {id: AUDIBLE_URL, gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', '')};
+  const urls = {gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', '')};
+  const asins = ()=> CatalogImport.editionAsins(ed).map(([site, asin])=> `${esc(site)} ${idLink(asinUrl(site), asin)}`).join(', ');
   return CatalogImport.editionParts(ed).map(([k, label, value])=>
-    (label ? esc(label) + ' ' : '') + (urls[k] ? idLink(urls[k], value) : esc(value))).join('; ');
+    (label ? esc(label) + ' ' : '') + (k === 'asin' ? asins() : urls[k] ? idLink(urls[k], value) : esc(value))).join('; ');
 }
 
 // The address of a book (or, with kind 'series', a series) shown on its own.
@@ -638,7 +641,7 @@ function setFormEditions(editions, index){
   renderFormEditions();
 }
 
-const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', id: 'B0…', gr: 'e.g. 4242',
+const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', asin: 'e.g. audible.com B0…, amazon.com B0…', gr: 'e.g. 4242',
   hc: 'id or hardcover.app address', isbn: '978…', p: 'e.g. Gullwing Audio', d: 'e.g. 2021-05', len: 'e.g. 10h 42m'};
 
 function renderFormEditions(){

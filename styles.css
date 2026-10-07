@@ -154,7 +154,8 @@ h1{
 .editionFields{display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:0 .5rem;}
 .editionFields > div{grid-column:span 2;}
 .editionFields > .ef-desc, .editionFields > .ef-n{grid-column:span 3;}
-.editionFields > .ef-d, .editionFields > .ef-len{grid-column:span 1;}
+.editionFields > .ef-asin{grid-column:span 4;}
+.editionFields > .ef-d, .editionFields > .ef-len{grid-column:span 3;}
 #addForm .editionFields input{background:var(--card);}
 .removeEdition, .addEdition{
   padding:.3rem .7rem; border-radius:6px; border:1px solid var(--line); cursor:pointer;
@@ -166,7 +167,7 @@ h1{
 @media (max-width:600px){
   .editionFields{grid-template-columns:repeat(2, minmax(0, 1fr));}
   .editionFields > div, .editionFields > .ef-d, .editionFields > .ef-len{grid-column:span 1;}
-  .editionFields > .ef-desc, .editionFields > .ef-n{grid-column:span 2;}
+  .editionFields > .ef-desc, .editionFields > .ef-n, .editionFields > .ef-asin{grid-column:span 2;}
 }
 .formrow{display:flex; gap:.6rem;}
 .formrow > div{flex:1;}

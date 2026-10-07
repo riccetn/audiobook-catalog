@@ -79,7 +79,7 @@ test('import-audible previews with --dry-run, then adds, fills in ids and honour
   const dry = run('import-audible', csv, '--dry-run');
   assert.equal(dry.code, 0);
   assert.match(dry.out, /already in the catalogue: 1/);
-  assert.match(dry.out, /Audible ids filled in on existing books: 1/);
+  assert.match(dry.out, /ASINs filled in on existing books: 1/);
   assert.match(dry.out, /skipped \(listed in data\/excluded.txt\): 1/);
   assert.match(dry.out, /\+ Ashfall - Ilse Marlowe {2}\[A Crown of Embers #6\]/);
   assert.match(dry.out, /dry run/);
@@ -87,8 +87,8 @@ test('import-audible previews with --dry-run, then adds, fills in ids and honour
 
   assert.equal(run('import-audible', csv).code, 0);
   assert.deepEqual(loadBooks(books), [
-    { t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5', e: [{ id: 'B5' }] },
-    { t: 'Ashfall', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '6', e: [{ id: 'B6', n: ['A. B. Quill'] }] },
+    { t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5', e: [{ asin: { 'audible.com': 'B5' } }] },
+    { t: 'Ashfall', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '6', e: [{ asin: { 'audible.com': 'B6' }, n: ['A. B. Quill'] }] },
   ]);
   assert.match(run('import-audible', csv).out, /new: 0/);
 });
@@ -138,14 +138,14 @@ test('imports store ISBNs, add another ISBN as another edition, and skip ISBNs i
   let { code, out } = run('import-audible', csv);
   assert.equal(code, 0);
   assert.match(out, /skipped \(listed in data\/excluded.txt\): 1/);
-  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [{ t: 'Kept', a: ['Ann'], e: [{ id: 'B1', isbn: '9780306406157' }] }]);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [{ t: 'Kept', a: ['Ann'], e: [{ asin: { 'audible.com': 'B1' }, isbn: '9780306406157' }] }]);
 
   const gr = path.join(tmp, 'goodreads.csv');
   fs.writeFileSync(gr, 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf\n'
     + 'Kept,Ann,"=""""","=""9780000000002""",Audible Audio,read\n');
   ({ code, out } = run('import-goodreads', gr));
   assert.match(out, /other editions added to existing books: 1/);
-  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ id: 'B1', isbn: '9780306406157' }, { isbn: '9780000000002' }]);
+  assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json'))[0].e, [{ asin: { 'audible.com': 'B1' }, isbn: '9780306406157' }, { isbn: '9780000000002' }]);
 });
 
 test('imports keep editions: publisher, release date and length, and another ASIN as another edition', t => {
@@ -158,7 +158,7 @@ test('imports keep editions: publisher, release date and length, and another ASI
   fs.writeFileSync(csv, ALE_COLUMNS.join(',') + '\n' + row({ Title: 'Kept', Authors: 'Ann', Progress: 'Finished', ASIN: 'B1UK' }));
   assert.match(run('import-audible', csv).out, /other editions added to existing books: 1/);
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')),
-    [{ t: 'Kept', a: ['Ann'], e: [{ id: 'B1', p: 'Gull Audio', d: '2021-05-04', len: 642 }, { id: 'B1UK' }] }]);
+    [{ t: 'Kept', a: ['Ann'], e: [{ asin: { 'audible.com': 'B1' }, p: 'Gull Audio', d: '2021-05-04', len: 642 }, { asin: { 'audible.com': 'B1UK' } }] }]);
 });
 
 test('import-audible splits a box set into its titles, each with the set\'s edition', t => {
@@ -171,9 +171,9 @@ test('import-audible splits a box set into its titles, each with the set\'s edit
   const { code, out } = run('import-audible', csv);
   assert.equal(code, 0);
   assert.match(out, /box sets split into their titles: 1\n    Ember: Books 1-2 - Ann: 1 already here, 1 added/);
-  const set = { id: 'BBOX', desc: 'Ember: Books 1-2' };
+  const set = { asin: { 'audible.com': 'BBOX' }, desc: 'Ember: Books 1-2' };
   assert.deepEqual(loadBooks(path.join(tmp, 'data', 'books.json')), [
-    { t: 'Spark', a: ['Ann'], s: 'Ember', sn: '1', e: [{ id: 'B1' }, set] },
+    { t: 'Spark', a: ['Ann'], s: 'Ember', sn: '1', e: [{ asin: { 'audible.com': 'B1' } }, set] },
     { t: 'Ember, Book 2', a: ['Ann'], s: 'Ember', sn: '2', e: [set] },
   ]);
   assert.doesNotMatch(run('import-audible', csv).out, /box sets/, 'nothing new the second time');
@@ -205,23 +205,24 @@ test('books from before editions validate, and format rewrites them with edition
   assert.equal(code, 0);
   assert.match(out, /from before editions/);
   assert.match(out, /1 book\(s\) keep a Hardcover book id on an edition or several ISBNs on one edition/);
+  assert.match(out, /1 book\(s\) keep an edition's ASIN as "id".*read as the audible.com ASIN/);
   assert.equal(run('format').code, 0);
-  assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')), [{ t: 'Old', a: ['Ann'], e: [{ id: 'B1', gr: '7', isbn: '9780306406157' }, { isbn: '9780000000002' }] },
-    { t: 'Newer', a: ['Ann'], hcb: '9', e: [{ id: 'B2', isbn: '9781000000009' }] }]);
-  assert.doesNotMatch(run('validate').out, /from before editions|several ISBNs/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')), [{ t: 'Old', a: ['Ann'], e: [{ asin: { 'audible.com': 'B1' }, gr: '7', isbn: '9780306406157' }, { isbn: '9780000000002' }] },
+    { t: 'Newer', a: ['Ann'], hcb: '9', e: [{ asin: { 'audible.com': 'B2' }, isbn: '9781000000009' }] }]);
+  assert.doesNotMatch(run('validate').out, /from before editions|several ISBNs|ASIN as "id"/);
 });
 
 test('authors and narrators written as text validate, and format writes them as lists', t => {
   const { tmp, run } = sandbox(t);
   assert.equal(run('init').code, 0);
   const booksPath = path.join(tmp, 'data', 'books.json');
-  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Old', a: 'Ann Vale, Bo Reed', e: [{ id: 'B1', n: 'Cy Hale, Di Moss' }] }, { t: 'New', a: ['Ann Vale'] }]));
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Old', a: 'Ann Vale, Bo Reed', e: [{ asin: { 'audible.com': 'B1' }, n: 'Cy Hale, Di Moss' }] }, { t: 'New', a: ['Ann Vale'] }]));
   const { code, out } = run('validate');
   assert.equal(code, 0);
   assert.match(out, /1 book\(s\) keep their authors or narrators as one comma separated text/);
   assert.equal(run('format').code, 0);
   assert.deepEqual(JSON.parse(fs.readFileSync(booksPath, 'utf8')),
-    [{ t: 'Old', a: ['Ann Vale', 'Bo Reed'], e: [{ id: 'B1', n: ['Cy Hale', 'Di Moss'] }] }, { t: 'New', a: ['Ann Vale'] }]);
+    [{ t: 'Old', a: ['Ann Vale', 'Bo Reed'], e: [{ asin: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }, { t: 'New', a: ['Ann Vale'] }]);
   assert.doesNotMatch(run('validate').out, /comma separated/);
 });
 
@@ -381,9 +382,9 @@ test('series fills in series, numbers and released totals from Audible, and --dr
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');
   fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([
-    { t: 'Loose', a: ['Ann Vale'], e: [{ id: 'B1' }] },
-    { t: 'Gull 2', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ id: 'B2' }] },
-    { t: 'Unknown', a: ['Ann Vale'], e: [{ id: 'B9' }] },
+    { t: 'Loose', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] },
+    { t: 'Gull 2', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ asin: { 'audible.com': 'B2' } }] },
+    { t: 'Unknown', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B9' } }] },
   ]));
   fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
   const answers = {
@@ -427,7 +428,7 @@ test('import-audible --series names a box set\'s new titles after Audible\'s ser
   const dataDir = path.join(tmp, 'data');
   fs.mkdirSync(dataDir, { recursive: true });
   const booksPath = path.join(dataDir, 'books.json');
-  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Spark', a: ['Ann Vale'], s: 'Ember', sn: '1', e: [{ id: 'B0SPARK001' }] }]));
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Spark', a: ['Ann Vale'], s: 'Ember', sn: '1', e: [{ asin: { 'audible.com': 'B0SPARK001' } }] }]));
   fs.writeFileSync(path.join(dataDir, 'series-info.json'), JSON.stringify({ Ember: { total: 3, status: 'complete' } }));
   const csv = path.join(tmp, 'library.csv');
   fs.writeFileSync(csv, 'Title,Title Short,Series,Authors,Progress,ASIN\n'
@@ -445,9 +446,9 @@ test('import-audible --series names a box set\'s new titles after Audible\'s ser
   const code = await main(['--root', tmp, 'import-audible', csv, '--series'], { out: s => out.push(s), err: s => err.push(s), fetch, pause: async () => {} });
   assert.equal(code, 0, err.join('\n'));
   assert.match(out.join('\n'), /box sets' titles named: 2\n    Ember, Book 2 -> Flame\n    Ember, Book 3 -> Ember Falls/);
-  const set = { id: 'B0EMBERBOX', desc: 'Ember: Books 1-3' };
+  const set = { asin: { 'audible.com': 'B0EMBERBOX' }, desc: 'Ember: Books 1-3' };
   assert.deepEqual(loadBooks(booksPath).map(b => [b.t, b.sn, b.e]), [
-    ['Spark', '1', [{ id: 'B0SPARK001' }, set]], ['Flame', '2', [set]], ['Ember Falls', '3', [set]],
+    ['Spark', '1', [{ asin: { 'audible.com': 'B0SPARK001' } }, set]], ['Flame', '2', [set]], ['Ember Falls', '3', [set]],
   ]);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'series-info.json'), 'utf8')), { Ember: { total: 3, status: 'complete' } });
 });
@@ -456,7 +457,7 @@ test('import-audible --series looks up the series of the new books only', async 
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');
   fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([{ t: 'Old Standalone', a: ['Ann Vale'], e: [{ id: 'B0OLD00001' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([{ t: 'Old Standalone', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]));
   fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
   const csv = path.join(tmp, 'library.csv');
   fs.writeFileSync(csv, 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
@@ -493,6 +494,10 @@ test('import-audible --series looks up the series of the new books only', async 
   asked.length = 0;
   assert.equal((await run('import-audible', csv, '--series')).code, 0);
   assert.deepEqual(asked, []);
+  // the export's ASINs are audible.com's, or those of the store named; the same ASIN on audible.co.uk is the same edition
+  assert.deepEqual(loadBooks(booksPath)[1].e[0].asin, { 'audible.com': 'B0NEW00001' });
+  assert.match((await run('import-audible', csv, '--store', 'uk')).out, /ASINs filled in on existing books: 1/);
+  assert.deepEqual(loadBooks(booksPath)[1].e[0].asin, { 'audible.co.uk': 'B0NEW00001', 'audible.com': 'B0NEW00001' });
 });
 
 test('series writes nothing when Audible cannot be reached, and refuses the demo data', async t => {
@@ -501,7 +506,7 @@ test('series writes nothing when Audible cannot be reached, and refuses the demo
   assert.match(run('series', '--store', 'xx').err, /--store must be one of/);
   assert.match(run('validate', '--store', 'uk').err, /--store only goes with series/);
   assert.match(run('import-goodreads', 'x.csv', '--series').err, /--series only goes with import-audible/);
-  assert.match(run('import-audible', 'x.csv', '--store', 'uk').err, /--store only goes with series and import-audible --series/);
+  assert.doesNotMatch(run('import-audible', 'x.csv', '--store', 'uk').err, /--store only goes/);
   assert.equal(run('init', '--sample').code, 0);
   const books = path.join(tmp, 'data', 'books.json');
   const before = fs.readFileSync(books, 'utf8');
@@ -583,7 +588,7 @@ test('serve looks books up on Audible for the page, and only for the page', asyn
 test('serve logs API calls, requests to Audible and Hardcover, and long tasks, never the token', async t => {
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');
-  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ id: 'B0LANTERN1' }] }]));
+  fs.writeFileSync(path.join(dataDir, 'books.json'), JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }]));
   fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
   const fetchAudible = async u => u.includes('B0DOWN0000') ? { ok: false, status: 503 }
     : { ok: true, status: 200, json: async () => ({ product: { series: [{ title: 'Gull Isle', sequence: '2', asin: 'B0GULLISLE' }] } }) };
@@ -717,11 +722,11 @@ test('merge-backup merges a backup from another device into data/', t => {
   assert.equal(run('init').code, 0);
   const dir = path.join(tmp, 'data');
   fs.writeFileSync(path.join(dir, 'books.json'), JSON.stringify([
-    { t: 'Here', a: ['Ann Vale'] }, { t: 'Gone There', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ id: 'B1' }] },
+    { t: 'Here', a: ['Ann Vale'] }, { t: 'Gone There', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] },
   ]));
   const backup = path.join(tmp, 'phone.json');
   fs.writeFileSync(backup, JSON.stringify({
-    books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ id: 'B1' }] }, { t: 'New There', a: ['Ann Vale'] }],
+    books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }, { t: 'New There', a: ['Ann Vale'] }],
     seriesInfo: {}, excluded: ['Gone There | Ann Vale'], notDuplicates: ['["editions","id B1"]', '["editions","id B7"]'],
   }));
   fs.writeFileSync(path.join(dir, 'not-duplicates.txt'), '["editions","id B1"]\n');
@@ -739,7 +744,7 @@ test('merge-backup merges a backup from another device into data/', t => {
   assert.equal(code, 0, err);
   assert.match(out, /kept the backup's: 1/);
   assert.deepEqual(loadBooks(path.join(dir, 'books.json')), [
-    { t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ id: 'B1' }] }, { t: 'New There', a: ['Ann Vale'] },
+    { t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }, { t: 'New There', a: ['Ann Vale'] },
   ]);
   assert.match(fs.readFileSync(path.join(dir, 'excluded.txt'), 'utf8'), /^Gone There \| Ann Vale$/m);
   assert.equal(fs.readFileSync(path.join(dir, 'not-duplicates.txt'), 'utf8'), '["editions","id B1"]\n["editions","id B7"]\n');
@@ -763,7 +768,7 @@ function hardcoverSandbox(t, books, state) {
 test('hardcover-sync imports the Read shelf, then puts the rest on it, and --dry-run changes nothing anywhere', async t => {
   const state = hardcoverState();
   const { run, sent, booksPath } = hardcoverSandbox(t, [
-    { t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01', '2024'], e: [{ id: 'B0LANTERN1' }] },
+    { t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01', '2024'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] },
     { t: 'Brine Songs', a: ['Ann Vale'], e: [{ gr: '4242', isbn: '9780000000002' }] },
     { t: 'Handwritten', a: ['Ann Vale'] },
   ], state);
@@ -788,10 +793,10 @@ test('hardcover-sync imports the Read shelf, then puts the rest on it, and --dry
   assert.equal(real.code, 0, real.err);
   assert.match(real.out, /put 2 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
   assert.deepEqual(loadBooks(booksPath), [
-    { t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01', '2024'], hcb: '80', e: [{ id: 'B0LANTERN1', hc: '801' }] },
+    { t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01', '2024'], hcb: '80', e: [{ asin: { 'audible.com': 'B0LANTERN1' }, hc: '801' }] },
     { t: 'Brine Songs', a: ['Ann Vale'], hcb: '81', e: [{ gr: '4242', isbn: '9780000000002' }] },
     { t: 'Handwritten', a: ['Ann Vale'] },
-    { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', r: ['2024-03-15'], hcb: '77', e: [{ id: 'B0TIDEWAT1', hc: '501', n: ['Hollis Marr'], len: 600 }] },
+    { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', r: ['2024-03-15'], hcb: '77', e: [{ asin: { 'amazon.com': 'B0TIDEWAT1' }, hc: '501', n: ['Hollis Marr'], len: 600 }] },
   ]);
   assert.deepEqual(state.shelf.slice(2).map(ub => [ub.book_id, ub.edition_id, ub.status_id, ub.user_book_reads]), [
     [80, 801, 3, [{ finished_at: '2023-07-01', edition_id: 801 }]],
@@ -811,8 +816,8 @@ test('hardcover-export leaves books on other shelves alone; hardcover-import add
   state.shelf[0].user_book_reads.push({ finished_at: '2025-08-01' });
   state.shelf.push({ id: 3, book_id: 80, edition_id: null, status_id: 1, user_book_reads: [] });
   const { run, booksPath } = hardcoverSandbox(t, [
-    { t: 'Tidewater', a: ['Ann Vale'], r: ['2024-03'], e: [{ id: 'B0TIDEWAT1' }] },
-    { t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ id: 'B0LANTERN1' }] },
+    { t: 'Tidewater', a: ['Ann Vale'], r: ['2024-03'], e: [{ asin: { 'audible.com': 'B0TIDEWAT1' } }] },
+    { t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] },
   ], state);
 
   const exp = await run(['hardcover-export']);
@@ -835,7 +840,7 @@ test('a box set\'s edition on its titles: exported as their own books, and readi
   state.editions[821] = { id: 821, book_id: 82, reading_format_id: 2, contributions: [] };
   state.editions[900] = { id: 900, book_id: 90, asin: 'B0BOXSET01', reading_format_id: 2, contributions: [] };
   // each title is its own Hardcover book; the box set's edition (900) is an edition of the box set (90)
-  const box = { id: 'B0BOXSET01', hc: '900' };
+  const box = { asin: { 'audible.com': 'B0BOXSET01' }, hc: '900' };
   const { run, booksPath } = hardcoverSandbox(t, [
     { t: 'Tidewater', a: ['Ann Vale'], r: ['2024-05-01'], hcb: '77', e: [{ ...box }] },
     { t: 'Salt Ledger', a: ['Ann Vale'], r: ['2024-06-01'], hcb: '82', e: [{ ...box }, { hc: '821' }] },
@@ -885,7 +890,7 @@ test('serve keeps the Hardcover token for the page, never shows it, and runs Har
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');
   const booksPath = path.join(dataDir, 'books.json'), tokenPath = path.join(dataDir, 'hardcover-token');
-  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01'], e: [{ id: 'B0LANTERN1' }] }]));
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }]));
   fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
   const state = hardcoverState(), hc = fakeHardcover(state);
   const server = createServer(tmp, () => server.address().port, {}, { fetch: hc.fetch, pause: async () => {}, env: {} });
@@ -973,7 +978,7 @@ test('serve shows a Hardcover run while it goes, runs one at a time, and an edit
   const { tmp } = sandbox(t);
   const dataDir = path.join(tmp, 'data');
   const booksPath = path.join(dataDir, 'books.json');
-  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ id: 'B0LANTERN1' }] }]));
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }]));
   fs.writeFileSync(path.join(dataDir, 'series-info.json'), '{}');
   fs.writeFileSync(path.join(dataDir, 'hardcover-token'), 'tok-123');
   const state = hardcoverState(), hc = fakeHardcover(state);
@@ -1001,7 +1006,7 @@ test('serve shows a Hardcover run while it goes, runs one at a time, and an edit
   assert.equal((await second.json()).job.id, going.id);
 
   // an edit saved from the page while it runs: the run writes nothing and sends nothing
-  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], g: ['Edited'], e: [{ id: 'B0LANTERN1' }] }]));
+  fs.writeFileSync(booksPath, JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'], g: ['Edited'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }]));
   gate = null;
   release();
   const done = await until(job => !job.running);
@@ -1014,7 +1019,7 @@ test('serve shows a Hardcover run while it goes, runs one at a time, and an edit
 
 test('hardcover commands say what they are doing through io.progress', async t => {
   const state = hardcoverState();
-  const { run } = hardcoverSandbox(t, [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01'], e: [{ id: 'B0LANTERN1' }] }], state);
+  const { run } = hardcoverSandbox(t, [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2023-07-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }], state);
   const steps = [];
   const res = await run(['hardcover-sync'], undefined, { progress: (text, done, total) => steps.push(total ? `${text}: ${done} of ${total}` : text) });
   assert.equal(res.code, 0, res.err);

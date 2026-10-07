@@ -70,7 +70,8 @@ function importBackup(file){
 // read the export, merge it into a copy of the catalogue, show what would change, and only
 // apply it when confirmed. Like every edit in the page, the result is then saved (see persist).
 const IMPORTERS = {
-  audible: {label: 'Audible', read: CatalogImport.readAudible},
+  // an Audible export's ASINs are those of the site picked beside the buttons (audible.com unless changed)
+  audible: {label: 'Audible', read: text=> CatalogImport.readAudible(text, document.getElementById('audibleImportSite').value)},
   goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},
 };
 let IMPORT_KIND = 'audible';
@@ -107,7 +108,7 @@ function previewImport(kind, text, fileName){
   let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
   html += `<p>Already in the catalogue: ${report.matched}</p>`;
   if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
-  if(report.backfilled.length) html += `<p>Audible ids filled in on existing books: ${report.backfilled.length}</p>`;
+  if(report.backfilled.length) html += `<p>ASINs filled in on existing books: ${report.backfilled.length}</p>`;
   if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
   if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
   if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
@@ -136,7 +137,7 @@ function previewImport(kind, text, fileName){
   confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
   confirmBtn.textContent = report.added.length
     ? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
-    : report.backfilled.length ? 'Save Audible ids' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
+    : report.backfilled.length ? 'Save ASINs' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
     : report.editionsAdded.length ? 'Save editions' : report.isbnsFilled.length ? 'Save ISBNs' : 'Save edition details';
   document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
   document.getElementById('importPreview').classList.add('open');
@@ -154,7 +155,7 @@ function applyImport(){
   setData(data);
   refreshPage(); persist();
   const done = `Added ${added} book${added === 1 ? '' : 's'}` +
-    (backfilled ? `, filled in ${backfilled} Audible id${backfilled === 1 ? '' : 's'}` : '') +
+    (backfilled ? `, filled in ${backfilled} ASIN${backfilled === 1 ? '' : 's'}` : '') +
     (withGr ? `, filled in ${withGr} Goodreads id${withGr === 1 ? '' : 's'}` : '') +
     (dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
     (withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
@@ -163,7 +164,7 @@ function applyImport(){
   showIoStatus(done + keepHint('data/books.json'));
   // the option under the import buttons: the new books' series, and release info for series new to the catalogue
   if(IMPORT_KIND === 'audible' && AUDIBLE_LOOKUP && added && document.getElementById('importSeries').checked){
-    return lookUpSeries(CatalogImport.seriesLookups(DATA, SERIES_INFO, report.added), done);
+    return lookUpSeries(report.added, done);
   }
 }
 
@@ -199,13 +200,13 @@ function seriesIntoCopy({store, found, totals}){
   return {data, info, report, renamed, added, errors: CatalogImport.validate(data, info).errors};
 }
 
-// Look up `asins` (default: every book that needs it); `lead` is said first in the preview.
-async function lookUpSeries(asins, lead){
+// Look up the books that need it (of `only`, e.g. the books an import added, by default all); `lead` is said first in the preview.
+async function lookUpSeries(only, lead){
   if(LOOKING_UP) return;
   LOOKING_UP = true;
   const store = document.getElementById('audibleStore').value;
   const host = CatalogImport.AUDIBLE_STORES[store];
-  asins = (asins || CatalogImport.seriesLookups(DATA, SERIES_INFO)).filter(a=> /^[A-Z0-9]{10}$/.test(a));
+  const asins = CatalogImport.seriesLookups(DATA, SERIES_INFO, only, store).filter(a=> /^[A-Z0-9]{10}$/.test(a));
   try{
     const found = await askAudible(store, 'series', asins, i=> showIoStatus(`Looking up books on ${host}: ${i} of ${asins.length}…`));
     const series = CatalogImport.seriesFromAudible(JSON.parse(JSON.stringify(DATA)), found).series;

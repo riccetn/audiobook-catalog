@@ -22,13 +22,19 @@ const GOODREADS_ID = /^\d+$/;
 const HARDCOVER_ID = /^\d+$/;
 // A book: title, authors, series and number, genres, dates read, Hardcover book id, editions.
 const BOOK_KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'hcb', 'e'];
-// An edition: Audible ASIN, Goodreads id, Hardcover edition id, ISBN (one: another ISBN is another
+// An edition: ASINs (by site), Goodreads id, Hardcover edition id, ISBN (one: another ISBN is another
 // edition), narrators, publisher, release date, length in minutes, and your own description of it
 // ("UK edition", "Dramatized adaptation").
-const EDITION_KEYS = ['id', 'gr', 'hc', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
+const EDITION_KEYS = ['asin', 'gr', 'hc', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
 // The ids that name one edition (and match books in imports). An ISBN names one edition too, but one
 // ISBN may be on several books (a boxed set's), so it never makes two books the same.
-const EDITION_IDS = ['id', 'gr', 'hc'];
+const EDITION_IDS = ['asin', 'gr', 'hc'];
+// Each Amazon and Audible site may give one edition an ASIN of its own, so an edition keeps them by the
+// site's address: {"audible.com": "B0...", "amazon.com": "B0..."}. An ASIN from before sites were kept
+// (the edition's "id") and one from an Audible import is audible.com's; one that Hardcover or Goodreads
+// gives is amazon.com's, the site they use.
+const ASIN_SITE = /^(?:audible|amazon)\.(?:[a-z]{2,3}|com?\.[a-z]{2})$/;
+const AUDIBLE_SITE = 'audible.com', AMAZON_SITE = 'amazon.com';
 // Before editions, a book held its ASIN, Goodreads id and ISBNs itself; fixEditions() moves them.
 const LEGACY_KEYS = ['id', 'gr', 'isbn'];
 const STATUSES = ['ongoing', 'complete'];
@@ -213,27 +219,81 @@ function bookIsbns(rec){
   return [...new Set(bookEditions(rec).flatMap(editionIsbns))];
 }
 
-/** The Audible ASINs (`field` 'id'), Goodreads ids ('gr') or Hardcover edition ids ('hc') of a book's editions. */
-function bookIdsOf(rec, field){
-  return [...new Set(bookEditions(rec).map(ed => ed[field]).filter(v => typeof v === 'string' && v))];
+/** An edition's ASINs as [site, ASIN] pairs, Audible's sites first, e.g. [["audible.com", "B0X"], ["amazon.com", "B0Y"]]. */
+function editionAsins(ed){
+  if(!isObject(ed) || !isObject(ed.asin)) return [];
+  return Object.entries(ed.asin).filter(([site, v]) => site && typeof v === 'string' && v).sort(([x], [y]) => siteOrder(x, y));
 }
 
-/** Whether two editions disagree on their ASIN, Goodreads id, Hardcover id or ISBN, so they cannot be one edition. */
+// Audible's sites before Amazon's, then by address, so an edition's ASINs are always listed alike.
+const siteOrder = (x, y) => (y.startsWith('audible.') - x.startsWith('audible.')) || (x < y ? -1 : x > y ? 1 : 0);
+
+/** The ASIN an edition has on one site ("audible.com"), or null. */
+function asinOn(ed, site){
+  const v = isObject(ed) && isObject(ed.asin) ? ed.asin[site] : null;
+  return typeof v === 'string' && v ? v : null;
+}
+
+/** An edition's ASINs ordered by site (see editionAsins), as an object; null when it has none. */
+function orderAsins(asins){
+  const pairs = editionAsins({asin: asins});
+  return pairs.length ? Object.fromEntries(pairs) : null;
+}
+
+/**
+ * The values of one of an edition's ids, as a list: its ASINs on every site (`field` 'asin', each once),
+ * or its Goodreads id ('gr') or Hardcover edition id ('hc').
+ */
+function editionIds(ed, field){
+  if(!isObject(ed)) return [];
+  if(field === 'asin') return [...new Set(editionAsins(ed).map(([, v]) => v))];
+  return typeof ed[field] === 'string' && ed[field] ? [ed[field]] : [];
+}
+
+/** Whether two editions have an id of this kind in common (an ASIN counts whatever site it is on). */
+const shareId = (x, y, field) => editionIds(x, field).some(v => editionIds(y, field).includes(v));
+
+/** Whether two editions have different ids of this kind: another ASIN on the same site, another Goodreads or Hardcover id. */
+function idsDisagree(x, y, field){
+  if(field === 'asin') return editionAsins(x).some(([site, v]) => asinOn(y, site) !== null && asinOn(y, site) !== v);
+  return !!(x[field] && y[field] && x[field] !== y[field]);
+}
+
+/** The ASINs (`field` 'asin', of every site), Goodreads ids ('gr') or Hardcover edition ids ('hc') of a book's editions. */
+function bookIdsOf(rec, field){
+  return [...new Set(bookEditions(rec).flatMap(ed => editionIds(ed, field)))];
+}
+
+/** Whether two editions disagree on an ASIN (on one site), their Goodreads id, Hardcover id or ISBN, so they cannot be one edition. */
 function editionsConflict(x, y){
-  if(EDITION_IDS.some(k => x[k] && y[k] && x[k] !== y[k])) return true;
+  if(EDITION_IDS.some(k => idsDisagree(x, y, k))) return true;
   const a = editionIsbns(x), b = editionIsbns(y);
   return a.length > 0 && b.length > 0 && a[0] !== b[0];
 }
 
 /**
- * Whether two edition records are the same edition: they share an ASIN, a Goodreads id, a Hardcover id
- * or the ISBN, and disagree on none of them. A box set is one edition listed on each of its titles.
+ * Whether two edition records are the same edition: they share an ASIN (on any site), a Goodreads id, a
+ * Hardcover id or the ISBN, and disagree on none of them. A box set is one edition listed on each of its titles.
  */
 function sameEdition(x, y){
   if(!isObject(x) || !isObject(y) || editionsConflict(x, y)) return false;
-  if(EDITION_IDS.some(k => x[k] && x[k] === y[k])) return true;
+  if(EDITION_IDS.some(k => shareId(x, y, k))) return true;
   const isbns = editionIsbns(y);
   return editionIsbns(x).some(isbn => isbns.includes(isbn));
+}
+
+/**
+ * An edition with the ASIN it kept as "id", from before ASINs were kept by site, as its audible.com ASIN.
+ * An "id" that disagrees with the audible.com ASIN the edition has is left for validate() to report.
+ */
+function fixAsin(ed){
+  if(!isObject(ed) || !('id' in ed)) return ed;
+  const {id, ...rest} = ed;
+  if(typeof id === 'string' && !id.trim()) return rest;
+  if(typeof id !== 'string' || !(rest.asin === undefined || isObject(rest.asin))) return ed;
+  const had = asinOn(rest, AUDIBLE_SITE);
+  if(had && had !== id.trim()) return ed;
+  return orderEdition({...rest, asin: orderAsins({...(rest.asin || {}), [AUDIBLE_SITE]: id.trim()})});
 }
 
 /** An edition with its keys in the usual order (unknown keys last, for validate() to report). */
@@ -244,11 +304,21 @@ function orderEdition(ed){
   return out;
 }
 
-/** Give edition `ed` (in place) what `from` has and it lacks. Nothing it has is changed. Returns the keys it gained. */
+/**
+ * Give edition `ed` (in place) what `from` has and it lacks, including the ASINs of sites it has none for.
+ * Nothing it has is changed. Returns the keys it gained.
+ */
 function fillEdition(ed, from){
   const gained = [];
   for(const k of EDITION_KEYS){
-    if(from[k] !== undefined && ed[k] === undefined){ ed[k] = Array.isArray(from[k]) ? [...from[k]] : from[k]; gained.push(k); }
+    if(k === 'asin' && isObject(from.asin) && isObject(ed.asin)){
+      const more = editionAsins(from).filter(([site]) => asinOn(ed, site) === null);
+      if(more.length){ ed.asin = orderAsins({...ed.asin, ...Object.fromEntries(more)}); gained.push(k); }
+    }
+    else if(from[k] !== undefined && ed[k] === undefined){
+      ed[k] = Array.isArray(from[k]) ? [...from[k]] : isObject(from[k]) ? {...from[k]} : from[k];
+      gained.push(k);
+    }
   }
   if(gained.length){
     const ordered = orderEdition(ed);
@@ -265,7 +335,8 @@ function fillEdition(ed, from){
  * moved to editions) goes on each of its editions that has none, or on a new edition when it has none.
  * An edition with several ISBNs becomes one edition per ISBN (splitIsbns), and the Hardcover book id
  * its editions held before it moved to the book ("hcb") goes on the book; when they name different
- * Hardcover books, `pickHcb(ids)` chooses (by default the first). An empty `e` is dropped.
+ * Hardcover books, `pickHcb(ids)` chooses (by default the first). An edition's ASIN from before ASINs
+ * were kept by site ("id") becomes its audible.com ASIN (fixAsin). An empty `e` is dropped.
  */
 function fixEditions(rec, pickHcb){
   if(!isObject(rec)) return rec;
@@ -273,12 +344,12 @@ function fixEditions(rec, pickHcb){
   for(const [k, v] of Object.entries(rec)){
     if(LEGACY_KEYS.includes(k)) legacy[k] = v; else if(k !== 'n') out[k] = v;
   }
-  let editions = Array.isArray(rec.e) ? rec.e.flatMap(ed => isObject(ed) ? splitIsbns(ed) : [ed]) : rec.e;
-  const fixedLegacy = Object.keys(legacy).length ? splitIsbns(legacy) : [];
+  let editions = Array.isArray(rec.e) ? rec.e.flatMap(ed => isObject(ed) ? splitIsbns(fixAsin(ed)) : [ed]) : rec.e;
+  const fixedLegacy = Object.keys(legacy).length ? splitIsbns(fixAsin(legacy)) : [];
   if(fixedLegacy.length){
     editions = Array.isArray(editions) ? editions.map(ed => isObject(ed) ? {...ed} : ed) : [];
     const [first, ...more] = fixedLegacy;
-    const same = editions.find(ed => isObject(ed) && sameEdition(ed, first) && ['id', 'gr'].some(k => ed[k] && ed[k] === first[k]));
+    const same = editions.find(ed => isObject(ed) && sameEdition(ed, first) && ['asin', 'gr'].some(k => shareId(ed, first, k)));
     if(same) fillEdition(same, first); else editions.unshift(orderEdition(first));
     editions.push(...more);
   }
@@ -319,7 +390,7 @@ function editionParts(ed){
   const parts = [];
   if(ed.desc) parts.push(['desc', '', ed.desc]);
   if(ed.n && namesText(ed.n)) parts.push(['n', 'Narrated by', namesText(ed.n)]);
-  if(ed.id) parts.push(['id', 'ASIN', ed.id]);
+  if(editionAsins(ed).length) parts.push(['asin', 'ASIN', asinsText(ed)]);
   if(ed.gr) parts.push(['gr', 'Goodreads', ed.gr]);
   if(ed.hc) parts.push(['hc', 'Hardcover', ed.hc]);
   if(typeof ed.isbn === 'string' && ed.isbn) parts.push(['isbn', 'ISBN', ed.isbn]);
@@ -329,9 +400,45 @@ function editionParts(ed){
   return parts;
 }
 
+/** An edition's ASINs as text, each after its site: "audible.com B0X, amazon.com B0Y" (what parseAsins() reads). */
+function asinsText(ed){
+  return editionAsins(ed).map(([site, v]) => `${site} ${v}`).join(', ');
+}
+
+// An ASIN's page: amazon.com/dp/B0X, audible.com/pd/Some-Title-Audiobook/B0X, amazon.com/gp/product/B0X.
+const ASIN_URL = /^(?:https?:\/\/)?(?:www\.)?((?:audible|amazon)\.[a-z.]+)\/(?:[^?#]*\/)?(?:dp|pd|product)\/(?:[^/?#]*\/)?([A-Za-z0-9]{10})(?=[/?#]|$)/i;
+
+/**
+ * Read ASINs written as asinsText() writes them, "audible.com B0X, amazon.com B0Y": each ASIN after (or
+ * before) the site it belongs to, or as the address of its page there. An ASIN without a site is
+ * `site`'s (by default audible.com's, as before ASINs were kept by site). Returns {asins (an object of
+ * site -> ASIN, null when there are none), bad (what could not be read, e.g. a second ASIN for one site)}.
+ */
+function parseAsins(text, site){
+  const found = [], bad = [];   // [site or null, ASIN]
+  const tokens = String(text || '').split(/[\s,;]+/).map(x => x.replace(/^[(\[]+|[)\]:]+$/g, '')).filter(Boolean);
+  const siteOf = t => { const s = t.toLowerCase().replace(/^www\./, ''); return ASIN_SITE.test(s) ? s : null; };
+  // an ASIN is ten letters and digits; a shorter one, from a hand-made catalogue, is taken as it is
+  const isAsin = t => /^[A-Za-z0-9]+$/.test(t);
+  for(let i = 0; i < tokens.length; i++){
+    const t = tokens[i], url = ASIN_URL.exec(t), s = siteOf(t);
+    if(url){ found.push([siteOf(url[1]), url[2].toUpperCase()]); if(!siteOf(url[1])) bad.push(t); }
+    else if(s && i + 1 < tokens.length && isAsin(tokens[i + 1])) found.push([s, tokens[++i].toUpperCase()]);
+    else if(s && found.length && found[found.length - 1][0] === null && isAsin(tokens[i - 1])) found[found.length - 1][0] = s;
+    else if(isAsin(t)) found.push([null, t.toUpperCase()]);
+    else bad.push(t);
+  }
+  const asins = {};
+  for(const [s, v] of found){
+    const at = s || site || AUDIBLE_SITE;
+    if(asins[at] && asins[at] !== v) bad.push(`${at} ${v}`); else asins[at] = v;
+  }
+  return {asins: orderAsins(asins), bad};
+}
+
 /**
  * An edition as one line of text, the way the page shows it and its edit form takes it: "UK edition;
- * Narrated by Ann Vale; ASIN B0X; Goodreads 4242; ISBN 9780000000002; Publisher Gull Audio;
+ * Narrated by Ann Vale; ASIN audible.com B0X, amazon.com B0Y; Goodreads 4242; ISBN 9780000000002; Publisher Gull Audio;
  * Released 2021-05; Length 10h 42m".
  */
 function formatEdition(ed){
@@ -365,7 +472,14 @@ function parseEditions(text){
       const isbns = parseIsbns(value), date = parseReadDate(value), minutes = parseLength(value);
       const allIsbns = isbns.isbns.length > 0 && !isbns.bad.length;
       let field = null, v = null;
-      if(label === 'asin') [field, v] = ['id', value];
+      if(label === 'asin'){
+        const read = parseAsins(value);
+        if(read.bad.length || !read.asins){ bad.push(part); continue; }
+        const both = {...(ed.asin || {})};
+        if(Object.entries(read.asins).some(([site, x]) => both[site] && both[site] !== x)){ bad.push(part); continue; }
+        ed.asin = orderAsins({...both, ...read.asins});
+        continue;
+      }
       else if(label === 'goodreads' || label === 'gr') [field, v] = ['gr', GOODREADS_ID.test(value) ? value : null];
       else if(label.startsWith('hardcover')){
         const kind = /book$/.test(label) ? 'book' : 'edition', url = parseHardcoverUrl(value);
@@ -393,11 +507,11 @@ function parseEditions(text){
 // The fields of the page's edition editor: [key, the label parseEditions() reads, the label the page shows].
 const EDITION_FIELDS = [
   ['desc', 'Description', 'Description'], ['n', 'Narrated by', 'Narrators'],
-  ['id', 'ASIN', 'ASIN'], ['gr', 'Goodreads', 'Goodreads id'], ['hc', 'Hardcover', 'Hardcover edition'],
+  ['asin', 'ASIN', 'ASINs'], ['gr', 'Goodreads', 'Goodreads id'], ['hc', 'Hardcover', 'Hardcover edition'],
   ['isbn', 'ISBN', 'ISBN'], ['p', 'Publisher', 'Publisher'], ['d', 'Released', 'Released'], ['len', 'Length', 'Length'],
 ];
 
-/** An edition as the text of each of the editor's fields, e.g. {id: 'B0X', len: '10h 42m', n: 'Ann Vale, Bo Reed', ...}. */
+/** An edition as the text of each of the editor's fields, e.g. {asin: 'audible.com B0X', len: '10h 42m', n: 'Ann Vale, Bo Reed', ...}. */
 function editionFields(ed){
   return Object.fromEntries(editionParts(ed).map(([k, , value]) => [k, value]));
 }
@@ -436,7 +550,7 @@ function saveBook(books, index, rec){
   const old = index === null ? [] : bookEditions(books[index]);
   const neu = bookEditions(rec);
   const others = books.map((b, k) => k).filter(k => k !== index && isObject(books[k]) && Array.isArray(books[k].e));
-  const linked = (x, ed) => EDITION_IDS.some(f => ed[f] && x[f] === ed[f]) && !editionsConflict(x, ed);
+  const linked = (x, ed) => EDITION_IDS.some(f => shareId(x, ed, f)) && !editionsConflict(x, ed);
   const befores = neu.map((ed, j) => old.find(x => sameEdition(x, ed)) || (old.length === neu.length ? old[j] : undefined));
   const same = (x, y) => y !== undefined && JSON.stringify(x) === JSON.stringify(y);
   neu.forEach((ed, j) => {
@@ -523,8 +637,12 @@ const tidyNames = names => {
 function tidyEdition(ed){
   if(!isObject(ed)) return ed;
   const out = fixPeople({...ed});
-  for(const key of ['id', 'gr', 'hc', 'p', 'd', 'desc']){
+  for(const key of ['gr', 'hc', 'p', 'd', 'desc']){
     if(typeof out[key] === 'string') out[key] = tidyText(out[key]);
+  }
+  if(isObject(out.asin)){
+    out.asin = Object.fromEntries(Object.entries(out.asin).map(([site, v]) => [tidyText(site).toLowerCase(), typeof v === 'string' ? tidyText(v) : v])
+      .sort(([x], [y]) => siteOrder(x, y)));
   }
   if(Array.isArray(out.n)) out.n = tidyNames(out.n);
   // the 13-digit form; anything that is not an ISBN is kept (tidied) for validate() to report
@@ -657,7 +775,7 @@ class Exclusions {
     return line;
   }
   covers(rec){
-    return bookIdsOf(rec, 'id').some(id => this.ids.has(id)) || bookIdsOf(rec, 'gr').some(gr => this.grs.has(gr)) ||
+    return bookIdsOf(rec, 'asin').some(id => this.ids.has(id)) || bookIdsOf(rec, 'gr').some(gr => this.grs.has(gr)) ||
       bookIdsOf(rec, 'hc').some(hc => this.hcs.has(hc)) ||
       (norm(rec.t) !== '' && this.titles.has(key(norm(rec.t), firstAuthor(rec.a)))) || bookIsbns(rec).some(isbn => this.isbns.has(isbn));
   }
@@ -689,7 +807,7 @@ function parseExclusions(text){
 function exclusionEntries(rec){
   const clean = v => tidyText(String(v || '').replace(/[#|]/g, ' '));
   const entries = [];
-  for(const id of bookIdsOf(rec, 'id')) if(clean(id)) entries.push(clean(id));
+  for(const id of bookIdsOf(rec, 'asin')) if(clean(id)) entries.push(clean(id));
   for(const gr of bookIdsOf(rec, 'gr')) if(GOODREADS_ID.test(gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
   for(const hc of bookIdsOf(rec, 'hc')) if(HARDCOVER_ID.test(hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
   if(clean(rec.t) && clean(namesText(rec.a))) entries.push(`${clean(rec.t)} | ${clean(namesText(rec.a))}`);
@@ -715,8 +833,16 @@ function validateEdition(ed, label, errors, warnings){
   for(const k of Object.keys(ed)){
     if(!EDITION_KEYS.includes(k)) errors.push(`${label}: unknown key ${repr(k)}`);
   }
-  for(const k of ['id', 'gr', 'hc', 'p', 'd', 'desc']){
+  for(const k of ['gr', 'hc', 'p', 'd', 'desc']){
     if(k in ed && !nonEmpty(ed[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
+  }
+  if('asin' in ed){
+    const pairs = isObject(ed.asin) ? Object.entries(ed.asin) : [];
+    if(!pairs.length) errors.push(`${label}: 'asin' must be the edition's ASINs by site, e.g. {"audible.com": "B0..."}`);
+    for(const [site, v] of pairs){
+      if(!ASIN_SITE.test(site)) errors.push(`${label}: ${repr(site)} is not an Amazon or Audible site (e.g. audible.com, amazon.co.uk)`);
+      if(!nonEmpty(v)) errors.push(`${label}: the ASIN on ${site} must be a non-empty string`);
+    }
   }
   if('n' in ed && !nameList(ed.n)) errors.push(`${label}: 'n' must be a non-empty list of narrators' names`);
   if(!Object.keys(ed).length) errors.push(`${label}: is empty`);
@@ -746,8 +872,8 @@ function validate(books, info){
   const nonEmpty = v => typeof v === 'string' && v.trim() !== '';
 
   // ASIN / Goodreads id -> the first edition seen with it; a box set is one edition on several titles
-  const seen = {id: new Map(), gr: new Map(), hc: new Map()};
-  const names = {id: 'id', gr: 'Goodreads id', hc: 'Hardcover id'};
+  const seen = {asin: new Map(), gr: new Map(), hc: new Map()};
+  const names = {asin: 'ASIN', gr: 'Goodreads id', hc: 'Hardcover id'};
   books.forEach((b, i) => {
     const label = isObj(b) ? `book #${i} (${repr(b.t === undefined ? '?' : b.t)})` : `book #${i}`;
     if(!isObj(b)){ errors.push(`${label}: not an object`); return; }
@@ -784,14 +910,13 @@ function validate(books, info){
     const isbns = bookEditions(b).flatMap(editionIsbns);
     for(const isbn of new Set(isbns.filter((x, j) => isbns.indexOf(x) !== j))) warnings.push(`${label}: lists ISBN ${isbn} on two editions`);
     for(const ed of bookEditions(b)){
-      for(const field of EDITION_IDS){
-        const v = ed[field];
+      for(const field of EDITION_IDS) for(const v of editionIds(ed, field)){
         if(!nonEmpty(v)) continue;
         const other = seen[field].get(v);
         if(!other){ seen[field].set(v, {i, label, titleKey, ed}); continue; }
         if(other.i === i) errors.push(`${label}: lists the edition with ${names[field]} ${v} twice`);
         else if(other.titleKey === titleKey) errors.push(`${label}: duplicate ${names[field]} ${v} (also ${other.label})`);
-        else if(field === 'id' || !ed.id || !other.ed.id){
+        else if(field === 'asin' || !editionIds(ed, 'asin').length || !editionIds(other.ed, 'asin').length){
           // a box set's edition on each of its titles: fine, as long as the copies agree
           if(JSON.stringify(orderEdition(tidyEdition(ed))) !== JSON.stringify(orderEdition(tidyEdition(other.ed)))){
             warnings.push(`${label}: the edition with ${names[field]} ${v} differs from its copy on ${other.label}`);
@@ -1022,8 +1147,8 @@ function formatLength(minutes){
   return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 }
 
-/** Convert one Audible CSV row. Returns [record or null, warning or null]. */
-function audibleRowToRecord(row){
+/** Convert one Audible CSV row; its ASIN is `site`'s (by default audible.com's). Returns [record or null, warning or null]. */
+function audibleRowToRecord(row, site){
   if(cell(row, 'Progress') !== 'Finished') return [null, null];
   const asin = cell(row, 'ASIN');
   if(SAMPLE_ASINS.has(asin)) return [null, null];
@@ -1043,7 +1168,7 @@ function audibleRowToRecord(row){
   if(!tags.length && cell(row, 'Child Category')) tags = [cell(row, 'Child Category')];
   if(tags.length) rec.g = tags;
   const edition = {};
-  if(asin) edition.id = asin;
+  if(asin) edition.asin = {[site || AUDIBLE_SITE]: asin};
   if(splitNames(cell(row, 'Narrators')).length) edition.n = splitNames(cell(row, 'Narrators'));
   const isbns = rowIsbns(row);
   if(isbns.length) edition.isbn = isbns;
@@ -1061,11 +1186,14 @@ function audibleRowToRecord(row){
   return [rec, warning];
 }
 
-/** Read the text of an Audible Library Extractor CSV. Only finished books are kept. */
-function readAudible(text){
+/**
+ * Read the text of an Audible Library Extractor CSV. Only finished books are kept. Its ASINs are those of
+ * the Audible site `site` (by default audible.com).
+ */
+function readAudible(text, site){
   const result = {records: [], warnings: [], skippedUnfinished: 0};
   for(const row of parseCsv(text)){
-    const [rec, warning] = audibleRowToRecord(row);
+    const [rec, warning] = audibleRowToRecord(row, site);
     if(rec === null){
       if(cell(row, 'Progress') !== 'Finished' && !SAMPLE_ASINS.has(cell(row, 'ASIN'))) result.skippedUnfinished++;
       continue;
@@ -1142,21 +1270,33 @@ const isBoxSetTitle = b => !!(b && b.s && b.sn && b.t === boxSetTitle(b.s, b.sn)
 /** ASINs that appear on more than one book: box sets, whose series number is the set's, not the title's. */
 function sharedAsins(books){
   const seen = new Set(), shared = new Set();
-  for(const b of books) for(const id of new Set(bookEditions(b).map(ed => ed.id).filter(Boolean))){
+  for(const b of books) for(const id of bookIdsOf(b, 'asin')){
     (seen.has(id) ? shared : seen).add(id);
   }
   return shared;
 }
 
 /**
- * The ASINs to look up for seriesFromAudible(): every book with no series or no number, and one
- * book of each series that has no release info yet or a box set's title still named boxSetTitle() (to
- * learn the series' own ASIN). `only` (books
- * of `books`, e.g. the ones an import just added) limits that to those books and their series.
+ * The ASIN to ask an Audible store (`store`, a key of AUDIBLE_STORES, by default 'us') about an edition:
+ * its ASIN on that store's site, else on the matching Amazon site (amazon.com for audible.com), where an
+ * Audible audiobook usually has the same ASIN, else another site's (Audible's first), which the store
+ * often knows too. Null when it has none.
  */
-function seriesLookups(books, info, only){
+function audibleAsin(ed, store){
+  const site = AUDIBLE_STORES[store || 'us'] || AUDIBLE_SITE;
+  const [first] = editionAsins(ed);
+  return asinOn(ed, site) || asinOn(ed, site.replace(/^audible\./, 'amazon.')) || (first ? first[1] : null);
+}
+
+/**
+ * The ASINs to look up in an Audible store (`store`, see audibleAsin) for seriesFromAudible(): every book
+ * with no series or no number, and one book of each series that has no release info yet or a box set's
+ * title still named boxSetTitle() (to learn the series' own ASIN). `only` (books of `books`, e.g. the
+ * ones an import just added) limits that to those books and their series.
+ */
+function seriesLookups(books, info, only, store){
   const asins = new Set(), covered = new Set();
-  const own = b => bookEditions(b).map(ed => ed.id).filter(Boolean);
+  const own = b => bookEditions(b).map(ed => audibleAsin(ed, store)).filter(Boolean);
   const wanted = only || books;
   for(const b of wanted){
     if(!b.s || !b.sn) own(b).forEach(id => asins.add(id));
@@ -1187,9 +1327,9 @@ function seriesFromAudible(books, found){
 
   for(const b of books){
     for(const ed of bookEditions(b)){
-      const list = ed.id && found.get(ed.id);
-      if(!list || !list.length) continue;
-      const boxSet = shared.has(ed.id);
+      const asin = editionIds(ed, 'asin').find(x => found.get(x) && found.get(x).length);
+      if(!asin) continue;
+      const list = found.get(asin), boxSet = shared.has(asin);
       if(!b.s){
         const [name, number, ambiguous] = chooseSeries(list.map(x => [x.name, x.number]));
         const k = seriesNorm(name);
@@ -1363,6 +1503,9 @@ function readGoodreads(text){
     const edition = {};
     const gr = cell(row, 'Book Id').replace(/[="\s]/g, '');
     if(GOODREADS_ID.test(gr)) edition.gr = gr;
+    // Goodreads' own export has no ASIN, but a CSV made like it may; an ASIN Goodreads knows is amazon.com's
+    const asin = cell(row, 'ASIN').replace(/[="\s]/g, '').toUpperCase();
+    if(/^[A-Z0-9]{10}$/.test(asin)) edition.asin = {[AMAZON_SITE]: asin};
     // Goodreads files narrators under "Additional Authors"; treat that as a best guess.
     if(splitNames(cell(row, 'Additional Authors')).length) edition.n = splitNames(cell(row, 'Additional Authors'));
     const isbns = rowIsbns(row);
@@ -1415,8 +1558,8 @@ function goodreadsEdition(rec, shared){
  * or only "2024-03") goes on the shelf with no date. Returns {csv, books, withoutIds, withoutDate}.
  */
 function goodreadsCsv(books){
-  const owners = new Map();   // "gr:123" / "id:B0..." / "isbn:978..." -> books carrying it
-  const edKeys = ed => [...['id', 'gr'].filter(k => ed[k]).map(k => k + ':' + ed[k]), ...editionIsbns(ed).map(i => 'isbn:' + i)];
+  const owners = new Map();   // "gr:123" / "asin:B0..." / "isbn:978..." -> books carrying it
+  const edKeys = ed => [...['asin', 'gr'].flatMap(k => editionIds(ed, k).map(v => k + ':' + v)), ...editionIsbns(ed).map(i => 'isbn:' + i)];
   books.forEach(rec => bookEditions(rec).forEach(ed => edKeys(ed).forEach(k => {
     if(!owners.has(k)) owners.set(k, new Set());
     owners.get(k).add(rec);
@@ -1438,7 +1581,7 @@ function goodreadsCsv(books){
       'ISBN': isbn10Of(isbn),
       'ISBN13': isbn,
       'Publisher': ed.p || '',
-      'Binding': ed.id ? 'Audible Audio' : 'Audiobook',
+      'Binding': editionIds(ed, 'asin').length ? 'Audible Audio' : 'Audiobook',
       'Year Published': ed.d ? String(ed.d).slice(0, 4) : '',
       'Date Read': dates.length ? dates[dates.length - 1].replace(/-/g, '/') : '',
       'Bookshelves': (Array.isArray(rec.g) ? rec.g : []).map(goodreadsShelf).filter(Boolean).join(', '),
@@ -1531,7 +1674,8 @@ function hardcoverPeople(contributions, role){
 /** One of your editions made from a Hardcover edition. */
 function hardcoverEdition(edition){
   const ed = {hc: String(edition.id)};
-  if(typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim())) ed.id = edition.asin.trim();
+  // Hardcover's ASIN is amazon.com's
+  if(typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim())) ed.asin = {[AMAZON_SITE]: edition.asin.trim()};
   // the ISBN-10 and ISBN-13 of an edition are one ISBN; should they differ, the ISBN-13 wins
   const isbn = [edition.isbn_13, edition.isbn_10].map(parseIsbn).find(Boolean);
   if(isbn) ed.isbn = isbn;
@@ -1617,7 +1761,7 @@ function hardcoverLookups(books){
   const ids = {hc: new Set(), asin: new Set(), isbn: new Set(), gr: new Set()};
   for(const ed of books.filter(b => isObject(b) && !b.hcb).flatMap(bookEditions)){
     if(ed.hc && HARDCOVER_ID.test(ed.hc)) ids.hc.add(Number(ed.hc));
-    if(ed.id) ids.asin.add(ed.id);
+    editionIds(ed, 'asin').forEach(asin => ids.asin.add(asin));
     editionIsbns(ed).forEach(isbn => ids.isbn.add(isbn));
     if(ed.gr) ids.gr.add(ed.gr);
   }
@@ -1629,7 +1773,7 @@ function hardcoverLookups(books){
  * titles): it shares an ASIN, Goodreads id, Hardcover id or ISBN with an edition of another book.
  */
 function sharedEditionTest(books){
-  const ids = ed => [...EDITION_IDS.filter(k => ed[k]).map(k => k + ' ' + ed[k]), ...editionIsbns(ed).map(x => 'isbn ' + x)];
+  const ids = ed => [...EDITION_IDS.flatMap(k => editionIds(ed, k).map(v => k + ' ' + v)), ...editionIsbns(ed).map(x => 'isbn ' + x)];
   const owners = new Map();
   for(const b of books) for(const id of new Set(bookEditions(b).flatMap(ids))) owners.set(id, (owners.get(id) || 0) + 1);
   return ed => ids(ed).some(id => owners.get(id) > 1);
@@ -1657,7 +1801,7 @@ function addHardcoverIds(books, found){
     let gained = false;
     const editions = bookEditions(b);
     for(const ed of [...editions.filter(x => !shared(x)), ...editions.filter(shared)]){
-      const hit = (ed.hc && found.hc.get(ed.hc)) || (ed.id && found.asin.get(ed.id)) ||
+      const hit = (ed.hc && found.hc.get(ed.hc)) || editionIds(ed, 'asin').map(asin => found.asin.get(asin)).find(Boolean) ||
         editionIsbns(ed).map(isbn => found.isbn.get(isbn)).find(Boolean) || (ed.gr && found.gr.get(ed.gr));
       if(!hit) continue;
       if(hit.hc && !ed.hc && fillEdition(ed, {hc: hit.hc}).length) gained = true;
@@ -1851,7 +1995,7 @@ function recordLines(records, limit = 15){
 /** What merge() did, as lines the import commands print. */
 function mergeLines(report, warnings){
   const lines = [`  already in the catalogue: ${report.matched}`];
-  const counts = [['backfilled', 'Audible ids filled in on existing books'], ['goodreadsFilled', 'Goodreads ids filled in on existing books'],
+  const counts = [['backfilled', 'ASINs filled in on existing books'], ['goodreadsFilled', 'Goodreads ids filled in on existing books'],
     ['hardcoverFilled', 'Hardcover ids filled in on existing books'], ['datesFilled', 'dates read filled in on existing books'],
     ['isbnsFilled', 'ISBNs added to existing books'], ['detailsFilled', 'narrator, publisher, release date or length filled in on existing books'],
     ['editionsAdded', 'other editions added to existing books'], ['excluded', 'skipped (listed in data/excluded.txt)']];
@@ -1991,7 +2135,7 @@ function boxRange(rec){
 }
 
 // Which report list a book goes on when one of its editions gains a field.
-const FILLED_REPORT = {id: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFilled', isbn: 'isbnsFilled', n: 'detailsFilled', p: 'detailsFilled', d: 'detailsFilled', len: 'detailsFilled', desc: 'detailsFilled'};
+const FILLED_REPORT = {asin: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFilled', isbn: 'isbnsFilled', n: 'detailsFilled', p: 'detailsFilled', d: 'detailsFilled', len: 'detailsFilled', desc: 'detailsFilled'};
 
 /**
  * Append incoming records that are not in `existing` yet (mutates `existing`). An existing book
@@ -2012,7 +2156,7 @@ const FILLED_REPORT = {id: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFi
  * A box set with a series range ("1-3") and an id or ISBN becomes its titles (see mergeBoxSet below),
  * unless it is in `existing` as one book already.
  * Returns {added, backfilled, goodreadsFilled, hardcoverFilled, isbnsFilled, detailsFilled, editionsAdded,
- * datesFilled, excluded, notAdded, boxSets, matched}: books that gained an Audible id, a Goodreads id, a Hardcover
+ * datesFilled, excluded, notAdded, boxSets, matched}: books that gained an ASIN, a Goodreads id, a Hardcover
  * id, ISBNs, a narrator, publisher, release date or length, a new edition, dates read; box sets
  * split into their titles ({t, a, titles: how many you had, added: how many were added}).
  */
@@ -2072,10 +2216,10 @@ function merge(existing, incoming, exclusions, opts){
    */
   const mergeBoxSet = (rec, original, [lo, hi]) => {
     // without an id or ISBN there is nothing to tie the titles together, so the set stays one book
-    if(!bookEditions(rec).some(ed => EDITION_IDS.some(k => ed[k]) || editionIsbns(ed).length)) return false;
+    if(!bookEditions(rec).some(ed => EDITION_IDS.some(k => editionIds(ed, k).length) || editionIsbns(ed).length)) return false;
     const editions = bookEditions(rec).map(ed => orderEdition({...ed, desc: ed.desc || rec.t}));
     const author = firstAuthor(rec.a), series = seriesNorm(rec.s);
-    const ownsSet = b => bookEditions(b).some(x => editions.some(ed => EDITION_IDS.some(k => x[k] && x[k] === ed[k]) && sameEdition(x, ed)));
+    const ownsSet = b => bookEditions(b).some(x => editions.some(ed => EDITION_IDS.some(k => shareId(x, ed, k)) && sameEdition(x, ed)));
     const titleNumber = b => firstAuthor(b.a) === author && seriesNorm(b.s || '') === series && /^\d+$/.test(String(b.sn || '').trim()) ?
       Number(String(b.sn).trim()) : null;
     const whole = existing.some(b => (ownsSet(b) && titleNumber(b) === null) ||
@@ -2230,7 +2374,7 @@ function markedNotSame(notSame, x, y){
  */
 function findDuplicates(books, notSame){
   notSame = notSame || new Set();
-  const isId = k => /^\["(id|gr|hc|hcb)"/.test(k);
+  const isId = k => /^\["(asin|gr|hc|hcb)"/.test(k);
   const byKey = new Map();
   books.forEach((b, i) => {
     if(!isObject(b) || typeof b.t !== 'string') return;
@@ -2274,10 +2418,13 @@ function joinEditions(editions){
   return out;
 }
 
-/** Key for "these editions of a book are different editions": the ids they carry, in any order. */
+/**
+ * Key for "these editions of a book are different editions": the ids they carry, in any order. An ASIN
+ * is written "id B0...", whatever its site, as it was when editions kept one ASIN, so marks made then hold.
+ */
 function editionsKey(rec){
   const ids = bookEditions(rec).flatMap(ed => [
-    ...EDITION_IDS.filter(k => typeof ed[k] === 'string' && ed[k]).map(k => k + ' ' + ed[k]),
+    ...EDITION_IDS.flatMap(k => editionIds(ed, k).map(v => (k === 'asin' ? 'id' : k) + ' ' + v)),
     ...editionIsbns(ed).map(x => 'isbn ' + x),
   ]);
   return key('editions', ...[...new Set(ids)].sort());
@@ -2435,11 +2582,12 @@ export {
   fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   splitNames, namesText, fixNames, fixPeople,
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
+  ASIN_SITE, AUDIBLE_SITE, AMAZON_SITE, editionAsins, asinOn, asinsText, parseAsins,
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, EDITION_FIELDS, editionFields, editionFromFields, saveBook,
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, audibleSeriesListing, seriesLookups, seriesFromAudible, addSeriesTotals,
+  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, audibleSeriesListing, audibleAsin, seriesLookups, seriesFromAudible, addSeriesTotals,
   boxSetTitle, seriesListingLookups, boxSetTitlesFromAudible,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
   readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport,
