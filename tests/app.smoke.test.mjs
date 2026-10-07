@@ -145,6 +145,12 @@ for (const page of PAGES) {
 }
 const demoBooks = JSON.parse(DEMO_BOOKS);
 
+// The book form's edition cards: what each card's fields hold, typing into one, adding and removing cards.
+const formEditions = get => get('FORM_EDITIONS.map(x => x.fields)');
+const typeEdition = (els, i, k, value) => els.f_editions.listeners.input[0]({ target: { dataset: { i: String(i), k }, value } });
+const addEdition = els => els.addEditionBtn.listeners.click[0]({});
+const removeEdition = (els, i) => els.f_editions.listeners.click[0]({ target: { closest: () => ({ dataset: { remove: String(i) } }) } });
+
 test('opens on the series overview, with a row per series', async () => {
   const { els, get } = await boot();
   assert.equal(get('VIEW'), 'series');
@@ -282,7 +288,9 @@ test('editing a book keeps its editions', async () => {
   ctx.setView('library');
   ctx.openEditForm(0);
   assert.equal(els.formTitle.textContent, 'Edit book');
-  assert.equal(els.f_e.value, 'ASIN TESTASIN01; Goodreads 4242; Publisher Gull Audio; Length 10h 42m\nASIN TESTASIN02');
+  assert.deepEqual(formEditions(get), [{ id: 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: '10h 42m' }, { id: 'TESTASIN02' }]);
+  assert.match(els.f_editions.innerHTML, /Edition 2/);
+  assert.match(els.f_editions.innerHTML, /<input data-i="0" data-k="len" value="10h 42m"/);
   els.f_t.value = 'Renamed In The App';
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.deepEqual(get('({t: DATA[0].t, e: DATA[0].e})'),
@@ -313,17 +321,18 @@ test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardc
   els.q.value = '';
   ctx.openEditForm(0);
   assert.equal(els.f_hcb.value, '808');
-  assert.equal(els.f_e.value, 'ASIN TESTASIN01; Hardcover 31337');
+  assert.deepEqual(formEditions(get), [{ id: 'TESTASIN01', hc: '31337' }]);
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['808', [{ id: 'TESTASIN01', hc: '31337' }]]);
 
-  // a Hardcover book id is a number; one typed on an edition line, as editions used to show it, goes on the book
+  // a Hardcover book id is a number; a book's address in an edition's Hardcover field goes on the book
   ctx.openEditForm(0);
   els.f_hcb.value = 'abc';
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.match(els.formError.textContent, /Not a Hardcover book id: abc/);
   els.f_hcb.value = '';
-  els.f_e.value = 'ASIN TESTASIN01; Hardcover 31337; Hardcover book 909';
+  addEdition(els);
+  typeEdition(els, 1, 'hc', 'https://hardcover.app/id/book/909');
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['909', [{ id: 'TESTASIN01', hc: '31337' }]]);
 });
@@ -453,29 +462,33 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
   els.q.value = '';
 
   ctx.openEditForm(0);
-  assert.equal(els.f_e.value, 'ISBN 9780306406157');
+  assert.deepEqual(formEditions(get), [{ isbn: '9780306406157' }]);
   // another ISBN is another edition
-  els.f_e.value = 'ISBN 9780306406157, 978-0-00-000000-2';
+  typeEdition(els, 0, 'isbn', '9780306406157, 978-0-00-000000-2');
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.deepEqual(get('DATA[0].e'), [{ isbn: '9780306406157' }, { isbn: '9780000000002' }]);
 
   // the same ISBN may go on another book (a boxed set); the cards then say so
   ctx.openEditForm(1);
-  els.f_e.value = '0306406152';
+  typeEdition(els, 0, 'isbn', '0306406152');
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.deepEqual(get('DATA[1].e'), [{ isbn: '9780306406157' }]);
   assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=Boxed\+One">Boxed One<\/a>/);
 
   // a mistyped ISBN is refused with a message, and nothing changes
   ctx.openEditForm(1);
-  els.f_e.value = 'ISBN 9780306406158';
+  typeEdition(els, 0, 'isbn', '9780306406158');
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.match(els.formError.textContent, /Not understood in editions: ISBN 9780306406158/);
+  assert.match(els.formError.textContent, /Not understood: edition 1: ISBN 9780306406158/);
   assert.deepEqual(get('DATA[1].e'), [{ isbn: '9780306406157' }]);
-  els.f_e.value = 'Goodreads 12; second note; third note';
+  typeEdition(els, 0, 'isbn', '');
+  typeEdition(els, 0, 'gr', 'twelve');
+  typeEdition(els, 0, 'd', 'someday');
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.match(els.formError.textContent, /Not understood in editions: third note/);
-  els.f_e.value = '';
+  assert.match(els.formError.textContent, /Not understood: edition 1: Goodreads id twelve; edition 1: Released someday/);
+  // removing the only card leaves an empty one, which is no edition
+  removeEdition(els, 0);
+  assert.deepEqual(formEditions(get), [{}]);
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.equal(get("'e' in DATA[1]"), false);
 });
@@ -497,10 +510,14 @@ test('narrators and descriptions live on editions: shown on the card, searchable
   els.q.value = '';
 
   ctx.openEditForm(salt);
-  assert.match(els.f_e.value, /^Narrated by Tobias Frane; ASIN SAMPLE0001/);
-  els.f_e.value += '\nDramatized adaptation; Narrated by A full cast; Goodreads 777';
+  assert.equal(formEditions(get)[0].n, 'Tobias Frane');
+  assert.equal(formEditions(get)[0].id, 'SAMPLE0001');
+  addEdition(els);
+  typeEdition(els, 2, 'desc', 'Dramatized adaptation; unabridged');
+  typeEdition(els, 2, 'n', 'A full cast');
+  typeEdition(els, 2, 'gr', '777');
   els.addForm.listeners.submit[0]({ preventDefault() {} });
-  assert.deepEqual(get(`DATA[${salt}].e[2]`), { gr: '777', n: ['A full cast'], desc: 'Dramatized adaptation' });
+  assert.deepEqual(get(`DATA[${salt}].e[2]`), { gr: '777', n: ['A full cast'], desc: 'Dramatized adaptation; unabridged' });
 });
 
 test('box sets: the edition shows on each of its books, and editing it on one edits it on all', async () => {
@@ -517,7 +534,8 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
   els.q.value = '';
 
   ctx.openEditForm(two);
-  els.f_e.value = els.f_e.value.replace('Kestrel Row Audio', 'Merlin Lane Audio');
+  assert.match(els.f_editions.innerHTML, /Also on Harvest of Gears: changes here change it there too/);
+  typeEdition(els, 0, 'p', 'Merlin Lane Audio');
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.equal(get(`DATA[${three}].e[0].p`), 'Merlin Lane Audio');
   assert.match(els.ioStatus.textContent, /Also updated the shared edition on 1 other book/);

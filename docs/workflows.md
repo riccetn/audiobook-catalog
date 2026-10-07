@@ -5,17 +5,17 @@
 **Edit in the app**
 
 Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
-list; `+ Add a book` opens it at the top. *Editions* takes one edition per line, the way the
-book card shows them: `UK edition; Narrated by Hollis Marr; ASIN B0SAMPLE01; Goodreads 4242;
-ISBN 978-0-00-000000-2; Publisher Gullwing Audio; Released 2021-05; Length 10h 42m` (any of the parts, and
-`Hardcover 501` for the Hardcover edition id, or just the address of the edition's page on Hardcover,
-`https://hardcover.app/books/the-salt-road/editions/501`; hyphens and ISBN-10s are fine).
+list; `+ Add a book` opens it at the top. *Editions* has a card per edition, with a field for each part: description, narrators, ASIN, Goodreads id,
+Hardcover edition (its id, or just the address of the edition's page on Hardcover,
+`https://hardcover.app/books/the-salt-road/editions/501`), ISBN (hyphens and ISBN-10s are fine), publisher,
+release date (`2021-05`) and length (`10h 42m`). Leave a field empty when you don't know it; `+ Add an edition`
+adds a card and *Remove* drops one. A card that is an edition of a box set says which other books it is on,
+since a change to it changes it there too. A field the page can't read is named when you save, and nothing changes.
 The Hardcover book has its own field, which takes the book's id or, since the Hardcover app doesn't show
 it, the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions'
 pages: the page looks the book up on Hardcover and puts its id in the field (when you leave the field, or
 when you save). That needs your Hardcover API token, saved on the *Import & export* page (see
-[Hardcover](hardcover.md)). Text without a label is the edition's description, so a line can be as
-short as `Dramatized adaptation; Narrated by A full cast`. Several authors, or several narrators of an
+[Hardcover](hardcover.md)). Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
@@ -104,7 +104,7 @@ hand to have that pair offered again. Backups carry the marks as well.
 **ISBNs**: both importers store the ISBN in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the edition they import. An edition has one ISBN: two different ISBNs are two
 editions, so a second one becomes an edition of its own. Edit them in the page under *Editions*
-(`ISBN 978-0-00-000000-2`, or `0-306-40615-2`; stored as ISBN-13; a line with several ISBNs is that many editions). The same ISBN may be on several books, e.g. each
+(`978-0-00-000000-2`, or `0-306-40615-2`; stored as ISBN-13; several ISBNs in one card's field are that many editions). The same ISBN may be on several books, e.g. each
 book of a boxed set. Searching the library for an ISBN, typed any way, finds the books that carry it;
 searching for an ASIN, a Goodreads id or a publisher works too.
 

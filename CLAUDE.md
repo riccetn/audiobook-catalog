@@ -40,7 +40,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command),
   `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, `parseHardcoverUrl`/`hardcoverBookId` (a book's id from its hardcover.app address), run by `runHardcover` through
   `hardcoverAsker` (the `hardcover-*` commands and the page's own runs; fetch and pause are passed in; the
-  GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`,
+  GraphQL queries are in `HARDCOVER_QUERIES`), `sameEdition`/`saveBook`, `formatEdition`/`parseEditions`, `editionFields`/`editionFromFields` (the book form's edition cards),
   `parseExclusions`/`exclusionEntries`, `readBackup`, `mergeBackup`, `fingerprint`, `findDuplicates`/`mergeBooks`/`splitEditions`.
 - `catalog.js`: the CLI (`main(argv, io)`; `series` fetches from Audible and `hardcover-import|export|sync` talk to
   Hardcover's GraphQL API, both through `io.fetch`, and return a promise; the Hardcover token comes from
