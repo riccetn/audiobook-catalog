@@ -511,10 +511,16 @@ const EDITION_FIELDS = [
   ['isbn', 'ISBN', 'ISBN'], ['p', 'Publisher', 'Publisher'], ['d', 'Released', 'Released'], ['len', 'Length', 'Length'],
 ];
 
-/** An edition as the text of each of the editor's fields, e.g. {asin: 'audible.com B0X', len: '10h 42m', n: 'Ann Vale, Bo Reed', ...}. */
+/**
+ * An edition as the text of each of the editor's fields, e.g. {'asin:audible.com': 'B0X', len: '10h 42m',
+ * n: 'Ann Vale, Bo Reed', ...}: each site's ASIN has a field of its own, `asin:` and the site.
+ */
 function editionFields(ed){
-  return Object.fromEntries(editionParts(ed).map(([k, , value]) => [k, value]));
+  const fields = Object.fromEntries(editionParts(ed).filter(([k]) => k !== 'asin').map(([k, , value]) => [k, value]));
+  for(const [site, asin] of editionAsins(ed)) fields['asin:' + site] = asin;
+  return fields;
 }
+
 
 /**
  * Read one edition from the editor's fields (as editionFields() gives them), checking each the way
@@ -526,6 +532,15 @@ function editionFields(ed){
 function editionFromFields(fields){
   const ed = {}, bad = [];
   let hcb = null;
+  // each site's field holds that site's ASIN (or the address of the book's page there)
+  for(const [k, text] of Object.entries(fields)){
+    const site = k.startsWith('asin:') ? k.slice(5) : null, value = tidyText(String(text || ''));
+    if(!site || !value) continue;
+    const read = parseAsins(value, site);
+    const both = {...(ed.asin || {})};
+    if(read.bad.length || !read.asins || Object.entries(read.asins).some(([at, x]) => both[at] && both[at] !== x)){ bad.push(`ASIN ${site} ${value}`); continue; }
+    ed.asin = orderAsins({...both, ...read.asins});
+  }
   for(const [k, label, shown] of EDITION_FIELDS){
     const value = tidyText(String(fields[k] || ''));
     if(!value) continue;
@@ -535,6 +550,10 @@ function editionFromFields(fields){
     const got = read.editions.flatMap(x => k === 'isbn' ? editionIsbns(x) : x[k] ? [x[k]] : []);
     if(read.hcb && k === 'hc') hcb = read.hcb;
     else if(read.bad.length || !got.length) bad.push(`${shown} ${value}`);
+    else if(k === 'asin'){
+      if(Object.entries(got[0]).some(([at, x]) => ed.asin && ed.asin[at] && ed.asin[at] !== x)) bad.push(`${shown} ${value}`);
+      else ed.asin = orderAsins({...(ed.asin || {}), ...got[0]});
+    }
     else ed[k] = k === 'isbn' ? got : got[0];
   }
   return {editions: Object.keys(ed).length ? splitIsbns(orderEdition(ed)) : [], bad, hcb};
@@ -1213,6 +1232,15 @@ function readAudible(text, site){
 // these functions only build the addresses and read the answers, so they can be tested offline.
 const AUDIBLE_STORES = {us: 'audible.com', uk: 'audible.co.uk', de: 'audible.de', fr: 'audible.fr', it: 'audible.it',
   es: 'audible.es', ca: 'audible.ca', au: 'audible.com.au', in: 'audible.in', jp: 'audible.co.jp'};
+
+/**
+ * The sites the book form offers an ASIN field for: each Audible store's site and its Amazon twin, and
+ * a few Amazon sites without an Audible store. An edition's ASIN on another site still gets its field.
+ */
+const ASIN_SITES = [...new Set([
+  ...Object.values(AUDIBLE_STORES).flatMap(site => [site, site.replace(/^audible\./, 'amazon.')]),
+  'amazon.se', 'amazon.nl', 'amazon.pl', 'amazon.com.br', 'amazon.com.mx',
+])];
 
 /** The catalogue address of a product (a book, or a series by its own ASIN) in one store. */
 function audibleProductUrl(asin, store, groups){
@@ -2583,7 +2611,7 @@ export {
   splitNames, namesText, fixNames, fixPeople,
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
   ASIN_SITE, AUDIBLE_SITE, AMAZON_SITE, editionAsins, asinOn, asinsText, parseAsins,
-  bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, EDITION_FIELDS, editionFields, editionFromFields, saveBook,
+  bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, EDITION_FIELDS, ASIN_SITES, editionFields, editionFromFields, saveBook,
   bookNarrators,
   Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,

@@ -813,8 +813,13 @@ test('ASINs by site: each site may have its own, so only another ASIN on the sam
 test('editions as fields: one field per part in the book form, each checked on its own', () => {
   const edition = { asin: { 'audible.com': 'B0X' }, gr: '4242', hc: '31337', isbn: ISBN_A, n: ['Ann Vale', 'Bo Reed'], p: 'Gull Audio', d: '2021-05', len: 642, desc: 'UK edition; abridged' };
   const fields = C.editionFields(edition);
-  assert.deepEqual(fields, { desc: 'UK edition; abridged', n: 'Ann Vale, Bo Reed', asin: 'audible.com B0X', gr: '4242', hc: '31337', isbn: ISBN_A, p: 'Gull Audio', d: '2021-05', len: '10h 42m' });
+  assert.deepEqual(fields, { desc: 'UK edition; abridged', n: 'Ann Vale, Bo Reed', gr: '4242', hc: '31337', isbn: ISBN_A, p: 'Gull Audio', d: '2021-05', len: '10h 42m', 'asin:audible.com': 'B0X' });
   assert.deepEqual(C.editionFromFields(fields), { editions: [edition], bad: [], hcb: null });
+  // a field per site; a page's address gives its site's ASIN; another ASIN for a site that has one can't be read
+  assert.deepEqual(C.editionFromFields({ 'asin:audible.co.uk': 'b0uk', 'asin:amazon.com': 'https://www.amazon.com/dp/B0AMAZON01' }).editions,
+    [{ asin: { 'audible.co.uk': 'B0UK', 'amazon.com': 'B0AMAZON01' } }]);
+  assert.deepEqual(C.editionFromFields({ 'asin:audible.com': 'B1, B2', 'asin:amazon.com': '' }).bad, ['ASIN audible.com B1, B2']);
+  assert.ok(C.ASIN_SITES.includes('amazon.se') && C.ASIN_SITES.includes('audible.co.uk'));
   // empty fields are no edition; a second ISBN is another edition; an edition's address gives its id, a book's the book
   assert.deepEqual(C.editionFromFields({ desc: '  ', p: '' }), { editions: [], bad: [], hcb: null });
   assert.deepEqual(C.editionFromFields({ isbn: '978-0-00-000000-2, 0306406152', hc: 'https://hardcover.app/books/the-salt-road/editions/501' }),

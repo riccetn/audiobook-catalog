@@ -5,9 +5,9 @@
 **Edit in the app**
 
 Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
-list; `+ Add a book` opens it at the top. *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (each after its
-site, `audible.com B0…, amazon.com B0…`, or the address of the book's page there; an ASIN without a site is
-audible.com's), Goodreads id,
+list; `+ Add a book` opens it at the top. *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
+site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
+another Amazon or Audible site, and the address of the book's page there works too), Goodreads id,
 Hardcover edition (its id, or just the address of the edition's page on Hardcover,
 `https://hardcover.app/books/the-salt-road/editions/501`), ISBN (hyphens and ISBN-10s are fine), publisher,
 release date (`2021-05`) and length (`10h 42m`). Leave a field empty when you don't know it; `+ Add an edition`

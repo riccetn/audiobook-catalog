@@ -288,7 +288,7 @@ test('editing a book keeps its editions', async () => {
   ctx.setView('library');
   ctx.openEditForm(0);
   assert.equal(els.formTitle.textContent, 'Edit book');
-  assert.deepEqual(formEditions(get), [{ asin: 'audible.com TESTASIN01', gr: '4242', p: 'Gull Audio', len: '10h 42m' }, { asin: 'audible.com TESTASIN02' }]);
+  assert.deepEqual(formEditions(get), [{ 'asin:audible.com': 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: '10h 42m' }, { 'asin:audible.com': 'TESTASIN02' }]);
   assert.match(els.f_editions.innerHTML, /Edition 2/);
   assert.match(els.f_editions.innerHTML, /<input data-i="0" data-k="len" value="10h 42m"/);
   els.f_t.value = 'Renamed In The App';
@@ -312,22 +312,34 @@ test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Good
   assert.match(els.results.innerHTML, /ASIN audible\.co\.uk <a href="https:\/\/www\.audible\.co\.uk\/pd\/TESTASIN02"[^>]*>TESTASIN02<\/a>, amazon\.com <a href="https:\/\/www\.amazon\.com\/dp\/TESTASIN03"[^>]*>TESTASIN03<\/a><\/div>/);
 });
 
-test('the book form keeps an edition\'s ASINs by site, and an ASIN typed without one is audible.com\'s', async () => {
+test('the book form has a field for each site an edition has an ASIN on, and adds one for another site', async () => {
   const { ctx, els, get, run } = await boot();
-  run("DATA[0].e = [{asin: { 'audible.com': 'TESTASIN01' }}]");
+  run("DATA[0].e = [{asin: { 'audible.com': 'TESTASIN01', 'amazon.co.uk': 'TESTASIN02' }}, {gr: '4242'}]");
   ctx.setView('library');
   ctx.openEditForm(0);
-  typeEdition(els, 0, 'asin', 'audible.com TESTASIN01, amazon.co.uk TESTASIN02, https://www.amazon.com/dp/TESTASIN03?ref=x');
-  addEdition(els);
-  typeEdition(els, 1, 'asin', 'testasin04');
+  // audible.com and the sites in use have a field; the others wait in the list
+  assert.match(els.f_editions.innerHTML, /<label>audible\.com<\/label><input data-i="0" data-k="asin:audible\.com" value="TESTASIN01"/);
+  assert.match(els.f_editions.innerHTML, /data-k="asin:amazon\.co\.uk" value="TESTASIN02"/);
+  assert.match(els.f_editions.innerHTML, /<label>audible\.com<\/label><input data-i="1" data-k="asin:audible\.com" value=""/);
+  assert.doesNotMatch(els.f_editions.innerHTML, /data-k="asin:amazon\.com"/);
+  assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another site<\/option><option value="amazon\.com">/);
+  // picking a site from the list gives it a field
+  els.f_editions.listeners.change[0]({ target: { dataset: { addSite: '0' }, value: 'amazon.com' } });
+  assert.match(els.f_editions.innerHTML, /data-i="0" data-k="asin:amazon\.com" value=""/);
+  typeEdition(els, 0, 'asin:amazon.com', 'https://www.amazon.com/dp/TESTASIN03?ref=x');
+  typeEdition(els, 1, 'asin:audible.com', 'testasin04');
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.deepEqual(get('DATA[0].e'), [{ asin: { 'audible.com': 'TESTASIN01', 'amazon.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' } },
-    { asin: { 'audible.com': 'TESTASIN04' } }]);
-  // two ASINs for one site can't be read
+    { asin: { 'audible.com': 'TESTASIN04' }, gr: '4242' }]);
+  // emptying a site's field drops that ASIN; something that isn't an ASIN is named
   ctx.openEditForm(0);
-  typeEdition(els, 1, 'asin', 'audible.com TESTASIN04, audible.com TESTASIN05');
+  typeEdition(els, 0, 'asin:amazon.co.uk', '');
+  typeEdition(els, 1, 'asin:audible.com', 'not an asin');
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-  assert.match(els.formError.textContent, /Not understood: edition 2: ASINs audible.com TESTASIN04, audible.com TESTASIN05/);
+  assert.match(els.formError.textContent, /Not understood: edition 2: ASIN audible\.com not an asin/);
+  typeEdition(els, 1, 'asin:audible.com', 'TESTASIN04');
+  els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+  assert.deepEqual(get('DATA[0].e[0]'), { asin: { 'audible.com': 'TESTASIN01', 'amazon.com': 'TESTASIN03' } });
 });
 
 test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardcover, and the edit form keeps them', async () => {
@@ -343,7 +355,7 @@ test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardc
   els.q.value = '';
   ctx.openEditForm(0);
   assert.equal(els.f_hcb.value, '808');
-  assert.deepEqual(formEditions(get), [{ asin: 'audible.com TESTASIN01', hc: '31337' }]);
+  assert.deepEqual(formEditions(get), [{ 'asin:audible.com': 'TESTASIN01', hc: '31337' }]);
   els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
   assert.deepEqual(get('[DATA[0].hcb, DATA[0].e]'), ['808', [{ asin: { 'audible.com': 'TESTASIN01' }, hc: '31337' }]]);
 
@@ -533,7 +545,8 @@ test('narrators and descriptions live on editions: shown on the card, searchable
 
   ctx.openEditForm(salt);
   assert.equal(formEditions(get)[0].n, 'Tobias Frane');
-  assert.equal(formEditions(get)[0].asin, 'audible.com SAMPLE0001, amazon.com SAMPLE0201');
+  assert.equal(formEditions(get)[0]['asin:audible.com'], 'SAMPLE0001');
+  assert.equal(formEditions(get)[0]['asin:amazon.com'], 'SAMPLE0201');
   addEdition(els);
   typeEdition(els, 2, 'desc', 'Dramatized adaptation; unabridged');
   typeEdition(els, 2, 'n', 'A full cast');
