@@ -5,7 +5,9 @@
 **Edit in the app**
 
 Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
-list; `+ Add a book` opens it at the top. *Editions* has a card per edition, with a field for each part: description, narrators, ASIN, Goodreads id,
+list; `+ Add a book` opens it at the top. *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
+site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
+another Amazon or Audible site, and the address of the book's page there works too), Goodreads id,
 Hardcover edition (its id, or just the address of the edition's page on Hardcover,
 `https://hardcover.app/books/the-salt-road/editions/501`), ISBN (hyphens and ISBN-10s are fine), publisher,
 release date (`2021-05`) and length (`10h 42m`). Leave a field empty when you don't know it; `+ Add an edition`
@@ -21,8 +23,8 @@ filter. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
 searching finds narrators and descriptions. To tie a box set to
 its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on each title: the details you typed on one
-are copied to the others. On the card, an edition's ASIN links to the book on Audible (audible.com,
-which sends you on to your own store), its Goodreads id to the book on Goodreads, and its Hardcover ids
+are copied to the others. On the card, each of an edition's ASINs links to the book on its site
+(`audible.co.uk/pd/…`, `amazon.com/dp/…`), its Goodreads id to the book on Goodreads, and its Hardcover ids
 to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
 when Hardcover renames the book). With `make serve` and your own `data/books.json`,
 every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other

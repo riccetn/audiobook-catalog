@@ -53,7 +53,7 @@ node catalog.js hardcover-export                # only catalogue -> Hardcover
 - **Import** reads the books on your Hardcover *Read* shelf, like any import (it only adds, see [How imports avoid clobbering your edits](imports.md)).
   A book read as an audiobook edition on Hardcover is added if it is new; a book you read in another
   format, or without an edition picked, only fills in a book you already have. Each gets Hardcover's book
-  id (`hcb`) and an edition with Hardcover's edition id (`hc`), the ASIN, ISBN, narrator, publisher, release
+  id (`hcb`) and an edition with Hardcover's edition id (`hc`), the ASIN (as amazon.com's, the site Hardcover uses), ISBN, narrator, publisher, release
   date and length Hardcover has, and every finished date of its reads (Hardcover keeps them all, so a book you have
   gains the dates it lacks; `2024-03-15` counts as there when you have `2024-03`). A book on Hardcover with
   no finished date gets none, which here means the date is unknown. A box set you read on Hardcover, found

@@ -19,7 +19,7 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 
 | key    | meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
-| `id`   | Audible ASIN, so re-imports recognise the book                           |
+| `asin` | the edition's ASINs, by site: `{"audible.com": "B0…", "amazon.com": "B0…"}`. Amazon and each of its Audible and Amazon sites may give one edition an ASIN of its own, so each is kept under its site's address (`audible.com`, `audible.co.uk`, `amazon.com`, `amazon.de`, …). Re-imports recognise the book by any of them; only another ASIN on the same site makes another edition |
 | `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
 | `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
 | `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page or `sync-export` saves |
@@ -31,9 +31,14 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 
 ```json
 {"t":"The Salt Road","a":["Marisol Quenby"],"s":"The Lantern Coast","sn":"1","hcb":"77",
- "e":[{"id":"B0SAMPLE01","gr":"9001","hc":"501","isbn":"9780000000002","n":["Tobias Frane"],"p":"Gullwing Audio","d":"2019-04-02","len":642},
-      {"id":"B0SAMPLE02","n":["Hollis Marr","Dana Whitlock"],"desc":"UK edition"}]}
+ "e":[{"asin":{"audible.com":"B0SAMPLE01","amazon.com":"B0SAMPLE03"},"gr":"9001","hc":"501","isbn":"9780000000002","n":["Tobias Frane"],"p":"Gullwing Audio","d":"2019-04-02","len":642},
+      {"asin":{"audible.co.uk":"B0SAMPLE02"},"n":["Hollis Marr","Dana Whitlock"],"desc":"UK edition"}]}
 ```
+
+**Which site an ASIN is from**: an Audible import's ASINs are from the Audible site you pick (audible.com
+unless you pick another, see [Audible](audible.md)); ASINs from Hardcover or Goodreads are amazon.com's,
+the site they use. An edition's ASIN from before ASINs were kept by site (`"id": "B0…"`) is read as its
+audible.com ASIN.
 
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
 titles, with the same ASIN, Goodreads id or ISBN; that shared identifier is what ties them together.
@@ -50,7 +55,8 @@ several ISBNs is read as one edition per ISBN (the first keeps everything else, 
 an edition of its own), and the Hardcover book id moves to the book (a box set's, which is on each of
 its titles, gives way to the book's own). Until 2026-10 the authors and narrators were one comma
 separated text (`"a": "Ann Vale, Bo Reed"`); that is read as a list, split at commas, semicolons, `&`
-and `and` (a suffix such as `Jr.` stays with its name). `make validate` mentions all of these, and
+and `and` (a suffix such as `Jr.` stays with its name). Until 2026-10 an edition had one ASIN, `id`,
+which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). `make validate` mentions all of these, and
 `make format`, or any save from the page, an import or `sync-export`, writes them in the new shape.
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to

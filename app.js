@@ -65,7 +65,7 @@ function matches(b, q, author, genre, read){
   else if(read && !readYears(b).includes(read)) return false;
   if(q){
     const editions = CatalogImport.bookEditions(b);
-    const hay = [b.t,...authorsOf(b),b.s,...(b.g||[]),...editions.flatMap(ed=>[ed.id, ed.gr, ed.hc, CatalogImport.namesText(ed.n), ed.p, ed.desc, ed.isbn]), b.hcb]
+    const hay = [b.t,...authorsOf(b),b.s,...(b.g||[]),...editions.flatMap(ed=>[...CatalogImport.editionAsins(ed).map(([, asin])=> asin), ed.gr, ed.hc, CatalogImport.namesText(ed.n), ed.p, ed.desc, ed.isbn]), b.hcb]
       .filter(x=> typeof x === 'string').join(' ').toLowerCase();
     // an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
     const isbn = CatalogImport.parseIsbn(q);
@@ -470,7 +470,8 @@ let SHARED = new Map();
 
 function sharedEditions(){
   const byKey = new Map();
-  const keys = ed=> [...['id','gr','hc'].filter(k=> ed[k]).map(k=> k + ' ' + ed[k]), ...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
+  const keys = ed=> [...CatalogImport.editionAsins(ed).map(([, asin])=> 'asin ' + asin), ...['gr','hc'].filter(k=> ed[k]).map(k=> k + ' ' + ed[k]),
+    ...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
   DATA.forEach((b,i)=> CatalogImport.bookEditions(b).forEach(ed=> keys(ed).forEach(k=>{
     if(!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push([i, ed]);
@@ -484,20 +485,22 @@ function sharedEditions(){
   return shared;
 }
 
-// Audible's US store: the catalogue has no notion of a store region, and audible.com redirects
-// a visitor to their own store when the title is sold there.
-const AUDIBLE_URL = 'https://www.audible.com/pd/', GOODREADS_URL = 'https://www.goodreads.com/book/show/';
+const GOODREADS_URL = 'https://www.goodreads.com/book/show/';
+
+// An ASIN's page on its site: audible.co.uk/pd/B0X, amazon.com/dp/B0X.
+const asinUrl = site=> `https://www.${site}/${site.startsWith('audible.') ? 'pd' : 'dp'}/`;
 
 /**
- * An edition as formatEdition() writes it, with its ASIN, Goodreads id and Hardcover ids linking to the
- * book there (Hardcover's links by id keep working when it renames the book).
+ * An edition as formatEdition() writes it, with each ASIN linking to the book on its site, and the
+ * Goodreads id and Hardcover ids to the book there (Hardcover's links by id keep working when it renames the book).
  */
 const idLink = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
 
 function editionHtml(ed){
-  const urls = {id: AUDIBLE_URL, gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', '')};
+  const urls = {gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', '')};
+  const asins = ()=> CatalogImport.editionAsins(ed).map(([site, asin])=> `${esc(site)} ${idLink(asinUrl(site), asin)}`).join(', ');
   return CatalogImport.editionParts(ed).map(([k, label, value])=>
-    (label ? esc(label) + ' ' : '') + (urls[k] ? idLink(urls[k], value) : esc(value))).join('; ');
+    (label ? esc(label) + ' ' : '') + (k === 'asin' ? asins() : urls[k] ? idLink(urls[k], value) : esc(value))).join('; ');
 }
 
 // The address of a book (or, with kind 'series', a series) shown on its own.
@@ -638,16 +641,33 @@ function setFormEditions(editions, index){
   renderFormEditions();
 }
 
-const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', id: 'B0…', gr: 'e.g. 4242',
+const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', asin: 'B0…', gr: 'e.g. 4242',
   hc: 'id or hardcover.app address', isbn: '978…', p: 'e.g. Gullwing Audio', d: 'e.g. 2021-05', len: 'e.g. 10h 42m'};
+
+// An edition's ASINs: a field for each site it has one on (audible.com's always, as an ASIN usually is),
+// and a list to add a field for another site, so the card only shows the sites in use.
+const DEFAULT_ASIN_SITE = 'audible.com';
+const asinSitesOf = fields=> [DEFAULT_ASIN_SITE, ...Object.keys(fields).filter(k=> k.startsWith('asin:')).map(k=> k.slice(5))]
+  .filter((site, j, all)=> all.indexOf(site) === j);
+
+function asinFieldsHtml(fields, i){
+  const sites = asinSitesOf(fields);
+  const more = CatalogImport.ASIN_SITES.filter(site=> !sites.includes(site));
+  return sites.map(site=> `<div class="ef-site"><label>${esc(site)}</label>` +
+      `<input data-i="${i}" data-k="asin:${esc(site)}" value="${esc(fields['asin:' + site] || '')}" placeholder="${esc(EDITION_HINTS.asin)}"></div>`).join('') +
+    (more.length ? `<div class="ef-site"><label>&nbsp;</label><select data-add-site="${i}" aria-label="Add an ASIN for another site">` +
+      '<option value="">+ Another site</option>' + more.map(site=> `<option value="${esc(site)}">${esc(site)}</option>`).join('') +
+      '</select></div>' : '');
+}
 
 function renderFormEditions(){
   document.getElementById('f_editions').innerHTML = FORM_EDITIONS.map(({fields, also}, i)=>
     `<div class="editionCard" role="group" aria-label="Edition ${i + 1}"><div class="editionCardHead"><span>Edition ${i + 1}</span>` +
     `<button type="button" class="removeEdition" data-remove="${i}" title="Remove this edition">Remove</button></div>` +
     (also.length ? `<p class="editionAlso">Also on ${also.map(esc).join(', ')}: changes here change it there too.</p>` : '') +
-    '<div class="editionFields">' + CatalogImport.EDITION_FIELDS.map(([k, , label])=>
-      `<div class="ef-${k}"><label>${label}</label><input data-i="${i}" data-k="${k}" value="${esc(fields[k] || '')}" placeholder="${esc(EDITION_HINTS[k])}"></div>`
+    '<div class="editionFields">' + CatalogImport.EDITION_FIELDS.map(([k, , label])=> k === 'asin'
+      ? `<div class="ef-asin" role="group" aria-label="${label}"><label>${label}</label><div class="asinSites">${asinFieldsHtml(fields, i)}</div></div>`
+      : `<div class="ef-${k}"><label>${label}</label><input data-i="${i}" data-k="${k}" value="${esc(fields[k] || '')}" placeholder="${esc(EDITION_HINTS[k])}"></div>`
     ).join('') + '</div></div>'
   ).join('');
 }
@@ -656,6 +676,15 @@ const editionsEditor = document.getElementById('f_editions');
 editionsEditor.addEventListener('input', e=>{
   const {i, k} = e.target.dataset || {};
   if(k && FORM_EDITIONS[i]) FORM_EDITIONS[i].fields[k] = e.target.value;
+});
+// "+ ASIN on another site": a field for that site, ready to type in
+editionsEditor.addEventListener('change', e=>{
+  const i = e.target && e.target.dataset ? e.target.dataset.addSite : undefined, site = e.target ? e.target.value : '';
+  if(i === undefined || !site || !FORM_EDITIONS[i]) return;
+  FORM_EDITIONS[i].fields['asin:' + site] = FORM_EDITIONS[i].fields['asin:' + site] || '';
+  renderFormEditions();
+  const input = editionsEditor.querySelector ? editionsEditor.querySelector(`input[data-i="${i}"][data-k="asin:${site}"]`) : null;
+  if(input) input.focus();
 });
 editionsEditor.addEventListener('click', e=>{
   const btn = e.target && e.target.closest ? e.target.closest('[data-remove]') : null;
@@ -667,8 +696,9 @@ editionsEditor.addEventListener('click', e=>{
 document.getElementById('addEditionBtn').addEventListener('click', ()=>{
   FORM_EDITIONS.push({fields: {}, also: []});
   renderFormEditions();
-  const inputs = editionsEditor.querySelectorAll ? editionsEditor.querySelectorAll('input') : [];
-  if(inputs.length) inputs[inputs.length - CatalogImport.EDITION_FIELDS.length].focus();
+  // the new card's first field, its description
+  const input = editionsEditor.querySelector ? editionsEditor.querySelector(`input[data-i="${FORM_EDITIONS.length - 1}"][data-k="desc"]`) : null;
+  if(input) input.focus();
 });
 
 /** The editions in the form, as {editions, bad (e.g. "edition 2: Released 2021-13"), hcb}. */
