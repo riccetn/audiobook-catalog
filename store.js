@@ -5,19 +5,21 @@ import * as CatalogImport from './importers.js';
 
 const LS_KEY = 'audiobook-catalog-data';
 // A catalogue kept in this browser alone, for a copy of the app with no data/books.json of its own (the
-// app installed on a phone from a static host): {books, seriesInfo, excluded}. It starts with a Restore.
+// app installed on a phone from a static host): {books, seriesInfo, authors, excluded}. It starts with a Restore.
 const DEVICE_KEY = 'audiobook-catalog-device';
 // Served from the project root: your own catalogue in data/ if it exists, otherwise the bundled demo.
 const DATA_DIRS = ['data/', 'data/sample/'];
 
 export let DATA = [];
 export let SERIES_INFO = {};
+export let AUTHORS = {};              // data/authors.json: author name -> {bio, url, audible, goodreads, hardcover}
 export let BASELINE = '';
 export let INFO_BASELINE = '';        // same, for series-info.json
+export let AUTHORS_BASELINE = '';     // and for authors.json
 let STARTUP_NOTICE = '';
 export let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
 export let NEW_EXCLUDED = [];         // entries added to EXCLUSIONS in the page that data/excluded.txt does not have yet
-export let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json and data/series-info.json
+export let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json, data/series-info.json and data/authors.json
 let SAVING = false;            // a save to disk is on its way
 let SAVE_AGAIN = false;        // more edits came in while it was
 export let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[storeKey()]
@@ -29,6 +31,7 @@ export let HARDCOVER = false;         // `make serve` with your own data can imp
 // A module's bindings can only be assigned in the module itself, so the pages replace these through here.
 export function setData(books){ DATA = books; }
 export function setSeriesInfo(info){ SERIES_INFO = info; }
+export function setAuthors(authors){ AUTHORS = authors; }
 
 // The page's own hooks, from startPage(): refreshPage() redraws it from DATA; onHardcoverJob(job) and
 // onHardcoverDone(job), when the page has them, do more with a Hardcover run (see followHardcover).
@@ -94,7 +97,7 @@ export function persist(){
 function saveLocally(){
   if(ON_DEVICE){
     try{
-      localStorage.setItem(DEVICE_KEY, JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, excluded: EXCLUSIONS.entries}));
+      localStorage.setItem(DEVICE_KEY, JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, authors: AUTHORS, excluded: EXCLUSIONS.entries}));
       LOCAL_SEEN = localNow();
     }catch(e){
       // nothing else holds this catalogue, so say so instead of losing the edit quietly
@@ -103,7 +106,8 @@ function saveLocally(){
     return;
   }
   try{
-    localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO, excluded: NEW_EXCLUDED}));
+    localStorage.setItem(LS_KEY, JSON.stringify({base: BASELINE, data: DATA, infoBase: INFO_BASELINE, info: SERIES_INFO,
+      authorsBase: AUTHORS_BASELINE, authors: AUTHORS, excluded: NEW_EXCLUDED}));
     LOCAL_SEEN = localNow();
   }catch(e){}
 }
@@ -129,7 +133,8 @@ async function saveToDisk(){
   try{
     res = await fetch('api/save', {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, excluded, notDuplicates, base: BASELINE, infoBase: INFO_BASELINE}),
+      body: JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, authors: AUTHORS, excluded, notDuplicates,
+        base: BASELINE, infoBase: INFO_BASELINE, authorsBase: AUTHORS_BASELINE}),
     });
     body = await res.json();
   }catch(e){
@@ -140,18 +145,22 @@ async function saveToDisk(){
   SAVING = false;
   if(!res.ok){
     const why = body.conflict
-      ? 'data/books.json changed on disk since this page loaded it. Export your edits here, then reload the page.'
+      ? 'the data files changed on disk since this page loaded them. Export your edits here, then reload the page.'
       : [body.error, ...(body.errors || [])].filter(Boolean).join('; ');
     showIoStatus(`Not saved to disk: ${why} Your edits are kept in this browser.`, true);
     return;
   }
   BASELINE = body.base;
   INFO_BASELINE = body.infoBase;
+  AUTHORS_BASELINE = body.authorsBase;
   NEW_EXCLUDED = NEW_EXCLUDED.slice(excluded.length);   // data/excluded.txt has those now
   notDuplicates.forEach(k=> NOT_DUP_ON_DISK.add(k));    // and data/not-duplicates.txt these
   if(SAVE_AGAIN){ saveLocally(); saveToDisk(); return; }
   // the disk has everything now (tidied the way sync-export tidies); the browser copy is no longer needed
-  if(JSON.stringify(body.books) !== JSON.stringify(DATA)){ DATA = body.books; refreshPage(); updateNav(); }
+  const authors = body.authors || AUTHORS;
+  if(JSON.stringify(body.books) !== JSON.stringify(DATA) || JSON.stringify(authors) !== JSON.stringify(AUTHORS)){
+    DATA = body.books; AUTHORS = authors; refreshPage(); updateNav();
+  }
   try{ localStorage.removeItem(LS_KEY); LOCAL_SEEN = null; }catch(e){}
   if(!document.getElementById('ioStatus').textContent) showIoStatus('Saved.');
 }
@@ -179,12 +188,13 @@ function loadDeviceCopy(){
   try{
     const raw = localStorage.getItem(DEVICE_KEY);
     if(!raw) return false;
-    const {books, seriesInfo, excluded} = CatalogImport.readBackup(JSON.parse(raw));
+    const {books, seriesInfo, authors, excluded} = CatalogImport.readBackup(JSON.parse(raw));
     DATA = books;                     // readBackup has migrated them already
     SERIES_INFO = seriesInfo || {};
+    AUTHORS = authors || {};
     EXCLUSIONS = CatalogImport.parseExclusions('');
     (excluded || []).forEach(e=> EXCLUSIONS.add(e));
-    BASELINE = INFO_BASELINE = '';
+    BASELINE = INFO_BASELINE = AUTHORS_BASELINE = '';
     LOCAL_SEEN = raw;
     return true;
   }catch(e){ return false; }
@@ -220,28 +230,32 @@ async function loadData(){
   for(const dir of DATA_DIRS){
     let booksText;
     try{ booksText = await fetchText(dir + 'books.json'); }catch(e){ continue; }
-    let infoText = '{}';
+    let infoText = '{}', authorsText = '{}';
     try{ infoText = await fetchText(dir + 'series-info.json'); }catch(e){}
+    try{ authorsText = await fetchText(dir + 'authors.json'); }catch(e){}   // catalogues from before it have none
     let excludedText = '', notDupText = '';
     try{ excludedText = await fetchText(dir + 'excluded.txt'); }catch(e){}
     try{ notDupText = await fetchText(dir + 'not-duplicates.txt'); }catch(e){}
-    return {dir, booksText, infoText, excludedText, notDupText};
+    return {dir, booksText, infoText, authorsText, excludedText, notDupText};
   }
   throw new Error('no books.json found');
 }
 
-// Local edits are only reused if they were made against *this* books.json (and series-info.json, for
-// saves that carry series info); otherwise an updated data file would keep showing stale data.
+// Local edits are only reused if they were made against *this* books.json (and series-info.json and
+// authors.json, for saves that carry them); otherwise an updated data file would keep showing stale data.
 // Returns whether there were edits to reuse.
 function restoreLocalEdits(){
   try{
     const raw = LOCAL_SEEN = localStorage.getItem(LS_KEY);
     if(!raw) return false;
     const saved = JSON.parse(raw);
-    const hasInfo = saved && typeof saved.info === 'object' && saved.info !== null && !Array.isArray(saved.info);
-    if(saved && saved.base === BASELINE && Array.isArray(saved.data) && (!hasInfo || saved.infoBase === INFO_BASELINE)){
+    const isObj = v => typeof v === 'object' && v !== null && !Array.isArray(v);
+    const hasInfo = saved && isObj(saved.info), hasAuthors = saved && isObj(saved.authors);
+    if(saved && saved.base === BASELINE && Array.isArray(saved.data) && (!hasInfo || saved.infoBase === INFO_BASELINE) &&
+       (!hasAuthors || saved.authorsBase === AUTHORS_BASELINE)){
       DATA = CatalogImport.fixBooks(saved.data);
       if(hasInfo) SERIES_INFO = saved.info;
+      if(hasAuthors) AUTHORS = saved.authors;
       if(Array.isArray(saved.excluded)) addExclusions(saved.excluded.filter(x=> typeof x === 'string'));
       return true;
     } else {
@@ -262,13 +276,15 @@ export function unsavedEdits(){
 
 // Load the catalogue from data/ again, after the server changed it (a Hardcover import), and redraw.
 export async function reloadFromDisk(){
-  const {booksText, infoText, excludedText} = await loadData();
+  const {booksText, infoText, authorsText, excludedText} = await loadData();
   DATA = CatalogImport.fixBooks(JSON.parse(booksText));
   SERIES_INFO = JSON.parse(infoText);
+  AUTHORS = JSON.parse(authorsText);
   EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
   NEW_EXCLUDED = [];
   BASELINE = CatalogImport.fingerprint(booksText);
   INFO_BASELINE = CatalogImport.fingerprint(infoText);
+  AUTHORS_BASELINE = CatalogImport.fingerprint(authorsText);
   refreshPage();
   updateNav();
 }
@@ -394,14 +410,16 @@ async function checkHardcover(){
 export async function startPage(init, page){
   ({refresh: refreshPage, onHardcoverJob = null, onHardcoverDone = null} = page);
   try{
-    const {dir, booksText, infoText, excludedText, notDupText} = await loadData();
+    const {dir, booksText, infoText, authorsText, excludedText, notDupText} = await loadData();
     DATA = CatalogImport.fixBooks(JSON.parse(booksText));   // "r": "2024-03-15" -> ["2024-03-15"]
     SERIES_INFO = JSON.parse(infoText);
+    AUTHORS = JSON.parse(authorsText);
     EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
     NOT_DUP_ON_DISK = new Set(CatalogImport.parseNotDuplicates(notDupText));
     NOT_DUP_ON_DISK.forEach(k=> NOT_DUPLICATES.add(k));
     BASELINE = CatalogImport.fingerprint(booksText);
     INFO_BASELINE = CatalogImport.fingerprint(infoText);
+    AUTHORS_BASELINE = CatalogImport.fingerprint(authorsText);
     DATA_DIR = dir;
     DISK_SAVE = await detectDiskSave(dir);
   }catch(e){

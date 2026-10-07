@@ -1054,6 +1054,78 @@ test('merging a backup: where both changed a title or series info, ours wins unl
   assert.deepEqual(take.infoChanged, ['Tide Saga']);
 });
 
+test('merging a backup: author info only the backup has is added; where both differ, ours wins unless the backup is preferred', () => {
+  const mine = [book('Lantern Road', 'Ann Vale'), book('Ember Gate', 'Bo Reed')];
+  const authors = { 'Ann Vale': { bio: 'Written here.' } };
+  const backup = { books: mine, seriesInfo: {}, authors: { 'Ann Vale': { bio: 'Written there.' }, 'Bo Reed': { url: 'https://example.com/' } } };
+  const keep = C.mergeBackup(mine, {}, null, backup, 'mine', [], authors);
+  assert.deepEqual(keep.authors, { 'Ann Vale': { bio: 'Written here.' }, 'Bo Reed': { url: 'https://example.com/' } });
+  assert.deepEqual([keep.authorsAdded, keep.authorsChanged, keep.authorsKept], [['Bo Reed'], [], ['Ann Vale']]);
+  const take = C.mergeBackup(mine, {}, null, backup, 'backup', [], authors);
+  assert.deepEqual(take.authors, backup.authors);
+  assert.deepEqual(take.authorsChanged, ['Ann Vale']);
+  assert.deepEqual(authors, { 'Ann Vale': { bio: 'Written here.' } }, 'changes nothing it is given');
+  // a backup from before author info keeps ours
+  assert.deepEqual(C.mergeBackup(mine, {}, null, { books: mine }, 'backup', [], authors).authors, authors);
+});
+
+// ------------------------------------------------------------------ authors
+test('author info: validated against the books, links checked against their sites', () => {
+  const books = [book('Lantern Road', 'Ann Vale')];
+  assert.deepEqual(C.validateAuthors(books, {}), { errors: [], warnings: [] });
+  assert.deepEqual(C.validateAuthors(books, undefined), { errors: [], warnings: [] });
+  assert.deepEqual(C.validateAuthors(books, { 'Ann Vale': { bio: 'Hi.\n\nMore.', url: 'https://example.com/',
+    audible: 'https://www.audible.co.uk/author/Ann-Vale/X1', goodreads: 'https://www.goodreads.com/author/show/1.Ann',
+    hardcover: 'https://hardcover.app/authors/ann-vale' } }), { errors: [], warnings: [] });
+  const { errors, warnings } = C.validateAuthors(books, {
+    'Ann Vale': { bio: '', url: 'example.com', audible: 'https://hardcover.app/authors/ann-vale', note: 'x' },
+    'Cy Hale': 'not an object',
+  });
+  assert.deepEqual(errors, [
+    "authors['Ann Vale']: unknown keys ['note']",
+    "authors['Ann Vale']: 'bio' must be a non-empty string when present",
+    "authors['Ann Vale']: 'url' must be a web address starting with http:// or https://",
+    "authors['Cy Hale']: not an object",
+  ]);
+  assert.deepEqual(warnings, [
+    "authors['Ann Vale']: 'audible' should be an address on Audible, not 'https://hardcover.app/authors/ann-vale'",
+    "authors: 'Cy Hale' matches no author in books.json",
+  ]);
+  assert.deepEqual(C.validateAuthors(books, []).errors, ['authors: must map author names to their info']);
+});
+
+test('author info is tidied: a bio keeps its paragraphs, empty fields are dropped', () => {
+  assert.deepEqual(C.tidyAuthor({ bio: '  First  line.\r\nSecond\u00a0line.\n\n\n\nNew  paragraph. ', url: ' https://example.com/ ', goodreads: '  ' }),
+    { bio: 'First line.\nSecond line.\n\nNew paragraph.', url: 'https://example.com/' });
+  assert.equal(C.tidyAuthor({ bio: ' ', url: '' }), null);
+  assert.equal(C.tidyAuthor('nope'), null);
+});
+
+test('an author\'s works: their series in series order, then their other titles, co-written books included', () => {
+  const books = [
+    book('Third', 'Ann Vale', { s: 'Tide Saga', sn: '3' }), book('First', 'Ann Vale', { s: 'Tide Saga', sn: '1' }),
+    book('Novella', 'Ann Vale', { s: 'Tide Saga' }), book('Zebra Days', 'Ann Vale'),
+    { t: 'Apple Hill', a: ['Bo Reed', 'Ann Vale'] }, book('Not Hers', 'Bo Reed', { s: 'Tide Saga', sn: '2' }),
+    book('Boxed', 'Ann Vale', { s: 'Ash Cycle', sn: '1-3' }),
+  ];
+  const works = C.authorWorks(books, 'Ann Vale');
+  assert.deepEqual(works.series.map(s => [s.name, s.books.map(b => b.t)]),
+    [['Ash Cycle', ['Boxed']], ['Tide Saga', ['First', 'Third', 'Novella']]]);
+  assert.deepEqual(works.titles.map(b => [b.t, b._i]), [['Apple Hill', 4], ['Zebra Days', 3]]);
+  assert.deepEqual(C.authorWorks(books, 'Nobody'), { series: [], titles: [] });
+  assert.deepEqual(C.authorList(books), [
+    { name: 'Ann Vale', books: 6, series: 2 }, { name: 'Bo Reed', books: 2, series: 1 },
+  ]);
+});
+
+test('backups carry author info, and older ones have none', () => {
+  const authors = { 'Ann Vale': { bio: 'Hi.' } };
+  assert.deepEqual(C.readBackup({ books: [], authors }).authors, authors);
+  assert.equal(C.readBackup({ books: [] }).authors, null);
+  assert.equal(C.readBackup([]).authors, null);
+  assert.throws(() => C.readBackup({ books: [], authors: [] }), /authors is not an object/);
+});
+
 test('merging a backup: a book the backup still has is not removed, and the same catalogue merges to itself', () => {
   const mine = [book('Back Again', 'Ann Vale', { r: ['2025-01-01', '2023-05-05'] })];
   // removed on the other device, then added there again

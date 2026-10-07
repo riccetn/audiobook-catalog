@@ -34,6 +34,8 @@ Commands that write refuse to touch the demo data.
 
 - The catalogue page browses by series or all books and edits books and series info; *Import & export*
   imports [Audible](docs/audible.md) and [Goodreads](docs/goodreads.md) CSVs, makes backups and merges them; *Duplicates* merges books entered twice.
+- *Authors* gives each author a page with a short bio, links to their website and their Audible, Goodreads
+  and Hardcover pages, and their series and titles ([Authors](docs/authors.md)).
 - With `make serve` and your own `data/books.json`, every edit in the pages is saved to `data/` as you
   make it. With any other server, or the demo data, edits stay in the browser: **Export** them and run
   `node catalog.js sync-export <file>`.
@@ -44,7 +46,8 @@ Commands that write refuse to touch the demo data.
 
 - [Everyday workflows](docs/workflows.md): editing, series info, missing books, removing and merging
   books, ISBNs, dates read, links
-- [Data format](docs/data-format.md): `books.json`, editions, box sets, `series-info.json`, tidy names
+- [Authors](docs/authors.md): author pages with a bio, links, and their series and titles
+- [Data format](docs/data-format.md): `books.json`, editions, box sets, `series-info.json`, `authors.json`, tidy names
   and known data quirks
 - [Audible](docs/audible.md): importing your Audible library and filling in series from Audible
 - [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads
@@ -59,7 +62,7 @@ Commands that write refuse to touch the demo data.
 
 This repository is meant to be public, so nothing personal is tracked:
 
-- `data/books.json`, `data/series-info.json`, `data/excluded.txt`, `data/hardcover-token` and `data/raw/*` are in
+- `data/books.json`, `data/series-info.json`, `data/authors.json`, `data/excluded.txt`, `data/hardcover-token` and `data/raw/*` are in
   `.gitignore`. `tests/data.test.mjs` fails if any of them stops being ignored or a
   file under `data/` other than the demo data becomes tracked.
 - The demo data and every example in the tests and docs are invented.

@@ -63,6 +63,30 @@ which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). `make va
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
 `total` is the number of books released so far; `url` (an author or publisher site) is optional.
 
+## Authors
+
+`data/authors.json` maps an author's name (it must match a name in some book's `a` exactly) to what you
+keep about them; every field is optional, and a catalogue without the file has no author info yet:
+
+```json
+{"Marisol Quenby": {"bio": "Writes seafaring fantasy.\n\nLives by the sea.", "url": "https://example.com/",
+  "audible": "https://www.audible.com/author/Marisol-Quenby/SAMPLEA001",
+  "goodreads": "https://www.goodreads.com/author/show/0.Marisol_Quenby",
+  "hardcover": "https://hardcover.app/authors/marisol-quenby"}}
+```
+
+| key         | meaning                                                              |
+|-------------|----------------------------------------------------------------------|
+| `bio`       | a short bio, free text; a blank line (`\n\n`) starts a new paragraph |
+| `url`       | the author's own website                                             |
+| `audible`   | their author page on Audible (any store, `audible.com`, `audible.co.uk`, ...) |
+| `goodreads` | their author page on Goodreads                                       |
+| `hardcover` | their author page on Hardcover                                       |
+
+Links must start with `http://` or `https://`; `make validate` warns when one is on another site than
+its key says, or when an entry matches no author of any book (an author renamed on their books). The
+series and titles on an author's page are not stored here: they come from `books.json`.
+
 `make validate` checks all of this and warns about suspicious entries.
 
 ## Tidy names and spacing

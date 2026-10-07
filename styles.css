@@ -114,6 +114,36 @@ h1{
   width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
   background:var(--paper); color:var(--ink); font-size:.9rem;
 }
+#authorForm{
+  display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
+  padding:1rem; margin-bottom:1.5rem;
+}
+#authorForm.open{display:block;}
+#authorForm h3{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
+#authorForm label{display:block; font-size:.78rem; color:var(--ink-soft); margin:.5rem 0 .2rem;}
+#authorForm input, #authorForm textarea{
+  width:100%; font-family:inherit; resize:vertical; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
+  background:var(--paper); color:var(--ink); font-size:.9rem;
+}
+/* an author's page (authors.html) */
+.crumb a{color:var(--moss); font-weight:600; text-decoration:none;}
+.author-head{display:flex; align-items:baseline; gap:.4rem; margin-bottom:.4rem;}
+.author-name{font-family:'Lora',Georgia,serif; font-weight:600; font-size:1.35rem; margin:0;}
+.author-bio{font-size:.92rem; margin-bottom:1.4rem;}
+.author-bio:has(+ .author-links){margin-bottom:.6rem;}
+.author-bio p:last-child{margin-bottom:0;}
+.author-bio p{margin:0 0 .6rem;}
+.author-links{display:flex; gap:.8rem; flex-wrap:wrap; margin:0 0 1.4rem;}
+.author-links .authorlink{font-size:.82rem;}
+.author-books{list-style:none; margin:0; padding:0; background:var(--card); border:1px solid var(--line); border-radius:9px;}
+.author-books li{padding:.45rem .9rem; border-top:1px solid var(--line); font-size:.9rem; overflow-wrap:anywhere;}
+.author-books li:first-child{border-top:none;}
+.author-books .num{display:inline-block; min-width:2.2rem; color:var(--ink-soft); font-size:.8rem; font-variant-numeric:tabular-nums;}
+.author-books a{color:inherit; text-decoration:none;}
+.author-books a:hover, .book .meta a:hover, .srow-foot .tag a:hover{color:var(--moss);}
+.author-books .with{color:var(--ink-soft); font-size:.8rem;}
+.author-books .with a{color:inherit; border-bottom:1px dotted var(--line);}
+.book .meta a, .srow-foot .tag a{color:inherit; text-decoration:none;}
 .formError{font-size:.8rem; color:#b0453f; margin:.5rem 0 0; overflow-wrap:anywhere;}
 .formError:empty{display:none;}
 .book .read, .book .ids, .book .edition{color:var(--ink-soft); font-size:.78rem; margin-top:.15rem; overflow-wrap:anywhere;}

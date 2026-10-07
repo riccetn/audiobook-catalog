@@ -17,7 +17,8 @@ Goodreads or Hardcover id (so each title of a box set finds its own book).
 - A book only this side has stays, unless the backup newly excludes it (it was removed there, which
   always adds it to the exclusions); then it is removed here too.
 - A book both have keeps all the genres, dates read and editions of both.
-- Where the title, author or series differ, and for series info both have but differently, this side's
+- Author info only the backup has is added.
+- Where the title, author or series differ, and for series or author info both have but differently, this side's
   version is kept; choose *the backup's version* in the preview, or `--prefer-backup`, to take
   the backup's instead. The preview and the command list each such book.
 - The backup's excluded books are added to `data/excluded.txt`, and its **Not duplicates** marks to

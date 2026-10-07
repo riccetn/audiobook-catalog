@@ -3,9 +3,9 @@
 // is only used when the network fails. Your own data/ files and saves are never cached: a phone keeps
 // its catalogue in localStorage (see keepOnDevice in store.js), and `make serve` must always be asked.
 const CACHE = 'audiobook-catalog-v1';
-const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'styles.css', 'importers.js', 'store.js', 'app.js',
-  'import.js', 'duplicates.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
-  'data/sample/books.json', 'data/sample/series-info.json'];
+const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'styles.css', 'importers.js', 'store.js', 'app.js',
+  'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
+  'data/sample/books.json', 'data/sample/series-info.json', 'data/sample/authors.json'];
 
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(CACHE).then(c=> c.addAll(APP)).then(()=> self.skipWaiting()));

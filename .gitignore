@@ -2,6 +2,7 @@
 # Your catalogue (the page reads it straight from data/).
 data/books.json
 data/series-info.json
+data/authors.json
 data/excluded.txt
 data/not-duplicates.txt
 # Your Hardcover API token: it gives access to your Hardcover account.

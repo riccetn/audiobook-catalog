@@ -7,6 +7,7 @@ data/
   sample/             fictional demo data: the only data committed to git
   books.json          YOUR catalogue (git-ignored)
   series-info.json    YOUR researched release info per series (git-ignored)
+  authors.json        YOUR bios and links for authors (git-ignored)
   excluded.txt        books your imports must never re-add (git-ignored)
   not-duplicates.txt  books the Duplicates page was told are different (git-ignored)
   hardcover-token     YOUR Hardcover API token, if you saved one (git-ignored)
@@ -14,6 +15,7 @@ data/
 index.html, app.js    the catalogue: browse by series or all books, edit books and series info
 import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, backups (Export / Restore / Merge)
 duplicates.html, duplicates.js    find and merge books entered twice
+authors.html, authors.js    the authors, and each author's page: bio, links, series and titles
 store.js              shared by the pages: loads data/books.json (or data/sample/), keeps and saves edits
 styles.css
 manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline

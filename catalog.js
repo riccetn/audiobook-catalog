@@ -35,9 +35,30 @@ const isDemo = (root, dir) => path.resolve(dir) === path.join(root, 'data', 'sam
 const readText = file => fs.readFileSync(file, 'utf8');
 const loadBooks = file => C.fixBooks(JSON.parse(readText(file)));   // "r": "2024-03-15" -> ["2024-03-15"]
 const loadSeriesInfo = file => JSON.parse(readText(file));
+// data/authors.json is optional: catalogues from before it have none.
+const loadAuthors = file => fs.existsSync(file) ? JSON.parse(readText(file)) : {};
 
 const dumpBooks = (books, file) => fs.writeFileSync(file, JSON.stringify(books), 'utf8');
 const dumpSeriesInfo = (info, file) => fs.writeFileSync(file, JSON.stringify(info), 'utf8');
+const dumpAuthors = (authors, file) => fs.writeFileSync(file, JSON.stringify(authors), 'utf8');
+const authorsFile = args => path.join(args.data, 'authors.json');
+
+/** Author info with tidy text (C.tidyAuthor), leaving out authors with nothing left. */
+const tidyAuthors = authors => Object.fromEntries(Object.entries(authors).map(([name, entry]) => [name, C.tidyAuthor(entry)]).filter(([, e]) => e));
+
+/** Check author info coming from the app: {blocking (errors), authors (tidied)}; an author left without books does not block. */
+function checkAuthors(books, authors){
+  const {errors} = C.validateAuthors(books, authors);
+  return errors.length ? {blocking: errors} : {blocking: [], authors: tidyAuthors(authors)};
+}
+
+/** "author info: 1 added, 2 changed, 0 removed", from the old and new data/authors.json. */
+function authorChanges(before, after){
+  const names = Object.keys(after), oldNames = Object.keys(before);
+  const added = names.filter(n => !(n in before)).length, removed = oldNames.filter(n => !(n in after)).length;
+  const changed = names.filter(n => n in before && JSON.stringify(after[n]) !== JSON.stringify(before[n])).length;
+  return `author info: ${added} added, ${changed} changed, ${removed} removed`;
+}
 
 function loadExclusions(file){
   return fs.existsSync(file) ? C.parseExclusions(readText(file)) : C.parseExclusions('');
@@ -157,6 +178,10 @@ function cmdValidate(args, io){
   const raw = JSON.parse(readText(booksPath));
   const books = C.fixBooks(raw), info = loadSeriesInfo(infoPath);
   const {errors, warnings} = C.validate(books, info);
+  const authors = loadAuthors(authorsFile(args));
+  const people = C.validateAuthors(books, authors);
+  errors.push(...people.errors);
+  warnings.push(...people.warnings);
   if(Array.isArray(raw) && raw.some(b => b && typeof b === 'object' && ['id', 'gr', 'isbn', 'n'].some(k => k in b))){
     io.out('note: some books keep their ids, ISBNs or narrator on the book, from before editions; they are read as editions, ' +
       'and `make format` (or any save) writes them that way');
@@ -185,7 +210,9 @@ function cmdValidate(args, io){
   for(const w of warnings) io.out('warning: ' + w);
   for(const e of errors) io.out('error: ' + e);
   const series = new Set(Array.isArray(books) ? books.filter(b => b && b.s).map(b => b.s) : []);
-  io.out(`${Array.isArray(books) ? books.length : 0} books, ${series.size} series, ${Object.keys(info).length} with release info; ` +
+  const authorCount = authors && typeof authors === 'object' && !Array.isArray(authors) ? Object.keys(authors).length : 0;
+  io.out(`${Array.isArray(books) ? books.length : 0} books, ${series.size} series, ${Object.keys(info).length} with release info, ` +
+    `${authorCount} author${authorCount === 1 ? '' : 's'} with info; ` +
     `${errors.length} error(s), ${warnings.length} warning(s)`);
   return errors.length ? 1 : 0;
 }
@@ -209,6 +236,7 @@ function cmdInit(args, io){
   const booksPath = path.join(target, 'books.json');
   const infoPath = path.join(target, 'series-info.json');
   const excludedPath = path.join(target, 'excluded.txt');
+  const authorsPath = path.join(target, 'authors.json');
   if(fs.existsSync(booksPath)){
     io.err(`${shown(booksPath, args.root)} already exists; not touching it.`);
     return 1;
@@ -218,12 +246,14 @@ function cmdInit(args, io){
     const demo = path.join(args.root, 'data', 'sample');
     dumpBooks(loadBooks(path.join(demo, 'books.json')), booksPath);
     dumpSeriesInfo(loadSeriesInfo(path.join(demo, 'series-info.json')), infoPath);
+    dumpAuthors(loadAuthors(path.join(demo, 'authors.json')), authorsPath);
   } else {
     dumpBooks([], booksPath);
     dumpSeriesInfo({}, infoPath);
+    dumpAuthors({}, authorsPath);
   }
   if(!fs.existsSync(excludedPath)) fs.writeFileSync(excludedPath, EXCLUDED_HEADER, 'utf8');
-  io.out(`created ${shown(target, args.root)}/ with books.json, series-info.json and excluded.txt`);
+  io.out(`created ${shown(target, args.root)}/ with books.json, series-info.json, authors.json and excluded.txt`);
   io.out('next: save your Audible export in its raw/ folder and run `node catalog.js import-audible <file>`');
   return 0;
 }
@@ -234,6 +264,7 @@ function cmdFormat(args, io){
   const [booksPath, infoPath] = paths(args);
   dumpBooks(loadBooks(booksPath), booksPath);
   dumpSeriesInfo(loadSeriesInfo(infoPath), infoPath);
+  if(fs.existsSync(authorsFile(args))) dumpAuthors(loadAuthors(authorsFile(args)), authorsFile(args));
   io.out('data files rewritten in the current format');
   return 0;
 }
@@ -274,17 +305,19 @@ function cmdSyncExport(args, io){
   if(!requireOwnData(args, io)) return 2;
   const [booksPath, infoPath, excludedPath] = paths(args);
   const notDupPath = path.join(args.data, 'not-duplicates.txt');
-  let newBooks, newInfo, excluded, notDuplicates;
+  const authorsPath = authorsFile(args);
+  let newBooks, newInfo, newAuthors, excluded, notDuplicates;
   try{
-    ({books: newBooks, seriesInfo: newInfo, excluded, notDuplicates} = C.readBackup(JSON.parse(readText(args.file))));
+    ({books: newBooks, seriesInfo: newInfo, authors: newAuthors, excluded, notDuplicates} = C.readBackup(JSON.parse(readText(args.file))));
   }catch(exc){
     io.err(`cannot read ${args.file}: ${exc.message}`);
     return 1;
   }
   const oldInfo = loadSeriesInfo(infoPath);
   const {books: tidiedBooks, tidied, blocking, errors} = checkFromApp(newBooks, newInfo, oldInfo);
-  if(blocking.length){
-    io.err('Not a valid catalogue export:\n  ' + blocking.slice(0, 10).join('\n  '));
+  const people = newAuthors ? checkAuthors(newBooks, newAuthors) : {blocking: []};
+  if(blocking.length || people.blocking.length){
+    io.err('Not a valid catalogue export:\n  ' + [...blocking, ...people.blocking].slice(0, 10).join('\n  '));
     return 1;
   }
   newBooks = tidiedBooks;
@@ -306,6 +339,8 @@ function cmdSyncExport(args, io){
   } else {
     io.out(`series info: not in this backup (older export), ${shown(infoPath, args.root)} left as is`);
   }
+  if(people.authors) io.out(authorChanges(loadAuthors(authorsPath), people.authors));
+  else io.out(`author info: not in this backup (older export), ${shown(authorsPath, args.root)} left as is`);
   const addedExcluded = newExclusions(excludedPath, excluded);
   if(excluded){
     io.out(`excluded from imports: ${addedExcluded.length} new`);
@@ -322,6 +357,10 @@ function cmdSyncExport(args, io){
   if(newInfo){
     dumpSeriesInfo(newInfo, infoPath);
     io.out(`wrote ${shown(infoPath, args.root)}`);
+  }
+  if(people.authors){
+    dumpAuthors(people.authors, authorsPath);
+    io.out(`wrote ${shown(authorsPath, args.root)}`);
   }
   if(addedExcluded.length){
     appendExclusions(excludedPath, addedExcluded);
@@ -353,11 +392,13 @@ function cmdMergeBackup(args, io){
     return 1;
   }
   const oldInfo = loadSeriesInfo(infoPath);
+  const authorsPath = authorsFile(args), oldAuthors = loadAuthors(authorsPath);
   const m = C.mergeBackup(loadBooks(booksPath), oldInfo, loadExclusions(excludedPath), backup, args.preferBackup ? 'backup' : 'mine',
-    fs.existsSync(notDupPath) ? C.parseNotDuplicates(readText(notDupPath)) : []);
+    fs.existsSync(notDupPath) ? C.parseNotDuplicates(readText(notDupPath)) : [], oldAuthors);
   const {books, blocking, errors} = checkFromApp(m.books, m.seriesInfo, oldInfo);
-  if(blocking.length){
-    io.err('The merged catalogue does not validate, nothing written:\n  ' + blocking.slice(0, 10).join('\n  '));
+  const people = checkAuthors(m.books, m.authors);
+  if(blocking.length || people.blocking.length){
+    io.err('The merged catalogue does not validate, nothing written:\n  ' + [...blocking, ...people.blocking].slice(0, 10).join('\n  '));
     return 1;
   }
   const side = args.preferBackup ? 'the backup\'s' : 'ours';
@@ -374,6 +415,7 @@ function cmdMergeBackup(args, io){
     for(const {mine, theirs} of m.conflicts.slice(0, 15)) io.out(`    ~ ${label(mine)}  /  backup: ${label(theirs)}`);
   }
   io.out(`series info: ${m.infoAdded.length} added, ${m.infoChanged.length} taken from the backup, ${m.infoKept.length} differing kept as ours`);
+  io.out(`author info: ${m.authorsAdded.length} added, ${m.authorsChanged.length} taken from the backup, ${m.authorsKept.length} differing kept as ours`);
   if(m.excluded.length) io.out(`excluded from imports: ${m.excluded.length} new`);
   if(m.notDuplicates.length) io.out(`marked not duplicates: ${m.notDuplicates.length} new`);
   if(args.dryRun){
@@ -384,6 +426,10 @@ function cmdMergeBackup(args, io){
   io.out(`wrote ${shown(booksPath, args.root)}`);
   dumpSeriesInfo(m.seriesInfo, infoPath);
   io.out(`wrote ${shown(infoPath, args.root)}`);
+  if(m.authorsAdded.length || m.authorsChanged.length){
+    dumpAuthors(people.authors, authorsPath);
+    io.out(`wrote ${shown(authorsPath, args.root)}`);
+  }
   if(m.excluded.length){
     appendExclusions(excludedPath, m.excluded);
     io.out(`added to ${shown(excludedPath, args.root)}`);
@@ -435,10 +481,11 @@ function sameOrigin(req, port){
 
 /**
  * The page's saves: GET says whether saving is possible (only to your own data/books.json, never the
- * demo) and that Audible lookups are, PUT {books, seriesInfo, excluded, notDuplicates, base, infoBase} writes both files, and adds the entries in
+ * demo) and that Audible lookups are, PUT {books, seriesInfo, authors, excluded, notDuplicates, base, infoBase, authorsBase}
+ * writes the files (data/authors.json only when `authors` is sent), and adds the entries in
  * `excluded` (books removed in the page) to data/excluded.txt and those in `notDuplicates` (marked on the
- * duplicates page) to data/not-duplicates.txt. `base` and `infoBase` are the
- * fingerprints of the files the page's edits started from; if either file changed since (an import,
+ * duplicates page) to data/not-duplicates.txt. `base`, `infoBase` and `authorsBase` are the
+ * fingerprints of the files the page's edits started from; if one of them changed since (an import,
  * sync-export or a hand edit), the save is refused rather than overwriting that change. excluded.txt
  * and not-duplicates.txt are only ever added to, so they need no such check.
  */
@@ -446,6 +493,7 @@ function handleSave(req, res, root, port){
   const dir = path.join(root, 'data');
   const booksPath = path.join(dir, 'books.json'), infoPath = path.join(dir, 'series-info.json');
   const excludedPath = path.join(dir, 'excluded.txt'), notDupPath = path.join(dir, 'not-duplicates.txt');
+  const authorsPath = path.join(dir, 'authors.json');
   const writable = fs.existsSync(booksPath);
   // `audible`: this server can also look books up on Audible for the page (see handleAudible)
   // `hardcover`: the page can save a Hardcover token and import from / export to Hardcover (handleHardcover)
@@ -463,29 +511,36 @@ function handleSave(req, res, root, port){
   });
   req.on('end', () => {
     if(res.headersSent) return;
-    let body, books, seriesInfo, excluded, notDuplicates;
+    let body, books, seriesInfo, authors, excluded, notDuplicates;
     try{
       body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      ({books, seriesInfo, excluded, notDuplicates} = C.readBackup(body));
+      ({books, seriesInfo, authors, excluded, notDuplicates} = C.readBackup(body));
       if(!seriesInfo) throw new Error('seriesInfo missing');
     }catch(exc){ sendJson(res, 400, {error: `not a catalogue: ${exc.message}`}); return; }
 
     const booksText = readText(booksPath);
     const infoText = fs.existsSync(infoPath) ? readText(infoPath) : '{}';
-    if(body.base !== C.fingerprint(booksText) || body.infoBase !== C.fingerprint(infoText)){
-      sendJson(res, 409, {error: 'data/books.json or data/series-info.json changed on disk since the page loaded it', conflict: true});
+    const authorsText = fs.existsSync(authorsPath) ? readText(authorsPath) : '{}';
+    if(body.base !== C.fingerprint(booksText) || body.infoBase !== C.fingerprint(infoText) ||
+       (authors && body.authorsBase !== C.fingerprint(authorsText))){
+      sendJson(res, 409, {error: 'data/books.json, data/series-info.json or data/authors.json changed on disk since the page loaded it', conflict: true});
       return;
     }
     const checked = checkFromApp(books, seriesInfo, null);
-    if(checked.blocking.length){ sendJson(res, 400, {error: 'not saved', errors: checked.blocking.slice(0, 10)}); return; }
+    const people = authors ? checkAuthors(books, authors) : {blocking: []};
+    const blocking = [...checked.blocking, ...people.blocking];
+    if(blocking.length){ sendJson(res, 400, {error: 'not saved', errors: blocking.slice(0, 10)}); return; }
     const newBooksText = JSON.stringify(checked.books), newInfoText = JSON.stringify(seriesInfo);
+    const newAuthorsText = people.authors ? JSON.stringify(people.authors) : authorsText;
     try{
       if(newBooksText !== booksText) writeAtomic(booksPath, newBooksText);
       if(newInfoText !== infoText) writeAtomic(infoPath, newInfoText);
+      if(newAuthorsText !== authorsText) writeAtomic(authorsPath, newAuthorsText);
       appendExclusions(excludedPath, newExclusions(excludedPath, excluded));
       appendNotDuplicates(notDupPath, newNotDuplicates(notDupPath, notDuplicates));
     }catch(exc){ sendJson(res, 500, {error: `could not write: ${exc.message}`}); return; }
-    sendJson(res, 200, {base: C.fingerprint(newBooksText), infoBase: C.fingerprint(newInfoText), books: checked.books});
+    sendJson(res, 200, {base: C.fingerprint(newBooksText), infoBase: C.fingerprint(newInfoText), authorsBase: C.fingerprint(newAuthorsText),
+      books: checked.books, authors: JSON.parse(newAuthorsText)});
   });
 }
 
@@ -876,7 +931,7 @@ function cmdServe(args, io){
   server.listen(args.port, '127.0.0.1', () => {
     io.out(`serving ${args.root} at http://localhost:${args.port}/ (Ctrl+C to stop)`);
     io.out(fs.existsSync(path.join(args.root, 'data', 'books.json'))
-      ? 'edits in the page are saved to data/books.json and data/series-info.json'
+      ? 'edits in the page are saved to data/books.json, data/series-info.json and data/authors.json'
       : 'showing the demo data; edits in the page stay in the browser (run `node catalog.js init` for your own)');
   });
   return null;   // keeps running
@@ -899,7 +954,7 @@ const COMMANDS = {
   'hardcover-export': {run: (a, io) => cmdHardcover(a, io, 'export'), dryRun: true,
     help: 'put your books on your Hardcover Read shelf, with their dates read, and keep their Hardcover ids'},
   'hardcover-sync': {run: (a, io) => cmdHardcover(a, io, 'sync'), dryRun: true, help: 'hardcover-import, then hardcover-export'},
-  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json and data/series-info.json (and add to data/excluded.txt and data/not-duplicates.txt)'},
+  'sync-export': {run: cmdSyncExport, file: true, dryRun: true, help: 'adopt a JSON backup exported from the app as data/books.json, data/series-info.json and data/authors.json (and add to data/excluded.txt and data/not-duplicates.txt)'},
   'merge-backup': {run: cmdMergeBackup, file: true, dryRun: true,
     help: 'merge a JSON backup from another device into data/ when both have changed (--prefer-backup: its edits win)'},
   'serve': {run: cmdServe, help: 'serve the app at http://localhost:8000/ (--port N); saves edits made in the page'},
@@ -914,7 +969,7 @@ ${Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(17)}${c.help}`).j
   --series           (import-audible) then fill in the new books' series from Audible
   --store us|uk|...  (import-audible, series) the Audible store: the site the export's ASINs are from,
                      and the one asked for series (default us, audible.com)
-  --data-dir DIR     folder with books.json and series-info.json (default: $${DATA_DIR_ENV},
+  --data-dir DIR     folder with books.json, series-info.json and authors.json (default: $${DATA_DIR_ENV},
                      then ./data, then the bundled demo)`;
 
 function parseArgs(argv){
@@ -987,7 +1042,7 @@ function failed(exc, io){
   throw exc;
 }
 
-export {main, loadBooks, loadSeriesInfo, dataDir, liveDataDir, createServer};
+export {main, loadBooks, loadSeriesInfo, loadAuthors, dataDir, liveDataDir, createServer};
 
 // Run as a command (node catalog.js ...), not imported by the tests.
 if(process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fileURLToPath(import.meta.url)){

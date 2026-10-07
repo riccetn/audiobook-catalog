@@ -27,7 +27,7 @@ are copied to the others. On the card, each of an edition's ASINs links to the b
 (`audible.co.uk/pd/…`, `amazon.com/dp/…`), its Goodreads id to the book on Goodreads, and its Hardcover ids
 to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
 when Hardcover renames the book). With `make serve` and your own `data/books.json`,
-every change is saved to `data/books.json` and `data/series-info.json` as you make it. With any other
+every change is saved to `data/books.json`, `data/series-info.json` and `data/authors.json` as you make it. With any other
 server, or the demo data, edits stay in the browser: press **Export** on the *Import & export* page, then:
 
 ```sh
@@ -36,17 +36,21 @@ node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json
 ```
 
 It refuses files that are not valid catalogue exports and prints what changed before writing.
-An export holds the books, the series info, the list of books imports must skip and the pairs marked
-**Not duplicates** (`{"books": [...], "seriesInfo": {...}, "excluded": [...], "notDuplicates": [...]}`),
-so `sync-export` updates `data/series-info.json` too and adds any new entries to `data/excluded.txt` and
+An export holds the books, the series info, the author info, the list of books imports must skip and the pairs marked
+**Not duplicates** (`{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`),
+so `sync-export` updates `data/series-info.json` and `data/authors.json` too and adds any new entries to `data/excluded.txt` and
 `data/not-duplicates.txt` (it never removes one).
-Backups from before series info was exported (a plain list of books), or before the exclusions were,
+Backups from before series info was exported (a plain list of books), or before the author info or the exclusions were,
 still work and leave those files as they are. The app's **Restore** reads all of them the same way,
 adding the backup's exclusions and **Not duplicates** marks to the ones it already has.
 
 When both catalogues have changed, merge the backup instead: see
 [Merge a backup from another device](backups.md).
 You can also edit `data/books.json` by hand; `make format` rewrites it the way the tools write it.
+
+**Authors' bios and links**: the *Authors* page lists every author; each author's page shows a bio,
+links to their website and their pages on Audible, Goodreads and Hardcover, and their series and titles.
+Author names on the books link there. See [Authors](authors.md).
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
