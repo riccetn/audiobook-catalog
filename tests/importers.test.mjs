@@ -659,9 +659,9 @@ test('merge: a box set edition on several titles matches them, and is filled in 
   const box = () => ({ asin: { 'audible.com': 'BBOX' } });
   const existing = [book('Two', 'Author', { s: 'S', sn: '2', ...ed(box()) }), book('Three', 'Author', { s: 'S', sn: '3', ...ed(box()) })];
   const report = C.merge(existing, [book('S: Books 2-3', 'Author', { s: 'S', sn: '2-3', ...ed({ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }) })]);
-  assert.deepEqual([report.added.length, report.matched], [0, 1]);
+  assert.deepEqual([report.added.map(b => [b.t, b.sn]), report.matched], [[['S: Books 2-3', '2-3']], 1]);
   const filled = { asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio', desc: 'S: Books 2-3' };
-  assert.deepEqual(existing.map(b => b.e), [[filled], [filled]]);
+  assert.deepEqual(existing.map(b => b.e), [[filled], [filled], [filled]]);
   assert.notEqual(existing[0].e[0], existing[1].e[0], 'copies, not one shared object');
 
   // a book whose only edition is the box set gets its own edition rather than filling in the box set
@@ -670,7 +670,7 @@ test('merge: a box set edition on several titles matches them, and is filled in 
   assert.deepEqual(existing[0].e, [filled]);
 });
 
-test('merge: a box set becomes its titles, each with the same edition', () => {
+test('merge: a box set is kept as its own book and becomes its titles, each with the same edition', () => {
   const existing = [
     book('Spark', 'Ann Vale', { s: 'Ember', sn: '1', ...ed({ asin: { 'audible.com': 'B1' }, n: ['Tobias Frane'] }) }),
     book('Flame', 'Ann Vale', { s: 'Ember', sn: '2', r: ['2023'] }),
@@ -684,10 +684,12 @@ test('merge: a box set becomes its titles, each with the same edition', () => {
     ['Flame', '2', [set], ['2023']],
     ['Other', '3', undefined, undefined],
     ['Ember, Book 3', '3', [set], ['2024-05-01']],
+    ['Ember: Books 1-3', '1-3', [set], ['2024-05-01']],
   ]);
   assert.deepEqual(existing[3], { t: 'Ember, Book 3', a: ['Ann Vale'], s: 'Ember', sn: '3', g: ['Fantasy'], r: ['2024-05-01'], e: [set] });
+  assert.deepEqual(existing[4], { t: 'Ember: Books 1-3', a: ['Ann Vale'], s: 'Ember', sn: '1-3', g: ['Fantasy'], r: ['2024-05-01'], e: [set] });
   assert.deepEqual([report.added.map(b => b.t), report.editionsAdded.map(b => b.t), report.datesFilled.map(b => b.t), report.matched],
-    [['Ember, Book 3'], ['Spark', 'Flame'], ['Spark'], 1]);
+    [['Ember, Book 3', 'Ember: Books 1-3'], ['Spark', 'Flame'], ['Spark'], 1]);
   assert.deepEqual(report.boxSets, [{ t: 'Ember: Books 1-3', a: ['Ann Vale'], titles: 2, added: 1 }]);
   assert.deepEqual(C.validate(existing, {}), { errors: [], warnings: [] });
 
@@ -695,7 +697,8 @@ test('merge: a box set becomes its titles, each with the same edition', () => {
   assert.deepEqual(C.merge(existing, [structuredClone(box)]).added, []);
   const gr = C.merge(existing, [book('The Ember Trilogy', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ gr: '99' }) })]);
   assert.deepEqual(gr.added, []);
-  assert.deepEqual([0, 1, 3].map(i => existing[i].e.at(-1)), Array(3).fill({ ...set, gr: '99' }));
+  assert.deepEqual([0, 1, 3, 4].map(i => existing[i].e.at(-1)), Array(4).fill({ ...set, gr: '99' }));
+  assert.equal(existing.length, 5, 'the set found by its edition, though Goodreads names it otherwise');
   assert.equal(existing[0].e.length, 2, 'the title\'s own edition is left alone');
 
   // a single title imported later finds the title the set added
@@ -703,10 +706,12 @@ test('merge: a box set becomes its titles, each with the same edition', () => {
   assert.deepEqual(existing[3].e, [{ ...set, gr: '99' }, { asin: { 'audible.com': 'B3' } }]);
 });
 
-test('merge: box sets already in the catalogue as one book, without ids, or excluded stay as they are', () => {
+test('merge: a box set already in the catalogue as one book gains its titles; without ids or excluded it stays as is', () => {
   const whole = [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ asin: { 'audible.com': 'BBOX' } }) })];
   C.merge(whole, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }) })]);
-  assert.deepEqual(whole, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }) })]);
+  const set = { asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio', desc: 'Ember: Books 1-3' };
+  assert.deepEqual(whole, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', e: [set] }),
+    ...[1, 2, 3].map(n => book(`Ember, Book ${n}`, 'Ann Vale', { s: 'Ember', sn: String(n), e: [set] }))]);
 
   const none = [];
   C.merge(none, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ n: ['Hollis Marr'] }) })]);
@@ -714,7 +719,66 @@ test('merge: box sets already in the catalogue as one book, without ids, or excl
 
   const kept = [];
   const report = C.merge(kept, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ asin: { 'audible.com': 'BBOX' } }) })], C.parseExclusions('BBOX\n'));
-  assert.deepEqual([kept, report.excluded.length], [[], 3]);
+  assert.deepEqual([kept, report.excluded.length], [[], 4]);
+});
+
+test('collections: a range is a collection, sorted after the titles of its series', () => {
+  assert.deepEqual(['1-3', ' 4-6 ', '2.5-3', '3', '3-3', '3-1', '', undefined].map(C.seriesRange), [[1, 3], [4, 6], [2.5, 3], null, null, null, null, null]);
+  assert.equal(C.isCollection(book('Set', 'A', { s: 'S', sn: '1-3' })), true);
+  assert.equal(C.isCollection(book('Set', 'A', { sn: '1-3' })), false, 'no series, no collection');
+  const books = [book('Set B', 'A', { s: 'S', sn: '4-6' }), book('Set A', 'A', { s: 'S', sn: '1-3' }), book('Omnibus', 'A', { s: 'S', sn: '1-6' }),
+    book('Three', 'A', { s: 'S', sn: '3' }), book('Loose', 'A', { s: 'S' }), book('One', 'A', { s: 'S', sn: '1' }), book('Novella', 'A', { s: 'S', sn: '1.5' })];
+  assert.deepEqual(books.sort(C.bySeriesNumber).map(b => b.t), ['One', 'Novella', 'Three', 'Loose', 'Set A', 'Omnibus', 'Set B']);
+  assert.deepEqual(C.authorWorks(books, 'A').series[0].books.map(b => b.t).slice(-3), ['Set A', 'Omnibus', 'Set B']);
+});
+
+test('merge: another Hardcover book found by a box set\'s edition on titles in a row is kept as their collection', () => {
+  const box = () => ({ asin: { 'audible.com': 'BBOX' }, hc: '700' });
+  const books = [book('One', 'Ann Vale', { s: 'Gull Isle', sn: '1', hcb: '71', ...ed(box()) }), book('Two', 'Ann Vale', { s: 'Gull Isle', sn: '2', hcb: '72', ...ed(box()) })];
+  const report = C.merge(books, [book('Gull Isle Duology', 'Ann Vale', { hcb: '70', r: ['2025-02-02'], ...ed(box()) })], null, { allDates: true });
+  assert.deepEqual(books[2], { t: 'Gull Isle Duology', a: ['Ann Vale'], s: 'Gull Isle', sn: '1-2', r: ['2025-02-02'], hcb: '70',
+    e: [{ asin: { 'audible.com': 'BBOX' }, hc: '700', desc: 'Gull Isle Duology' }] });
+  assert.deepEqual(books.map(b => b.r), Array(3).fill(['2025-02-02']));
+  assert.deepEqual([report.added.length, report.boxSets.length], [1, 1]);
+  // read again: the set finds itself, and reading it reads its titles
+  C.merge(books, [book('Gull Isle Duology', 'Ann Vale', { hcb: '70', r: ['2026-03-03'], ...ed(box()) })], null, { allDates: true });
+  assert.deepEqual([books.length, books.map(b => b.r.at(-1))], [3, Array(3).fill('2026-03-03')]);
+  // a title's own Hardcover book reads only that title, even when the box set's edition finds another title first
+  C.merge(books, [book('Two', 'Ann Vale', { hcb: '72', r: ['2026-04-04'], ...ed(box()) })], null, { allDates: true });
+  assert.deepEqual(books.map(b => b.r.at(-1)), ['2026-03-03', '2026-04-04', '2026-03-03']);
+  // exports: the set goes to Hardcover and Goodreads as the set's edition, its titles without it
+  assert.deepEqual(C.planHardcoverExport(books, []).add.map(a => [a.book, a.edition]), [[71, null], [72, null], [70, 700]]);
+  const rows = C.parseCsv(C.goodreadsCsv([book('One', 'Ann Vale', { s: 'Gull Isle', sn: '1', ...ed({ gr: '9' }) }),
+    book('Gull Isle Duology', 'Ann Vale', { s: 'Gull Isle', sn: '1-2', ...ed({ gr: '9' }) })]).csv);
+  assert.deepEqual(rows.map(r => r['Book Id']), ['', '9']);
+});
+
+test('boxSetBooks keeps each box set in the catalogue as its own book and as its titles', () => {
+  const tide = { asin: { 'audible.com': 'BTIDE' } }, ember = { asin: { 'audible.com': 'BEMBER' }, desc: 'Ember: Books 1-2' };
+  const books = [
+    book('Tide: Books 1-3', 'Bo Lin', { s: 'Tide', sn: '1-3', r: ['2024'], ...ed({ ...tide }) }),
+    book('Tide Two', 'Bo Lin', { s: 'Tide', sn: '2' }),
+    book('Spark', 'Ann Vale', { s: 'Ember', sn: '1', r: ['2023', '2024'], ...ed({ ...ember }) }),
+    book('Flame', 'Ann Vale', { s: 'Ember', sn: '2', r: ['2024'], ...ed({ ...ember }) }),
+    book('Gap One', 'Cy Hale', { s: 'Gap', sn: '1', ...ed({ asin: { 'audible.com': 'BGAP' } }) }),   // not in a row: no set
+    book('Gap Three', 'Cy Hale', { s: 'Gap', sn: '3', ...ed({ asin: { 'audible.com': 'BGAP' } }) }),
+  ];
+  const report = C.boxSetBooks(books, C.parseExclusions('Tide, Book 3 | Bo Lin\n'));
+  const tideSet = { ...tide, desc: 'Tide: Books 1-3' };
+  assert.deepEqual(books.slice(6), [
+    book('Tide, Book 1', 'Bo Lin', { s: 'Tide', sn: '1', r: ['2024'], e: [tideSet] }),
+    book('Ember: Books 1-2', 'Ann Vale', { s: 'Ember', sn: '1-2', r: ['2024'], e: [ember] }),
+  ]);
+  assert.deepEqual(books[1].e, [tideSet], 'a title there already gains the set\'s edition');
+  assert.deepEqual([report.added.length, report.excluded.map(b => b.t)], [2, ['Tide, Book 3']]);
+  assert.deepEqual(C.validate(books, {}).errors, []);
+  // done once, there is nothing more to do
+  const again = C.boxSetBooks(books, C.parseExclusions('Tide, Book 3 | Bo Lin\n'));
+  assert.deepEqual([again.added, again.boxSets], [[], []]);
+  // with no description the set is named after its series
+  const plain = [book('A', 'X', { s: 'Saga', sn: '1', ...ed({ gr: '5' }) }), book('B', 'X', { s: 'Saga', sn: '2', ...ed({ gr: '5' }) })];
+  C.boxSetBooks(plain);
+  assert.deepEqual(plain[2], book('Saga, Books 1-2', 'X', { s: 'Saga', sn: '1-2', e: [{ gr: '5' }] }));
 });
 
 test('series from Audible: a box set\'s titles still named "Series, Book N" get the listing\'s titles', () => {
@@ -970,7 +1034,7 @@ test('authors and narrators are lists; comma separated text from before is split
   assert.deepEqual([gr.a, gr.e[0].n], [['Ann Vale'], ['Cy Hale', 'Di Moss']]);
   const existing = [];
   C.merge(existing, [{ t: 'Text', a: 'Ann Vale, Bo Reed', s: 'Saga', sn: '1-2', e: [{ asin: { 'audible.com': 'BBOX' }, n: 'Cy Hale' }] }]);
-  assert.deepEqual(existing.map(b => [b.a, b.e[0].n]), [[['Ann Vale', 'Bo Reed'], ['Cy Hale']], [['Ann Vale', 'Bo Reed'], ['Cy Hale']]]);
+  assert.deepEqual(existing.map(b => [b.a, b.e[0].n]), Array(3).fill([['Ann Vale', 'Bo Reed'], ['Cy Hale']]));
   assert.notEqual(existing[0].a, existing[1].a, 'each title has a list of its own');
 });
 

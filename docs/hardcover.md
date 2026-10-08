@@ -57,7 +57,8 @@ node catalog.js hardcover-export                # only catalogue -> Hardcover
   date and length Hardcover has, and every finished date of its reads (Hardcover keeps them all, so a book you have
   gains the dates it lacks; `2024-03-15` counts as there when you have `2024-03`). A book on Hardcover with
   no finished date gets none, which here means the date is unknown. A box set you read on Hardcover, found
-  by its edition on your titles, gives its dates to each of those titles.
+  by its edition on your titles, gives its dates to each of those titles, and is added as their collection
+  when they are numbers in a row of one series ([Box sets](imports.md#box-sets)).
 - **Export** finds each of your books without a Hardcover book id by its editions' Hardcover id, ASIN, ISBN
   or Goodreads id, saves the book's id (`hcb`) on the book and the edition's (`hc`) on the edition (an ISBN or
   Goodreads id only gives the book's id, since it is often the print edition), and puts the books that aren't on your Hardcover shelves yet on *Read*, with

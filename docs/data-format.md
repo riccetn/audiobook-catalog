@@ -7,7 +7,7 @@
 | `t`  | title                                               | yes      |
 | `a`  | list of authors, one name each (`["Ann Vale", "Bo Reed"]`) | yes |
 | `s`  | series name                                         |          |
-| `sn` | position in series, as text (`"3"`, `"4-6"` for a boxed set) |  |
+| `sn` | position in series, as text (`"3"`, `"4-6"` for a box set, which is listed after the series' titles) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
 | `hcb` | Hardcover's id of the book (`"77"`), the number in `hardcover.app/id/book/…`; every edition of it is an edition of this book |  |
@@ -43,9 +43,11 @@ audible.com ASIN.
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
 titles, with the same ASIN, Goodreads id or ISBN; that shared identifier is what ties them together.
 The page shows "Also in this edition: …" on each of them, and editing the edition on one updates it on
-the others. `make validate` warns when the copies disagree. Imports split a box set into its titles this
-way ([Box sets](imports.md#box-sets)). (A book you only have as a box set can still be one record with a
-range such as `"sn": "2-3"`.)
+the others. `make validate` warns when the copies disagree. A box set is also a book of its own, whose
+series number is the range it holds (`"sn": "2-3"`), with the same edition. Imports keep a box set this
+way, as its own book and as its titles ([Box sets](imports.md#box-sets)), and `node catalog.js box-sets`
+brings older box sets up to date. (A box set with nothing to tie it to its titles is just the one book
+with a range.)
 
 **Older files**: before editions, a book held its `id`, `gr` and `isbn` itself, and its narrator (`n`)
 until narrators moved to editions. Such books are still read: the ids become one edition, and the

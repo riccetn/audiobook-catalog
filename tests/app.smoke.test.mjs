@@ -216,7 +216,7 @@ test('the address names the view, so a series, a book or a search can be linked 
   assert.deepEqual(found.get('[VIEW, SERIES_FILTER]'), ['library', null]);
   assert.equal(found.els.q.value, 'ashcombe');
   assert.equal(found.els.readFilter.value, '__undated__');
-  assert.equal((found.els.results.innerHTML.match(/class="book"/g) || []).length, 3);
+  assert.equal((found.els.results.innerHTML.match(/class="book"/g) || []).length, 4);
   assert.equal(found.ctx.location.hash, '#books&q=ashcombe&genre=Science+Fiction&read=undated');
   const gaps = await boot({ hash: '#q=coast&missing' });
   assert.equal(gaps.get('VIEW'), 'series');
@@ -556,6 +556,16 @@ test('narrators and descriptions live on editions: shown on the card, searchable
   assert.deepEqual(get(`DATA[${salt}].e[2]`), { gr: '777', n: ['A full cast'], desc: 'Dramatized adaptation; unabridged' });
 });
 
+test('box sets: kept as their own book, last in the series, and not counted as one more title', async () => {
+  const { ctx, els } = await boot();
+  ctx.openSeries('The Orchard Cycle');
+  const titles = [...els.results.innerHTML.matchAll(/<div class="title"><a [^>]*>([^<]+)<\/a>/g)].map(m => m[1]);
+  assert.deepEqual(titles, ['The Brass Orchard', 'The Copper Graft', 'Harvest of Gears', 'The Orchard Cycle: Books 2-3']);
+  assert.match(els.results.innerHTML, /<span class="n">3 owned \+ 1 box set<\/span>/);
+  ctx.setView('series');
+  assert.match(els.results.innerHTML, /The Orchard Cycle<\/a>\s*<span class="srow-owned">3 owned<\/span>/);
+});
+
 test('box sets: the edition shows on each of its books, and editing it on one edits it on all', async () => {
   const { ctx, els, get } = await boot();
   ctx.setView('library');
@@ -566,15 +576,15 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
   assert.match(els.results.innerHTML, /Also in this edition: <a href="#book=The\+Copper\+Graft">The Copper Graft #2<\/a>/);
   els.q.value = 'kestrel row';
   ctx.render();
-  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 2, 'search finds a publisher');
+  assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 3, 'search finds a publisher (the box set\'s own book too)');
   els.q.value = '';
 
   ctx.openEditForm(two);
-  assert.match(els.f_editions.innerHTML, /Also on Harvest of Gears: changes here change it there too/);
+  assert.match(els.f_editions.innerHTML, /Also on Harvest of Gears, The Orchard Cycle: Books 2-3: changes here change it there too/);
   typeEdition(els, 0, 'p', 'Merlin Lane Audio');
   els.addForm.listeners.submit[0]({ preventDefault() {} });
   assert.equal(get(`DATA[${three}].e[0].p`), 'Merlin Lane Audio');
-  assert.match(els.ioStatus.textContent, /Also updated the shared edition on 1 other book/);
+  assert.match(els.ioStatus.textContent, /Also updated the shared edition on 2 other books/);
 });
 
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
