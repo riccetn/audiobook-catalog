@@ -1,9 +1,9 @@
 // The authors page: every author in the catalogue, and one author's page (authors.html#a=Name) with what
-// you keep about them in data/authors.json (a short bio, their own site and their pages on Audible,
+// you keep about them (AUTHORS) (a short bio, their own site and their pages on Audible,
 // Goodreads and Hardcover) and the series and titles of theirs you have, worked out from the books.
 // Loading and saving live in store.js.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, AUTHORS, setAuthors, esc, persist, keepHint, showIoStatus, startPage } from './store.js';
+import { DATA, SERIES_INFO, AUTHORS, setAuthors, esc, persist, showIoStatus, startPage } from './store.js';
 
 export let AUTHOR = null;             // the author shown (#a=...), or null for the list of authors
 let EDITING = null;            // the author whose info the form is editing, or null
@@ -93,8 +93,7 @@ function renderAuthor(name){
 }
 
 // ------------------------------------------------------------------ the author info form
-// Edits the author's entry in data/authors.json; like every edit, it is saved to disk by `make serve`
-// (see persist in store.js).
+// Edits the author's entry in AUTHORS; like every edit, it is kept in this browser (see persist in store.js).
 export function openAuthorForm(name){
   const info = AUTHORS[name] || {};
   EDITING = name;
@@ -128,7 +127,7 @@ function saveAuthorForm(){
     bio: document.getElementById('af_bio').value,
     ...Object.fromEntries(LINKS.map(([k])=> [k, document.getElementById('af_' + k).value])),
   });
-  // the same rules as `make validate`, applied to this author alone; a link to the wrong site is
+  // the same rules as Check, applied to this author alone; a link to the wrong site is
   // only a warning there, but here it is most likely pasted into the wrong field
   if(entry){
     const {errors, warnings} = CatalogImport.validateAuthors(DATA, {[name]: entry});
@@ -138,7 +137,7 @@ function saveAuthorForm(){
   const {[name]: _old, ...rest} = AUTHORS;
   setAuthors(entry ? {...rest, [name]: entry} : rest);
   closeAuthorForm(); render(); persist();
-  showIoStatus((entry ? `Saved author info for ${name}.` : `Removed author info for ${name}.`) + keepHint('data/authors.json'));
+  showIoStatus((entry ? `Saved author info for ${name}.` : `Removed author info for ${name}.`));
 }
 
 function removeAuthorInfo(){
@@ -147,7 +146,7 @@ function removeAuthorInfo(){
   const {[name]: _removed, ...rest} = AUTHORS;
   setAuthors(rest);
   closeAuthorForm(); render(); persist();
-  showIoStatus(`Removed author info for ${name}.` + keepHint('data/authors.json'));
+  showIoStatus(`Removed author info for ${name}.`);
 }
 
 document.getElementById('authorForm').addEventListener('submit', e=>{ e.preventDefault(); saveAuthorForm(); });
@@ -174,6 +173,4 @@ addEventListener('hashchange', showAddress);
 addEventListener('popstate', showAddress);
 
 // After a save to disk tidied the books or the author info (store.js).
-function refreshPage(){ render(); }
-
-export const READY = startPage(()=>{ AUTHOR = authorFromHash(location.hash); render(); }, {refresh: refreshPage});
+export const READY = startPage(()=>{ AUTHOR = authorFromHash(location.hash); render(); });

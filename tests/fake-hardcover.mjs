@@ -1,8 +1,8 @@
-// A fake of Hardcover's GraphQL API, shared by the CLI and page tests (not a test suite itself).
+// A fake of Hardcover's GraphQL API, for the page tests (not a test suite itself).
 import assert from 'node:assert/strict';
 
 /**
- * A stand-in for Hardcover's GraphQL API, answering the queries catalog.js and the page send from `state`: {shelf
+ * A stand-in for Hardcover's GraphQL API, answering the queries the page sends from `state`: {shelf
  * (user_books rows), books, editions (rows by id), goodreads ({Goodreads id: Hardcover book id})}.
  * Mutations change `state.shelf`. Built from Hardcover's published schema; the real API is not reached.
  */

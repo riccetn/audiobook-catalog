@@ -1,43 +1,38 @@
-# Running the app and saving edits
+# Running the app and keeping your catalogue
 
-The page loads its data with `fetch`, which browsers block for pages opened straight from disk
-(`file://`), so serve the project folder: `make serve` (it listens on 127.0.0.1 only, since the folder
-holds your personal data). Any static web server pointed at the project root works too. The app uses
-`data/books.json`, `data/series-info.json` and `data/authors.json`, or `data/sample/` if you have no `data/books.json`;
-`--data-dir` and `CATALOG_DATA_DIR` only affect the command line tools, not the page.
+The pages are ES modules, which browsers won't load from a page opened straight from disk (`file://`),
+so serve the project folder: `make serve` (Python's static server on http://localhost:8000/, listening on
+127.0.0.1 only), any other static web server pointed at the project root, or GitHub Pages
+([On your phone](phone.md)). Nothing on the server takes part: the pages never ask it for anything but
+themselves.
 
-`make serve` also saves: every edit in the pages (books, series info, author info, CSV imports, **Restore** of a
-backup, merges) is sent to the server, which checks it like `sync-export` does (the same validation and
-tidying) and writes `data/books.json`, `data/series-info.json` and `data/authors.json`, and adds books removed in the page
-to `data/excluded.txt` (that file is only ever added to). It only accepts saves from the page
-it serves, only to your own `data/books.json` (never the demo), and refuses a save if one of those files changed
-on disk since the page loaded it (an import, a `sync-export`, a hand edit), so it never overwrites
-those; reload the page to pick them up. A refused or failed save (for example with the server stopped)
-says so under the buttons.
+## Where the catalogue lives
 
-While it runs, `make serve` logs to the terminal, each line stamped with the time: every call the pages
-make to its API (method, path, the answer's status, why it refused if it did, and how long it took),
-every request it sends to Audible or Hardcover (the address, the Hardcover query's name, the answer's
-status), and when a long task (an Audible lookup, a Hardcover import, export or sync) starts and
-finishes, with how it went. While a Hardcover run goes, each open page asks for its progress once a
-second, and each of those asks is logged too:
+The catalogue (books, series info, author info and the list of books imports skip) is kept in the
+browser's `localStorage`, under the key `audiobook-catalog-device`, and "Not duplicates" marks under
+`audiobook-catalog-not-duplicates`. Every edit, import, Restore and Merge is saved there at once. All
+pages of the app share it; if two tabs edit the catalogue at once, the one that saves second refuses
+and asks you to reload it, rather than overwriting the other.
 
-```
-[21:04:12] started: Hardcover sync (dry run)
-[21:04:12] POST /api/hardcover 202 (3 ms)
-[21:04:12] external: POST https://api.hardcover.app/v1/graphql (me) -> 200 (310 ms)
-[21:04:13] GET /api/hardcover 200 (1 ms)
-[21:04:19] finished: Hardcover sync (dry run), exit code 0 (7.2 s)
-```
+Each browser keeps its own catalogue, tied to the address the app is served from: `localhost:8000` and
+your GitHub Pages site are two catalogues, and so are two browsers on one PC. Move a catalogue with a
+backup (below), and combine two that both changed with **Merge** ([Merge a backup from another device](backups.md)).
 
-It never logs what is sent (your books, your Hardcover token), and not the pages and files it serves.
+The first time the app opens somewhere, the catalogue is empty. The app asks the browser to keep its
+storage when space runs low, but clearing the site's data (or the browser deciding to) deletes it.
+If the stored catalogue can't be read, it is set aside under `audiobook-catalog-device.unreadable` and
+the catalogue starts empty; restore a backup.
 
-Until the disk has them, edits also live in that browser's `localStorage`, and with any other static
-server they only live there: use **Export** and `sync-export`. **Export / Restore** JSON also make real
-backups (books, series and author info and the import exclusion list). Local edits are tagged with a fingerprint of the `books.json`,
-`series-info.json` and `authors.json` they were made against. When one of them changes, older local edits are **set aside**
-(kept under the `audiobook-catalog-data.backup` key) instead of silently hiding your new data; if they
-still match on the next load, `make serve` saves them then.
+## Backups
 
-All pages share those edits, so moving between them keeps your work. If two tabs edit the catalogue
-at once, the one that saves second refuses and asks you to reload it, rather than overwriting the other.
+**Export** on *Import & export* downloads a backup: the books, series and author info, the list of books
+imports skip and the "Not duplicates" marks, as one JSON file. It is the only copy of your catalogue
+outside the browser, so export now and then and keep the files somewhere safe.
+
+**Restore** replaces the catalogue with a backup. It also takes the data files of a catalogue from
+before it lived in the browser: pick `books.json`, `series-info.json`, `authors.json`, `excluded.txt` and
+`not-duplicates.txt` (from `data/`) together. Only `books.json` is needed; series info and author info
+the files don't have are kept as they are, and the exclusions and marks are added to those kept already.
+
+Edits made in a page that was waiting for the old `make serve` to save them to `data/` are taken as the
+catalogue the first time the app opens in that browser, if it has no catalogue yet.

@@ -26,31 +26,20 @@ its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on eac
 are copied to the others. On the card, each of an edition's ASINs links to the book on its site
 (`audible.co.uk/pd/…`, `amazon.com/dp/…`), its Goodreads id to the book on Goodreads, and its Hardcover ids
 to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
-when Hardcover renames the book). With `make serve` and your own `data/books.json`,
-every change is saved to `data/books.json`, `data/series-info.json` and `data/authors.json` as you make it. With any other
-server, or the demo data, edits stay in the browser: press **Export** on the *Import & export* page, then:
+when Hardcover renames the book). Every change is saved in the browser as you make it (see
+[Running the app and keeping your catalogue](saving.md)).
 
-```sh
-node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json --dry-run
-node catalog.js sync-export ~/Downloads/audiobook-catalog-backup-2026-01-01.json
-```
+**Back up and move the catalogue**: **Export** on the *Import & export* page downloads a backup with the
+books, the series info, the author info, the list of books imports must skip and the pairs marked
+**Not duplicates** (`{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`).
+**Restore** replaces the catalogue with one. Backups from before series info was exported (a plain list of
+books), or before the author info or the exclusions were, still work and keep what the catalogue has; the
+backup's exclusions and **Not duplicates** marks are added to the ones it already has. When both
+catalogues have changed, merge the backup instead: see [Merge a backup from another device](backups.md).
 
-It refuses files that are not valid catalogue exports and prints what changed before writing.
-An export holds the books, the series info, the author info, the list of books imports must skip and the pairs marked
-**Not duplicates** (`{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`),
-so `sync-export` updates `data/series-info.json` and `data/authors.json` too and adds any new entries to `data/excluded.txt` and
-`data/not-duplicates.txt` (it never removes one).
-Backups from before series info was exported (a plain list of books), or before the author info or the exclusions were,
-still work and leave those files as they are. The app's **Restore** reads all of them the same way,
-adding the backup's exclusions and **Not duplicates** marks to the ones it already has.
-
-When both catalogues have changed, merge the backup instead: see
-[Merge a backup from another device](backups.md).
-You can also edit `data/books.json` by hand; `make format` rewrites it the way the tools write it.
-
-**Check the catalogue**: **Check** on the *Import & export* page lists the errors and warnings `make validate`
-would, and the data files still in an older format or layout; under `make serve` its **Rewrite data files**
-does what `make format` does.
+**Check the catalogue**: **Check** on the *Import & export* page lists errors and warnings (a series
+info entry no book has, an untidy name, a link to the wrong site...) and anything kept in an older format,
+which **Save in the current format** rewrites (any edit does that too).
 
 **Authors' bios and links**: the *Authors* page lists every author; each author's page shows a bio,
 links to their website and their pages on Audible, Goodreads and Hardcover, and their series and titles.
@@ -58,34 +47,28 @@ Author names on the books link there. See [Authors](authors.md).
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
-the author site, or to add or remove that info. The form checks the same rules as `make validate`.
-Like book edits, the change is saved to `data/series-info.json`.
+the author site, or to add or remove that info. The form checks the same rules as **Check**.
 The same form renames the series: change its name and every book in the series gets the new name
 (a series without info is renamed without adding any). Renaming it to a series you already have
 moves its books into that one; the first **Save** says so and the second does it, and if the form has
-info it replaces the other series' info. Or edit
-`data/series-info.json` by hand, then `make validate`.
+info it replaces the other series' info.
 
-**Find books missing from a series**: when a series has a released total in `data/series-info.json`,
+**Find books missing from a series**: when a series has a released total in its series info,
 the series overview and the series itself list the numbers you don't own (for example
 "missing #3, #5–7"). A boxed set (`"4-6"`) counts for every number in it, but not as one more book owned; a
 novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
-**Fill in series from Audible**: see [Audible](audible.md#fill-in-series-from-audible).
-
 **Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
-the import exclusion list, `data/excluded.txt`, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
+the import exclusion list, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
 ids (`Hardcover 501`) of its editions, and as `Title | Author`, so no later Audible, Goodreads or Hardcover
-import brings it back. With
-`make serve` that is saved to `data/excluded.txt` along with the removal; otherwise it goes into
-**Export**, and `sync-export` adds it there. When editing `data/books.json` by hand, add the ASIN,
-`Goodreads 4242` or `Title | Author` to `data/excluded.txt` yourself (a Goodreads id needs its `Goodreads`
-prefix; a bare number is read as an ASIN). You can also exclude by ISBN: a line `ISBN 978-0-00-000000-2`
-(or just the ISBN-13) skips every imported book that carries that ISBN, in any of its editions' forms (so
+import brings it back. Backups carry the list (`excluded`), one entry per line: an ASIN,
+`Goodreads 4242` (a bare number is read as an ASIN), `Hardcover 501` or `Title | Author`. An entry
+`ISBN 978-0-00-000000-2` (or just the ISBN-13) skips every imported book that carries that ISBN, in any of its editions' forms (so
 an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN counts as both an ASIN and an ISBN.
-Removing a book in the page does not add its ISBNs, since another book may share them. To let an import add a book again, delete its lines
-from `data/excluded.txt`.
+Removing a book in the page does not add its ISBNs, since another book may share them. The list is only
+ever added to: to let an import add a book again, delete its entries from a backup's `excluded` and
+restore it.
 
 **Merge duplicates**: the *Duplicates* page (its link shows how many it found) lists books that look like
 one title entered twice, found the way an import matches books (same author, series and number,
@@ -93,10 +76,10 @@ or same author and title, forgiving Audible's long titles); books that only shar
 are not duplicates. For each pair, pick the title, author and series to keep where they
 differ; genres, dates read and editions are combined (an edition with the same ASIN, Goodreads id or ISBN
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
-adding them to `data/excluded.txt`, since the kept book carries their ids and imports find it. **Not
+adding them to the exclusion list, since the kept book carries their ids and imports find it. **Not
 duplicates** stops offering that pair. To merge two books the list misses (say, an
 author spelled two ways), press &#8644; on one book in the catalogue and then on the other; the
-duplicates page opens with the two. Like any edit, a merge is saved to `data/books.json`.
+duplicates page opens with the two.
 
 When the merged entries' editions don't disagree on an ASIN or Goodreads id (typically one book
 imported from Audible with its ASIN and from Goodreads with its Goodreads id), they become one edition
@@ -106,10 +89,8 @@ joined this way. Books merged before this, or that got two such editions some ot
 under *Editions that look like one*: **Make one edition** joins them, **Keep separate** stops
 listing that book. The *Duplicates* link counts both.
 
-Both marks are kept in the browser, and with `make serve` also in `data/not-duplicates.txt`, so
-other browsers see them too; a mark made without `make serve` is added to the file the next time
-the page saves there. Like `data/excluded.txt`, the file is only ever added to: delete a line by
-hand to have that pair offered again. Backups carry the marks as well.
+Both marks are kept in the browser, and backups carry them (`notDuplicates`), so Restore and Merge
+bring them to another browser. Like the exclusion list, they are only ever added to.
 
 **ISBNs**: both importers store the ISBN in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the edition they import. An edition has one ISBN: two different ISBNs are two

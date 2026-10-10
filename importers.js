@@ -1,19 +1,8 @@
 // The catalogue's data pipeline: tidying and identity of book records, validation, the Audible and
 // Goodreads readers, and the merge that adds imported books without clobbering hand edits.
 //
-// An ES module shared by the pages (store.js and each page's script import it) and the command line
-// (catalog.js), so both import exactly the same way.
-
-// ------------------------------------------------------------------ fingerprints
-/**
- * Cheap non-cryptographic hash of a data file's text. The page tags its edits with the fingerprint of
- * the books.json it loaded, and `serve` refuses to save over a file whose fingerprint has changed since.
- */
-function fingerprint(s){
-  let h = 5381;
-  for(let i = 0; i < s.length; i++){ h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
-  return (h >>> 0).toString(36) + ':' + s.length;
-}
+// An ES module shared by the pages (store.js and each page's script import it). It uses no browser APIs,
+// so the tests run it in Node as it is.
 
 // ------------------------------------------------------------------ book records
 // A Goodreads book id, as stored in `gr`: the number in goodreads.com/book/show/12345.
@@ -607,8 +596,7 @@ function fixBooks(books){
 
 /**
  * What in `raw` (books.json as read, before fixBooks) is from an older format: a sentence per kind, each
- * saying how many books it is and how they are read; `make format`, or any save, writes them the current
- * way. Empty when the books are all in the current format.
+ * saying how many books it is and how they are read; any save writes them the current way. Empty when the books are all in the current format.
  */
 function formatNotes(raw){
   if(!Array.isArray(raw)) return [];
@@ -770,10 +758,10 @@ class Exclusions {
     this.isbns = new Set();    // 13-digit ISBNs
     this.grs = new Set();      // Goodreads book ids
     this.hcs = new Set();      // Hardcover edition ids
-    this.lines = new Map();   // key -> the entry as written in data/excluded.txt
+    this.lines = new Map();   // key -> the entry as written in the exclusions list
   }
   /**
-   * Add one line of data/excluded.txt: an ASIN, "ISBN 978...", "Goodreads 12345", "Hardcover 12345" or
+   * Add one line of the exclusions list: an ASIN, "ISBN 978...", "Goodreads 12345", "Hardcover 12345" or
    * "Title | Author";
    * '#' starts a comment.
    * Returns the entry as it should be written, or null for a blank line or one already covered.
@@ -827,7 +815,7 @@ class Exclusions {
       bookIdsOf(rec, 'hc').some(hc => this.hcs.has(hc)) ||
       (norm(rec.t) !== '' && this.titles.has(key(norm(rec.t), firstAuthor(rec.a)))) || bookIsbns(rec).some(isbn => this.isbns.has(isbn));
   }
-  /** The entries, one per line as in data/excluded.txt, without comments. */
+  /** The entries, one per line as in the exclusions list, without comments. */
   get entries(){ return [...this.lines.values()]; }
   get size(){ return this.lines.size; }
 }
@@ -838,7 +826,7 @@ const GOODREADS_ENTRY = /^(?:goodreads|gr)(?:\s+id)?:?\s*(\d+)$/i;
 const HARDCOVER_ENTRY = /^hardcover(?:\s+id)?:?\s*(\d+)$/i;
 
 /**
- * Parse the text of data/excluded.txt: an ASIN, "ISBN 978...", "Goodreads 12345", "Hardcover 12345" or "Title | Author",
+ * Parse the text of the exclusions list: an ASIN, "ISBN 978...", "Goodreads 12345", "Hardcover 12345" or "Title | Author",
  * per line; '#' starts a comment.
  */
 function parseExclusions(text){
@@ -848,7 +836,7 @@ function parseExclusions(text){
 }
 
 /**
- * The data/excluded.txt entries that keep a removed book out of later imports: the ASINs, Goodreads
+ * The the exclusions list entries that keep a removed book out of later imports: the ASINs, Goodreads
  * book ids and Hardcover edition ids of its editions, and "Title | Author" (for books with none). '#' and '|' would
  * break the line, and matching ignores punctuation anyway, so they are dropped.
  */
@@ -1036,7 +1024,7 @@ function validate(books, info){
 }
 
 // ---------------------------------------------------------------------- authors
-// data/authors.json maps an author's name, as books write it in `a`, to what you keep about them:
+// author info maps an author's name, as books write it in `a`, to what you keep about them:
 // a short bio and links to their own site and their pages on Audible, Goodreads and Hardcover. Their
 // series and titles are not stored there: they come from books.json (authorWorks).
 const AUTHOR_KEYS = ['bio', 'url', 'audible', 'goodreads', 'hardcover'];
@@ -1065,7 +1053,7 @@ function tidyAuthor(entry){
 }
 
 /**
- * Check data/authors.json against the books. Returns {errors, warnings}: a malformed entry is an
+ * Check author info against the books. Returns {errors, warnings}: a malformed entry is an
  * error; an entry for a name no book has (an author renamed on their books) and a link to another
  * site than its field says are warnings.
  */
@@ -1170,8 +1158,8 @@ function authorList(books){
 /**
  * Read a backup exported from the page: {books: [...], seriesInfo: {...}, authors: {...}, excluded: [...],
  * notDuplicates: [...]}, or a plain array of books from before series info was exported. Returns
- * {books, seriesInfo, authors, excluded, notDuplicates}; seriesInfo, authors (data/authors.json), excluded
- * (the data/excluded.txt entries) and notDuplicates (the data/not-duplicates.txt entries) are null when
+ * {books, seriesInfo, authors, excluded, notDuplicates}; seriesInfo, authors (author info), excluded
+ * (the the exclusions list entries) and notDuplicates (the the not-duplicates list entries) are null when
  * the backup predates them, so callers leave theirs alone. Throws if it is neither.
  */
 function readBackup(data){
@@ -1193,7 +1181,36 @@ function readBackup(data){
 }
 
 /**
- * The entries of data/not-duplicates.txt: one duplicatePairKey() or editionsKey() per line, for the
+ * What Restore was given, as readBackup() reads a backup: either a backup, or the data files a catalogue
+ * kept before it lived in the browser, picked together and told apart by name (books.json,
+ * series-info.json, authors.json, excluded.txt, not-duplicates.txt; a file renamed with a date, say, still
+ * counts). `files` are [{name, text}]. Throws when there are no books among them.
+ */
+function readDataFiles(files){
+  let backup = null;
+  const picked = {};
+  for(const {name, text} of files){
+    const base = String(name).toLowerCase().replace(/^.*[\\/]/, '');
+    if(base.endsWith('.txt')){
+      if(base.includes('not-duplicates')) picked.notDuplicates = parseNotDuplicates(text);
+      else if(base.includes('excluded')) picked.excluded = parseExclusions(text).entries;
+      else throw new Error(`${name}: not one of the catalogue's files`);
+      continue;
+    }
+    const json = JSON.parse(text);
+    if(base.startsWith('series-info')) picked.seriesInfo = json;
+    else if(base.startsWith('authors')) picked.authors = json;
+    else if(Array.isArray(json)) picked.books = json;
+    else if(isObject(json) && Array.isArray(json.books)) backup = json;
+    else throw new Error(`${name}: not one of the catalogue's files`);
+  }
+  const all = {...backup, ...picked};
+  if(!Array.isArray(all.books)) throw new Error('no books.json or backup among the files');
+  return readBackup(all);
+}
+
+/**
+ * The entries of the not-duplicates list: one duplicatePairKey() or editionsKey() per line, for the
  * books the duplicates page was told are different books (or have different editions). Lines
  * starting with '#' are comments.
  */
@@ -1389,9 +1406,8 @@ function readAudible(text, site){
   return result;
 }
 
-// ------------------------------------------------------- series from Audible's catalogue
-// Audible's catalogue API answers without a login, one host per store. The CLI does the fetching;
-// these functions only build the addresses and read the answers, so they can be tested offline.
+// ------------------------------------------------------- Audible's sites
+// Audible's stores and their sites, for the ASIN fields of the book form.
 const AUDIBLE_STORES = {us: 'audible.com', uk: 'audible.co.uk', de: 'audible.de', fr: 'audible.fr', it: 'audible.it',
   es: 'audible.es', ca: 'audible.ca', au: 'audible.com.au', in: 'audible.in', jp: 'audible.co.jp'};
 
@@ -1404,190 +1420,9 @@ const ASIN_SITES = [...new Set([
   'amazon.se', 'amazon.nl', 'amazon.pl', 'amazon.com.br', 'amazon.com.mx',
 ])];
 
-/** The catalogue address of a product (a book, or a series by its own ASIN) in one store. */
-function audibleProductUrl(asin, store, groups){
-  return `https://api.${AUDIBLE_STORES[store]}/1.0/catalog/products/${encodeURIComponent(asin)}?response_groups=${groups}`;
-}
-
-/** The series a catalogue product belongs to: [{name, number, asin}]; [] when none. */
-function audibleSeries(json){
-  const list = json && json.product && Array.isArray(json.product.series) ? json.product.series : [];
-  return list.filter(isObject).map(x => ({
-    name: tidyText(String(x.title || '')),
-    number: SERIES_NUMBER.test(String(x.sequence || '').trim()) ? String(x.sequence).trim() : null,
-    asin: typeof x.asin === 'string' ? x.asin : null,
-  })).filter(x => x.name);
-}
-
-/**
- * How many books of a series are out, from the series' own catalogue product: the highest whole
- * number among its titles (a boxed set "1-3" counts up to 3, a novella "2.5" adds nothing).
- * Returns null when the answer lists no numbered titles.
- */
-function audibleSeriesTotal(json){
-  const rels = json && json.product && Array.isArray(json.product.relationships) ? json.product.relationships : [];
-  let total = 0;
-  for(const r of rels){
-    if(!isObject(r) || r.relationship_to_product !== 'child') continue;
-    const m = /^(\d+)(?:-(\d+))?$/.exec(String(r.sequence || '').trim());
-    if(m) total = Math.max(total, parseInt(m[2] || m[1], 10));
-  }
-  return total || null;
-}
-
-/**
- * A series' own catalogue product as the lookups use it: {total: audibleSeriesTotal(), titles: the title
- * of each whole-numbered book, {"1": "Spark", ...}, the first listed when Audible has several}.
- */
-function audibleSeriesListing(json){
-  const rels = json && json.product && Array.isArray(json.product.relationships) ? json.product.relationships : [];
-  const titles = {};
-  for(const r of rels){
-    if(!isObject(r) || r.relationship_to_product !== 'child') continue;
-    const number = String(r.sequence || '').trim(), title = tidyText(String(r.title || ''));
-    if(/^\d+$/.test(number) && title && !(String(Number(number)) in titles)) titles[String(Number(number))] = title;
-  }
-  return {total: audibleSeriesTotal(json), titles};
-}
-
-/** The name an import gives a box set's title it doesn't know yet, until Audible names it: "Ember, Book 2". */
+/** The name an import gives a box set's title it doesn't know yet: "Ember, Book 2". */
 function boxSetTitle(series, number){
   return `${series}, Book ${number}`;
-}
-
-const isBoxSetTitle = b => !!(b && b.s && b.sn && b.t === boxSetTitle(b.s, b.sn));
-
-/** ASINs that appear on more than one book: box sets, whose series number is the set's, not the title's. */
-function sharedAsins(books){
-  const seen = new Set(), shared = new Set();
-  for(const b of books) for(const id of bookIdsOf(b, 'asin')){
-    (seen.has(id) ? shared : seen).add(id);
-  }
-  return shared;
-}
-
-/**
- * The ASIN to ask an Audible store (`store`, a key of AUDIBLE_STORES, by default 'us') about an edition:
- * its ASIN on that store's site, else on the matching Amazon site (amazon.com for audible.com), where an
- * Audible audiobook usually has the same ASIN, else another site's (Audible's first), which the store
- * often knows too. Null when it has none.
- */
-function audibleAsin(ed, store){
-  const site = AUDIBLE_STORES[store || 'us'] || AUDIBLE_SITE;
-  const [first] = editionAsins(ed);
-  return asinOn(ed, site) || asinOn(ed, site.replace(/^audible\./, 'amazon.')) || (first ? first[1] : null);
-}
-
-/**
- * The ASINs to look up in an Audible store (`store`, see audibleAsin) for seriesFromAudible(): every book
- * with no series or no number, and one book of each series that has no release info yet or a box set's
- * title still named boxSetTitle() (to learn the series' own ASIN). `only` (books of `books`, e.g. the
- * ones an import just added) limits that to those books and their series.
- */
-function seriesLookups(books, info, only, store){
-  const asins = new Set(), covered = new Set();
-  const own = b => bookEditions(b).map(ed => audibleAsin(ed, store)).filter(Boolean);
-  const wanted = only || books;
-  for(const b of wanted){
-    if(!b.s || !b.sn) own(b).forEach(id => asins.add(id));
-  }
-  const shared = sharedAsins(books);
-  for(const b of wanted){
-    // a series with release info is looked up all the same when a box set's title waits for its name
-    if(!b.s || (info && Object.prototype.hasOwnProperty.call(info, b.s) && !isBoxSetTitle(b)) || covered.has(b.s)) continue;
-    const id = own(b).find(x => !shared.has(x)) || own(b)[0];
-    if(id){ asins.add(id); covered.add(b.s); }
-  }
-  return [...asins];
-}
-
-/**
- * Fill in series from Audible's answers (`found`: Map of ASIN -> audibleSeries() list), never
- * changing a value you have: a book with no series gets Audible's (a parent series over its
- * sub-series, as imports pick it) and its number; a book with a series but no number gets the
- * number when Audible files it under that series. A number taken from a box set's ASIN is skipped.
- * Changes `books` in place. Returns {filled: [books], series: Map of your series name -> its Audible
- * ASIN, warnings}.
- */
-function seriesFromAudible(books, found){
-  const report = {filled: [], series: new Map(), warnings: []};
-  const canonical = new Map();
-  for(const b of books) if(b.s && !canonical.has(seriesNorm(b.s))) canonical.set(seriesNorm(b.s), b.s);
-  const shared = sharedAsins(books);
-
-  for(const b of books){
-    for(const ed of bookEditions(b)){
-      const asin = editionIds(ed, 'asin').find(x => found.get(x) && found.get(x).length);
-      if(!asin) continue;
-      const list = found.get(asin), boxSet = shared.has(asin);
-      if(!b.s){
-        const [name, number, ambiguous] = chooseSeries(list.map(x => [x.name, x.number]));
-        const k = seriesNorm(name);
-        if(!canonical.has(k)) canonical.set(k, name);
-        b.s = canonical.get(k);
-        if(number && !boxSet) b.sn = number;
-        report.filled.push(b);
-        if(ambiguous) report.warnings.push(`${repr(b.t)}: Audible lists several series (${list.map(x => x.name).join(', ')}); using ${repr(b.s)}`);
-      } else if(!b.sn && !boxSet){
-        const same = list.find(x => seriesNorm(x.name) === seriesNorm(b.s) && x.number);
-        if(same){ b.sn = same.number; report.filled.push(b); }
-      }
-      for(const x of list){
-        const name = canonical.get(seriesNorm(x.name));
-        if(name && x.asin && !report.series.has(name)) report.series.set(name, x.asin);
-      }
-      if(b.s && b.sn) break;
-    }
-  }
-  return report;
-}
-
-/**
- * The series ASINs to fetch audibleSeriesListing() for, from seriesFromAudible()'s `series` (Map of name
- * -> series ASIN): the series with no entry in `info`, and those with a box set's title still named
- * boxSetTitle().
- */
-function seriesListingLookups(books, info, series){
-  const unnamed = new Set(books.filter(isBoxSetTitle).map(b => b.s));
-  return [...series].filter(([name]) => !Object.prototype.hasOwnProperty.call(info, name) || unnamed.has(name)).map(([, asin]) => asin);
-}
-
-/**
- * Name the box sets' titles that an import added as boxSetTitle() ("Ember, Book 2") after the book of
- * that number in their series' Audible listing (`series`: Map of name -> series ASIN, `listings`: Map of
- * series ASIN -> audibleSeriesListing()). No other title is changed. Changes `books` in place; returns
- * [[book, the title it had]].
- */
-function boxSetTitlesFromAudible(books, series, listings){
-  const renamed = [];
-  for(const b of books){
-    if(!isBoxSetTitle(b) || !series.has(b.s)) continue;
-    const listing = listings.get(series.get(b.s));
-    const title = listing && listing.titles && listing.titles[String(Number(b.sn))];
-    if(!title) continue;
-    const old = b.t, fixed = fixSeriesTitle({...b, t: title});
-    b.t = fixed.s === b.s && fixed.sn === b.sn ? fixed.t : title;
-    renamed.push([b, old]);
-  }
-  return renamed;
-}
-
-/**
- * Give each series in `series` (seriesFromAudible()'s Map of name -> Audible series ASIN) that has no
- * entry in `info` a released total from `totals` (Map of series ASIN -> audibleSeriesListing(), or its
- * total alone). Audible
- * only lists what is out, so the entry says "ongoing" and asks whether the series is finished.
- * Changes `info` in place; returns the names given a total.
- */
-function addSeriesTotals(info, series, totals, store, today){
-  const added = [];
-  for(const [name, asin] of series){
-    const listing = totals.get(asin), total = isObject(listing) ? listing.total : listing;
-    if(Object.prototype.hasOwnProperty.call(info, name) || !total) continue;
-    info[name] = {total, status: 'ongoing', note: `${total} released on ${AUDIBLE_STORES[store]} as of ${today}; is it complete?`};
-    added.push(name);
-  }
-  return added;
 }
 
 // ------------------------------------------------------------------ Goodreads
@@ -1787,8 +1622,8 @@ function goodreadsCsv(books){
 }
 
 // ------------------------------------------------------------------ Hardcover
-// Hardcover's GraphQL API needs your personal token and must not be called from a browser, so the CLI
-// does the asking (catalog.js). These functions only write the queries and read the answers, so they
+// Hardcover's GraphQL API needs your personal token, which the page keeps in this browser; the page does
+// the asking (store.js, import.js). These functions only write the queries and read the answers, so they
 // can be tested offline. Queries stay within three levels of nesting, which Hardcover plans to enforce.
 const HARDCOVER_API = 'https://api.hardcover.app/v1/graphql';
 // Hardcover's shelves (user_books.status_id): only "Read" is a finished book.
@@ -2106,9 +1941,8 @@ function hardcoverUrl(kind, id){
 }
 
 // --------------------------------------------------------------- Hardcover runs
-// The import, export and sync themselves, shared by the command line and the page: Hardcover allows
-// browser requests (its API answers with open CORS headers), so the page can run them without
-// `make serve`. They only ever reach Hardcover through `ask`, and write only through `save`.
+// The import, export and sync themselves: Hardcover allows browser requests (its API answers with open
+// CORS headers), so the page runs them. They only ever reach Hardcover through `ask`, and write only through `save`.
 
 /** A token as Hardcover shows it ("Bearer eyJ..."), without the "Bearer" and spacing; '' when there is none. */
 function cleanHardcoverToken(t){
@@ -2189,7 +2023,7 @@ function mergeLines(report, warnings){
   const counts = [['backfilled', 'ASINs filled in on existing books'], ['goodreadsFilled', 'Goodreads ids filled in on existing books'],
     ['hardcoverFilled', 'Hardcover ids filled in on existing books'], ['datesFilled', 'dates read filled in on existing books'],
     ['isbnsFilled', 'ISBNs added to existing books'], ['detailsFilled', 'narrator, publisher, release date or length filled in on existing books'],
-    ['editionsAdded', 'other editions added to existing books'], ['excluded', 'skipped (listed in data/excluded.txt)']];
+    ['editionsAdded', 'other editions added to existing books'], ['excluded', 'skipped (excluded from imports)']];
   for(const [k, label] of counts) if(report[k] && report[k].length) lines.push(`  ${label}: ${report[k].length}`);
   if(report.boxSets && report.boxSets.length){
     lines.push(`  box sets kept as their own book and as their titles: ${report.boxSets.length}`);
@@ -2857,17 +2691,16 @@ function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicate
 }
 
 export {
-  fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, formatNotes, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
+  norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, formatNotes, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   splitNames, namesText, fixNames, fixPeople,
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
   ASIN_SITE, AUDIBLE_SITE, AMAZON_SITE, editionAsins, asinOn, asinsText, parseAsins,
   bookEditions, editionIsbns, sameEdition, fixEditions, tidyEdition, parseLength, formatLength, editionParts, formatEdition, parseEditions, EDITION_FIELDS, ASIN_SITES, editionFields, editionFromFields, saveBook,
   bookNarrators, seriesRange, isCollection, bySeriesNumber, seriesOwned, boxSetBooks,
-  Exclusions, parseExclusions, exclusionEntries, validate, readBackup, parseCsv,
+  Exclusions, parseExclusions, exclusionEntries, validate, readBackup, readDataFiles, parseCsv,
   AUTHOR_KEYS, tidyAuthor, validateAuthors, authorWorks, authorList,
   parseSeriesField, chooseSeries, cleanTitle, audibleRowToRecord, readAudible,
-  AUDIBLE_STORES, audibleProductUrl, audibleSeries, audibleSeriesTotal, audibleSeriesListing, audibleAsin, seriesLookups, seriesFromAudible, addSeriesTotals,
-  boxSetTitle, seriesListingLookups, boxSetTitlesFromAudible,
+  AUDIBLE_STORES, boxSetTitle,
   HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
   readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport,
   cleanHardcoverToken, hardcoverAsker, runHardcover, recordLines, mergeLines, hardcoverUrl, parseHardcoverUrl, hardcoverBookId, hasReadDate,

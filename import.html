@@ -47,7 +47,6 @@
         <option value="audible.in">audible.in</option>
         <option value="audible.co.jp">audible.co.jp</option>
       </select></label></p>
-    <label class="option" id="importSeriesOption" style="display:none"><input type="checkbox" id="importSeries"> After an Audible import, look up the new books' series on Audible (in the store picked below)</label>
   </section>
 
   <div id="importPreview" class="importPreview">
@@ -61,26 +60,6 @@
     </div>
   </div>
 
-  <section class="panel" id="audiblePanel" style="display:none">
-    <h2>Fill in series from Audible</h2>
-    <p>Looks your books up on Audible by their ASIN, and fills in series and numbers they don't have, and how many books are out in series without release info. Nothing you have is changed, and you see what would change first.</p>
-    <div class="rowbtns">
-      <select id="audibleStore" title="The Audible store to ask">
-        <option value="us">audible.com</option>
-        <option value="uk">audible.co.uk</option>
-        <option value="de">audible.de</option>
-        <option value="fr">audible.fr</option>
-        <option value="it">audible.it</option>
-        <option value="es">audible.es</option>
-        <option value="ca">audible.ca</option>
-        <option value="au">audible.com.au</option>
-        <option value="in">audible.in</option>
-        <option value="jp">audible.co.jp</option>
-      </select>
-      <button class="iconbtn2" id="audibleSeriesBtn" title="Look up series on Audible">Look up series</button>
-    </div>
-  </section>
-
   <section class="panel" id="hardcoverPanel">
     <h2>Hardcover</h2>
     <p><strong>Import</strong> adds the books on your Hardcover <em>Read</em> shelf, <strong>Export</strong> puts your books on it with their dates read, and <strong>Sync</strong> does both. Nothing is changed or removed on either side, and you see what would happen first.</p>
@@ -92,15 +71,15 @@
     <p id="hardcoverTokenState"></p>
     <div class="rowbtns">
       <input type="password" id="hardcoverToken" placeholder="Hardcover API token" autocomplete="off" spellcheck="false">
-      <button class="iconbtn2" id="hardcoverTokenSave" title="Keep this token with your catalogue, in data/hardcover-token">Save token</button>
-      <button class="iconbtn2" id="hardcoverTokenRemove" title="Delete data/hardcover-token">Remove token</button>
+      <button class="iconbtn2" id="hardcoverTokenSave" title="Keep this token in this browser">Save token</button>
+      <button class="iconbtn2" id="hardcoverTokenRemove" title="Forget the token in this browser">Remove token</button>
     </div>
   </section>
 
   <section class="panel">
     <h2>Check the catalogue</h2>
-    <p>Check lists errors and anything that needs a look, by the same rules as <code>make validate</code>, and data files
-      in an older format, which it can rewrite under <code>make serve</code>. Box sets keeps each box set both as its own book and
+    <p>Check lists errors and anything that needs a look, and anything kept in an older format, which it can save in
+      the current one. Box sets keeps each box set both as its own book and
       as its titles, as imports do now; it shows what it would add before changing anything.</p>
     <div class="rowbtns">
       <button class="iconbtn2" id="checkBtn" title="Check the books, series info and author info for problems">Check</button>
@@ -118,13 +97,15 @@
 
   <section class="panel">
     <h2>Backups</h2>
-    <p>Export downloads the books, the series and author info and the list of books imports skip. Restore replaces the catalogue with a backup.
-      Merge combines a backup from another device (your phone, say) with this catalogue when both have changed.</p>
+    <p>The catalogue lives in this browser only, so export a backup now and then: it has the books, the series and author info
+      and the list of books imports skip. Restore replaces the catalogue with a backup, or with the data files of a catalogue
+      from before it lived in the browser (pick <code>books.json</code>, <code>series-info.json</code>, <code>authors.json</code>,
+      <code>excluded.txt</code> and <code>not-duplicates.txt</code> together). Merge combines a backup from another device (your phone, say) with this catalogue when both have changed.</p>
     <div class="rowbtns">
       <button class="iconbtn2" id="exportBtn" title="Download a backup JSON file">Export</button>
-      <button class="iconbtn2" id="importBtn" title="Restore from a backup JSON file">Restore</button>
+      <button class="iconbtn2" id="importBtn" title="Restore from a backup JSON file, or from data files">Restore</button>
       <button class="iconbtn2" id="mergeBtn" title="Merge a backup from another device into this catalogue">Merge</button>
-      <input type="file" id="importFile" accept="application/json" style="display:none">
+      <input type="file" id="importFile" accept="application/json,.json,.txt,text/plain" multiple style="display:none">
       <input type="file" id="mergeFile" accept="application/json" style="display:none">
     </div>
   </section>
