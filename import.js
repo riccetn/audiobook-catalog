@@ -5,7 +5,7 @@ import {
   DATA, SERIES_INFO, AUTHORS, setData, setSeriesInfo, setAuthors, BASELINE, INFO_BASELINE, EXCLUSIONS, LOCAL_SEEN, AUDIBLE_LOOKUP, HARDCOVER, NOT_DUPLICATES,
   addNotDuplicates, esc, localNow, persist, addExclusions, keepHint, keepOnDevice, showIoStatus, unsavedEdits, reloadFromDisk,
   HARDCOVER_JOB, minutes, showHardcoverJob, followHardcover, HARDCOVER_TOKEN_KEY, HARDCOVER_PAUSE_MS, browserHardcoverToken,
-  fetchHardcover, startPage
+  fetchHardcover, startPage, FORMAT_NOTES, DISK_SAVE
 } from './store.js';
 
 function refreshPage(){
@@ -104,6 +104,7 @@ function previewImport(kind, text, fileName){
   PENDING_SERIES = null;
   PENDING_HARDCOVER = null;
   PENDING_MERGE = null;
+  PENDING_TIDY = null;
   document.getElementById('mergePrefer').classList.remove('show');
 
   const li = rec => `<li>${bookLine(rec)}</li>`;
@@ -232,6 +233,7 @@ function previewSeries(pending, lead){
   PENDING_IMPORT = null;
   PENDING_HARDCOVER = null;
   PENDING_MERGE = null;
+  PENDING_TIDY = null;
   document.getElementById('mergePrefer').classList.remove('show');
 
   let html = lead ? `<p>${esc(lead)} Their series:</p>` : '';
@@ -356,6 +358,7 @@ function mergeBackupFile(file){
       PENDING_SERIES = null;
       PENDING_HARDCOVER = null;
       PENDING_MERGE = {backup, fileName: file.name};
+      PENDING_TIDY = null;
       previewMerge();
     }catch(err){
       closeImportPreview();
@@ -363,6 +366,104 @@ function mergeBackupFile(file){
     }
   };
   reader.readAsText(file);
+}
+
+// ------------------------------------------------------------ Check the catalogue, box sets
+// The page's `node catalog.js validate`, `format` and `box-sets`: the check lists what `make validate`
+// would, and offers to rewrite data files in an older format where a save can (`make serve`); box sets
+// are previewed like an import and only applied when confirmed.
+export let PENDING_TIDY = null;   // 'format' or 'box-sets', while its preview is open
+
+// A list of messages, at most `limit` of them, saying how many more there are.
+function messageList(items, limit = 100){
+  const more = items.length > limit ? `<li>&hellip;and ${items.length - limit} more</li>` : '';
+  return `<ul>${items.slice(0, limit).map(m=> `<li>${esc(m)}</li>`).join('')}${more}</ul>`;
+}
+
+function showTidyPreview(title, html, confirm){
+  PENDING_IMPORT = null;
+  PENDING_SERIES = null;
+  PENDING_HARDCOVER = null;
+  PENDING_MERGE = null;
+  document.getElementById('mergePrefer').classList.remove('show');
+  document.getElementById('importPreviewTitle').textContent = title;
+  document.getElementById('importPreviewBody').innerHTML = html;
+  const confirmBtn = document.getElementById('importConfirm');
+  confirmBtn.style.display = PENDING_TIDY ? '' : 'none';
+  confirmBtn.textContent = confirm;
+  document.getElementById('importCancel').textContent = PENDING_TIDY ? 'Cancel' : 'Close';
+  document.getElementById('importPreview').classList.add('open');
+  document.getElementById('importPreview').scrollIntoView();   // it opens at the top, far above these buttons
+}
+
+function checkCatalogue(){
+  const {errors, warnings} = CatalogImport.validate(DATA, SERIES_INFO);
+  const people = CatalogImport.validateAuthors(DATA, AUTHORS);
+  errors.push(...people.errors);
+  warnings.push(...people.warnings);
+  const series = new Set(DATA.filter(b=> b.s).map(b=> b.s)).size;
+  const authors = Object.keys(AUTHORS).length;
+  let html = `<p>${DATA.length} books, ${series} series, ${Object.keys(SERIES_INFO).length} with release info, ` +
+    `${authors} author${authors === 1 ? '' : 's'} with info.</p>`;
+  if(errors.length) html += `<p class="warn">Errors (${errors.length}):</p>` + messageList(errors);
+  if(warnings.length) html += `<p class="warn">Needs a look (${warnings.length}):</p>` + messageList(warnings);
+  if(FORMAT_NOTES.length){
+    html += `<p>In an older format (read the current way here):</p>` + messageList(FORMAT_NOTES);
+    html += DISK_SAVE ? '<p>Rewrite data files to write them in the current format, as <code>make format</code> does.</p>'
+      : '<p>Any save under <code>make serve</code>, or <code>make format</code>, writes them in the current format.</p>';
+  }
+  if(!errors.length && !warnings.length && !FORMAT_NOTES.length) html += '<p>No problems found.</p>';
+  PENDING_TIDY = DISK_SAVE && FORMAT_NOTES.length ? 'format' : null;
+  showTidyPreview('Check the catalogue', html, 'Rewrite data files');
+}
+
+// Keep each box set as its own book and as its titles, in a copy of DATA (CatalogImport.boxSetBooks).
+function boxSetsIntoCopy(){
+  const data = JSON.parse(JSON.stringify(DATA));
+  const report = CatalogImport.boxSetBooks(data, EXCLUSIONS);
+  const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
+  return {data, report, errors};
+}
+
+function previewBoxSets(){
+  const {report, errors} = boxSetsIntoCopy();
+  let html = `<p>Box sets: ${report.boxSets.length}</p>`;
+  if(report.boxSets.length){
+    html += '<ul>' + report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}: ${b.titles} title${b.titles === 1 ? '' : 's'} already here</li>`).join('') + '</ul>';
+  }
+  if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
+  html += `<p>New: ${report.added.length}</p>`;
+  if(report.added.length){
+    html += `<ul>${report.added.map(b=> `<li>${bookLine(b)}</li>`).join('')}</ul>`;
+  }
+  if(report.boxSets.some(b=> b.added)){
+    html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until the Audible series lookup names it (or you rename it on its card).</p>';
+  }
+  if(errors.length){
+    html += '<p class="warn">Validation failed, nothing will be changed:</p>' + messageList(errors, 10);
+  } else if(!report.added.length){
+    html += '<p>Every box set is already kept both as its own book and as its titles.</p>';
+  }
+  PENDING_TIDY = errors.length || !report.added.length ? null : 'box-sets';
+  showTidyPreview('Box sets', html, `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`);
+}
+
+function applyTidy(){
+  const pending = PENDING_TIDY;
+  closeImportPreview();
+  if(pending === 'format'){
+    // a save writes the books as the page holds them, which is the current format
+    showIoStatus('');   // so the save says when it is done
+    persist();
+    return;
+  }
+  // applied again, in case books were edited while the preview was open
+  const {data, report, errors} = boxSetsIntoCopy();
+  if(errors.length){ showIoStatus('The catalogue changed and the box sets no longer validate; nothing was changed.', true); return; }
+  setData(data);
+  refreshPage(); persist();
+  const added = report.added.length;
+  showIoStatus(`Added ${added} book${added === 1 ? '' : 's'} for box sets.` + keepHint('data/books.json'));
 }
 
 // ------------------------------------------------------------ Hardcover
@@ -523,6 +624,7 @@ function showHardcoverResult(mode, result, pending){
   PENDING_SERIES = null;
   PENDING_HARDCOVER = pending && result.code === 0 ? mode : null;
   PENDING_MERGE = null;
+  PENDING_TIDY = null;
   document.getElementById('mergePrefer').classList.remove('show');
   const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
   const took = Number.isFinite(result.elapsed) ? ` (took ${minutes(result.elapsed)})` : '';
@@ -552,6 +654,7 @@ function closeImportPreview(){
   PENDING_IMPORT = null;
   PENDING_SERIES = null;
   PENDING_MERGE = null;
+  PENDING_TIDY = null;
   document.getElementById('mergePrefer').classList.remove('show');
   PENDING_HARDCOVER = null;
   document.getElementById('importPreview').classList.remove('open');
@@ -577,7 +680,7 @@ document.getElementById('importCsvFile').addEventListener('change', e=>{
   if(file) importCsv(IMPORT_KIND, file);
   e.target.value = '';
 });
-document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : PENDING_SERIES ? applySeries() : applyImport());
+document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : PENDING_SERIES ? applySeries() : applyImport());
 for(const mode of Object.keys(HARDCOVER_MODES)){
   document.getElementById(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
 }
@@ -592,6 +695,8 @@ document.getElementById('importSeries').addEventListener('change', e=>{
 });
 document.getElementById('importCancel').addEventListener('click', closeImportPreview);
 
+document.getElementById('checkBtn').addEventListener('click', checkCatalogue);
+document.getElementById('boxSetsBtn').addEventListener('click', previewBoxSets);
 document.getElementById('exportBtn').addEventListener('click', exportBackup);
 document.getElementById('exportGoodreadsBtn').addEventListener('click', exportGoodreads);
 document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());

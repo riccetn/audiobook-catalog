@@ -1456,3 +1456,12 @@ test('hardcoverAsker asks one query a request, pausing between them, and says pl
   assert.equal(sent.at(-1)[1].headers['user-agent'], 'test');
   assert.equal(C.cleanHardcoverToken('  bearer abc '), 'abc');
 });
+
+test('formatNotes says what in books.json is from an older format', () => {
+  assert.deepEqual(C.formatNotes([{ t: 'Gull Isle', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0SET00001' } }] }]), []);
+  const notes = C.formatNotes([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B0OLD00001' }] }]);
+  assert.equal(notes.length, 2);
+  assert.match(notes[0], /1 book\(s\) keep an edition's ASIN as "id"/);
+  assert.match(notes[1], /1 book\(s\) keep their authors or narrators as one comma separated text/);
+  assert.deepEqual(C.formatNotes({}), []);
+});

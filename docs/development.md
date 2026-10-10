@@ -13,7 +13,7 @@ data/
   hardcover-token     YOUR Hardcover API token, if you saved one (git-ignored)
   raw/                your Audible/Goodreads exports (git-ignored)
 index.html, app.js    the catalogue: browse by series or all books, edit books and series info
-import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, backups (Export / Restore / Merge)
+import.html, import.js    Audible and Goodreads CSV imports, Goodreads CSV export, Check / Box sets, backups (Export / Restore / Merge)
 duplicates.html, duplicates.js    find and merge books entered twice
 authors.html, authors.js    the authors, and each author's page: bio, links, series and titles
 store.js              shared by the pages: loads data/books.json (or data/sample/), keeps and saves edits

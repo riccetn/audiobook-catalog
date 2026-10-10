@@ -19,6 +19,7 @@ export let AUTHORS_BASELINE = '';     // and for authors.json
 let STARTUP_NOTICE = '';
 export let EXCLUSIONS = CatalogImport.parseExclusions('');   // data/excluded.txt: books imports must never re-add
 export let NEW_EXCLUDED = [];         // entries added to EXCLUSIONS in the page that data/excluded.txt does not have yet
+export let FORMAT_NOTES = [];         // what in data/books.json is from an older format (CatalogImport.formatNotes); any save rewrites it
 export let DISK_SAVE = false;         // `make serve` saves edits straight to data/books.json, data/series-info.json and data/authors.json
 let SAVING = false;            // a save to disk is on its way
 let SAVE_AGAIN = false;        // more edits came in while it was
@@ -161,6 +162,7 @@ async function saveToDisk(){
   if(JSON.stringify(body.books) !== JSON.stringify(DATA) || JSON.stringify(authors) !== JSON.stringify(AUTHORS)){
     DATA = body.books; AUTHORS = authors; refreshPage(); updateNav();
   }
+  FORMAT_NOTES = [];    // the save wrote the files in the current format
   try{ localStorage.removeItem(LS_KEY); LOCAL_SEEN = null; }catch(e){}
   if(!document.getElementById('ioStatus').textContent) showIoStatus('Saved.');
 }
@@ -274,10 +276,21 @@ export function unsavedEdits(){
   try{ return localStorage.getItem(LS_KEY) !== null; }catch(e){ return false; }
 }
 
+// What `node catalog.js format` would change in the data files: older shapes of books, and a layout
+// other than the compact JSON the tools write (a file edited by hand, say).
+function formatNotes(booksText, infoText, authorsText){
+  const notes = CatalogImport.formatNotes(JSON.parse(booksText));
+  const loose = [['books.json', booksText], ['series-info.json', infoText], ['authors.json', authorsText]]
+    .filter(([, text])=> text.trim() !== JSON.stringify(JSON.parse(text))).map(([name])=> name);
+  if(loose.length) notes.push(`${loose.join(', ')} ${loose.length === 1 ? 'is' : 'are'} not written as the compact JSON the tools write`);
+  return notes;
+}
+
 // Load the catalogue from data/ again, after the server changed it (a Hardcover import), and redraw.
 export async function reloadFromDisk(){
   const {booksText, infoText, authorsText, excludedText} = await loadData();
   DATA = CatalogImport.fixBooks(JSON.parse(booksText));
+  FORMAT_NOTES = formatNotes(booksText, infoText, authorsText);
   SERIES_INFO = JSON.parse(infoText);
   AUTHORS = JSON.parse(authorsText);
   EXCLUSIONS = CatalogImport.parseExclusions(excludedText);
@@ -421,6 +434,7 @@ export async function startPage(init, page){
     INFO_BASELINE = CatalogImport.fingerprint(infoText);
     AUTHORS_BASELINE = CatalogImport.fingerprint(authorsText);
     DATA_DIR = dir;
+    FORMAT_NOTES = dir === 'data/' ? formatNotes(booksText, infoText, authorsText) : [];   // the demo is never rewritten
     DISK_SAVE = await detectDiskSave(dir);
   }catch(e){
     document.getElementById('subtitle').textContent =

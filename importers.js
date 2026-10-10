@@ -605,6 +605,35 @@ function fixBooks(books){
   return books.map(b => fixSeriesTitle(fixPeople(fixEditions(fixReadDates(b), pickHcb))));
 }
 
+/**
+ * What in `raw` (books.json as read, before fixBooks) is from an older format: a sentence per kind, each
+ * saying how many books it is and how they are read; `make format`, or any save, writes them the current
+ * way. Empty when the books are all in the current format.
+ */
+function formatNotes(raw){
+  if(!Array.isArray(raw)) return [];
+  const notes = [];
+  if(raw.some(b => b && typeof b === 'object' && ['id', 'gr', 'isbn', 'n'].some(k => k in b))){
+    notes.push('some books keep their ids, ISBNs or narrator on the book, from before editions; they are read as editions');
+  }
+  const oldAsins = raw.filter(b => bookEditions(b).some(ed => 'id' in ed)).length;
+  if(oldAsins){
+    notes.push(`${oldAsins} book(s) keep an edition's ASIN as "id", from before ASINs were kept by site; it is read as the ` +
+      'audible.com ASIN');
+  }
+  const oldEditions = raw.filter(b => bookEditions(b).some(ed => 'hcb' in ed || Array.isArray(ed.isbn))).length;
+  if(oldEditions){
+    notes.push(`${oldEditions} book(s) keep a Hardcover book id on an edition or several ISBNs on one edition; they are read ` +
+      'with the id on the book and one edition per ISBN');
+  }
+  const textNames = raw.filter(b => b && typeof b === 'object' &&
+    (typeof b.a === 'string' || typeof b.n === 'string' || bookEditions(b).some(ed => typeof ed.n === 'string'))).length;
+  if(textNames) notes.push(`${textNames} book(s) keep their authors or narrators as one comma separated text; they are read as lists`);
+  const retitled = raw.filter(b => b && typeof b === 'object' && fixSeriesTitle(b) !== b).length;
+  if(retitled) notes.push(`${retitled} title(s) still hold their series ("Title: Series, Book 3"); they are read with the series split off`);
+  return notes;
+}
+
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 /**
@@ -2828,7 +2857,7 @@ function mergeBackup(books, seriesInfo, exclusions, backup, prefer, notDuplicate
 }
 
 export {
-  fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
+  fingerprint, norm, seriesNorm, tidyText, parseReadDate, parseReadDates, fixReadDates, fixBooks, formatNotes, normalizeName, tidyBook, firstAuthor, bookKeys, lookupKeys,
   splitNames, namesText, fixNames, fixPeople,
   parseIsbn, parseIsbns, splitIsbns, bookIsbns, rowIsbns,
   ASIN_SITE, AUDIBLE_SITE, AMAZON_SITE, editionAsins, asinOn, asinsText, parseAsins,

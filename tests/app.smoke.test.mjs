@@ -1796,3 +1796,56 @@ test('with make serve, author info is saved to data/authors.json with the books'
   assert.ok(!storage.has('audiobook-catalog-data'));
   assert.equal(els.ioStatus.textContent, 'Saved author info for Me.');
 });
+
+test('Check on the import page lists problems and older formats, and rewrites the data files under make serve', async () => {
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', id: 'B0OLD00001' }], null, 2);
+  const info = JSON.stringify({ Nowhere: { total: 3, status: 'ongoing' } });
+  const files = { 'data/books.json': mine, 'data/series-info.json': info };
+  const plain = await boot({ page: 'import.html', files });
+  plain.els.checkBtn.listeners.click[0]();
+  const report = plain.els.importPreviewBody.innerHTML;
+  assert.match(report, /1 books, 0 series, 1 with release info, 0 authors with info/);
+  assert.match(report, /Errors \(1\):.*&#39;Nowhere&#39; matches no series/s);
+  assert.match(report, /some books keep their ids, ISBNs or narrator on the book/);
+  assert.match(report, /books\.json is not written as the compact JSON the tools write/);
+  assert.equal(plain.els.importConfirm.style.display, 'none', 'nothing here can rewrite the files');
+
+  const saves = [];
+  const api = async (init, url) => {
+    if (url !== 'api/save') return { status: 200, body: {} };
+    if (init.method !== 'PUT') return { status: 200, body: { writable: true, audible: false, hardcover: false } };
+    const body = JSON.parse(init.body);
+    saves.push(body);
+    return { status: 200, body: { base: 'b', infoBase: 'i', authorsBase: 'a', books: body.books } };
+  };
+  const served = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api });
+  served.els.checkBtn.listeners.click[0]();
+  assert.equal(served.els.importConfirm.style.display, '');
+  assert.equal(served.els.importConfirm.textContent, 'Rewrite data files');
+  await served.els.importConfirm.listeners.click[0]();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(saves.map(s => s.books), [[{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]]);
+  served.els.checkBtn.listeners.click[0]();
+  assert.doesNotMatch(served.els.importPreviewBody.innerHTML, /older format/, 'the save wrote the current format');
+  assert.equal(served.els.importConfirm.style.display, 'none');
+});
+
+test('Box sets on the import page adds a set beside the titles sharing its edition, once confirmed', async () => {
+  const set = { asin: { 'audible.com': 'B0SET00001' } };
+  const mine = JSON.stringify([
+    { t: 'Gull Isle', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [set] },
+    { t: 'Second Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [set] },
+  ]);
+  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  els.boxSetsBtn.listeners.click[0]();
+  assert.match(els.importPreviewBody.innerHTML, /Gull Isle, Books 1-2 &mdash; Ann Vale: 2 titles already here/);
+  assert.match(els.importPreviewBody.innerHTML, /New: 1/);
+  assert.equal(get('DATA.length'), 2, 'nothing changes before it is confirmed');
+  assert.equal(els.importConfirm.textContent, 'Add 1 book');
+  els.importConfirm.listeners.click[0]();
+  assert.deepEqual(get('DATA[2]'), { t: 'Gull Isle, Books 1-2', a: ['Ann Vale'], s: 'Gull Isle', sn: '1-2', e: [set] });
+  assert.match(els.ioStatus.textContent, /Added 1 book for box sets/);
+  els.boxSetsBtn.listeners.click[0]();
+  assert.match(els.importPreviewBody.innerHTML, /already kept both as its own book and as its titles/);
+  assert.equal(els.importConfirm.style.display, 'none');
+});
