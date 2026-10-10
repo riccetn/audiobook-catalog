@@ -1,7 +1,7 @@
 // The catalogue page: the series overview, all books, and editing books and series info.
 // Loading and saving live in store.js.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, keepHint, showIoStatus, lookupHardcoverBook, startPage } from './store.js';
+import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage } from './store.js';
 
 export let VIEW = 'series';           // 'series' | 'library'
 export let SERIES_FILTER = null;      // series name, '__standalone__', or null
@@ -221,8 +221,17 @@ document.getElementById('results').addEventListener('click', e=>{
   if(st.book !== null) openBook(st.book); else navigate({view: st.view, series: st.series, book: null});
 });
 
+// A new catalogue, with nothing in it yet: where books come from.
+function renderEmpty(){
+  document.getElementById('subtitle').textContent = 'Your catalogue is empty';
+  document.getElementById('resultCount').textContent = '';
+  document.getElementById('results').innerHTML = '<p class="empty">No books yet. Add one with + Add a book under <a href="#books">All Books</a>, ' +
+    'import your Audible, Goodreads or Hardcover library on <a href="import.html">Import &amp; export</a>, or restore a backup there.</p>';
+}
+
 export function render(){
   homeBookForm();   // out of the list before it is redrawn, which would drop it
+  if(!DATA.length){ renderEmpty(); return; }
   if(VIEW === 'series'){ renderSeriesOverview(); return; }
 
   const q = document.getElementById('q').value.trim();
@@ -293,7 +302,7 @@ export function render(){
         if(EDIT_INDEX === i){ closeForm(); }
         else if(EDIT_INDEX !== null && EDIT_INDEX > i) EDIT_INDEX--;
         populateFilters(); render(); persist();
-        showIoStatus(`Removed ${removed.t}; imports will skip it.` + keepHint('data/books.json and data/excluded.txt'));
+        showIoStatus(`Removed ${removed.t}; imports will skip it.`);
       } else {
         el.dataset.confirm = '1';
         el.innerHTML = '&check;';
@@ -386,9 +395,8 @@ function renderSeriesOverview(){
 }
 
 // ------------------------------------------------------------------ series info
-// Edits the series' entry in series-info.json (released total, status, note, author site) and its name,
-// which is renamed on every book in the series. Like book edits, it is saved to disk by `make serve`
-// (see persist).
+// Edits the series' entry in SERIES_INFO (released total, status, note, author site) and its name,
+// which is renamed on every book in the series. Like book edits, it is kept in this browser (see persist).
 function seriesEditButton(name){
   const label = SERIES_INFO[name] ? 'Edit series info' : 'Add series info';
   return `<button class="iconbtn sedit" data-series="${esc(name)}" title="${label}" aria-label="${label}">&#9998;</button>`;
@@ -441,7 +449,7 @@ function saveSeriesForm(){
     entry = {total: /^\d+$/.test(totalText) ? parseInt(totalText, 10) : totalText.toLowerCase(),
       status: document.getElementById('sf_status').value, note};
     if(url) entry.url = url;
-    // the same rules as `make validate`, applied to just this series (checked before the rename,
+    // the same rules as Check, applied to just this series (checked before the rename,
     // under the name its books have now)
     const {errors} = CatalogImport.validate(DATA, {[name]: entry});
     const problems = errors.filter(e=> e.startsWith('series-info')).map(e=> e.replace(/^series-info(\[[^\]]*\])?: /, ''));
@@ -463,8 +471,8 @@ function saveSeriesForm(){
   if(renamed && SERIES_FILTER === name) navigate({series: newName}, 'replace');
   render(); persist();
   showIoStatus(renamed
-    ? `Renamed ${name} to ${newName} on ${count} book${count === 1 ? '' : 's'}.` + keepHint('data/books.json')
-    : `Saved series info for ${name}.` + keepHint('data/series-info.json'));
+    ? `Renamed ${name} to ${newName} on ${count} book${count === 1 ? '' : 's'}.`
+    : `Saved series info for ${name}.`);
 }
 
 function removeSeriesInfo(){
@@ -825,10 +833,5 @@ export function pickMergeBook(i){
 }
 
 // After a save to disk tidied the books (store.js).
-function refreshPage(){
-  populateFilters(); render();
-}
-
 // The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
-export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); },
-  {refresh: refreshPage});
+export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); });

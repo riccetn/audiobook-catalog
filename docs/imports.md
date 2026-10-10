@@ -34,9 +34,7 @@ or Goodreads id on each (see [box sets](data-format.md)), with the set's name as
 description. The set's own book is found again by that edition, by its title, or by author, series and
 range, so the other export's copy of it fills it in rather than adding it twice. A title you already have
 (same first author, series and number) gains the edition beside its own editions, which are never filled
-in from the set's; a title you don't have yet is added as `Ember, Book 2`. The Audible series lookup
-(`--series`, or the option under the import buttons with `make serve`, or `node catalog.js series` later)
-renames it after book 2 in Audible's listing of the series; otherwise rename it yourself. Each title
+in from the set's; a title you don't have yet is added as `Ember, Book 2`: rename it in its edit form. Each title
 gets the set's date read when it has none. The import lists the box sets it kept. Importing the same set
 from the other export later fills in that edition on the set and every title (Goodreads' id beside
 Audible's ASIN). A box set you already have as one book gains its titles the same way.
@@ -51,11 +49,10 @@ say which titles it holds), or when it has no ASIN, Goodreads id or ISBN to tie 
 In a series, a box set (any book whose number is a range) is listed after the titles, and the series
 counts its titles, not the set: "3 owned + 1 box set".
 
-**Box sets already in your catalogue**: `node catalog.js box-sets` (`--dry-run` to see what it would do
-first) brings the box sets you imported before this up to date: a set kept as one book (a range and an
+**Box sets already in your catalogue**: **Box sets** on the *Import & export* page brings the box sets you
+imported before this up to date: a set kept as one book (a range and an
 ASIN, Goodreads id, Hardcover id or ISBN) gains its titles as an import would add them, and titles that
 share an edition and are numbers in a row of one series gain the set as its own book, named by the
 edition's description (the set's name, from an import) or else `Series, Books 1-3`, with the dates read
-all its titles have. Nothing in `data/excluded.txt` is added, so a title or set you removed stays away.
-**Box sets** on the *Import & export* page does the same in the app: it lists what it would add, and
-changes nothing until you confirm.
+all its titles have. Nothing on the exclusion list is added, so a title or set you removed stays away.
+It lists what it would add, and changes nothing until you confirm.

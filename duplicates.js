@@ -3,12 +3,12 @@
 // (duplicates.html#merge=3,7). Merging keeps one entry, with the title, author and series you
 // pick, and every genre, date read and edition of the others; the rest are removed without excluding
 // them from imports (the kept book carries their ids, so an import finds it). Pairs marked
-// "Not duplicates" are remembered in this browser, in data/not-duplicates.txt with `make serve`, and in backups (store.js).
+// "Not duplicates" are remembered in this browser and in backups (store.js).
 // The editions of the merged entries become one edition when none disagree on an ASIN or Goodreads id
 // (one book imported from both Audible and Goodreads), unless you untick that. Books merged before
 // that, whose editions still look like one, are listed below the duplicates to be joined the same way.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, setData, DISK_SAVE, NOT_DUPLICATES, addNotDuplicates, readDates, esc, updateNav, persist, keepHint, showIoStatus, startPage } from './store.js';
+import { DATA, SERIES_INFO, setData, NOT_DUPLICATES, addNotDuplicates, readDates, esc, updateNav, persist, showIoStatus, startPage } from './store.js';
 
 export let DUP_GROUPS = [];           // groups of DATA indexes shown
 export let DUP_PICKS = [];            // per group: which book's title, author and series to keep
@@ -167,7 +167,7 @@ export function mergeGroup(g){
   setData(data);
   forgetManualPair();            // its indexes are stale now
   refreshPage(); persist();
-  showIoStatus(`Merged ${idx.length} entries into ${merged.t}.` + keepHint('data/books.json'));
+  showIoStatus(`Merged ${idx.length} entries into ${merged.t}.`);
 }
 
 // Remember that the books of group `g` are different books (see addNotDuplicates).
@@ -175,7 +175,7 @@ export function keepApart(g){
   const books = (DUP_GROUPS[g] || []).map(i=> DATA[i]);
   addNotDuplicates(books.flatMap((x, k)=> books.slice(k + 1).map(y=> CatalogImport.duplicatePairKey(x, y))));
   if(DUP_MANUAL && DUP_MANUAL.join() === (DUP_GROUPS[g] || []).join()) forgetManualPair();
-  if(DISK_SAVE) persist(); else updateNav();      // a save takes the mark to data/not-duplicates.txt
+  updateNav();
   refreshPage();
 }
 
@@ -193,15 +193,15 @@ export function joinBookEditions(i){
   setData(data);
   forgetManualPair();
   refreshPage(); persist();
-  showIoStatus(`${b.t} now has one edition.` + keepHint('data/books.json'));
+  showIoStatus(`${b.t} now has one edition.`);
 }
 
 // Remember that the editions of book `i` are different editions (see addNotDuplicates).
 export function keepEditionsApart(i){
   if(!DATA[i]) return;
   addNotDuplicates([CatalogImport.editionsKey(DATA[i])]);
-  if(DISK_SAVE) persist(); else updateNav();      // a save takes the mark to data/not-duplicates.txt
+  updateNav();
   refreshPage();
 }
 
-export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); }, {refresh: refreshPage});
+export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); });

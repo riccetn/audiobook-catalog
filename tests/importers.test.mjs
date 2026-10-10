@@ -275,74 +275,6 @@ test('Audible: a title holding its series is split when the Series column is emp
   assert.deepEqual(result.records, [{ t: 'Second Wind', a: ['Ann'], s: 'Fantasy Adventures', sn: '2', ...ed({ asin: { 'audible.com': 'B2' } }) }]);
 });
 
-// -------------------------------------------------------- series from Audible
-// Shaped like answers from Audible's catalogue API, with invented books.
-const product = (...series) => ({ product: { asin: 'X', series: series.map(([title, sequence, asin]) => ({ title, sequence, asin })) } });
-
-test('Audible catalogue answers: a book\'s series and a series\' released total', () => {
-  assert.equal(C.audibleProductUrl('B0SAMPLE01', 'uk', 'series'),
-    'https://api.audible.co.uk/1.0/catalog/products/B0SAMPLE01?response_groups=series');
-  assert.deepEqual(C.audibleSeries(product(['The Lantern  Coast', '2', 'S1'], ['Odd', 'Book 3', 'S2'])), [
-    { name: 'The Lantern Coast', number: '2', asin: 'S1' },
-    { name: 'Odd', number: null, asin: 'S2' },
-  ]);
-  assert.deepEqual(C.audibleSeries({ product: {} }), []);
-  assert.deepEqual(C.audibleSeries(null), []);
-  const children = (...seqs) => ({ product: { relationships: seqs.map(sequence => ({ relationship_to_product: 'child', sequence })) } });
-  assert.equal(C.audibleSeriesTotal(children('1', '2', '2.5', '1-3', '4')), 4);
-  assert.equal(C.audibleSeriesTotal(children('1', '1-6')), 6);
-  assert.equal(C.audibleSeriesTotal(children('', '0.5')), null);
-  assert.equal(C.audibleSeriesTotal({ product: { relationships: [{ relationship_to_product: 'parent', sequence: '9' }] } }), null);
-  assert.equal(C.audibleSeriesTotal(null), null);
-});
-
-test('series lookups: books missing a series or number, and one book per series without release info', () => {
-  const books = [
-    book('Loose', 'Ann', ed({ asin: { 'audible.com': 'B1' } })),
-    book('Unnumbered', 'Ann', { s: 'Gull Isle', ...ed({ asin: { 'audible.com': 'B2' } }) }),
-    book('Gull 2', 'Ann', { s: 'Gull Isle', sn: '2', ...ed({ asin: { 'audible.com': 'B3' } }) }),
-    book('Known 1', 'Ann', { s: 'Known', sn: '1', ...ed({ asin: { 'audible.com': 'B4' } }) }),
-    book('No ASIN', 'Ann', ed({ gr: '7' })),
-  ];
-  assert.deepEqual(C.seriesLookups(books, { Known: { total: 3, status: 'ongoing' } }), ['B1', 'B2']);
-  assert.deepEqual(C.seriesLookups(books, {}), ['B1', 'B2', 'B4']);
-});
-
-test('series from Audible fill only what is empty, in the spelling in use', () => {
-  const books = [
-    book('Loose', 'Ann', ed({ asin: { 'audible.com': 'B1' } })),
-    book('Unnumbered', 'Ann', { s: 'Gull Isle', ...ed({ asin: { 'audible.com': 'B2' } }) }),
-    book('Other number', 'Ann', { s: 'Gull Isle', sn: '5', ...ed({ asin: { 'audible.com': 'B3' } }) }),
-    book('Other series', 'Ann', { s: 'My Own Name', ...ed({ asin: { 'audible.com': 'B4' } }) }),
-    book('Nested', 'Ann', ed({ asin: { 'audible.com': 'B5' } })),
-  ];
-  const found = new Map([
-    ['B1', C.audibleSeries(product(['The Gull Isle Series', '1', 'SG']))],
-    ['B2', C.audibleSeries(product(['Gull Isle', '3', 'SG']))],
-    ['B3', C.audibleSeries(product(['Gull Isle', '4', 'SG']))],
-    ['B4', C.audibleSeries(product(['Theirs', '2', 'ST']))],
-    ['B5', C.audibleSeries(product(['Thornmere: Wardens', '1', 'SW'], ['Thornmere', '6', 'SM']))],
-  ]);
-  const report = C.seriesFromAudible(books, found);
-  assert.deepEqual(books.map(b => [b.s, b.sn]), [
-    ['Gull Isle', '1'], ['Gull Isle', '3'], ['Gull Isle', '5'], ['My Own Name', undefined], ['Thornmere', '6'],
-  ]);
-  assert.deepEqual(report.filled.map(b => b.t), ['Loose', 'Unnumbered', 'Nested']);
-  assert.deepEqual([...report.series], [['Gull Isle', 'SG'], ['Thornmere', 'SM']]);
-  assert.deepEqual(report.warnings, []);
-
-  const twoSeries = [book('Torn', 'Ann', ed({ asin: { 'audible.com': 'B6' } }))];
-  const warned = C.seriesFromAudible(twoSeries, new Map([['B6', C.audibleSeries(product(['Red', '1'], ['Blue', '2']))]]));
-  assert.deepEqual([twoSeries[0].s, twoSeries[0].sn], ['Red', '1']);
-  assert.match(warned.warnings[0], /several series/);
-});
-
-test('series from Audible: a box set\'s ASIN gives each title the series, not the set\'s number', () => {
-  const books = [book('First', 'Ann', ed({ asin: { 'audible.com': 'BOX' } })), book('Second', 'Ann', ed({ asin: { 'audible.com': 'BOX' } }))];
-  C.seriesFromAudible(books, new Map([['BOX', C.audibleSeries(product(['Gull Isle', '1-2', 'SG']))]]));
-  assert.deepEqual(books.map(b => [b.s, b.sn]), [['Gull Isle', undefined], ['Gull Isle', undefined]]);
-});
-
 // --------------------------------------------------------------- Goodreads
 const GR_HEADER = 'Book Id,Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n';
 
@@ -781,27 +713,6 @@ test('boxSetBooks keeps each box set in the catalogue as its own book and as its
   assert.deepEqual(plain[2], book('Saga, Books 1-2', 'X', { s: 'Saga', sn: '1-2', e: [{ gr: '5' }] }));
 });
 
-test('series from Audible: a box set\'s titles still named "Series, Book N" get the listing\'s titles', () => {
-  const set = { asin: { 'audible.com': 'BBOX' } };
-  const books = [book('Spark', 'Ann', { s: 'Ember', sn: '1', ...ed(set) }), book('Ember, Book 2', 'Ann', { s: 'Ember', sn: '2', ...ed(set) }),
-    book('Ember, Book 3', 'Ann', { s: 'Ember', sn: '3', ...ed(set) }), book('Gull Isle, Book 1', 'Ann', { s: 'Gull Isle', sn: '1' })];
-  const info = { Ember: { total: 3, status: 'complete' } };
-  assert.deepEqual(C.seriesLookups(books, info), ['BBOX'], 'looked up although the series has release info');
-  const listing = C.audibleSeriesListing({ product: { relationships: [
-    { relationship_to_product: 'child', sequence: '1-3', title: 'Ember: Books 1-3' },
-    { relationship_to_product: 'child', sequence: '2', title: ' Flame ' }, { relationship_to_product: 'child', sequence: '2', title: 'Flame (Dramatized)' },
-    { relationship_to_product: 'child', sequence: '3', title: 'Ember Falls: Ember, Book 3' }, { relationship_to_product: 'parent', sequence: '4', title: 'No' },
-  ] } });
-  assert.deepEqual(listing, { total: 3, titles: { 2: 'Flame', 3: 'Ember Falls: Ember, Book 3' } });
-  const series = new Map([['Ember', 'SER']]);
-  assert.deepEqual(C.seriesListingLookups(books, info, series), ['SER']);
-  assert.deepEqual(C.seriesListingLookups(books.slice(0, 1), info, series), [], 'nothing to name, release info known');
-  const renamed = C.boxSetTitlesFromAudible(books, series, new Map([['SER', listing]]));
-  assert.deepEqual(renamed.map(([b, old]) => [old, b.t]), [['Ember, Book 2', 'Flame'], ['Ember, Book 3', 'Ember Falls']]);
-  assert.deepEqual(books.map(b => b.t), ['Spark', 'Flame', 'Ember Falls', 'Gull Isle, Book 1']);
-  assert.deepEqual(C.addSeriesTotals({}, series, new Map([['SER', listing]]), 'us', '2026-10-03'), ['Ember']);
-});
-
 test('Audible and Goodreads exports: a box set is read with its range', () => {
   const audible = C.readAudible('Title,Title Short,Authors,Series,Book Numbers,Progress,ASIN\n' +
     '"Ember: Books 1-3","Ember: Books 1-3",Ann Vale,"Ember (books 1-3)",1-3,Finished,BBOX\n');
@@ -867,11 +778,6 @@ test('ASINs by site: each site may have its own, so only another ASIN on the sam
   // an ASIN in a Goodreads-style CSV is amazon.com's
   assert.deepEqual(C.readGoodreads('Book Id,Title,Author,Binding,Exclusive Shelf,ASIN\n42,Tidewater,Ann Vale,Audible Audio,read,B0TIDEWATA\n').records[0].e,
     [{ asin: { 'amazon.com': 'B0TIDEWATA' }, gr: '42' }]);
-  // the series lookup asks a store about its own site's ASIN, else the matching Amazon site's, else another
-  const lookups = [book('One', 'A', ed({ asin: { 'audible.com': 'B1', 'audible.co.uk': 'U1' } })), book('Two', 'A', ed({ asin: { 'amazon.co.uk': 'K2' } })),
-    book('Three', 'A', ed({ asin: { 'amazon.com': 'M3' } }))];
-  assert.deepEqual(C.seriesLookups(lookups, {}, null, 'uk'), ['U1', 'K2', 'M3']);
-  assert.deepEqual(C.seriesLookups(lookups, {}), ['B1', 'K2', 'M3']);
 });
 
 test('editions as fields: one field per part in the book form, each checked on its own', () => {

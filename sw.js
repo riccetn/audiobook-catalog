@@ -1,11 +1,9 @@
 // The service worker that makes the catalogue installable as an app (on a phone, say) and usable offline.
 // Every request goes to the network first, so a new version of the app shows up at once; the cached copy
-// is only used when the network fails. Your own data/ files and saves are never cached: a phone keeps
-// its catalogue in localStorage (see keepOnDevice in store.js), and `make serve` must always be asked.
-const CACHE = 'audiobook-catalog-v1';
+// is only used when the network fails. The catalogue itself lives in localStorage (store.js), not in files.
+const CACHE = 'audiobook-catalog-v2';
 const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'styles.css', 'importers.js', 'store.js', 'app.js',
-  'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
-  'data/sample/books.json', 'data/sample/series-info.json', 'data/sample/authors.json'];
+  'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(CACHE).then(c=> c.addAll(APP)).then(()=> self.skipWaiting()));
@@ -17,12 +15,13 @@ self.addEventListener('activate', e=>{
     .then(()=> self.clients.claim()));
 });
 
-// Whether a request may be answered from the cache: the app itself and the demo data, nothing personal.
+// Whether a request may be answered from the cache: the app itself, never anything under data/ (files
+// kept beside it from before the catalogue lived in the browser).
 function cacheable(req){
   const url = new URL(req.url);
   if(req.method !== 'GET' || url.origin !== location.origin) return false;
   const rel = url.pathname.slice(new URL(self.registration.scope).pathname.length);
-  return !rel.startsWith('api/') && (!rel.startsWith('data/') || rel.startsWith('data/sample/'));
+  return !rel.startsWith('data/');
 }
 
 self.addEventListener('fetch', e=>{

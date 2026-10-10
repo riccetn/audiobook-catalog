@@ -1,6 +1,8 @@
 # Data format
 
-`data/books.json` is a list of titles, with short keys to keep the file small:
+The catalogue is kept in the browser ([Running the app and keeping your catalogue](saving.md)) in the
+shape a backup has: `{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`.
+The books (`books.json` before the catalogue moved into the browser) are a list of titles, with short keys to keep it small:
 
 | key  | meaning                                             | required |
 |------|-----------------------------------------------------|----------|
@@ -22,7 +24,7 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 | `asin` | the edition's ASINs, by site: `{"audible.com": "B0…", "amazon.com": "B0…"}`. Amazon and each of its Audible and Amazon sites may give one edition an ASIN of its own, so each is kept under its site's address (`audible.com`, `audible.co.uk`, `amazon.com`, `amazon.de`, …). Re-imports recognise the book by any of them; only another ASIN on the same site makes another edition |
 | `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
 | `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
-| `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page or `sync-export` saves |
+| `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page saves |
 | `n`    | list of this edition's narrators, one name each (`["Tobias Frane"]`)     |
 | `p`    | publisher                                                                |
 | `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
@@ -43,10 +45,10 @@ audible.com ASIN.
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
 titles, with the same ASIN, Goodreads id or ISBN; that shared identifier is what ties them together.
 The page shows "Also in this edition: …" on each of them, and editing the edition on one updates it on
-the others. `make validate` warns when the copies disagree. A box set is also a book of its own, whose
+the others. **Check** warns when the copies disagree. A box set is also a book of its own, whose
 series number is the range it holds (`"sn": "2-3"`), with the same edition. Imports keep a box set this
-way, as its own book and as its titles ([Box sets](imports.md#box-sets)), and `node catalog.js box-sets`
-brings older box sets up to date. (A box set with nothing to tie it to its titles is just the one book
+way, as its own book and as its titles ([Box sets](imports.md#box-sets)), and **Box sets** on the
+*Import & export* page brings older box sets up to date. (A box set with nothing to tie it to its titles is just the one book
 with a range.)
 
 **Older files**: before editions, a book held its `id`, `gr` and `isbn` itself, and its narrator (`n`)
@@ -58,17 +60,17 @@ an edition of its own), and the Hardcover book id moves to the book (a box set's
 its titles, gives way to the book's own). Until 2026-10 the authors and narrators were one comma
 separated text (`"a": "Ann Vale, Bo Reed"`); that is read as a list, split at commas, semicolons, `&`
 and `and` (a suffix such as `Jr.` stays with its name). Until 2026-10 an edition had one ASIN, `id`,
-which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). `make validate` (or **Check** on the *Import & export* page) mentions all of these, and
-`make format`, any save from the page (**Rewrite data files** after a **Check** under `make serve`), an import or `sync-export`, writes them in the new shape.
+which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). **Check** on the *Import & export* page
+mentions all of these, and any save (**Save in the current format** after a **Check**, any edit or import) writes them in the new shape.
 
-`data/series-info.json` maps a series name (it must match `s` exactly) to
+The series info (`seriesInfo`, `series-info.json` before) maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
 `total` is the number of books released so far; `url` (an author or publisher site) is optional.
 
 ## Authors
 
-`data/authors.json` maps an author's name (it must match a name in some book's `a` exactly) to what you
-keep about them; every field is optional, and a catalogue without the file has no author info yet:
+The author info (`authors`, `authors.json` before) maps an author's name (it must match a name in some
+book's `a` exactly) to what you keep about them; every field is optional:
 
 ```json
 {"Marisol Quenby": {"bio": "Writes seafaring fantasy.\n\nLives by the sea.", "url": "https://example.com/",
@@ -85,22 +87,22 @@ keep about them; every field is optional, and a catalogue without the file has n
 | `goodreads` | their author page on Goodreads                                       |
 | `hardcover` | their author page on Hardcover                                       |
 
-Links must start with `http://` or `https://`; `make validate` warns when one is on another site than
+Links must start with `http://` or `https://`; **Check** warns when one is on another site than
 its key says, or when an entry matches no author of any book (an author renamed on their books). The
-series and titles on an author's page are not stored here: they come from `books.json`.
+series and titles on an author's page are not stored here: they come from the books.
 
-`make validate` checks all of this and warns about suspicious entries.
+**Check** checks all of this and warns about suspicious entries.
 
 ## Tidy names and spacing
 
 Authors and narrators keep a space between initials (`A. B. Quill`, not `A.B. Quill`), so the filters
 never list one person twice. Every text field also has stray spacing removed: runs of spaces, tabs,
-non-breaking or invisible characters, and leading/trailing whitespace. Both importers and
-`sync-export` apply this automatically (`tidyBook` in `importers.js`), and `make validate` warns
+non-breaking or invisible characters, and leading/trailing whitespace. The importers and the edit forms
+apply this automatically (`tidyBook` in `importers.js`), and **Check** warns
 about any value that is not tidy. Capitalisation and quote styles are left alone.
 
 ## Known data quirks
 
-`make validate` may warn about entries carried over from an Audible export, for example a series
+**Check** may warn about entries carried over from an Audible export, for example a series
 name such as `Some Series (book ), Other Series` when Audible lists several series for one book, or
-`∞` as a series number. Fix them with the edit form or in `data/books.json`.
+`∞` as a series number. Fix them with the edit form.

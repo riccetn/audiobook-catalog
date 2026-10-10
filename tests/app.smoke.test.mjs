@@ -1,6 +1,6 @@
 // Smoke test for the browser app. Runs the real index.html + app.js (and the modules it imports) in
-// Node against a tiny fake DOM and a fake fetch serving the demo data, so it needs no dependencies and
-// no browser. The modules run as ES modules in node:vm, which needs --experimental-vm-modules.
+// Node against a tiny fake DOM and a fake localStorage holding the demo data, so it needs no dependencies
+// and no browser. The modules run as ES modules in node:vm, which needs --experimental-vm-modules.
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -56,12 +56,29 @@ function makeElement(id) {
   };
 }
 
+const CATALOG_KEY = 'audiobook-catalog-device';
+const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
+const DEMO = { 'books.json': DEMO_BOOKS, 'series-info.json': DEMO_INFO, 'authors.json': DEMO_AUTHORS };
+// The catalogue in localStorage, made of data files ({'books.json': text, 'series-info.json': ..., 'excluded.txt': ...}) as written.
+function stored(files) {
+  const json = (name, empty) => JSON.parse(files[name] || empty);
+  const catalogue = { books: json('books.json', '[]'), seriesInfo: json('series-info.json', '{}'), authors: json('authors.json', '{}'),
+    excluded: CatalogImport.parseExclusions(files['excluded.txt'] || '').entries };
+  return JSON.stringify(catalogue);
+}
+// What the page keeps in localStorage now.
+const kept = storage => JSON.parse(storage.get(CATALOG_KEY));
+
 /**
- * Load the page into a fresh fake browser. `files` maps URLs to what the fake server returns
- * (default: no data/books.json yet, so the demo). `storage` is a Map standing in for localStorage.
+ * Load the page into a fresh fake browser. `storage` is a Map standing in for localStorage; unless it
+ * holds a catalogue already, the catalogue is made of `files` (see stored(); default: the demo data), or
+ * there is none when `files` is null.
  */
-async function boot({ page = 'index.html', files = { 'data/sample/books.json': DEMO_BOOKS, 'data/sample/series-info.json': DEMO_INFO, 'data/sample/authors.json': DEMO_AUTHORS },
-                      storage = new Map(), api = null, hash = '', setTimeout = () => 0, hardcover = null } = {}) {
+async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null } = {}) {
+  if (files && !storage.has(CATALOG_KEY)) storage.set(CATALOG_KEY, stored(files));
+  if (files && files['not-duplicates.txt'] && !storage.has(NOT_DUP_KEY)) {
+    storage.set(NOT_DUP_KEY, JSON.stringify(CatalogImport.parseNotDuplicates(files['not-duplicates.txt'])));
+  }
   const html = read(page);
   const els = {};
   for (const [, id] of html.matchAll(/id="([^"]+)"/g)) els[id] = makeElement(id);
@@ -78,19 +95,13 @@ async function boot({ page = 'index.html', files = { 'data/sample/books.json': D
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: k => storage.delete(k),
   };
-  // `api(init, url)` stands in for `make serve`'s api/ endpoints and returns {status, body}; without it, a plain static server.
+  // The page asks nothing of the server it came from; only Hardcover, when a test gives a fake of it.
   const fetch = async (url, init = {}) => {
     if (url.startsWith('https://api.hardcover.app/')) {
       if (!hardcover) throw new TypeError('Failed to fetch');
       return hardcover(url, init);
     }
-    if (url.startsWith('api/') && api) {
-      const { status, body } = await api(init, url);
-      return { ok: status < 300, status, json: async () => body };
-    }
-    return url in files
-      ? { ok: true, status: 200, text: async () => files[url], json: async () => JSON.parse(files[url]) }
-      : { ok: false, status: 404, text: async () => 'not found', json: async () => { throw new SyntaxError('not JSON'); } };
+    throw new Error(`the page fetched ${url}`);
   };
   // Files picked in a fake <input type="file"> are {name, text}; reading one completes at once.
   class FileReader { readAsText(file) { this.onload({ target: { result: file.text } }); } }
@@ -373,7 +384,7 @@ test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardc
 });
 
 test('the Hardcover book field takes the address of a book or edition on Hardcover, and looks up its id', async () => {
-  // without make serve the page asks Hardcover, with the token saved in this browser
+  // the page asks Hardcover, with the token saved in this browser
   const hc = fakeHardcover(hardcoverState());
   const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };   // the pause between requests
   const storage = new Map();
@@ -403,25 +414,6 @@ test('the Hardcover book field takes the address of a book or edition on Hardcov
   assert.equal(get('DATA[0].hcb'), '81');
   assert.equal(hc.sent.length, asked);
 
-  // with make serve, the server asks Hardcover with the token it keeps
-  const calls = [];
-  const api = async (init, url) => {
-    const body = init.body && JSON.parse(init.body);
-    calls.push([url, body]);
-    if (url === 'api/save') return { status: 200, body: init.method === 'PUT' ? { base: 'b', infoBase: 'i', books: body.books } : { writable: true, audible: true, hardcover: true } };
-    if (url === 'api/hardcover/book') return JSON.parse(init.body).address.includes('missing')
-      ? { status: 404, body: { error: 'Hardcover has no book at hardcover.app/books/missing' } } : { status: 200, body: { id: '78', title: 'The Paper Fen' } };
-    return { status: 200, body: {} };
-  };
-  const served = await boot({ files: { 'data/books.json': JSON.stringify([{ t: 'The Paper Fen', a: ['Ann Vale'] }]) }, api });
-  served.ctx.openEditForm(0);
-  served.els.f_hcb.value = 'https://hardcover.app/books/missing';
-  await served.els.addForm.listeners.submit[0]({ preventDefault() {}, target: served.els.addForm });
-  assert.match(served.els.formError.textContent, /Couldn't find the Hardcover book: Hardcover has no book at hardcover\.app\/books\/missing/);
-  served.els.f_hcb.value = 'https://hardcover.app/books/the-paper-fen';
-  await served.els.addForm.listeners.submit[0]({ preventDefault() {}, target: served.els.addForm });
-  assert.equal(served.get('DATA[0].hcb'), '78');
-  assert.deepEqual(calls.filter(c => c[0] === 'api/hardcover/book').map(c => c[1]), [{ address: 'https://hardcover.app/books/missing' }, { address: 'https://hardcover.app/books/the-paper-fen' }]);
 });
 
 test('adding a book appends it', async () => {
@@ -486,7 +478,7 @@ test('dates read: shown on the card, edited in the form, and filterable by year'
 test('ISBNs: shown on the card, searchable however typed, edited in the form', async () => {
   // written before editions: read as the book's first edition
   const mine = JSON.stringify([{ t: 'Boxed One', a: ['Ann Vale'], isbn: ['9780306406157'] }, { t: 'Other', a: ['Ann Vale'] }]);
-  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  const { ctx, els, get } = await boot({ files: { 'books.json': mine } });
   ctx.setView('library');
   assert.match(els.results.innerHTML, /ISBN 9780306406157/);
   for (const q of ['9780306406157', '0-306-40615-2', '406157']) {
@@ -589,7 +581,7 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
   const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2020'] }]);
-  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
   const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
     + 'Old Favourite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
   els.importGoodreadsBtn.listeners.click[0]();
@@ -625,53 +617,54 @@ test('authors are lists: the author filter offers each author on its own, and th
 
 test('authors and narrators written as comma separated text load as lists', async () => {
   const mine = JSON.stringify([{ t: 'Old Style', a: 'Ann Vale, Bo Reed', e: [{ asin: { 'audible.com': 'B1' }, n: 'Cy Hale, Di Moss' }] }]);
-  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  const { ctx, els, get } = await boot({ files: { 'books.json': mine } });
   assert.deepEqual(get('DATA'), [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ asin: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }]);
   ctx.setView('library');
   assert.match(els.authorFilter.innerHTML, /<option value="Bo Reed">/);
   assert.match(els.results.innerHTML, /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. Cy Hale, Di Moss/);
 });
 
-test('your own data/books.json wins over the demo', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
-  const { get } = await boot({ files: { 'data/books.json': mine, 'data/sample/books.json': DEMO_BOOKS } });
-  assert.deepEqual(get('DATA'), [{ t: 'Mine', a: ['Me'] }]);
+test('with no catalogue in this browser it starts empty, not with the demo, and says where books come from', async () => {
+  const { els, get, run, storage } = await boot({ files: null });
+  assert.deepEqual(get('DATA'), []);
   assert.deepEqual(get('SERIES_INFO'), {});
+  assert.equal(els.subtitle.textContent, 'Your catalogue is empty');
+  assert.match(els.results.innerHTML, /No books yet\. .*<a href="import\.html">Import &amp; export<\/a>/);
+  assert.equal(storage.has(CATALOG_KEY), false, 'nothing is stored before the first edit');
+  run("DATA.push({ t: 'First', a: ['Me'] })");
+  run('persist()');
+  assert.deepEqual(kept(storage), { books: [{ t: 'First', a: ['Me'] }], seriesInfo: {}, authors: {}, excluded: [] });
 });
 
-test('without the data (e.g. opened as a file) it says how to serve it', async () => {
-  const { els } = await boot({ files: {} });
-  assert.match(els.subtitle.textContent, /make serve/);
-});
-
-test('local edits are kept for the same data, and set aside when books.json changes', async () => {
-  // 1. edit in the browser: the change lands in localStorage, tagged with this books.json's baseline
+test('the catalogue is kept in this browser, from one page load to the next', async () => {
   const first = await boot();
   first.run("DATA[0].t = 'Edited Locally'");
   first.run('persist()');
-  assert.ok(first.storage.has('audiobook-catalog-data'));
+  const again = await boot({ storage: new Map(first.storage) });
+  assert.equal(again.get('DATA[0].t'), 'Edited Locally');
+  assert.equal(again.get('DATA.length'), demoBooks.length);
+});
 
-  // 2. reload with the same data: the edit is still there
-  const same = await boot({ storage: new Map(first.storage) });
-  assert.equal(same.get('DATA[0].t'), 'Edited Locally');
+test('edits from before, which waited for make serve to save them, become the catalogue', async () => {
+  const old = { base: 'x', data: [{ t: 'Waiting', a: ['Me'] }], infoBase: 'y', info: { S: { total: 2, status: 'ongoing' } }, excluded: ['BGONE'] };
+  const { get, storage } = await boot({ files: null, storage: new Map([['audiobook-catalog-data', JSON.stringify(old)]]) });
+  assert.deepEqual(get('DATA'), old.data);
+  assert.deepEqual(get('SERIES_INFO'), old.info);
+  assert.deepEqual(get('EXCLUSIONS.entries'), ['BGONE']);
+  assert.equal(storage.has(CATALOG_KEY), false);
+});
 
-  // 3. reload after books.json changed: show the new data, keep the old edits aside
-  const changed = { 'data/sample/books.json': DEMO_BOOKS + '\n', 'data/sample/series-info.json': DEMO_INFO };
-  const newer = await boot({ files: changed, storage: new Map(first.storage) });
-  assert.equal(newer.get('DATA[0].t'), demoBooks[0].t);
-  assert.ok(newer.storage.has('audiobook-catalog-data.backup'));
-  assert.ok(!newer.storage.has('audiobook-catalog-data'));
-  assert.match(newer.els.ioStatus.textContent, /set aside/);
-
-  // 4. a save from the old, pre-baseline format is also treated as stale, never trusted blindly
-  const legacy = await boot({ storage: new Map([['audiobook-catalog-data', JSON.stringify([{ t: 'Old', a: ['Format'] }])]]) });
-  assert.equal(legacy.get('DATA[0].t'), demoBooks[0].t);
-  assert.ok(legacy.storage.has('audiobook-catalog-data.backup'));
+test('a catalogue this browser can\'t read is set aside, not overwritten', async () => {
+  const { get, els, storage } = await boot({ storage: new Map([[CATALOG_KEY, '{not json']]) });
+  assert.deepEqual(get('DATA'), []);
+  assert.equal(storage.get(CATALOG_KEY + '.unreadable'), '{not json');
+  assert.equal(storage.has(CATALOG_KEY), false);
+  assert.match(els.ioStatus.textContent, /set aside/);
 });
 
 test('importing an Audible CSV previews first, then adds only new books', async () => {
   const mine = JSON.stringify([{ t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5' }]);
-  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine, 'data/excluded.txt': 'BGONE\n' } });
+  const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine, 'excluded.txt': 'BGONE\n' } });
   const csv = 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
     + 'x,A Crown of Embers 5: A Spark of Dawn,A Crown of Embers Series (book 5),Ilse Marlowe,,Finished,B5\n'
     + 'x,A Crown of Embers 6: Ashfall,A Crown of Embers Series (book 6),Ilse Marlowe,A.B. Quill,Finished,B6\n'
@@ -685,7 +678,7 @@ test('importing an Audible CSV previews first, then adds only new books', async 
   assert.equal(els.importPreviewTitle.textContent, 'Audible import');
   assert.match(els.importPreviewBody.innerHTML, /Already in the catalogue: 1/);
   assert.match(els.importPreviewBody.innerHTML, /ASINs filled in on existing books: 1/);
-  assert.match(els.importPreviewBody.innerHTML, /excluded\.txt\): 1/);
+  assert.match(els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
   assert.match(els.importPreviewBody.innerHTML, /New: 1/);
   assert.match(els.importPreviewBody.innerHTML, /Ashfall/);
   assert.equal(els.importConfirm.textContent, 'Add 1 book');
@@ -707,7 +700,7 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 
 test('a date read written as a plain string loads, renders, and round-trips through Export / Import', async () => {
   const mine = JSON.stringify([{ t: 'Hand Edited', a: ['Ann Vale'], r: '2024-03-15' }, { t: 'Odd', a: ['Ann Vale'], r: 5 }]);
-  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  const { ctx, els, get } = await boot({ files: { 'books.json': mine } });
   assert.deepEqual(get('DATA[0].r'), ['2024-03-15']);
   ctx.setView('library');
   assert.match(els.results.innerHTML, /Read 2024-03-15/);
@@ -715,19 +708,19 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 
   const backup = JSON.stringify({ books: [{ t: 'From Backup', a: ['Ann Vale'], r: '2023-01-05' }], seriesInfo: {} });
   const storage = new Map();
-  const imp = await boot({ page: 'import.html', files: { 'data/books.json': mine }, storage });
-  imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: backup }], value: '' } });
+  const imp = await boot({ page: 'import.html', files: { 'books.json': mine }, storage });
+  await imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: backup }], value: '' } });
   assert.doesNotMatch(imp.els.ioStatus.textContent, /Couldn't read/);
   assert.deepEqual(imp.get('DATA'), [{ t: 'From Backup', a: ['Ann Vale'], r: ['2023-01-05'] }]);
   // back on the catalogue page
-  const back = await boot({ files: { 'data/books.json': mine }, storage });
+  const back = await boot({ files: { 'books.json': mine }, storage });
   back.ctx.setView('library');
   assert.match(back.els.results.innerHTML, /Read 2023-01-05/);
 });
 
 test('a Goodreads import fills in dates read on books that have none', async () => {
   const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
-  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
   const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
     + 'Old Favourite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
   els.importGoodreadsBtn.listeners.click[0]();
@@ -777,10 +770,10 @@ test('Export includes series and author info, and Import brings them back', asyn
 
   // into a page that has no series info: it comes back, and survives a reload
   const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
-  const files = { 'data/books.json': mine };
+  const files = { 'books.json': mine };
   const other = await boot({ page: 'import.html', files });
   assert.deepEqual(other.get('[SERIES_INFO, AUTHORS]'), [{}, {}]);
-  other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
   assert.deepEqual(other.get('DATA'), demoBooks);
   assert.deepEqual(other.get('SERIES_INFO'), backup.seriesInfo);
   assert.deepEqual(other.get('AUTHORS'), backup.authors);
@@ -788,22 +781,37 @@ test('Export includes series and author info, and Import brings them back', asyn
   assert.deepEqual(reloaded.get('SERIES_INFO'), backup.seriesInfo);
   assert.deepEqual(reloaded.get('AUTHORS'), backup.authors);
 
-  // an older backup (a plain list of books) still imports and keeps the current series info
+  // an older backup (a plain list of books) still imports and keeps the current series and author info
   const legacy = await boot({ page: 'import.html' });
-  legacy.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: mine }], value: '' } });
+  await legacy.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: mine }], value: '' } });
   assert.deepEqual(legacy.get('DATA'), [{ t: 'Mine', a: ['Me'] }]);
   assert.deepEqual(legacy.get('SERIES_INFO'), JSON.parse(DEMO_INFO));
-  // (restored over the demo, it is this device's own catalogue now, which the demo's author info is not part of)
-  assert.deepEqual(legacy.get('AUTHORS'), {});
+  assert.deepEqual(legacy.get('AUTHORS'), JSON.parse(DEMO_AUTHORS));
+});
 
-  // locally saved series info is set aside when series-info.json changes on disk
-  const changedInfo = await boot({ files: { 'data/books.json': mine, 'data/series-info.json': '{}\n' }, storage: new Map(other.storage) });
-  assert.deepEqual(changedInfo.get('SERIES_INFO'), {});
-  assert.ok(changedInfo.storage.has('audiobook-catalog-data.backup'));
-  // and so is author info when authors.json changes
-  const changedAuthors = await boot({ files: { ...files, 'data/authors.json': '{"Me":{"bio":"Hand edited."}}' }, storage: new Map(other.storage) });
-  assert.deepEqual(changedAuthors.get('AUTHORS'), { Me: { bio: 'Hand edited.' } });
-  assert.ok(changedAuthors.storage.has('audiobook-catalog-data.backup'));
+test('Restore takes the data files of a catalogue from before it lived in the browser, picked together', async () => {
+  const { els, get, storage } = await boot({ page: 'import.html', files: null });
+  const books = [{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1' }, { t: 'Tide Water', a: ['Ann Vale'] }];
+  const pair = CatalogImport.duplicatePairKey(books[0], books[1]);
+  await els.importFile.listeners.change[0]({ target: { value: '', files: [
+    { name: 'books.json', text: JSON.stringify(books) },
+    { name: 'series-info.json', text: '{"Gull Isle":{"total":3,"status":"ongoing"}}' },
+    { name: 'authors.json', text: '{"Ann Vale":{"bio":"Writes about the sea."}}' },
+    { name: 'excluded.txt', text: '# books imports skip\nBGONE\n' },
+    { name: 'not-duplicates.txt', text: pair + '\n' },
+  ] } });
+  assert.match(els.ioStatus.textContent, /^Restored 2 books and info for 1 series; 1 more excluded from imports\.$/);
+  assert.deepEqual(kept(storage), { books, seriesInfo: { 'Gull Isle': { total: 3, status: 'ongoing' } },
+    authors: { 'Ann Vale': { bio: 'Writes about the sea.' } }, excluded: ['BGONE'] });
+  assert.deepEqual(get('[...NOT_DUPLICATES]'), [pair]);
+  assert.equal(els.dupCount.textContent, '');
+
+  // without books.json, or with a file that is none of these, nothing changes
+  for (const files of [[{ name: 'series-info.json', text: '{}' }], [{ name: 'books.json', text: '[]' }, { name: 'notes.txt', text: 'hi' }]]) {
+    await els.importFile.listeners.change[0]({ target: { value: '', files } });
+    assert.match(els.ioStatus.textContent, /Couldn't read that/);
+    assert.equal(get('DATA.length'), 2);
+  }
 });
 
 // Press a book's remove button twice (the second press confirms), as in the library view.
@@ -819,25 +827,24 @@ function removeBook(ctx, i) {
 
 test('removing a book excludes it from imports, and Export / Import carry the exclusions', async () => {
   const mine = JSON.stringify([{ t: 'Keep', a: ['Ann Vale'] }, { t: 'Gone', a: ['Ann Vale'], id: 'BGONE2' }]);
-  const files = { 'data/books.json': mine, 'data/excluded.txt': '# header\nBOLD\n' };
+  const files = { 'books.json': mine, 'excluded.txt': '# header\nBOLD\n' };
   const { ctx, els, get, storage } = await boot({ files });
   ctx.setView('library');
   removeBook(ctx, 1);
   assert.deepEqual(get('DATA'), [{ t: 'Keep', a: ['Ann Vale'] }]);
-  assert.deepEqual(get('NEW_EXCLUDED'), ['BGONE2', 'Gone | Ann Vale']);
-  assert.match(els.ioStatus.textContent, /Removed Gone; imports will skip it\. Export it on the Import & export page and run sync-export/);
-  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).excluded, ['BGONE2', 'Gone | Ann Vale']);
+  assert.equal(els.ioStatus.textContent, 'Removed Gone; imports will skip it.');
+  assert.deepEqual(kept(storage).excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
 
   // on the import page, an import (Audible by id, or Goodreads by title) does not bring it back
   const imp = await boot({ page: 'import.html', files, storage });
   imp.els.importAudibleBtn.listeners.click[0]();
   imp.els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'l.csv', text:
     'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\nx,Gone,,Ann Vale,,Finished,BGONE2\n' }], value: '' } });
-  assert.match(imp.els.importPreviewBody.innerHTML, /excluded\.txt\): 1/);
+  assert.match(imp.els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
   imp.els.importGoodreadsBtn.listeners.click[0]();
   imp.els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'g.csv', text:
     'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\nGone,Ann Vale,,Audible Audio,read,\n' }], value: '' } });
-  assert.match(imp.els.importPreviewBody.innerHTML, /excluded\.txt\): 1/);
+  assert.match(imp.els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
 
   // a reload keeps the exclusions along with the edit
   const reloaded = await boot({ files, storage: new Map(storage) });
@@ -850,10 +857,9 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
   imp.els.exportBtn.listeners.click[0]();
   const backup = JSON.parse(blobs[0]);
   assert.deepEqual(backup.excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
-  const other = await boot({ page: 'import.html', files: { 'data/books.json': '[]', 'data/excluded.txt': 'BOLD\nOther\n' } });
-  other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  const other = await boot({ page: 'import.html', files: { 'books.json': '[]', 'excluded.txt': 'BOLD\nOther\n' } });
+  await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
   assert.deepEqual(other.get('EXCLUSIONS.entries'), ['BOLD', 'Other', 'BGONE2', 'Gone | Ann Vale']);
-  assert.deepEqual(other.get('NEW_EXCLUDED'), ['BGONE2', 'Gone | Ann Vale']);
   assert.match(other.els.ioStatus.textContent, /2 more excluded from imports/);
 });
 
@@ -887,7 +893,7 @@ test('the edit form takes the place of the book card, and adding a book opens it
 
 test('removing a book while another is being edited saves the edit to the right book', async () => {
   const mine = JSON.stringify([{ t: 'First', a: ['Ann Vale'] }, { t: 'Second', a: ['Ann Vale'] }, { t: 'Third', a: ['Ann Vale'] }]);
-  const { ctx, els, get } = await boot({ files: { 'data/books.json': mine } });
+  const { ctx, els, get } = await boot({ files: { 'books.json': mine } });
   ctx.setView('library');
   ctx.openEditForm(1);
   removeBook(ctx, 0);
@@ -951,7 +957,7 @@ test('series info can be edited, added and removed in the page', async () => {
   assert.deepEqual(get(`SERIES_INFO[${JSON.stringify(name)}]`),
     { total: 7, status: 'ongoing', note: 'book 8 is announced', url: 'https://example.com/author' });
   assert.match(els.results.innerHTML, /7 owned|owned of 7/);
-  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).info[name].total, 7);
+  assert.deepEqual(kept(storage).seriesInfo[name].total, 7);
 
   // invalid input is refused with a message, and nothing changes
   ctx.openSeriesForm(name);
@@ -1005,9 +1011,9 @@ test('a series can be renamed from its series info form, on every book in it', a
   assert.equal(get(`${JSON.stringify(name)} in SERIES_INFO`), false);
   assert.equal(get('SERIES_FILTER'), 'The Renamed Saga');
   assert.match(els.ioStatus.textContent, new RegExp(`Renamed .* on ${count} book`));
-  const saved = JSON.parse(storage.get('audiobook-catalog-data'));
-  assert.ok(saved.info['The Renamed Saga']);
-  assert.equal(saved.data.filter(b => b.s === 'The Renamed Saga').length, count);
+  const saved = kept(storage);
+  assert.ok(saved.seriesInfo['The Renamed Saga']);
+  assert.equal(saved.books.filter(b => b.s === 'The Renamed Saga').length, count);
 
   // a series without info is renamed without having to add some
   const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
@@ -1042,209 +1048,6 @@ test('a series can be renamed from its series info form, on every book in it', a
 // Lets pending promises (a save on its way to the fake server) settle.
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-test('with make serve, edits are saved to disk and the browser copy is dropped', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
-  const saves = [];
-  const api = async init => {
-    if (!init.method) return { status: 200, body: { writable: true } };
-    const body = JSON.parse(init.body);
-    saves.push({ method: init.method, headers: init.headers, body });
-    const books = body.books.map(b => ({ ...b, t: b.t.trim() }));   // the server tidies
-    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i' + saves.length, books } };
-  };
-  const { ctx, els, get, storage } = await boot({ files: { 'data/books.json': mine }, api });
-  assert.equal(get('DISK_SAVE'), true);
-  ctx.setView('library');
-  els.toggleAdd.listeners.click[0]();
-  Object.assign(els.f_t, { value: 'New  ' });
-  Object.assign(els.f_a, { value: 'Me' });
-  Object.assign(els.f_s, { value: 'Mine Saga' });
-  els.addForm.listeners.submit[0]({ preventDefault() {} });
-  await settle();
-  assert.equal(saves.length, 1);
-  assert.equal(saves[0].method, 'PUT');
-  assert.equal(saves[0].headers['Content-Type'], 'application/json');
-  assert.deepEqual(saves[0].body.books, [{ t: 'Mine', a: ['Me'] }, { t: 'New', a: ['Me'], s: 'Mine Saga' }]);
-  assert.equal(saves[0].body.base, get('CatalogImport.fingerprint(' + JSON.stringify(mine) + ')'));
-  assert.deepEqual(saves[0].body.seriesInfo, {});
-  assert.equal(get('BASELINE'), 'b1');                  // the next save starts from the file just written
-  assert.deepEqual(get('DATA[1]'), { t: 'New', a: ['Me'], s: 'Mine Saga' });
-  assert.ok(!storage.has('audiobook-catalog-data'));
-  assert.equal(els.ioStatus.textContent, 'Saved.');
-
-  // series info goes along, and the status message no longer asks for Export + sync-export
-  ctx.openSeriesForm('Mine Saga');
-  Object.assign(els.sf_total, { value: '3' });
-  Object.assign(els.sf_status, { value: 'ongoing' });
-  els.seriesForm.listeners.submit[0]({ preventDefault() {} });
-  await settle();
-  assert.equal(saves.length, 2);
-  assert.equal(saves[1].body.base, 'b1');
-  assert.equal(saves[1].body.seriesInfo['Mine Saga'].total, 3);
-  assert.doesNotMatch(els.ioStatus.textContent, /sync-export/);
-});
-
-test('with make serve, a removed book\'s exclusions are sent with the save, once', async () => {
-  const mine = JSON.stringify([{ t: 'Keep', a: ['Me'] }, { t: 'Gone', a: ['Me'] }]);
-  const saves = [];
-  const api = async init => {
-    if (!init.method) return { status: 200, body: { writable: true } };
-    const body = JSON.parse(init.body);
-    saves.push(body);
-    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i', books: body.books } };
-  };
-  const { ctx, get, run } = await boot({ files: { 'data/books.json': mine }, api });
-  ctx.setView('library');
-  removeBook(ctx, 1);
-  await settle();
-  assert.deepEqual(saves[0].excluded, ['Gone | Me']);
-  assert.deepEqual(get('NEW_EXCLUDED'), []);
-  assert.deepEqual(get('EXCLUSIONS.entries'), ['Gone | Me']);
-  run("DATA[0].t = 'Kept'; persist();");
-  await settle();
-  assert.deepEqual(saves[1].excluded, []);
-});
-
-test('edits made while a save is on its way are saved right after it', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
-  const saves = [];
-  let release;
-  const api = async init => {
-    if (!init.method) return { status: 200, body: { writable: true } };
-    const body = JSON.parse(init.body);
-    saves.push(body);
-    if (saves.length === 1) await new Promise(resolve => { release = resolve; });
-    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i', books: body.books } };
-  };
-  const { get, run } = await boot({ files: { 'data/books.json': mine }, api });
-  run("DATA[0].t = 'One'; persist(); DATA[0].t = 'Two'; persist();");
-  await settle();
-  assert.equal(saves.length, 1);
-  release();
-  await settle(); await settle();
-  assert.equal(saves.length, 2);
-  assert.equal(saves[1].books[0].t, 'Two');
-  assert.equal(saves[1].base, 'b1');
-  assert.equal(get('DATA[0].t'), 'Two');
-});
-
-test('a refused save keeps the edits in the browser and says why', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
-  let answer = { status: 409, body: { error: 'changed', conflict: true } };
-  const api = async init => (init.method ? answer : { status: 200, body: { writable: true } });
-  const { get, run, els, storage } = await boot({ files: { 'data/books.json': mine }, api });
-  run("DATA[0].t = 'Edited'; persist();");
-  await settle();
-  assert.match(els.ioStatus.textContent, /Not saved to disk: the data files changed on disk/);
-  assert.equal(JSON.parse(storage.get('audiobook-catalog-data')).data[0].t, 'Edited');
-
-  // after a reload against the same file, the kept edits are saved again
-  let saved = null;
-  answer = { status: 200, body: { base: 'b', infoBase: 'i', books: [{ t: 'Edited', a: ['Me'] }] } };
-  const again = await boot({ files: { 'data/books.json': mine }, storage: new Map(storage),
-    api: async init => { if (init.method) saved = JSON.parse(init.body); return init.method ? answer : { status: 200, body: { writable: true } }; } });
-  await settle();
-  assert.equal(saved.books[0].t, 'Edited');
-  assert.ok(!again.storage.has('audiobook-catalog-data'));
-  assert.equal(again.get('DATA[0].t'), 'Edited');
-});
-
-test('with make serve, series can be looked up on Audible, previewed, then saved', async () => {
-  const mine = JSON.stringify([
-    { t: 'Loose', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0LOOSE001' } }] },
-    { t: 'Gull 2', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ asin: { 'audible.com': 'B0GULL0002' } }] },
-  ]);
-  const lookups = [], saves = [];
-  const api = async (init, url) => {
-    if (!init.method) return { status: 200, body: { writable: true, audible: true } };
-    const body = JSON.parse(init.body);
-    if (url === 'api/save') { saves.push(body); return { status: 200, body: { base: 'b', infoBase: 'i', books: body.books } }; }
-    lookups.push(body);
-    const series = asin => [{ name: 'The Gull Isle Series', number: asin === 'B0LOOSE001' ? '1' : '2', asin: 'B0GULLISLE' }];
-    const results = Object.fromEntries(body.asins.map(a => [a, body.groups === 'series' ? series(a) : 4]));
-    return { status: 200, body: { results } };
-  };
-  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api });
-  assert.equal(els.audiblePanel.style.display, '');
-  els.audibleStore.value = 'uk';
-  await els.audibleSeriesBtn.listeners.click[0]();
-  assert.deepEqual(lookups, [
-    { store: 'uk', groups: 'series', asins: ['B0LOOSE001', 'B0GULL0002'] },
-    { store: 'uk', groups: 'relationships', asins: ['B0GULLISLE'] },
-  ]);
-  assert.equal(els.importPreviewTitle.textContent, 'Series from Audible');
-  assert.match(els.importPreviewBody.innerHTML, /Series or number filled in: 1/);
-  assert.match(els.importPreviewBody.innerHTML, /Loose &mdash; Ann Vale {2}\[Gull Isle #1\]/);
-  assert.match(els.importPreviewBody.innerHTML, /Gull Isle: 4/);
-  assert.equal(els.importConfirm.textContent, 'Save series');
-  assert.equal(get('"s" in DATA[0]'), false);             // nothing changed before confirming
-
-  els.importConfirm.listeners.click[0]();
-  await settle();
-  assert.deepEqual(get('DATA[0]'), { t: 'Loose', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ asin: { 'audible.com': 'B0LOOSE001' } }] });
-  assert.equal(get('SERIES_INFO["Gull Isle"].total'), 4);
-  assert.equal(get('SERIES_INFO["Gull Isle"].status'), 'ongoing');
-  assert.equal(saves.length, 1);
-  assert.equal(saves[0].seriesInfo['Gull Isle'].total, 4);
-  assert.match(els.ioStatus.textContent, /Filled in the series of 1 book and released totals for 1 series/);
-
-  // without make serve there is no lookup to offer
-  const plain = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
-  assert.equal(plain.els.audiblePanel.style.display, 'none');
-});
-
-test('with make serve, an Audible import can go on to look up the new books\' series', async () => {
-  const mine = JSON.stringify([{ t: 'Old Standalone', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
-  const lookups = [];
-  const api = async (init, url) => {
-    if (!init.method) return { status: 200, body: { writable: true, audible: true } };
-    const body = JSON.parse(init.body);
-    if (url === 'api/save') return { status: 200, body: { base: 'b', infoBase: 'i', books: body.books } };
-    lookups.push(body);
-    const results = Object.fromEntries(body.asins.map(a => [a, body.groups === 'series'
-      ? [{ name: 'Gull Isle', number: '1', asin: 'B0GULLISLE' }] : 2]));
-    return { status: 200, body: { results } };
-  };
-  const storage = new Map();
-  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api, storage });
-  assert.equal(els.importSeriesOption.style.display, '');
-  els.importSeries.checked = true;
-  els.importSeries.listeners.change[0]({ target: els.importSeries });
-  assert.equal(storage.get('audiobook-catalog-import-series'), '1');
-
-  els.importAudibleBtn.listeners.click[0]();
-  els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv',
-    text: 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\nx,Tidewater,,Ann Vale,,Finished,B0NEW00001\n' }], value: '' } });
-  await els.importConfirm.listeners.click[0]();
-  assert.deepEqual(lookups.map(l => l.asins), [['B0NEW00001'], ['B0GULLISLE']]);   // only the new book
-  assert.equal(els.importPreviewTitle.textContent, 'Series from Audible');
-  assert.match(els.importPreviewBody.innerHTML, /Added 1 book\. Their series:/);
-  assert.match(els.importPreviewBody.innerHTML, /Tidewater &mdash; Ann Vale {2}\[Gull Isle #1\]/);
-  els.importConfirm.listeners.click[0]();
-  await settle();
-  assert.deepEqual(get('DATA[1]'), { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ asin: { 'audible.com': 'B0NEW00001' } }] });
-  assert.equal(get('SERIES_INFO["Gull Isle"].total'), 2);
-
-  // the choice is remembered in this browser
-  const again = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api, storage });
-  assert.equal(again.els.importSeries.checked, true);
-});
-
-test('without make serve (or with the demo data) edits stay in the browser', async () => {
-  let calls = 0;
-  const api = async init => { calls++; assert.equal(init.method, undefined); return { status: 200, body: { writable: true } }; };
-  const demo = await boot({ api });                     // demo data: only asks what the server can do, never saves
-  assert.equal(demo.get('DISK_SAVE'), false);
-  demo.run("DATA[0].t = 'Edited'; persist();");
-  await settle();
-  assert.equal(calls, 1);
-  const plain = await boot({ files: { 'data/books.json': JSON.stringify([{ t: 'Mine', a: ['Me'] }]) } });
-  assert.equal(plain.get('DISK_SAVE'), false);
-  plain.run("DATA[0].t = 'Edited'; persist();");
-  await settle();
-  assert.ok(plain.storage.has('audiobook-catalog-data'));
-});
-
 test('duplicates page: found, merged with the picked title, or kept apart', async () => {
   const mine = JSON.stringify([
     { t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ asin: { 'audible.com': 'B1' } }] },
@@ -1254,7 +1057,7 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
     { t: 'The Ledger', a: ['Priya Ostrander'] },
     { t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
   ]);
-  const files = { 'data/books.json': mine };
+  const files = { 'books.json': mine };
   // every page's link says how many there are; a box set's titles share an edition but are not duplicates
   const home = await boot({ files });
   assert.equal(home.els.dupCount.textContent, ' (2)');
@@ -1288,7 +1091,7 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
 
 test('the merge button pairs two books by hand and opens them on the duplicates page', async () => {
   const mine = JSON.stringify([{ t: 'Ledger', a: ['Priya Ostrander'] }, { t: 'Other', a: ['Ann Vale'] }, { t: 'The Ledger', a: ['P. Ostrander'], r: ['2024'] }]);
-  const files = { 'data/books.json': mine };
+  const files = { 'books.json': mine };
   const home = await boot({ files });
   home.ctx.setView('library');
   home.ctx.pickMergeBook(2);
@@ -1311,16 +1114,16 @@ test('the merge button pairs two books by hand and opens them on the duplicates 
 });
 
 test('an edit is not saved over changes another tab made meanwhile', async () => {
-  const files = { 'data/books.json': JSON.stringify([{ t: 'Mine', a: ['Me'] }, { t: 'Yours', a: ['You'] }]) };
+  const files = { 'books.json': JSON.stringify([{ t: 'Mine', a: ['Me'] }, { t: 'Yours', a: ['You'] }]) };
   const storage = new Map();
   const one = await boot({ files, storage });
   const two = await boot({ page: 'duplicates.html', files, storage });
   one.run("DATA[0].t = 'Edited Here'; persist();");
   two.run("DATA[1].t = 'Edited There'; persist();");
   assert.match(two.els.ioStatus.textContent, /changed in another tab/);
-  assert.equal(JSON.parse(storage.get('audiobook-catalog-data')).data[0].t, 'Edited Here');
+  assert.equal(kept(storage).books[0].t, 'Edited Here');
   one.run("DATA[1].t = 'Again Here'; persist();");      // the tab that saved last can keep going
-  assert.equal(JSON.parse(storage.get('audiobook-catalog-data')).data[1].t, 'Again Here');
+  assert.equal(kept(storage).books[1].t, 'Again Here');
 });
 
 test('merging keeps editions apart when asked, and books merged that way can be joined later', async () => {
@@ -1332,7 +1135,7 @@ test('merging keeps editions apart when asked, and books merged that way can be 
     { t: 'Box Set', a: ['Marisol Quenby'], e: [{ asin: { 'audible.com': 'BBOX' } }, { gr: '888' }] },
     { t: 'Other In Box', a: ['Marisol Quenby'], e: [{ asin: { 'audible.com': 'BBOX' } }] },
   ]);
-  const files = { 'data/books.json': mine };
+  const files = { 'books.json': mine };
   const { ctx, els, get, run, storage } = await boot({ page: 'duplicates.html', files });
   // Beacons (an ASIN edition and a Goodreads one) is listed; two ASINs, or a box set's shared edition, are not
   assert.deepEqual(get('SPLIT'), [2]);
@@ -1353,38 +1156,9 @@ test('merging keeps editions apart when asked, and books merged that way can be 
   // "Keep separate" is remembered in this browser
   ctx.keepEditionsApart(get('SPLIT[0]'));
   assert.deepEqual(get('SPLIT'), []);
-  const again = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(get('DATA')) }, storage: new Map([...storage].filter(([k]) => k !== 'audiobook-catalog-data')) });
+  const again = await boot({ page: 'duplicates.html', files: { 'books.json': JSON.stringify(get('DATA')) }, storage: new Map([...storage].filter(([k]) => k !== CATALOG_KEY)) });
   assert.deepEqual(again.get('SPLIT'), []);
   assert.equal(again.els.dupCount.textContent, '');
-});
-
-test('restoring a backup where only the demo is served makes it this device\'s own catalogue', async () => {
-  const backup = { books: [{ t: 'Pocket Edition', a: ['Ann Vale'], r: ['2025-06-01'] }], seriesInfo: {}, excluded: ['BGONE3'] };
-  const imp = await boot({ page: 'import.html' });
-  imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
-  assert.equal(imp.get('ON_DEVICE'), true);
-  assert.match(imp.els.ioStatus.textContent, /This device now keeps its own catalogue\./);
-  assert.deepEqual(JSON.parse(imp.storage.get('audiobook-catalog-device')), { ...backup, authors: {} });
-
-  // it loads instead of the demo, even after the demo data changes, and edits are kept with it
-  const files = { 'data/sample/books.json': '[{"t":"Another Demo","a":"Nobody"}]', 'data/sample/series-info.json': '{}' };
-  const { ctx, els, get, storage } = await boot({ files, storage: new Map(imp.storage) });
-  assert.deepEqual(get('DATA'), backup.books);
-  assert.deepEqual(get('EXCLUSIONS.entries'), ['BGONE3']);
-  ctx.setView('library');
-  removeBook(ctx, 0);
-  assert.equal(els.ioStatus.textContent, 'Removed Pocket Edition; imports will skip it.');
-  const kept = JSON.parse(storage.get('audiobook-catalog-device'));
-  assert.deepEqual(kept.books, []);
-  assert.deepEqual(kept.excluded, ['BGONE3', 'Pocket Edition | Ann Vale']);
-
-  // a page served with its own data/books.json ignores it, and a restore there does not switch
-  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
-  const served = await boot({ page: 'import.html', files: { 'data/books.json': mine }, storage: new Map(storage) });
-  assert.deepEqual(served.get('DATA'), [{ t: 'Mine', a: ['Me'] }]);
-  served.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
-  assert.equal(served.get('ON_DEVICE'), false);
-  assert.doesNotMatch(served.els.ioStatus.textContent, /own catalogue/);
 });
 
 test('the app can be installed: the manifest\'s icons and everything the service worker caches exist', () => {
@@ -1398,60 +1172,44 @@ test('the app can be installed: the manifest\'s icons and everything the service
     assert.ok(read(page).includes('<link rel="manifest" href="manifest.webmanifest">'), page);
     for (const file of modulesOf(entryOf(page)[0])) assert.ok(cached.includes(file), `sw.js caches ${file}`);
   }
-  assert.ok(!cached.some(f => f.startsWith('data/') && !f.startsWith('data/sample/')), 'never your own data');
+  assert.ok(!cached.some(f => f.startsWith('data/')), 'never anything under data/');
 });
 
-test('"Not duplicates" marks come from data/not-duplicates.txt, are saved there by make serve, and travel in backups', async () => {
+test('"Not duplicates" marks are kept in this browser and travel in backups', async () => {
   const books = [{ t: 'The Ledger', a: ['Priya Ostrander'] }, { t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
     { t: 'Salt Road', a: ['Marisol Quenby'] }, { t: 'Salt Road, Book 1', a: ['Marisol Quenby'] }];
   const pairKey = (x, y) => CatalogImport.duplicatePairKey(books[x], books[y]);
-  const saves = [];
-  const api = async init => {
-    if (!init.method) return { status: 200, body: { writable: true } };
-    const body = JSON.parse(init.body);
-    saves.push(body);
-    return { status: 200, body: { base: 'b' + saves.length, infoBase: 'i' + saves.length, books: body.books } };
-  };
   const ledger = pairKey(0, 1);
-  const files = { 'data/books.json': JSON.stringify(books), 'data/not-duplicates.txt': '# header\n' + ledger + '\n' };
-  const { ctx, get, els } = await boot({ page: 'duplicates.html', files, api });
-  // the file's marks hide that pair; nothing to save yet
+  const files = { 'books.json': JSON.stringify(books), 'not-duplicates.txt': '# header\n' + ledger + '\n' };
+  const { ctx, get, els, storage } = await boot({ page: 'duplicates.html', files });
+  // the marks kept hide that pair
   assert.deepEqual(get('DUP_GROUPS'), [[2, 3]]);
-  assert.equal(saves.length, 0);
 
-  // marking the other pair saves it, and only it, to the file
+  // marking the other pair keeps it too
   ctx.keepApart(0);
-  await settle();
-  assert.equal(saves.length, 1);
-  assert.deepEqual(saves[0].notDuplicates, [pairKey(2, 3)]);
+  assert.deepEqual(JSON.parse(storage.get(NOT_DUP_KEY)), [ledger, pairKey(2, 3)]);
   assert.deepEqual(get('DUP_GROUPS'), []);
   assert.equal(els.dupCount.textContent, '');
 
   // Export carries every mark; Restore elsewhere brings them back
-  const imp = await boot({ page: 'import.html', files });
+  const imp = await boot({ page: 'import.html', files: { ...files, 'not-duplicates.txt': ledger } });
   const blobs = [];
   imp.ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
   imp.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
   imp.els.exportBtn.listeners.click[0]();
   assert.deepEqual(JSON.parse(blobs[0]).notDuplicates, [ledger]);
   const backup = { books, seriesInfo: {}, notDuplicates: [ledger, pairKey(2, 3)] };
-  const other = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(books) } });
-  other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
-  const after = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(books) }, storage: other.storage });
+  const other = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(books) } });
+  await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
+  const after = await boot({ page: 'duplicates.html', storage: other.storage });
   assert.deepEqual(after.get('DUP_GROUPS'), []);
-
-  // marks made before they could be saved to the file are saved when the page loads under make serve
-  const early = await boot({ page: 'duplicates.html', files: { 'data/books.json': JSON.stringify(books) }, storage: other.storage, api });
-  await settle();
-  assert.deepEqual(saves[saves.length - 1].notDuplicates, [ledger, pairKey(2, 3)]);
-  assert.equal(early.get('pendingNotDuplicates().length'), 0);
 });
 
 test('Merge previews a backup from another device and keeps both sides\' changes', async () => {
   const mine = JSON.stringify([{ t: 'Here', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
   const backup = { books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] },
     { t: 'New There', a: ['Ann Vale'] }], seriesInfo: {}, excluded: ['BGONE9'], notDuplicates: ['["editions","id B1"]'] };
-  const { els, get, storage } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  const { els, get, storage } = await boot({ page: 'import.html', files: { 'books.json': mine } });
   els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
   assert.equal(els.importPreviewTitle.textContent, 'Merge a backup');
   assert.ok(els.mergePrefer.classList.contains('show'));
@@ -1466,11 +1224,11 @@ test('Merge previews a backup from another device and keeps both sides\' changes
   assert.match(els.importPreviewBody.innerHTML, /keeping the backup's: 1/);
   els.importConfirm.listeners.click[0]();
   assert.deepEqual(get('DATA'), backup.books);
-  assert.deepEqual(get('NEW_EXCLUDED'), ['BGONE9']);
+  assert.deepEqual(get('EXCLUSIONS.entries'), ['BGONE9']);
   assert.deepEqual(get('[...NOT_DUPLICATES]'), ['["editions","id B1"]']);
   assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-not-duplicates')), ['["editions","id B1"]']);
   assert.match(els.ioStatus.textContent, /^Merged: 1 added, 2 updated, 0 removed\./);
-  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).data, backup.books);
+  assert.deepEqual(kept(storage).books, backup.books);
   assert.ok(!els.importPreview.classList.contains('open'));
 
   // merging the same backup again has nothing to do
@@ -1479,90 +1237,7 @@ test('Merge previews a backup from another device and keeps both sides\' changes
   assert.equal(els.importConfirm.style.display, 'none');
 });
 
-/**
- * A stand-in for `make serve`'s Hardcover endpoints: POST api/hardcover starts a run, and each GET after
- * that answers with the next of `steps` (progress updates, then the finished run). `ticks` holds the page's
- * pending polls (its setTimeout(…, 1000)); tick() runs them, as time passing would.
- */
-function fakeHardcoverServer(steps) {
-  const calls = [], ticks = [];
-  let token = false, job = null, queue = [];
-  const api = async (init, url) => {
-    const body = init.body ? JSON.parse(init.body) : null;
-    calls.push([url, init.method || 'GET', body]);
-    if (url === 'api/save') return { status: 200, body: { writable: true, audible: true, hardcover: true } };
-    if (url === 'api/hardcover/token') {
-      if (init.method === 'PUT') token = true;
-      if (init.method === 'DELETE') token = false;
-      return { status: 200, body: { token } };
-    }
-    if (init.method === 'POST') {
-      job = { id: calls.length, mode: body.mode, dryRun: body.dryRun, running: true, elapsed: 0, step: 'Starting' };
-      queue = steps(body).map(x => ({ ...job, ...x }));
-      return { status: 202, body: { job } };
-    }
-    if (queue.length) job = queue.shift();
-    return { status: 200, body: { job } };
-  };
-  const setTimeout = (fn, ms) => { if (ms === 1000) ticks.push(fn); return 0; };
-  const tick = async () => { while (ticks.length) { ticks.shift()(); await settle(); await settle(); } };
-  return { api, calls, ticks, setTimeout, tick };
-}
-
-test('with make serve, the Hardcover panel saves the token and previews, then runs, an import in the background', async () => {
-  const mine = JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'] }]);
-  const files = { 'data/books.json': mine };
-  const server = fakeHardcoverServer(body => body.dryRun
-    ? [{ running: false, elapsed: 2000, step: 'Done', code: 0, out: 'Hardcover: 1 books on your Read shelf\n  new: 1\n    + Tidewater - Ann Vale\n(dry run: nothing written)', err: '' }]
-    : [{ step: 'Putting books on your Hardcover Read shelf', done: 3, total: 10, elapsed: 65000 },
-       (files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: ['Ann Vale'] }]),
-        { running: false, elapsed: 70000, step: 'Done', code: 0, out: 'wrote data/books.json', err: '', base: 'new' })]);
-  const { els, get } = await boot({ page: 'import.html', files, api: server.api, setTimeout: server.setTimeout });
-  await settle();
-  assert.notEqual(els.hardcoverPanel.style.display, 'none');
-  assert.match(els.hardcoverTokenState.textContent, /Paste an API token/);
-  els.hardcoverToken.value = 'Bearer tok-123';
-  await els.hardcoverTokenSave.listeners.click[0]();
-  assert.deepEqual(server.calls.find(c => c[1] === 'PUT'), ['api/hardcover/token', 'PUT', { token: 'Bearer tok-123' }]);
-  assert.equal(els.hardcoverToken.value, '', 'the token is not left in the page');
-  assert.match(els.hardcoverTokenState.textContent, /saved with your catalogue/);
-
-  // the preview runs in the background too: the banner shows it, the buttons wait
-  const previewing = els.hardcoverImportBtn.listeners.click[0]();
-  await settle(); await settle();
-  const preview = server.calls.find(c => c[0] === 'api/hardcover' && c[1] === 'POST');
-  assert.deepEqual([preview[2].mode, preview[2].dryRun, preview[2].base], ['import', true, get('BASELINE')]);
-  assert.ok(els.bgTask.classList.contains('show'));
-  assert.match(els.bgTask.innerHTML, /<span class="spinner" aria-hidden="true"><\/span>.*<strong>Checking what a Hardcover import would do<\/strong> <span class="bgTaskTime">0:00<\/span><br>Starting/);
-  assert.doesNotMatch(els.bgTask.innerHTML, /Details/, 'no link to the page it is on');
-  assert.equal(els.hardcoverSyncBtn.disabled, true);
-  await server.tick();
-  await previewing;
-  assert.ok(!els.bgTask.classList.contains('show'));
-  assert.equal(els.hardcoverSyncBtn.disabled, false);
-  assert.equal(els.importPreviewTitle.textContent, 'Import from Hardcover: preview');
-  assert.match(els.importPreviewBody.innerHTML, /<pre>Hardcover: 1 books on your Read shelf\n {2}new: 1\n {4}\+ Tidewater - Ann Vale\n?<\/pre>/);
-  assert.equal(els.importConfirm.textContent, 'Import');
-  assert.equal(get('DATA.length'), 1);
-
-  // the real run: the banner counts along, then the page picks up what it wrote
-  const applying = els.importConfirm.listeners.click[0]();
-  await settle(); await settle();
-  assert.equal(server.calls.filter(c => c[1] === 'POST' && c[0] === 'api/hardcover').at(-1)[2].dryRun, false);
-  assert.match(els.bgTask.innerHTML, /<strong>Importing from Hardcover<\/strong>.*Please don't edit the catalogue until it is done/);
-  server.ticks.splice(1);   // just the next poll
-  const first = server.ticks.shift(); first(); await settle(); await settle();
-  assert.match(els.bgTask.innerHTML, /<span class="bgTaskTime">1:05<\/span><br>Putting books on your Hardcover Read shelf: 3 of 10 <progress max="10" value="3"><\/progress>/);
-  await server.tick();
-  await applying;
-  await settle();
-  assert.ok(!els.bgTask.classList.contains('show'));
-  assert.equal(get('DATA.length'), 2, 'the page reloads the catalogue the server wrote');
-  assert.equal(els.importPreviewTitle.textContent, 'Import from Hardcover (took 1:10)');
-  assert.match(els.ioStatus.textContent, /Import from Hardcover: done\./);
-});
-
-test('without make serve, the page runs a Hardcover sync itself, with a token kept in this browser', async () => {
+test('the page runs a Hardcover sync itself, with a token kept in this browser', async () => {
   const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }];
   const state = hardcoverState();
   const hc = fakeHardcover(state);
@@ -1575,7 +1250,7 @@ test('without make serve, the page runs a Hardcover sync itself, with a token ke
     return hc.fetch(url, init);
   };
   const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };   // the pause between requests
-  const page = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(mine) }, hardcover, setTimeout });
+  const page = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, hardcover, setTimeout });
   const { els, get, storage } = page;
   assert.notEqual(els.hardcoverPanel.style.display, 'none');
   assert.match(els.hardcoverTokenState.textContent, /Paste an API token .* kept in this browser only/);
@@ -1604,7 +1279,7 @@ test('without make serve, the page runs a Hardcover sync itself, with a token ke
   // the real run keeps the catalogue before sending, and the browser asks before leaving the page meanwhile
   await els.importConfirm.listeners.click[0]();
   assert.deepEqual(get('DATA.map(b => b.t)'), ['Lantern Hours', 'Tidewater']);
-  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).data.map(b => b.t), ['Lantern Hours', 'Tidewater']);
+  assert.deepEqual(kept(storage).books.map(b => b.t), ['Lantern Hours', 'Tidewater']);
   assert.equal(get('DATA[0].hcb'), '80', 'the Hardcover ids found are kept');
   assert.deepEqual(state.shelf.at(-1), { id: 102, book_id: 80, edition_id: 801, status_id: 3, user_book_reads: [{ finished_at: '2024-05-01', edition_id: 801 }] });
   assert.ok(leaving.prevented, 'leaving during the run is asked about');
@@ -1627,7 +1302,7 @@ test('a Hardcover run in the page writes and sends nothing when the catalogue is
   };
   const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };
   const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
-  const page = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(mine) }, hardcover, setTimeout, storage });
+  const page = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, hardcover, setTimeout, storage });
   const { els, get } = page;
   assert.match(els.hardcoverTokenState.textContent, /saved in this browser only/);
   await els.hardcoverExportBtn.listeners.click[0]();   // the preview, then the run, edited while it goes
@@ -1639,40 +1314,10 @@ test('a Hardcover run in the page writes and sends nothing when the catalogue is
   assert.equal(get('DATA[0].hcb || null'), null);
   assert.match(els.ioStatus.textContent, /Not everything went through/);
 
-  const offline = await boot({ page: 'import.html', files: { 'data/books.json': JSON.stringify(mine) }, setTimeout, storage });
+  const offline = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, setTimeout, storage });
   await offline.els.hardcoverImportBtn.listeners.click[0]();
-  assert.match(offline.els.importPreviewBody.innerHTML, /this browser could not reach Hardcover .*make serve/);
+  assert.match(offline.els.importPreviewBody.innerHTML, /this browser could not reach Hardcover \(offline/);
   assert.equal(offline.els.importConfirm.style.display, 'none');
-});
-
-test('every page shows a Hardcover run already going, and picks up what it wrote', async () => {
-  const mine = JSON.stringify([{ t: 'Lantern Hours', a: ['R. T. Hale'] }]);
-  const files = { 'data/books.json': mine };
-  const server = fakeHardcoverServer(() => []);
-  let gets = 0;
-  const api = async (init, url) => {
-    if (url !== 'api/hardcover') return server.api(init, url);
-    gets++;
-    if (gets === 1) return { status: 200, body: { job: { id: 7, mode: 'sync', dryRun: false, running: true, elapsed: 3000, step: 'Finding your books on Hardcover', done: 50, total: 200 } } };
-    files['data/books.json'] = JSON.stringify([...JSON.parse(mine), { t: 'Tidewater', a: ['Ann Vale'] }]);
-    return { status: 200, body: { job: { id: 7, mode: 'sync', dryRun: false, running: false, elapsed: 9000, step: 'Done', code: 0, out: '', err: '', base: 'new' } } };
-  };
-  const { els, get } = await boot({ files, api, setTimeout: server.setTimeout });
-  await settle(); await settle();
-  assert.ok(els.bgTask.classList.contains('show'));
-  assert.match(els.bgTask.innerHTML, /<strong>Syncing with Hardcover<\/strong> <span class="bgTaskTime">0:03<\/span><br>Finding your books on Hardcover: 50 of 200/);
-  assert.match(els.bgTask.innerHTML, /<a href="import.html">Details<\/a>/);
-  await server.tick();
-  await settle();
-  assert.ok(!els.bgTask.classList.contains('show'));
-  assert.equal(get('DATA.length'), 2);
-  assert.match(els.ioStatus.textContent, /Syncing with Hardcover: done\./);
-
-  // a run that ended before the page loaded shows nothing
-  const later = await boot({ files, api: async (init, url) => url === 'api/hardcover'
-    ? { status: 200, body: { job: { id: 7, mode: 'sync', running: false, code: 0 } } } : server.api(init, url) });
-  await settle();
-  assert.ok(!later.els.bgTask.classList.contains('show'));
 });
 
 // ------------------------------------------------------------------ the authors page
@@ -1756,9 +1401,9 @@ test('author info can be added, edited and removed on the author\'s page, and li
   const entry = { bio: 'Builds clockwork worlds.\n\nLives by a canal.', url: 'https://wendell.example/', hardcover: 'https://hardcover.app/authors/wendell' };
   assert.deepEqual(get("AUTHORS['Wendell Ashcombe']"), entry);
   assert.match(els.authorBody.innerHTML, /<p>Builds clockwork worlds\.<\/p><p>Lives by a canal\.<\/p>/);
-  assert.match(els.ioStatus.textContent, /Saved author info for Wendell Ashcombe\. Export it/);
+  assert.match(els.ioStatus.textContent, /^Saved author info for Wendell Ashcombe\.$/);
   // kept in this browser, and loaded again with the page
-  assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-data')).authors['Wendell Ashcombe'], entry);
+  assert.deepEqual(kept(storage).authors['Wendell Ashcombe'], entry);
   const again = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', storage: new Map(storage) });
   assert.deepEqual(again.get("AUTHORS['Wendell Ashcombe']"), entry);
 
@@ -1773,61 +1418,23 @@ test('author info can be added, edited and removed on the author\'s page, and li
   assert.ok(get("'Marisol Quenby' in AUTHORS"), 'the other authors keep theirs');
 });
 
-test('with make serve, author info is saved to data/authors.json with the books', async () => {
-  const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
-  const saves = [];
-  const api = async init => {
-    if (!init.method) return { status: 200, body: { writable: true } };
-    const body = JSON.parse(init.body);
-    saves.push(body);
-    return { status: 200, body: { base: 'b', infoBase: 'i', authorsBase: 'a' + saves.length, books: body.books, authors: body.authors } };
-  };
-  const authorsText = '{"Me":{"bio":"On disk."}}';
-  const { els, get, storage } = await boot({ page: 'authors.html', hash: '#a=Me', files: { 'data/books.json': mine, 'data/authors.json': authorsText }, api });
-  assert.match(els.authorBody.innerHTML, /On disk\./);
-  els.authorBody.listeners.click[0]({ target: { closest: () => ({}) } });
-  els.af_url.value = 'https://me.example/';
-  els.authorForm.listeners.submit[0]({ preventDefault() {} });
-  await settle();
-  assert.equal(saves.length, 1);
-  assert.deepEqual(saves[0].authors, { Me: { bio: 'On disk.', url: 'https://me.example/' } });
-  assert.equal(saves[0].authorsBase, get('CatalogImport.fingerprint(' + JSON.stringify(authorsText) + ')'));
-  assert.equal(get('AUTHORS_BASELINE'), 'a1');
-  assert.ok(!storage.has('audiobook-catalog-data'));
-  assert.equal(els.ioStatus.textContent, 'Saved author info for Me.');
-});
-
-test('Check on the import page lists problems and older formats, and rewrites the data files under make serve', async () => {
-  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', id: 'B0OLD00001' }], null, 2);
+test('Check on the import page lists problems and older formats, and saves the catalogue in the current one', async () => {
+  const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', id: 'B0OLD00001' }]);
   const info = JSON.stringify({ Nowhere: { total: 3, status: 'ongoing' } });
-  const files = { 'data/books.json': mine, 'data/series-info.json': info };
-  const plain = await boot({ page: 'import.html', files });
-  plain.els.checkBtn.listeners.click[0]();
-  const report = plain.els.importPreviewBody.innerHTML;
+  const { els, storage } = await boot({ page: 'import.html', files: { 'books.json': mine, 'series-info.json': info } });
+  els.checkBtn.listeners.click[0]();
+  const report = els.importPreviewBody.innerHTML;
   assert.match(report, /1 books, 0 series, 1 with release info, 0 authors with info/);
   assert.match(report, /Errors \(1\):.*&#39;Nowhere&#39; matches no series/s);
   assert.match(report, /some books keep their ids, ISBNs or narrator on the book/);
-  assert.match(report, /books\.json is not written as the compact JSON the tools write/);
-  assert.equal(plain.els.importConfirm.style.display, 'none', 'nothing here can rewrite the files');
-
-  const saves = [];
-  const api = async (init, url) => {
-    if (url !== 'api/save') return { status: 200, body: {} };
-    if (init.method !== 'PUT') return { status: 200, body: { writable: true, audible: false, hardcover: false } };
-    const body = JSON.parse(init.body);
-    saves.push(body);
-    return { status: 200, body: { base: 'b', infoBase: 'i', authorsBase: 'a', books: body.books } };
-  };
-  const served = await boot({ page: 'import.html', files: { 'data/books.json': mine }, api });
-  served.els.checkBtn.listeners.click[0]();
-  assert.equal(served.els.importConfirm.style.display, '');
-  assert.equal(served.els.importConfirm.textContent, 'Rewrite data files');
-  await served.els.importConfirm.listeners.click[0]();
-  await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(saves.map(s => s.books), [[{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]]);
-  served.els.checkBtn.listeners.click[0]();
-  assert.doesNotMatch(served.els.importPreviewBody.innerHTML, /older format/, 'the save wrote the current format');
-  assert.equal(served.els.importConfirm.style.display, 'none');
+  assert.equal(els.importConfirm.style.display, '');
+  assert.equal(els.importConfirm.textContent, 'Save in the current format');
+  els.importConfirm.listeners.click[0]();
+  assert.deepEqual(kept(storage).books, [{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
+  assert.equal(els.ioStatus.textContent, 'Saved in the current format.');
+  els.checkBtn.listeners.click[0]();
+  assert.doesNotMatch(els.importPreviewBody.innerHTML, /older format/, 'the save wrote the current format');
+  assert.equal(els.importConfirm.style.display, 'none');
 });
 
 test('Box sets on the import page adds a set beside the titles sharing its edition, once confirmed', async () => {
@@ -1836,7 +1443,7 @@ test('Box sets on the import page adds a set beside the titles sharing its editi
     { t: 'Gull Isle', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [set] },
     { t: 'Second Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [set] },
   ]);
-  const { els, get } = await boot({ page: 'import.html', files: { 'data/books.json': mine } });
+  const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
   els.boxSetsBtn.listeners.click[0]();
   assert.match(els.importPreviewBody.innerHTML, /Gull Isle, Books 1-2 &mdash; Ann Vale: 2 titles already here/);
   assert.match(els.importPreviewBody.innerHTML, /New: 1/);

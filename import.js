@@ -2,16 +2,14 @@
 // Loading and saving live in store.js.
 import * as CatalogImport from './importers.js';
 import {
-  DATA, SERIES_INFO, AUTHORS, setData, setSeriesInfo, setAuthors, BASELINE, INFO_BASELINE, EXCLUSIONS, LOCAL_SEEN, AUDIBLE_LOOKUP, HARDCOVER, NOT_DUPLICATES,
-  addNotDuplicates, esc, localNow, persist, addExclusions, keepHint, keepOnDevice, showIoStatus, unsavedEdits, reloadFromDisk,
-  HARDCOVER_JOB, minutes, showHardcoverJob, followHardcover, HARDCOVER_TOKEN_KEY, HARDCOVER_PAUSE_MS, browserHardcoverToken,
-  fetchHardcover, startPage, FORMAT_NOTES, DISK_SAVE
+  DATA, SERIES_INFO, AUTHORS, setData, setSeriesInfo, setAuthors, EXCLUSIONS, LOCAL_SEEN, NOT_DUPLICATES,
+  addNotDuplicates, esc, localNow, persist, addExclusions, showIoStatus,
+  minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, HARDCOVER_PAUSE_MS, browserHardcoverToken,
+  fetchHardcover, startPage, FORMAT_NOTES
 } from './store.js';
 
 function refreshPage(){
   document.getElementById('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
-  document.getElementById('audiblePanel').style.display = AUDIBLE_LOOKUP ? '' : 'none';
-  document.getElementById('importSeriesOption').style.display = AUDIBLE_LOOKUP ? '' : 'none';
 }
 
 function download(text, type, name){
@@ -41,36 +39,39 @@ function exportGoodreads(){
   showIoStatus(`Goodreads CSV with ${out.books} books downloaded${notes.length ? ' (' + notes.join('; ') + ')' : ''}.`);
 }
 
-function importBackup(file){
-  const reader = new FileReader();
-  reader.onload = e=>{
-    try{
-      const {books, seriesInfo, authors, excluded, notDuplicates} = CatalogImport.readBackup(JSON.parse(e.target.result));
-      const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
-      if(bad) throw new Error('missing title/author');
-      setData(books);
-      if(seriesInfo) setSeriesInfo(seriesInfo);     // older backups have no series info: keep the current one
-      if(authors) setAuthors(authors);              // nor author info
-      const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
-      addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
-      // with no data/books.json to save to (the demo is showing), the restored catalogue becomes this device's own
-      const onDevice = keepOnDevice();
-      if(onDevice && !authors) setAuthors({});     // the demo's authors are not this device's
-      refreshPage(); persist();
-      showIoStatus(`Imported ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series` : '') +
-        (newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.') +
-        (onDevice ? ' This device now keeps its own catalogue.' : ''));
-    }catch(err){
-      showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
-    }
-  };
-  reader.readAsText(file);
+// Pick the files to read; resolves to [{name, text}].
+function readFiles(files){
+  return Promise.all([...files].map(file=> new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=> resolve({name: file.name, text: e.target.result});
+    reader.onerror = ()=> reject(new Error(`couldn't read ${file.name}`));
+    reader.readAsText(file);
+  })));
+}
+
+// Restore: a backup, or the data files of a catalogue from before it lived in the browser
+// (books.json, series-info.json, ... picked together; CatalogImport.readDataFiles), replaces the catalogue.
+async function importBackup(files){
+  try{
+    const {books, seriesInfo, authors, excluded, notDuplicates} = CatalogImport.readDataFiles(await readFiles(files));
+    const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
+    if(bad) throw new Error('missing title/author');
+    setData(books);
+    if(seriesInfo) setSeriesInfo(seriesInfo);     // older backups have no series info: keep the current one
+    if(authors) setAuthors(authors);              // nor author info
+    const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
+    addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
+    refreshPage(); persist();
+    showIoStatus(`Restored ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series` : '') +
+      (newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
+  }catch(err){
+    showIoStatus("Couldn't read that — pick a catalogue backup JSON, or your books.json with the other data files.", true);
+  }
 }
 
 // ------------------------------------------------------------ Audible / Goodreads CSV import
-// The same pipeline as `node catalog.js import-audible|import-goodreads` (both use importers.js):
-// read the export, merge it into a copy of the catalogue, show what would change, and only
-// apply it when confirmed. Like every edit in the page, the result is then saved (see persist).
+// Read the export, merge it into a copy of the catalogue, show what would change, and only apply it
+// when confirmed. Like every edit in the page, the result is then saved (see persist).
 const IMPORTERS = {
   // an Audible export's ASINs are those of the site picked beside the buttons (audible.com unless changed)
   audible: {label: 'Audible', read: text=> CatalogImport.readAudible(text, document.getElementById('audibleImportSite').value)},
@@ -101,7 +102,6 @@ function previewImport(kind, text, fileName){
   const changes = report.added.length + report.backfilled.length + report.goodreadsFilled.length + report.datesFilled.length +
     report.isbnsFilled.length + report.detailsFilled.length + report.editionsAdded.length;
   PENDING_IMPORT = errors.length || !changes ? null : result.records;
-  PENDING_SERIES = null;
   PENDING_HARDCOVER = null;
   PENDING_MERGE = null;
   PENDING_TIDY = null;
@@ -117,11 +117,11 @@ function previewImport(kind, text, fileName){
   if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
   if(report.detailsFilled.length) html += `<p>Narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
   if(report.editionsAdded.length) html += `<p>Other editions added to existing books: ${report.editionsAdded.length}</p>`;
-  if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
+  if(report.excluded.length) html += `<p>Skipped (excluded from imports): ${report.excluded.length}</p>`;
   if(report.boxSets.length){
     html += `<p>Box sets split into their titles, each with the set's edition: ${report.boxSets.length}</p><ul>` +
       report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
-    if(report.boxSets.some(b=> b.added)) html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until the Audible series lookup names it (or you rename it on its card).</p>';
+    if(report.boxSets.some(b=> b.added)) html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>';
   }
   html += `<p>New: ${report.added.length}</p>`;
   if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
@@ -164,116 +164,7 @@ function applyImport(){
     (withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
     (withEditions ? `, added editions to ${withEditions} book${withEditions === 1 ? '' : 's'}` : '') +
     (withDetails ? `, filled in edition details on ${withDetails} book${withDetails === 1 ? '' : 's'}` : '') + '.';
-  showIoStatus(done + keepHint('data/books.json'));
-  // the option under the import buttons: the new books' series, and release info for series new to the catalogue
-  if(IMPORT_KIND === 'audible' && AUDIBLE_LOOKUP && added && document.getElementById('importSeries').checked){
-    return lookUpSeries(report.added, done);
-  }
-}
-
-// ------------------------------------------------------------ series from Audible
-// The same lookup as `node catalog.js series`, with `make serve` asking Audible for the page
-// (api/audible), since a browser may not. What Audible answered is kept, so confirming applies it
-// again to the catalogue as it is then, without asking Audible twice.
-let PENDING_SERIES = null;      // {store, found, totals} while the preview is open
-let LOOKING_UP = false;
-
-// Ask the server about `asins`, a batch at a time; returns a Map of ASIN -> what Audible said.
-async function askAudible(store, groups, asins, progress){
-  const found = new Map();
-  for(let i = 0; i < asins.length; i += 25){
-    progress(i);
-    const res = await fetch('api/audible', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({store, groups, asins: asins.slice(i, i + 25)}),
-    });
-    const body = await res.json();
-    if(!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-    for(const [asin, value] of Object.entries(body.results)) found.set(asin, value);
-  }
-  return found;
-}
-
-// Apply Audible's answers to copies of the books and series info.
-function seriesIntoCopy({store, found, totals}){
-  const data = JSON.parse(JSON.stringify(DATA)), info = JSON.parse(JSON.stringify(SERIES_INFO));
-  const report = CatalogImport.seriesFromAudible(data, found);
-  const renamed = CatalogImport.boxSetTitlesFromAudible(data, report.series, totals);
-  const added = CatalogImport.addSeriesTotals(info, report.series, totals, store, new Date().toISOString().slice(0, 10));
-  return {data, info, report, renamed, added, errors: CatalogImport.validate(data, info).errors};
-}
-
-// Look up the books that need it (of `only`, e.g. the books an import added, by default all); `lead` is said first in the preview.
-async function lookUpSeries(only, lead){
-  if(LOOKING_UP) return;
-  LOOKING_UP = true;
-  const store = document.getElementById('audibleStore').value;
-  const host = CatalogImport.AUDIBLE_STORES[store];
-  const asins = CatalogImport.seriesLookups(DATA, SERIES_INFO, only, store).filter(a=> /^[A-Z0-9]{10}$/.test(a));
-  try{
-    const found = await askAudible(store, 'series', asins, i=> showIoStatus(`Looking up books on ${host}: ${i} of ${asins.length}…`));
-    const series = CatalogImport.seriesFromAudible(JSON.parse(JSON.stringify(DATA)), found).series;
-    const wanted = CatalogImport.seriesListingLookups(DATA, SERIES_INFO, series);
-    const totals = await askAudible(store, 'relationships', wanted, i=> showIoStatus(`Looking up series on ${host}: ${i} of ${wanted.length}…`));
-    previewSeries({store, found, totals}, lead);
-    showIoStatus('');
-  }catch(e){
-    showIoStatus(`Couldn't look up series: ${e.message}`, true);
-  }finally{
-    LOOKING_UP = false;
-  }
-}
-
-function previewSeries(pending, lead){
-  const {info, report, renamed, added, errors} = seriesIntoCopy(pending);
-  const host = CatalogImport.AUDIBLE_STORES[pending.store];
-  const unknown = [...pending.found.values()].filter(x=> x === null).length;
-  const changes = report.filled.length + renamed.length + added.length;
-  PENDING_SERIES = errors.length || !changes ? null : pending;
-  PENDING_IMPORT = null;
-  PENDING_HARDCOVER = null;
-  PENDING_MERGE = null;
-  PENDING_TIDY = null;
-  document.getElementById('mergePrefer').classList.remove('show');
-
-  let html = lead ? `<p>${esc(lead)} Their series:</p>` : '';
-  html += `<p>${pending.found.size} book${pending.found.size === 1 ? '' : 's'} looked up on ${esc(host)}</p>`;
-  html += `<p>Series or number filled in: ${report.filled.length}</p>`;
-  if(report.filled.length) html += `<ul>${report.filled.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}  [${esc(b.s)}${b.sn ? ' #' + esc(b.sn) : ''}]</li>`).join('')}</ul>`;
-  if(renamed.length) html += `<p>Box sets' titles named: ${renamed.length}</p><ul>${renamed.map(([b, old])=> `<li>${esc(old)} &rarr; ${esc(b.t)}</li>`).join('')}</ul>`;
-  html += `<p>Series given a released total: ${added.length}</p>`;
-  if(added.length) html += `<ul>${added.map(name=> `<li>${esc(name)}: ${info[name].total} (marked ongoing; check whether it is complete)</li>`).join('')}</ul>`;
-  if(unknown) html += `<p>Not found on ${esc(host)}: ${unknown} (try another store)</p>`;
-  if(report.warnings.length){
-    html += `<p class="warn">Needs a look (${report.warnings.length}):</p><ul>${report.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`;
-  }
-  if(errors.length){
-    html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
-  } else if(!changes){
-    html += '<p>Nothing to fill in.</p>';
-  }
-  document.getElementById('importPreviewTitle').textContent = 'Series from Audible';
-  document.getElementById('importPreviewBody').innerHTML = html;
-  const confirmBtn = document.getElementById('importConfirm');
-  confirmBtn.style.display = PENDING_SERIES ? '' : 'none';
-  confirmBtn.textContent = 'Save series';
-  document.getElementById('importCancel').textContent = PENDING_SERIES ? 'Cancel' : 'Close';
-  document.getElementById('importPreview').classList.add('open');
-}
-
-function applySeries(){
-  if(!PENDING_SERIES) return;
-  // applied again, in case books were edited while the preview was open
-  const {data, info, report, renamed, added, errors} = seriesIntoCopy(PENDING_SERIES);
-  closeImportPreview();
-  if(errors.length){ showIoStatus('The catalogue changed and the series no longer validate; nothing was changed.', true); return; }
-  setData(data);
-  setSeriesInfo(info);
-  refreshPage(); persist();
-  const filled = report.filled.length;
-  showIoStatus(`Filled in the series of ${filled} book${filled === 1 ? '' : 's'}` +
-    (renamed.length ? `, named ${renamed.length} box set title${renamed.length === 1 ? '' : 's'}` : '') +
-    (added.length ? ` and released totals for ${added.length} series` : '') + '.' + keepHint('data/books.json'));
+  showIoStatus(done);
 }
 
 // ------------------------------------------------------------ Merge a backup from another device
@@ -344,8 +235,7 @@ function applyMerge(){
   addExclusions(m.excluded);
   addNotDuplicates(m.notDuplicates);
   refreshPage(); persist();
-  showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.` +
-    keepHint('data/books.json, data/series-info.json and data/authors.json'));
+  showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.`);
 }
 
 function mergeBackupFile(file){
@@ -355,7 +245,6 @@ function mergeBackupFile(file){
       const backup = CatalogImport.readBackup(JSON.parse(e.target.result));
       if(backup.books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a)) throw new Error('missing title/author');
       PENDING_IMPORT = null;
-      PENDING_SERIES = null;
       PENDING_HARDCOVER = null;
       PENDING_MERGE = {backup, fileName: file.name};
       PENDING_TIDY = null;
@@ -369,9 +258,8 @@ function mergeBackupFile(file){
 }
 
 // ------------------------------------------------------------ Check the catalogue, box sets
-// The page's `node catalog.js validate`, `format` and `box-sets`: the check lists what `make validate`
-// would, and offers to rewrite data files in an older format where a save can (`make serve`); box sets
-// are previewed like an import and only applied when confirmed.
+// The check lists errors, warnings and what is kept in an older format, which it offers to save in the
+// current one; box sets are previewed like an import and only applied when confirmed.
 export let PENDING_TIDY = null;   // 'format' or 'box-sets', while its preview is open
 
 // A list of messages, at most `limit` of them, saying how many more there are.
@@ -382,7 +270,6 @@ function messageList(items, limit = 100){
 
 function showTidyPreview(title, html, confirm){
   PENDING_IMPORT = null;
-  PENDING_SERIES = null;
   PENDING_HARDCOVER = null;
   PENDING_MERGE = null;
   document.getElementById('mergePrefer').classList.remove('show');
@@ -409,12 +296,11 @@ function checkCatalogue(){
   if(warnings.length) html += `<p class="warn">Needs a look (${warnings.length}):</p>` + messageList(warnings);
   if(FORMAT_NOTES.length){
     html += `<p>In an older format (read the current way here):</p>` + messageList(FORMAT_NOTES);
-    html += DISK_SAVE ? '<p>Rewrite data files to write them in the current format, as <code>make format</code> does.</p>'
-      : '<p>Any save under <code>make serve</code>, or <code>make format</code>, writes them in the current format.</p>';
+    html += '<p>Save it to keep it in the current format; any edit does that too.</p>';
   }
   if(!errors.length && !warnings.length && !FORMAT_NOTES.length) html += '<p>No problems found.</p>';
-  PENDING_TIDY = DISK_SAVE && FORMAT_NOTES.length ? 'format' : null;
-  showTidyPreview('Check the catalogue', html, 'Rewrite data files');
+  PENDING_TIDY = FORMAT_NOTES.length ? 'format' : null;
+  showTidyPreview('Check the catalogue', html, 'Save in the current format');
 }
 
 // Keep each box set as its own book and as its titles, in a copy of DATA (CatalogImport.boxSetBooks).
@@ -431,13 +317,13 @@ function previewBoxSets(){
   if(report.boxSets.length){
     html += '<ul>' + report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}: ${b.titles} title${b.titles === 1 ? '' : 's'} already here</li>`).join('') + '</ul>';
   }
-  if(report.excluded.length) html += `<p>Skipped (listed in data/excluded.txt): ${report.excluded.length}</p>`;
+  if(report.excluded.length) html += `<p>Skipped (excluded from imports): ${report.excluded.length}</p>`;
   html += `<p>New: ${report.added.length}</p>`;
   if(report.added.length){
     html += `<ul>${report.added.map(b=> `<li>${bookLine(b)}</li>`).join('')}</ul>`;
   }
   if(report.boxSets.some(b=> b.added)){
-    html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until the Audible series lookup names it (or you rename it on its card).</p>';
+    html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>';
   }
   if(errors.length){
     html += '<p class="warn">Validation failed, nothing will be changed:</p>' + messageList(errors, 10);
@@ -453,8 +339,8 @@ function applyTidy(){
   closeImportPreview();
   if(pending === 'format'){
     // a save writes the books as the page holds them, which is the current format
-    showIoStatus('');   // so the save says when it is done
     persist();
+    if(!FORMAT_NOTES.length) showIoStatus('Saved in the current format.');
     return;
   }
   // applied again, in case books were edited while the preview was open
@@ -463,95 +349,48 @@ function applyTidy(){
   setData(data);
   refreshPage(); persist();
   const added = report.added.length;
-  showIoStatus(`Added ${added} book${added === 1 ? '' : 's'} for box sets.` + keepHint('data/books.json'));
+  showIoStatus(`Added ${added} book${added === 1 ? '' : 's'} for box sets.`);
 }
 
 // ------------------------------------------------------------ Hardcover
-// Under `make serve`, `node catalog.js hardcover-import|export|sync` runs on the server with the token it
-// keeps (data/hardcover-token), in the background, shown on every page while it goes (store.js); the page
-// then reloads data/ from disk. Anywhere else (the installed app, another server) the page runs it itself,
-// as Hardcover's API allows browser requests, with a token kept in this browser only (never in a backup);
-// it stops if you leave the page, so the browser asks first. Either way a dry run shows what would
-// happen, and confirming runs it for real.
+// The page runs it itself, as Hardcover's API allows browser requests, with a token kept in this browser
+// only (never in a backup); it stops if you leave the page, so the browser asks first. A dry run shows
+// what would happen, and confirming runs it for real.
 const HARDCOVER_MODES = {
   import: {title: 'Import from Hardcover', confirm: 'Import'},
   export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
   sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
 };
 export let PENDING_HARDCOVER = null;   // the mode, while its preview is open
-let PAGE_RUN = null;           // a run going on in this page, described like the server's (showHardcoverJob)
+let PAGE_RUN = null;           // a run going on in this page (showHardcoverJob)
 
-async function showHardcoverToken(){
-  let saved = false;
-  if(HARDCOVER){
-    try{ saved = (await (await fetch('api/hardcover/token', {cache: 'no-cache'})).json()).token === true; }catch(e){}
-  } else saved = Boolean(browserHardcoverToken());
-  const where = HARDCOVER ? 'with your catalogue (data/hardcover-token, never committed)' : 'in this browser only (never in a backup)';
+function showHardcoverToken(){
+  const saved = Boolean(browserHardcoverToken());
   document.getElementById('hardcoverTokenState').textContent = saved
-    ? `Your Hardcover API token is saved ${where}.`
-    : `Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept ${where}.`;
+    ? 'Your Hardcover API token is saved in this browser only (never in a backup).'
+    : 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept in this browser only (never in a backup).';
   document.getElementById('hardcoverTokenRemove').style.display = saved ? '' : 'none';
-  document.getElementById('hardcoverTokenSave').title = HARDCOVER ? 'Keep this token with your catalogue, in data/hardcover-token' : 'Keep this token in this browser';
-  document.getElementById('hardcoverTokenRemove').title = HARDCOVER ? 'Delete data/hardcover-token' : 'Forget the token in this browser';
 }
 
-async function saveHardcoverToken(remove){
+function saveHardcoverToken(remove){
   const input = document.getElementById('hardcoverToken');
   if(!remove && !input.value.trim()){ showIoStatus('Paste your Hardcover API token first.', true); return; }
-  if(!HARDCOVER){
-    try{
-      if(remove) localStorage.removeItem(HARDCOVER_TOKEN_KEY);
-      else localStorage.setItem(HARDCOVER_TOKEN_KEY, CatalogImport.cleanHardcoverToken(input.value));
-      input.value = '';
-      showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
-    }catch(e){
-      showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: this browser refused to store it.`, true);
-    }
-    await showHardcoverToken();
-    return;
-  }
   try{
-    const res = await fetch('api/hardcover/token', remove ? {method: 'DELETE'} : {
-      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token: input.value}),
-    });
-    const body = await res.json();
-    if(!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    if(remove) localStorage.removeItem(HARDCOVER_TOKEN_KEY);
+    else localStorage.setItem(HARDCOVER_TOKEN_KEY, CatalogImport.cleanHardcoverToken(input.value));
     input.value = '';
     showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
   }catch(e){
-    showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: ${e.message}`, true);
+    showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: this browser refused to store it.`, true);
   }
-  await showHardcoverToken();
-}
-
-// Start `mode` on the server; store.js follows it (the banner on top) and hands it to onHardcoverDone.
-async function startHardcover(mode, dryRun){
-  if(!HARDCOVER) return runHardcoverHere(mode, dryRun);
-  if(HARDCOVER_JOB) return;
-  if(unsavedEdits()){ showIoStatus('Some edits are not saved to data/ yet. Wait for "Saved." (or reload the page), then try again.', true); return; }
-  let res, body;
-  try{
-    res = await fetch('api/hardcover', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({mode, dryRun, base: BASELINE, infoBase: INFO_BASELINE}),
-    });
-    body = await res.json();
-  }catch(e){
-    showIoStatus('Couldn\'t reach the server (is `make serve` still running?).', true);
-    return;
-  }
-  if(res.ok){ await followHardcover(body.job); return; }
-  if(body.job && body.job.running){ showIoStatus('A Hardcover run is already going; it is shown on top.', true); await followHardcover(body.job); return; }
-  showIoStatus(body.conflict ? 'data/books.json changed on disk since this page loaded it. Reload the page, then try again.'
-    : `Couldn't start it: ${body.error || 'HTTP ' + res.status}`, true);
+  showHardcoverToken();
 }
 
 /**
- * Run `mode` in this page (CatalogImport.runHardcover) on a copy of the catalogue, shown like a server run
- * (the banner on top). A real run keeps its changes (persist) before sending anything to Hardcover, unless
- * the catalogue was edited meanwhile. Returns a promise of the ended run.
+ * Run `mode` (CatalogImport.runHardcover) on a copy of the catalogue, shown in the banner on top. A real
+ * run keeps its changes (persist) before sending anything to Hardcover, unless the catalogue was edited meanwhile. Returns a promise of the ended run.
  */
-async function runHardcoverHere(mode, dryRun){
+async function runHardcover(mode, dryRun){
   if(PAGE_RUN) return;
   const token = browserHardcoverToken();
   if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
@@ -602,26 +441,14 @@ addEventListener('beforeunload', e => {
   if(PAGE_RUN && !PAGE_RUN.dryRun){ e.preventDefault(); e.returnValue = ''; }
 });
 
-// Each update of a run (store.js): no second run while one goes.
+// Each update of a run (showHardcoverJob in store.js): no second run while one goes.
 function onHardcoverJob(job){
   const busy = Boolean(job && job.running);
   for(const id of ['hardcoverImportBtn', 'hardcoverExportBtn', 'hardcoverSyncBtn']) document.getElementById(id).disabled = busy;
 }
 
-// A run ended (store.js): a dry run is offered to be run for real; a real one shows what it did, and the
-// page picks up what it wrote.
-async function onHardcoverDone(job){
-  showHardcoverResult(job.mode, job, job.dryRun);
-  if(job.dryRun) return;
-  if(job.base && job.base !== BASELINE){
-    try{ await reloadFromDisk(); }catch(e){ showIoStatus('Done; reload the page to see the catalogue as it is now.', true); return; }
-  }
-  showIoStatus(job.code === 0 ? `${HARDCOVER_MODES[job.mode].title}: done.` : 'Not everything went through; see the details.', job.code !== 0);
-}
-
 function showHardcoverResult(mode, result, pending){
   PENDING_IMPORT = null;
-  PENDING_SERIES = null;
   PENDING_HARDCOVER = pending && result.code === 0 ? mode : null;
   PENDING_MERGE = null;
   PENDING_TIDY = null;
@@ -640,19 +467,18 @@ function showHardcoverResult(mode, result, pending){
 
 function previewHardcover(mode){
   closeImportPreview();
-  return startHardcover(mode, true);
+  return runHardcover(mode, true);
 }
 
 function applyHardcover(){
   const mode = PENDING_HARDCOVER;
   if(!mode) return;
   closeImportPreview();
-  return startHardcover(mode, false);
+  return runHardcover(mode, false);
 }
 
 function closeImportPreview(){
   PENDING_IMPORT = null;
-  PENDING_SERIES = null;
   PENDING_MERGE = null;
   PENDING_TIDY = null;
   document.getElementById('mergePrefer').classList.remove('show');
@@ -680,19 +506,12 @@ document.getElementById('importCsvFile').addEventListener('change', e=>{
   if(file) importCsv(IMPORT_KIND, file);
   e.target.value = '';
 });
-document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : PENDING_SERIES ? applySeries() : applyImport());
+document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : applyImport());
 for(const mode of Object.keys(HARDCOVER_MODES)){
   document.getElementById(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
 }
 document.getElementById('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
 document.getElementById('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
-document.getElementById('audibleSeriesBtn').addEventListener('click', ()=> lookUpSeries());
-// remembered in this browser, like a preference
-const SERIES_AFTER_IMPORT_KEY = 'audiobook-catalog-import-series';
-try{ document.getElementById('importSeries').checked = localStorage.getItem(SERIES_AFTER_IMPORT_KEY) === '1'; }catch(e){}
-document.getElementById('importSeries').addEventListener('change', e=>{
-  try{ localStorage.setItem(SERIES_AFTER_IMPORT_KEY, e.target.checked ? '1' : '0'); }catch(err){}
-});
 document.getElementById('importCancel').addEventListener('click', closeImportPreview);
 
 document.getElementById('checkBtn').addEventListener('click', checkCatalogue);
@@ -708,9 +527,9 @@ document.getElementById('mergeFile').addEventListener('change', e=>{
 });
 document.getElementById('mergePreferSelect').addEventListener('change', ()=>{ if(PENDING_MERGE) previewMerge(); });
 document.getElementById('importFile').addEventListener('change', e=>{
-  const file = e.target.files[0];
-  if(file) importBackup(file);
+  const files = [...e.target.files];
   e.target.value = '';
+  if(files.length) return importBackup(files);
 });
 
-export const READY = startPage(()=>{ refreshPage(); return showHardcoverToken(); }, {refresh: refreshPage, onHardcoverJob, onHardcoverDone});
+export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); }, {onHardcoverJob});

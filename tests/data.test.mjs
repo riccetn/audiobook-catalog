@@ -1,5 +1,6 @@
-// Guards the data files: the demo data is always checked, your own data too when it is present,
-// and personal data must never be tracked by git (this repository is public).
+// Guards the data files: the demo data the tests use is checked, and personal data (data files kept
+// from before the catalogue lived in the browser, raw exports) must never be tracked by git (this
+// repository is public).
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,11 +9,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as C from '../importers.js';
-import { loadBooks, loadSeriesInfo, loadAuthors } from '../catalog.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(root, 'data');
 const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+const loadBooks = file => C.fixBooks(JSON.parse(read(file)));
+const loadSeriesInfo = file => JSON.parse(read(file));
+const loadAuthors = file => JSON.parse(read(file));
 
 test('demo data validates without errors or warnings', () => {
   const folder = path.join(DATA, 'sample');
@@ -26,14 +29,6 @@ test('demo data has what the smoke test needs', () => {
   const books = loadBooks(path.join(DATA, 'sample', 'books.json'));
   assert.ok(books.some(b => !b.s), 'needs standalone books');
   assert.ok(books.some(b => b.s), 'needs series');
-});
-
-const ownData = fs.existsSync(path.join(DATA, 'books.json'));
-const noOwnData = !ownData && 'no personal data/books.json (fine: it is git-ignored)';
-
-test('your own data validates without errors', { skip: noOwnData }, () => {
-  assert.deepEqual(C.validate(loadBooks(path.join(DATA, 'books.json')), loadSeriesInfo(path.join(DATA, 'series-info.json'))).errors, []);
-  assert.deepEqual(C.validateAuthors(loadBooks(path.join(DATA, 'books.json')), loadAuthors(path.join(DATA, 'authors.json'))).errors, []);
 });
 
 const PRIVATE = ['data/books.json', 'data/series-info.json', 'data/authors.json', 'data/excluded.txt', 'data/not-duplicates.txt', 'data/hardcover-token', 'data/raw/*'];
