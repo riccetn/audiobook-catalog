@@ -58,8 +58,8 @@ an edition of its own), and the Hardcover book id moves to the book (a box set's
 its titles, gives way to the book's own). Until 2026-10 the authors and narrators were one comma
 separated text (`"a": "Ann Vale, Bo Reed"`); that is read as a list, split at commas, semicolons, `&`
 and `and` (a suffix such as `Jr.` stays with its name). Until 2026-10 an edition had one ASIN, `id`,
-which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). `make validate` mentions all of these, and
-`make format`, or any save from the page, an import or `sync-export`, writes them in the new shape.
+which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). `make validate` (or **Check** on the *Import & export* page) mentions all of these, and
+`make format`, any save from the page (**Rewrite data files** after a **Check** under `make serve`), an import or `sync-export`, writes them in the new shape.
 
 `data/series-info.json` maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.

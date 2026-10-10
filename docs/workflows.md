@@ -48,6 +48,10 @@ When both catalogues have changed, merge the backup instead: see
 [Merge a backup from another device](backups.md).
 You can also edit `data/books.json` by hand; `make format` rewrites it the way the tools write it.
 
+**Check the catalogue**: **Check** on the *Import & export* page lists the errors and warnings `make validate`
+would, and the data files still in an older format or layout; under `make serve` its **Rewrite data files**
+does what `make format` does.
+
 **Authors' bios and links**: the *Authors* page lists every author; each author's page shows a bio,
 links to their website and their pages on Audible, Goodreads and Hardcover, and their series and titles.
 Author names on the books link there. See [Authors](authors.md).

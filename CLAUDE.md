@@ -36,7 +36,7 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
 - `importers.js`: the data pipeline, shared by the page and the CLI: a module that exports its functions
   by name (`import * as CatalogImport from './importers.js'` in the pages, `as C` in `catalog.js`). Keep
   it free of imports and of Node or DOM APIs, so the page and the CLI import, tidy, validate and merge identically.
-  Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`,
+  Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`, `formatNotes` (what is in an older format),
   `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`, `seriesLookups`/`seriesFromAudible` (the `series` command),
   `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, `parseHardcoverUrl`/`hardcoverBookId` (a book's id from its hardcover.app address), run by `runHardcover` through
   `hardcoverAsker` (the `hardcover-*` commands and the page's own runs; fetch and pause are passed in; the
@@ -77,7 +77,8 @@ CI (`.github/workflows/ci.yml`) runs `make test` then `make validate` on pull re
   (the smoke test checks every module a page imports).
 - `app.js` (`index.html`): series overview, all books, the book and series-info forms, module-level
   state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
-- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, the Hardcover panel (under `make serve` the server runs it; elsewhere the page calls Hardcover itself, `runHardcoverHere`, with the token in localStorage `audiobook-catalog-hardcover-token`), Export / Restore / Merge of backups.
+- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`validate`, plus
+  `FORMAT_NOTES` from `formatNotes` and a rewrite under `make serve`) and Box sets (`boxSetBooks`), the Hardcover panel (under `make serve` the server runs it; elsewhere the page calls Hardcover itself, `runHardcoverHere`, with the token in localStorage `audiobook-catalog-hardcover-token`), Export / Restore / Merge of backups.
 - `authors.js` (`authors.html`): the list of authors and an author's page (`#a=Name`): bio and links from
   `AUTHORS`, their series and titles from the books (`authorWorks`), and the author info form. Author
   names on the catalogue's book cards link here.

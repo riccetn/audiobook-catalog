@@ -57,3 +57,5 @@ ASIN, Goodreads id, Hardcover id or ISBN) gains its titles as an import would ad
 share an edition and are numbers in a row of one series gain the set as its own book, named by the
 edition's description (the set's name, from an import) or else `Series, Books 1-3`, with the dates read
 all its titles have. Nothing in `data/excluded.txt` is added, so a title or set you removed stays away.
+**Box sets** on the *Import & export* page does the same in the app: it lists what it would add, and
+changes nothing until you confirm.
