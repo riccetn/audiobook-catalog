@@ -1,6 +1,6 @@
 # Hardcover
 
-The catalogue can import from and export to your shelves on [Hardcover](https://hardcover.app),
+The catalog can import from and export to your shelves on [Hardcover](https://hardcover.app),
 through Hardcover's API. Make a token on Hardcover (**Settings → Hardcover API**, `hardcover.app/account/api`)
 with the scopes `read:me`, `read:catalog`, `read:library` and, for exports, `write:library`.
 
@@ -11,7 +11,7 @@ same site can read it too: on GitHub Pages every project site of an account (`<n
 shares one site, so host the app on its own (sub)domain if you publish other pages there.
 
 **Import**, **Export** and **Sync** first show what would happen, and nothing changes, here or on
-Hardcover, until you confirm; confirming runs it. The catalogue is saved before anything is sent to
+Hardcover, until you confirm; confirming runs it. The catalog is saved before anything is sent to
 Hardcover. While it runs, a banner on top shows what it is doing (reading your shelves, finding your books
 on Hardcover, putting them on your shelf...), how far it has got (`12 of 40`) and how long it has been
 going. Stay on the page until it is done: leaving the page, or opening another page of the app, stops the
@@ -48,4 +48,4 @@ address in an edition's *Hardcover edition* field needs no lookup: it holds the 
 Nothing is ever changed or removed on either side: a book on another Hardcover shelf (*Want to Read*,
 *Did Not Finish*, ...) is listed and left alone, and ratings and reviews are not touched. Running it again
 only does what is still missing. Hardcover allows 60 requests a minute, so the page asks once a second;
-a first export of a large catalogue takes a few minutes.
+a first export of a large catalog takes a few minutes.

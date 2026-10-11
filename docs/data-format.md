@@ -1,8 +1,8 @@
 # Data format
 
-The catalogue is kept in the browser ([Running the app and keeping your catalogue](saving.md)) in the
+The catalog is kept in the browser ([Running the app and keeping your catalog](saving.md)) in the
 shape a backup has: `{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`.
-The books (`books.json` before the catalogue moved into the browser) are a list of titles, with short keys to keep it small:
+The books (`books.json` before the catalog moved into the browser) are a list of titles, with short keys to keep it small:
 
 | key  | meaning                                             | required |
 |------|-----------------------------------------------------|----------|
@@ -21,9 +21,9 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 
 | key    | meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
-| `asin` | the edition's ASINs, by site: `{"audible.com": "B0…", "amazon.com": "B0…"}`. Amazon and each of its Audible and Amazon sites may give one edition an ASIN of its own, so each is kept under its site's address (`audible.com`, `audible.co.uk`, `amazon.com`, `amazon.de`, …). Re-imports recognise the book by any of them; only another ASIN on the same site makes another edition |
-| `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognise the book |
-| `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognise it      |
+| `asin` | the edition's ASINs, by site: `{"audible.com": "B0…", "amazon.com": "B0…"}`. Amazon and each of its Audible and Amazon sites may give one edition an ASIN of its own, so each is kept under its site's address (`audible.com`, `audible.co.uk`, `amazon.com`, `amazon.de`, …). Re-imports recognize the book by any of them; only another ASIN on the same site makes another edition |
+| `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognize the book |
+| `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognize it      |
 | `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page saves |
 | `n`    | list of this edition's narrators, one name each (`["Tobias Frane"]`)     |
 | `p`    | publisher                                                                |

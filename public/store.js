@@ -1,4 +1,4 @@
-// What every page shares: the catalogue, kept in this browser's localStorage and nowhere else, the
+// What every page shares: the catalog, kept in this browser's localStorage and nowhere else, the
 // status line and the page links. Each page's own module starts with startPage(), handing it a refresh()
 // that redraws the page from DATA.
 import * as CatalogImport from './importers.js';
@@ -19,12 +19,29 @@ import * as CatalogImport from './importers.js';
  * @property {string} [err] what went wrong
  */
 
-// The catalogue: {books, seriesInfo, authors, excluded}, the shape of a backup. (The key is the one the
-// installed app kept its own catalogue under, so a phone's catalogue carries over as it is.)
+// The catalog: {books, seriesInfo, authors, excluded}, the shape of a backup. (The key is the one the
+// installed app kept its own catalog under, so a phone's catalog carries over as it is.)
 const CATALOG_KEY = 'audiobook-catalog-device';
-// Where edits waited for `make serve` to save them to data/, when the catalogue still lived in files:
-// {data, info, authors, excluded}. Only read, once, when there is no catalogue yet.
+// Where edits waited for `make serve` to save them to data/, when the catalog still lived in files:
+// {data, info, authors, excluded}. Only read, once, when there is no catalog yet.
 const OLD_EDITS_KEY = 'audiobook-catalog-data';
+
+// British spelling ("catalogue") when the browser's first English language is a British one, else American.
+export const BRITISH = (() => { try{ return CatalogImport.prefersBritish(navigator.languages || [navigator.language]); }catch(e){ return false; } })();
+
+/**
+ * The page's own text in the spelling this browser prefers (see BRITISH); never a book's title or other data.
+ * @param {string} text
+ * @returns {string}
+ */
+export function spell(text){ return CatalogImport.spelled(text, BRITISH); }
+
+// The page as written is American, so respell it before the page's module finds its elements and
+// fills them in; at this point it holds only the page's own text.
+if(BRITISH){
+	document.title = spell(document.title);
+	document.body.innerHTML = spell(document.body.innerHTML);
+}
 
 /** @type {Book[]} */
 export let DATA = [];
@@ -34,7 +51,7 @@ export let SERIES_INFO = {};
 export let AUTHORS = {};              // author name -> {bio, url, audible, goodreads, hardcover}
 export let EXCLUSIONS = CatalogImport.parseExclusions('');   // books imports must never re-add
 /** @type {string[]} */
-export let FORMAT_NOTES = [];         // what in the stored catalogue is from an older format (CatalogImport.formatNotes); any save rewrites it
+export let FORMAT_NOTES = [];         // what in the stored catalog is from an older format (CatalogImport.formatNotes); any save rewrites it
 /** @type {string | null} */
 export let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[CATALOG_KEY]
 
@@ -52,7 +69,7 @@ export function setAuthors(authors){ AUTHORS = authors; }
 let onHardcoverJob = null;
 
 // Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
-// duplicates page. Kept in this browser beside the catalogue; backups carry them too.
+// duplicates page. Kept in this browser beside the catalog; backups carry them too.
 const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
 /** @type {Set<string>} */
 export let NOT_DUPLICATES = new Set();
@@ -91,7 +108,7 @@ export function esc(s){
 	return String(s).replace(/[&<>"']/g, c => entities[c]);
 }
 
-/** @returns {string | null} the catalogue as localStorage holds it now */
+/** @returns {string | null} the catalog as localStorage holds it now */
 export function localNow(){
 	try{ return localStorage.getItem(CATALOG_KEY); }catch(e){ return null; }
 }
@@ -102,12 +119,12 @@ export function updateNav(){
 	byId('dupCount').textContent = n ? ` (${n})` : '';
 }
 
-// Keep the catalogue as the page holds it now. Another page or tab that saved meanwhile would be
+// Keep the catalog as the page holds it now. Another page or tab that saved meanwhile would be
 // overwritten, so then nothing is saved.
 export function persist(){
 	updateNav();
 	if(localNow() !== LOCAL_SEEN){
-		showIoStatus('The catalogue was changed in another tab. Reload this page to see that; this change was not saved.', true);
+		showIoStatus(spell('The catalog was changed in another tab. Reload this page to see that; this change was not saved.'), true);
 		return;
 	}
 	try{
@@ -115,8 +132,8 @@ export function persist(){
 		LOCAL_SEEN = localNow();
 		FORMAT_NOTES = [];    // written as the page holds it, which is the current format
 	}catch(e){
-		// nothing else holds this catalogue, so say so instead of losing the edit quietly
-		showIoStatus('Not saved: this browser refused to store the catalogue (is its storage full?). Export a backup.', true);
+		// nothing else holds this catalog, so say so instead of losing the edit quietly
+		showIoStatus(spell('Not saved: this browser refused to store the catalog (is its storage full?). Export a backup.'), true);
 	}
 }
 
@@ -135,11 +152,11 @@ function askToKeepStorage(){
 }
 
 /**
- * The stored catalogue as a backup ({books, seriesInfo, authors, excluded}), or null when there is none
- * yet. Edits from before, still waiting for `make serve` to save them to data/, are taken as the catalogue.
+ * The stored catalog as a backup ({books, seriesInfo, authors, excluded}), or null when there is none
+ * yet. Edits from before, still waiting for `make serve` to save them to data/, are taken as the catalog.
  * @returns {Unchecked}
  */
-function storedCatalogue(){
+function storedCatalog(){
 	const raw = localNow();
 	if(raw) return JSON.parse(raw);
 	const old = JSON.parse(localStorage.getItem(OLD_EDITS_KEY) || 'null');
@@ -147,11 +164,11 @@ function storedCatalogue(){
 	return null;
 }
 
-// Load the catalogue kept in this browser; with none, it starts empty. One that can't be read is set
+// Load the catalog kept in this browser; with none, it starts empty. One that can't be read is set
 // aside (under CATALOG_KEY + '.unreadable'), not overwritten by the next edit.
-function loadCatalogue(){
+function loadCatalog(){
 	try{
-		const saved = storedCatalogue();
+		const saved = storedCatalog();
 		if(saved){
 			const notes = CatalogImport.formatNotes(saved.books);   // before readBackup migrates them
 			const {books, seriesInfo, authors, excluded} = CatalogImport.readBackup(saved);
@@ -163,7 +180,7 @@ function loadCatalogue(){
 		}
 	}catch(e){
 		try{ localStorage.setItem(CATALOG_KEY + '.unreadable', localNow() || ''); localStorage.removeItem(CATALOG_KEY); }catch(err){}
-		STARTUP_NOTICE = "Couldn't read the catalogue kept in this browser; it was set aside and the catalogue starts empty. Restore a backup.";
+		STARTUP_NOTICE = spell("Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.");
 	}
 	LOCAL_SEEN = localNow();
 }
@@ -272,7 +289,7 @@ export function showHardcoverJob(job){
 				`<strong>${esc((job.dryRun ? HARDCOVER_PREVIEWS : HARDCOVER_VERBS)[job.mode] || 'Working with Hardcover')}</strong>` +
 				` <span class="bgTaskTime">${minutes(job.elapsed)}</span><br>${esc(job.step || '')}` +
 				(counted ? `: ${job.done} of ${job.total} <progress max="${job.total}" value="${job.done}"></progress>` : '') +
-				(job.dryRun ? '' : '<br><small>Please don\'t edit the catalogue until it is done: an edit saved meanwhile stops it before anything is written.</small>') +
+				(job.dryRun ? '' : spell('<br><small>Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.</small>')) +
 				'</div>';
 		}
 	}
@@ -280,14 +297,14 @@ export function showHardcoverJob(job){
 }
 
 /**
- * Load the catalogue kept in this browser (empty the first time), then let the page draw itself with
+ * Load the catalog kept in this browser (empty the first time), then let the page draw itself with
  * `init`. `page.onHardcoverJob` is optional (see showHardcoverJob).
  * @param {() => void} init
  * @param {{onHardcoverJob?: (job: HardcoverJob | null) => void}} [page]
  */
 export async function startPage(init, page = {}){
 	({onHardcoverJob = null} = page);
-	loadCatalogue();
+	loadCatalog();
 	askToKeepStorage();
 	init();
 	updateNav();

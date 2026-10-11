@@ -27,17 +27,17 @@ are copied to the others. On the card, each of an edition's ASINs links to the b
 (`audible.co.uk/pd/…`, `amazon.com/dp/…`), its Goodreads id to the book on Goodreads, and its Hardcover ids
 to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
 when Hardcover renames the book). Every change is saved in the browser as you make it (see
-[Running the app and keeping your catalogue](saving.md)).
+[Running the app and keeping your catalog](saving.md)).
 
-**Back up and move the catalogue**: **Export** on the *Import & export* page downloads a backup with the
+**Back up and move the catalog**: **Export** on the *Import & export* page downloads a backup with the
 books, the series info, the author info, the list of books imports must skip and the pairs marked
 **Not duplicates** (`{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`).
-**Restore** replaces the catalogue with one. Backups from before series info was exported (a plain list of
-books), or before the author info or the exclusions were, still work and keep what the catalogue has; the
+**Restore** replaces the catalog with one. Backups from before series info was exported (a plain list of
+books), or before the author info or the exclusions were, still work and keep what the catalog has; the
 backup's exclusions and **Not duplicates** marks are added to the ones it already has. When both
-catalogues have changed, merge the backup instead: see [Merge a backup from another device](backups.md).
+catalogs have changed, merge the backup instead: see [Merge a backup from another device](backups.md).
 
-**Check the catalogue**: **Check** on the *Import & export* page lists errors and warnings (a series
+**Check the catalog**: **Check** on the *Import & export* page lists errors and warnings (a series
 info entry no book has, an untidy name, a link to the wrong site...) and anything kept in an older format,
 which **Save in the current format** rewrites (any edit does that too).
 
@@ -78,7 +78,7 @@ differ; genres, dates read and editions are combined (an edition with the same A
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
 adding them to the exclusion list, since the kept book carries their ids and imports find it. **Not
 duplicates** stops offering that pair. To merge two books the list misses (say, an
-author spelled two ways), press &#8644; on one book in the catalogue and then on the other; the
+author spelled two ways), press &#8644; on one book in the catalog and then on the other; the
 duplicates page opens with the two.
 
 When the merged entries' editions don't disagree on an ASIN or Goodreads id (typically one book
@@ -99,7 +99,7 @@ editions, so a second one becomes an edition of its own. Edit them in the page u
 book of a boxed set. Searching the library for an ISBN, typed any way, finds the books that carry it;
 searching for an ASIN, a Goodreads id or a publisher works too.
 
-**Link to a series, a book or a search**: the address after the `#` says what the catalogue shows, so
+**Link to a series, a book or a search**: the address after the `#` says what the catalog shows, so
 you can bookmark it, share it with yourself or reload it: `index.html#series=The+Lantern+Coast` (a series,
 from its name in the overview), `#standalone`, `#book=The+Salt+Road` (a book's title on its card links
 here, as do the other titles of a box set), `#books` (all books), and the search and filters on top:

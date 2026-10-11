@@ -49,7 +49,7 @@ say which titles it holds), or when it has no ASIN, Goodreads id or ISBN to tie 
 In a series, a box set (any book whose number is a range) is listed after the titles, and the series
 counts its titles, not the set: "3 owned + 1 box set".
 
-**Box sets already in your catalogue**: **Box sets** on the *Import & export* page brings the box sets you
+**Box sets already in your catalog**: **Box sets** on the *Import & export* page brings the box sets you
 imported before this up to date: a set kept as one book (a range and an
 ASIN, Goodreads id, Hardcover id or ISBN) gains its titles as an import would add them, and titles that
 share an edition and are numbers in a row of one series gain the set as its own book, named by the

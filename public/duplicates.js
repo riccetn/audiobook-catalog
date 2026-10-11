@@ -1,5 +1,5 @@
 // The duplicates page: books that look like one title entered twice (the way an import would match
-// them; see findDuplicates), plus a pair picked by hand with the merge button on the catalogue page
+// them; see findDuplicates), plus a pair picked by hand with the merge button on the catalog page
 // (duplicates.html#merge=3,7). Merging keeps one entry, with the title, author and series you
 // pick, and every genre, date read and edition of the others; the rest are removed without excluding
 // them from imports (the kept book carries their ids, so an import finds it). Pairs marked
@@ -8,7 +8,7 @@
 // (one book imported from both Audible and Goodreads), unless you untick that. Books merged before
 // that, whose editions still look like one, are listed below the duplicates to be joined the same way.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, setData, NOT_DUPLICATES, addNotDuplicates, readDates, esc, updateNav, persist, showIoStatus, startPage, byId } from './store.js';
+import { DATA, SERIES_INFO, setData, NOT_DUPLICATES, addNotDuplicates, readDates, esc, updateNav, persist, showIoStatus, startPage, byId, spell } from './store.js';
 /** @import {Book, Edition} from './importers.js' */
 
 /** @typedef {{t?: number, a?: number, series?: number, joinEditions?: boolean}} Picks which book's title, author and series to keep (mergeBooks) */
@@ -105,8 +105,8 @@ export function renderDuplicates(){
 		? `${DUP_FOUND} possible duplicate${DUP_FOUND === 1 ? '' : 's'} among ${DATA.length} audiobooks`
 		: `No duplicates among ${DATA.length} audiobooks`) +
 		(SPLIT.length ? `; ${SPLIT.length} book${SPLIT.length === 1 ? '' : 's'} with editions that look like one` : '');
-	let html = DUP_GROUPS.length ? '' : '<p class="empty">No books look like duplicates. To merge two books anyway, ' +
-		'press &#8644; on one of them in the catalogue and then on the other.</p>';
+	let html = DUP_GROUPS.length ? '' : spell('<p class="empty">No books look like duplicates. To merge two books anyway, ' +
+		'press &#8644; on one of them in the catalog and then on the other.</p>');
 	DUP_GROUPS.forEach((idx, g)=>{
 		const books = idx.map(i=> DATA[i]);
 		const picks = groupPicks(g);

@@ -139,7 +139,7 @@ test('exclusions list their entries, and a removed book gets entries that keep i
 	assert.ok(C.parseExclusions(entry).covers(odd));
 });
 
-test('validation: a clean catalogue passes; required fields, unknown keys, ids', () => {
+test('validation: a clean catalog passes; required fields, unknown keys, ids', () => {
 	const clean = [{ t: 'A', a: ['B'], s: 'S', sn: '1', g: ['x'], hcb: '77', ...ed({ asin: { 'audible.com': 'B0' }, gr: '1', hc: '5', isbn: '9780000000002', p: 'P', d: '2021-05', len: 600 }) }];
 	assert.deepEqual(C.validate(clean, { S: { total: 3, status: 'ongoing', note: 'n', url: 'https://example.com' } }), { errors: [], warnings: [] });
 	assert.equal(C.validate([{ t: '', a: ['x'] }, { t: 't', a: ['a'], bogus: 1 }, 'nope'], {}).errors.length, 3);
@@ -662,7 +662,7 @@ test('merge: a box set is kept as its own book and becomes its titles, each with
 	assert.deepEqual(existing[3].e, [{ ...set, gr: '99' }, { asin: { 'audible.com': 'B3' } }]);
 });
 
-test('merge: a box set already in the catalogue as one book gains its titles; without ids or excluded it stays as is', () => {
+test('merge: a box set already in the catalog as one book gains its titles; without ids or excluded it stays as is', () => {
 	const whole = [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ asin: { 'audible.com': 'BBOX' } }) })];
 	C.merge(whole, [book('Ember: Books 1-3', 'Ann Vale', { s: 'Ember', sn: '1-3', ...ed({ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }) })]);
 	const set = { asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio', desc: 'Ember: Books 1-3' };
@@ -709,7 +709,7 @@ test('merge: another Hardcover book found by a box set\'s edition on titles in a
 	assert.deepEqual(rows.map(r => r['Book Id']), ['', '9']);
 });
 
-test('boxSetBooks keeps each box set in the catalogue as its own book and as its titles', () => {
+test('boxSetBooks keeps each box set in the catalog as its own book and as its titles', () => {
 	const tide = { asin: { 'audible.com': 'BTIDE' } }, ember = { asin: { 'audible.com': 'BEMBER' }, desc: 'Ember: Books 1-2' };
 	const books = [
 		book('Tide: Books 1-3', 'Bo Lin', { s: 'Tide', sn: '1-3', r: ['2024'], ...ed({ ...tide }) }),
@@ -1014,7 +1014,7 @@ test('merging a backup from another device keeps what each side added, edited an
 	assert.deepEqual(m.seriesInfo, backup.seriesInfo);
 	assert.deepEqual(m.infoAdded, ['Tide Saga']);
 	assert.deepEqual(m.conflicts, []);
-	assert.equal(JSON.stringify(mine), before, 'the catalogue it was given is unchanged');
+	assert.equal(JSON.stringify(mine), before, 'the catalog it was given is unchanged');
 	assert.equal(exclusions.size, 1);
 	assert.deepEqual(m.notDuplicates, [], 'a backup without marks adds none');
 });
@@ -1120,7 +1120,7 @@ test('backups carry author info, and older ones have none', () => {
 	assert.throws(() => C.readBackup({ books: [], authors: [] }), /authors is not an object/);
 });
 
-test('merging a backup: a book the backup still has is not removed, and the same catalogue merges to itself', () => {
+test('merging a backup: a book the backup still has is not removed, and the same catalog merges to itself', () => {
 	const mine = [book('Back Again', 'Ann Vale', { r: ['2025-01-01', '2023-05-05'] })];
 	// removed on the other device, then added there again
 	const backup = { books: [book('Back Again', 'Ann Vale')], seriesInfo: {}, excluded: ['Back Again | Ann Vale'] };
@@ -1399,9 +1399,22 @@ test('hardcoverAsker asks one query a request, pausing between them, and says pl
 
 test('formatNotes says what in books.json is from an older format', () => {
 	assert.deepEqual(C.formatNotes([{ t: 'Gull Isle', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0SET00001' } }] }]), []);
-	const notes = C.formatNotes([{ t: 'Old Favourite', a: 'Ann Vale', e: [{ id: 'B0OLD00001' }] }]);
+	const notes = C.formatNotes([{ t: 'Old Favorite', a: 'Ann Vale', e: [{ id: 'B0OLD00001' }] }]);
 	assert.equal(notes.length, 2);
 	assert.match(notes[0], /1 book\(s\) keep an edition's ASIN as "id"/);
 	assert.match(notes[1], /1 book\(s\) keep their authors or narrators as one comma separated text/);
 	assert.deepEqual(C.formatNotes({}), []);
+});
+
+test('British spelling: the first English language decides; otherwise American', () => {
+	for (const langs of [['en-GB'], ['en_AU'], ['sv-SE', 'sv', 'en-GB', 'en-US'], ['en-IE'], ['en-Latn-NZ'], ['EN-in']]) assert.equal(C.prefersBritish(langs), true, langs.join());
+	for (const langs of [[], ['en'], ['en-US', 'en-GB'], ['sv-SE', 'sv'], ['fr-CA'], ['de-GB']]) assert.equal(C.prefersBritish(langs), false, langs.join());
+});
+
+test('spelled() respells the app\'s words for British readers, and leaves names and identifiers as they are', () => {
+	assert.equal(C.spelled('Check the catalog', true), 'Check the catalogue');
+	assert.equal(C.spelled('Audiobook Catalog · this catalog\'s version · two catalogs', true), 'Audiobook Catalogue · this catalogue\'s version · two catalogues');
+	assert.equal(C.spelled('the catalogue', true), 'the catalogue');
+	assert.equal(C.spelled('audiobook-catalog-backup, read:catalog, catalogs-x, cataloging', true), 'audiobook-catalog-backup, read:catalog, catalogs-x, cataloging');
+	assert.equal(C.spelled('Check the catalog', false), 'Check the catalog');
 });

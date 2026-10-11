@@ -5,8 +5,8 @@ read them for workflows and the data format. This file covers what you need to c
 
 ## What this is
 
-A personal audiobook catalogue: static pages (`index.html`, `import.html`, `duplicates.html`, `authors.html`,
-sharing `styles.css`) that run entirely in the browser and keep the catalogue in `localStorage`. There is
+A personal audiobook catalog: static pages (`index.html`, `import.html`, `duplicates.html`, `authors.html`,
+sharing `styles.css`) that run entirely in the browser and keep the catalog in `localStorage`. There is
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to run the tests.
 
@@ -50,11 +50,11 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `parseExclusions`/`exclusionEntries`, `seriesRange`/`isCollection`/`bySeriesNumber`/`seriesOwned` (box sets, whose number is a range, last in a series and not counted as a title), `boxSetBooks` (Box sets on the import page), `tidyAuthor`/`validateAuthors`/`authorWorks`/`authorList` (the authors page and author info), `readBackup`, `readDataFiles` (Restore of a backup or of the old `data/` files picked together), `mergeBackup`, `findDuplicates`/`mergeBooks`/`splitEditions`.
 - `store.js`: shared by the pages: the shared state (`DATA`, `SERIES_INFO`, `AUTHORS`, `EXCLUSIONS`, ..., exported;
   a page replaces `DATA`, `SERIES_INFO` and `AUTHORS` with `setData`/`setSeriesInfo`/`setAuthors`, since only the module that
-  declares a binding can assign it), loading (`startPage(init, page)`: reads the catalogue from localStorage
+  declares a binding can assign it), loading (`startPage(init, page)`: reads the catalog from localStorage
   `audiobook-catalog-device` as a backup-shaped `{books, seriesInfo, authors, excluded}`, run through `readBackup`; with none
   it starts **empty**, never with the demo data; one that can't be read is set aside under `.unreadable`; edits left under the
-  old `audiobook-catalog-data` key by the removed `make serve` save are adopted when there is no catalogue yet),
-  `persist` (writes the whole catalogue back; refuses when another tab wrote it since this page last read or wrote it),
+  old `audiobook-catalog-data` key by the removed `make serve` save are adopted when there is no catalog yet),
+  `persist` (writes the whole catalog back; refuses when another tab wrote it since this page last read or wrote it),
   the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), the page links, the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`).
@@ -63,22 +63,22 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
   the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
-- `app.js` (`index.html`): series overview, all books (an empty catalogue says where books come from), the book and
+- `app.js` (`index.html`): series overview, all books (an empty catalog says where books come from), the book and
   series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
 - `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`validate`, plus
   `FORMAT_NOTES` and **Save in the current format**) and Box sets (`boxSetBooks`), the Hardcover panel (`runHardcover`
-  in the page, on a copy of the catalogue), Export / Restore (`readDataFiles`) / Merge of backups.
-  Audible's catalogue doesn't allow browser requests, so there is no series lookup from Audible.
+  in the page, on a copy of the catalog), Export / Restore (`readDataFiles`) / Merge of backups.
+  Audible's catalog doesn't allow browser requests, so there is no series lookup from Audible.
 - `authors.js` (`authors.html`): the list of authors and an author's page (`#a=Name`): bio and links from
   `AUTHORS`, their series and titles from the books (`authorWorks`), and the author info form. Author
-  names on the catalogue's book cards link here.
+  names on the catalog's book cards link here.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `editionsJoinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
   - `importers.test.mjs`: pipeline unit tests.
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM and a fake localStorage (`boot`'s `files`
-    seed the stored catalogue, by default from `sample/`; `files: null` for none). Tests reach what the
+    seed the stored catalog, by default from `sample/`; `files: null` for none). Tests reach what the
     modules export (`ctx.render()`, `get('DATA')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
@@ -86,7 +86,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 
-The catalogue (in localStorage and in backups) is `{books, seriesInfo, authors, excluded, notDuplicates}`. `books` is a list of titles with short keys `t a s sn g r hcb e` (title, list of authors, series,
+The catalog (in localStorage and in backups) is `{books, seriesInfo, authors, excluded, notDuplicates}`. `books` is a list of titles with short keys `t a s sn g r hcb e` (title, list of authors, series,
 series number as text, genres, dates read, Hardcover book id, editions). Each edition in `e` has `asin gr hc isbn n p d len desc`
 (ASINs by site, `{"audible.com": "B0…", "amazon.com": "B0…"}`, Goodreads book id, Hardcover edition id, one ISBN, list of narrators, publisher, release date,
 length in minutes, free-text description) and must not be empty. `asin`, `gr` and `hc` name an edition
@@ -122,7 +122,7 @@ Invariants the code relies on:
 ## Privacy (hard rule)
 
 The repo is public; the user's library is not.
-- The catalogue lives in the browser.
+- The catalog lives in the browser.
 - Only `sample/` (the tests' demo data; the page never loads it) is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.
 
@@ -132,11 +132,14 @@ The repo is public; the user's library is not.
   compact one-line helpers are fine. Comments explain *why* in plain sentences; JSDoc on
   non-obvious functions.
 - Status messages and errors are short, plain English; anything that changes many books shows a preview first.
-- The catalogue is stored as compact `JSON.stringify` output (backups are indented for reading).
+- American spelling everywhere in code, comments and docs. Text the page shows (status lines, previews, titles set
+  from code) goes through `spell()` from `store.js`, which gives British spelling to a browser that prefers it
+  (`prefersBritish`/`spelled`/`BRITISH_WORDS` in `importers.js`); the static HTML is respelled on load. Never respell data.
+- The catalog is stored as compact `JSON.stringify` output (backups are indented for reading).
 - Every function has its types in JSDoc (`@param`, `@returns`, `@type` for a variable that starts empty), and
   `make typecheck` passes; a cast (`/** @type {X} */ (value)`) only where the code knows more than the checker, with
   the reason when it isn't plain. No `@ts-ignore`. `catch` gets `unknown`: `errorText(exc)` gives its message.
-- Behaviour changes need a test in the matching suite, and a docs update when user-visible
+- Behavior changes need a test in the matching suite, and a docs update when user-visible
   (`docs/` documents every workflow; keep the README to the essentials).
 - Commit messages: a short imperative summary of the user-visible change
   (e.g. "Exclude removed books from imports, and carry exclusions in exports").
