@@ -5,12 +5,13 @@ and searchable by title, author, series and genre. The app is four plain pages (
 *Import & export* and *Duplicates*) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
 and the catalogue is kept in the browser's local storage. There is no build step and no server code.
 
-- Vanilla JavaScript: no framework, no bundler, no dependencies
-- Node 18+ only for the tests; no npm packages
+- Vanilla JavaScript: no framework, no bundler, nothing the app loads from npm
+- Node 18+ for the tests; TypeScript (`npm install`) checks the code against its JSDoc types, without a build step
 
 ```sh
 git clone <this repo> && cd audiobook-catalog
 make test     # all tests, including a browser smoke test
+npm install && make typecheck   # check the code against its types (TypeScript)
 make serve    # serves public/ at http://localhost:8000/ (any static server, or GitHub Pages, works too)
 make help
 ```
@@ -48,7 +49,7 @@ together. After that the files are no longer used.
 - [How imports avoid clobbering your edits](docs/imports.md): how imported books are matched and merged
 - [Running the app and keeping your catalogue](docs/saving.md): serving the pages, browser storage, backups
 - [On your phone](docs/phone.md): installing the app
-- [Development](docs/development.md): file layout and tests
+- [Development](docs/development.md): file layout, tests and type checking
 
 ## Privacy
 
