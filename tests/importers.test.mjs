@@ -9,6 +9,26 @@ const book = (t, a = 'Author', extra = {}) => ({ t, a: [a], ...extra });
 // A book's editions: ed({ asin: { 'audible.com': 'B1' } }, { gr: '7' }) -> { e: [{ asin: { 'audible.com': 'B1' } }, { gr: '7' }] }
 const ed = (...editions) => ({ e: editions });
 
+// ------------------------------------------------------------------ data
+const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+const loadBooks = file => C.fixBooks(JSON.parse(read(file)));
+const loadSeriesInfo = file => JSON.parse(read(file));
+const loadAuthors = file => JSON.parse(read(file));
+
+test('demo data validates without errors or warnings', () => {
+	const folder = path.join(DATA, 'sample');
+	assert.deepEqual(C.validate(loadBooks(path.join(folder, 'books.json')), loadSeriesInfo(path.join(folder, 'series-info.json'))),
+		{ errors: [], warnings: [] });
+	assert.deepEqual(C.validateAuthors(loadBooks(path.join(folder, 'books.json')), loadAuthors(path.join(folder, 'authors.json'))),
+		{ errors: [], warnings: [] });
+});
+
+test('demo data has what the smoke test needs', () => {
+	const books = loadBooks(path.join(DATA, 'sample', 'books.json'));
+	assert.ok(books.some(b => !b.s), 'needs standalone books');
+	assert.ok(books.some(b => b.s), 'needs series');
+});
+
 // ------------------------------------------------------------------ model
 test('series names: spelling variants are one series, different series stay apart', () => {
 	const variants = ['Ember Coast', 'Ember Coast Series', 'The Ember-Coast series', 'ember coast'];
