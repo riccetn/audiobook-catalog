@@ -1,16 +1,16 @@
 name: CI
 # Push runs only on main, so a PR branch is tested once (by pull_request) rather than twice.
 on:
-  push:
-    branches: [main]
-  pull_request:
+    push:
+        branches: [main]
+    pull_request:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-      - run: make test          # importers, data checks, browser smoke test
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v7
+                with:
+                    node-version: 24
+            - run: make test          # importers, data checks, browser smoke test
