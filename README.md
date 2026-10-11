@@ -22,10 +22,6 @@ The first time the app opens in a browser, the catalogue is empty. Fill it from 
 import an [Audible](docs/audible.md), [Goodreads](docs/goodreads.md) or [Hardcover](docs/hardcover.md)
 library, restore a backup, or add books by hand with **+ Add a book**.
 
-If you kept the catalogue in `data/` files before it moved into the browser, **Restore** on *Import & export*
-takes them: pick `books.json`, `series-info.json`, `authors.json`, `excluded.txt` and `not-duplicates.txt`
-together. After that the files are no longer used.
-
 ## Using it
 
 - The catalogue page browses by series or all books and edits books and series info; *Import & export*
@@ -55,11 +51,7 @@ together. After that the files are no longer used.
 
 This repository is meant to be public, and your catalogue never enters it: it lives in your browser.
 
-- The demo data in `data/sample/` (used by the tests) and every example in the tests and docs are invented.
-- Data files from before the catalogue moved into the browser (`data/books.json`, `data/series-info.json`,
-  `data/authors.json`, `data/excluded.txt`, `data/not-duplicates.txt`, `data/hardcover-token`) and `data/raw/*`
-  are in `.gitignore`. `tests/data.test.mjs` fails if any of them stops being ignored or a file under `data/`
-  other than the demo data becomes tracked.
+- The demo data in `sample/` (used by the tests) and every example in the tests and docs are invented.
 - **Nothing backs up your catalogue but you.** Clearing the site's data in the browser deletes it, so keep
   the backups you **Export** somewhere safe.
 

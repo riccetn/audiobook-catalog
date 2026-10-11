@@ -14,9 +14,7 @@ public/               the app, and all that a static server serves (make serve, 
   importers.js          the pipeline: importers, merge, validation, Hardcover (no browser APIs, so the tests run it in Node)
 package.json          "type": "module" (every .js file is an ES module) and TypeScript, the type checker
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
-data/
-  sample/             fictional demo data, used by the tests: the only data committed to git
-  raw/                a place for your Audible/Goodreads exports (git-ignored)
+sample/               fictional demo data, used by the tests: the only data committed to git
 tests/                node:test suites (*.test.mjs), including the browser smoke test
 ```
 
