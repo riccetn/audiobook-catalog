@@ -29,7 +29,7 @@ node --test tests/importers.test.mjs          # one suite (the smoke test needs 
 node --test --test-name-pattern='merge' tests/importers.test.mjs   # one test
 ```
 
-There is no linter or formatter config; match the surrounding style (see Conventions).
+There is no linter or formatter; `.editorconfig` sets tab indentation for code, and otherwise match the surrounding style (see Conventions).
 CI (`.github/workflows/ci.yml`) runs `make test` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`.
 
@@ -127,7 +127,7 @@ The repo is public; the user's library is not.
 
 ## Conventions
 
-- 2-space indent, semicolons, single quotes, `function name(){` with no space before `{`,
+- Indent with one tab (see `.editorconfig`), semicolons, single quotes, `function name(){` with no space before `{`,
   compact one-line helpers are fine. Comments explain *why* in plain sentences; JSDoc on
   non-obvious functions.
 - Status messages and errors are short, plain English; anything that changes many books shows a preview first.
