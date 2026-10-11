@@ -379,7 +379,7 @@ function renderSeriesOverview(){
     if(missing && missing.length) foot += ` <span class="missing">missing ${numberList(missing)}</span>`;
     foot += '</div>';
     html += foot;
-    if(info && info.note !== '') html += `<p class="srow-note">${esc(info.note)}</p>`;
+    if(info && info.note) html += `<p class="srow-note">${esc(info.note)}</p>`;
     html += '</div>';
   });
 
