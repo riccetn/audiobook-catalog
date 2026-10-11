@@ -62,22 +62,22 @@ function makeElement(id) {
 const CATALOG_KEY = 'audiobook-catalog-device';
 const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
 const DEMO = { 'books.json': DEMO_BOOKS, 'series-info.json': DEMO_INFO, 'authors.json': DEMO_AUTHORS };
-// The catalogue in localStorage, made of data files ({'books.json': text, 'series-info.json': ..., 'excluded.txt': ...}) as written.
+// The catalog in localStorage, made of data files ({'books.json': text, 'series-info.json': ..., 'excluded.txt': ...}) as written.
 function stored(files) {
 	const json = (name, empty) => JSON.parse(files[name] || empty);
-	const catalogue = { books: json('books.json', '[]'), seriesInfo: json('series-info.json', '{}'), authors: json('authors.json', '{}'),
+	const catalog = { books: json('books.json', '[]'), seriesInfo: json('series-info.json', '{}'), authors: json('authors.json', '{}'),
 		excluded: CatalogImport.parseExclusions(files['excluded.txt'] || '').entries };
-	return JSON.stringify(catalogue);
+	return JSON.stringify(catalog);
 }
 // What the page keeps in localStorage now.
 const kept = storage => JSON.parse(storage.get(CATALOG_KEY));
 
 /**
  * Load the page into a fresh fake browser. `storage` is a Map standing in for localStorage; unless it
- * holds a catalogue already, the catalogue is made of `files` (see stored(); default: the demo data), or
+ * holds a catalog already, the catalog is made of `files` (see stored(); default: the demo data), or
  * there is none when `files` is null.
  */
-async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null } = {}) {
+async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null, languages = ['en-US', 'en'] } = {}) {
 	if (files && !storage.has(CATALOG_KEY)) storage.set(CATALOG_KEY, stored(files));
 	if (files && files['not-duplicates.txt'] && !storage.has(NOT_DUP_KEY)) {
 		storage.set(NOT_DUP_KEY, JSON.stringify(CatalogImport.parseNotDuplicates(files['not-duplicates.txt'])));
@@ -90,8 +90,8 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 		querySelectorAll: () => [],
 		querySelector: () => null,
 		createElement: () => makeElement('created'),
-		body: { appendChild() {}, removeChild() {} },
-		title: '',
+		body: { appendChild() {}, removeChild() {}, innerHTML: html.slice(html.indexOf('<body'), html.indexOf('</body>')) },
+		title: html.match(/<title>([^<]*)<\/title>/)[1],
 	};
 	const localStorage = {
 		getItem: k => (storage.has(k) ? storage.get(k) : null),
@@ -125,7 +125,8 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 		back() { this.go(-1); }, forward() { this.go(1); },
 	};
 	const addEventListener = (type, fn) => (windowListeners[type] ||= []).push(fn);
-	const context = vm.createContext({ document, localStorage, fetch, FileReader, location, history, addEventListener,
+	const navigator = { languages };
+	const context = vm.createContext({ document, navigator, localStorage, fetch, FileReader, location, history, addEventListener,
 		console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
 	const [entry] = entryOf(page);
 	const namespaces = await runModules(entry, context);
@@ -204,7 +205,7 @@ test('the address names the view, so a series, a book or a search can be linked 
 	assert.equal(ctx.location.hash, '');
 	ctx.openSeries('Halloway & Finch');
 	assert.equal(ctx.location.hash, '#series=Halloway+%26+Finch');
-	assert.equal(ctx.document.title, 'Halloway & Finch — Audiobook Catalogue');
+	assert.equal(ctx.document.title, 'Halloway & Finch — Audiobook Catalog');
 	// the overview links each series to that address, and book cards link to their own
 	ctx.setView('series');
 	assert.match(els.results.innerHTML, /<a class="srow-title" href="#series=Halloway\+%26\+Finch">Halloway &amp; Finch<\/a>/);
@@ -583,10 +584,10 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 });
 
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
-	const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2020'] }]);
+	const mine = JSON.stringify([{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2020'] }]);
 	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
-		+ 'Old Favourite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
+		+ 'Old Favorite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
 	els.importGoodreadsBtn.listeners.click[0]();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	assert.match(els.importPreviewBody.innerHTML, /ISBNs added to existing books: 1/);
@@ -627,11 +628,11 @@ test('authors and narrators written as comma separated text load as lists', asyn
 	assert.match(els.results.innerHTML, /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. Cy Hale, Di Moss/);
 });
 
-test('with no catalogue in this browser it starts empty, not with the demo, and says where books come from', async () => {
+test('with no catalog in this browser it starts empty, not with the demo, and says where books come from', async () => {
 	const { els, get, run, storage } = await boot({ files: null });
 	assert.deepEqual(get('DATA'), []);
 	assert.deepEqual(get('SERIES_INFO'), {});
-	assert.equal(els.subtitle.textContent, 'Your catalogue is empty');
+	assert.equal(els.subtitle.textContent, 'Your catalog is empty');
 	assert.match(els.results.innerHTML, /No books yet\. .*<a href="import\.html">Import &amp; export<\/a>/);
 	assert.equal(storage.has(CATALOG_KEY), false, 'nothing is stored before the first edit');
 	run("DATA.push({ t: 'First', a: ['Me'] })");
@@ -639,7 +640,7 @@ test('with no catalogue in this browser it starts empty, not with the demo, and 
 	assert.deepEqual(kept(storage), { books: [{ t: 'First', a: ['Me'] }], seriesInfo: {}, authors: {}, excluded: [] });
 });
 
-test('the catalogue is kept in this browser, from one page load to the next', async () => {
+test('the catalog is kept in this browser, from one page load to the next', async () => {
 	const first = await boot();
 	first.run("DATA[0].t = 'Edited Locally'");
 	first.run('persist()');
@@ -648,7 +649,7 @@ test('the catalogue is kept in this browser, from one page load to the next', as
 	assert.equal(again.get('DATA.length'), demoBooks.length);
 });
 
-test('edits from before, which waited for make serve to save them, become the catalogue', async () => {
+test('edits from before, which waited for make serve to save them, become the catalog', async () => {
 	const old = { base: 'x', data: [{ t: 'Waiting', a: ['Me'] }], infoBase: 'y', info: { S: { total: 2, status: 'ongoing' } }, excluded: ['BGONE'] };
 	const { get, storage } = await boot({ files: null, storage: new Map([['audiobook-catalog-data', JSON.stringify(old)]]) });
 	assert.deepEqual(get('DATA'), old.data);
@@ -657,7 +658,7 @@ test('edits from before, which waited for make serve to save them, become the ca
 	assert.equal(storage.has(CATALOG_KEY), false);
 });
 
-test('a catalogue this browser can\'t read is set aside, not overwritten', async () => {
+test('a catalog this browser can\'t read is set aside, not overwritten', async () => {
 	const { get, els, storage } = await boot({ storage: new Map([[CATALOG_KEY, '{not json']]) });
 	assert.deepEqual(get('DATA'), []);
 	assert.equal(storage.get(CATALOG_KEY + '.unreadable'), '{not json');
@@ -679,7 +680,7 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 	// preview: nothing changed yet
 	assert.ok(els.importPreview.classList.contains('open'));
 	assert.equal(els.importPreviewTitle.textContent, 'Audible import');
-	assert.match(els.importPreviewBody.innerHTML, /Already in the catalogue: 1/);
+	assert.match(els.importPreviewBody.innerHTML, /Already in the catalog: 1/);
 	assert.match(els.importPreviewBody.innerHTML, /ASINs filled in on existing books: 1/);
 	assert.match(els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
 	assert.match(els.importPreviewBody.innerHTML, /New: 1/);
@@ -715,27 +716,27 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 	await imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: backup }], value: '' } });
 	assert.doesNotMatch(imp.els.ioStatus.textContent, /Couldn't read/);
 	assert.deepEqual(imp.get('DATA'), [{ t: 'From Backup', a: ['Ann Vale'], r: ['2023-01-05'] }]);
-	// back on the catalogue page
+	// back on the catalog page
 	const back = await boot({ files: { 'books.json': mine }, storage });
 	back.ctx.setView('library');
 	assert.match(back.els.results.innerHTML, /Read 2023-01-05/);
 });
 
 test('a Goodreads import fills in dates read on books that have none', async () => {
-	const mine = JSON.stringify([{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
+	const mine = JSON.stringify([{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
 	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
-		+ 'Old Favourite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
+		+ 'Old Favorite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
 	els.importGoodreadsBtn.listeners.click[0]();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	assert.match(els.importPreviewBody.innerHTML, /Dates read filled in on existing books: 1/);
 	assert.equal(els.importConfirm.textContent, 'Save dates read');
 	els.importConfirm.listeners.click[0]();
-	assert.deepEqual(get('DATA'), [{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2023-11-04'] }]);
+	assert.deepEqual(get('DATA'), [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2023-11-04'] }]);
 	assert.match(els.ioStatus.textContent, /filled in dates read on 1 book/);
 });
 
-test('importing a Goodreads CSV can be cancelled', async () => {
+test('importing a Goodreads CSV can be canceled', async () => {
 	const { els, get } = await boot({ page: 'import.html' });
 	const before = get('DATA.length');
 	const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n'
@@ -792,7 +793,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 	assert.deepEqual(legacy.get('AUTHORS'), JSON.parse(DEMO_AUTHORS));
 });
 
-test('Restore takes the data files of a catalogue from before it lived in the browser, picked together', async () => {
+test('Restore takes the data files of a catalog from before it lived in the browser, picked together', async () => {
 	const { els, get, storage } = await boot({ page: 'import.html', files: null });
 	const books = [{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1' }, { t: 'Tide Water', a: ['Ann Vale'] }];
 	const pair = CatalogImport.duplicatePairKey(books[0], books[1]);
@@ -1175,7 +1176,7 @@ test('the app can be installed: the manifest\'s icons and everything the service
 		assert.ok(read(page).includes('<link rel="manifest" href="manifest.webmanifest">'), page);
 		for (const file of modulesOf(entryOf(page)[0])) assert.ok(cached.includes(file), `sw.js caches ${file}`);
 	}
-	// public/ is what gets served, so it holds the app and nothing else (no catalogue files, no notes).
+	// public/ is what gets served, so it holds the app and nothing else (no catalog files, no notes).
 	const served = fs.readdirSync(site, { recursive: true }).filter(f => fs.statSync(path.join(site, f)).isFile()).map(f => f.split(path.sep).join('/'));
 	for (const file of served) assert.ok(file === 'sw.js' || cached.includes(file), `public/${file} is part of the app (add it to sw.js's APP list)`);
 });
@@ -1219,7 +1220,7 @@ test('Merge previews a backup from another device and keeps both sides\' changes
 	assert.equal(els.importPreviewTitle.textContent, 'Merge a backup');
 	assert.ok(els.mergePrefer.classList.contains('show'));
 	assert.match(els.importPreviewBody.innerHTML, /New from the backup: 1<\/p><ul><li>New There &mdash; Ann Vale/);
-	assert.match(els.importPreviewBody.innerHTML, /keeping this catalogue's: 1<\/p><ul><li>Renamed &mdash; Ann Vale \/ backup: Renamed Twice/);
+	assert.match(els.importPreviewBody.innerHTML, /keeping this catalog's: 1<\/p><ul><li>Renamed &mdash; Ann Vale \/ backup: Renamed Twice/);
 	assert.match(els.importPreviewBody.innerHTML, /More books marked "Not duplicates": 1/);
 	assert.equal(get('DATA.length'), 2, 'nothing changes before it is confirmed');
 
@@ -1281,7 +1282,7 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 	assert.equal(get('DATA.length'), 1);
 	assert.equal(state.shelf.length, 2);
 
-	// the real run keeps the catalogue before sending, and the browser asks before leaving the page meanwhile
+	// the real run keeps the catalog before sending, and the browser asks before leaving the page meanwhile
 	await els.importConfirm.listeners.click[0]();
 	assert.deepEqual(get('DATA.map(b => b.t)'), ['Lantern Hours', 'Tidewater']);
 	assert.deepEqual(kept(storage).books.map(b => b.t), ['Lantern Hours', 'Tidewater']);
@@ -1296,7 +1297,7 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 	assert.ok(!JSON.stringify(get('DATA')).includes('tok-123') && ![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-hardcover-token' && v.includes('tok-123')));
 });
 
-test('a Hardcover run in the page writes and sends nothing when the catalogue is edited meanwhile, or Hardcover cannot be reached', async () => {
+test('a Hardcover run in the page writes and sends nothing when the catalog is edited meanwhile, or Hardcover cannot be reached', async () => {
 	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }];
 	const state = hardcoverState();
 	const hc = fakeHardcover(state);
@@ -1314,7 +1315,7 @@ test('a Hardcover run in the page writes and sends nothing when the catalogue is
 	assert.equal(get('PENDING_HARDCOVER'), 'export');
 	edit = true;
 	await els.importConfirm.listeners.click[0]();
-	assert.match(els.importPreviewBody.innerHTML, /the catalogue was edited while this ran .*nothing written, nothing sent to Hardcover/);
+	assert.match(els.importPreviewBody.innerHTML, /the catalog was edited while this ran .*nothing written, nothing sent to Hardcover/);
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
 	assert.equal(get('DATA[0].hcb || null'), null);
 	assert.match(els.ioStatus.textContent, /Not everything went through/);
@@ -1343,10 +1344,10 @@ test('the authors page lists every author, with their books and series, and a se
 	assert.match(els.authorBody.innerHTML, /No authors match/);
 });
 
-test('an author\'s page shows their bio, their links, and their series and titles from the catalogue', async () => {
+test('an author\'s page shows their bio, their links, and their series and titles from the catalog', async () => {
 	const { ctx, els, fire } = await boot({ page: 'authors.html', hash: '#a=Marisol+Quenby' });
 	const html = els.authorBody.innerHTML;
-	assert.equal(ctx.document.title, 'Marisol Quenby · Audiobook Catalogue');
+	assert.equal(ctx.document.title, 'Marisol Quenby · Audiobook Catalog');
 	assert.ok(els.crumb.classList.contains('show'));
 	assert.equal(els.authorControls.style.display, 'none');
 	assert.match(html, /<h2 class="author-name">Marisol Quenby<\/h2>/);
@@ -1354,7 +1355,7 @@ test('an author\'s page shows their bio, their links, and their series and title
 	for (const [label, url] of [['Website', 'https://example.com/'], ['Audible', 'https://www.audible.com/author/'], ['Goodreads', 'https://www.goodreads.com/author/show/'], ['Hardcover', 'https://hardcover.app/authors/']]) {
 		assert.match(html, new RegExp(`<a class="authorlink" href="${url.replace(/[./]/g, '\\$&')}[^"]*" target="_blank" rel="noopener">${label} ↗</a>`));
 	}
-	// the series, with how many are owned of the released total, its books in order, each a link to it in the catalogue
+	// the series, with how many are owned of the released total, its books in order, each a link to it in the catalog
 	assert.match(html, /<a href="index\.html#series=The\+Lantern\+Coast">The Lantern Coast<\/a> <span class="n">4 owned of 5<\/span> <span class="status ongoing">ongoing<\/span>/);
 	assert.match(html, /#1<\/span> <a href="index\.html#book=The\+Salt\+Road">The Salt Road<\/a><\/li><li>.*#2<\/span> <a href="index\.html#book=Beacons\+at\+Low\+Tide">/);
 	assert.equal(els.subtitle.textContent, '4 audiobooks in 1 series');
@@ -1375,7 +1376,7 @@ test('an author\'s page shows their bio, their links, and their series and title
 	assert.match(els.authorBody.innerHTML, /Titles <span class="n">1 book<\/span>/);
 	ctx.location.hash = '#a=Nobody+Here';
 	fire('hashchange');
-	assert.equal(els.subtitle.textContent, 'No books by this author in the catalogue.');
+	assert.equal(els.subtitle.textContent, 'No books by this author in the catalog.');
 	ctx.location.hash = '';
 	fire('hashchange');
 	assert.equal(ctx.AUTHOR, null);
@@ -1423,8 +1424,8 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	assert.ok(get("'Marisol Quenby' in AUTHORS"), 'the other authors keep theirs');
 });
 
-test('Check on the import page lists problems and older formats, and saves the catalogue in the current one', async () => {
-	const mine = JSON.stringify([{ t: 'Old Favourite', a: 'Ann Vale', id: 'B0OLD00001' }]);
+test('Check on the import page lists problems and older formats, and saves the catalog in the current one', async () => {
+	const mine = JSON.stringify([{ t: 'Old Favorite', a: 'Ann Vale', id: 'B0OLD00001' }]);
 	const info = JSON.stringify({ Nowhere: { total: 3, status: 'ongoing' } });
 	const { els, storage } = await boot({ page: 'import.html', files: { 'books.json': mine, 'series-info.json': info } });
 	els.checkBtn.listeners.click[0]();
@@ -1435,7 +1436,7 @@ test('Check on the import page lists problems and older formats, and saves the c
 	assert.equal(els.importConfirm.style.display, '');
 	assert.equal(els.importConfirm.textContent, 'Save in the current format');
 	els.importConfirm.listeners.click[0]();
-	assert.deepEqual(kept(storage).books, [{ t: 'Old Favourite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
+	assert.deepEqual(kept(storage).books, [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
 	assert.equal(els.ioStatus.textContent, 'Saved in the current format.');
 	els.checkBtn.listeners.click[0]();
 	assert.doesNotMatch(els.importPreviewBody.innerHTML, /older format/, 'the save wrote the current format');
@@ -1468,4 +1469,25 @@ test('Series info without note should not be rendered as "undefined"', async() =
 	const info = JSON.stringify({ 'Pop': { total: 5, status: 'ongoing' }});
 	const { els, storage } = await boot({ files: { 'books.json': mine, 'series-info.json': info } });
 	assert.doesNotMatch(els.results.innerHTML, /undefined/);
+});
+
+test('a browser that prefers British English sees "catalogue"; any other sees "catalog", and the data is never respelled', async () => {
+	const titled = JSON.stringify([{ t: 'The Catalog of Stars', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
+	for (const page of PAGES) {
+		const { ctx } = await boot({ page, languages: ['sv-SE', 'en-GB'], files: { 'books.json': titled } });
+		assert.match(ctx.document.title, /Audiobook Catalogue$/, page);
+		assert.ok(!/\b[Cc]atalog\b/.test(ctx.document.body.innerHTML), `${page} has no American spelling left`);
+		assert.match(ctx.document.body.innerHTML, /<h1>Audiobook Catalogue<\/h1>/, page);
+	}
+	const uk = await boot({ page: 'import.html', languages: ['en-AU'], files: { 'books.json': titled } });
+	assert.equal(uk.els.subtitle.textContent, '1 audiobooks in the catalogue');
+	const app = await boot({ languages: ['en-GB'], files: { 'books.json': titled } });
+	app.ctx.setView('library');
+	assert.match(app.els.results.innerHTML, /The Catalog of Stars/);
+	assert.equal(app.ctx.document.title, 'All books — Audiobook Catalogue');
+
+	const us = await boot({ page: 'import.html', languages: ['fr-FR', 'fr'], files: { 'books.json': titled } });
+	assert.equal(us.els.subtitle.textContent, '1 audiobooks in the catalog');
+	assert.match(us.ctx.document.title, /Audiobook Catalog$/);
+	assert.match(us.ctx.document.body.innerHTML, /<h1>Audiobook Catalog<\/h1>/);
 });

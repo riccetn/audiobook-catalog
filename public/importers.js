@@ -1,11 +1,11 @@
-// The catalogue's data pipeline: tidying and identity of book records, validation, the Audible and
+// The catalog's data pipeline: tidying and identity of book records, validation, the Audible and
 // Goodreads readers, and the merge that adds imported books without clobbering hand edits.
 //
 // An ES module shared by the pages (store.js and each page's script import it). It uses no browser APIs,
 // so the tests run it in Node as it is.
 
 // ------------------------------------------------------------------ types
-// The catalogue's shapes, for the type checker (`make typecheck`); docs/data-format.md describes them.
+// The catalog's shapes, for the type checker (`make typecheck`); docs/data-format.md describes them.
 // Other modules use them with `/** @import {Book} from './importers.js' */`.
 
 /**
@@ -23,7 +23,7 @@
  */
 
 /**
- * A title in the catalogue.
+ * A title in the catalog.
  * @typedef {object} Book
  * @property {string} t title
  * @property {string[]} a authors
@@ -92,13 +92,13 @@
 /** @typedef {(text: string, done?: number, total?: number) => void} Step reports a run's progress */
 
 /**
- * What mergeBackup() made of a backup and this catalogue.
+ * What mergeBackup() made of a backup and this catalog.
  * @typedef {object} BackupMerge
  * @property {Book[]} books
  * @property {SeriesInfo} seriesInfo
  * @property {Authors} authors
  * @property {string[]} excluded entries new to the exclusions list
- * @property {string[]} notDuplicates marks new to this catalogue
+ * @property {string[]} notDuplicates marks new to this catalog
  * @property {Book[]} added
  * @property {Book[]} updated
  * @property {Book[]} removed
@@ -135,10 +135,11 @@
  * @property {(line: string) => void} [out]
  * @property {(line: string) => void} [err]
  * @property {Step} [step]
+ * @property {boolean} [british] say it in British spelling (spelled())
  */
 
 /**
- * A catalogue as a backup holds it; readBackup() gives null for what a backup from before it lacks.
+ * A catalog as a backup holds it; readBackup() gives null for what a backup from before it lacks.
  * The books are as the backup has them, in the current format: validate() checks them.
  * @typedef {object} Backup
  * @property {Book[]} books
@@ -685,7 +686,7 @@ function parseAsins(text, site){
 	const bad = [];
 	const tokens = String(text || '').split(/[\s,;]+/).map(x => x.replace(/^[(\[]+|[)\]:]+$/g, '')).filter(Boolean);
 	const siteOf = (/** @type {string} */ t) => { const s = t.toLowerCase().replace(/^www\./, ''); return ASIN_SITE.test(s) ? s : null; };
-	// an ASIN is ten letters and digits; a shorter one, from a hand-made catalogue, is taken as it is
+	// an ASIN is ten letters and digits; a shorter one, from a hand-made catalog, is taken as it is
 	const isAsin = (/** @type {string} */ t) => /^[A-Za-z0-9]+$/.test(t);
 	for(let i = 0; i < tokens.length; i++){
 		const t = tokens[i], url = ASIN_URL.exec(t), s = siteOf(t);
@@ -719,7 +720,7 @@ const EDITION_PART = /^(asin|goodreads(?:\s+id)?|gr|hardcover(?:\s+book)?(?:\s+i
 
 /**
  * Read editions written one per line as formatEdition() writes them. Parts are separated by ';' and
- * start with their label; a bare ISBN, date or length is recognised without one, and other text
+ * start with their label; a bare ISBN, date or length is recognized without one, and other text
  * without a label is the edition's description (one per edition). A line with several ISBNs is that
  * many editions (splitIsbns). "Hardcover book 123" names the book, not the edition. An edition's address
  * on Hardcover (hardcover.app/books/the-salt-road/editions/501, with or without the label) gives its id.
@@ -974,7 +975,7 @@ function seriesNorm(name){
 	return seriesKey(norm(name));
 }
 
-// The series key of a name already normalised: no leading "the", no word "series", no spaces.
+// The series key of a name already normalized: no leading "the", no word "series", no spaces.
 /** @type {(n: string) => string} */
 const seriesKey = n => n.replace(/^the /, '').replace(/(^| )series(?= |$)/g, ' ').replace(/ /g, '');
 
@@ -1607,7 +1608,7 @@ function readBackup(data){
 }
 
 /**
- * What Restore was given, as readBackup() reads a backup: either a backup, or the data files a catalogue
+ * What Restore was given, as readBackup() reads a backup: either a backup, or the data files a catalog
  * kept before it lived in the browser, picked together and told apart by name (books.json,
  * series-info.json, authors.json, excluded.txt, not-duplicates.txt; a file renamed with a date, say, still
  * counts). `files` are [{name, text}]. Throws when there are no books among them.
@@ -1622,7 +1623,7 @@ function readDataFiles(files){
 		if(base.endsWith('.txt')){
 			if(base.includes('not-duplicates')) picked.notDuplicates = parseNotDuplicates(text);
 			else if(base.includes('excluded')) picked.excluded = parseExclusions(text).entries;
-			else throw new Error(`${name}: not one of the catalogue's files`);
+			else throw new Error(`${name}: not one of the catalog's files`);
 			continue;
 		}
 		const json = JSON.parse(text);
@@ -1630,7 +1631,7 @@ function readDataFiles(files){
 		else if(base.startsWith('authors')) picked.authors = json;
 		else if(Array.isArray(json)) picked.books = json;
 		else if(isObject(json) && Array.isArray(json.books)) backup = json;
-		else throw new Error(`${name}: not one of the catalogue's files`);
+		else throw new Error(`${name}: not one of the catalog's files`);
 	}
 	const all = {...backup, ...picked};
 	if(!Array.isArray(all.books)) throw new Error('no books.json or backup among the files');
@@ -2087,7 +2088,7 @@ function goodreadsEdition(rec, shared){
 }
 
 /**
- * Write the catalogue as a Goodreads library export CSV, which Goodreads' import accepts: every book on
+ * Write the catalog as a Goodreads library export CSV, which Goodreads' import accepts: every book on
  * the "read" shelf, with its series in the title as Goodreads writes it, its genres as shelves, and the
  * Goodreads id and ISBNs of one edition so Goodreads picks that edition (without them it goes by title and
  * author). Goodreads keeps one date read, so a book gets its latest full date; a book without one (no `r`,
@@ -2259,7 +2260,7 @@ function hardcoverPosition(position){
 /**
  * Your books from your Hardcover shelf: `userBooks` (user_books rows), with `books` and `editions` as
  * Maps of id -> the rows the books and editions queries answered. Only books on the Read shelf are kept,
- * each with its finished dates (no date stays unknown, as in the catalogue). Returns {records, audio
+ * each with its finished dates (no date stays unknown, as in the catalog). Returns {records, audio
  * (the records whose edition is an audiobook), otherShelves (how many are on other shelves), warnings}.
  * @param {Unchecked[]} userBooks
  * @param {Map<unknown, Unchecked>} books
@@ -2525,6 +2526,43 @@ function hardcoverUrl(kind, id){
 	return `https://hardcover.app/id/${kind}/${encodeURIComponent(id)}`;
 }
 
+// The pages are written in American spelling and shown in British spelling to a browser that prefers it.
+// The words the pages use that the two spell differently, American first; add a word here when a page starts using one.
+const BRITISH_WORDS = [['catalog', 'catalogue']];
+// Regions whose English spells these words the British way (Canada included: it writes "catalogue").
+const BRITISH_REGIONS = new Set(['GB', 'UK', 'IE', 'AU', 'NZ', 'ZA', 'IN', 'CA', 'SG', 'HK', 'MT', 'PK', 'NG', 'KE']);
+
+/**
+ * Whether the browser's languages (navigator.languages, most preferred first) ask for British spelling: the
+ * first English one decides, so a Swedish browser that takes en-GB next gets British. With no English
+ * one, or English without a British region (en, en-US), it is American.
+ * @param {readonly string[]} languages BCP 47 tags, as `en-GB` or `en_AU`
+ * @returns {boolean}
+ */
+function prefersBritish(languages){
+	const english = languages.map(tag => String(tag).split(/[-_]/)).find(parts => parts[0].toLowerCase() === 'en');
+	if(!english) return false;
+	// the region is the two-letter subtag after the language (and after a four-letter script, if any)
+	const region = english.slice(1).find(part => /^[a-z]{2}$/i.test(part));
+	return !!region && BRITISH_REGIONS.has(region.toUpperCase());
+}
+
+/**
+ * The page's own text in British spelling when `british`, else as it is. Only for text the app wrote:
+ * a book's title is the book's own and is never respelled.
+ * @param {string} text
+ * @param {boolean} british
+ * @returns {string}
+ */
+function spelled(text, british){
+	if(!british) return text;
+	for(const [us, uk] of BRITISH_WORDS){
+		// the word, capitalized or not and with a plural s, but not inside another word (audiobook-catalog-backup is a file name)
+		text = text.replace(new RegExp(`(?<![\\w:-])([${us[0]}${us[0].toUpperCase()}])${us.slice(1)}(s?)\\b(?!-)`, 'g'), `$1${uk.slice(1)}$2`);
+	}
+	return text;
+}
+
 /**
  * What went wrong, from what a `catch` caught: an error's message, or what was thrown as text. (An error
  * from another realm, like a test's, is no `instanceof Error` here, so this goes by its message.)
@@ -2650,10 +2688,11 @@ function recordLines(records, limit = 15){
  * What merge() did, as lines the import commands print.
  * @param {MergeReport} report
  * @param {string[]} [warnings]
+ * @param {boolean} [british] in British spelling
  * @returns {string[]}
  */
-function mergeLines(report, warnings){
-	const lines = [`  already in the catalogue: ${report.matched}`];
+function mergeLines(report, warnings, british = false){
+	const lines = [spelled(`  already in the catalog: ${report.matched}`, british)];
 	/** @type {[keyof MergeReport, string][]} */
 	const counts = [['backfilled', 'ASINs filled in on existing books'], ['goodreadsFilled', 'Goodreads ids filled in on existing books'],
 		['hardcoverFilled', 'Hardcover ids filled in on existing books'], ['datesFilled', 'dates read filled in on existing books'],
@@ -2682,7 +2721,7 @@ function mergeLines(report, warnings){
  * your Hardcover Read shelf like any import; export puts your books on that shelf with their dates read.
  * Neither ever changes or removes anything, here or on Hardcover. Options: `exclusions`, `info` (series
  * info, for validating), `dryRun`, `out(line)` and `err(line)` (what it has to say), `step(text, done,
- * total)` (progress) and `save()`, which keeps the changed `books` before anything is sent to Hardcover
+ * total)` (progress), `british` (spelling) and `save()`, which keeps the changed `books` before anything is sent to Hardcover
  * and returns false (having said why) when it can't. Returns a promise of the exit code.
  * @param {Book[]} books
  * @param {'import' | 'export' | 'sync'} mode
@@ -2711,7 +2750,7 @@ async function runHardcover(books, mode, ask, opts){
 		}catch(exc){ return stop(exc); }
 		const report = merge(books, result.records, exclusions, {allDates: true, addable: rec => result.audio.has(rec)});
 		out(`Hardcover: ${result.records.length} books on your Read shelf`);
-		mergeLines(report, result.warnings).forEach(line => out(line));
+		mergeLines(report, result.warnings, opts.british).forEach(line => out(line));
 		if(report.notAdded.length){
 			out(`  not added, as Hardcover has no audiobook edition picked for them: ${report.notAdded.length}`);
 			recordLines(report.notAdded, 5).forEach(line => out(line));
@@ -3325,15 +3364,15 @@ function bookText(rec){
 }
 
 /**
- * Merge a backup made on another device into this catalogue, when both have changed since they were
+ * Merge a backup made on another device into this catalog, when both have changed since they were
  * last the same (there is no common ancestor to compare with, so this works from what each side has):
- * - a book only the backup has is added, unless this catalogue excludes it (it was removed here);
- * - a book only this catalogue has stays, unless the backup newly excludes it (it was removed there);
+ * - a book only the backup has is added, unless this catalog excludes it (it was removed here);
+ * - a book only this catalog has stays, unless the backup newly excludes it (it was removed there);
  * - a book both have (found as imports find books) keeps the union of their genres, dates read and
  *   editions; where title, author or series differ, `prefer` ('mine', the default, or 'backup') wins,
  *   and the book is listed in `conflicts`;
  * - series info and author info (`authors`) both have keep the preferred side's; the backup's excluded
- *   books, and its "Not duplicates" marks, are added to ours (`notDuplicates`, the marks this catalogue has).
+ *   books, and its "Not duplicates" marks, are added to ours (`notDuplicates`, the marks this catalog has).
  * Changes nothing it is given. Returns {books, seriesInfo, authors, excluded (entries new to `exclusions`),
  * notDuplicates (marks new to `notDuplicates`), added, updated, removed, skipped, conflicts: [{mine, theirs}],
  * infoAdded, infoChanged, infoKept, and the same for authors: authorsAdded, authorsChanged, authorsKept}.
@@ -3453,7 +3492,7 @@ export {
 	AUDIBLE_STORES, boxSetTitle,
 	HARDCOVER_API, HARDCOVER_QUERIES, HARDCOVER_STATUSES, HARDCOVER_PAGE, HARDCOVER_BATCH, hardcoverFindQuery, hardcoverEdition,
 	readHardcover, hardcoverMatches, hardcoverLookups, addHardcoverIds, hardcoverExportEditions, planHardcoverExport,
-	cleanHardcoverToken, errorText, hardcoverAsker, runHardcover, recordLines, mergeLines, hardcoverUrl, parseHardcoverUrl, hardcoverBookId, hasReadDate,
+	cleanHardcoverToken, prefersBritish, spelled, errorText, hardcoverAsker, runHardcover, recordLines, mergeLines, hardcoverUrl, parseHardcoverUrl, hardcoverBookId, hasReadDate,
 	parseGoodreadsTitle, splitSeriesTitle, fixSeriesTitle, readGoodreadsTitle, readGoodreads, goodreadsCsv, merge, missingNumbers, duplicatePairKey, findDuplicates, mergeBooks,
 	editionsJoinable, joinEditions, editionsKey, splitEditions, mergeBackup, parseNotDuplicates,
 };

@@ -7,14 +7,14 @@ export; it works like [the Audible import](audible.md#add-new-audible-purchases)
 MP3...) and the *read* shelf. The edition's narrator comes from the "Additional Authors" column, which is a guess
 (it never replaces a narrator you already have).
 Each book keeps Goodreads' *Book Id* as its edition's `gr`, with the edition's *Publisher* and *Year Published*,
-so a later export still finds it after you rename it; books already in the catalogue get their Goodreads id
+so a later export still finds it after you rename it; books already in the catalog get their Goodreads id
 filled in the first time an export matches them. Goodreads puts the series in the title, as
 `The First Adventure (Fantasy Adventures, #1)` or `The First Adventure: Fantasy Adventures, Book 1`; both
 become the title `The First Adventure` in series `Fantasy Adventures`, number `1`.
 
 ## Export to Goodreads
 
-**Goodreads CSV** under *Export to Goodreads* on the *Import & export* page downloads the catalogue as a Goodreads library export,
+**Goodreads CSV** under *Export to Goodreads* on the *Import & export* page downloads the catalog as a Goodreads library export,
 the format Goodreads' [import page](https://www.goodreads.com/review/import) takes. Every book goes on the
 *read* shelf, also those with no date read (a missing date means unknown, not unread), with the series in
 the title (`The First Adventure (Fantasy Adventures, #1)`), the first author as *Author* and the rest as
@@ -26,7 +26,7 @@ author; a box set's edition, shared with its other titles, is left out so Goodre
 title as the box set (the box set's own book, whose number is a range, goes by it). The page says how many books have no id or ISBN and how many no full date.
 Our own Goodreads import reads the file back.
 
-Books imported before titles were split this way (or by hand) are split when the catalogue loads: a book with
+Books imported before titles were split this way (or by hand) are split when the catalog loads: a book with
 no series gets the one in its title, and a book that already has that series just loses it from the title.
 A book whose title names a different series or number than the one it has is left alone. **Check**
 says how many titles still hold their series, and any save writes them split.

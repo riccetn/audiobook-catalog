@@ -1,6 +1,6 @@
-// The service worker that makes the catalogue installable as an app (on a phone, say) and usable offline.
+// The service worker that makes the catalog installable as an app (on a phone, say) and usable offline.
 // Every request goes to the network first, so a new version of the app shows up at once; the cached copy
-// is only used when the network fails. The catalogue itself lives in localStorage (store.js), not in files.
+// is only used when the network fails. The catalog itself lives in localStorage (store.js), not in files.
 const CACHE = 'audiobook-catalog-v3';
 const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'styles.css', 'importers.js', 'store.js', 'app.js',
 	'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];

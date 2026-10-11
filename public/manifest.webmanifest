@@ -1,5 +1,5 @@
 {
-	"name": "Audiobook Catalogue",
+	"name": "Audiobook Catalog",
 	"short_name": "Audiobooks",
 	"description": "Your audiobooks by series, with what you have read and what is missing.",
 	"start_url": "./index.html",

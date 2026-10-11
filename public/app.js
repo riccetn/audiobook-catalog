@@ -1,7 +1,7 @@
-// The catalogue page: the series overview, all books, and editing books and series info.
+// The catalog page: the series overview, all books, and editing books and series info.
 // Loading and saving live in store.js.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById } from './store.js';
+import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell } from './store.js';
 /** @import {Book, Edition, IndexedBook, SeriesEntry} from './importers.js' */
 
 /** @type {'series' | 'library'} */
@@ -150,7 +150,7 @@ function showView(){
 		: SERIES_FILTER === '__standalone__' ? 'Standalone books' : SERIES_FILTER;
 	crumb.classList.toggle('show', !!label);
 	byId('crumbLabel').textContent = label || '';
-	document.title = (label ? label + ' — ' : v === 'library' ? 'All books — ' : '') + 'Audiobook Catalogue';
+	document.title = (label ? label + ' — ' : v === 'library' ? 'All books — ' : '') + spell('Audiobook Catalog');
 	render();
 }
 
@@ -310,9 +310,9 @@ byId('results').addEventListener('click', e=>{
 	if(st.book !== null) openBook(st.book); else navigate({view: st.view, series: st.series, book: null});
 });
 
-// A new catalogue, with nothing in it yet: where books come from.
+// A new catalog, with nothing in it yet: where books come from.
 function renderEmpty(){
-	byId('subtitle').textContent = 'Your catalogue is empty';
+	byId('subtitle').textContent = spell('Your catalog is empty');
 	byId('resultCount').textContent = '';
 	byId('results').innerHTML = '<p class="empty">No books yet. Add one with + Add a book under <a href="#books">All Books</a>, ' +
 		'import your Audible, Goodreads or Hardcover library on <a href="import.html">Import &amp; export</a>, or restore a backup there.</p>';

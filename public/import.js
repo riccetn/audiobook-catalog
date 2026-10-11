@@ -5,7 +5,7 @@ import {
 	DATA, SERIES_INFO, AUTHORS, setData, setSeriesInfo, setAuthors, EXCLUSIONS, LOCAL_SEEN, NOT_DUPLICATES,
 	addNotDuplicates, esc, localNow, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, HARDCOVER_PAUSE_MS, browserHardcoverToken,
-	fetchHardcover, startPage, FORMAT_NOTES, byId, fieldById
+	fetchHardcover, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell
 } from './store.js';
 /** @import {Book, ReadResult, Backup} from './importers.js' */
 /** @import {HardcoverJob} from './store.js' */
@@ -14,7 +14,7 @@ import {
 /** @typedef {'audible' | 'goodreads'} ImportKind */
 
 function refreshPage(){
-	byId('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
+	byId('subtitle').textContent = spell(`${DATA.length} audiobooks in the catalog`);
 }
 
 /**
@@ -74,8 +74,8 @@ function readFiles(files){
 }
 
 /**
- * Restore: a backup, or the data files of a catalogue from before it lived in the browser
- * (books.json, series-info.json, ... picked together; CatalogImport.readDataFiles), replaces the catalogue.
+ * Restore: a backup, or the data files of a catalog from before it lived in the browser
+ * (books.json, series-info.json, ... picked together; CatalogImport.readDataFiles), replaces the catalog.
  * @param {File[]} files
  */
 async function importBackup(files){
@@ -92,12 +92,12 @@ async function importBackup(files){
 		showIoStatus(`Restored ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series` : '') +
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
 	}catch(err){
-		showIoStatus("Couldn't read that — pick a catalogue backup JSON, or your books.json with the other data files.", true);
+		showIoStatus(spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
 	}
 }
 
 // ------------------------------------------------------------ Audible / Goodreads CSV import
-// Read the export, merge it into a copy of the catalogue, show what would change, and only apply it
+// Read the export, merge it into a copy of the catalog, show what would change, and only apply it
 // when confirmed. Like every edit in the page, the result is then saved (see persist).
 /** @type {Record<ImportKind, {label: string, read: (text: string) => ReadResult}>} */
 const IMPORTERS = {
@@ -108,7 +108,7 @@ const IMPORTERS = {
 /** @type {ImportKind} */
 let IMPORT_KIND = 'audible';
 /** @type {Book[] | null} */
-export let PENDING_IMPORT = null;   // the records of the import previewed, until it is applied or cancelled
+export let PENDING_IMPORT = null;   // the records of the import previewed, until it is applied or canceled
 
 /**
  * Merge into a copy of DATA, so nothing changes until the result is known to be valid.
@@ -153,7 +153,7 @@ function previewImport(kind, text, fileName){
 
 	const li = (/** @type {Book} */ rec) => `<li>${bookLine(rec)}</li>`;
 	let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
-	html += `<p>Already in the catalogue: ${report.matched}</p>`;
+	html += spell(`<p>Already in the catalog: ${report.matched}</p>`);
 	if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
 	if(report.backfilled.length) html += `<p>ASINs filled in on existing books: ${report.backfilled.length}</p>`;
 	if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
@@ -165,7 +165,7 @@ function previewImport(kind, text, fileName){
 	if(report.boxSets.length){
 		html += `<p>Box sets split into their titles, each with the set's edition: ${report.boxSets.length}</p><ul>` +
 			report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
-		if(report.boxSets.some(b=> b.added)) html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>';
+		if(report.boxSets.some(b=> b.added)) html += spell('<p>A title not in the catalog yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>');
 	}
 	html += `<p>New: ${report.added.length}</p>`;
 	if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
@@ -195,7 +195,7 @@ function applyImport(){
 	// merged again, in case books were edited while the preview was open
 	const {data, report, errors} = mergeIntoCopy(PENDING_IMPORT);
 	closeImportPreview();
-	if(errors.length){ showIoStatus('The catalogue changed and the import no longer validates; nothing was added.', true); return; }
+	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was added.'), true); return; }
 	const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
 	const withIsbns = report.isbnsFilled.length, withGr = report.goodreadsFilled.length;
 	const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
@@ -212,17 +212,17 @@ function applyImport(){
 }
 
 // ------------------------------------------------------------ Merge a backup from another device
-// Restore replaces the catalogue; Merge is for two catalogues that have both changed since they were
+// Restore replaces the catalog; Merge is for two catalogs that have both changed since they were
 // last the same (the phone and the PC, say), so neither side's edits are lost (CatalogImport.mergeBackup).
 // Like a CSV import it is previewed first, and only applied when confirmed.
 /** @type {{backup: Backup, fileName: string} | null} */
 let PENDING_MERGE = null;      // {backup, fileName} while its preview is open
 
 /**
- * The catalogue merged with a backup, in copies, with what blocks it and how many changes it makes.
+ * The catalog merged with a backup, in copies, with what blocks it and how many changes it makes.
  * @param {Backup} backup
  */
-function mergeIntoCatalogue(backup){
+function mergeIntoCatalog(backup){
 	// the select's options are 'mine' and 'backup'
 	const prefer = /** @type {'mine' | 'backup'} */ (fieldById('mergePreferSelect').value);
 	// mergeBackup takes the marks as a list (it only makes a Set of them again)
@@ -238,7 +238,7 @@ function mergeIntoCatalogue(backup){
 function previewMerge(){
 	if(!PENDING_MERGE) return;
 	const {backup, fileName} = PENDING_MERGE;
-	const {m, errors, changes} = mergeIntoCatalogue(backup);
+	const {m, errors, changes} = mergeIntoCatalog(backup);
 	const list = (/** @type {Book[]} */ recs) => recs.length ? `<ul>${recs.map(r=> `<li>${bookLine(r)}</li>`).join('')}</ul>` : '';
 	let html = `<p>${backup.books.length} books in ${esc(fileName)}; ${m.books.length} after merging.</p>`;
 	html += `<p>New from the backup: ${m.added.length}</p>` + list(m.added);
@@ -246,24 +246,24 @@ function previewMerge(){
 	html += `<p>Removed (removed on the other device): ${m.removed.length}</p>` + list(m.removed);
 	if(m.skipped.length) html += `<p>Not added back (removed here): ${m.skipped.length}</p>`;
 	if(m.conflicts.length){
-		const kept = fieldById('mergePreferSelect').value === 'backup' ? "the backup's" : "this catalogue's";
+		const kept = fieldById('mergePreferSelect').value === 'backup' ? "the backup's" : spell("this catalog's");
 		html += `<p>Title, author or series differ, keeping ${kept}: ${m.conflicts.length}</p><ul>` +
 			m.conflicts.map(c=> `<li>${bookLine(c.mine)} / backup: ${bookLine(c.theirs)}</li>`).join('') + '</ul>';
 	}
 	const infoDiffer = m.infoChanged.length + m.infoKept.length;
 	if(m.infoAdded.length || infoDiffer){
-		html += `<p>Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : "this catalogue's"})` : '') + '</p>';
+		html += `<p>Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : spell("this catalog's")})` : '') + '</p>';
 	}
 	const authorsDiffer = m.authorsChanged.length + m.authorsKept.length;
 	if(m.authorsAdded.length || authorsDiffer){
-		html += `<p>Author info: ${m.authorsAdded.length} added` + (authorsDiffer ? `, ${authorsDiffer} differing (keeping ${m.authorsChanged.length ? "the backup's" : "this catalogue's"})` : '') + '</p>';
+		html += `<p>Author info: ${m.authorsAdded.length} added` + (authorsDiffer ? `, ${authorsDiffer} differing (keeping ${m.authorsChanged.length ? "the backup's" : spell("this catalog's")})` : '') + '</p>';
 	}
 	if(m.excluded.length) html += `<p>More books excluded from imports: ${m.excluded.length}</p>`;
 	if(m.notDuplicates.length) html += `<p>More books marked "Not duplicates": ${m.notDuplicates.length}</p>`;
 	if(errors.length){
 		html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
 	} else if(!changes){
-		html += '<p>Nothing to merge: this catalogue already has everything in the backup.</p>';
+		html += spell('<p>Nothing to merge: this catalog already has everything in the backup.</p>');
 	}
 	const ok = !errors.length && changes;
 	byId('importPreviewTitle').textContent = 'Merge a backup';
@@ -279,9 +279,9 @@ function previewMerge(){
 function applyMerge(){
 	if(!PENDING_MERGE) return;
 	// merged again, in case books were edited while the preview was open
-	const {m, errors, changes} = mergeIntoCatalogue(PENDING_MERGE.backup);
+	const {m, errors, changes} = mergeIntoCatalog(PENDING_MERGE.backup);
 	closeImportPreview();
-	if(errors.length || !changes){ showIoStatus('The catalogue changed and the merge no longer applies; nothing was changed.', true); return; }
+	if(errors.length || !changes){ showIoStatus(spell('The catalog changed and the merge no longer applies; nothing was changed.'), true); return; }
 	setData(m.books);
 	setSeriesInfo(m.seriesInfo);
 	setAuthors(m.authors);
@@ -308,13 +308,13 @@ function mergeBackupFile(file){
 			previewMerge();
 		}catch(err){
 			closeImportPreview();
-			showIoStatus("Couldn't read that file \u2014 make sure it's a catalogue backup JSON.", true);
+			showIoStatus(spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
 		}
 	};
 	reader.readAsText(file);
 }
 
-// ------------------------------------------------------------ Check the catalogue, box sets
+// ------------------------------------------------------------ Check the catalog, box sets
 // The check lists errors, warnings and what is kept in an older format, which it offers to save in the
 // current one; box sets are previewed like an import and only applied when confirmed.
 /** @type {'format' | 'box-sets' | null} */
@@ -332,7 +332,7 @@ function messageList(items, limit = 100){
 }
 
 /**
- * Show the check or the box sets in the preview; its confirm button (labelled `confirm`) shows when PENDING_TIDY is set.
+ * Show the check or the box sets in the preview; its confirm button (labeled `confirm`) shows when PENDING_TIDY is set.
  * @param {string} title
  * @param {string} html
  * @param {string} confirm
@@ -352,7 +352,7 @@ function showTidyPreview(title, html, confirm){
 	byId('importPreview').scrollIntoView();   // it opens at the top, far above these buttons
 }
 
-function checkCatalogue(){
+function checkCatalog(){
 	const {errors, warnings} = CatalogImport.validate(DATA, SERIES_INFO);
 	const people = CatalogImport.validateAuthors(DATA, AUTHORS);
 	errors.push(...people.errors);
@@ -369,7 +369,7 @@ function checkCatalogue(){
 	}
 	if(!errors.length && !warnings.length && !FORMAT_NOTES.length) html += '<p>No problems found.</p>';
 	PENDING_TIDY = FORMAT_NOTES.length ? 'format' : null;
-	showTidyPreview('Check the catalogue', html, 'Save in the current format');
+	showTidyPreview(spell('Check the catalog'), html, 'Save in the current format');
 }
 
 // Keep each box set as its own book and as its titles, in a copy of DATA (CatalogImport.boxSetBooks).
@@ -393,7 +393,7 @@ function previewBoxSets(){
 		html += `<ul>${report.added.map(b=> `<li>${bookLine(b)}</li>`).join('')}</ul>`;
 	}
 	if(report.boxSets.some(b=> b.added)){
-		html += '<p>A title not in the catalogue yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>';
+		html += spell('<p>A title not in the catalog yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>');
 	}
 	if(errors.length){
 		html += '<p class="warn">Validation failed, nothing will be changed:</p>' + messageList(errors, 10);
@@ -415,7 +415,7 @@ function applyTidy(){
 	}
 	// applied again, in case books were edited while the preview was open
 	const {data, report, errors} = boxSetsIntoCopy();
-	if(errors.length){ showIoStatus('The catalogue changed and the box sets no longer validate; nothing was changed.', true); return; }
+	if(errors.length){ showIoStatus(spell('The catalog changed and the box sets no longer validate; nothing was changed.'), true); return; }
 	setData(data);
 	refreshPage(); persist();
 	const added = report.added.length;
@@ -464,8 +464,8 @@ function saveHardcoverToken(remove){
 }
 
 /**
- * Run `mode` (CatalogImport.runHardcover) on a copy of the catalogue, shown in the banner on top. A real
- * run keeps its changes (persist) before sending anything to Hardcover, unless the catalogue was edited meanwhile. Returns a promise of the ended run.
+ * Run `mode` (CatalogImport.runHardcover) on a copy of the catalog, shown in the banner on top. A real
+ * run keeps its changes (persist) before sending anything to Hardcover, unless the catalog was edited meanwhile. Returns a promise of the ended run.
  * @param {HardcoverMode} mode
  * @param {boolean} dryRun
  * @returns {Promise<HardcoverJob | undefined>} undefined when it didn't start
@@ -486,14 +486,14 @@ async function runHardcover(mode, dryRun){
 	const books = JSON.parse(before);
 	const save = async (/** @type {boolean} */ changed) => {
 		if(JSON.stringify(DATA) !== before || localNow() !== seen){
-			lines.err.push('error: the catalogue was edited while this ran (here or in another tab); nothing written, nothing sent to Hardcover. Run it again.');
+			lines.err.push(spell('error: the catalog was edited while this ran (here or in another tab); nothing written, nothing sent to Hardcover. Run it again.'));
 			return false;
 		}
 		if(changed){
 			setData(books);
 			persist();
 			refreshPage();
-			lines.out.push('saved the catalogue');
+			lines.out.push(spell('saved the catalog'));
 		}
 		return true;
 	};
@@ -502,7 +502,7 @@ async function runHardcover(mode, dryRun){
 	let code;
 	try{
 		code = await CatalogImport.runHardcover(books, mode, CatalogImport.hardcoverAsker(token, fetchHardcover, pause), {
-			exclusions: EXCLUSIONS, info: SERIES_INFO, dryRun, save,
+			exclusions: EXCLUSIONS, info: SERIES_INFO, dryRun, save, british: BRITISH,
 			out: line => lines.out.push(line), err: line => lines.err.push(line),
 			step: (text, done, total) => { Object.assign(job, {step: text, done, total}); show(); },
 		});
@@ -614,7 +614,7 @@ byId('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(fal
 byId('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
 byId('importCancel').addEventListener('click', closeImportPreview);
 
-byId('checkBtn').addEventListener('click', checkCatalogue);
+byId('checkBtn').addEventListener('click', checkCatalog);
 byId('boxSetsBtn').addEventListener('click', previewBoxSets);
 byId('exportBtn').addEventListener('click', exportBackup);
 byId('exportGoodreadsBtn').addEventListener('click', exportGoodreads);

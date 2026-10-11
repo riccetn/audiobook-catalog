@@ -4,11 +4,11 @@
 
 ```
 public/               the app, and all that a static server serves (make serve, GitHub Pages)
-  index.html, app.js    the catalogue: browse by series or all books, edit books and series info
+  index.html, app.js    the catalog: browse by series or all books, edit books and series info
   import.html, import.js    Audible, Goodreads and Hardcover imports, Goodreads CSV export, Check / Box sets, backups (Export / Restore / Merge)
   duplicates.html, duplicates.js    find and merge books entered twice
   authors.html, authors.js    the authors, and each author's page: bio, links, series and titles
-  store.js              shared by the pages: loads the catalogue from localStorage and saves every edit there
+  store.js              shared by the pages: loads the catalog from localStorage and saves every edit there
   styles.css
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline
   importers.js          the pipeline: importers, merge, validation, Hardcover (no browser APIs, so the tests run it in Node)
@@ -39,16 +39,25 @@ npm install       # once: installs TypeScript into node_modules/
 make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig.json, and jsconfig.sw.json for sw.js)
 ```
 
-- The catalogue's shapes are `@typedef`s at the top of `importers.js`: `Book`, `Edition`, `SeriesEntry`,
+- The catalog's shapes are `@typedef`s at the top of `importers.js`: `Book`, `Edition`, `SeriesEntry`,
   `AuthorEntry`, `Backup` and the reports of imports, merges and Hardcover runs. Other modules bring
   them in with `/** @import {Book, Edition} from './importers.js' */`, a comment, so the browser loads
   nothing more.
 - Functions say what they take and give with `@param` and `@returns`; a variable that starts empty says
   what it will hold (`/** @type {string[]} */`).
-- The checker only knows what the code says. A catalogue read from localStorage, a backup or a CSV is
+- The checker only knows what the code says. A catalog read from localStorage, a backup or a CSV is
   `Unchecked` (any) until the code has checked it: `readBackup()` and `fixBooks()` bring it to the
   current format, and `validate()` is what makes sure it is a list of `Book`s.
 - `byId(id)` and `fieldById(id)` in `store.js` get the page's elements; they throw when the page lacks
   one, so a typo in an id fails at once with its name.
 - CI runs `make typecheck` beside `make test`.
 
+## Spelling
+
+The code, its comments and these docs use American spelling. The pages are written that way too, and
+are shown in British spelling to a browser whose first English language is a British one
+(`prefersBritish` in `importers.js`, from `navigator.languages`; `en-GB`, `en-AU`, `en-IE`, `en-CA`, ...).
+`store.js` respells the page's own HTML as it loads, and text the code puts on the page goes through
+`spell()`; book titles and other data never do. `spelled()` knows only the words in `BRITISH_WORDS`
+(now just catalog/catalogue), so a page that starts using another such word adds it there. Stored keys and
+file names (`audiobook-catalog-device`, the backup's file name) are names, not text, and never change.

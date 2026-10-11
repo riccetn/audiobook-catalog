@@ -1,9 +1,9 @@
-// The authors page: every author in the catalogue, and one author's page (authors.html#a=Name) with what
+// The authors page: every author in the catalog, and one author's page (authors.html#a=Name) with what
 // you keep about them (AUTHORS) (a short bio, their own site and their pages on Audible,
 // Goodreads and Hardcover) and the series and titles of theirs you have, worked out from the books.
 // Loading and saving live in store.js.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, AUTHORS, setAuthors, esc, persist, showIoStatus, startPage, byId, fieldById } from './store.js';
+import { DATA, SERIES_INFO, AUTHORS, setAuthors, esc, persist, showIoStatus, startPage, byId, fieldById, spell } from './store.js';
 /** @import {Book, IndexedBook, AuthorEntry} from './importers.js' */
 
 /** @type {string | null} */
@@ -15,7 +15,7 @@ let EDITING = null;            // the author whose info the form is editing, or 
 /** @type {['url' | 'audible' | 'goodreads' | 'hardcover', string][]} */
 const LINKS = [['url', 'Website'], ['audible', 'Audible'], ['goodreads', 'Goodreads'], ['hardcover', 'Hardcover']];
 
-// Addresses as the catalogue page writes them (spaces as +), so its links and these look the same.
+// Addresses as the catalog page writes them (spaces as +), so its links and these look the same.
 const enc = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
 const dec = (/** @type {string} */ v)=>{ try{ return decodeURIComponent(v.replace(/\+/g, ' ')); }catch(e){ return v; } };
 /** @type {(name: string) => string} */
@@ -49,7 +49,7 @@ export function render(){
 	homeAuthorForm();
 	byId('crumb').classList.toggle('show', AUTHOR !== null);
 	byId('authorControls').style.display = AUTHOR === null ? '' : 'none';
-	document.title = (AUTHOR === null ? 'Authors' : AUTHOR) + ' · Audiobook Catalogue';
+	document.title = (AUTHOR === null ? 'Authors' : AUTHOR) + spell(' · Audiobook Catalog');
 	if(AUTHOR === null) renderList(); else renderAuthor(AUTHOR);
 }
 
@@ -67,7 +67,7 @@ function renderList(){
 }
 
 /**
- * A book of the author's: its number in the series, its title (a link to it in the catalogue), and who
+ * A book of the author's: its number in the series, its title (a link to it in the catalog), and who
  * else wrote it.
  * @param {Book} b
  * @param {string} name
@@ -87,7 +87,7 @@ function renderAuthor(name){
 	const count = series.reduce((n, s)=> n + s.books.length, 0) + titles.length;
 	byId('subtitle').textContent = count
 		? `${plural(count, 'audiobook')}${series.length ? ' in ' + plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
-		: 'No books by this author in the catalogue.';
+		: spell('No books by this author in the catalog.');
 	const label = AUTHORS[name] ? 'Edit author info' : 'Add author info';
 	let html = `<div class="author-head"><h2 class="author-name">${esc(name)}</h2>` +
 		`<button class="iconbtn aedit" data-edit-author="1" title="${label}" aria-label="${label}">&#9998;</button></div>`;
