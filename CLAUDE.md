@@ -10,6 +10,10 @@ sharing `styles.css`) that run entirely in the browser and keep the catalogue in
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to run the tests.
 
+Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`),
+and nothing else goes there: `data/`, `docs/` and `tests/` stay outside it, so they are never served.
+The module names below are files in `public/`.
+
 - Vanilla JavaScript, no framework, no bundler, **no npm packages**. `package.json` only says
   `"type": "module"`; don't add dependencies to it, use Node built-ins in tests.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
@@ -20,13 +24,14 @@ Node is only used to run the tests.
 
 ```sh
 make test       # node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
-make serve      # python3 -m http.server on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
+make serve      # python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/importers.test.mjs          # one suite (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/importers.test.mjs   # one test
 ```
 
 There is no linter or formatter config; match the surrounding style (see Conventions).
-CI (`.github/workflows/ci.yml`) runs `make test` on pull requests and on pushes to `main`.
+CI (`.github/workflows/ci.yml`) runs `make test` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
+publishes `public/` to GitHub Pages on pushes to `main`.
 
 ## Architecture
 
@@ -51,8 +56,8 @@ CI (`.github/workflows/ci.yml`) runs `make test` on pull requests and on pushes 
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are kept in localStorage
   `audiobook-catalog-not-duplicates` (`notDuplicates` in backups).
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
-  only the app, never anything under `data/`; add new modules to its `APP` list
-  (the smoke test checks every module a page imports).
+  the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
+  page imports, and fails on any file in `public/` the list lacks).
 - `app.js` (`index.html`): series overview, all books (an empty catalogue says where books come from), the book and
   series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
 - `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`validate`, plus

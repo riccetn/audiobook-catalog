@@ -2,7 +2,7 @@
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as C from '../importers.js';
+import * as C from '../public/importers.js';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 
 const book = (t, a = 'Author', extra = {}) => ({ t, a: [a], ...extra });

@@ -1,7 +1,7 @@
 // The service worker that makes the catalogue installable as an app (on a phone, say) and usable offline.
 // Every request goes to the network first, so a new version of the app shows up at once; the cached copy
 // is only used when the network fails. The catalogue itself lives in localStorage (store.js), not in files.
-const CACHE = 'audiobook-catalog-v2';
+const CACHE = 'audiobook-catalog-v3';
 const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'styles.css', 'importers.js', 'store.js', 'app.js',
   'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
@@ -15,13 +15,10 @@ self.addEventListener('activate', e=>{
     .then(()=> self.clients.claim()));
 });
 
-// Whether a request may be answered from the cache: the app itself, never anything under data/ (files
-// kept beside it from before the catalogue lived in the browser).
+// Whether a request may be answered from the cache: the app's own files. Only public/ is served, so the
+// old data/ files beside it are out of reach anyway; requests to Hardcover go straight to the network.
 function cacheable(req){
-  const url = new URL(req.url);
-  if(req.method !== 'GET' || url.origin !== location.origin) return false;
-  const rel = url.pathname.slice(new URL(self.registration.scope).pathname.length);
-  return !rel.startsWith('data/');
+  return req.method === 'GET' && new URL(req.url).origin === location.origin;
 }
 
 self.addEventListener('fetch', e=>{
