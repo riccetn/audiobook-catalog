@@ -123,11 +123,8 @@ Invariants the code relies on:
 ## Privacy (hard rule)
 
 The repo is public; the user's library is not.
-- The catalogue lives in the browser, but the user may still have the old data files in `data/`: never commit `data/books.json`,
-  `data/series-info.json`, `data/authors.json`, `data/excluded.txt`, `data/not-duplicates.txt`, `data/hardcover-token` or anything in
-  `data/raw/`. `tests/data.test.mjs` fails if they become tracked. The Hardcover token stays in that browser's localStorage, is
-  only ever sent to Hardcover, and never goes in a backup.
-- Only `data/sample/` (the tests' demo data; the page never loads it) is committed, and it and every example in tests and docs must be **invented**
+- The catalogue lives in the browser.
+- Only `sample/` (the tests' demo data; the page never loads it) is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.
 
 ## Conventions

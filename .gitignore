@@ -1,19 +1,5 @@
-# ---- Personal data: this repository is public, your library is not. -----------------------
-# Your catalogue's files from before it lived in the browser (Restore reads them).
-data/books.json
-data/series-info.json
-data/authors.json
-data/excluded.txt
-data/not-duplicates.txt
-# Your Hardcover API token: it gives access to your Hardcover account.
-data/hardcover-token
-
-# Raw exports contain ratings, reviews and purchase history.
-data/raw/*
-!data/raw/.gitkeep
-
-# ---- Noise ----------------------------------------------------------------------------------
-.DS_Store
-
-# TypeScript, installed by npm install to type-check the code (make typecheck)
+# managed by npm
 node_modules/
+
+# Mac OS
+.DS_Store
