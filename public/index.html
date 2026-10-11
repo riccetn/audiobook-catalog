@@ -15,88 +15,88 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Audiobook Catalogue</h1>
-  <nav class="pages">
-    <a href="index.html" class="current" aria-current="page">Catalogue</a>
-    <a href="authors.html">Authors</a>
-    <a href="import.html">Import &amp; export</a>
-    <a href="duplicates.html">Duplicates<span id="dupCount"></span></a>
-  </nav>
-  <p class="sub" id="subtitle">Loading&hellip;</p>
+	<h1>Audiobook Catalogue</h1>
+	<nav class="pages">
+		<a href="index.html" class="current" aria-current="page">Catalogue</a>
+		<a href="authors.html">Authors</a>
+		<a href="import.html">Import &amp; export</a>
+		<a href="duplicates.html">Duplicates<span id="dupCount"></span></a>
+	</nav>
+	<p class="sub" id="subtitle">Loading&hellip;</p>
 
-  <div class="viewToggle">
-    <button id="btnSeriesView" class="active">By Series</button>
-    <button id="btnLibraryView">All Books</button>
-  </div>
+	<div class="viewToggle">
+		<button id="btnSeriesView" class="active">By Series</button>
+		<button id="btnLibraryView">All Books</button>
+	</div>
 
-  <div class="crumb" id="crumb">
-    <button id="backToSeries">&larr; All series</button>
-    <span id="crumbLabel"></span>
-  </div>
+	<div class="crumb" id="crumb">
+		<button id="backToSeries">&larr; All series</button>
+		<span id="crumbLabel"></span>
+	</div>
 
-  <div class="controls">
-    <input type="text" id="q" placeholder="Search title, author, series, genre&hellip;">
-    <select id="authorFilter"><option value="">All authors</option></select>
-    <select id="genreFilter"><option value="">All genres</option></select>
-    <select id="readFilter"><option value="">Read any time</option></select>
-    <select id="missingFilter"><option value="">All series</option><option value="missing">Series with missing books</option></select>
-  </div>
+	<div class="controls">
+		<input type="text" id="q" placeholder="Search title, author, series, genre&hellip;">
+		<select id="authorFilter"><option value="">All authors</option></select>
+		<select id="genreFilter"><option value="">All genres</option></select>
+		<select id="readFilter"><option value="">Read any time</option></select>
+		<select id="missingFilter"><option value="">All series</option><option value="missing">Series with missing books</option></select>
+	</div>
 
-  <div class="count-row">
-    <span id="resultCount"></span>
-    <div class="rowbtns">
-      <button class="addbtn" id="toggleAdd">+ Add a book</button>
-    </div>
-  </div>
-  <div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
-  <p id="ioStatus" class="ioStatus"></p>
+	<div class="count-row">
+		<span id="resultCount"></span>
+		<div class="rowbtns">
+			<button class="addbtn" id="toggleAdd">+ Add a book</button>
+		</div>
+	</div>
+	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
+	<p id="ioStatus" class="ioStatus"></p>
 
-  <form id="addForm">
-    <h3 id="formTitle">Add a book</h3>
-    <div class="formrow">
-      <div><label>Title</label><input id="f_t" required></div>
-      <div><label>Authors, separated by commas</label><input id="f_a" required></div>
-    </div>
-    <div class="formrow">
-      <div><label>Genres (comma separated)</label><input id="f_g"></div>
-      <div><label>Hardcover book</label><input id="f_hcb" placeholder="its id, or paste its hardcover.app address"></div>
-    </div>
-    <div class="formrow">
-      <div><label>Series</label><input id="f_s"></div>
-      <div><label>Book # in series</label><input id="f_sn"></div>
-    </div>
-    <div class="formrow">
-      <div><label>Date(s) read, comma separated</label><input id="f_r" placeholder="e.g. 2024-03-15, 2026-01"></div>
-      <div class="formrow-btn"><button type="button" id="readTodayBtn" title="Add today's date">+ Read today</button></div>
-    </div>
-    <label>Editions (another ISBN is another edition; a box set is the same edition on each of its books)</label>
-    <div id="f_editions" class="editionsEditor"></div>
-    <button type="button" id="addEditionBtn" class="addEdition">+ Add an edition</button>
-    <p id="formError" class="formError"></p>
-    <div class="formbtns">
-      <button type="submit" class="save" id="formSaveBtn">Add book</button>
-      <button type="button" id="cancelAdd">Cancel</button>
-    </div>
-  </form>
+	<form id="addForm">
+		<h3 id="formTitle">Add a book</h3>
+		<div class="formrow">
+			<div><label>Title</label><input id="f_t" required></div>
+			<div><label>Authors, separated by commas</label><input id="f_a" required></div>
+		</div>
+		<div class="formrow">
+			<div><label>Genres (comma separated)</label><input id="f_g"></div>
+			<div><label>Hardcover book</label><input id="f_hcb" placeholder="its id, or paste its hardcover.app address"></div>
+		</div>
+		<div class="formrow">
+			<div><label>Series</label><input id="f_s"></div>
+			<div><label>Book # in series</label><input id="f_sn"></div>
+		</div>
+		<div class="formrow">
+			<div><label>Date(s) read, comma separated</label><input id="f_r" placeholder="e.g. 2024-03-15, 2026-01"></div>
+			<div class="formrow-btn"><button type="button" id="readTodayBtn" title="Add today's date">+ Read today</button></div>
+		</div>
+		<label>Editions (another ISBN is another edition; a box set is the same edition on each of its books)</label>
+		<div id="f_editions" class="editionsEditor"></div>
+		<button type="button" id="addEditionBtn" class="addEdition">+ Add an edition</button>
+		<p id="formError" class="formError"></p>
+		<div class="formbtns">
+			<button type="submit" class="save" id="formSaveBtn">Add book</button>
+			<button type="button" id="cancelAdd">Cancel</button>
+		</div>
+	</form>
 
-  <form id="seriesForm">
-    <h3 id="seriesFormTitle">Series info</h3>
-    <div><label>Series name (renames it on every book in the series)</label><input id="sf_name"></div>
-    <div class="formrow">
-      <div><label>Books released so far</label><input id="sf_total" placeholder="e.g. 12, or many"></div>
-      <div><label>Status</label><select id="sf_status"><option value="ongoing">ongoing</option><option value="complete">complete</option></select></div>
-    </div>
-    <div><label>Note</label><input id="sf_note" placeholder="e.g. book 5 is announced"></div>
-    <div><label>Author or publisher site (optional)</label><input id="sf_url" placeholder="https://"></div>
-    <p id="seriesFormError" class="formError"></p>
-    <div class="formbtns">
-      <button type="submit" class="save" id="seriesSaveBtn">Save series info</button>
-      <button type="button" id="seriesRemoveBtn">Remove info</button>
-      <button type="button" id="cancelSeries">Cancel</button>
-    </div>
-  </form>
+	<form id="seriesForm">
+		<h3 id="seriesFormTitle">Series info</h3>
+		<div><label>Series name (renames it on every book in the series)</label><input id="sf_name"></div>
+		<div class="formrow">
+			<div><label>Books released so far</label><input id="sf_total" placeholder="e.g. 12, or many"></div>
+			<div><label>Status</label><select id="sf_status"><option value="ongoing">ongoing</option><option value="complete">complete</option></select></div>
+		</div>
+		<div><label>Note</label><input id="sf_note" placeholder="e.g. book 5 is announced"></div>
+		<div><label>Author or publisher site (optional)</label><input id="sf_url" placeholder="https://"></div>
+		<p id="seriesFormError" class="formError"></p>
+		<div class="formbtns">
+			<button type="submit" class="save" id="seriesSaveBtn">Save series info</button>
+			<button type="button" id="seriesRemoveBtn">Remove info</button>
+			<button type="button" id="cancelSeries">Cancel</button>
+		</div>
+	</form>
 
-  <div id="results"></div>
+	<div id="results"></div>
 </div>
 
 <script type="module" src="app.js"></script>
