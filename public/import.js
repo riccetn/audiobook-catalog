@@ -5,13 +5,24 @@ import {
 	DATA, SERIES_INFO, AUTHORS, setData, setSeriesInfo, setAuthors, EXCLUSIONS, LOCAL_SEEN, NOT_DUPLICATES,
 	addNotDuplicates, esc, localNow, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, HARDCOVER_PAUSE_MS, browserHardcoverToken,
-	fetchHardcover, startPage, FORMAT_NOTES
+	fetchHardcover, startPage, FORMAT_NOTES, byId, fieldById
 } from './store.js';
+/** @import {Book, ReadResult, Backup} from './importers.js' */
+/** @import {HardcoverJob} from './store.js' */
+
+/** @typedef {HardcoverJob['mode']} HardcoverMode */
+/** @typedef {'audible' | 'goodreads'} ImportKind */
 
 function refreshPage(){
-	document.getElementById('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
+	byId('subtitle').textContent = `${DATA.length} audiobooks in the catalogue`;
 }
 
+/**
+ * Hand the browser `text` as a file to save, named `name` and today's date.
+ * @param {string} text
+ * @param {string} type its media type: 'text/csv' or 'application/json'
+ * @param {string} name
+ */
 function download(text, type, name){
 	const blob = new Blob([text], {type});
 	const url = URL.createObjectURL(blob);
@@ -33,24 +44,40 @@ function exportBackup(){
 function exportGoodreads(){
 	const out = CatalogImport.goodreadsCsv(DATA);
 	download(out.csv, 'text/csv', 'goodreads-import');
+	/** @type {string[]} */
 	const notes = [];
 	if(out.withoutIds) notes.push(`${out.withoutIds} without a Goodreads id or ISBN, which Goodreads finds by title and author`);
 	if(out.withoutDate) notes.push(`${out.withoutDate} without a full date read`);
 	showIoStatus(`Goodreads CSV with ${out.books} books downloaded${notes.length ? ' (' + notes.join('; ') + ')' : ''}.`);
 }
 
-// Pick the files to read; resolves to [{name, text}].
+/**
+ * What a FileReader that was asked to readAsText() read: its onload event's target is the reader, and
+ * its result a string.
+ * @param {ProgressEvent<FileReader>} e
+ * @returns {string}
+ */
+const readText = e => /** @type {string} */ (/** @type {FileReader} */ (e.target).result);
+
+/**
+ * Pick the files to read; resolves to [{name, text}].
+ * @param {Iterable<File>} files
+ * @returns {Promise<{name: string, text: string}[]>}
+ */
 function readFiles(files){
-	return Promise.all([...files].map(file=> new Promise((resolve, reject)=>{
+	return Promise.all([...files].map(file=> /** @type {Promise<{name: string, text: string}>} */ (new Promise((resolve, reject)=>{
 		const reader = new FileReader();
-		reader.onload = e=> resolve({name: file.name, text: e.target.result});
+		reader.onload = e=> resolve({name: file.name, text: readText(e)});
 		reader.onerror = ()=> reject(new Error(`couldn't read ${file.name}`));
 		reader.readAsText(file);
-	})));
+	}))));
 }
 
-// Restore: a backup, or the data files of a catalogue from before it lived in the browser
-// (books.json, series-info.json, ... picked together; CatalogImport.readDataFiles), replaces the catalogue.
+/**
+ * Restore: a backup, or the data files of a catalogue from before it lived in the browser
+ * (books.json, series-info.json, ... picked together; CatalogImport.readDataFiles), replaces the catalogue.
+ * @param {File[]} files
+ */
 async function importBackup(files){
 	try{
 		const {books, seriesInfo, authors, excluded, notDuplicates} = CatalogImport.readDataFiles(await readFiles(files));
@@ -72,16 +99,23 @@ async function importBackup(files){
 // ------------------------------------------------------------ Audible / Goodreads CSV import
 // Read the export, merge it into a copy of the catalogue, show what would change, and only apply it
 // when confirmed. Like every edit in the page, the result is then saved (see persist).
+/** @type {Record<ImportKind, {label: string, read: (text: string) => ReadResult}>} */
 const IMPORTERS = {
 	// an Audible export's ASINs are those of the site picked beside the buttons (audible.com unless changed)
-	audible: {label: 'Audible', read: text=> CatalogImport.readAudible(text, document.getElementById('audibleImportSite').value)},
+	audible: {label: 'Audible', read: text=> CatalogImport.readAudible(text, fieldById('audibleImportSite').value)},
 	goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},
 };
+/** @type {ImportKind} */
 let IMPORT_KIND = 'audible';
+/** @type {Book[] | null} */
 export let PENDING_IMPORT = null;   // the records of the import previewed, until it is applied or cancelled
 
-// Merge into a copy of DATA, so nothing changes until the result is known to be valid.
+/**
+ * Merge into a copy of DATA, so nothing changes until the result is known to be valid.
+ * @param {Book[]} records
+ */
 function mergeIntoCopy(records){
+	/** @type {Book[]} */
 	const data = JSON.parse(JSON.stringify(DATA));
 	const report = CatalogImport.merge(data, records, EXCLUSIONS);
 	// series-info problems are not the import's doing (a series renamed in the page); only block on the books
@@ -89,12 +123,22 @@ function mergeIntoCopy(records){
 	return {data, report, errors};
 }
 
-// A book in a preview list: title, author and series, escaped.
+/**
+ * A book in a preview list: title, author and series, escaped.
+ * @param {Book} rec
+ * @returns {string}
+ */
 function bookLine(rec){
 	const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
 	return `${esc(rec.t)} &mdash; ${esc(CatalogImport.namesText(rec.a))}${esc(series)}`;
 }
 
+/**
+ * Show what importing an export would do, in the preview.
+ * @param {ImportKind} kind
+ * @param {string} text the export's text
+ * @param {string} fileName
+ */
 function previewImport(kind, text, fileName){
 	const importer = IMPORTERS[kind];
 	const result = importer.read(text);
@@ -105,9 +149,9 @@ function previewImport(kind, text, fileName){
 	PENDING_HARDCOVER = null;
 	PENDING_MERGE = null;
 	PENDING_TIDY = null;
-	document.getElementById('mergePrefer').classList.remove('show');
+	byId('mergePrefer').classList.remove('show');
 
-	const li = rec => `<li>${bookLine(rec)}</li>`;
+	const li = (/** @type {Book} */ rec) => `<li>${bookLine(rec)}</li>`;
 	let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
 	html += `<p>Already in the catalogue: ${report.matched}</p>`;
 	if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
@@ -134,16 +178,16 @@ function previewImport(kind, text, fileName){
 		html += '<p>Nothing new to add.</p>';
 	}
 
-	document.getElementById('importPreviewTitle').textContent = `${importer.label} import`;
-	document.getElementById('importPreviewBody').innerHTML = html;
-	const confirmBtn = document.getElementById('importConfirm');
+	byId('importPreviewTitle').textContent = `${importer.label} import`;
+	byId('importPreviewBody').innerHTML = html;
+	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
 	confirmBtn.textContent = report.added.length
 		? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
 		: report.backfilled.length ? 'Save ASINs' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
 		: report.editionsAdded.length ? 'Save editions' : report.isbnsFilled.length ? 'Save ISBNs' : 'Save edition details';
-	document.getElementById('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
-	document.getElementById('importPreview').classList.add('open');
+	byId('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
+	byId('importPreview').classList.add('open');
 }
 
 function applyImport(){
@@ -171,11 +215,18 @@ function applyImport(){
 // Restore replaces the catalogue; Merge is for two catalogues that have both changed since they were
 // last the same (the phone and the PC, say), so neither side's edits are lost (CatalogImport.mergeBackup).
 // Like a CSV import it is previewed first, and only applied when confirmed.
+/** @type {{backup: Backup, fileName: string} | null} */
 let PENDING_MERGE = null;      // {backup, fileName} while its preview is open
 
+/**
+ * The catalogue merged with a backup, in copies, with what blocks it and how many changes it makes.
+ * @param {Backup} backup
+ */
 function mergeIntoCatalogue(backup){
-	const prefer = document.getElementById('mergePreferSelect').value;
-	const m = CatalogImport.mergeBackup(DATA, SERIES_INFO, EXCLUSIONS, backup, prefer, NOT_DUPLICATES, AUTHORS);
+	// the select's options are 'mine' and 'backup'
+	const prefer = /** @type {'mine' | 'backup'} */ (fieldById('mergePreferSelect').value);
+	// mergeBackup takes the marks as a list (it only makes a Set of them again)
+	const m = CatalogImport.mergeBackup(DATA, SERIES_INFO, EXCLUSIONS, backup, prefer, [...NOT_DUPLICATES], AUTHORS);
 	// series info left without books is expected after a series was renamed; anything else blocks
 	const errors = [...CatalogImport.validate(m.books, m.seriesInfo).errors.filter(e=> !/^series-info: .* matches no series/.test(e)),
 		...CatalogImport.validateAuthors(m.books, m.authors).errors];
@@ -185,16 +236,17 @@ function mergeIntoCatalogue(backup){
 }
 
 function previewMerge(){
+	if(!PENDING_MERGE) return;
 	const {backup, fileName} = PENDING_MERGE;
 	const {m, errors, changes} = mergeIntoCatalogue(backup);
-	const list = recs => recs.length ? `<ul>${recs.map(r=> `<li>${bookLine(r)}</li>`).join('')}</ul>` : '';
+	const list = (/** @type {Book[]} */ recs) => recs.length ? `<ul>${recs.map(r=> `<li>${bookLine(r)}</li>`).join('')}</ul>` : '';
 	let html = `<p>${backup.books.length} books in ${esc(fileName)}; ${m.books.length} after merging.</p>`;
 	html += `<p>New from the backup: ${m.added.length}</p>` + list(m.added);
 	html += `<p>Gaining genres, dates read or editions${m.conflicts.length ? ', or the version kept below' : ''}: ${m.updated.length}</p>`;
 	html += `<p>Removed (removed on the other device): ${m.removed.length}</p>` + list(m.removed);
 	if(m.skipped.length) html += `<p>Not added back (removed here): ${m.skipped.length}</p>`;
 	if(m.conflicts.length){
-		const kept = document.getElementById('mergePreferSelect').value === 'backup' ? "the backup's" : "this catalogue's";
+		const kept = fieldById('mergePreferSelect').value === 'backup' ? "the backup's" : "this catalogue's";
 		html += `<p>Title, author or series differ, keeping ${kept}: ${m.conflicts.length}</p><ul>` +
 			m.conflicts.map(c=> `<li>${bookLine(c.mine)} / backup: ${bookLine(c.theirs)}</li>`).join('') + '</ul>';
 	}
@@ -214,17 +266,18 @@ function previewMerge(){
 		html += '<p>Nothing to merge: this catalogue already has everything in the backup.</p>';
 	}
 	const ok = !errors.length && changes;
-	document.getElementById('importPreviewTitle').textContent = 'Merge a backup';
-	document.getElementById('importPreviewBody').innerHTML = html;
-	document.getElementById('mergePrefer').classList.add('show');
-	const confirmBtn = document.getElementById('importConfirm');
+	byId('importPreviewTitle').textContent = 'Merge a backup';
+	byId('importPreviewBody').innerHTML = html;
+	byId('mergePrefer').classList.add('show');
+	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = ok ? '' : 'none';
 	confirmBtn.textContent = 'Merge';
-	document.getElementById('importCancel').textContent = ok ? 'Cancel' : 'Close';
-	document.getElementById('importPreview').classList.add('open');
+	byId('importCancel').textContent = ok ? 'Cancel' : 'Close';
+	byId('importPreview').classList.add('open');
 }
 
 function applyMerge(){
+	if(!PENDING_MERGE) return;
 	// merged again, in case books were edited while the preview was open
 	const {m, errors, changes} = mergeIntoCatalogue(PENDING_MERGE.backup);
 	closeImportPreview();
@@ -238,11 +291,15 @@ function applyMerge(){
 	showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.`);
 }
 
+/**
+ * Read a backup to merge, and preview the merge.
+ * @param {File} file
+ */
 function mergeBackupFile(file){
 	const reader = new FileReader();
 	reader.onload = e=>{
 		try{
-			const backup = CatalogImport.readBackup(JSON.parse(e.target.result));
+			const backup = CatalogImport.readBackup(JSON.parse(readText(e)));
 			if(backup.books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a)) throw new Error('missing title/author');
 			PENDING_IMPORT = null;
 			PENDING_HARDCOVER = null;
@@ -260,27 +317,39 @@ function mergeBackupFile(file){
 // ------------------------------------------------------------ Check the catalogue, box sets
 // The check lists errors, warnings and what is kept in an older format, which it offers to save in the
 // current one; box sets are previewed like an import and only applied when confirmed.
+/** @type {'format' | 'box-sets' | null} */
 export let PENDING_TIDY = null;   // 'format' or 'box-sets', while its preview is open
 
-// A list of messages, at most `limit` of them, saying how many more there are.
+/**
+ * A list of messages, at most `limit` of them, saying how many more there are.
+ * @param {string[]} items
+ * @param {number} [limit]
+ * @returns {string}
+ */
 function messageList(items, limit = 100){
 	const more = items.length > limit ? `<li>&hellip;and ${items.length - limit} more</li>` : '';
 	return `<ul>${items.slice(0, limit).map(m=> `<li>${esc(m)}</li>`).join('')}${more}</ul>`;
 }
 
+/**
+ * Show the check or the box sets in the preview; its confirm button (labelled `confirm`) shows when PENDING_TIDY is set.
+ * @param {string} title
+ * @param {string} html
+ * @param {string} confirm
+ */
 function showTidyPreview(title, html, confirm){
 	PENDING_IMPORT = null;
 	PENDING_HARDCOVER = null;
 	PENDING_MERGE = null;
-	document.getElementById('mergePrefer').classList.remove('show');
-	document.getElementById('importPreviewTitle').textContent = title;
-	document.getElementById('importPreviewBody').innerHTML = html;
-	const confirmBtn = document.getElementById('importConfirm');
+	byId('mergePrefer').classList.remove('show');
+	byId('importPreviewTitle').textContent = title;
+	byId('importPreviewBody').innerHTML = html;
+	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_TIDY ? '' : 'none';
 	confirmBtn.textContent = confirm;
-	document.getElementById('importCancel').textContent = PENDING_TIDY ? 'Cancel' : 'Close';
-	document.getElementById('importPreview').classList.add('open');
-	document.getElementById('importPreview').scrollIntoView();   // it opens at the top, far above these buttons
+	byId('importCancel').textContent = PENDING_TIDY ? 'Cancel' : 'Close';
+	byId('importPreview').classList.add('open');
+	byId('importPreview').scrollIntoView();   // it opens at the top, far above these buttons
 }
 
 function checkCatalogue(){
@@ -305,6 +374,7 @@ function checkCatalogue(){
 
 // Keep each box set as its own book and as its titles, in a copy of DATA (CatalogImport.boxSetBooks).
 function boxSetsIntoCopy(){
+	/** @type {Book[]} */
 	const data = JSON.parse(JSON.stringify(DATA));
 	const report = CatalogImport.boxSetBooks(data, EXCLUSIONS);
 	const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
@@ -356,24 +426,31 @@ function applyTidy(){
 // The page runs it itself, as Hardcover's API allows browser requests, with a token kept in this browser
 // only (never in a backup); it stops if you leave the page, so the browser asks first. A dry run shows
 // what would happen, and confirming runs it for real.
+/** @type {Record<HardcoverMode, {title: string, confirm: string}>} */
 const HARDCOVER_MODES = {
 	import: {title: 'Import from Hardcover', confirm: 'Import'},
 	export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
 	sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
 };
+/** @type {HardcoverMode | null} */
 export let PENDING_HARDCOVER = null;   // the mode, while its preview is open
+/** @type {HardcoverJob | null} */
 let PAGE_RUN = null;           // a run going on in this page (showHardcoverJob)
 
 function showHardcoverToken(){
 	const saved = Boolean(browserHardcoverToken());
-	document.getElementById('hardcoverTokenState').textContent = saved
+	byId('hardcoverTokenState').textContent = saved
 		? 'Your Hardcover API token is saved in this browser only (never in a backup).'
 		: 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept in this browser only (never in a backup).';
-	document.getElementById('hardcoverTokenRemove').style.display = saved ? '' : 'none';
+	byId('hardcoverTokenRemove').style.display = saved ? '' : 'none';
 }
 
+/**
+ * Save the token pasted in the page in this browser, or `remove` the saved one.
+ * @param {boolean} remove
+ */
 function saveHardcoverToken(remove){
-	const input = document.getElementById('hardcoverToken');
+	const input = fieldById('hardcoverToken');
 	if(!remove && !input.value.trim()){ showIoStatus('Paste your Hardcover API token first.', true); return; }
 	try{
 		if(remove) localStorage.removeItem(HARDCOVER_TOKEN_KEY);
@@ -389,19 +466,25 @@ function saveHardcoverToken(remove){
 /**
  * Run `mode` (CatalogImport.runHardcover) on a copy of the catalogue, shown in the banner on top. A real
  * run keeps its changes (persist) before sending anything to Hardcover, unless the catalogue was edited meanwhile. Returns a promise of the ended run.
+ * @param {HardcoverMode} mode
+ * @param {boolean} dryRun
+ * @returns {Promise<HardcoverJob | undefined>} undefined when it didn't start
  */
 async function runHardcover(mode, dryRun){
 	if(PAGE_RUN) return;
 	const token = browserHardcoverToken();
 	if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
-	const started = Date.now(), lines = {out: [], err: []};
+	const started = Date.now();
+	/** @type {{out: string[], err: string[]}} */
+	const lines = {out: [], err: []};
+	/** @type {HardcoverJob} */
 	const job = PAGE_RUN = {mode, dryRun, running: true, elapsed: 0, step: 'Starting'};
 	const show = () => { job.elapsed = Date.now() - started; showHardcoverJob(job); };
 	const ticker = setInterval(show, 1000);
 	show();
 	const before = JSON.stringify(DATA), seen = LOCAL_SEEN;
 	const books = JSON.parse(before);
-	const save = async changed => {
+	const save = async (/** @type {boolean} */ changed) => {
 		if(JSON.stringify(DATA) !== before || localNow() !== seen){
 			lines.err.push('error: the catalogue was edited while this ran (here or in another tab); nothing written, nothing sent to Hardcover. Run it again.');
 			return false;
@@ -415,6 +498,7 @@ async function runHardcover(mode, dryRun){
 		return true;
 	};
 	const pause = () => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS));
+	/** @type {number} */
 	let code;
 	try{
 		code = await CatalogImport.runHardcover(books, mode, CatalogImport.hardcoverAsker(token, fetchHardcover, pause), {
@@ -423,7 +507,7 @@ async function runHardcover(mode, dryRun){
 			step: (text, done, total) => { Object.assign(job, {step: text, done, total}); show(); },
 		});
 	}catch(e){
-		lines.err.push(`error: ${e.message}`);
+		lines.err.push(`error: ${CatalogImport.errorText(e)}`);
 		code = 1;
 	}
 	clearInterval(ticker);
@@ -441,30 +525,40 @@ addEventListener('beforeunload', e => {
 	if(PAGE_RUN && !PAGE_RUN.dryRun){ e.preventDefault(); e.returnValue = ''; }
 });
 
-// Each update of a run (showHardcoverJob in store.js): no second run while one goes.
+/**
+ * Each update of a run (showHardcoverJob in store.js): no second run while one goes.
+ * @param {HardcoverJob | null} job
+ */
 function onHardcoverJob(job){
 	const busy = Boolean(job && job.running);
-	for(const id of ['hardcoverImportBtn', 'hardcoverExportBtn', 'hardcoverSyncBtn']) document.getElementById(id).disabled = busy;
+	for(const id of ['hardcoverImportBtn', 'hardcoverExportBtn', 'hardcoverSyncBtn']) /** @type {HTMLButtonElement} */ (byId(id)).disabled = busy;
 }
 
+/**
+ * Show how a run went in the preview; a `pending` (dry) run that went through can be confirmed.
+ * @param {HardcoverMode} mode
+ * @param {HardcoverJob} result
+ * @param {boolean} pending
+ */
 function showHardcoverResult(mode, result, pending){
 	PENDING_IMPORT = null;
 	PENDING_HARDCOVER = pending && result.code === 0 ? mode : null;
 	PENDING_MERGE = null;
 	PENDING_TIDY = null;
-	document.getElementById('mergePrefer').classList.remove('show');
+	byId('mergePrefer').classList.remove('show');
 	const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
 	const took = Number.isFinite(result.elapsed) ? ` (took ${minutes(result.elapsed)})` : '';
-	document.getElementById('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title + (pending ? ': preview' : took);
-	document.getElementById('importPreviewBody').innerHTML = `<pre>${esc(text)}</pre>` +
+	byId('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title + (pending ? ': preview' : took);
+	byId('importPreviewBody').innerHTML = `<pre>${esc(text)}</pre>` +
 		(pending && result.code === 0 ? '<p>Nothing has changed yet, here or on Hardcover.</p>' : '');
-	const confirmBtn = document.getElementById('importConfirm');
+	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_HARDCOVER ? '' : 'none';
 	confirmBtn.textContent = HARDCOVER_MODES[mode].confirm;
-	document.getElementById('importCancel').textContent = PENDING_HARDCOVER ? 'Cancel' : 'Close';
-	document.getElementById('importPreview').classList.add('open');
+	byId('importCancel').textContent = PENDING_HARDCOVER ? 'Cancel' : 'Close';
+	byId('importPreview').classList.add('open');
 }
 
+/** @param {HardcoverMode} mode */
 function previewHardcover(mode){
 	closeImportPreview();
 	return runHardcover(mode, true);
@@ -481,16 +575,21 @@ function closeImportPreview(){
 	PENDING_IMPORT = null;
 	PENDING_MERGE = null;
 	PENDING_TIDY = null;
-	document.getElementById('mergePrefer').classList.remove('show');
+	byId('mergePrefer').classList.remove('show');
 	PENDING_HARDCOVER = null;
-	document.getElementById('importPreview').classList.remove('open');
+	byId('importPreview').classList.remove('open');
 }
 
+/**
+ * Read an Audible or Goodreads export, and preview its import.
+ * @param {ImportKind} kind
+ * @param {File} file
+ */
 function importCsv(kind, file){
 	const reader = new FileReader();
 	reader.onload = e=>{
 		try{
-			previewImport(kind, e.target.result, file.name);
+			previewImport(kind, readText(e), file.name);
 		}catch(err){
 			closeImportPreview();
 			showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind].label} export.`, true);
@@ -499,36 +598,39 @@ function importCsv(kind, file){
 	reader.readAsText(file);
 }
 
-document.getElementById('importAudibleBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'audible'; document.getElementById('importCsvFile').click(); });
-document.getElementById('importGoodreadsBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'goodreads'; document.getElementById('importCsvFile').click(); });
-document.getElementById('importCsvFile').addEventListener('change', e=>{
-	const file = e.target.files[0];
+byId('importAudibleBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'audible'; byId('importCsvFile').click(); });
+byId('importGoodreadsBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'goodreads'; byId('importCsvFile').click(); });
+byId('importCsvFile').addEventListener('change', e=>{
+	const input = /** @type {HTMLInputElement} */ (e.target);
+	const file = input.files && input.files[0];
 	if(file) importCsv(IMPORT_KIND, file);
-	e.target.value = '';
+	input.value = '';
 });
-document.getElementById('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : applyImport());
-for(const mode of Object.keys(HARDCOVER_MODES)){
-	document.getElementById(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
+byId('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : applyImport());
+for(const mode of /** @type {HardcoverMode[]} */ (Object.keys(HARDCOVER_MODES))){
+	byId(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
 }
-document.getElementById('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
-document.getElementById('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
-document.getElementById('importCancel').addEventListener('click', closeImportPreview);
+byId('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
+byId('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
+byId('importCancel').addEventListener('click', closeImportPreview);
 
-document.getElementById('checkBtn').addEventListener('click', checkCatalogue);
-document.getElementById('boxSetsBtn').addEventListener('click', previewBoxSets);
-document.getElementById('exportBtn').addEventListener('click', exportBackup);
-document.getElementById('exportGoodreadsBtn').addEventListener('click', exportGoodreads);
-document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
-document.getElementById('mergeBtn').addEventListener('click', ()=> document.getElementById('mergeFile').click());
-document.getElementById('mergeFile').addEventListener('change', e=>{
-	const file = e.target.files[0];
+byId('checkBtn').addEventListener('click', checkCatalogue);
+byId('boxSetsBtn').addEventListener('click', previewBoxSets);
+byId('exportBtn').addEventListener('click', exportBackup);
+byId('exportGoodreadsBtn').addEventListener('click', exportGoodreads);
+byId('importBtn').addEventListener('click', ()=> byId('importFile').click());
+byId('mergeBtn').addEventListener('click', ()=> byId('mergeFile').click());
+byId('mergeFile').addEventListener('change', e=>{
+	const input = /** @type {HTMLInputElement} */ (e.target);
+	const file = input.files && input.files[0];
 	if(file) mergeBackupFile(file);
-	e.target.value = '';
+	input.value = '';
 });
-document.getElementById('mergePreferSelect').addEventListener('change', ()=>{ if(PENDING_MERGE) previewMerge(); });
-document.getElementById('importFile').addEventListener('change', e=>{
-	const files = [...e.target.files];
-	e.target.value = '';
+byId('mergePreferSelect').addEventListener('change', ()=>{ if(PENDING_MERGE) previewMerge(); });
+byId('importFile').addEventListener('change', e=>{
+	const input = /** @type {HTMLInputElement} */ (e.target);
+	const files = [...(input.files || [])];
+	input.value = '';
 	if(files.length) return importBackup(files);
 });
 

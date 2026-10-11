@@ -6,6 +6,7 @@ on:
     pull_request:
 
 jobs:
+<<<<<<< HEAD
     test:
         runs-on: ubuntu-latest
         steps:
@@ -14,3 +15,5 @@ jobs:
                 with:
                     node-version: 24
             - run: make test          # importers, data checks, browser smoke test
+            - run: npm ci             # TypeScript, the type checker
+            - run: make typecheck     # the code against its JSDoc types

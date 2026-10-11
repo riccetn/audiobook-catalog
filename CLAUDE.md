@@ -14,8 +14,10 @@ Everything that is served lives in `public/` (pages, modules, `styles.css`, the 
 and nothing else goes there: `data/`, `docs/` and `tests/` stay outside it, so they are never served.
 The module names below are files in `public/`.
 
-- Vanilla JavaScript, no framework, no bundler, **no npm packages**. `package.json` only says
-  `"type": "module"`; don't add dependencies to it, use Node built-ins in tests.
+- Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests**. `package.json` says
+  `"type": "module"` and has one devDependency, TypeScript, used only as a checker (`make typecheck`); don't add
+  others, use Node built-ins in tests.
+- Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` and `importers.js`.
 - Node 18+ for the tests (CI uses 24).
@@ -24,13 +26,14 @@ The module names below are files in `public/`.
 
 ```sh
 make test       # node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
+make typecheck  # tsc -p jsconfig.json and -p jsconfig.sw.json (sw.js, with the worker's globals); needs `npm install` once
 make serve      # python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/importers.test.mjs          # one suite (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/importers.test.mjs   # one test
 ```
 
 There is no linter or formatter; `.editorconfig` sets tab indentation for code, and otherwise match the surrounding style (see Conventions).
-CI (`.github/workflows/ci.yml`) runs `make test` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
+CI (`.github/workflows/ci.yml`) runs `make test` and `make typecheck` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`.
 
 ## Architecture
@@ -38,6 +41,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `importers.js`: the data pipeline, a module that exports its functions by name (`import * as CatalogImport
   from './importers.js'` in the pages, `as C` in the tests). Keep it free of imports and of Node or DOM APIs,
   so the tests run it in Node as it is.
+  Its top holds the `@typedef`s every module uses (`Book`, `Edition`, `SeriesInfo`, `Authors`, `Backup`, `MergeReport`, `Unchecked`
+  for data not yet checked, ...); others bring them in with `/** @import {Book} from './importers.js' */`.
   Key pieces: `tidyBook`/`tidyText`/`normalizeName`, `parseReadDate(s)`/`fixBooks`/`fixEditions`, `validate`, `formatNotes` (what is in an older format),
   `readAudible`, `readGoodreads`, `goodreadsCsv` (export for Goodreads' import), `merge`,
   `readHardcover`/`hardcoverMatches`/`addHardcoverIds`/`planHardcoverExport`, `parseHardcoverUrl`/`hardcoverBookId` (a book's id from its hardcover.app address), run by `runHardcover` through
@@ -50,7 +55,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   it starts **empty**, never with the demo data; one that can't be read is set aside under `.unreadable`; edits left under the
   old `audiobook-catalog-data` key by the removed `make serve` save are adopted when there is no catalogue yet),
   `persist` (writes the whole catalogue back; refuses when another tab wrote it since this page last read or wrote it),
-  the status line, the page links, the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
+  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), the page links, the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`).
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are kept in localStorage
@@ -132,6 +137,9 @@ The repo is public; the user's library is not.
   non-obvious functions.
 - Status messages and errors are short, plain English; anything that changes many books shows a preview first.
 - The catalogue is stored as compact `JSON.stringify` output (backups are indented for reading).
+- Every function has its types in JSDoc (`@param`, `@returns`, `@type` for a variable that starts empty), and
+  `make typecheck` passes; a cast (`/** @type {X} */ (value)`) only where the code knows more than the checker, with
+  the reason when it isn't plain. No `@ts-ignore`. `catch` gets `unknown`: `errorText(exc)` gives its message.
 - Behaviour changes need a test in the matching suite, and a docs update when user-visible
   (`docs/` documents every workflow; keep the README to the essentials).
 - Commit messages: a short imperative summary of the user-visible change

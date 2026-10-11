@@ -5,23 +5,30 @@ const CACHE = 'audiobook-catalog-v3';
 const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'styles.css', 'importers.js', 'store.js', 'app.js',
 	'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
-self.addEventListener('install', e=>{
-	e.waitUntil(caches.open(CACHE).then(c=> c.addAll(APP)).then(()=> self.skipWaiting()));
+// `self`, as what it is in a service worker (the type checker only knows it as a worker's).
+const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
+
+sw.addEventListener('install', e=>{
+	e.waitUntil(caches.open(CACHE).then(c=> c.addAll(APP)).then(()=> sw.skipWaiting()));
 });
 
-self.addEventListener('activate', e=>{
+sw.addEventListener('activate', e=>{
 	e.waitUntil(caches.keys()
 		.then(keys=> Promise.all(keys.filter(k=> k !== CACHE).map(k=> caches.delete(k))))
-		.then(()=> self.clients.claim()));
+		.then(()=> sw.clients.claim()));
 });
 
-// Whether a request may be answered from the cache: the app's own files. Only public/ is served, so the
-// old data/ files beside it are out of reach anyway; requests to Hardcover go straight to the network.
+/**
+ * Whether a request may be answered from the cache: the app's own files. Only public/ is served, so the
+ * old data/ files beside it are out of reach anyway; requests to Hardcover go straight to the network.
+ * @param {Request} req
+ * @returns {boolean}
+ */
 function cacheable(req){
 	return req.method === 'GET' && new URL(req.url).origin === location.origin;
 }
 
-self.addEventListener('fetch', e=>{
+sw.addEventListener('fetch', e=>{
 	const req = e.request;
 	if(!cacheable(req)) return;
 	e.respondWith(fetch(req).then(res=>{

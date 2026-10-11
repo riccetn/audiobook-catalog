@@ -1336,6 +1336,16 @@ test('hardcoverBookId finds the book an address names, asking Hardcover only whe
 	await assert.rejects(C.hardcoverBookId(ask, 'https://hardcover.app/books/no-such-book'), /Hardcover has no book at hardcover\.app\/books\/no-such-book/);
 	await assert.rejects(C.hardcoverBookId(ask, 'https://hardcover.app/id/edition/999'), /Hardcover has no edition 999/);
 	await assert.rejects(C.hardcoverBookId(ask, 'Tidewater'), /not a Hardcover book id, or the address/);
+	// without a way to ask (no token), only an address that holds the id is read
+	assert.deepEqual(await C.hardcoverBookId(null, 'https://hardcover.app/id/book/78'), { id: '78' });
+	await assert.rejects(C.hardcoverBookId(null, 'https://hardcover.app/books/tidewater'), /needs Hardcover/);
+});
+
+test('errorText gives what went wrong, whatever was thrown', () => {
+	assert.equal(C.errorText(new Error('no such book')), 'no such book');
+	assert.equal(C.errorText({ message: 'from another realm' }), 'from another realm');
+	assert.equal(C.errorText('just text'), 'just text');
+	assert.equal(C.errorText(null), 'null');
 });
 
 test('hardcoverAsker asks one query a request, pausing between them, and says plainly when Hardcover says no', async () => {
