@@ -37,7 +37,7 @@ function download(text, type, name){
 
 function exportBackup(){
 	const backup = {books: DATA, seriesInfo: SERIES_INFO, authors: AUTHORS, excluded: EXCLUSIONS.entries, notDuplicates: [...NOT_DUPLICATES]};
-	download(JSON.stringify(backup, null, 2), 'application/json', 'audiobook-catalog-backup');
+	download(JSON.stringify(backup, null, '\t'), 'application/json', 'audiobook-catalog-backup');
 	showIoStatus('Backup downloaded.');
 }
 

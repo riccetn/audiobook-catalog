@@ -16,7 +16,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const site = path.join(root, 'public');
 const read = file => fs.readFileSync(path.join(site, file), 'utf8');
 const PAGES = ['index.html', 'import.html', 'duplicates.html', 'authors.html'];
-const readData = file => fs.readFileSync(path.join(root, 'data', 'sample', file), 'utf8');
+const readData = file => fs.readFileSync(path.join(root, 'sample', file), 'utf8');
 const DEMO_BOOKS = readData('books.json');
 const DEMO_INFO = readData('series-info.json');
 const DEMO_AUTHORS = readData('authors.json');

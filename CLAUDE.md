@@ -11,7 +11,7 @@ no server code and no command line: any static server (`make serve`, GitHub Page
 Node is only used to run the tests.
 
 Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`),
-and nothing else goes there: `data/`, `docs/` and `tests/` stay outside it, so they are never served.
+and nothing else goes there: `docs/` and `tests/` stay outside it, so they are never served.
 The module names below are files in `public/`.
 
 - Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests**. `package.json` says
@@ -76,10 +76,9 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   conflict, `editionsJoinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
   - `importers.test.mjs`: pipeline unit tests.
-  - `data.test.mjs`: validates the demo data and enforces the privacy rules below.
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM and a fake localStorage (`boot`'s `files`
-    seed the stored catalogue, by default from `data/sample/`; `files: null` for none). Tests reach what the
+    seed the stored catalogue, by default from `sample/`; `files: null` for none). Tests reach what the
     modules export (`ctx.render()`, `get('DATA')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
@@ -123,11 +122,8 @@ Invariants the code relies on:
 ## Privacy (hard rule)
 
 The repo is public; the user's library is not.
-- The catalogue lives in the browser, but the user may still have the old data files in `data/`: never commit `data/books.json`,
-  `data/series-info.json`, `data/authors.json`, `data/excluded.txt`, `data/not-duplicates.txt`, `data/hardcover-token` or anything in
-  `data/raw/`. `tests/data.test.mjs` fails if they become tracked. The Hardcover token stays in that browser's localStorage, is
-  only ever sent to Hardcover, and never goes in a backup.
-- Only `data/sample/` (the tests' demo data; the page never loads it) is committed, and it and every example in tests and docs must be **invented**
+- The catalogue lives in the browser.
+- Only `sample/` (the tests' demo data; the page never loads it) is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.
 
 ## Conventions
