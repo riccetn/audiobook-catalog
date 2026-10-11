@@ -1,13 +1,19 @@
 NODE ?= node
 PORT ?= 8000
+TSC ?= node_modules/.bin/tsc
 
-.PHONY: help test serve
+.PHONY: help test typecheck serve
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
 
 test:            ## run the tests: importers, data checks and the browser smoke test
 	$(NODE) --experimental-vm-modules --test tests/*.test.mjs
+
+typecheck:       ## check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)
+	@test -x $(TSC) || { echo 'TypeScript is not installed: run npm install first'; exit 1; }
+	$(TSC) -p jsconfig.json
+	$(TSC) -p jsconfig.sw.json
 
 serve:           ## open the app at http://localhost:8000/ (serves public/; any static server works, but the pages are ES modules, so not from a file)
 	python3 -m http.server $(PORT) --bind 127.0.0.1 --directory public

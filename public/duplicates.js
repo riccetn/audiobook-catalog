@@ -8,18 +8,30 @@
 // (one book imported from both Audible and Goodreads), unless you untick that. Books merged before
 // that, whose editions still look like one, are listed below the duplicates to be joined the same way.
 import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, setData, NOT_DUPLICATES, addNotDuplicates, readDates, esc, updateNav, persist, showIoStatus, startPage } from './store.js';
+import { DATA, SERIES_INFO, setData, NOT_DUPLICATES, addNotDuplicates, readDates, esc, updateNav, persist, showIoStatus, startPage, byId } from './store.js';
+/** @import {Book, Edition} from './importers.js' */
 
+/** @typedef {{t?: number, a?: number, series?: number, joinEditions?: boolean}} Picks which book's title, author and series to keep (mergeBooks) */
+
+/** @type {number[][]} */
 export let DUP_GROUPS = [];           // groups of DATA indexes shown
+/** @type {Picks[]} */
 export let DUP_PICKS = [];            // per group: which book's title, author and series to keep
+/** @type {number[] | null} */
 export let DUP_MANUAL = null;         // the pair picked by hand, until it is merged or kept apart
 let DUP_FOUND = 0;             // how many of DUP_GROUPS findDuplicates found (the rest is DUP_MANUAL)
+/** @type {number[]} */
 export let SPLIT = [];                // indexes of books whose editions look like one edition recorded twice
 
+/** @type {['t' | 'a' | 'series', string][]} */
 const DUP_FIELDS = [['t', 'Title'], ['a', 'Author'], ['series', 'Series']];   // narrators are on the editions, which are all kept
+/** @type {(b: Book, f: 't' | 'a' | 'series') => string} */
 const dupValue = (b, f)=> f === 'series' ? (b.s ? b.s + (b.sn ? ` #${b.sn}` : '') : '') : f === 'a' ? CatalogImport.namesText(b.a) : (b[f] || '');
 
-// The pair in the address (#merge=3,7), if it names two books.
+/**
+ * The pair in the address (#merge=3,7), if it names two books.
+ * @returns {number[] | null}
+ */
 function manualPair(){
 	const m = /^#merge=(\d+),(\d+)$/.exec(location.hash || '');
 	if(!m) return null;
@@ -35,7 +47,8 @@ function forgetManualPair(){
 // Find the groups again (DATA changed), keeping the choices made for a group that is still there.
 function refreshPage(){
 	const found = CatalogImport.findDuplicates(DATA, NOT_DUPLICATES);
-	const manual = DUP_MANUAL && !found.some(g=> DUP_MANUAL.every(i=> g.includes(i))) ? [DUP_MANUAL] : [];
+	const pair = DUP_MANUAL;
+	const manual = pair && !found.some(g=> pair.every(i=> g.includes(i))) ? [pair] : [];
 	const groups = [...manual, ...found];
 	DUP_FOUND = found.length;
 	const before = new Map(DUP_GROUPS.map((g, k)=> [g.join(','), DUP_PICKS[k]]));
@@ -45,13 +58,22 @@ function refreshPage(){
 	renderDuplicates();
 }
 
-// Whether any of `editions` is also on a book outside `idx` (a box set): joining it would change those too.
+/**
+ * Whether any of `editions` is also on a book outside `idx` (a box set): joining it would change those too.
+ * @param {Edition[]} editions
+ * @param {number[]} idx
+ * @returns {boolean}
+ */
 function sharedOutside(editions, idx){
 	return DATA.some((b, i)=> !idx.includes(i) &&
 		CatalogImport.bookEditions(b).some(x=> editions.some(ed=> CatalogImport.sameEdition(x, ed))));
 }
 
-// The choices for group `g`, with joinEditions on by default when the editions can be joined.
+/**
+ * The choices for group `g`, with joinEditions on by default when the editions can be joined.
+ * @param {number} g
+ * @returns {Picks & {joinable: boolean, joinEditions: boolean}}
+ */
 function groupPicks(g){
 	const idx = DUP_GROUPS[g], picks = DUP_PICKS[g];
 	const separate = CatalogImport.bookEditions(CatalogImport.mergeBooks(idx.map(i=> DATA[i]), {...picks, joinEditions: false}));
@@ -59,7 +81,7 @@ function groupPicks(g){
 	return {...picks, joinable, joinEditions: joinable && picks.joinEditions !== false};
 }
 
-const editionLines = rec=> CatalogImport.bookEditions(rec).map(ed=> `<div class="dup-extra">${esc(CatalogImport.formatEdition(ed))}</div>`).join('');
+const editionLines = (/** @type {Book} */ rec)=> CatalogImport.bookEditions(rec).map(ed=> `<div class="dup-extra">${esc(CatalogImport.formatEdition(ed))}</div>`).join('');
 
 function renderSplit(){
 	if(!SPLIT.length) return '';
@@ -79,7 +101,7 @@ function renderSplit(){
 }
 
 export function renderDuplicates(){
-	document.getElementById('subtitle').textContent = (DUP_FOUND
+	byId('subtitle').textContent = (DUP_FOUND
 		? `${DUP_FOUND} possible duplicate${DUP_FOUND === 1 ? '' : 's'} among ${DATA.length} audiobooks`
 		: `No duplicates among ${DATA.length} audiobooks`) +
 		(SPLIT.length ? `; ${SPLIT.length} book${SPLIT.length === 1 ? '' : 's'} with editions that look like one` : '');
@@ -102,7 +124,7 @@ export function renderDuplicates(){
 				html += `<label class="dup-field dup-choice"><input type="radio" name="dup-${g}-${f}" data-g="${g}" data-f="${f}" data-k="${k}"${checked ? ' checked' : ''}> ${line}</label>`;
 			});
 			const extra = [
-				(b.g || []).length ? esc(b.g.join(', ')) : '',
+				(b.g || []).length ? esc((b.g || []).join(', ')) : '',
 				readDates(b).length ? 'Read ' + esc(readDates(b).join(', ')) : '',
 				...CatalogImport.bookEditions(b).map(ed=> esc(CatalogImport.formatEdition(ed))),
 			].filter(Boolean);
@@ -121,39 +143,52 @@ export function renderDuplicates(){
 			`<button type="button" class="dup-apart" data-g="${g}">Not duplicates</button></div></div>`;
 	});
 	html += renderSplit();
-	document.getElementById('dupBody').innerHTML = html;
+	byId('dupBody').innerHTML = html;
+	// (each element found is the kind its selector names, with the data-* the html above gives it)
 	document.querySelectorAll('#dupBody .dup-joinbox').forEach(input=>{
 		input.addEventListener('change', e=>{
-			DUP_PICKS[e.currentTarget.dataset.g].joinEditions = e.currentTarget.checked;
+			const box = /** @type {HTMLInputElement} */ (e.currentTarget);
+			DUP_PICKS[Number(box.dataset.g)].joinEditions = box.checked;
 			renderDuplicates();
 		});
 	});
 	document.querySelectorAll('#dupBody .split-join').forEach(btn=>{
-		btn.addEventListener('click', e=> joinBookEditions(parseInt(e.currentTarget.dataset.i, 10)));
+		btn.addEventListener('click', e=> joinBookEditions(parseInt(dataOf(e).i, 10)));
 	});
 	document.querySelectorAll('#dupBody .split-apart').forEach(btn=>{
-		btn.addEventListener('click', e=> keepEditionsApart(parseInt(e.currentTarget.dataset.i, 10)));
+		btn.addEventListener('click', e=> keepEditionsApart(parseInt(dataOf(e).i, 10)));
 	});
 	document.querySelectorAll('#dupBody input[type=radio]').forEach(input=>{
 		input.addEventListener('change', e=>{
-			const {g, f, k} = e.currentTarget.dataset;
-			DUP_PICKS[g][f] = parseInt(k, 10);
+			const {g, f, k} = dataOf(e);
+			DUP_PICKS[Number(g)][/** @type {'t' | 'a' | 'series'} */ (f)] = parseInt(k, 10);
 			renderDuplicates();
 		});
 	});
 	document.querySelectorAll('#dupBody .dup-merge').forEach(btn=>{
-		btn.addEventListener('click', e=> mergeGroup(parseInt(e.currentTarget.dataset.g, 10)));
+		btn.addEventListener('click', e=> mergeGroup(parseInt(dataOf(e).g, 10)));
 	});
 	document.querySelectorAll('#dupBody .dup-apart').forEach(btn=>{
-		btn.addEventListener('click', e=> keepApart(parseInt(e.currentTarget.dataset.g, 10)));
+		btn.addEventListener('click', e=> keepApart(parseInt(dataOf(e).g, 10)));
 	});
 }
 
-// Merge group `g` into its first book: on a copy of DATA, so nothing changes unless the result validates.
+/**
+ * The data-* of the element an event's listener is on, which the html of renderDuplicates() gives it.
+ * @param {Event} e
+ * @returns {Record<string, string>}
+ */
+const dataOf = e=> /** @type {Record<string, string>} */ (/** @type {HTMLElement} */ (e.currentTarget).dataset);
+
+/**
+ * Merge group `g` into its first book: on a copy of DATA, so nothing changes unless the result validates.
+ * @param {number} g
+ */
 export function mergeGroup(g){
 	const idx = DUP_GROUPS[g];
 	if(!idx) return;
 	const merged = CatalogImport.mergeBooks(idx.map(i=> DATA[i]), groupPicks(g));
+	/** @type {Book[]} */
 	const data = JSON.parse(JSON.stringify(DATA));
 	const keep = Math.min(...idx);
 	// an edition a box set shares with other titles gets what the merged one gained there too
@@ -170,7 +205,10 @@ export function mergeGroup(g){
 	showIoStatus(`Merged ${idx.length} entries into ${merged.t}.`);
 }
 
-// Remember that the books of group `g` are different books (see addNotDuplicates).
+/**
+ * Remember that the books of group `g` are different books (see addNotDuplicates).
+ * @param {number} g
+ */
 export function keepApart(g){
 	const books = (DUP_GROUPS[g] || []).map(i=> DATA[i]);
 	addNotDuplicates(books.flatMap((x, k)=> books.slice(k + 1).map(y=> CatalogImport.duplicatePairKey(x, y))));
@@ -179,10 +217,14 @@ export function keepApart(g){
 	refreshPage();
 }
 
-// Make the editions of book `i` one edition (it is in SPLIT).
+/**
+ * Make the editions of book `i` one edition (it is in SPLIT).
+ * @param {number} i
+ */
 export function joinBookEditions(i){
 	const b = DATA[i];
 	if(!b || !CatalogImport.editionsJoinable(CatalogImport.bookEditions(b))) return;
+	/** @type {Book[]} */
 	const data = JSON.parse(JSON.stringify(DATA));
 	CatalogImport.saveBook(data, i, {...b, e: [CatalogImport.joinEditions(CatalogImport.bookEditions(b))]});
 	const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
@@ -196,7 +238,10 @@ export function joinBookEditions(i){
 	showIoStatus(`${b.t} now has one edition.`);
 }
 
-// Remember that the editions of book `i` are different editions (see addNotDuplicates).
+/**
+ * Remember that the editions of book `i` are different editions (see addNotDuplicates).
+ * @param {number} i
+ */
 export function keepEditionsApart(i){
 	if(!DATA[i]) return;
 	addNotDuplicates([CatalogImport.editionsKey(DATA[i])]);

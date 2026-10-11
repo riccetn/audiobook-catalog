@@ -14,3 +14,6 @@ data/raw/*
 
 # ---- Noise ----------------------------------------------------------------------------------
 .DS_Store
+
+# TypeScript, installed by npm install to type-check the code (make typecheck)
+node_modules/
