@@ -1,10 +1,11 @@
 # Running the app and keeping your catalogue
 
 The pages are ES modules, which browsers won't load from a page opened straight from disk (`file://`),
-so serve the project folder: `make serve` (Python's static server on http://localhost:8000/, listening on
-127.0.0.1 only), any other static web server pointed at the project root, or GitHub Pages
-([On your phone](phone.md)). Nothing on the server takes part: the pages never ask it for anything but
-themselves.
+so serve the `public/` folder, which holds the whole app and nothing else: `make serve` (Python's static
+server on http://localhost:8000/, listening on 127.0.0.1 only), any other static web server pointed at
+`public/`, or GitHub Pages ([On your phone](phone.md)). Nothing on the server takes part: the pages never
+ask it for anything but themselves, and the rest of the repository (`data/`, `docs/`, `tests/`) is never
+served.
 
 ## Where the catalogue lives
 

@@ -9,14 +9,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
-import * as CatalogImport from '../importers.js';
+import * as CatalogImport from '../public/importers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+// The app is the public/ folder, what a static server serves; the demo data stays outside it.
+const site = path.join(root, 'public');
+const read = file => fs.readFileSync(path.join(site, file), 'utf8');
 const PAGES = ['index.html', 'import.html', 'duplicates.html', 'authors.html'];
-const DEMO_BOOKS = read('data/sample/books.json');
-const DEMO_INFO = read('data/sample/series-info.json');
-const DEMO_AUTHORS = read('data/sample/authors.json');
+const readData = file => fs.readFileSync(path.join(root, 'data', 'sample', file), 'utf8');
+const DEMO_BOOKS = readData('books.json');
+const DEMO_INFO = readData('series-info.json');
+const DEMO_AUTHORS = readData('authors.json');
 
 // The module a page loads with <script type="module">, and the modules it imports, in load order.
 const entryOf = page => [...read(page).matchAll(/<script type="module" src="([^"]+)">/g)].map(m => m[1]);
@@ -1163,16 +1166,18 @@ test('merging keeps editions apart when asked, and books merged that way can be 
 
 test('the app can be installed: the manifest\'s icons and everything the service worker caches exist', () => {
   const manifest = JSON.parse(read('manifest.webmanifest'));
-  for (const icon of manifest.icons) assert.ok(fs.existsSync(path.join(root, icon.src)), icon.src);
+  for (const icon of manifest.icons) assert.ok(fs.existsSync(path.join(site, icon.src)), icon.src);
   assert.ok(manifest.icons.some(i => i.sizes === '512x512') && manifest.icons.some(i => i.sizes === '192x192'));
   const cached = JSON.parse(read('sw.js').match(/const APP = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
-  for (const file of cached.filter(f => f !== './')) assert.ok(fs.existsSync(path.join(root, file)), file);
+  for (const file of cached.filter(f => f !== './')) assert.ok(fs.existsSync(path.join(site, file)), file);
   for (const page of PAGES) {
     assert.ok(cached.includes(page), `sw.js caches ${page}`);
     assert.ok(read(page).includes('<link rel="manifest" href="manifest.webmanifest">'), page);
     for (const file of modulesOf(entryOf(page)[0])) assert.ok(cached.includes(file), `sw.js caches ${file}`);
   }
-  assert.ok(!cached.some(f => f.startsWith('data/')), 'never anything under data/');
+  // public/ is what gets served, so it holds the app and nothing else (no catalogue files, no notes).
+  const served = fs.readdirSync(site, { recursive: true }).filter(f => fs.statSync(path.join(site, f)).isFile()).map(f => f.split(path.sep).join('/'));
+  for (const file of served) assert.ok(file === 'sw.js' || cached.includes(file), `public/${file} is part of the app (add it to sw.js's APP list)`);
 });
 
 test('"Not duplicates" marks are kept in this browser and travel in backups', async () => {

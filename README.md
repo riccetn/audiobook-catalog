@@ -2,7 +2,7 @@
 
 A personal audiobook library, merged from Audible, Goodreads and Hardcover exports, grouped by series
 and searchable by title, author, series and genre. The app is four plain pages (the catalogue, *Authors*,
-*Import & export* and *Duplicates*) with a stylesheet and a script each. Everything runs in the browser,
+*Import & export* and *Duplicates*) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
 and the catalogue is kept in the browser's local storage. There is no build step and no server code.
 
 - Vanilla JavaScript: no framework, no bundler, no dependencies
@@ -11,7 +11,7 @@ and the catalogue is kept in the browser's local storage. There is no build step
 ```sh
 git clone <this repo> && cd audiobook-catalog
 make test     # all tests, including a browser smoke test
-make serve    # serves the app at http://localhost:8000/ (any static server, or GitHub Pages, works too)
+make serve    # serves public/ at http://localhost:8000/ (any static server, or GitHub Pages, works too)
 make help
 ```
 
