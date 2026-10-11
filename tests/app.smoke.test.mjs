@@ -1461,3 +1461,11 @@ test('Box sets on the import page adds a set beside the titles sharing its editi
   assert.match(els.importPreviewBody.innerHTML, /already kept both as its own book and as its titles/);
   assert.equal(els.importConfirm.style.display, 'none');
 });
+
+
+test('Series info without note should not be rendered as "undefined"', async() => {
+	const mine = JSON.stringify([{ t: 'Lol', a: ['Jonathan Smith'], s: 'Pop', sn: '1', e: [{'n':'Michel Reed'}] }]);
+	const info = JSON.stringify({ 'Pop': { total: 5, status: 'ongoing' }});
+	const { els, storage } = await boot({ files: { 'books.json': mine, 'series-info.json': info } });
+	assert.doesNotMatch(els.results.innerHTML, /undefined/);
+});
