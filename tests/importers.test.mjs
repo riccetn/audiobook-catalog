@@ -2,6 +2,9 @@
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as C from '../public/importers.js';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 
@@ -10,21 +13,22 @@ const book = (t, a = 'Author', extra = {}) => ({ t, a: [a], ...extra });
 const ed = (...editions) => ({ e: editions });
 
 // ------------------------------------------------------------------ data
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const DATA = path.join(root, 'sample');
 const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 const loadBooks = file => C.fixBooks(JSON.parse(read(file)));
 const loadSeriesInfo = file => JSON.parse(read(file));
 const loadAuthors = file => JSON.parse(read(file));
 
 test('demo data validates without errors or warnings', () => {
-	const folder = path.join(DATA, 'sample');
-	assert.deepEqual(C.validate(loadBooks(path.join(folder, 'books.json')), loadSeriesInfo(path.join(folder, 'series-info.json'))),
+	assert.deepEqual(C.validate(loadBooks(path.join(DATA, 'books.json')), loadSeriesInfo(path.join(DATA, 'series-info.json'))),
 		{ errors: [], warnings: [] });
-	assert.deepEqual(C.validateAuthors(loadBooks(path.join(folder, 'books.json')), loadAuthors(path.join(folder, 'authors.json'))),
+	assert.deepEqual(C.validateAuthors(loadBooks(path.join(DATA, 'books.json')), loadAuthors(path.join(DATA, 'authors.json'))),
 		{ errors: [], warnings: [] });
 });
 
 test('demo data has what the smoke test needs', () => {
-	const books = loadBooks(path.join(DATA, 'sample', 'books.json'));
+	const books = loadBooks(path.join(DATA, 'books.json'));
 	assert.ok(books.some(b => !b.s), 'needs standalone books');
 	assert.ok(books.some(b => b.s), 'needs series');
 });
