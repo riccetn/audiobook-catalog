@@ -5,8 +5,9 @@
 import {Author} from './modules/author.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
-import { CATALOG, esc, persist, showIoStatus, startPage, byId, fieldById, spell } from './store.js';
+import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, h, fill, joined } from './store.js';
 /** @import {Book} from './modules/book.js' */
+/** @import {Child} from './store.js' */
 
 /** @type {string | null} */
 export let AUTHOR = null;             // the author shown (#a=...), or null for the list of authors
@@ -39,10 +40,10 @@ function authorFromHash(hash){
 /**
  * A bio as paragraphs: a blank line starts a new one, a single line break stays a line break.
  * @param {string} bio
- * @returns {string}
+ * @returns {HTMLParagraphElement[]}
  */
-function bioHtml(bio){
-	return bio.split(/\n{2,}/).map(p=> `<p>${p.split('\n').map(esc).join('<br>')}</p>`).join('');
+function bioParagraphs(bio){
+	return bio.split(/\n{2,}/).map(p=> h('p', {}, p.split('\n').flatMap((line, i)=> i ? [h('br'), line] : [line])));
 }
 
 const plural = (/** @type {number} */ n, /** @type {string} */ word, many = word + 's')=> `${n} ${n === 1 ? word : many}`;
@@ -60,22 +61,22 @@ function renderList(){
 	const all = CATALOG.authorList();
 	const shown = q ? all.filter(a=> a.name.toLowerCase().includes(q)) : all;
 	byId('subtitle').textContent = `${plural(all.length, 'author')} across ${plural(CATALOG.books.length, 'audiobook')}`;
-	const html = shown.map(a=> `<div class="srow"><div class="srow-head">
-			<a class="srow-title" href="${esc(authorHref(a.name))}">${esc(a.name)}</a>
-			<span class="srow-owned">${plural(a.books, 'book')}${a.series ? ', ' + plural(a.series, 'series', 'series') : ''}</span>
-		</div>${bioLine(a.name)}</div>`).join('');
-	byId('authorBody').innerHTML = html ||
-		`<p class="empty">${all.length ? 'No authors match your search.' : 'No books yet.'}</p>`;
+	fill(byId('authorBody'), shown.length ? shown.map(a=> h('div', {class: 'srow'},
+		h('div', {class: 'srow-head'},
+			h('a', {class: 'srow-title', href: authorHref(a.name)}, a.name), ' ',
+			h('span', {class: 'srow-owned'}, `${plural(a.books, 'book')}${a.series ? ', ' + plural(a.series, 'series', 'series') : ''}`)),
+		bioLine(a.name)))
+		: h('p', {class: 'empty'}, all.length ? 'No authors match your search.' : 'No books yet.'));
 }
 
 /**
- * The first line of an author's bio, for the list of authors; '' when there is none.
+ * The first line of an author's bio, for the list of authors; null when there is none.
  * @param {string} name
- * @returns {string}
+ * @returns {HTMLParagraphElement | null}
  */
 function bioLine(name){
 	const info = CATALOG.authors.get(name);
-	return info && info.bio ? `<p class="srow-note">${esc(info.bio.split('\n')[0])}</p>` : '';
+	return info && info.bio ? h('p', {class: 'srow-note'}, info.bio.split('\n')[0]) : null;
 }
 
 /**
@@ -83,12 +84,12 @@ function bioLine(name){
  * else wrote it.
  * @param {Book} b
  * @param {string} name
- * @returns {string}
+ * @returns {HTMLLIElement}
  */
 function bookLine(b, name){
 	const others = b.authors.filter(x=> x !== name);
-	return `<li>${b.number ? `<span class="num">#${esc(b.number)}</span> ` : ''}<a href="${esc(bookHref(b.title))}">${esc(b.title)}</a>` +
-		(others.length ? ` <span class="with">with ${others.map(x=> `<a href="${esc(authorHref(x))}">${esc(x)}</a>`).join(', ')}</span>` : '') + '</li>';
+	return h('li', {}, b.number && [h('span', {class: 'num'}, '#' + b.number), ' '], h('a', {href: bookHref(b.title)}, b.title),
+		others.length > 0 && [' ', h('span', {class: 'with'}, 'with ', joined(others.map(x=> h('a', {href: authorHref(x)}, x)), ', '))]);
 }
 
 /** @param {string} name */
@@ -100,27 +101,30 @@ function renderAuthor(name){
 		? `${plural(count, 'audiobook')}${series.length ? ' in ' + plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
 		: spell('No books by this author in the catalog.');
 	const label = CATALOG.authors.has(name) ? 'Edit author info' : 'Add author info';
-	let html = `<div class="author-head"><h2 class="author-name">${esc(name)}</h2>` +
-		`<button class="iconbtn aedit" data-edit-author="1" title="${label}" aria-label="${label}">&#9998;</button></div>`;
-	if(info.bio) html += `<div class="author-bio">${bioHtml(info.bio)}</div>`;
 	const links = LINKS.filter(([k])=> info[k]).map(([k, text])=>
-		`<a class="authorlink" href="${esc(info[k] || '')}" target="_blank" rel="noopener">${text} ↗</a>`);
-	if(links.length) html += `<p class="author-links">${links.join(' ')}</p>`;
-	if(!info.bio && !links.length) html += '<p class="hint">No bio or links yet: add them with &#9998;.</p>';
-
+		h('a', {class: 'authorlink', href: info[k] || '', target: '_blank', rel: 'noopener'}, `${text} \u2197`));
+	/** @type {Child[]} */
+	const out = [
+		h('div', {class: 'author-head'}, h('h2', {class: 'author-name'}, name),
+			h('button', {class: 'iconbtn aedit', 'data-edit-author': '1', title: label, 'aria-label': label}, '\u270E')),
+		info.bio && h('div', {class: 'author-bio'}, bioParagraphs(info.bio)),
+		links.length > 0 && h('p', {class: 'author-links'}, joined(links, ' ')),
+		!info.bio && !links.length && h('p', {class: 'hint'}, 'No bio or links yet: add them with \u270E.'),
+	];
 	series.forEach(s=>{
 		const si = CATALOG.series.get(s.name);
-		const owned = `${Series.owned(s.books)} owned${si ? ' of ' + esc(si.total) : ''}`;
-		html += `<div class="series-group"><p class="series-title"><a href="${esc(seriesHref(s.name))}">${esc(s.name)}</a>` +
-			` <span class="n">${owned}</span>` +
-			(si ? ` <span class="status ${si.status}">${si.status === 'complete' ? 'complete' : 'ongoing'}</span>` : '') + '</p>' +
-			`<ul class="author-books">${s.books.map(b=> bookLine(b, name)).join('')}</ul></div>`;
+		out.push(h('div', {class: 'series-group'},
+			h('p', {class: 'series-title'}, h('a', {href: seriesHref(s.name)}, s.name),
+				' ', h('span', {class: 'n'}, `${Series.owned(s.books)} owned${si ? ' of ' + si.total : ''}`),
+				si && [' ', h('span', {class: `status ${si.status}`}, si.status === 'complete' ? 'complete' : 'ongoing')]),
+			h('ul', {class: 'author-books'}, s.books.map(b=> bookLine(b, name)))));
 	});
 	if(titles.length){
-		html += `<div class="series-group"><p class="series-title">${series.length ? 'Outside a series' : 'Titles'} <span class="n">${plural(titles.length, 'book')}</span></p>` +
-			`<ul class="author-books">${titles.map(b=> bookLine(b, name)).join('')}</ul></div>`;
+		out.push(h('div', {class: 'series-group'},
+			h('p', {class: 'series-title'}, series.length ? 'Outside a series' : 'Titles', ' ', h('span', {class: 'n'}, plural(titles.length, 'book'))),
+			h('ul', {class: 'author-books'}, titles.map(b=> bookLine(b, name)))));
 	}
-	byId('authorBody').innerHTML = html;
+	fill(byId('authorBody'), out);
 }
 
 // ------------------------------------------------------------------ the author info form
@@ -196,7 +200,7 @@ byId('q').addEventListener('input', render);
 // address, so Back and Forward step through them.
 export function showAddress(){
 	const name = authorFromHash(location.hash);
-	if(name === AUTHOR && byId('authorBody').innerHTML) return;
+	if(name === AUTHOR && byId('authorBody').hasChildNodes()) return;
 	const moved = name !== AUTHOR;
 	AUTHOR = name;
 	render();

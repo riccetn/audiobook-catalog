@@ -39,12 +39,90 @@ export const BRITISH = (() => { try{ return Text.prefersBritish(navigator.langua
  */
 export function spell(text){ return Text.spelled(text, BRITISH); }
 
+// Attributes of the page's own elements that hold text a reader sees.
+const TEXT_ATTRIBUTES = ['title', 'placeholder', 'aria-label', 'alt'];
+
+/**
+ * Respell the text in `node` and below, in place (see spell).
+ * @param {Node} node
+ */
+function respell(node){
+	for(const child of node.childNodes){
+		if(child.nodeType === Node.TEXT_NODE) child.nodeValue = spell(child.nodeValue || '');
+		else if(child.nodeType === Node.ELEMENT_NODE){
+			const el = /** @type {Element} */ (child);
+			for(const name of TEXT_ATTRIBUTES){
+				const value = el.getAttribute(name);
+				if(value !== null) el.setAttribute(name, spell(value));
+			}
+			respell(el);
+		}
+	}
+}
+
 // The page as written is American, so respell it before the page's module finds its elements and
 // fills them in; at this point it holds only the page's own text.
 if(BRITISH){
 	document.title = spell(document.title);
-	document.body.innerHTML = spell(document.body.innerHTML);
+	respell(document.body);
 }
+
+/**
+ * Something to put in an element: an element, or text (always as text, never read as HTML). Null, undefined,
+ * false and '' stand for nothing, so a part shown only sometimes can be `cond && h(...)`; lists are flattened.
+ * @typedef {Node | string | number | null | undefined | false | Child[]} Child
+ */
+
+/**
+ * The nodes and text of `children`, flattened, without the empty ones.
+ * @param {Child[]} children
+ * @returns {(Node | string)[]}
+ */
+export function nodes(children){
+	/** @type {(Node | string)[]} */
+	const out = [];
+	for(const c of children){
+		if(Array.isArray(c)) out.push(...nodes(c));
+		else if(c !== null && c !== undefined && c !== false && c !== '') out.push(typeof c === 'number' ? String(c) : c);
+	}
+	return out;
+}
+
+/**
+ * A new element: h('a', {class: 'srow-title', href}, name). Attributes are set as given: null, undefined
+ * and false leave one out, true sets it empty (checked); a function under an on... name listens to that
+ * event (onclick: fn). The children go in in order (see Child).
+ * @template {keyof HTMLElementTagNameMap} K
+ * @param {K} tag
+ * @param {Record<string, string | number | boolean | null | undefined | ((e: Event) => void)>} [attrs]
+ * @param {...Child} children
+ * @returns {HTMLElementTagNameMap[K]}
+ */
+export function h(tag, attrs = {}, ...children){
+	const el = document.createElement(tag);
+	for(const [name, value] of Object.entries(attrs)){
+		if(typeof value === 'function') el.addEventListener(name.slice(2), value);
+		else if(value === true) el.setAttribute(name, '');
+		else if(value !== null && value !== undefined && value !== false) el.setAttribute(name, String(value));
+	}
+	el.append(...nodes(children));
+	return el;
+}
+
+/**
+ * Replace what `el` holds with `children` (see Child).
+ * @param {Element} el
+ * @param {...Child} children
+ */
+export function fill(el, ...children){ el.replaceChildren(...nodes(children)); }
+
+/**
+ * `items` with `separator` between each two, as children for h() or fill(): links joined with ', '.
+ * @param {Child[]} items
+ * @param {string} separator
+ * @returns {Child[]}
+ */
+export function joined(items, separator){ return items.flatMap((x, i)=> i ? [separator, x] : [x]); }
 
 // The catalog the page shows. It stays this one object: a page that takes another catalog (Restore, an
 // import confirmed) moves it in with CATALOG.replaceWith().
@@ -85,17 +163,6 @@ export function addNotDuplicates(entries){
 // The marks are kept apart from the catalog, so a page that only marks a pair saves only them.
 export function saveNotDuplicates(){
 	try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...CATALOG.notDuplicates])); }catch(e){}
-}
-
-/**
- * Text made safe to put in HTML.
- * @param {unknown} s
- * @returns {string}
- */
-export function esc(s){
-	/** @type {Record<string, string>} */
-	const entities = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
-	return String(s).replace(/[&<>"']/g, c => entities[c]);
 }
 
 /** @returns {string | null} the catalog as localStorage holds it now */
@@ -281,15 +348,14 @@ export function showHardcoverJob(job){
 	const el = document.getElementById('bgTask');
 	if(el){
 		el.classList.toggle('show', Boolean(job && job.running));
-		if(!job || !job.running) el.innerHTML = '';
+		if(!job || !job.running) fill(el);
 		else {
 			const counted = typeof job.total === 'number' && Number.isInteger(job.total) && job.total > 0;
-			el.innerHTML = `<span class="spinner" aria-hidden="true"></span><div class="bgTaskText">` +
-				`<strong>${esc((job.dryRun ? HARDCOVER_PREVIEWS : HARDCOVER_VERBS)[job.mode] || 'Working with Hardcover')}</strong>` +
-				` <span class="bgTaskTime">${minutes(job.elapsed)}</span><br>${esc(job.step || '')}` +
-				(counted ? `: ${job.done} of ${job.total} <progress max="${job.total}" value="${job.done}"></progress>` : '') +
-				(job.dryRun ? '' : spell('<br><small>Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.</small>')) +
-				'</div>';
+			fill(el, h('span', {class: 'spinner', 'aria-hidden': 'true'}), h('div', {class: 'bgTaskText'},
+				h('strong', {}, (job.dryRun ? HARDCOVER_PREVIEWS : HARDCOVER_VERBS)[job.mode] || 'Working with Hardcover'),
+				' ', h('span', {class: 'bgTaskTime'}, minutes(job.elapsed)), h('br'), job.step || '',
+				counted && [`: ${job.done} of ${job.total} `, h('progress', {max: job.total, value: job.done})],
+				!job.dryRun && [h('br'), h('small', {}, spell('Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.'))]));
 		}
 	}
 	if(onHardcoverJob) onHardcoverJob(job);
