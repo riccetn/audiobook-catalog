@@ -7,7 +7,7 @@ TSC ?= node_modules/.bin/tsc
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
 
-test:            ## run the tests: importers, data checks and the browser smoke test
+test:            ## run the tests: the catalog classes and the browser smoke test
 	$(NODE) --experimental-vm-modules --test tests/*.test.mjs
 
 typecheck:       ## check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)

@@ -1,10 +1,12 @@
 // The authors page: every author in the catalog, and one author's page (authors.html#a=Name) with what
-// you keep about them (AUTHORS) (a short bio, their own site and their pages on Audible,
+// you keep about them (CATALOG.authors) (a short bio, their own site and their pages on Audible,
 // Goodreads and Hardcover) and the series and titles of theirs you have, worked out from the books.
 // Loading and saving live in store.js.
-import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, AUTHORS, setAuthors, esc, persist, showIoStatus, startPage, byId, fieldById, spell } from './store.js';
-/** @import {Book, IndexedBook, AuthorEntry} from './importers.js' */
+import {Author} from './modules/author.js';
+import {Series} from './modules/series.js';
+import {Validator} from './modules/validator.js';
+import { CATALOG, esc, persist, showIoStatus, startPage, byId, fieldById, spell } from './store.js';
+/** @import {Book} from './modules/book.js' */
 
 /** @type {string | null} */
 export let AUTHOR = null;             // the author shown (#a=...), or null for the list of authors
@@ -55,15 +57,25 @@ export function render(){
 
 function renderList(){
 	const q = fieldById('q').value.trim().toLowerCase();
-	const all = CatalogImport.authorList(DATA);
+	const all = CATALOG.authorList();
 	const shown = q ? all.filter(a=> a.name.toLowerCase().includes(q)) : all;
-	byId('subtitle').textContent = `${plural(all.length, 'author')} across ${plural(DATA.length, 'audiobook')}`;
+	byId('subtitle').textContent = `${plural(all.length, 'author')} across ${plural(CATALOG.books.length, 'audiobook')}`;
 	const html = shown.map(a=> `<div class="srow"><div class="srow-head">
 			<a class="srow-title" href="${esc(authorHref(a.name))}">${esc(a.name)}</a>
 			<span class="srow-owned">${plural(a.books, 'book')}${a.series ? ', ' + plural(a.series, 'series', 'series') : ''}</span>
-		</div>${AUTHORS[a.name] && AUTHORS[a.name].bio ? `<p class="srow-note">${esc((AUTHORS[a.name].bio || '').split('\n')[0])}</p>` : ''}</div>`).join('');
+		</div>${bioLine(a.name)}</div>`).join('');
 	byId('authorBody').innerHTML = html ||
 		`<p class="empty">${all.length ? 'No authors match your search.' : 'No books yet.'}</p>`;
+}
+
+/**
+ * The first line of an author's bio, for the list of authors; '' when there is none.
+ * @param {string} name
+ * @returns {string}
+ */
+function bioLine(name){
+	const info = CATALOG.authors.get(name);
+	return info && info.bio ? `<p class="srow-note">${esc(info.bio.split('\n')[0])}</p>` : '';
 }
 
 /**
@@ -74,32 +86,31 @@ function renderList(){
  * @returns {string}
  */
 function bookLine(b, name){
-	const others = b.a.filter(x=> x !== name);
-	return `<li>${b.sn ? `<span class="num">#${esc(b.sn)}</span> ` : ''}<a href="${esc(bookHref(b.t))}">${esc(b.t)}</a>` +
+	const others = b.authors.filter(x=> x !== name);
+	return `<li>${b.number ? `<span class="num">#${esc(b.number)}</span> ` : ''}<a href="${esc(bookHref(b.title))}">${esc(b.title)}</a>` +
 		(others.length ? ` <span class="with">with ${others.map(x=> `<a href="${esc(authorHref(x))}">${esc(x)}</a>`).join(', ')}</span>` : '') + '</li>';
 }
 
 /** @param {string} name */
 function renderAuthor(name){
-	/** @type {AuthorEntry} */
-	const info = AUTHORS[name] || {};
-	const {series, titles} = CatalogImport.authorWorks(DATA, name);
+	const info = CATALOG.authors.get(name) || new Author(name);
+	const {series, titles} = CATALOG.authorWorks(name);
 	const count = series.reduce((n, s)=> n + s.books.length, 0) + titles.length;
 	byId('subtitle').textContent = count
 		? `${plural(count, 'audiobook')}${series.length ? ' in ' + plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
 		: spell('No books by this author in the catalog.');
-	const label = AUTHORS[name] ? 'Edit author info' : 'Add author info';
+	const label = CATALOG.authors.has(name) ? 'Edit author info' : 'Add author info';
 	let html = `<div class="author-head"><h2 class="author-name">${esc(name)}</h2>` +
 		`<button class="iconbtn aedit" data-edit-author="1" title="${label}" aria-label="${label}">&#9998;</button></div>`;
 	if(info.bio) html += `<div class="author-bio">${bioHtml(info.bio)}</div>`;
 	const links = LINKS.filter(([k])=> info[k]).map(([k, text])=>
-		`<a class="authorlink" href="${esc(info[k])}" target="_blank" rel="noopener">${text} ↗</a>`);
+		`<a class="authorlink" href="${esc(info[k] || '')}" target="_blank" rel="noopener">${text} ↗</a>`);
 	if(links.length) html += `<p class="author-links">${links.join(' ')}</p>`;
 	if(!info.bio && !links.length) html += '<p class="hint">No bio or links yet: add them with &#9998;.</p>';
 
 	series.forEach(s=>{
-		const si = SERIES_INFO[s.name];
-		const owned = `${CatalogImport.seriesOwned(s.books)} owned${si ? ' of ' + esc(si.total) : ''}`;
+		const si = CATALOG.series.get(s.name);
+		const owned = `${Series.owned(s.books)} owned${si ? ' of ' + esc(si.total) : ''}`;
 		html += `<div class="series-group"><p class="series-title"><a href="${esc(seriesHref(s.name))}">${esc(s.name)}</a>` +
 			` <span class="n">${owned}</span>` +
 			(si ? ` <span class="status ${si.status}">${si.status === 'complete' ? 'complete' : 'ongoing'}</span>` : '') + '</p>' +
@@ -114,18 +125,17 @@ function renderAuthor(name){
 
 // ------------------------------------------------------------------ the author info form
 /**
- * Edits the author's entry in AUTHORS; like every edit, it is kept in this browser (see persist in store.js).
+ * Edits the author's entry in CATALOG.authors; like every edit, it is kept in this browser (see persist in store.js).
  * @param {string} name
  */
 export function openAuthorForm(name){
-	/** @type {AuthorEntry} */
-	const info = AUTHORS[name] || {};
+	const info = CATALOG.authors.get(name) || new Author(name);
 	EDITING = name;
-	byId('authorFormTitle').textContent = (AUTHORS[name] ? 'Author info: ' : 'Add author info: ') + name;
+	byId('authorFormTitle').textContent = (CATALOG.authors.has(name) ? 'Author info: ' : 'Add author info: ') + name;
 	fieldById('af_bio').value = info.bio || '';
 	LINKS.forEach(([k])=> { fieldById('af_' + k).value = info[k] || ''; });
 	byId('authorFormError').textContent = '';
-	byId('authorRemoveBtn').style.display = AUTHORS[name] ? '' : 'none';
+	byId('authorRemoveBtn').style.display = CATALOG.authors.has(name) ? '' : 'none';
 	const form = byId('authorForm');
 	form.classList.add('open');
 	form.scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -147,28 +157,26 @@ function homeAuthorForm(){
 function saveAuthorForm(){
 	const name = EDITING;
 	if(name === null) return;
-	const entry = CatalogImport.tidyAuthor({
+	const entry = Author.tidy(name, {
 		bio: fieldById('af_bio').value,
 		...Object.fromEntries(LINKS.map(([k])=> [k, fieldById('af_' + k).value])),
 	});
 	// the same rules as Check, applied to this author alone; a link to the wrong site is
 	// only a warning there, but here it is most likely pasted into the wrong field
 	if(entry){
-		const {errors, warnings} = CatalogImport.validateAuthors(DATA, {[name]: entry});
+		const {errors, warnings} = Validator.validateAuthors(JSON.parse(JSON.stringify(CATALOG.books)), {[name]: entry.toJSON()});
 		const problems = [...errors, ...warnings.filter(w=> !/matches no author/.test(w))].map(e=> e.replace(/^authors\[[^\]]*\]: /, ''));
 		if(problems.length){ byId('authorFormError').textContent = problems.join('; '); return; }
 	}
-	const {[name]: _old, ...rest} = AUTHORS;
-	setAuthors(entry ? {...rest, [name]: entry} : rest);
+	if(entry) CATALOG.authors.set(name, entry); else CATALOG.authors.delete(name);
 	closeAuthorForm(); render(); persist();
 	showIoStatus((entry ? `Saved author info for ${name}.` : `Removed author info for ${name}.`));
 }
 
 function removeAuthorInfo(){
 	const name = EDITING;
-	if(name === null || !AUTHORS[name]) return;
-	const {[name]: _removed, ...rest} = AUTHORS;
-	setAuthors(rest);
+	if(name === null || !CATALOG.authors.has(name)) return;
+	CATALOG.authors.delete(name);
 	closeAuthorForm(); render(); persist();
 	showIoStatus(`Removed author info for ${name}.`);
 }

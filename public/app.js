@@ -1,8 +1,15 @@
 // The catalog page: the series overview, all books, and editing books and series info.
 // Loading and saving live in store.js.
-import * as CatalogImport from './importers.js';
-import { DATA, SERIES_INFO, setSeriesInfo, readDates, esc, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell } from './store.js';
-/** @import {Book, Edition, IndexedBook, SeriesEntry} from './importers.js' */
+import {Text} from './modules/text.js';
+import {Isbn} from './modules/isbn.js';
+import {Edition} from './modules/edition.js';
+import {Book} from './modules/book.js';
+import {Series} from './modules/series.js';
+import {Validator} from './modules/validator.js';
+import {HardcoverClient} from './modules/hardcover-client.js';
+import { CATALOG, esc, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell } from './store.js';
+
+/** @typedef {{b: Book, i: number}} ListedBook a book shown, with its index in CATALOG.books */
 
 /** @type {'series' | 'library'} */
 export let VIEW = 'series';           // 'series' | 'library'
@@ -11,7 +18,7 @@ export let SERIES_FILTER = null;      // series name, '__standalone__', or null
 /** @type {string | null} */
 export let BOOK_FILTER = null;        // title of the book linked to (#book=...), or null
 /** @type {number | null} */
-let EDIT_INDEX = null;         // index into DATA being edited, or null when adding new
+let EDIT_INDEX = null;         // index into CATALOG.books being edited, or null when adding new
 /** @type {string | null} */
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
 /** @type {string | null} */
@@ -26,7 +33,7 @@ const UNDATED = '__undated__';
  * Year a book was (last) read in, for the read filter: '2024' from ['2021-05', '2024-03-15'].
  * @type {(b: Book) => string[]}
  */
-const readYears = b => readDates(b).map(d => d.slice(0, 4));
+const readYears = b => b.read.map(d => d.slice(0, 4));
 
 /** @param {string[]} arr */
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
@@ -35,7 +42,7 @@ function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare
  * @param {Book} b
  * @returns {string[]}
  */
-function authorsOf(b){ return Array.isArray(b.a) ? b.a.filter(x=> typeof x === 'string') : []; }
+function authorsOf(b){ return b.authors; }
 /**
  * Authors' names, each a link to their page on the authors page.
  * @type {(names: string[]) => string}
@@ -48,9 +55,15 @@ const authorLinks = names => names.map(x=> `<a href="authors.html#a=${esc(encode
  * @returns {number[] | null}
  */
 function seriesMissing(name){
-	const info = SERIES_INFO[name];
-	return info ? CatalogImport.missingNumbers(DATA.filter(b=> b.s === name), info.total) : null;
+	return CATALOG.missing(name);
 }
+
+/**
+ * A series' released total as its info has it (as typed, should it not be a number).
+ * @param {Series} info
+ * @returns {string}
+ */
+const totalText = info=> String(info.toJSON().total ?? '');
 
 /**
  * A series' books by number, unnumbered ones first, and its collections (box sets, "1-3") last.
@@ -59,9 +72,9 @@ function seriesMissing(name){
  * @returns {number}
  */
 function seriesOrder(a, b){
-	const last = (/** @type {Book} */ x)=> (CatalogImport.seriesRange(x.sn) || [0, 0])[1];
-	return (Number(CatalogImport.isCollection(a)) - Number(CatalogImport.isCollection(b))) ||
-		(parseFloat(a.sn || '')||0) - (parseFloat(b.sn || '')||0) || last(a) - last(b);
+	const last = (/** @type {Book} */ x)=> (Series.range(x.number) || [0, 0])[1];
+	return (Number(a.isCollection()) - Number(b.isCollection())) ||
+		(parseFloat(a.number || '')||0) - (parseFloat(b.number || '')||0) || last(a) - last(b);
 }
 
 /**
@@ -70,8 +83,8 @@ function seriesOrder(a, b){
  * @returns {string}
  */
 function ownedText(books){
-	const sets = books.filter(CatalogImport.isCollection).length;
-	return `${CatalogImport.seriesOwned(books)} owned` + (sets ? ` + ${sets} box set${sets > 1 ? 's' : ''}` : '');
+	const sets = books.filter(b=> b.isCollection()).length;
+	return `${Series.owned(books)} owned` + (sets ? ` + ${sets} box set${sets > 1 ? 's' : ''}` : '');
 }
 
 /**
@@ -90,19 +103,19 @@ function numberList(nums){
 }
 
 function populateFilters(){
-	const authors = uniqueSorted(DATA.flatMap(authorsOf));
-	const genres = uniqueSorted(DATA.flatMap(b=>b.g||[]));
+	const authors = uniqueSorted(CATALOG.books.flatMap(authorsOf));
+	const genres = uniqueSorted(CATALOG.books.flatMap(b=>b.genres));
 	const aSel = fieldById('authorFilter');
 	const gSel = fieldById('genreFilter');
 	const rSel = fieldById('readFilter');
-	const years = uniqueSorted(DATA.flatMap(readYears)).reverse();
+	const years = uniqueSorted(CATALOG.books.flatMap(readYears)).reverse();
 	const aCur = aSel.value, gCur = gSel.value, rCur = rSel.value;
 	aSel.innerHTML = '<option value="">All authors</option>' + authors.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
 	gSel.innerHTML = '<option value="">All genres</option>' + genres.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
 	rSel.innerHTML = '<option value="">Read any time</option>' + years.map(y=>`<option value="${esc(y)}">Read in ${esc(y)}</option>`).join('')
 		+ `<option value="${UNDATED}">No date read</option>`;
 	aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
-	MERGE_FROM = null;             // DATA changed, so an index picked for merging may be stale
+	MERGE_FROM = null;             // the books changed, so an index picked for merging may be stale
 }
 
 /**
@@ -114,22 +127,22 @@ function populateFilters(){
  * @returns {boolean}
  */
 function matches(b, q, author, genre, read){
-	if(BOOK_FILTER !== null && b.t !== BOOK_FILTER) return false;
+	if(BOOK_FILTER !== null && b.title !== BOOK_FILTER) return false;
 	if(SERIES_FILTER){
-		if(SERIES_FILTER === '__standalone__'){ if(b.s) return false; }
-		else if(b.s !== SERIES_FILTER) return false;
+		if(SERIES_FILTER === '__standalone__'){ if(b.series) return false; }
+		else if(b.series !== SERIES_FILTER) return false;
 	}
 	if(author && !authorsOf(b).includes(author)) return false;
-	if(genre && !(b.g||[]).includes(genre)) return false;
-	if(read === UNDATED){ if(readDates(b).length) return false; }
+	if(genre && !b.genres.includes(genre)) return false;
+	if(read === UNDATED){ if(b.read.length) return false; }
 	else if(read && !readYears(b).includes(read)) return false;
 	if(q){
-		const editions = CatalogImport.bookEditions(b);
-		const hay = [b.t,...authorsOf(b),b.s,...(b.g||[]),...editions.flatMap(ed=>[...CatalogImport.editionAsins(ed).map(([, asin])=> asin), ed.gr, ed.hc, CatalogImport.namesText(ed.n), ed.p, ed.desc, ed.isbn]), b.hcb]
+		const hay = [b.title,...authorsOf(b),b.series,...b.genres,...b.editions.flatMap(ed=>[...ed.asinList().map(([, asin])=> asin), ed.goodreadsId, ed.hardcoverId,
+			Text.namesText(ed.narrators), ed.publisher, ed.description, ed.isbn]), b.hardcoverId]
 			.filter(x=> typeof x === 'string').join(' ').toLowerCase();
 		// an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
-		const isbn = CatalogImport.parseIsbn(q);
-		if(!hay.includes(q.toLowerCase()) && !(isbn && CatalogImport.bookIsbns(b).includes(isbn))) return false;
+		const isbn = Isbn.parse(q);
+		if(!hay.includes(q.toLowerCase()) && !(isbn && b.isbns().includes(isbn))) return false;
 	}
 	return true;
 }
@@ -320,27 +333,27 @@ function renderEmpty(){
 
 export function render(){
 	homeBookForm();   // out of the list before it is redrawn, which would drop it
-	if(!DATA.length){ renderEmpty(); return; }
+	if(!CATALOG.books.length){ renderEmpty(); return; }
 	if(VIEW === 'series'){ renderSeriesOverview(); return; }
 
 	const q = fieldById('q').value.trim();
 	const author = fieldById('authorFilter').value;
 	const genre = fieldById('genreFilter').value;
 	const read = fieldById('readFilter').value;
-	/** @type {IndexedBook[]} */
-	const filtered = DATA.map((b,i)=>({...b, _i:i})).filter(b=>matches(b,q,author,genre,read));
+	/** @type {ListedBook[]} */
+	const filtered = CATALOG.books.map((b,i)=>({b, i})).filter(({b})=>matches(b,q,author,genre,read));
 
 	byId('subtitle').textContent =
-		`${DATA.length} audiobooks, merged from your Audible library and Goodreads history`;
+		`${CATALOG.books.length} audiobooks, merged from your Audible library and Goodreads history`;
 	byId('resultCount').textContent = `${filtered.length} shown`;
 
-	/** @type {Record<string, IndexedBook[]>} */
+	/** @type {Record<string, ListedBook[]>} */
 	const groups = {};
-	/** @type {IndexedBook[]} */
+	/** @type {ListedBook[]} */
 	const standalone = [];
-	filtered.forEach(b=>{
-		if(b.s){ (groups[b.s] = groups[b.s]||[]).push(b); }
-		else standalone.push(b);
+	filtered.forEach(x=>{
+		if(x.b.series){ (groups[x.b.series] = groups[x.b.series]||[]).push(x); }
+		else standalone.push(x);
 	});
 
 	const seriesNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
@@ -352,9 +365,9 @@ export function render(){
 	}
 
 	seriesNames.forEach(name=>{
-		const books = groups[name].sort(seriesOrder);
-		const info = SERIES_INFO[name];
-		let head = `<p class="series-title"><a href="${esc(bookHref(name, 'series'))}">${esc(name)}</a> <span class="n">${ownedText(books)}</span>`;
+		const books = groups[name].sort((x, y)=> seriesOrder(x.b, y.b));
+		const info = CATALOG.series.get(name);
+		let head = `<p class="series-title"><a href="${esc(bookHref(name, 'series'))}">${esc(name)}</a> <span class="n">${ownedText(books.map(x=> x.b))}</span>`;
 		head += ` ${seriesEditButton(name)}`;
 		if(info){
 			head += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
@@ -365,7 +378,7 @@ export function render(){
 		head += '</p>';
 		if(info){
 			const missing = seriesMissing(name);
-			const note = [`${esc(info.total)} released total`];
+			const note = [`${esc(totalText(info))} released total`];
 			if(missing && missing.length) note.push(`missing ${numberList(missing)}`);
 			if(info.note) note.push(esc(info.note));
 			head += `<p class="series-note">${note.join(' \u2014 ')}</p>`;
@@ -376,7 +389,7 @@ export function render(){
 	});
 
 	if(standalone.length){
-		standalone.sort((a,b)=>a.t.localeCompare(b.t));
+		standalone.sort((x,y)=>x.b.title.localeCompare(y.b.title));
 		html += `<div class="series-group"><p class="series-title">Standalone <span class="n">${standalone.length} book${standalone.length>1?'s':''}</span></p>`;
 		standalone.forEach(b=> html += bookCard(b));
 		html += '</div>';
@@ -388,13 +401,13 @@ export function render(){
 			const el = /** @type {HTMLElement & {_resetTimer?: ReturnType<typeof setTimeout>}} */ (e.currentTarget);
 			const i = parseInt(el.dataset.i || '',10);
 			if(el.dataset.confirm === '1'){
-				const [removed] = DATA.splice(i,1);
-				addExclusions(CatalogImport.exclusionEntries(removed));   // so the next import does not bring it back
+				const [removed] = CATALOG.books.splice(i,1);
+				addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
 				// the book being edited moves up one when a book before it goes, and Save must still find it
 				if(EDIT_INDEX === i){ closeForm(); }
 				else if(EDIT_INDEX !== null && EDIT_INDEX > i) EDIT_INDEX--;
 				populateFilters(); render(); persist();
-				showIoStatus(`Removed ${removed.t}; imports will skip it.`);
+				showIoStatus(`Removed ${removed.title}; imports will skip it.`);
 			} else {
 				el.dataset.confirm = '1';
 				el.innerHTML = '&check;';
@@ -428,8 +441,8 @@ function renderSeriesOverview(){
 	/** @type {Record<string, Book[]>} */
 	const groups = {};
 	let standaloneCount = 0;
-	DATA.forEach(b=>{
-		if(b.s){ (groups[b.s] = groups[b.s]||[]).push(b); }
+	CATALOG.books.forEach(b=>{
+		if(b.series){ (groups[b.series] = groups[b.series]||[]).push(b); }
 		else standaloneCount++;
 	});
 
@@ -445,7 +458,7 @@ function renderSeriesOverview(){
 	if(onlyMissing) seriesNames = seriesNames.filter(name=> (seriesMissing(name) || []).length);
 
 	byId('subtitle').textContent =
-		`${Object.keys(groups).length} series across ${DATA.length} audiobooks \u2014 tap a series to see its titles`;
+		`${Object.keys(groups).length} series across ${CATALOG.books.length} audiobooks \u2014 tap a series to see its titles`;
 	byId('resultCount').textContent = `${seriesNames.length} series shown`;
 
 	let html = '';
@@ -457,10 +470,10 @@ function renderSeriesOverview(){
 	seriesNames.forEach(name=>{
 		const books = groups[name];
 		const authors = uniqueSorted(books.flatMap(authorsOf));
-		const info = SERIES_INFO[name];
+		const info = CATALOG.series.get(name);
 		html += `<div class="srow"><div class="srow-head">
 			<a class="srow-title" href="${esc(stateHash({view: 'library', series: name, book: null}))}">${esc(name)}</a>
-			<span class="srow-owned">${CatalogImport.seriesOwned(books)} owned${info ? ' of ' + esc(info.total) : ''}</span>
+			<span class="srow-owned">${Series.owned(books)} owned${info ? ' of ' + esc(totalText(info)) : ''}</span>
 			${seriesEditButton(name)}
 		</div>`;
 		let foot = `<div class="srow-foot"><span class="tag">${authorLinks(authors)}</span>`;
@@ -488,11 +501,11 @@ function renderSeriesOverview(){
 }
 
 // ------------------------------------------------------------------ series info
-// Edits the series' entry in SERIES_INFO (released total, status, note, author site) and its name,
+// Edits the series' entry in CATALOG.series (released total, status, note, author site) and its name,
 // which is renamed on every book in the series. Like book edits, it is kept in this browser (see persist).
 /** @param {string} name */
 function seriesEditButton(name){
-	const label = SERIES_INFO[name] ? 'Edit series info' : 'Add series info';
+	const label = CATALOG.series.has(name) ? 'Edit series info' : 'Add series info';
 	return `<button class="iconbtn sedit" data-series="${esc(name)}" title="${label}" aria-label="${label}">&#9998;</button>`;
 }
 
@@ -505,12 +518,12 @@ function bindSeriesEditButtons(){
 /** @param {string} name */
 export function openSeriesForm(name){
 	closeForm();
-	const info = SERIES_INFO[name];
+	const info = CATALOG.series.get(name);
 	EDIT_SERIES = name; JOIN_SERIES = null;
 	fieldById('sf_name').value = name;
 	byId('seriesFormTitle').textContent = (info ? 'Series info: ' : 'Add series info: ') + name;
-	fieldById('sf_total').value = info ? String(info.total) : '';
-	fieldById('sf_status').value = info ? info.status : 'ongoing';
+	fieldById('sf_total').value = info ? totalText(info) : '';
+	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') : 'ongoing';
 	fieldById('sf_note').value = info ? info.note || '' : '';
 	fieldById('sf_url').value = info ? info.url || '' : '';
 	byId('seriesFormError').textContent = '';
@@ -531,39 +544,41 @@ function saveSeriesForm(){
 	const name = EDIT_SERIES;
 	if(name === null) return;
 	const showError = (/** @type {string} */ text)=> { byId('seriesFormError').textContent = text; };
-	const newName = CatalogImport.tidyText(fieldById('sf_name').value);
+	const newName = Text.tidy(fieldById('sf_name').value);
 	if(!newName) return showError('Give the series a name.');
 	const renamed = newName !== name;
-	const totalText = fieldById('sf_total').value.trim();
-	const note = CatalogImport.tidyText(fieldById('sf_note').value);
+	const totalTyped = fieldById('sf_total').value.trim();
+	const note = Text.tidy(fieldById('sf_note').value);
 	const url = fieldById('sf_url').value.trim();
 	// a rename of a series without info doesn't have to add some
-	const keepInfo = !renamed || SERIES_INFO[name] || totalText || note || url;
-	/** @type {SeriesEntry | null} */
+	const keepInfo = !renamed || CATALOG.series.has(name) || totalTyped || note || url;
+	/** @type {Series | null} */
 	let entry = null;
 	if(keepInfo){
-		// unchecked as typed: validate() below says what is wrong with the total or status
-		entry = /** @type {SeriesEntry} */ ({total: /^\d+$/.test(totalText) ? parseInt(totalText, 10) : totalText.toLowerCase(),
-			status: fieldById('sf_status').value, note});
-		if(url) entry.url = url;
+		// unchecked as typed: the Check below says what is wrong with the total or status
+		/** @type {Record<string, unknown>} */
+		const typed = {total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase(),
+			status: fieldById('sf_status').value, note};
+		if(url) typed.url = url;
 		// the same rules as Check, applied to just this series (checked before the rename,
 		// under the name its books have now)
-		const {errors} = CatalogImport.validate(DATA, {[name]: entry});
+		const {errors} = Validator.validate(JSON.parse(JSON.stringify(CATALOG.books)), {[name]: typed});
 		const problems = errors.filter(e=> e.startsWith('series-info')).map(e=> e.replace(/^series-info(\[[^\]]*\])?: /, ''));
 		if(problems.length) return showError(problems.join('; '));
+		entry = Series.fromJSON(newName, typed);
 	}
 	// Joining another series is easy to do by mistake (and replaces its info), so the first Save says so.
-	const exists = DATA.some(b=> b.s === newName) || newName in SERIES_INFO;
+	const exists = CATALOG.books.some(b=> b.series === newName) || CATALOG.series.has(newName);
 	if(renamed && exists && JOIN_SERIES !== newName){
 		JOIN_SERIES = newName;
 		return showError(`There is already a series called ${newName}. Press Save again to move these books into it` +
-			(entry && SERIES_INFO[newName] ? '; its series info will be replaced by this.' : '.'));
+			(entry && CATALOG.series.has(newName) ? '; its series info will be replaced by this.' : '.'));
 	}
 
 	let count = 0;
-	if(renamed) DATA.forEach(b=>{ if(b.s === name){ b.s = newName; count++; } });
-	const {[name]: _old, ...rest} = SERIES_INFO;
-	setSeriesInfo(entry ? {...rest, [newName]: entry} : rest);
+	if(renamed) CATALOG.books.forEach(b=>{ if(b.series === name){ b.series = newName; count++; } });
+	CATALOG.series.delete(name);
+	if(entry) CATALOG.series.set(newName, entry);
 	closeSeriesForm();
 	if(renamed && SERIES_FILTER === name) navigate({series: newName}, 'replace');
 	render(); persist();
@@ -574,9 +589,8 @@ function saveSeriesForm(){
 
 function removeSeriesInfo(){
 	const name = EDIT_SERIES;
-	if(name === null || !SERIES_INFO[name]) return;
-	const {[name]: _removed, ...rest} = SERIES_INFO;
-	setSeriesInfo(rest);
+	if(name === null || !CATALOG.series.has(name)) return;
+	CATALOG.series.delete(name);
 	closeSeriesForm(); render(); persist();
 	showIoStatus(`Removed series info for ${name}.`);
 }
@@ -594,19 +608,18 @@ function sharedEditions(){
 	/** @type {Map<string, [number, Edition][]>} */
 	const byKey = new Map();
 	/** @type {(ed: Edition) => string[]} */
-	const keys = ed=> [...CatalogImport.editionAsins(ed).map(([, asin])=> 'asin ' + asin), ...(/** @type {('gr' | 'hc')[]} */ (['gr','hc'])).filter(k=> ed[k]).map(k=> k + ' ' + ed[k]),
-		...CatalogImport.editionIsbns(ed).map(x=> 'isbn ' + x)];
-	DATA.forEach((b,i)=> CatalogImport.bookEditions(b).forEach(ed=> keys(ed).forEach(k=>{
+	const keys = ed=> [...Edition.IDS.flatMap(k=> ed.ids(k).map(v=> k + ' ' + v)), ...ed.isbns().map(x=> 'isbn ' + x)];
+	CATALOG.books.forEach((b,i)=> b.editions.forEach(ed=> keys(ed).forEach(k=>{
 		let list = byKey.get(k);
 		if(!list) byKey.set(k, list = []);
 		list.push([i, ed]);
 	})));
 	/** @type {Map<Edition, number[]>} */
 	const shared = new Map();
-	DATA.forEach((b,i)=> CatalogImport.bookEditions(b).forEach(ed=>{
+	CATALOG.books.forEach((b,i)=> b.editions.forEach(ed=>{
 		/** @type {Set<number>} */
 		const others = new Set();
-		for(const k of keys(ed)) for(const [j, x] of byKey.get(k) || []) if(j !== i && CatalogImport.sameEdition(x, ed)) others.add(j);
+		for(const k of keys(ed)) for(const [j, x] of byKey.get(k) || []) if(j !== i && x.sameAs(ed)) others.add(j);
 		if(others.size) shared.set(ed, [...others]);
 	}));
 	return shared;
@@ -621,7 +634,7 @@ const GOODREADS_URL = 'https://www.goodreads.com/book/show/';
 const asinUrl = site=> `https://www.${site}/${site.startsWith('audible.') ? 'pd' : 'dp'}/`;
 
 /**
- * An edition as formatEdition() writes it, with each ASIN linking to the book on its site, and the
+ * An edition as Edition.format() writes it, with each ASIN linking to the book on its site, and the
  * Goodreads id and Hardcover ids to the book there (Hardcover's links by id keep working when it renames the book).
  * @type {(url: string, id: string) => string}
  */
@@ -629,13 +642,14 @@ const idLink = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" targe
 
 /**
  * @param {Edition} ed
+ * @param {boolean} narrators whether to name its narrators (not when the book's line names them all)
  * @returns {string}
  */
-function editionHtml(ed){
-	/** @type {Partial<Record<keyof Edition, string>>} */
-	const urls = {gr: GOODREADS_URL, hc: CatalogImport.hardcoverUrl('edition', '')};
-	const asins = ()=> CatalogImport.editionAsins(ed).map(([site, asin])=> `${esc(site)} ${idLink(asinUrl(site), asin)}`).join(', ');
-	return CatalogImport.editionParts(ed).map(([k, label, value])=>{
+function editionHtml(ed, narrators){
+	/** @type {Partial<Record<string, string>>} */
+	const urls = {gr: GOODREADS_URL, hc: HardcoverClient.url('edition', '')};
+	const asins = ()=> ed.asinList().map(([site, asin])=> `${esc(site)} ${idLink(asinUrl(site), asin)}`).join(', ');
+	return ed.parts().filter(([k])=> narrators || k !== 'n').map(([k, label, value])=>{
 		const url = urls[k];
 		return (label ? esc(label) + ' ' : '') + (k === 'asin' ? asins() : url ? idLink(url, value) : esc(value));
 	}).join('; ');
@@ -652,36 +666,37 @@ function bookHref(name, kind = 'book'){
 }
 
 /**
- * @param {IndexedBook} b
+ * @param {ListedBook} listed
  * @returns {string}
  */
-function bookCard(b){
-	const num = b.sn ? `<div class="num">${esc(b.sn)}</div>` : '<div class="num">&bull;</div>';
+function bookCard({b, i}){
+	const books = CATALOG.books;
+	const num = b.number ? `<div class="num">${esc(b.number)}</div>` : '<div class="num">&bull;</div>';
 	// the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
-	const narrators = [...new Set(CatalogImport.bookEditions(b).map(ed=> CatalogImport.namesText(ed.n)).filter(Boolean))];
+	const narrators = [...new Set(b.editions.map(ed=> Text.namesText(ed.narrators)).filter(Boolean))];
 	const differ = narrators.length > 1;
 	const meta = [authorLinks(authorsOf(b)), narrators.length ? esc('narr. '+narrators.join(' / ')) : null].filter(Boolean).join(' \u2014 ');
-	const genres = (b.g||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('');
-	const read = readDates(b).length ? `<div class="read">Read ${esc(readDates(b).join(', '))}</div>` : '';
-	const editions = CatalogImport.bookEditions(b).map(ed=>{
+	const genres = b.genres.map(g=>`<span class="tag">${esc(g)}</span>`).join('');
+	const read = b.read.length ? `<div class="read">Read ${esc(b.read.join(', '))}</div>` : '';
+	const editions = b.editions.map(ed=>{
 		const also = (SHARED.get(ed) || []).map(k=>
-			`<a href="${esc(bookHref(DATA[k].t))}">${esc(DATA[k].t + (DATA[k].sn ? ` #${DATA[k].sn}` : ''))}</a>`);
-		return `<div class="edition">${editionHtml(differ ? ed : {...ed, n: undefined})}` +
+			`<a href="${esc(bookHref(books[k].title))}">${esc(books[k].title + (books[k].number ? ` #${books[k].number}` : ''))}</a>`);
+		return `<div class="edition">${editionHtml(ed, differ)}` +
 			(also.length ? `<br><span class="also">Also in this edition: ${also.join(', ')}</span>` : '') + '</div>';
 	}).join('');
-	const picked = MERGE_FROM === b._i;
-	const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${DATA[MERGE_FROM].t}`;
-	return `<div class="book${picked ? ' picked' : ''}" data-i="${b._i}">${num}<div class="info">
-		<div class="title"><a href="${esc(bookHref(b.t))}">${esc(b.t)}</a></div>
+	const picked = MERGE_FROM === i;
+	const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${books[MERGE_FROM].title}`;
+	return `<div class="book${picked ? ' picked' : ''}" data-i="${i}">${num}<div class="info">
+		<div class="title"><a href="${esc(bookHref(b.title))}">${esc(b.title)}</a></div>
 		<div class="meta">${meta}</div>
 		${read}
-		${b.hcb ? `<div class="ids">Hardcover book ${idLink(CatalogImport.hardcoverUrl('book', ''), b.hcb)}</div>` : ''}
+		${b.hardcoverId ? `<div class="ids">Hardcover book ${idLink(HardcoverClient.url('book', ''), b.hardcoverId)}</div>` : ''}
 		${editions}
 		${genres ? `<div class="genres">${genres}</div>` : ''}
 	</div><div class="book-actions">
-		<button class="iconbtn edit" data-i="${b._i}" title="Edit" aria-label="Edit">&#9998;</button>
-		<button class="iconbtn merge" data-i="${b._i}" title="${esc(mergeLabel)}" aria-label="${esc(mergeLabel)}">&#8644;</button>
-		<button class="iconbtn del" data-i="${b._i}" title="Remove" aria-label="Remove">&times;</button>
+		<button class="iconbtn edit" data-i="${i}" title="Edit" aria-label="Edit">&#9998;</button>
+		<button class="iconbtn merge" data-i="${i}" title="${esc(mergeLabel)}" aria-label="${esc(mergeLabel)}">&#8644;</button>
+		<button class="iconbtn del" data-i="${i}" title="Remove" aria-label="Remove">&times;</button>
 	</div></div>`;
 }
 
@@ -755,17 +770,17 @@ function placeBookForm(){
 
 /** @param {number} i */
 export function openEditForm(i){
-	const b = DATA[i];
+	const b = CATALOG.books[i];
 	closeSeriesForm();
 	EDIT_INDEX = i;
-	fieldById('f_t').value = b.t || '';
+	fieldById('f_t').value = b.title;
 	fieldById('f_a').value = authorsOf(b).join(', ');
-	fieldById('f_g').value = (b.g||[]).join(', ');
-	fieldById('f_hcb').value = b.hcb || '';
-	fieldById('f_s').value = b.s || '';
-	fieldById('f_sn').value = b.sn || '';
-	fieldById('f_r').value = readDates(b).join(', ');
-	setFormEditions(CatalogImport.bookEditions(b), i);
+	fieldById('f_g').value = b.genres.join(', ');
+	fieldById('f_hcb').value = b.hardcoverId || '';
+	fieldById('f_s').value = b.series || '';
+	fieldById('f_sn').value = b.number || '';
+	fieldById('f_r').value = b.read.join(', ');
+	setFormEditions(b.editions, i);
 	byId('formError').textContent = '';
 	byId('formTitle').textContent = 'Edit book';
 	byId('formSaveBtn').textContent = 'Save changes';
@@ -785,10 +800,11 @@ export let FORM_EDITIONS = [];
  * @param {number | null} index the book they are of, or null for a new book
  */
 function setFormEditions(editions, index){
-	const others = DATA.map((b, k)=> k).filter(k=> k !== index);
+	const books = CATALOG.books;
+	const others = books.map((b, k)=> k).filter(k=> k !== index);
 	FORM_EDITIONS = editions.map(ed=> ({
-		fields: CatalogImport.editionFields(ed),
-		also: others.filter(k=> CatalogImport.bookEditions(DATA[k]).some(x=> CatalogImport.sameEdition(x, ed))).map(k=> DATA[k].t),
+		fields: ed.fields(),
+		also: others.filter(k=> books[k].editions.some(x=> x.sameAs(ed))).map(k=> books[k].title),
 	}));
 	if(!FORM_EDITIONS.length) FORM_EDITIONS.push({fields: {}, also: []});
 	renderFormEditions();
@@ -812,7 +828,7 @@ const asinSitesOf = fields=> [DEFAULT_ASIN_SITE, ...Object.keys(fields).filter(k
  */
 function asinFieldsHtml(fields, i){
 	const sites = asinSitesOf(fields);
-	const more = CatalogImport.ASIN_SITES.filter(site=> !sites.includes(site));
+	const more = Edition.ASIN_SITES.filter(site=> !sites.includes(site));
 	return sites.map(site=> `<div class="ef-site"><label>${esc(site)}</label>` +
 			`<input data-i="${i}" data-k="asin:${esc(site)}" value="${esc(fields['asin:' + site] || '')}" placeholder="${esc(EDITION_HINTS.asin)}"></div>`).join('') +
 		(more.length ? `<div class="ef-site"><label>&nbsp;</label><select data-add-site="${i}" aria-label="Add an ASIN for another site">` +
@@ -825,7 +841,7 @@ function renderFormEditions(){
 		`<div class="editionCard" role="group" aria-label="Edition ${i + 1}"><div class="editionCardHead"><span>Edition ${i + 1}</span>` +
 		`<button type="button" class="removeEdition" data-remove="${i}" title="Remove this edition">Remove</button></div>` +
 		(also.length ? `<p class="editionAlso">Also on ${also.map(esc).join(', ')}: changes here change it there too.</p>` : '') +
-		'<div class="editionFields">' + CatalogImport.EDITION_FIELDS.map(([k, , label])=> k === 'asin'
+		'<div class="editionFields">' + Edition.FIELDS.map(([k, , label])=> k === 'asin'
 			? `<div class="ef-asin" role="group" aria-label="${label}"><label>${label}</label><div class="asinSites">${asinFieldsHtml(fields, i)}</div></div>`
 			: `<div class="ef-${k}"><label>${label}</label><input data-i="${i}" data-k="${k}" value="${esc(fields[k] || '')}" placeholder="${esc(EDITION_HINTS[k])}"></div>`
 		).join('') + '</div></div>'
@@ -878,7 +894,7 @@ function readFormEditions(){
 	/** @type {string | null} */
 	let hcb = null;
 	FORM_EDITIONS.forEach(({fields}, i)=>{
-		const read = CatalogImport.editionFromFields(fields);
+		const read = Edition.fromFields(fields);
 		editions.push(...read.editions);
 		bad.push(...read.bad.map(x=> `edition ${i + 1}: ${x}`));
 		hcb = hcb || read.hcb;
@@ -895,7 +911,7 @@ let HARDCOVER_LOOKUP = null;   // the field's lookup on its way, as a promise
 /** @returns {Promise<string | null>} */
 function resolveHardcoverField(){
 	const field = fieldById('f_hcb'), text = field.value.trim();
-	if(!CatalogImport.parseHardcoverUrl(text)) return Promise.resolve(text);
+	if(!HardcoverClient.parseUrl(text)) return Promise.resolve(text);
 	if(HARDCOVER_LOOKUP && HARDCOVER_LOOKUP.text === text) return HARDCOVER_LOOKUP;
 	// declared first, as the lookup's own finally compares with it (which runs after an await, once it is assigned)
 	/** @type {HardcoverLookup | null} */
@@ -908,7 +924,7 @@ function resolveHardcoverField(){
 			if(found.title) showIoStatus(`Found on Hardcover: ${found.title} (book ${found.id}).`);
 			return found.id;
 		}catch(err){
-			byId('formError').textContent = `Couldn't find the Hardcover book: ${CatalogImport.errorText(err)}. ` +
+			byId('formError').textContent = `Couldn't find the Hardcover book: ${Text.errorText(err)}. ` +
 				'Paste the address of its page, or of one of its editions, on hardcover.app, or the number in hardcover.app/id/book/12345.';
 			return null;
 		}finally{
@@ -923,38 +939,36 @@ byId('f_hcb').addEventListener('change', ()=>{ resolveHardcoverField(); });
 
 byId('addForm').addEventListener('submit', async e=>{
 	e.preventDefault();
-	if(CatalogImport.parseHardcoverUrl(fieldById('f_hcb').value)){
+	if(HardcoverClient.parseUrl(fieldById('f_hcb').value)){
 		// look the address up first, unless the form was closed or moved to another book meanwhile
 		const index = EDIT_INDEX;
 		const id = await resolveHardcoverField();
 		if(id === null || EDIT_INDEX !== index || !byId('addForm').classList.contains('open')) return;
 	}
-	/** @type {Book} */
-	const b = {
-		t: fieldById('f_t').value.trim(),
-		a: CatalogImport.splitNames(fieldById('f_a').value),
-	};
-	const s = fieldById('f_s').value.trim(); if(s) b.s = s;
-	const sn = fieldById('f_sn').value.trim(); if(sn) b.sn = sn;
-	const g = fieldById('f_g').value.trim();
-	if(g) b.g = g.split(',').map(x=>x.trim()).filter(Boolean);
-	if(!b.t || !b.a.length) return;
-	const {dates, bad} = CatalogImport.parseReadDates(fieldById('f_r').value);
+	const b = new Book({
+		title: fieldById('f_t').value.trim(),
+		authors: Text.splitNames(fieldById('f_a').value),
+		genres: fieldById('f_g').value.split(',').map(x=>x.trim()).filter(Boolean),
+	});
+	const s = fieldById('f_s').value.trim(); if(s) b.series = s;
+	const sn = fieldById('f_sn').value.trim(); if(sn) b.number = sn;
+	if(!b.title || !b.authors.length) return;
+	const {dates, bad} = Text.parseDates(fieldById('f_r').value);
 	if(bad.length){
 		byId('formError').textContent =
 			`Not a date: ${bad.join(', ')}. Use YYYY-MM-DD, or YYYY-MM / YYYY if you don't remember the day.`;
 		return;
 	}
-	if(dates.length) b.r = dates;
+	b.read = dates;
 	const {editions, bad: badParts, hcb} = readFormEditions();
 	const hardcover = fieldById('f_hcb').value.trim() || hcb;
 	if(hardcover && !/^\d+$/.test(hardcover)){
 		byId('formError').textContent = `Not a Hardcover book id: ${hardcover}. It is the number in hardcover.app/id/book/12345, or paste the address of the book's page on hardcover.app in the Hardcover book field.`;
 		return;
 	}
-	if(hardcover) b.hcb = hardcover;
+	if(hardcover) b.hardcoverId = hardcover;
 	// "book #0 ('Title') edition #2: needs an ..." -> "edition #2: needs an ..."
-	const problems = (editions.length ? CatalogImport.validate([{t: b.t, a: b.a, e: editions}], {}).errors : [])
+	const problems = (editions.length ? Validator.validate([{t: b.title, a: b.authors, e: JSON.parse(JSON.stringify(editions))}], {}).errors : [])
 		.map(e=> e.includes(' edition #') ? e.slice(e.indexOf(' edition #') + 1) : e);
 	if(badParts.length || problems.length){
 		byId('formError').textContent = badParts.length
@@ -962,10 +976,10 @@ byId('addForm').addEventListener('submit', async e=>{
 			: problems.join('; ');
 		return;
 	}
-	if(editions.length) b.e = editions;
+	b.editions = editions;
 
 	// editing an edition a box set shares with other books edits it there too
-	const others = CatalogImport.saveBook(DATA, EDIT_INDEX, b);
+	const others = CATALOG.saveBook(EDIT_INDEX, b);
 	populateFilters(); render(); persist();
 	closeForm();
 	if(others) showIoStatus(`Also updated the shared edition on ${others} other book${others === 1 ? '' : 's'}.`);
@@ -977,7 +991,7 @@ byId('addForm').addEventListener('submit', async e=>{
 export function pickMergeBook(i){
 	if(MERGE_FROM === null){
 		MERGE_FROM = i;
-		showIoStatus(`Now press \u21c4 on the book to merge ${DATA[i].t} with.`);
+		showIoStatus(`Now press \u21c4 on the book to merge ${CATALOG.books[i].title} with.`);
 	} else if(MERGE_FROM === i){
 		MERGE_FROM = null;
 	} else {

@@ -1,8 +1,11 @@
 // What every page shares: the catalog, kept in this browser's localStorage and nowhere else, the
 // status line and the page links. Each page's own module starts with startPage(), handing it a refresh()
-// that redraws the page from DATA.
-import * as CatalogImport from './importers.js';
-/** @import {Book, SeriesInfo, Authors, Unchecked} from './importers.js' */
+// that redraws the page from CATALOG.
+import {Text} from './modules/text.js';
+import {Book} from './modules/book.js';
+import {Catalog} from './modules/catalog.js';
+import {HardcoverClient} from './modules/hardcover-client.js';
+/** @import {Unchecked} from './modules/text.js' */
 
 /**
  * A Hardcover import, export or sync going on (or just ended) in a page, as showHardcoverJob() shows it.
@@ -27,14 +30,14 @@ const CATALOG_KEY = 'audiobook-catalog-device';
 const OLD_EDITS_KEY = 'audiobook-catalog-data';
 
 // British spelling ("catalogue") when the browser's first English language is a British one, else American.
-export const BRITISH = (() => { try{ return CatalogImport.prefersBritish(navigator.languages || [navigator.language]); }catch(e){ return false; } })();
+export const BRITISH = (() => { try{ return Text.prefersBritish(navigator.languages || [navigator.language]); }catch(e){ return false; } })();
 
 /**
  * The page's own text in the spelling this browser prefers (see BRITISH); never a book's title or other data.
  * @param {string} text
  * @returns {string}
  */
-export function spell(text){ return CatalogImport.spelled(text, BRITISH); }
+export function spell(text){ return Text.spelled(text, BRITISH); }
 
 // The page as written is American, so respell it before the page's module finds its elements and
 // fills them in; at this point it holds only the page's own text.
@@ -43,25 +46,13 @@ if(BRITISH){
 	document.body.innerHTML = spell(document.body.innerHTML);
 }
 
-/** @type {Book[]} */
-export let DATA = [];
-/** @type {SeriesInfo} */
-export let SERIES_INFO = {};
-/** @type {Authors} */
-export let AUTHORS = {};              // author name -> {bio, url, audible, goodreads, hardcover}
-export let EXCLUSIONS = CatalogImport.parseExclusions('');   // books imports must never re-add
+// The catalog the page shows. It stays this one object: a page that takes another catalog (Restore, an
+// import confirmed) moves it in with CATALOG.replaceWith().
+export const CATALOG = new Catalog();
 /** @type {string[]} */
-export let FORMAT_NOTES = [];         // what in the stored catalog is from an older format (CatalogImport.formatNotes); any save rewrites it
+export let FORMAT_NOTES = [];         // what in the stored catalog is from an older format (Book.formatNotes); any save rewrites it
 /** @type {string | null} */
 export let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[CATALOG_KEY]
-
-// A module's bindings can only be assigned in the module itself, so the pages replace these through here.
-/** @param {Book[]} books */
-export function setData(books){ DATA = books; }
-/** @param {SeriesInfo} info */
-export function setSeriesInfo(info){ SERIES_INFO = info; }
-/** @param {Authors} authors */
-export function setAuthors(authors){ AUTHORS = authors; }
 
 // The page's own hook, from startPage(): onHardcoverJob(job), when the page has it, does more with each
 // update of a Hardcover run (see showHardcoverJob).
@@ -71,31 +62,30 @@ let onHardcoverJob = null;
 // Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
 // duplicates page. Kept in this browser beside the catalog; backups carry them too.
 const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
-/** @type {Set<string>} */
-export let NOT_DUPLICATES = new Set();
-try{
-	const saved = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || '[]');
-	if(Array.isArray(saved)) NOT_DUPLICATES = new Set(saved.filter(x=> typeof x === 'string'));
-}catch(e){}
+/** @returns {string[]} the marks kept in this browser */
+function storedNotDuplicates(){
+	try{
+		const saved = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || '[]');
+		if(Array.isArray(saved)) return saved.filter(x=> typeof x === 'string');
+	}catch(e){}
+	return [];
+}
 
 /**
- * Add marks to NOT_DUPLICATES (and this browser's copy); returns how many were new.
+ * Add marks to CATALOG.notDuplicates (and this browser's copy); returns how many were new.
  * @param {string[]} entries
  * @returns {number}
  */
 export function addNotDuplicates(entries){
-	const before = NOT_DUPLICATES.size;
-	entries.forEach(e=> NOT_DUPLICATES.add(e));
-	try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...NOT_DUPLICATES])); }catch(e){}
-	return NOT_DUPLICATES.size - before;
+	const added = CATALOG.addNotDuplicates(entries);
+	saveNotDuplicates();
+	return added;
 }
 
-/**
- * Dates read of a book; [] when it has none (or something that is not a list of dates).
- * @param {Book} b
- * @returns {string[]}
- */
-export const readDates = b => Array.isArray(b.r) ? b.r.filter(d => typeof d === 'string') : [];
+// The marks are kept apart from the catalog, so a page that only marks a pair saves only them.
+export function saveNotDuplicates(){
+	try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...CATALOG.notDuplicates])); }catch(e){}
+}
 
 /**
  * Text made safe to put in HTML.
@@ -115,7 +105,8 @@ export function localNow(){
 
 // The page links: the duplicates link says how many duplicates and books with split editions there are.
 export function updateNav(){
-	const n = CatalogImport.findDuplicates(DATA, NOT_DUPLICATES).length + CatalogImport.splitEditions(DATA, NOT_DUPLICATES).length;
+	const duplicates = CATALOG.duplicates();
+	const n = duplicates.groups().length + duplicates.splitEditions().length;
 	byId('dupCount').textContent = n ? ` (${n})` : '';
 }
 
@@ -128,7 +119,8 @@ export function persist(){
 		return;
 	}
 	try{
-		localStorage.setItem(CATALOG_KEY, JSON.stringify({books: DATA, seriesInfo: SERIES_INFO, authors: AUTHORS, excluded: EXCLUSIONS.entries}));
+		const {books, seriesInfo, authors, excluded} = CATALOG.toJSON();   // the marks have a key of their own
+		localStorage.setItem(CATALOG_KEY, JSON.stringify({books, seriesInfo, authors, excluded}));
 		LOCAL_SEEN = localNow();
 		FORMAT_NOTES = [];    // written as the page holds it, which is the current format
 	}catch(e){
@@ -143,7 +135,7 @@ export function persist(){
  * @returns {number}
  */
 export function addExclusions(entries){
-	return entries.map(e=> EXCLUSIONS.add(e)).filter(Boolean).length;
+	return CATALOG.addExclusions(entries);
 }
 
 // Ask the browser not to clear this site's storage when space runs low; on a phone it may otherwise.
@@ -170,12 +162,10 @@ function loadCatalog(){
 	try{
 		const saved = storedCatalog();
 		if(saved){
-			const notes = CatalogImport.formatNotes(saved.books);   // before readBackup migrates them
-			const {books, seriesInfo, authors, excluded} = CatalogImport.readBackup(saved);
-			DATA = books;                     // readBackup has migrated them already
-			SERIES_INFO = seriesInfo || {};
-			AUTHORS = authors || {};
-			(excluded || []).forEach(e=> EXCLUSIONS.add(e));
+			const notes = Book.formatNotes(saved.books);   // before Catalog.fromJSON migrates them
+			const notDuplicates = CATALOG.notDuplicates;
+			CATALOG.replaceWith(Catalog.fromJSON(saved));
+			CATALOG.notDuplicates = notDuplicates;
 			FORMAT_NOTES = notes;
 		}
 	}catch(e){
@@ -232,7 +222,7 @@ export const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minu
 
 /** @returns {string} the Hardcover token saved in this browser, or '' */
 export function browserHardcoverToken(){
-	try{ return CatalogImport.cleanHardcoverToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch(e){ return ''; }
+	try{ return HardcoverClient.cleanToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch(e){ return ''; }
 }
 
 /**
@@ -247,19 +237,28 @@ export async function fetchHardcover(url, opts){
 }
 
 /**
+ * A Hardcover client asking from this page, with `token`.
+ * @param {string} token
+ * @returns {HardcoverClient}
+ */
+export function hardcoverClient(token){
+	const pause = () => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS));
+	return new HardcoverClient(token, fetchHardcover, pause);
+}
+
+/**
  * The Hardcover book that `text` names: its id, or the address of the book's or one of its editions'
- * pages on hardcover.app (CatalogImport.hardcoverBookId), as {id, title}. An address without the book's id
+ * pages on hardcover.app (HardcoverClient.bookId), as {id, title}. An address without the book's id
  * is looked up on Hardcover with the token saved in this browser. Throws with a short reason.
  * @param {string} text
  * @returns {Promise<{id: string, title?: string}>}
  */
 export async function lookupHardcoverBook(text){
-	const url = CatalogImport.parseHardcoverUrl(text);
-	if(!url || url.book) return CatalogImport.hardcoverBookId(null, text);
+	const url = HardcoverClient.parseUrl(text);
+	if(!url || url.book) return HardcoverClient.bookId(null, text);
 	const token = browserHardcoverToken();
 	if(!token) throw new Error('to look it up on Hardcover, save your Hardcover API token on the Import & export page first');
-	const pause = () => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS));
-	return CatalogImport.hardcoverBookId(CatalogImport.hardcoverAsker(token, fetchHardcover, pause), text);
+	return HardcoverClient.bookId(hardcoverClient(token), text);
 }
 
 // ------------------------------------------------------------ Hardcover runs
@@ -304,6 +303,7 @@ export function showHardcoverJob(job){
  */
 export async function startPage(init, page = {}){
 	({onHardcoverJob = null} = page);
+	CATALOG.notDuplicates = new Set(storedNotDuplicates());
 	loadCatalog();
 	askToKeepStorage();
 	init();
