@@ -98,7 +98,7 @@ series and titles on an author's page are not stored here: they come from the bo
 Authors and narrators keep a space between initials (`A. B. Quill`, not `A.B. Quill`), so the filters
 never list one person twice. Every text field also has stray spacing removed: runs of spaces, tabs,
 non-breaking or invisible characters, and leading/trailing whitespace. The importers and the edit forms
-apply this automatically (`tidyBook` in `importers.js`), and **Check** warns
+apply this automatically (`Book.tidyJSON` in `modules/book.js`), and **Check** warns
 about any value that is not tidy. Capitalisation and quote styles are left alone.
 
 ## Known data quirks

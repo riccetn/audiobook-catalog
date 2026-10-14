@@ -1,20 +1,27 @@
 // The import and export page: adding books from Audible and Goodreads exports, Hardcover, and backups.
 // Loading and saving live in store.js.
-import * as CatalogImport from './importers.js';
+import {Text} from './modules/text.js';
+import {Catalog} from './modules/catalog.js';
+import {Backup} from './modules/backup.js';
+import {AudibleImporter} from './modules/audible-importer.js';
+import {GoodreadsImporter} from './modules/goodreads-importer.js';
+import {GoodreadsExporter} from './modules/goodreads-exporter.js';
+import {HardcoverClient} from './modules/hardcover-client.js';
+import {HardcoverSync} from './modules/hardcover-sync.js';
 import {
-	DATA, SERIES_INFO, AUTHORS, setData, setSeriesInfo, setAuthors, EXCLUSIONS, LOCAL_SEEN, NOT_DUPLICATES,
-	addNotDuplicates, esc, localNow, persist, addExclusions, showIoStatus,
-	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, HARDCOVER_PAUSE_MS, browserHardcoverToken,
-	fetchHardcover, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell
+	CATALOG, LOCAL_SEEN, addNotDuplicates, esc, localNow, persist, addExclusions, showIoStatus,
+	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
+	hardcoverClient, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell
 } from './store.js';
-/** @import {Book, ReadResult, Backup} from './importers.js' */
+/** @import {Book} from './modules/book.js' */
+/** @import {Importer} from './modules/importer.js' */
 /** @import {HardcoverJob} from './store.js' */
 
 /** @typedef {HardcoverJob['mode']} HardcoverMode */
 /** @typedef {'audible' | 'goodreads'} ImportKind */
 
 function refreshPage(){
-	byId('subtitle').textContent = spell(`${DATA.length} audiobooks in the catalog`);
+	byId('subtitle').textContent = spell(`${CATALOG.books.length} audiobooks in the catalog`);
 }
 
 /**
@@ -36,13 +43,13 @@ function download(text, type, name){
 }
 
 function exportBackup(){
-	const backup = {books: DATA, seriesInfo: SERIES_INFO, authors: AUTHORS, excluded: EXCLUSIONS.entries, notDuplicates: [...NOT_DUPLICATES]};
-	download(JSON.stringify(backup, null, '\t'), 'application/json', 'audiobook-catalog-backup');
+	// {books, seriesInfo, authors, excluded, notDuplicates} (Catalog.toJSON)
+	download(JSON.stringify(CATALOG, null, '\t'), 'application/json', 'audiobook-catalog-backup');
 	showIoStatus('Backup downloaded.');
 }
 
 function exportGoodreads(){
-	const out = CatalogImport.goodreadsCsv(DATA);
+	const out = new GoodreadsExporter().write(CATALOG.books);
 	download(out.csv, 'text/csv', 'goodreads-import');
 	/** @type {string[]} */
 	const notes = [];
@@ -75,21 +82,21 @@ function readFiles(files){
 
 /**
  * Restore: a backup, or the data files of a catalog from before it lived in the browser
- * (books.json, series-info.json, ... picked together; CatalogImport.readDataFiles), replaces the catalog.
+ * (books.json, series-info.json, ... picked together; Backup.readFiles), replaces the catalog.
  * @param {File[]} files
  */
 async function importBackup(files){
 	try{
-		const {books, seriesInfo, authors, excluded, notDuplicates} = CatalogImport.readDataFiles(await readFiles(files));
-		const bad = books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a);
+		const {books, series, authors, excluded, notDuplicates} = Backup.readFiles(await readFiles(files));
+		const bad = books.some(b=> !b.title || !b.authors.length);
 		if(bad) throw new Error('missing title/author');
-		setData(books);
-		if(seriesInfo) setSeriesInfo(seriesInfo);     // older backups have no series info: keep the current one
-		if(authors) setAuthors(authors);              // nor author info
+		CATALOG.books = books;
+		if(series) CATALOG.series = series;           // older backups have no series info: keep the current one
+		if(authors) CATALOG.authors = authors;        // nor author info
 		const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
 		addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
 		refreshPage(); persist();
-		showIoStatus(`Restored ${books.length} books` + (seriesInfo ? ` and info for ${Object.keys(seriesInfo).length} series` : '') +
+		showIoStatus(`Restored ${books.length} books` + (series ? ` and info for ${series.size} series` : '') +
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
 	}catch(err){
 		showIoStatus(spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
@@ -99,38 +106,37 @@ async function importBackup(files){
 // ------------------------------------------------------------ Audible / Goodreads CSV import
 // Read the export, merge it into a copy of the catalog, show what would change, and only apply it
 // when confirmed. Like every edit in the page, the result is then saved (see persist).
-/** @type {Record<ImportKind, {label: string, read: (text: string) => ReadResult}>} */
+/** @type {Record<ImportKind, () => Importer>} */
 const IMPORTERS = {
 	// an Audible export's ASINs are those of the site picked beside the buttons (audible.com unless changed)
-	audible: {label: 'Audible', read: text=> CatalogImport.readAudible(text, fieldById('audibleImportSite').value)},
-	goodreads: {label: 'Goodreads', read: CatalogImport.readGoodreads},
+	audible: ()=> new AudibleImporter(fieldById('audibleImportSite').value),
+	goodreads: ()=> new GoodreadsImporter(),
 };
 /** @type {ImportKind} */
 let IMPORT_KIND = 'audible';
 /** @type {Book[] | null} */
-export let PENDING_IMPORT = null;   // the records of the import previewed, until it is applied or canceled
+export let PENDING_IMPORT = null;   // the books of the import previewed, until it is applied or canceled
 
 /**
- * Merge into a copy of DATA, so nothing changes until the result is known to be valid.
- * @param {Book[]} records
+ * Merge into a copy of the catalog, so nothing changes until the result is known to be valid.
+ * @param {Book[]} books
  */
-function mergeIntoCopy(records){
-	/** @type {Book[]} */
-	const data = JSON.parse(JSON.stringify(DATA));
-	const report = CatalogImport.merge(data, records, EXCLUSIONS);
+function mergeIntoCopy(books){
+	const copy = CATALOG.clone();
+	const report = copy.merge(books);
 	// series-info problems are not the import's doing (a series renamed in the page); only block on the books
-	const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
-	return {data, report, errors};
+	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
+	return {copy, report, errors};
 }
 
 /**
  * A book in a preview list: title, author and series, escaped.
- * @param {Book} rec
+ * @param {Book} b
  * @returns {string}
  */
-function bookLine(rec){
-	const series = rec.s ? `  [${rec.s}${rec.sn ? ' #' + rec.sn : ''}]` : '';
-	return `${esc(rec.t)} &mdash; ${esc(CatalogImport.namesText(rec.a))}${esc(series)}`;
+function bookLine(b){
+	const series = b.series ? `  [${b.series}${b.number ? ' #' + b.number : ''}]` : '';
+	return `${esc(b.title)} &mdash; ${esc(Text.namesText(b.authors))}${esc(series)}`;
 }
 
 /**
@@ -140,19 +146,19 @@ function bookLine(rec){
  * @param {string} fileName
  */
 function previewImport(kind, text, fileName){
-	const importer = IMPORTERS[kind];
+	const importer = IMPORTERS[kind]();
 	const result = importer.read(text);
-	const {report, errors} = mergeIntoCopy(result.records);
+	const {report, errors} = mergeIntoCopy(result.books);
 	const changes = report.added.length + report.backfilled.length + report.goodreadsFilled.length + report.datesFilled.length +
 		report.isbnsFilled.length + report.detailsFilled.length + report.editionsAdded.length;
-	PENDING_IMPORT = errors.length || !changes ? null : result.records;
+	PENDING_IMPORT = errors.length || !changes ? null : result.books;
 	PENDING_HARDCOVER = null;
 	PENDING_MERGE = null;
 	PENDING_TIDY = null;
 	byId('mergePrefer').classList.remove('show');
 
-	const li = (/** @type {Book} */ rec) => `<li>${bookLine(rec)}</li>`;
-	let html = `<p>${result.records.length} finished book${result.records.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
+	const li = (/** @type {Book} */ b) => `<li>${bookLine(b)}</li>`;
+	let html = `<p>${result.books.length} finished book${result.books.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
 	html += spell(`<p>Already in the catalog: ${report.matched}</p>`);
 	if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
 	if(report.backfilled.length) html += `<p>ASINs filled in on existing books: ${report.backfilled.length}</p>`;
@@ -164,7 +170,7 @@ function previewImport(kind, text, fileName){
 	if(report.excluded.length) html += `<p>Skipped (excluded from imports): ${report.excluded.length}</p>`;
 	if(report.boxSets.length){
 		html += `<p>Box sets split into their titles, each with the set's edition: ${report.boxSets.length}</p><ul>` +
-			report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
+			report.boxSets.map(b=> `<li>${esc(b.title)} &mdash; ${esc(Text.namesText(b.authors))}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
 		if(report.boxSets.some(b=> b.added)) html += spell('<p>A title not in the catalog yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>');
 	}
 	html += `<p>New: ${report.added.length}</p>`;
@@ -193,13 +199,13 @@ function previewImport(kind, text, fileName){
 function applyImport(){
 	if(!PENDING_IMPORT) return;
 	// merged again, in case books were edited while the preview was open
-	const {data, report, errors} = mergeIntoCopy(PENDING_IMPORT);
+	const {copy, report, errors} = mergeIntoCopy(PENDING_IMPORT);
 	closeImportPreview();
 	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was added.'), true); return; }
 	const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
 	const withIsbns = report.isbnsFilled.length, withGr = report.goodreadsFilled.length;
 	const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
-	setData(data);
+	CATALOG.books = copy.books;
 	refreshPage(); persist();
 	const done = `Added ${added} book${added === 1 ? '' : 's'}` +
 		(backfilled ? `, filled in ${backfilled} ASIN${backfilled === 1 ? '' : 's'}` : '') +
@@ -213,7 +219,7 @@ function applyImport(){
 
 // ------------------------------------------------------------ Merge a backup from another device
 // Restore replaces the catalog; Merge is for two catalogs that have both changed since they were
-// last the same (the phone and the PC, say), so neither side's edits are lost (CatalogImport.mergeBackup).
+// last the same (the phone and the PC, say), so neither side's edits are lost (Backup.mergeInto).
 // Like a CSV import it is previewed first, and only applied when confirmed.
 /** @type {{backup: Backup, fileName: string} | null} */
 let PENDING_MERGE = null;      // {backup, fileName} while its preview is open
@@ -225,11 +231,10 @@ let PENDING_MERGE = null;      // {backup, fileName} while its preview is open
 function mergeIntoCatalog(backup){
 	// the select's options are 'mine' and 'backup'
 	const prefer = /** @type {'mine' | 'backup'} */ (fieldById('mergePreferSelect').value);
-	// mergeBackup takes the marks as a list (it only makes a Set of them again)
-	const m = CatalogImport.mergeBackup(DATA, SERIES_INFO, EXCLUSIONS, backup, prefer, [...NOT_DUPLICATES], AUTHORS);
+	const m = backup.mergeInto(CATALOG, prefer);
 	// series info left without books is expected after a series was renamed; anything else blocks
-	const errors = [...CatalogImport.validate(m.books, m.seriesInfo).errors.filter(e=> !/^series-info: .* matches no series/.test(e)),
-		...CatalogImport.validateAuthors(m.books, m.authors).errors];
+	const merged = new Catalog({books: m.books, series: m.series, authors: m.authors});
+	const errors = merged.validate({authors: true}).errors.filter(e=> !/^series-info: .* matches no series/.test(e));
 	const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length +
 		m.authorsAdded.length + m.authorsChanged.length + m.excluded.length + m.notDuplicates.length;
 	return {m, errors, changes};
@@ -239,7 +244,7 @@ function previewMerge(){
 	if(!PENDING_MERGE) return;
 	const {backup, fileName} = PENDING_MERGE;
 	const {m, errors, changes} = mergeIntoCatalog(backup);
-	const list = (/** @type {Book[]} */ recs) => recs.length ? `<ul>${recs.map(r=> `<li>${bookLine(r)}</li>`).join('')}</ul>` : '';
+	const list = (/** @type {Book[]} */ books) => books.length ? `<ul>${books.map(b=> `<li>${bookLine(b)}</li>`).join('')}</ul>` : '';
 	let html = `<p>${backup.books.length} books in ${esc(fileName)}; ${m.books.length} after merging.</p>`;
 	html += `<p>New from the backup: ${m.added.length}</p>` + list(m.added);
 	html += `<p>Gaining genres, dates read or editions${m.conflicts.length ? ', or the version kept below' : ''}: ${m.updated.length}</p>`;
@@ -282,9 +287,9 @@ function applyMerge(){
 	const {m, errors, changes} = mergeIntoCatalog(PENDING_MERGE.backup);
 	closeImportPreview();
 	if(errors.length || !changes){ showIoStatus(spell('The catalog changed and the merge no longer applies; nothing was changed.'), true); return; }
-	setData(m.books);
-	setSeriesInfo(m.seriesInfo);
-	setAuthors(m.authors);
+	CATALOG.books = m.books;
+	CATALOG.series = m.series;
+	CATALOG.authors = m.authors;
 	addExclusions(m.excluded);
 	addNotDuplicates(m.notDuplicates);
 	refreshPage(); persist();
@@ -299,8 +304,8 @@ function mergeBackupFile(file){
 	const reader = new FileReader();
 	reader.onload = e=>{
 		try{
-			const backup = CatalogImport.readBackup(JSON.parse(readText(e)));
-			if(backup.books.some(b=> !b || typeof b !== 'object' || !b.t || !b.a)) throw new Error('missing title/author');
+			const backup = Backup.read(JSON.parse(readText(e)));
+			if(backup.books.some(b=> !b.title || !b.authors.length)) throw new Error('missing title/author');
 			PENDING_IMPORT = null;
 			PENDING_HARDCOVER = null;
 			PENDING_MERGE = {backup, fileName: file.name};
@@ -353,13 +358,10 @@ function showTidyPreview(title, html, confirm){
 }
 
 function checkCatalog(){
-	const {errors, warnings} = CatalogImport.validate(DATA, SERIES_INFO);
-	const people = CatalogImport.validateAuthors(DATA, AUTHORS);
-	errors.push(...people.errors);
-	warnings.push(...people.warnings);
-	const series = new Set(DATA.filter(b=> b.s).map(b=> b.s)).size;
-	const authors = Object.keys(AUTHORS).length;
-	let html = `<p>${DATA.length} books, ${series} series, ${Object.keys(SERIES_INFO).length} with release info, ` +
+	const {errors, warnings} = CATALOG.validate({authors: true});
+	const series = new Set(CATALOG.books.filter(b=> b.series).map(b=> b.series)).size;
+	const authors = CATALOG.authors.size;
+	let html = `<p>${CATALOG.books.length} books, ${series} series, ${CATALOG.series.size} with release info, ` +
 		`${authors} author${authors === 1 ? '' : 's'} with info.</p>`;
 	if(errors.length) html += `<p class="warn">Errors (${errors.length}):</p>` + messageList(errors);
 	if(warnings.length) html += `<p class="warn">Needs a look (${warnings.length}):</p>` + messageList(warnings);
@@ -372,20 +374,19 @@ function checkCatalog(){
 	showTidyPreview(spell('Check the catalog'), html, 'Save in the current format');
 }
 
-// Keep each box set as its own book and as its titles, in a copy of DATA (CatalogImport.boxSetBooks).
+// Keep each box set as its own book and as its titles, in a copy of the catalog (Catalog.addBoxSets).
 function boxSetsIntoCopy(){
-	/** @type {Book[]} */
-	const data = JSON.parse(JSON.stringify(DATA));
-	const report = CatalogImport.boxSetBooks(data, EXCLUSIONS);
-	const errors = CatalogImport.validate(data, SERIES_INFO).errors.filter(e=> !e.startsWith('series-info'));
-	return {data, report, errors};
+	const copy = CATALOG.clone();
+	const report = copy.addBoxSets();
+	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
+	return {copy, report, errors};
 }
 
 function previewBoxSets(){
 	const {report, errors} = boxSetsIntoCopy();
 	let html = `<p>Box sets: ${report.boxSets.length}</p>`;
 	if(report.boxSets.length){
-		html += '<ul>' + report.boxSets.map(b=> `<li>${esc(b.t)} &mdash; ${esc(CatalogImport.namesText(b.a))}: ${b.titles} title${b.titles === 1 ? '' : 's'} already here</li>`).join('') + '</ul>';
+		html += '<ul>' + report.boxSets.map(b=> `<li>${esc(b.title)} &mdash; ${esc(Text.namesText(b.authors))}: ${b.titles} title${b.titles === 1 ? '' : 's'} already here</li>`).join('') + '</ul>';
 	}
 	if(report.excluded.length) html += `<p>Skipped (excluded from imports): ${report.excluded.length}</p>`;
 	html += `<p>New: ${report.added.length}</p>`;
@@ -414,9 +415,9 @@ function applyTidy(){
 		return;
 	}
 	// applied again, in case books were edited while the preview was open
-	const {data, report, errors} = boxSetsIntoCopy();
+	const {copy, report, errors} = boxSetsIntoCopy();
 	if(errors.length){ showIoStatus(spell('The catalog changed and the box sets no longer validate; nothing was changed.'), true); return; }
-	setData(data);
+	CATALOG.books = copy.books;
 	refreshPage(); persist();
 	const added = report.added.length;
 	showIoStatus(`Added ${added} book${added === 1 ? '' : 's'} for box sets.`);
@@ -454,7 +455,7 @@ function saveHardcoverToken(remove){
 	if(!remove && !input.value.trim()){ showIoStatus('Paste your Hardcover API token first.', true); return; }
 	try{
 		if(remove) localStorage.removeItem(HARDCOVER_TOKEN_KEY);
-		else localStorage.setItem(HARDCOVER_TOKEN_KEY, CatalogImport.cleanHardcoverToken(input.value));
+		else localStorage.setItem(HARDCOVER_TOKEN_KEY, HardcoverClient.cleanToken(input.value));
 		input.value = '';
 		showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
 	}catch(e){
@@ -464,7 +465,7 @@ function saveHardcoverToken(remove){
 }
 
 /**
- * Run `mode` (CatalogImport.runHardcover) on a copy of the catalog, shown in the banner on top. A real
+ * Run `mode` (HardcoverSync.run) on a copy of the catalog, shown in the banner on top. A real
  * run keeps its changes (persist) before sending anything to Hardcover, unless the catalog was edited meanwhile. Returns a promise of the ended run.
  * @param {HardcoverMode} mode
  * @param {boolean} dryRun
@@ -482,32 +483,31 @@ async function runHardcover(mode, dryRun){
 	const show = () => { job.elapsed = Date.now() - started; showHardcoverJob(job); };
 	const ticker = setInterval(show, 1000);
 	show();
-	const before = JSON.stringify(DATA), seen = LOCAL_SEEN;
-	const books = JSON.parse(before);
+	const before = JSON.stringify(CATALOG.books), seen = LOCAL_SEEN;
+	const copy = CATALOG.clone();
 	const save = async (/** @type {boolean} */ changed) => {
-		if(JSON.stringify(DATA) !== before || localNow() !== seen){
+		if(JSON.stringify(CATALOG.books) !== before || localNow() !== seen){
 			lines.err.push(spell('error: the catalog was edited while this ran (here or in another tab); nothing written, nothing sent to Hardcover. Run it again.'));
 			return false;
 		}
 		if(changed){
-			setData(books);
+			CATALOG.books = copy.books;
 			persist();
 			refreshPage();
 			lines.out.push(spell('saved the catalog'));
 		}
 		return true;
 	};
-	const pause = () => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS));
 	/** @type {number} */
 	let code;
 	try{
-		code = await CatalogImport.runHardcover(books, mode, CatalogImport.hardcoverAsker(token, fetchHardcover, pause), {
-			exclusions: EXCLUSIONS, info: SERIES_INFO, dryRun, save, british: BRITISH,
+		code = await new HardcoverSync(hardcoverClient(token)).run(copy, mode, {
+			dryRun, save, british: BRITISH,
 			out: line => lines.out.push(line), err: line => lines.err.push(line),
 			step: (text, done, total) => { Object.assign(job, {step: text, done, total}); show(); },
 		});
 	}catch(e){
-		lines.err.push(`error: ${CatalogImport.errorText(e)}`);
+		lines.err.push(`error: ${Text.errorText(e)}`);
 		code = 1;
 	}
 	clearInterval(ticker);
@@ -592,7 +592,7 @@ function importCsv(kind, file){
 			previewImport(kind, readText(e), file.name);
 		}catch(err){
 			closeImportPreview();
-			showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind].label} export.`, true);
+			showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind]().label} export.`, true);
 		}
 	};
 	reader.readAsText(file);

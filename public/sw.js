@@ -1,9 +1,13 @@
 // The service worker that makes the catalog installable as an app (on a phone, say) and usable offline.
 // Every request goes to the network first, so a new version of the app shows up at once; the cached copy
 // is only used when the network fails. The catalog itself lives in localStorage (store.js), not in files.
-const CACHE = 'audiobook-catalog-v3';
-const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'styles.css', 'importers.js', 'store.js', 'app.js',
-	'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'audiobook-catalog-v4';
+const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'styles.css', 'store.js', 'app.js',
+	'import.js', 'duplicates.js', 'authors.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
+	'modules/audible-importer.js', 'modules/author.js', 'modules/backup.js', 'modules/book.js', 'modules/catalog.js',
+	'modules/csv.js', 'modules/duplicates.js', 'modules/edition.js', 'modules/exclusions.js', 'modules/goodreads-exporter.js',
+	'modules/goodreads-importer.js', 'modules/hardcover-client.js', 'modules/hardcover-sync.js', 'modules/importer.js', 'modules/isbn.js',
+	'modules/merger.js', 'modules/series.js', 'modules/text.js', 'modules/validator.js'];
 
 // `self`, as what it is in a service worker (the type checker only knows it as a worker's).
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));

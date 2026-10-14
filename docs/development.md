@@ -11,7 +11,8 @@ public/               the app, and all that a static server serves (make serve, 
   store.js              shared by the pages: loads the catalog from localStorage and saves every edit there
   styles.css
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline
-  importers.js          the pipeline: importers, merge, validation, Hardcover (no browser APIs, so the tests run it in Node)
+  modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Author, the importers and
+                        exporter, merge, validation, Hardcover (no browser APIs, so the tests run them in Node)
 package.json          "type": "module" (every .js file is an ES module) and TypeScript, the type checker
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
 sample/               fictional demo data, used by the tests: the only data committed to git
@@ -20,7 +21,7 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 
 ## Tests
 
-- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the importers (`importers.test.mjs`),
+- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`),
   and the browser smoke test (`app.smoke.test.mjs`), which executes each page's real modules against a small fake DOM built from
   its HTML, with a fake `localStorage` holding the demo data (running ES modules in `node:vm` is what
   needs the flag; Node prints an ExperimentalWarning for it).
@@ -39,15 +40,15 @@ npm install       # once: installs TypeScript into node_modules/
 make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig.json, and jsconfig.sw.json for sw.js)
 ```
 
-- The catalog's shapes are `@typedef`s at the top of `importers.js`: `Book`, `Edition`, `SeriesEntry`,
-  `AuthorEntry`, `Backup` and the reports of imports, merges and Hardcover runs. Other modules bring
-  them in with `/** @import {Book, Edition} from './importers.js' */`, a comment, so the browser loads
-  nothing more.
+- The catalog's parts are classes in `modules/`: `Catalog`, `Book`, `Edition`, `Series`, `Author`, ... A module
+  that only needs a type (a report of an import, a merge or a Hardcover run is a `@typedef` in the module that
+  makes it) brings it in with `/** @import {MergeReport} from './merger.js' */`, a comment, so the browser
+  loads nothing more.
 - Functions say what they take and give with `@param` and `@returns`; a variable that starts empty says
   what it will hold (`/** @type {string[]} */`).
 - The checker only knows what the code says. A catalog read from localStorage, a backup or a CSV is
-  `Unchecked` (any) until the code has checked it: `readBackup()` and `fixBooks()` bring it to the
-  current format, and `validate()` is what makes sure it is a list of `Book`s.
+  `Unchecked` (any) until the code has checked it: `Backup.read()` and `Book.fixBooks()` bring it to the
+  current format, and `Validator.validate()` is what makes sure it describes `Book`s before `Book.fromJSON()` makes them.
 - `byId(id)` and `fieldById(id)` in `store.js` get the page's elements; they throw when the page lacks
   one, so a typo in an id fails at once with its name.
 - CI runs `make typecheck` beside `make test`.
@@ -56,7 +57,7 @@ make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig
 
 The code, its comments and these docs use American spelling. The pages are written that way too, and
 are shown in British spelling to a browser whose first English language is a British one
-(`prefersBritish` in `importers.js`, from `navigator.languages`; `en-GB`, `en-AU`, `en-IE`, `en-CA`, ...).
+(`Text.prefersBritish` in `modules/text.js`, from `navigator.languages`; `en-GB`, `en-AU`, `en-IE`, `en-CA`, ...).
 `store.js` respells the page's own HTML as it loads, and text the code puts on the page goes through
 `spell()`; book titles and other data never do. `spelled()` knows only the words in `BRITISH_WORDS`
 (now just catalog/catalogue), so a page that starts using another such word adds it there. Stored keys and
