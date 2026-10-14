@@ -69,7 +69,7 @@ if(BRITISH){
 
 /**
  * Something to put in an element: an element, or text (always as text, never read as HTML). Null, undefined,
- * false and '' stand for nothing, so a part shown only sometimes can be `cond && h(...)`; lists are flattened.
+ * false and '' stand for nothing, so a part shown only sometimes can be `cond && buildElement(...)`; lists are flattened.
  * @typedef {Node | string | number | null | undefined | false | Child[]} Child
  */
 
@@ -89,7 +89,7 @@ export function nodes(children){
 }
 
 /**
- * A new element: h('a', {class: 'srow-title', href}, name). Attributes are set as given: null, undefined
+ * A new element: buildElement('a', {class: 'srow-title', href}, name). Attributes are set as given: null, undefined
  * and false leave one out, true sets it empty (checked); a function under an on... name listens to that
  * event (onclick: fn). The children go in in order (see Child).
  * @template {keyof HTMLElementTagNameMap} K
@@ -98,7 +98,7 @@ export function nodes(children){
  * @param {...Child} children
  * @returns {HTMLElementTagNameMap[K]}
  */
-export function h(tag, attrs = {}, ...children){
+export function buildElement(tag, attrs = {}, ...children){
 	const el = document.createElement(tag);
 	for(const [name, value] of Object.entries(attrs)){
 		if(typeof value === 'function') el.addEventListener(name.slice(2), value);
@@ -114,10 +114,10 @@ export function h(tag, attrs = {}, ...children){
  * @param {Element} el
  * @param {...Child} children
  */
-export function fill(el, ...children){ el.replaceChildren(...nodes(children)); }
+export function fillElement(el, ...children){ el.replaceChildren(...nodes(children)); }
 
 /**
- * `items` with `separator` between each two, as children for h() or fill(): links joined with ', '.
+ * `items` with `separator` between each two, as children for buildElement() or fillElement(): links joined with ', '.
  * @param {Child[]} items
  * @param {string} separator
  * @returns {Child[]}
@@ -348,14 +348,14 @@ export function showHardcoverJob(job){
 	const el = document.getElementById('bgTask');
 	if(el){
 		el.classList.toggle('show', Boolean(job && job.running));
-		if(!job || !job.running) fill(el);
+		if(!job || !job.running) fillElement(el);
 		else {
 			const counted = typeof job.total === 'number' && Number.isInteger(job.total) && job.total > 0;
-			fill(el, h('span', {class: 'spinner', 'aria-hidden': 'true'}), h('div', {class: 'bgTaskText'},
-				h('strong', {}, (job.dryRun ? HARDCOVER_PREVIEWS : HARDCOVER_VERBS)[job.mode] || 'Working with Hardcover'),
-				' ', h('span', {class: 'bgTaskTime'}, minutes(job.elapsed)), h('br'), job.step || '',
-				counted && [`: ${job.done} of ${job.total} `, h('progress', {max: job.total, value: job.done})],
-				!job.dryRun && [h('br'), h('small', {}, spell('Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.'))]));
+			fillElement(el, buildElement('span', {class: 'spinner', 'aria-hidden': 'true'}), buildElement('div', {class: 'bgTaskText'},
+				buildElement('strong', {}, (job.dryRun ? HARDCOVER_PREVIEWS : HARDCOVER_VERBS)[job.mode] || 'Working with Hardcover'),
+				' ', buildElement('span', {class: 'bgTaskTime'}, minutes(job.elapsed)), buildElement('br'), job.step || '',
+				counted && [`: ${job.done} of ${job.total} `, buildElement('progress', {max: job.total, value: job.done})],
+				!job.dryRun && [buildElement('br'), buildElement('small', {}, spell('Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.'))]));
 		}
 	}
 	if(onHardcoverJob) onHardcoverJob(job);

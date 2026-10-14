@@ -11,7 +11,7 @@ import {HardcoverSync} from './modules/hardcover-sync.js';
 import {
 	CATALOG, LOCAL_SEEN, addNotDuplicates, localNow, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
-	hardcoverClient, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell, h, fill
+	hardcoverClient, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell, buildElement, fillElement
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
@@ -146,7 +146,7 @@ function bookLine(b){
  * @param {string} [className]
  * @returns {HTMLParagraphElement}
  */
-const para = (text, className)=> h('p', {class: className}, text);
+const para = (text, className)=> buildElement('p', {class: className}, text);
 
 /**
  * A list of messages, at most `limit` of them, saying how many more there are; nothing when there are none.
@@ -156,8 +156,8 @@ const para = (text, className)=> h('p', {class: className}, text);
  */
 function messageList(items, limit = Infinity){
 	if(!items.length) return null;
-	return h('ul', {}, items.slice(0, limit).map(m=> h('li', {}, m)),
-		items.length > limit && h('li', {}, `\u2026and ${items.length - limit} more`));
+	return buildElement('ul', {}, items.slice(0, limit).map(m=> buildElement('li', {}, m)),
+		items.length > limit && buildElement('li', {}, `\u2026and ${items.length - limit} more`));
 }
 
 /**
@@ -205,7 +205,7 @@ function previewImport(kind, text, fileName){
 	}
 
 	byId('importPreviewTitle').textContent = `${importer.label} import`;
-	fill(byId('importPreviewBody'), out);
+	fillElement(byId('importPreviewBody'), out);
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
 	confirmBtn.textContent = report.added.length
@@ -293,7 +293,7 @@ function previewMerge(){
 	}
 	const ok = !errors.length && changes;
 	byId('importPreviewTitle').textContent = 'Merge a backup';
-	fill(byId('importPreviewBody'), out);
+	fillElement(byId('importPreviewBody'), out);
 	byId('mergePrefer').classList.add('show');
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = ok ? '' : 'none';
@@ -358,7 +358,7 @@ function showTidyPreview(title, body, confirm){
 	PENDING_MERGE = null;
 	byId('mergePrefer').classList.remove('show');
 	byId('importPreviewTitle').textContent = title;
-	fill(byId('importPreviewBody'), body);
+	fillElement(byId('importPreviewBody'), body);
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_TIDY ? '' : 'none';
 	confirmBtn.textContent = confirm;
@@ -556,7 +556,7 @@ function showHardcoverResult(mode, result, pending){
 	const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
 	const took = Number.isFinite(result.elapsed) ? ` (took ${minutes(result.elapsed)})` : '';
 	byId('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title + (pending ? ': preview' : took);
-	fill(byId('importPreviewBody'), h('pre', {}, text),
+	fillElement(byId('importPreviewBody'), buildElement('pre', {}, text),
 		pending && result.code === 0 && para('Nothing has changed yet, here or on Hardcover.'));
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_HARDCOVER ? '' : 'none';

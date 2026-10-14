@@ -7,7 +7,7 @@ import {Book} from './modules/book.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
-import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, h, fill, joined } from './store.js';
+import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined } from './store.js';
 /** @import {Child} from './store.js' */
 
 /** @typedef {{b: Book, i: number}} ListedBook a book shown, with its index in CATALOG.books */
@@ -48,14 +48,14 @@ function authorsOf(b){ return b.authors; }
  * Authors' names, each a link to their page on the authors page.
  * @type {(names: string[]) => Child[]}
  */
-const authorLinks = names => joined(names.map(x=> h('a', {href: 'authors.html#a=' + encodeURIComponent(x).replace(/%20/g, '+')}, x)), ', ');
+const authorLinks = names => joined(names.map(x=> buildElement('a', {href: 'authors.html#a=' + encodeURIComponent(x).replace(/%20/g, '+')}, x)), ', ');
 /**
  * A series' status, as a tag.
  * @type {(status: string | undefined) => HTMLSpanElement}
  */
-const statusTag = status=> h('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing');
+const statusTag = status=> buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing');
 /** @type {(url: string) => HTMLAnchorElement} */
-const authorSiteLink = url=> h('a', {class: 'authorlink', href: url, target: '_blank', rel: 'noopener'}, 'author site \u2197');
+const authorSiteLink = url=> buildElement('a', {class: 'authorlink', href: url, target: '_blank', rel: 'noopener'}, 'author site \u2197');
 
 /**
  * Series numbers you don't own yet, from series-info.json's released total; null when that is unknown.
@@ -119,10 +119,10 @@ function populateFilters(){
 	const years = uniqueSorted(CATALOG.books.flatMap(readYears)).reverse();
 	const aCur = aSel.value, gCur = gSel.value, rCur = rSel.value;
 	/** @type {(value: string, text: string) => HTMLOptionElement} */
-	const option = (value, text)=> h('option', {value}, text);
-	fill(aSel, option('', 'All authors'), authors.map(a=> option(a, a)));
-	fill(gSel, option('', 'All genres'), genres.map(g=> option(g, g)));
-	fill(rSel, option('', 'Read any time'), years.map(y=> option(y, `Read in ${y}`)), option(UNDATED, 'No date read'));
+	const option = (value, text)=> buildElement('option', {value}, text);
+	fillElement(aSel, option('', 'All authors'), authors.map(a=> option(a, a)));
+	fillElement(gSel, option('', 'All genres'), genres.map(g=> option(g, g)));
+	fillElement(rSel, option('', 'Read any time'), years.map(y=> option(y, `Read in ${y}`)), option(UNDATED, 'No date read'));
 	aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
 	MERGE_FROM = null;             // the books changed, so an index picked for merging may be stale
 }
@@ -336,8 +336,8 @@ byId('results').addEventListener('click', e=>{
 function renderEmpty(){
 	byId('subtitle').textContent = spell('Your catalog is empty');
 	byId('resultCount').textContent = '';
-	fill(byId('results'), h('p', {class: 'empty'}, 'No books yet. Add one with + Add a book under ', h('a', {href: '#books'}, 'All Books'),
-		', import your Audible, Goodreads or Hardcover library on ', h('a', {href: 'import.html'}, 'Import & export'), ', or restore a backup there.'));
+	fillElement(byId('results'), buildElement('p', {class: 'empty'}, 'No books yet. Add one with + Add a book under ', buildElement('a', {href: '#books'}, 'All Books'),
+		', import your Audible, Goodreads or Hardcover library on ', buildElement('a', {href: 'import.html'}, 'Import & export'), ', or restore a backup there.'));
 }
 
 export function render(){
@@ -371,7 +371,7 @@ export function render(){
 	SHARED = sharedEditions();
 
 	if(filtered.length === 0){
-		out.push(h('p', {class: 'empty'}, 'No books match. Try clearing a filter.'));
+		out.push(buildElement('p', {class: 'empty'}, 'No books match. Try clearing a filter.'));
 	}
 
 	seriesNames.forEach(name=>{
@@ -385,21 +385,21 @@ export function render(){
 			if(missing && missing.length) note.push(`missing ${numberList(missing)}`);
 			if(info.note) note.push(info.note);
 		}
-		out.push(h('div', {class: 'series-group'},
-			h('p', {class: 'series-title'}, h('a', {href: bookHref(name, 'series')}, name), ' ', h('span', {class: 'n'}, ownedText(books.map(x=> x.b))),
+		out.push(buildElement('div', {class: 'series-group'},
+			buildElement('p', {class: 'series-title'}, buildElement('a', {href: bookHref(name, 'series')}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books.map(x=> x.b))),
 				' ', seriesEditButton(name), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)]]),
-			note.length > 0 && h('p', {class: 'series-note'}, note.join(' \u2014 ')),
+			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
 			books.map(bookCard)));
 	});
 
 	if(standalone.length){
 		standalone.sort((x,y)=>x.b.title.localeCompare(y.b.title));
-		out.push(h('div', {class: 'series-group'},
-			h('p', {class: 'series-title'}, 'Standalone ', h('span', {class: 'n'}, `${standalone.length} book${standalone.length>1?'s':''}`)),
+		out.push(buildElement('div', {class: 'series-group'},
+			buildElement('p', {class: 'series-title'}, 'Standalone ', buildElement('span', {class: 'n'}, `${standalone.length} book${standalone.length>1?'s':''}`)),
 			standalone.map(bookCard)));
 	}
 
-	fill(byId('results'), out);
+	fillElement(byId('results'), out);
 	placeBookForm();
 }
 
@@ -432,7 +432,7 @@ function renderSeriesOverview(){
 	const out = [];
 	const showStandalone = !onlyMissing && (!q || 'standalone'.includes(q));
 	if(seriesNames.length === 0 && !showStandalone){
-		out.push(h('p', {class: 'empty'}, onlyMissing ? 'No series with missing books.' : 'No series match your search.'));
+		out.push(buildElement('p', {class: 'empty'}, onlyMissing ? 'No series with missing books.' : 'No series match your search.'));
 	}
 
 	seriesNames.forEach(name=>{
@@ -440,24 +440,24 @@ function renderSeriesOverview(){
 		const authors = uniqueSorted(books.flatMap(authorsOf));
 		const info = CATALOG.series.get(name);
 		const missing = seriesMissing(name);
-		out.push(h('div', {class: 'srow'},
-			h('div', {class: 'srow-head'},
-				h('a', {class: 'srow-title', href: stateHash({view: 'library', series: name, book: null})}, name), ' ',
-				h('span', {class: 'srow-owned'}, `${Series.owned(books)} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
+		out.push(buildElement('div', {class: 'srow'},
+			buildElement('div', {class: 'srow-head'},
+				buildElement('a', {class: 'srow-title', href: stateHash({view: 'library', series: name, book: null})}, name), ' ',
+				buildElement('span', {class: 'srow-owned'}, `${Series.owned(books)} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
 				seriesEditButton(name)),
-			h('div', {class: 'srow-foot'}, h('span', {class: 'tag'}, authorLinks(authors)),
+			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'}, authorLinks(authors)),
 				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)]],
-				missing && missing.length > 0 && [' ', h('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
-			info && info.note && h('p', {class: 'srow-note'}, info.note)));
+				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
+			info && info.note && buildElement('p', {class: 'srow-note'}, info.note)));
 	});
 
 	if(showStandalone){
-		out.push(h('div', {class: 'srow'}, h('div', {class: 'srow-head'},
-			h('a', {class: 'srow-title', href: '#standalone'}, 'Standalone'), ' ',
-			h('span', {class: 'srow-owned'}, `${standaloneCount} owned`))));
+		out.push(buildElement('div', {class: 'srow'}, buildElement('div', {class: 'srow-head'},
+			buildElement('a', {class: 'srow-title', href: '#standalone'}, 'Standalone'), ' ',
+			buildElement('span', {class: 'srow-owned'}, `${standaloneCount} owned`))));
 	}
 
-	fill(byId('results'), out);
+	fillElement(byId('results'), out);
 }
 
 // ------------------------------------------------------------------ series info
@@ -469,7 +469,7 @@ function renderSeriesOverview(){
  */
 function seriesEditButton(name){
 	const label = CATALOG.series.has(name) ? 'Edit series info' : 'Add series info';
-	return h('button', {class: 'iconbtn sedit', 'data-series': name, title: label, 'aria-label': label, onclick: ()=> openSeriesForm(name)}, '\u270E');
+	return buildElement('button', {class: 'iconbtn sedit', 'data-series': name, title: label, 'aria-label': label, onclick: ()=> openSeriesForm(name)}, '\u270E');
 }
 
 /** @param {string} name */
@@ -595,7 +595,7 @@ const asinUrl = site=> `https://www.${site}/${site.startsWith('audible.') ? 'pd'
  * Goodreads id and Hardcover ids to the book there (Hardcover's links by id keep working when it renames the book).
  * @type {(url: string, id: string) => HTMLAnchorElement}
  */
-const idLink = (url, id)=> h('a', {href: url + encodeURIComponent(id), target: '_blank', rel: 'noopener'}, id);
+const idLink = (url, id)=> buildElement('a', {href: url + encodeURIComponent(id), target: '_blank', rel: 'noopener'}, id);
 
 /**
  * @param {Edition} ed
@@ -634,25 +634,25 @@ function bookCard({b, i}){
 	const meta = joined([authorLinks(authorsOf(b)), narrators.length ? 'narr. '+narrators.join(' / ') : null].filter(Boolean), ' \u2014 ');
 	const editions = b.editions.map(ed=>{
 		const also = (SHARED.get(ed) || []).map(k=>
-			h('a', {href: bookHref(books[k].title)}, books[k].title + (books[k].number ? ` #${books[k].number}` : '')));
-		return h('div', {class: 'edition'}, editionParts(ed, differ),
-			also.length > 0 && [h('br'), h('span', {class: 'also'}, 'Also in this edition: ', joined(also, ', '))]);
+			buildElement('a', {href: bookHref(books[k].title)}, books[k].title + (books[k].number ? ` #${books[k].number}` : '')));
+		return buildElement('div', {class: 'edition'}, editionParts(ed, differ),
+			also.length > 0 && [buildElement('br'), buildElement('span', {class: 'also'}, 'Also in this edition: ', joined(also, ', '))]);
 	});
 	const picked = MERGE_FROM === i;
 	const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${books[MERGE_FROM].title}`;
-	return h('div', {class: 'book' + (picked ? ' picked' : ''), 'data-i': i},
-		h('div', {class: 'num'}, b.number || '\u2022'),
-		h('div', {class: 'info'},
-			h('div', {class: 'title'}, h('a', {href: bookHref(b.title)}, b.title)),
-			h('div', {class: 'meta'}, meta),
-			b.read.length > 0 && h('div', {class: 'read'}, 'Read ' + b.read.join(', ')),
-			b.hardcoverId && h('div', {class: 'ids'}, 'Hardcover book ', idLink(HardcoverClient.url('book', ''), b.hardcoverId)),
+	return buildElement('div', {class: 'book' + (picked ? ' picked' : ''), 'data-i': i},
+		buildElement('div', {class: 'num'}, b.number || '\u2022'),
+		buildElement('div', {class: 'info'},
+			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b.title)}, b.title)),
+			buildElement('div', {class: 'meta'}, meta),
+			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', ')),
+			b.hardcoverId && buildElement('div', {class: 'ids'}, 'Hardcover book ', idLink(HardcoverClient.url('book', ''), b.hardcoverId)),
 			editions,
-			b.genres.length > 0 && h('div', {class: 'genres'}, b.genres.map(g=> h('span', {class: 'tag'}, g)))),
-		h('div', {class: 'book-actions'},
-			h('button', {class: 'iconbtn edit', 'data-i': i, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(i)}, '\u270E'), ' ',
-			h('button', {class: 'iconbtn merge', 'data-i': i, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(i)}, '\u21C4'), ' ',
-			h('button', {class: 'iconbtn del', 'data-i': i, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '\u00D7')));
+			b.genres.length > 0 && buildElement('div', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))),
+		buildElement('div', {class: 'book-actions'},
+			buildElement('button', {class: 'iconbtn edit', 'data-i': i, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(i)}, '\u270E'), ' ',
+			buildElement('button', {class: 'iconbtn merge', 'data-i': i, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(i)}, '\u21C4'), ' ',
+			buildElement('button', {class: 'iconbtn del', 'data-i': i, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '\u00D7')));
 }
 
 /**
@@ -815,24 +815,24 @@ function asinFields(fields, i){
 	const sites = asinSitesOf(fields);
 	const more = Edition.ASIN_SITES.filter(site=> !sites.includes(site));
 	return [
-		...sites.map(site=> h('div', {class: 'ef-site'}, h('label', {}, site),
-			h('input', {'data-i': i, 'data-k': 'asin:' + site, value: fields['asin:' + site] || '', placeholder: EDITION_HINTS.asin}))),
-		...more.length ? [h('div', {class: 'ef-site'}, h('label', {}, '\u00A0'),
-			h('select', {'data-add-site': i, 'aria-label': 'Add an ASIN for another site'},
-				h('option', {value: ''}, '+ Another site'), more.map(site=> h('option', {value: site}, site))))] : [],
+		...sites.map(site=> buildElement('div', {class: 'ef-site'}, buildElement('label', {}, site),
+			buildElement('input', {'data-i': i, 'data-k': 'asin:' + site, value: fields['asin:' + site] || '', placeholder: EDITION_HINTS.asin}))),
+		...more.length ? [buildElement('div', {class: 'ef-site'}, buildElement('label', {}, '\u00A0'),
+			buildElement('select', {'data-add-site': i, 'aria-label': 'Add an ASIN for another site'},
+				buildElement('option', {value: ''}, '+ Another site'), more.map(site=> buildElement('option', {value: site}, site))))] : [],
 	];
 }
 
 function renderFormEditions(){
-	fill(byId('f_editions'), FORM_EDITIONS.map(({fields, also}, i)=>
-		h('div', {class: 'editionCard', role: 'group', 'aria-label': `Edition ${i + 1}`},
-			h('div', {class: 'editionCardHead'}, h('span', {}, `Edition ${i + 1}`),
-				h('button', {type: 'button', class: 'removeEdition', 'data-remove': i, title: 'Remove this edition'}, 'Remove')),
-			also.length > 0 && h('p', {class: 'editionAlso'}, `Also on ${also.join(', ')}: changes here change it there too.`),
-			h('div', {class: 'editionFields'}, Edition.FIELDS.map(([k, , label])=> k === 'asin'
-				? h('div', {class: 'ef-asin', role: 'group', 'aria-label': label}, h('label', {}, label), h('div', {class: 'asinSites'}, asinFields(fields, i)))
-				: h('div', {class: `ef-${k}`}, h('label', {}, label),
-					h('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k]})))))));
+	fillElement(byId('f_editions'), FORM_EDITIONS.map(({fields, also}, i)=>
+		buildElement('div', {class: 'editionCard', role: 'group', 'aria-label': `Edition ${i + 1}`},
+			buildElement('div', {class: 'editionCardHead'}, buildElement('span', {}, `Edition ${i + 1}`),
+				buildElement('button', {type: 'button', class: 'removeEdition', 'data-remove': i, title: 'Remove this edition'}, 'Remove')),
+			also.length > 0 && buildElement('p', {class: 'editionAlso'}, `Also on ${also.join(', ')}: changes here change it there too.`),
+			buildElement('div', {class: 'editionFields'}, Edition.FIELDS.map(([k, , label])=> k === 'asin'
+				? buildElement('div', {class: 'ef-asin', role: 'group', 'aria-label': label}, buildElement('label', {}, label), buildElement('div', {class: 'asinSites'}, asinFields(fields, i)))
+				: buildElement('div', {class: `ef-${k}`}, buildElement('label', {}, label),
+					buildElement('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k]})))))));
 }
 
 const editionsEditor = byId('f_editions');

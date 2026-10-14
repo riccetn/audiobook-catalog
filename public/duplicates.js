@@ -11,7 +11,7 @@ import {Text} from './modules/text.js';
 import {Edition} from './modules/edition.js';
 import {Book} from './modules/book.js';
 import {Duplicates} from './modules/duplicates.js';
-import { CATALOG, addNotDuplicates, updateNav, persist, showIoStatus, startPage, byId, spell, h, fill } from './store.js';
+import { CATALOG, addNotDuplicates, updateNav, persist, showIoStatus, startPage, byId, spell, buildElement, fillElement } from './store.js';
 /** @import {Picks} from './modules/book.js' */
 /** @import {Child} from './store.js' */
 
@@ -85,27 +85,27 @@ function groupPicks(g){
 	return {...picks, joinable, joinEditions: joinable && picks.joinEditions !== false};
 }
 
-const editionLines = (/** @type {Book} */ b)=> b.editions.map(ed=> h('div', {class: 'dup-extra'}, ed.format()));
+const editionLines = (/** @type {Book} */ b)=> b.editions.map(ed=> buildElement('div', {class: 'dup-extra'}, ed.format()));
 /** @type {(label: string, value: string) => Child[]} */
-const fieldLine = (label, value)=> [h('span', {class: 'dup-label'}, label), ' ' + value];
+const fieldLine = (label, value)=> [buildElement('span', {class: 'dup-label'}, label), ' ' + value];
 
 /** @returns {Child[]} */
 function renderSplit(){
 	if(!SPLIT.length) return [];
 	return [
-		h('h2', {class: 'dup-heading'}, 'Editions that look like one'),
-		h('p', {class: 'hint'}, 'These books have editions that don\'t disagree on an ASIN or Goodreads id, such as one from Audible and one from Goodreads.'),
+		buildElement('h2', {class: 'dup-heading'}, 'Editions that look like one'),
+		buildElement('p', {class: 'hint'}, 'These books have editions that don\'t disagree on an ASIN or Goodreads id, such as one from Audible and one from Goodreads.'),
 		SPLIT.map(i=>{
 			const b = CATALOG.books[i];
 			const joined = Edition.join(b.editions);
-			return h('div', {class: 'dup-group'},
-				h('div', {class: 'dup-books'}, h('div', {class: 'dup-book'},
-					h('div', {class: 'dup-field'}, fieldLine('Title', b.title)),
-					h('div', {class: 'dup-field'}, fieldLine('Author', Text.namesText(b.authors))), editionLines(b))),
-				h('p', {class: 'dup-result'}, 'Becomes one edition: ' + joined.format()),
-				h('div', {class: 'formbtns'},
-					h('button', {type: 'button', class: 'save split-join', 'data-i': i, onclick: ()=> joinBookEditions(i)}, 'Make one edition'),
-					h('button', {type: 'button', class: 'split-apart', 'data-i': i, onclick: ()=> keepEditionsApart(i)}, 'Keep separate')));
+			return buildElement('div', {class: 'dup-group'},
+				buildElement('div', {class: 'dup-books'}, buildElement('div', {class: 'dup-book'},
+					buildElement('div', {class: 'dup-field'}, fieldLine('Title', b.title)),
+					buildElement('div', {class: 'dup-field'}, fieldLine('Author', Text.namesText(b.authors))), editionLines(b))),
+				buildElement('p', {class: 'dup-result'}, 'Becomes one edition: ' + joined.format()),
+				buildElement('div', {class: 'formbtns'},
+					buildElement('button', {type: 'button', class: 'save split-join', 'data-i': i, onclick: ()=> joinBookEditions(i)}, 'Make one edition'),
+					buildElement('button', {type: 'button', class: 'split-apart', 'data-i': i, onclick: ()=> keepEditionsApart(i)}, 'Keep separate')));
 		}),
 	];
 }
@@ -115,8 +115,8 @@ export function renderDuplicates(){
 		? `${DUP_FOUND} possible duplicate${DUP_FOUND === 1 ? '' : 's'} among ${CATALOG.books.length} audiobooks`
 		: `No duplicates among ${CATALOG.books.length} audiobooks`) +
 		(SPLIT.length ? `; ${SPLIT.length} book${SPLIT.length === 1 ? '' : 's'} with editions that look like one` : '');
-	fill(byId('dupBody'),
-		!DUP_GROUPS.length && h('p', {class: 'empty'}, spell('No books look like duplicates. To merge two books anyway, ' +
+	fillElement(byId('dupBody'),
+		!DUP_GROUPS.length && buildElement('p', {class: 'empty'}, spell('No books look like duplicates. To merge two books anyway, ' +
 			'press \u21C4 on one of them in the catalog and then on the other.')),
 		DUP_GROUPS.map(duplicateGroup),
 		renderSplit());
@@ -132,37 +132,37 @@ function duplicateGroup(idx, g){
 	const books = idx.map(i=> CATALOG.books[i]);
 	const picks = groupPicks(g);
 	const merged = Book.merge(books, picks);
-	const bookBox = (/** @type {Book} */ b, /** @type {number} */ k)=> h('div', {class: 'dup-book'},
+	const bookBox = (/** @type {Book} */ b, /** @type {number} */ k)=> buildElement('div', {class: 'dup-book'},
 		DUP_FIELDS.map(([f, label])=>{
 			const value = dupValue(b, f);
 			if(!value) return null;
 			const choices = new Set(books.map(x=> dupValue(x, f)).filter(Boolean));
-			if(choices.size < 2) return h('div', {class: 'dup-field'}, fieldLine(label, value));
+			if(choices.size < 2) return buildElement('div', {class: 'dup-field'}, fieldLine(label, value));
 			const checked = dupValue(merged, f) === value && books.findIndex(x=> dupValue(x, f) === value) === k;
 			const pick = ()=>{ DUP_PICKS[g][f] = k; renderDuplicates(); };
-			return h('label', {class: 'dup-field dup-choice'},
-				h('input', {type: 'radio', name: `dup-${g}-${f}`, 'data-g': g, 'data-f': f, 'data-k': k, checked, onchange: pick}), ' ', fieldLine(label, value));
+			return buildElement('label', {class: 'dup-field dup-choice'},
+				buildElement('input', {type: 'radio', name: `dup-${g}-${f}`, 'data-g': g, 'data-f': f, 'data-k': k, checked, onchange: pick}), ' ', fieldLine(label, value));
 		}),
 		[b.genres.join(', '), b.read.length ? 'Read ' + b.read.join(', ') : '', ...b.editions.map(ed=> ed.format())]
-			.filter(Boolean).map(x=> h('div', {class: 'dup-extra'}, x)));
+			.filter(Boolean).map(x=> buildElement('div', {class: 'dup-extra'}, x)));
 	const editions = merged.editions.length;
-	return h('div', {class: 'dup-group'},
-		DUP_MANUAL && g === 0 && DUP_MANUAL.join() === idx.join() && h('p', {class: 'dup-note'}, 'Picked by hand'),
-		h('div', {class: 'dup-books'}, books.map(bookBox)),
-		h('p', {class: 'dup-result'}, `Becomes: ${merged.title} — ${Text.namesText(merged.authors)}` +
+	return buildElement('div', {class: 'dup-group'},
+		DUP_MANUAL && g === 0 && DUP_MANUAL.join() === idx.join() && buildElement('p', {class: 'dup-note'}, 'Picked by hand'),
+		buildElement('div', {class: 'dup-books'}, books.map(bookBox)),
+		buildElement('p', {class: 'dup-result'}, `Becomes: ${merged.title} — ${Text.namesText(merged.authors)}` +
 			(merged.series ? ` — ${dupValue(merged, 'series')}` : '') +
 			(editions ? `, ${editions} edition${editions === 1 ? '' : 's'}` : '') +
 			(merged.read.length ? `, read ${merged.read.join(', ')}` : '')),
 		editionLines(merged),
-		picks.joinable && h('label', {class: 'dup-join'},
-			h('input', {type: 'checkbox', class: 'dup-joinbox', 'data-g': g, checked: picks.joinEditions, onchange: (/** @type {Event} */ e)=>{
+		picks.joinable && buildElement('label', {class: 'dup-join'},
+			buildElement('input', {type: 'checkbox', class: 'dup-joinbox', 'data-g': g, checked: picks.joinEditions, onchange: (/** @type {Event} */ e)=>{
 				DUP_PICKS[g].joinEditions = /** @type {HTMLInputElement} */ (e.currentTarget).checked;
 				renderDuplicates();
 			}}),
 			' Make the editions one edition (they don\'t disagree on an ASIN or Goodreads id)'),
-		h('div', {class: 'formbtns'},
-			h('button', {type: 'button', class: 'save dup-merge', 'data-g': g, onclick: ()=> mergeGroup(g)}, 'Merge into one'),
-			h('button', {type: 'button', class: 'dup-apart', 'data-g': g, onclick: ()=> keepApart(g)}, 'Not duplicates')));
+		buildElement('div', {class: 'formbtns'},
+			buildElement('button', {type: 'button', class: 'save dup-merge', 'data-g': g, onclick: ()=> mergeGroup(g)}, 'Merge into one'),
+			buildElement('button', {type: 'button', class: 'dup-apart', 'data-g': g, onclick: ()=> keepApart(g)}, 'Not duplicates')));
 }
 
 /**
