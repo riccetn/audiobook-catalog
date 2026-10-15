@@ -865,7 +865,20 @@ test('editions as fields: one field per part in the book form, each checked on i
 	assert.deepEqual(json(Edition.fromFields({ asin: 'B1', hc: 'https://hardcover.app/id/book/909' })), { editions: [{ asin: { 'audible.com': 'B1' } }], bad: [], hcb: '909' });
 	// what can't be read is reported with the field's name, and left out
 	assert.deepEqual(json(Edition.fromFields({ asin: 'B1', gr: 'x', d: '2021-13', len: 'long', isbn: '978' })),
-		{ editions: [{ asin: { 'audible.com': 'B1' } }], bad: ['Goodreads id x', 'ISBN 978', 'Released 2021-13', 'Length long'], hcb: null });
+		{ editions: [{ asin: { 'audible.com': 'B1' } }], bad: ['Goodreads id x', 'ISBN 978', 'Released 2021-13', 'Length long'], hcb: null });	// a book's page on Goodreads gives its id
+	assert.deepEqual(json(Edition.fromFields({ gr: 'https://www.goodreads.com/book/show/4242-the-salt-road?ref=nav' }).editions), [{ gr: '4242' }]);
+});
+
+test('idFromAddress: the id a pasted address names, and the field it goes in', () => {
+	assert.deepEqual(Edition.idFromAddress('https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/b0saltroad?qid=1'), { field: 'asin:audible.co.uk', id: 'B0SALTROAD' });
+	assert.deepEqual(Edition.idFromAddress('https://www.amazon.com/The-Salt-Road/dp/B0AMAZON01/ref=sr_1_1'), { field: 'asin:amazon.com', id: 'B0AMAZON01' });
+	assert.deepEqual(Edition.idFromAddress('amazon.de/gp/product/B0AMAZON02'), { field: 'asin:amazon.de', id: 'B0AMAZON02' });
+	assert.deepEqual(Edition.idFromAddress(' https://www.goodreads.com/book/show/4242.The_Salt_Road '), { field: 'gr', id: '4242' });
+	assert.deepEqual(Edition.idFromAddress('goodreads.com/book/show/4242'), { field: 'gr', id: '4242' });
+	assert.deepEqual(Edition.idFromAddress('https://hardcover.app/books/the-salt-road/editions/501'), { field: 'hc', id: '501' });
+	// ids, a Hardcover book's address, a Goodreads work or another site's page name no edition
+	for (const text of ['B0SALTROAD', '4242', '', 'https://hardcover.app/books/the-salt-road', 'https://www.goodreads.com/work/editions/99',
+		'https://www.kobo.com/dp/B0SALTROAD']) assert.equal(Edition.idFromAddress(text), null, text);
 });
 
 test('saving a book keeps the copies of a shared edition in step', () => {

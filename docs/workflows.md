@@ -5,12 +5,16 @@
 **Edit in the app**
 
 Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
-list; `+ Add a book` opens it at the top. *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
+list; `+ Add a book` opens it at the top, with the series and author filled in from what the list shows: the
+series you are looking at, and the author picked in the author filter (else the author of every book in the
+series). *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
-another Amazon or Audible site, and the address of the book's page there works too), Goodreads id,
-Hardcover edition (its id, or just the address of the edition's page on Hardcover,
-`https://hardcover.app/books/the-salt-road/editions/501`), ISBN (hyphens and ISBN-10s are fine), publisher,
-release date (`2021-05`) and length (`10h 42m`). Leave a field empty when you don't know it; `+ Add an edition`
+another Amazon or Audible site), Goodreads id, Hardcover edition, ISBN (hyphens and ISBN-10s are fine), publisher,
+release date (`2021-05`) and length (`10h 42m`). The ASIN, Goodreads and Hardcover edition fields also take the address of the book's
+page on that site (`https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0…`, `https://www.amazon.com/dp/B0…`,
+`https://www.goodreads.com/book/show/4242-the-salt-road`, `https://hardcover.app/books/the-salt-road/editions/501`):
+when you leave the field it shows just the id, and an Audible or Amazon page's ASIN moves to the field for
+its site (added when the card has none). Leave a field empty when you don't know it; `+ Add an edition`
 adds a card and *Remove* drops one. A card that is an edition of a box set says which other books it is on,
 since a change to it changes it there too. A field the page can't read is named when you save, and nothing changes.
 The Hardcover book has its own field, which takes the book's id or, since the Hardcover app doesn't show

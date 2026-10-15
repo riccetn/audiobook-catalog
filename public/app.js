@@ -708,11 +708,28 @@ byId('toggleAdd').addEventListener('click', ()=>{
 		byId('formError').textContent = '';
 		/** @type {HTMLFormElement} */ (form).reset();
 		setFormEditions([], null);
+		const {series, authors} = newBookDefaults();
+		fieldById('f_s').value = series;
+		fieldById('f_a').value = authors.join(', ');
 		placeBookForm();
 		form.classList.add('open');
 	}
 });
 byId('cancelAdd').addEventListener('click', closeForm);
+
+/**
+ * What a new book starts with, from what the list shows: the series shown, and the author picked in the
+ * author filter, else the authors every book of the series shown has (its co-authors on some books left out).
+ * @returns {{series: string, authors: string[]}}
+ */
+export function newBookDefaults(){
+	const series = SERIES_FILTER && SERIES_FILTER !== '__standalone__' ? SERIES_FILTER : '';
+	const author = fieldById('authorFilter').value;
+	if(author) return {series, authors: [author]};
+	const books = series ? CATALOG.books.filter(b=> b.series === series) : [];
+	const authors = books.length ? authorsOf(books[0]).filter(a=> books.every(b=> authorsOf(b).includes(a))) : [];
+	return {series, authors};
+}
 
 // Today in the viewer's time zone, as YYYY-MM-DD.
 export function today(){
@@ -796,7 +813,7 @@ function setFormEditions(editions, index){
 }
 
 /** @type {Record<string, string>} */
-const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', asin: 'B0…', gr: 'e.g. 4242',
+const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', asin: 'B0… or its address', gr: 'id or goodreads.com address',
 	hc: 'id or hardcover.app address', isbn: '978…', p: 'e.g. Gullwing Audio', d: 'e.g. 2021-05', len: 'e.g. 10h 42m'};
 
 // An edition's ASINs: a field for each site it has one on (audible.com's always, as an ASIN usually is),
@@ -851,6 +868,32 @@ editionsEditor.addEventListener('change', e=>{
 	renderFormEditions();
 	const input = editionsEditor.querySelector ? /** @type {HTMLInputElement | null} */ (editionsEditor.querySelector(`input[data-i="${i}"][data-k="asin:${site}"]`)) : null;
 	if(input) input.focus();
+});
+// An address pasted into an id field (an ASIN, Goodreads id or Hardcover edition) becomes the id it names
+// when the field is left, in the field for it: an Amazon or Audible page's ASIN goes to its site's field,
+// which is added when the card has none. When that field holds another id the address stays, and Save says why.
+editionsEditor.addEventListener('focusout', e=>{
+	const event = /** @type {FocusEvent} */ (e);
+	const target = /** @type {HTMLInputElement | null} */ (event.target);
+	const {i, k} = target && target.dataset || {};
+	const edition = FORM_EDITIONS[Number(i)];
+	if(!target || !k || !edition || !(k.startsWith('asin:') || k === 'gr' || k === 'hc')) return;
+	const found = Edition.idFromAddress(target.value);
+	if(!found) return;
+	const {field, id} = found, there = Text.tidy(edition.fields[field] || '');
+	if(field !== k && there && there !== id) return;
+	edition.fields[k] = '';
+	edition.fields[field] = id;
+	if(field === k){ target.value = id; return; }
+	target.value = '';
+	const input = /** @type {HTMLInputElement | null} */ (editionsEditor.querySelector(`input[data-i="${i}"][data-k="${field}"]`));
+	if(input){ input.value = id; return; }
+	// a field for the address's site: draw the cards again, and keep the focus where it was going
+	const next = /** @type {HTMLElement | null} */ (event.relatedTarget);
+	const {i: nextI, k: nextK} = next && next.dataset || {};
+	renderFormEditions();
+	const refocus = nextK ? /** @type {HTMLElement | null} */ (editionsEditor.querySelector(`[data-i="${nextI}"][data-k="${nextK}"]`)) : null;
+	if(refocus) refocus.focus();
 });
 editionsEditor.addEventListener('click', e=>{
 	const target = /** @type {Element | null} */ (e.target);

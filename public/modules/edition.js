@@ -25,6 +25,8 @@ import {HardcoverClient} from './hardcover-client.js';
 
 // A Goodreads book id, as an edition keeps it: the number in goodreads.com/book/show/12345.
 const GOODREADS_ID = /^\d+$/;
+// A book's page on Goodreads: goodreads.com/book/show/12345-the-salt-road, or 12345.The_Salt_Road.
+const GOODREADS_URL = /^(?:https?:\/\/)?(?:www\.|m\.)?goodreads\.com\/book\/show\/(\d+)(?=[-._/?#]|$)/i;
 // Each Amazon and Audible site may give one edition an ASIN of its own, so an edition keeps them by the
 // site's address: {"audible.com": "B0...", "amazon.com": "B0..."}. An ASIN from before sites were kept
 // (the edition's "id") and one from an Audible import is audible.com's; one that Hardcover or Goodreads
@@ -403,6 +405,24 @@ export class Edition {
 	}
 
 	/**
+	 * The id a pasted address names, and the book form's field it belongs in: {field: 'asin:audible.co.uk',
+	 * id: 'B0X'} for a book's page on an Audible or Amazon site (each site has a field of its own), {field:
+	 * 'gr', id: '12345'} for its page on Goodreads, {field: 'hc', id: '501'} for an edition's page on Hardcover.
+	 * null for anything else: an id, or a Hardcover book's address, which names the book, not the edition.
+	 * @param {unknown} text
+	 * @returns {{field: string, id: string} | null}
+	 */
+	static idFromAddress(text){
+		const value = String(text || '').trim();
+		const asin = ASIN_URL.exec(value), site = asin ? asin[1].toLowerCase() : '';
+		if(asin && ASIN_SITE.test(site)) return {field: 'asin:' + site, id: asin[2].toUpperCase()};
+		const goodreads = GOODREADS_URL.exec(value);
+		if(goodreads) return {field: 'gr', id: goodreads[1]};
+		const hardcover = HardcoverClient.parseUrl(value);
+		return hardcover && hardcover.edition ? {field: 'hc', id: hardcover.edition} : null;
+	}
+
+	/**
 	 * Read editions written one per line as format() writes them. Parts are separated by ';' and
 	 * start with their label; a bare ISBN, date or length is recognized without one, and other text
 	 * without a label is the edition's description (one per edition). A line with several ISBNs is that
@@ -446,7 +466,10 @@ export class Edition {
 					ed.asin = Edition.orderAsins({...both, ...read.asins});
 					continue;
 				}
-				else if(label === 'goodreads' || label === 'gr') [field, v] = ['gr', GOODREADS_ID.test(value) ? value : null];
+				else if(label === 'goodreads' || label === 'gr'){
+					const url = GOODREADS_URL.exec(value);
+					[field, v] = ['gr', GOODREADS_ID.test(value) ? value : url ? url[1] : null];
+				}
 				else if(label.startsWith('hardcover')){
 					const kind = /book$/.test(label) ? 'book' : 'edition', url = HardcoverClient.parseUrl(value);
 					[field, v] = [kind === 'book' ? 'hcb' : 'hc', HardcoverClient.ID.test(value) ? value : url && url[/** @type {'book' | 'edition'} */ (kind)] || null];
