@@ -585,6 +585,39 @@ test('adding a book appends it', async () => {
 	assert.deepEqual(get('CATALOG.books[CATALOG.books.length-1]'), { t: 'Brand New', a: ['Some Author'], g: ['Fantasy', 'Cozy'] });
 });
 
+test('a new book starts with the series shown and the author picked', async () => {
+	const { ctx, els } = await boot();
+	const open = () => { els.cancelAdd.listeners.click[0](); els.toggleAdd.listeners.click[0](); return [els.f_s.value, els.f_a.value]; };
+	// a series: its name, and the authors of all its books
+	ctx.openSeries('The Orchard Cycle');
+	assert.deepEqual(open(), ['The Orchard Cycle', 'Wendell Ashcombe']);
+	// all books: nothing, unless an author is picked
+	ctx.setView('library');
+	assert.deepEqual(open(), ['', '']);
+	els.authorFilter.value = 'Priya Ostrander';
+	assert.deepEqual(open(), ['', 'Priya Ostrander']);
+});
+
+test('an address pasted in an edition id field becomes the id when the field is left', async () => {
+	const { ctx, els, get } = await boot();
+	ctx.setView('library');
+	els.toggleAdd.listeners.click[0]();
+	const field = k => els.f_editions.querySelector(`input[data-i="0"][data-k="${k}"]`);
+	const leave = (k, value) => { const input = field(k); input.value = value; typeEdition(els, 0, k, value); input.dispatch('focusout', { relatedTarget: field('isbn') }); return input; };
+	// the field's own id
+	assert.equal(leave('gr', 'https://www.goodreads.com/book/show/4242-the-salt-road').value, '4242');
+	assert.equal(leave('hc', 'https://hardcover.app/books/the-salt-road/editions/501').value, '501');
+	assert.equal(leave('asin:audible.com', 'https://www.audible.com/pd/The-Salt-Road-Audiobook/B0SALTROAD?qid=1').value, 'B0SALTROAD');
+	// another site's page: its ASIN goes to that site's field, which is added
+	assert.equal(leave('asin:audible.com', 'https://www.amazon.co.uk/dp/B0SALTUK01').value, '');
+	assert.equal(field('asin:amazon.co.uk').getAttribute('value'), 'B0SALTUK01');
+	assert.deepEqual(get('FORM_EDITIONS[0].fields'), { gr: '4242', hc: '501', 'asin:audible.com': '', 'asin:amazon.co.uk': 'B0SALTUK01' });
+	// a site whose field holds another ASIN keeps the address, for Save to report
+	assert.equal(leave('asin:audible.com', 'https://www.amazon.co.uk/dp/B0OTHER001').value, 'https://www.amazon.co.uk/dp/B0OTHER001');
+	// anything else is left as typed
+	assert.equal(leave('gr', 'not an address').value, 'not an address');
+});
+
 test('dates read: shown on the card, edited in the form, and filterable by year', async () => {
 	const { ctx, els, get } = await boot();
 	ctx.setView('library');
