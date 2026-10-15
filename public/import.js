@@ -9,10 +9,11 @@ import {GoodreadsExporter} from './modules/goodreads-exporter.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {HardcoverSync} from './modules/hardcover-sync.js';
 import {
-	CATALOG, LOCAL_SEEN, addNotDuplicates, esc, localNow, persist, addExclusions, showIoStatus,
+	CATALOG, LOCAL_SEEN, addNotDuplicates, localNow, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
-	hardcoverClient, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell
+	hardcoverClient, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell, buildElement, fillElement
 } from './store.js';
+/** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
 /** @import {Importer} from './modules/importer.js' */
 /** @import {HardcoverJob} from './store.js' */
@@ -130,13 +131,33 @@ function mergeIntoCopy(books){
 }
 
 /**
- * A book in a preview list: title, author and series, escaped.
+ * A book in a preview list: title, author and series.
  * @param {Book} b
  * @returns {string}
  */
 function bookLine(b){
 	const series = b.series ? `  [${b.series}${b.number ? ' #' + b.number : ''}]` : '';
-	return `${esc(b.title)} &mdash; ${esc(Text.namesText(b.authors))}${esc(series)}`;
+	return `${b.title} \u2014 ${Text.namesText(b.authors)}${series}`;
+}
+
+/**
+ * A paragraph of the preview.
+ * @param {string} text
+ * @param {string} [className]
+ * @returns {HTMLParagraphElement}
+ */
+const para = (text, className)=> buildElement('p', {class: className}, text);
+
+/**
+ * A list of messages, at most `limit` of them, saying how many more there are; nothing when there are none.
+ * @param {string[]} items
+ * @param {number} [limit]
+ * @returns {HTMLUListElement | null}
+ */
+function messageList(items, limit = Infinity){
+	if(!items.length) return null;
+	return buildElement('ul', {}, items.slice(0, limit).map(m=> buildElement('li', {}, m)),
+		items.length > limit && buildElement('li', {}, `\u2026and ${items.length - limit} more`));
 }
 
 /**
@@ -157,35 +178,34 @@ function previewImport(kind, text, fileName){
 	PENDING_TIDY = null;
 	byId('mergePrefer').classList.remove('show');
 
-	const li = (/** @type {Book} */ b) => `<li>${bookLine(b)}</li>`;
-	let html = `<p>${result.books.length} finished book${result.books.length === 1 ? '' : 's'} read from ${esc(fileName)}</p>`;
-	html += spell(`<p>Already in the catalog: ${report.matched}</p>`);
-	if(result.skippedUnfinished) html += `<p>Not finished yet, skipped: ${result.skippedUnfinished}</p>`;
-	if(report.backfilled.length) html += `<p>ASINs filled in on existing books: ${report.backfilled.length}</p>`;
-	if(report.goodreadsFilled.length) html += `<p>Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}</p>`;
-	if(report.datesFilled.length) html += `<p>Dates read filled in on existing books: ${report.datesFilled.length}</p>`;
-	if(report.isbnsFilled.length) html += `<p>ISBNs added to existing books: ${report.isbnsFilled.length}</p>`;
-	if(report.detailsFilled.length) html += `<p>Narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}</p>`;
-	if(report.editionsAdded.length) html += `<p>Other editions added to existing books: ${report.editionsAdded.length}</p>`;
-	if(report.excluded.length) html += `<p>Skipped (excluded from imports): ${report.excluded.length}</p>`;
+	/** @type {Child[]} */
+	const out = [para(`${result.books.length} finished book${result.books.length === 1 ? '' : 's'} read from ${fileName}`)];
+	out.push(para(spell(`Already in the catalog: ${report.matched}`)));
+	if(result.skippedUnfinished) out.push(para(`Not finished yet, skipped: ${result.skippedUnfinished}`));
+	if(report.backfilled.length) out.push(para(`ASINs filled in on existing books: ${report.backfilled.length}`));
+	if(report.goodreadsFilled.length) out.push(para(`Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}`));
+	if(report.datesFilled.length) out.push(para(`Dates read filled in on existing books: ${report.datesFilled.length}`));
+	if(report.isbnsFilled.length) out.push(para(`ISBNs added to existing books: ${report.isbnsFilled.length}`));
+	if(report.detailsFilled.length) out.push(para(`Narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}`));
+	if(report.editionsAdded.length) out.push(para(`Other editions added to existing books: ${report.editionsAdded.length}`));
+	if(report.excluded.length) out.push(para(`Skipped (excluded from imports): ${report.excluded.length}`));
 	if(report.boxSets.length){
-		html += `<p>Box sets split into their titles, each with the set's edition: ${report.boxSets.length}</p><ul>` +
-			report.boxSets.map(b=> `<li>${esc(b.title)} &mdash; ${esc(Text.namesText(b.authors))}: ${b.titles} already here, ${b.added} added</li>`).join('') + '</ul>';
-		if(report.boxSets.some(b=> b.added)) html += spell('<p>A title not in the catalog yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>');
+		out.push(para(`Box sets split into their titles, each with the set's edition: ${report.boxSets.length}`),
+			messageList(report.boxSets.map(b=> `${b.title} \u2014 ${Text.namesText(b.authors)}: ${b.titles} already here, ${b.added} added`)));
+		if(report.boxSets.some(b=> b.added)) out.push(para(spell('A title not in the catalog yet is named \u201CSeries, Book N\u201D until you rename it on its card.')));
 	}
-	html += `<p>New: ${report.added.length}</p>`;
-	if(report.added.length) html += `<ul>${report.added.map(li).join('')}</ul>`;
+	out.push(para(`New: ${report.added.length}`), messageList(report.added.map(bookLine)));
 	if(result.warnings.length){
-		html += `<p class="warn">Needs a look (${result.warnings.length}):</p><ul>${result.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`;
+		out.push(para(`Needs a look (${result.warnings.length}):`, 'warn'), messageList(result.warnings));
 	}
 	if(errors.length){
-		html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
+		out.push(para('Validation failed, nothing will be changed:', 'warn'), messageList(errors.slice(0, 10)));
 	} else if(!changes){
-		html += '<p>Nothing new to add.</p>';
+		out.push(para('Nothing new to add.'));
 	}
 
 	byId('importPreviewTitle').textContent = `${importer.label} import`;
-	byId('importPreviewBody').innerHTML = html;
+	fillElement(byId('importPreviewBody'), out);
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
 	confirmBtn.textContent = report.added.length
@@ -244,35 +264,36 @@ function previewMerge(){
 	if(!PENDING_MERGE) return;
 	const {backup, fileName} = PENDING_MERGE;
 	const {m, errors, changes} = mergeIntoCatalog(backup);
-	const list = (/** @type {Book[]} */ books) => books.length ? `<ul>${books.map(b=> `<li>${bookLine(b)}</li>`).join('')}</ul>` : '';
-	let html = `<p>${backup.books.length} books in ${esc(fileName)}; ${m.books.length} after merging.</p>`;
-	html += `<p>New from the backup: ${m.added.length}</p>` + list(m.added);
-	html += `<p>Gaining genres, dates read or editions${m.conflicts.length ? ', or the version kept below' : ''}: ${m.updated.length}</p>`;
-	html += `<p>Removed (removed on the other device): ${m.removed.length}</p>` + list(m.removed);
-	if(m.skipped.length) html += `<p>Not added back (removed here): ${m.skipped.length}</p>`;
+	const list = (/** @type {Book[]} */ books) => messageList(books.map(bookLine));
+	/** @type {Child[]} */
+	const out = [para(`${backup.books.length} books in ${fileName}; ${m.books.length} after merging.`)];
+	out.push(para(`New from the backup: ${m.added.length}`), list(m.added));
+	out.push(para(`Gaining genres, dates read or editions${m.conflicts.length ? ', or the version kept below' : ''}: ${m.updated.length}`));
+	out.push(para(`Removed (removed on the other device): ${m.removed.length}`), list(m.removed));
+	if(m.skipped.length) out.push(para(`Not added back (removed here): ${m.skipped.length}`));
 	if(m.conflicts.length){
 		const kept = fieldById('mergePreferSelect').value === 'backup' ? "the backup's" : spell("this catalog's");
-		html += `<p>Title, author or series differ, keeping ${kept}: ${m.conflicts.length}</p><ul>` +
-			m.conflicts.map(c=> `<li>${bookLine(c.mine)} / backup: ${bookLine(c.theirs)}</li>`).join('') + '</ul>';
+		out.push(para(`Title, author or series differ, keeping ${kept}: ${m.conflicts.length}`),
+			messageList(m.conflicts.map(c=> `${bookLine(c.mine)} / backup: ${bookLine(c.theirs)}`)));
 	}
 	const infoDiffer = m.infoChanged.length + m.infoKept.length;
 	if(m.infoAdded.length || infoDiffer){
-		html += `<p>Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : spell("this catalog's")})` : '') + '</p>';
+		out.push(para(`Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : spell("this catalog's")})` : '')));
 	}
 	const authorsDiffer = m.authorsChanged.length + m.authorsKept.length;
 	if(m.authorsAdded.length || authorsDiffer){
-		html += `<p>Author info: ${m.authorsAdded.length} added` + (authorsDiffer ? `, ${authorsDiffer} differing (keeping ${m.authorsChanged.length ? "the backup's" : spell("this catalog's")})` : '') + '</p>';
+		out.push(para(`Author info: ${m.authorsAdded.length} added` + (authorsDiffer ? `, ${authorsDiffer} differing (keeping ${m.authorsChanged.length ? "the backup's" : spell("this catalog's")})` : '')));
 	}
-	if(m.excluded.length) html += `<p>More books excluded from imports: ${m.excluded.length}</p>`;
-	if(m.notDuplicates.length) html += `<p>More books marked "Not duplicates": ${m.notDuplicates.length}</p>`;
+	if(m.excluded.length) out.push(para(`More books excluded from imports: ${m.excluded.length}`));
+	if(m.notDuplicates.length) out.push(para(`More books marked "Not duplicates": ${m.notDuplicates.length}`));
 	if(errors.length){
-		html += `<p class="warn">Validation failed, nothing will be changed:</p><ul>${errors.slice(0, 10).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
+		out.push(para('Validation failed, nothing will be changed:', 'warn'), messageList(errors.slice(0, 10)));
 	} else if(!changes){
-		html += spell('<p>Nothing to merge: this catalog already has everything in the backup.</p>');
+		out.push(para(spell('Nothing to merge: this catalog already has everything in the backup.')));
 	}
 	const ok = !errors.length && changes;
 	byId('importPreviewTitle').textContent = 'Merge a backup';
-	byId('importPreviewBody').innerHTML = html;
+	fillElement(byId('importPreviewBody'), out);
 	byId('mergePrefer').classList.add('show');
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = ok ? '' : 'none';
@@ -326,29 +347,18 @@ function mergeBackupFile(file){
 export let PENDING_TIDY = null;   // 'format' or 'box-sets', while its preview is open
 
 /**
- * A list of messages, at most `limit` of them, saying how many more there are.
- * @param {string[]} items
- * @param {number} [limit]
- * @returns {string}
- */
-function messageList(items, limit = 100){
-	const more = items.length > limit ? `<li>&hellip;and ${items.length - limit} more</li>` : '';
-	return `<ul>${items.slice(0, limit).map(m=> `<li>${esc(m)}</li>`).join('')}${more}</ul>`;
-}
-
-/**
  * Show the check or the box sets in the preview; its confirm button (labeled `confirm`) shows when PENDING_TIDY is set.
  * @param {string} title
- * @param {string} html
+ * @param {Child[]} body
  * @param {string} confirm
  */
-function showTidyPreview(title, html, confirm){
+function showTidyPreview(title, body, confirm){
 	PENDING_IMPORT = null;
 	PENDING_HARDCOVER = null;
 	PENDING_MERGE = null;
 	byId('mergePrefer').classList.remove('show');
 	byId('importPreviewTitle').textContent = title;
-	byId('importPreviewBody').innerHTML = html;
+	fillElement(byId('importPreviewBody'), body);
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_TIDY ? '' : 'none';
 	confirmBtn.textContent = confirm;
@@ -361,17 +371,18 @@ function checkCatalog(){
 	const {errors, warnings} = CATALOG.validate({authors: true});
 	const series = new Set(CATALOG.books.filter(b=> b.series).map(b=> b.series)).size;
 	const authors = CATALOG.authors.size;
-	let html = `<p>${CATALOG.books.length} books, ${series} series, ${CATALOG.series.size} with release info, ` +
-		`${authors} author${authors === 1 ? '' : 's'} with info.</p>`;
-	if(errors.length) html += `<p class="warn">Errors (${errors.length}):</p>` + messageList(errors);
-	if(warnings.length) html += `<p class="warn">Needs a look (${warnings.length}):</p>` + messageList(warnings);
+	/** @type {Child[]} */
+	const out = [para(`${CATALOG.books.length} books, ${series} series, ${CATALOG.series.size} with release info, ` +
+		`${authors} author${authors === 1 ? '' : 's'} with info.`)];
+	if(errors.length) out.push(para(`Errors (${errors.length}):`, 'warn'), messageList(errors, 100));
+	if(warnings.length) out.push(para(`Needs a look (${warnings.length}):`, 'warn'), messageList(warnings, 100));
 	if(FORMAT_NOTES.length){
-		html += `<p>In an older format (read the current way here):</p>` + messageList(FORMAT_NOTES);
-		html += '<p>Save it to keep it in the current format; any edit does that too.</p>';
+		out.push(para('In an older format (read the current way here):'), messageList(FORMAT_NOTES, 100));
+		out.push(para('Save it to keep it in the current format; any edit does that too.'));
 	}
-	if(!errors.length && !warnings.length && !FORMAT_NOTES.length) html += '<p>No problems found.</p>';
+	if(!errors.length && !warnings.length && !FORMAT_NOTES.length) out.push(para('No problems found.'));
 	PENDING_TIDY = FORMAT_NOTES.length ? 'format' : null;
-	showTidyPreview(spell('Check the catalog'), html, 'Save in the current format');
+	showTidyPreview(spell('Check the catalog'), out, 'Save in the current format');
 }
 
 // Keep each box set as its own book and as its titles, in a copy of the catalog (Catalog.addBoxSets).
@@ -384,25 +395,21 @@ function boxSetsIntoCopy(){
 
 function previewBoxSets(){
 	const {report, errors} = boxSetsIntoCopy();
-	let html = `<p>Box sets: ${report.boxSets.length}</p>`;
-	if(report.boxSets.length){
-		html += '<ul>' + report.boxSets.map(b=> `<li>${esc(b.title)} &mdash; ${esc(Text.namesText(b.authors))}: ${b.titles} title${b.titles === 1 ? '' : 's'} already here</li>`).join('') + '</ul>';
-	}
-	if(report.excluded.length) html += `<p>Skipped (excluded from imports): ${report.excluded.length}</p>`;
-	html += `<p>New: ${report.added.length}</p>`;
-	if(report.added.length){
-		html += `<ul>${report.added.map(b=> `<li>${bookLine(b)}</li>`).join('')}</ul>`;
-	}
+	/** @type {Child[]} */
+	const out = [para(`Box sets: ${report.boxSets.length}`),
+		messageList(report.boxSets.map(b=> `${b.title} \u2014 ${Text.namesText(b.authors)}: ${b.titles} title${b.titles === 1 ? '' : 's'} already here`))];
+	if(report.excluded.length) out.push(para(`Skipped (excluded from imports): ${report.excluded.length}`));
+	out.push(para(`New: ${report.added.length}`), messageList(report.added.map(bookLine)));
 	if(report.boxSets.some(b=> b.added)){
-		html += spell('<p>A title not in the catalog yet is named &ldquo;Series, Book N&rdquo; until you rename it on its card.</p>');
+		out.push(para(spell('A title not in the catalog yet is named \u201CSeries, Book N\u201D until you rename it on its card.')));
 	}
 	if(errors.length){
-		html += '<p class="warn">Validation failed, nothing will be changed:</p>' + messageList(errors, 10);
+		out.push(para('Validation failed, nothing will be changed:', 'warn'), messageList(errors, 10));
 	} else if(!report.added.length){
-		html += '<p>Every box set is already kept both as its own book and as its titles.</p>';
+		out.push(para('Every box set is already kept both as its own book and as its titles.'));
 	}
 	PENDING_TIDY = errors.length || !report.added.length ? null : 'box-sets';
-	showTidyPreview('Box sets', html, `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`);
+	showTidyPreview('Box sets', out, `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`);
 }
 
 function applyTidy(){
@@ -549,8 +556,8 @@ function showHardcoverResult(mode, result, pending){
 	const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
 	const took = Number.isFinite(result.elapsed) ? ` (took ${minutes(result.elapsed)})` : '';
 	byId('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title + (pending ? ': preview' : took);
-	byId('importPreviewBody').innerHTML = `<pre>${esc(text)}</pre>` +
-		(pending && result.code === 0 ? '<p>Nothing has changed yet, here or on Hardcover.</p>' : '');
+	fillElement(byId('importPreviewBody'), buildElement('pre', {}, text),
+		pending && result.code === 0 && para('Nothing has changed yet, here or on Hardcover.'));
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_HARDCOVER ? '' : 'none';
 	confirmBtn.textContent = HARDCOVER_MODES[mode].confirm;

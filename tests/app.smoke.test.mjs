@@ -49,20 +49,147 @@ async function runModules(entry, context) {
 	return new Map([...modules].map(([file, m]) => [file, m.namespace]));
 }
 
-function makeElement(id) {
-	const classes = new Set();
-	const listeners = {};
-	return {
-		id, textContent: '', innerHTML: '', value: '', style: {}, dataset: {}, listeners,
-		classList: {
-			add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c),
-			toggle(c, force) { const on = force === undefined ? !classes.has(c) : !!force; on ? classes.add(c) : classes.delete(c); return on; },
-		},
-		addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
-		reset() {}, scrollIntoView() {}, click() {},
-		// where an element was last moved to, as 'before <id>' or 'after <id>'
-		before(node) { node.place = `before ${id}`; }, after(node) { node.place = `after ${id}`; },
-	};
+// A small DOM: elements with attributes and children, built by the page with createElement/append and
+// read back by the tests as innerHTML, written the way a browser writes it. Setting innerHTML throws: the
+// page builds its elements, it never parses HTML.
+const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', larr: '←', rarr: '→',
+	times: '×', mdash: '—', ndash: '–', middot: '·', bull: '•', check: '✓' };
+const decode = text => text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+	if (e[0] === '#') return String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : Number(e.slice(1)));
+	if (!(e in ENTITIES)) throw new Error(`the fake DOM doesn't know ${m}`);
+	return ENTITIES[e];
+});
+const escText = text => text.replace(/&/g, '&amp;').replace(/ /g, '&nbsp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escAttr = text => text.replace(/&/g, '&amp;').replace(/ /g, '&nbsp;').replace(/"/g, '&quot;');
+const dataName = key => 'data-' + key.replace(/[A-Z]/g, c => '-' + c.toLowerCase());
+
+class FakeText {
+	constructor(text) { this.nodeType = 3; this.nodeValue = String(text); this.parentNode = null; }
+	get textContent() { return this.nodeValue; }
+	set textContent(text) { this.nodeValue = String(text); }
+	get outerHTML() { return escText(this.nodeValue); }
+}
+
+/** Does `el` match a simple selector: tag, .class, #id, [attr], [attr="value"] and [attr^="start"], combined (no descendants)? */
+function matches(el, selector) {
+	const parts = selector.match(/^[a-z0-9]+|\.[\w-]+|#[\w-]+|\[[\w-]+(?:\^?="[^"]*")?\]/gi) || [];
+	if (parts.join('') !== selector) throw new Error(`the fake DOM can't match ${selector}`);
+	return parts.every(part => {
+		if (part[0] === '.') return el.classList.contains(part.slice(1));
+		if (part[0] === '#') return el.getAttribute('id') === part.slice(1);
+		if (part[0] === '[') {
+			const [, name, op, value] = /^\[([\w-]+)(?:(\^?)="([^"]*)")?\]$/.exec(part);
+			const actual = el.getAttribute(name);
+			if (value === undefined) return actual !== null;
+			return op ? actual !== null && actual.startsWith(value) : actual === value;
+		}
+		return el.localName === part.toLowerCase();
+	});
+}
+
+class FakeElement {
+	constructor(tag, id) {
+		this.nodeType = 1;
+		this.localName = tag.toLowerCase();
+		this.tagName = tag.toUpperCase();
+		this.attributes = new Map();
+		this.childNodes = [];
+		this.parentNode = null;
+		this.listeners = {};
+		this.style = {};
+		this.value = '';
+		if (id) this.setAttribute('id', id);
+		const el = this;
+		this.dataset = new Proxy({}, {
+			get: (t, key) => (typeof key === 'string' && el.hasAttribute(dataName(key)) ? el.getAttribute(dataName(key)) : undefined),
+			set: (t, key, value) => { el.setAttribute(dataName(key), value); return true; },
+			has: (t, key) => el.hasAttribute(dataName(key)),
+		});
+		const classes = () => (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+		const setClasses = list => el.setAttribute('class', list.join(' '));
+		this.classList = {
+			contains: c => classes().includes(c),
+			add: c => { if (!classes().includes(c)) setClasses([...classes(), c]); },
+			remove: c => setClasses(classes().filter(x => x !== c)),
+			toggle(c, force) { const on = force === undefined ? !this.contains(c) : !!force; on ? this.add(c) : this.remove(c); return on; },
+		};
+	}
+	get id() { return this.getAttribute('id') || ''; }
+	set id(v) { this.setAttribute('id', v); }
+	get className() { return this.getAttribute('class') || ''; }
+	set className(v) { this.setAttribute('class', v); }
+	get title() { return this.getAttribute('title') || ''; }
+	set title(v) { this.setAttribute('title', v); }
+	getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
+	setAttribute(name, value) { this.attributes.set(name, String(value)); }
+	hasAttribute(name) { return this.attributes.has(name); }
+	removeAttribute(name) { this.attributes.delete(name); }
+	append(...nodes) {
+		for (const node of nodes) {
+			const child = typeof node === 'string' ? new FakeText(node) : node;
+			if (child.parentNode) child.parentNode.childNodes.splice(child.parentNode.childNodes.indexOf(child), 1);
+			child.parentNode = this;
+			this.childNodes.push(child);
+		}
+	}
+	appendChild(node) { this.append(node); return node; }
+	removeChild(node) { this.childNodes.splice(this.childNodes.indexOf(node), 1); node.parentNode = null; return node; }
+	replaceChildren(...nodes) { this.childNodes.forEach(c => { c.parentNode = null; }); this.childNodes = []; this.append(...nodes); }
+	hasChildNodes() { return this.childNodes.length > 0; }
+	get children() { return this.childNodes.filter(c => c.nodeType === 1); }
+	get textContent() { return this.childNodes.map(c => c.textContent).join(''); }
+	set textContent(text) { this.replaceChildren(...(String(text) ? [String(text)] : [])); }
+	get innerHTML() { return this.childNodes.map(c => c.outerHTML).join(''); }
+	set innerHTML(html) { throw new Error(`the page set innerHTML of #${this.id}`); }
+	get outerHTML() {
+		const attrs = [...this.attributes].map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('');
+		return `<${this.localName}${attrs}>` + (VOID.has(this.localName) ? '' : `${this.innerHTML}</${this.localName}>`);
+	}
+	/** Elements below this one matching `selector` (simple selectors, or several separated by spaces for descendants). */
+	querySelectorAll(selector) {
+		const [first, ...rest] = selector.trim().split(/\s+/);
+		const found = [];
+		const walk = el => el.children.forEach(c => { if (matches(c, first)) found.push(c); walk(c); });
+		walk(this);
+		return rest.length ? [...new Set(found.flatMap(el => el.querySelectorAll(rest.join(' '))))] : found;
+	}
+	querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+	closest(selector) { for (let el = this; el && el.nodeType === 1; el = el.parentNode) if (matches(el, selector)) return el; return null; }
+	addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+	/** Run the listeners for `type` as a browser would for an event on this element. */
+	dispatch(type, event = {}) {
+		for (let el = this; el && el.nodeType === 1; el = el.parentNode) {
+			(el.listeners[type] || []).forEach(fn => fn({ preventDefault() {}, ...event, target: this, currentTarget: el }));
+		}
+	}
+	reset() {} scrollIntoView() {} click() {} focus() {}
+	// where an element was last moved to, as 'before <id>' or 'after <id>'
+	before(node) { node.place = `before ${this.id}`; }
+	after(node) { node.place = `after ${this.id}`; }
+}
+const makeElement = id => new FakeElement('div', id);
+
+/** The page's <body>, parsed: tags, attributes, text and entities, as the pages write them. */
+function parseBody(html) {
+	const body = new FakeElement('body');
+	const open = [body];
+	const at = () => open[open.length - 1];
+	const source = html.slice(html.indexOf('>', html.indexOf('<body')) + 1, html.indexOf('</body>'));
+	for (const [, text, close, tag, attrs] of source.matchAll(/([^<]+)|<\/([a-z0-9]+)\s*>|<([a-z0-9]+)((?:\s+[\w-]+(?:="[^"]*")?)*)\s*\/?>/gi)) {
+		if (text !== undefined) at().append(decode(text));
+		else if (close) {
+			if (at().localName !== close.toLowerCase()) throw new Error(`</${close}> closes <${at().localName}>`);
+			open.pop();
+		} else {
+			const el = new FakeElement(tag);
+			for (const [, name, value] of attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)) el.setAttribute(name, decode(value ?? ''));
+			at().append(el);
+			if (!VOID.has(el.localName)) open.push(el);
+		}
+	}
+	if (open.length !== 1) throw new Error(`<${at().localName}> is never closed`);
+	return body;
 }
 
 const CATALOG_KEY = 'audiobook-catalog-device';
@@ -89,15 +216,16 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 		storage.set(NOT_DUP_KEY, JSON.stringify(Duplicates.parseMarks(files['not-duplicates.txt'])));
 	}
 	const html = read(page);
+	const body = parseBody(html);
 	const els = {};
-	for (const [, id] of html.matchAll(/id="([^"]+)"/g)) els[id] = makeElement(id);
+	for (const el of body.querySelectorAll('[id]')) els[el.id] = el;
 	const document = {
-		getElementById: id => els[id],
-		querySelectorAll: () => [],
-		querySelector: () => null,
-		createElement: () => makeElement('created'),
-		body: { appendChild() {}, removeChild() {}, innerHTML: html.slice(html.indexOf('<body'), html.indexOf('</body>')) },
-		title: html.match(/<title>([^<]*)<\/title>/)[1],
+		getElementById: id => els[id] || null,
+		querySelectorAll: selector => body.querySelectorAll(selector),
+		querySelector: selector => body.querySelector(selector),
+		createElement: tag => new FakeElement(tag),
+		body,
+		title: decode(html.match(/<title>([^<]*)<\/title>/)[1]),
 	};
 	const localStorage = {
 		getItem: k => (storage.has(k) ? storage.get(k) : null),
@@ -132,7 +260,8 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 	};
 	const addEventListener = (type, fn) => (windowListeners[type] ||= []).push(fn);
 	const navigator = { languages };
-	const context = vm.createContext({ document, navigator, localStorage, fetch, FileReader, location, history, addEventListener,
+	const Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
+	const context = vm.createContext({ document, Node, navigator, localStorage, fetch, FileReader, location, history, addEventListener,
 		console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
 	const [entry] = entryOf(page);
 	const namespaces = await runModules(entry, context);
@@ -204,6 +333,23 @@ test('search narrows the library view', async () => {
 	els.q.value = 'zzzz-no-such-book-zzzz';
 	ctx.render();
 	assert.match(els.results.innerHTML, /No books match/);
+});
+
+test('text from the catalog is shown as text, never read as HTML', async () => {
+	const odd = '<img src=x onerror=alert(1)> & "Co"';
+	// twice, so the duplicates page shows it too
+	const mine = JSON.stringify([{ t: odd, a: [odd], s: odd, sn: '1', g: [odd], e: [{ desc: odd, n: [odd] }] }, { t: odd, a: [odd], e: [{ gr: '42' }] }]);
+	const info = JSON.stringify({ [odd]: { total: 2, status: 'ongoing', note: odd } });
+	const authors = JSON.stringify({ [odd]: { bio: odd } });
+	const files = { 'books.json': mine, 'series-info.json': info, 'authors.json': authors };
+	const pages = [['index.html', 'results'], ['index.html', 'results', 'library'], ['authors.html', 'authorBody'], ['duplicates.html', 'dupBody']];
+	for (const [page, id, view] of pages) {
+		const { ctx, els } = await boot({ page, files, hash: page === 'authors.html' ? '#a=' + encodeURIComponent(odd) : '' });
+		if (view) ctx.setView(view);
+		const shown = els[id].innerHTML;
+		assert.equal(els[id].querySelectorAll('img').length, 0, `${page} ${view || ''}: no element made of the text`);
+		assert.match(shown, /&lt;img src=x onerror=alert\(1\)&gt; &amp; "Co"/, page);
+	}
 });
 
 test('the address names the view, so a series, a book or a search can be linked to', async () => {
@@ -750,7 +896,7 @@ test('importing a Goodreads CSV can be canceled', async () => {
 	els.importGoodreadsBtn.listeners.click[0]();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	assert.equal(els.importPreviewTitle.textContent, 'Goodreads import');
-	assert.match(els.importPreviewBody.innerHTML, /Zzz New Book &mdash; Nobody Yet  \[Zzz Saga #2\]/);
+	assert.match(els.importPreviewBody.innerHTML, /Zzz New Book — Nobody Yet  \[Zzz Saga #2\]/);
 	els.importCancel.listeners.click[0]();
 	assert.ok(!els.importPreview.classList.contains('open'));
 	assert.equal(get('CATALOG.books.length'), before);
@@ -826,13 +972,11 @@ test('Restore takes the data files of a catalog from before it lived in the brow
 
 // Press a book's remove button twice (the second press confirms), as in the library view.
 function removeBook(ctx, i) {
-	const btn = { dataset: { i: String(i) }, style: {}, innerHTML: '' };
-	let handler;
-	ctx.document.querySelectorAll = sel => (sel === '.iconbtn.del'
-		? [{ addEventListener: (type, fn) => { handler = fn; } }] : []);
 	ctx.render();
-	handler({ currentTarget: btn });
-	handler({ currentTarget: btn });
+	const btn = ctx.document.getElementById('results').querySelector(`.iconbtn.del[data-i="${i}"]`);
+	btn.dispatch('click');
+	assert.equal(btn.textContent, '\u2713', 'the first press asks to confirm');
+	btn.dispatch('click');
 }
 
 test('removing a book excludes it from imports, and Export / Import carry the exclusions', async () => {
@@ -1075,7 +1219,7 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
 	const { ctx, els, get, run, storage } = await boot({ page: 'duplicates.html', files });
 	assert.deepEqual(get('DUP_GROUPS'), [[0, 2], [4, 5]]);
 	assert.match(els.subtitle.textContent, /^2 possible duplicates among 6 audiobooks/);
-	assert.match(els.dupBody.innerHTML, /name="dup-0-title"[^>]*checked> <span class="dup-label">Title<\/span> The Salt Road/);
+	assert.match(els.dupBody.innerHTML, /name="dup-0-title"[^>]*checked=""> <span class="dup-label">Title<\/span> The Salt Road/);
 	assert.match(els.dupBody.innerHTML, /Becomes: The Salt Road/);
 
 	// pick the second entry's title, then merge: one book with both editions, the narrator and the date read
@@ -1151,7 +1295,7 @@ test('merging keeps editions apart when asked, and books merged that way can be 
 	assert.deepEqual(get('SPLIT'), [2]);
 	assert.match(els.subtitle.textContent, /1 book with editions that look like one/);
 	assert.equal(els.dupCount.textContent, ' (2)');
-	assert.match(els.dupBody.innerHTML, /class="dup-joinbox" data-g="0" checked/);
+	assert.match(els.dupBody.innerHTML, /class="dup-joinbox" data-g="0" checked=""/);
 
 	// untick "Make the editions one edition": the merge keeps both
 	run('DUP_PICKS[0].joinEditions = false; renderDuplicates()');
@@ -1225,8 +1369,8 @@ test('Merge previews a backup from another device and keeps both sides\' changes
 	els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
 	assert.equal(els.importPreviewTitle.textContent, 'Merge a backup');
 	assert.ok(els.mergePrefer.classList.contains('show'));
-	assert.match(els.importPreviewBody.innerHTML, /New from the backup: 1<\/p><ul><li>New There &mdash; Ann Vale/);
-	assert.match(els.importPreviewBody.innerHTML, /keeping this catalog's: 1<\/p><ul><li>Renamed &mdash; Ann Vale \/ backup: Renamed Twice/);
+	assert.match(els.importPreviewBody.innerHTML, /New from the backup: 1<\/p><ul><li>New There — Ann Vale/);
+	assert.match(els.importPreviewBody.innerHTML, /keeping this catalog's: 1<\/p><ul><li>Renamed — Ann Vale \/ backup: Renamed Twice/);
 	assert.match(els.importPreviewBody.innerHTML, /More books marked "Not duplicates": 1/);
 	assert.equal(get('CATALOG.books.length'), 2, 'nothing changes before it is confirmed');
 
@@ -1437,7 +1581,7 @@ test('Check on the import page lists problems and older formats, and saves the c
 	els.checkBtn.listeners.click[0]();
 	const report = els.importPreviewBody.innerHTML;
 	assert.match(report, /1 books, 0 series, 1 with release info, 0 authors with info/);
-	assert.match(report, /Errors \(1\):.*&#39;Nowhere&#39; matches no series/s);
+	assert.match(report, /Errors \(1\):.*'Nowhere' matches no series/s);
 	assert.match(report, /some books keep their ids, ISBNs or narrator on the book/);
 	assert.equal(els.importConfirm.style.display, '');
 	assert.equal(els.importConfirm.textContent, 'Save in the current format');
@@ -1457,7 +1601,7 @@ test('Box sets on the import page adds a set beside the titles sharing its editi
 	]);
 	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	els.boxSetsBtn.listeners.click[0]();
-	assert.match(els.importPreviewBody.innerHTML, /Gull Isle, Books 1-2 &mdash; Ann Vale: 2 titles already here/);
+	assert.match(els.importPreviewBody.innerHTML, /Gull Isle, Books 1-2 — Ann Vale: 2 titles already here/);
 	assert.match(els.importPreviewBody.innerHTML, /New: 1/);
 	assert.equal(get('CATALOG.books.length'), 2, 'nothing changes before it is confirmed');
 	assert.equal(els.importConfirm.textContent, 'Add 1 book');
@@ -1482,7 +1626,8 @@ test('a browser that prefers British English sees "catalogue"; any other sees "c
 	for (const page of PAGES) {
 		const { ctx } = await boot({ page, languages: ['sv-SE', 'en-GB'], files: { 'books.json': titled } });
 		assert.match(ctx.document.title, /Audiobook Catalogue$/, page);
-		assert.ok(!/\b[Cc]atalog\b/.test(ctx.document.body.innerHTML), `${page} has no American spelling left`);
+		// (the body holds what the page drew too; the Hardcover scope read:catalog is a name, and stays)
+		assert.ok(!/(?<!:)\b[Cc]atalog\b/.test(ctx.document.body.innerHTML), `${page} has no American spelling left`);
 		assert.match(ctx.document.body.innerHTML, /<h1>Audiobook Catalogue<\/h1>/, page);
 	}
 	const uk = await boot({ page: 'import.html', languages: ['en-AU'], files: { 'books.json': titled } });

@@ -7,7 +7,8 @@ import {Book} from './modules/book.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
-import { CATALOG, esc, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell } from './store.js';
+import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined } from './store.js';
+/** @import {Child} from './store.js' */
 
 /** @typedef {{b: Book, i: number}} ListedBook a book shown, with its index in CATALOG.books */
 
@@ -45,9 +46,16 @@ function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare
 function authorsOf(b){ return b.authors; }
 /**
  * Authors' names, each a link to their page on the authors page.
- * @type {(names: string[]) => string}
+ * @type {(names: string[]) => Child[]}
  */
-const authorLinks = names => names.map(x=> `<a href="authors.html#a=${esc(encodeURIComponent(x).replace(/%20/g, '+'))}">${esc(x)}</a>`).join(', ');
+const authorLinks = names => joined(names.map(x=> buildElement('a', {href: 'authors.html#a=' + encodeURIComponent(x).replace(/%20/g, '+')}, x)), ', ');
+/**
+ * A series' status, as a tag.
+ * @type {(status: string | undefined) => HTMLSpanElement}
+ */
+const statusTag = status=> buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing');
+/** @type {(url: string) => HTMLAnchorElement} */
+const authorSiteLink = url=> buildElement('a', {class: 'authorlink', href: url, target: '_blank', rel: 'noopener'}, 'author site \u2197');
 
 /**
  * Series numbers you don't own yet, from series-info.json's released total; null when that is unknown.
@@ -110,10 +118,11 @@ function populateFilters(){
 	const rSel = fieldById('readFilter');
 	const years = uniqueSorted(CATALOG.books.flatMap(readYears)).reverse();
 	const aCur = aSel.value, gCur = gSel.value, rCur = rSel.value;
-	aSel.innerHTML = '<option value="">All authors</option>' + authors.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
-	gSel.innerHTML = '<option value="">All genres</option>' + genres.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
-	rSel.innerHTML = '<option value="">Read any time</option>' + years.map(y=>`<option value="${esc(y)}">Read in ${esc(y)}</option>`).join('')
-		+ `<option value="${UNDATED}">No date read</option>`;
+	/** @type {(value: string, text: string) => HTMLOptionElement} */
+	const option = (value, text)=> buildElement('option', {value}, text);
+	fillElement(aSel, option('', 'All authors'), authors.map(a=> option(a, a)));
+	fillElement(gSel, option('', 'All genres'), genres.map(g=> option(g, g)));
+	fillElement(rSel, option('', 'Read any time'), years.map(y=> option(y, `Read in ${y}`)), option(UNDATED, 'No date read'));
 	aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
 	MERGE_FROM = null;             // the books changed, so an index picked for merging may be stale
 }
@@ -327,8 +336,8 @@ byId('results').addEventListener('click', e=>{
 function renderEmpty(){
 	byId('subtitle').textContent = spell('Your catalog is empty');
 	byId('resultCount').textContent = '';
-	byId('results').innerHTML = '<p class="empty">No books yet. Add one with + Add a book under <a href="#books">All Books</a>, ' +
-		'import your Audible, Goodreads or Hardcover library on <a href="import.html">Import &amp; export</a>, or restore a backup there.</p>';
+	fillElement(byId('results'), buildElement('p', {class: 'empty'}, 'No books yet. Add one with + Add a book under ', buildElement('a', {href: '#books'}, 'All Books'),
+		', import your Audible, Goodreads or Hardcover library on ', buildElement('a', {href: 'import.html'}, 'Import & export'), ', or restore a backup there.'));
 }
 
 export function render(){
@@ -357,82 +366,40 @@ export function render(){
 	});
 
 	const seriesNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
-	let html = '';
+	/** @type {Child[]} */
+	const out = [];
 	SHARED = sharedEditions();
 
 	if(filtered.length === 0){
-		html = '<p class="empty">No books match. Try clearing a filter.</p>';
+		out.push(buildElement('p', {class: 'empty'}, 'No books match. Try clearing a filter.'));
 	}
 
 	seriesNames.forEach(name=>{
 		const books = groups[name].sort((x, y)=> seriesOrder(x.b, y.b));
 		const info = CATALOG.series.get(name);
-		let head = `<p class="series-title"><a href="${esc(bookHref(name, 'series'))}">${esc(name)}</a> <span class="n">${ownedText(books.map(x=> x.b))}</span>`;
-		head += ` ${seriesEditButton(name)}`;
-		if(info){
-			head += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
-			if(info.url){
-				head += ` <a class="authorlink" href="${esc(info.url)}" target="_blank" rel="noopener">author site \u2197</a>`;
-			}
-		}
-		head += '</p>';
+		/** @type {string[]} */
+		const note = [];
 		if(info){
 			const missing = seriesMissing(name);
-			const note = [`${esc(totalText(info))} released total`];
+			note.push(`${totalText(info)} released total`);
 			if(missing && missing.length) note.push(`missing ${numberList(missing)}`);
-			if(info.note) note.push(esc(info.note));
-			head += `<p class="series-note">${note.join(' \u2014 ')}</p>`;
+			if(info.note) note.push(info.note);
 		}
-		html += `<div class="series-group">${head}`;
-		books.forEach(b=> html += bookCard(b));
-		html += '</div>';
+		out.push(buildElement('div', {class: 'series-group'},
+			buildElement('p', {class: 'series-title'}, buildElement('a', {href: bookHref(name, 'series')}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books.map(x=> x.b))),
+				' ', seriesEditButton(name), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)]]),
+			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
+			books.map(bookCard)));
 	});
 
 	if(standalone.length){
 		standalone.sort((x,y)=>x.b.title.localeCompare(y.b.title));
-		html += `<div class="series-group"><p class="series-title">Standalone <span class="n">${standalone.length} book${standalone.length>1?'s':''}</span></p>`;
-		standalone.forEach(b=> html += bookCard(b));
-		html += '</div>';
+		out.push(buildElement('div', {class: 'series-group'},
+			buildElement('p', {class: 'series-title'}, 'Standalone ', buildElement('span', {class: 'n'}, `${standalone.length} book${standalone.length>1?'s':''}`)),
+			standalone.map(bookCard)));
 	}
 
-	byId('results').innerHTML = html;
-	document.querySelectorAll('.iconbtn.del').forEach(btn=>{
-		btn.addEventListener('click', e=>{
-			const el = /** @type {HTMLElement & {_resetTimer?: ReturnType<typeof setTimeout>}} */ (e.currentTarget);
-			const i = parseInt(el.dataset.i || '',10);
-			if(el.dataset.confirm === '1'){
-				const [removed] = CATALOG.books.splice(i,1);
-				addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
-				// the book being edited moves up one when a book before it goes, and Save must still find it
-				if(EDIT_INDEX === i){ closeForm(); }
-				else if(EDIT_INDEX !== null && EDIT_INDEX > i) EDIT_INDEX--;
-				populateFilters(); render(); persist();
-				showIoStatus(`Removed ${removed.title}; imports will skip it.`);
-			} else {
-				el.dataset.confirm = '1';
-				el.innerHTML = '&check;';
-				el.title = 'Click again to confirm removal';
-				el.style.color = '#b0453f';
-				clearTimeout(el._resetTimer);
-				el._resetTimer = setTimeout(()=>{
-					el.dataset.confirm = '';
-					el.innerHTML = '&times;';
-					el.title = 'Remove';
-					el.style.color = '';
-				}, 3000);
-			}
-		});
-	});
-	document.querySelectorAll('.iconbtn.edit').forEach(btn=>{
-		btn.addEventListener('click', e=>{
-			const i = parseInt(/** @type {HTMLElement} */ (e.currentTarget).dataset.i || '',10);
-			openEditForm(i);
-		});
-	});
-	document.querySelectorAll('.iconbtn.merge').forEach(btn=>{
-		btn.addEventListener('click', e=> pickMergeBook(parseInt(/** @type {HTMLElement} */ (e.currentTarget).dataset.i || '',10)));
-	});
-	bindSeriesEditButtons();
+	fillElement(byId('results'), out);
 	placeBookForm();
 }
 
@@ -461,58 +428,48 @@ function renderSeriesOverview(){
 		`${Object.keys(groups).length} series across ${CATALOG.books.length} audiobooks \u2014 tap a series to see its titles`;
 	byId('resultCount').textContent = `${seriesNames.length} series shown`;
 
-	let html = '';
+	/** @type {Child[]} */
+	const out = [];
 	const showStandalone = !onlyMissing && (!q || 'standalone'.includes(q));
 	if(seriesNames.length === 0 && !showStandalone){
-		html = onlyMissing ? '<p class="empty">No series with missing books.</p>' : '<p class="empty">No series match your search.</p>';
+		out.push(buildElement('p', {class: 'empty'}, onlyMissing ? 'No series with missing books.' : 'No series match your search.'));
 	}
 
 	seriesNames.forEach(name=>{
 		const books = groups[name];
 		const authors = uniqueSorted(books.flatMap(authorsOf));
 		const info = CATALOG.series.get(name);
-		html += `<div class="srow"><div class="srow-head">
-			<a class="srow-title" href="${esc(stateHash({view: 'library', series: name, book: null}))}">${esc(name)}</a>
-			<span class="srow-owned">${Series.owned(books)} owned${info ? ' of ' + esc(totalText(info)) : ''}</span>
-			${seriesEditButton(name)}
-		</div>`;
-		let foot = `<div class="srow-foot"><span class="tag">${authorLinks(authors)}</span>`;
-		if(info){
-			foot += ` <span class="status ${info.status}">${info.status === 'complete' ? 'complete' : 'ongoing'}</span>`;
-			if(info.url) foot += ` <a class="authorlink" href="${esc(info.url)}" target="_blank" rel="noopener">author site \u2197</a>`;
-		}
 		const missing = seriesMissing(name);
-		if(missing && missing.length) foot += ` <span class="missing">missing ${numberList(missing)}</span>`;
-		foot += '</div>';
-		html += foot;
-		if(info && info.note) html += `<p class="srow-note">${esc(info.note)}</p>`;
-		html += '</div>';
+		out.push(buildElement('div', {class: 'srow'},
+			buildElement('div', {class: 'srow-head'},
+				buildElement('a', {class: 'srow-title', href: stateHash({view: 'library', series: name, book: null})}, name), ' ',
+				buildElement('span', {class: 'srow-owned'}, `${Series.owned(books)} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
+				seriesEditButton(name)),
+			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'}, authorLinks(authors)),
+				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)]],
+				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
+			info && info.note && buildElement('p', {class: 'srow-note'}, info.note)));
 	});
 
 	if(showStandalone){
-		html += `<div class="srow"><div class="srow-head">
-			<a class="srow-title" href="#standalone">Standalone</a>
-			<span class="srow-owned">${standaloneCount} owned</span>
-		</div></div>`;
+		out.push(buildElement('div', {class: 'srow'}, buildElement('div', {class: 'srow-head'},
+			buildElement('a', {class: 'srow-title', href: '#standalone'}, 'Standalone'), ' ',
+			buildElement('span', {class: 'srow-owned'}, `${standaloneCount} owned`))));
 	}
 
-	byId('results').innerHTML = html;
-	bindSeriesEditButtons();
+	fillElement(byId('results'), out);
 }
 
 // ------------------------------------------------------------------ series info
 // Edits the series' entry in CATALOG.series (released total, status, note, author site) and its name,
 // which is renamed on every book in the series. Like book edits, it is kept in this browser (see persist).
-/** @param {string} name */
+/**
+ * @param {string} name
+ * @returns {HTMLButtonElement}
+ */
 function seriesEditButton(name){
 	const label = CATALOG.series.has(name) ? 'Edit series info' : 'Add series info';
-	return `<button class="iconbtn sedit" data-series="${esc(name)}" title="${label}" aria-label="${label}">&#9998;</button>`;
-}
-
-function bindSeriesEditButtons(){
-	document.querySelectorAll('.iconbtn.sedit').forEach(btn=>{
-		btn.addEventListener('click', e=> openSeriesForm(/** @type {HTMLElement} */ (e.currentTarget).dataset.series || ''));
-	});
+	return buildElement('button', {class: 'iconbtn sedit', 'data-series': name, title: label, 'aria-label': label, onclick: ()=> openSeriesForm(name)}, '\u270E');
 }
 
 /** @param {string} name */
@@ -636,23 +593,23 @@ const asinUrl = site=> `https://www.${site}/${site.startsWith('audible.') ? 'pd'
 /**
  * An edition as Edition.format() writes it, with each ASIN linking to the book on its site, and the
  * Goodreads id and Hardcover ids to the book there (Hardcover's links by id keep working when it renames the book).
- * @type {(url: string, id: string) => string}
+ * @type {(url: string, id: string) => HTMLAnchorElement}
  */
-const idLink = (url, id)=> `<a href="${esc(url + encodeURIComponent(id))}" target="_blank" rel="noopener">${esc(id)}</a>`;
+const idLink = (url, id)=> buildElement('a', {href: url + encodeURIComponent(id), target: '_blank', rel: 'noopener'}, id);
 
 /**
  * @param {Edition} ed
  * @param {boolean} narrators whether to name its narrators (not when the book's line names them all)
- * @returns {string}
+ * @returns {Child[]}
  */
-function editionHtml(ed, narrators){
+function editionParts(ed, narrators){
 	/** @type {Partial<Record<string, string>>} */
 	const urls = {gr: GOODREADS_URL, hc: HardcoverClient.url('edition', '')};
-	const asins = ()=> ed.asinList().map(([site, asin])=> `${esc(site)} ${idLink(asinUrl(site), asin)}`).join(', ');
-	return ed.parts().filter(([k])=> narrators || k !== 'n').map(([k, label, value])=>{
+	const asins = ()=> joined(ed.asinList().map(([site, asin])=> [site + ' ', idLink(asinUrl(site), asin)]), ', ');
+	return joined(ed.parts().filter(([k])=> narrators || k !== 'n').map(([k, label, value])=>{
 		const url = urls[k];
-		return (label ? esc(label) + ' ' : '') + (k === 'asin' ? asins() : url ? idLink(url, value) : esc(value));
-	}).join('; ');
+		return [label ? label + ' ' : '', k === 'asin' ? asins() : url ? idLink(url, value) : value];
+	}), '; ');
 }
 
 /**
@@ -667,37 +624,65 @@ function bookHref(name, kind = 'book'){
 
 /**
  * @param {ListedBook} listed
- * @returns {string}
+ * @returns {HTMLDivElement}
  */
 function bookCard({b, i}){
 	const books = CATALOG.books;
-	const num = b.number ? `<div class="num">${esc(b.number)}</div>` : '<div class="num">&bull;</div>';
 	// the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
 	const narrators = [...new Set(b.editions.map(ed=> Text.namesText(ed.narrators)).filter(Boolean))];
 	const differ = narrators.length > 1;
-	const meta = [authorLinks(authorsOf(b)), narrators.length ? esc('narr. '+narrators.join(' / ')) : null].filter(Boolean).join(' \u2014 ');
-	const genres = b.genres.map(g=>`<span class="tag">${esc(g)}</span>`).join('');
-	const read = b.read.length ? `<div class="read">Read ${esc(b.read.join(', '))}</div>` : '';
+	const meta = joined([authorLinks(authorsOf(b)), narrators.length ? 'narr. '+narrators.join(' / ') : null].filter(Boolean), ' \u2014 ');
 	const editions = b.editions.map(ed=>{
 		const also = (SHARED.get(ed) || []).map(k=>
-			`<a href="${esc(bookHref(books[k].title))}">${esc(books[k].title + (books[k].number ? ` #${books[k].number}` : ''))}</a>`);
-		return `<div class="edition">${editionHtml(ed, differ)}` +
-			(also.length ? `<br><span class="also">Also in this edition: ${also.join(', ')}</span>` : '') + '</div>';
-	}).join('');
+			buildElement('a', {href: bookHref(books[k].title)}, books[k].title + (books[k].number ? ` #${books[k].number}` : '')));
+		return buildElement('div', {class: 'edition'}, editionParts(ed, differ),
+			also.length > 0 && [buildElement('br'), buildElement('span', {class: 'also'}, 'Also in this edition: ', joined(also, ', '))]);
+	});
 	const picked = MERGE_FROM === i;
 	const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${books[MERGE_FROM].title}`;
-	return `<div class="book${picked ? ' picked' : ''}" data-i="${i}">${num}<div class="info">
-		<div class="title"><a href="${esc(bookHref(b.title))}">${esc(b.title)}</a></div>
-		<div class="meta">${meta}</div>
-		${read}
-		${b.hardcoverId ? `<div class="ids">Hardcover book ${idLink(HardcoverClient.url('book', ''), b.hardcoverId)}</div>` : ''}
-		${editions}
-		${genres ? `<div class="genres">${genres}</div>` : ''}
-	</div><div class="book-actions">
-		<button class="iconbtn edit" data-i="${i}" title="Edit" aria-label="Edit">&#9998;</button>
-		<button class="iconbtn merge" data-i="${i}" title="${esc(mergeLabel)}" aria-label="${esc(mergeLabel)}">&#8644;</button>
-		<button class="iconbtn del" data-i="${i}" title="Remove" aria-label="Remove">&times;</button>
-	</div></div>`;
+	return buildElement('div', {class: 'book' + (picked ? ' picked' : ''), 'data-i': i},
+		buildElement('div', {class: 'num'}, b.number || '\u2022'),
+		buildElement('div', {class: 'info'},
+			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b.title)}, b.title)),
+			buildElement('div', {class: 'meta'}, meta),
+			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', ')),
+			b.hardcoverId && buildElement('div', {class: 'ids'}, 'Hardcover book ', idLink(HardcoverClient.url('book', ''), b.hardcoverId)),
+			editions,
+			b.genres.length > 0 && buildElement('div', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))),
+		buildElement('div', {class: 'book-actions'},
+			buildElement('button', {class: 'iconbtn edit', 'data-i': i, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(i)}, '\u270E'), ' ',
+			buildElement('button', {class: 'iconbtn merge', 'data-i': i, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(i)}, '\u21C4'), ' ',
+			buildElement('button', {class: 'iconbtn del', 'data-i': i, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '\u00D7')));
+}
+
+/**
+ * A book's remove button: the first press asks for a second one, which removes the book (its data-i).
+ * @param {Event} e
+ */
+function removeBookClick(e){
+	const el = /** @type {HTMLElement & {_resetTimer?: ReturnType<typeof setTimeout>}} */ (e.currentTarget);
+	const i = parseInt(el.dataset.i || '',10);
+	if(el.dataset.confirm === '1'){
+		const [removed] = CATALOG.books.splice(i,1);
+		addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
+		// the book being edited moves up one when a book before it goes, and Save must still find it
+		if(EDIT_INDEX === i){ closeForm(); }
+		else if(EDIT_INDEX !== null && EDIT_INDEX > i) EDIT_INDEX--;
+		populateFilters(); render(); persist();
+		showIoStatus(`Removed ${removed.title}; imports will skip it.`);
+	} else {
+		el.dataset.confirm = '1';
+		el.textContent = '\u2713';
+		el.title = 'Click again to confirm removal';
+		el.style.color = '#b0453f';
+		clearTimeout(el._resetTimer);
+		el._resetTimer = setTimeout(()=>{
+			el.dataset.confirm = '';
+			el.textContent = '\u00D7';
+			el.title = 'Remove';
+			el.style.color = '';
+		}, 3000);
+	}
 }
 
 // Typing a search is one step back, however many letters it took: the first change of the search
@@ -824,28 +809,30 @@ const asinSitesOf = fields=> [DEFAULT_ASIN_SITE, ...Object.keys(fields).filter(k
 /**
  * @param {Record<string, string>} fields
  * @param {number} i the edition's card
- * @returns {string}
+ * @returns {HTMLDivElement[]}
  */
-function asinFieldsHtml(fields, i){
+function asinFields(fields, i){
 	const sites = asinSitesOf(fields);
 	const more = Edition.ASIN_SITES.filter(site=> !sites.includes(site));
-	return sites.map(site=> `<div class="ef-site"><label>${esc(site)}</label>` +
-			`<input data-i="${i}" data-k="asin:${esc(site)}" value="${esc(fields['asin:' + site] || '')}" placeholder="${esc(EDITION_HINTS.asin)}"></div>`).join('') +
-		(more.length ? `<div class="ef-site"><label>&nbsp;</label><select data-add-site="${i}" aria-label="Add an ASIN for another site">` +
-			'<option value="">+ Another site</option>' + more.map(site=> `<option value="${esc(site)}">${esc(site)}</option>`).join('') +
-			'</select></div>' : '');
+	return [
+		...sites.map(site=> buildElement('div', {class: 'ef-site'}, buildElement('label', {}, site),
+			buildElement('input', {'data-i': i, 'data-k': 'asin:' + site, value: fields['asin:' + site] || '', placeholder: EDITION_HINTS.asin}))),
+		...more.length ? [buildElement('div', {class: 'ef-site'}, buildElement('label', {}, '\u00A0'),
+			buildElement('select', {'data-add-site': i, 'aria-label': 'Add an ASIN for another site'},
+				buildElement('option', {value: ''}, '+ Another site'), more.map(site=> buildElement('option', {value: site}, site))))] : [],
+	];
 }
 
 function renderFormEditions(){
-	byId('f_editions').innerHTML = FORM_EDITIONS.map(({fields, also}, i)=>
-		`<div class="editionCard" role="group" aria-label="Edition ${i + 1}"><div class="editionCardHead"><span>Edition ${i + 1}</span>` +
-		`<button type="button" class="removeEdition" data-remove="${i}" title="Remove this edition">Remove</button></div>` +
-		(also.length ? `<p class="editionAlso">Also on ${also.map(esc).join(', ')}: changes here change it there too.</p>` : '') +
-		'<div class="editionFields">' + Edition.FIELDS.map(([k, , label])=> k === 'asin'
-			? `<div class="ef-asin" role="group" aria-label="${label}"><label>${label}</label><div class="asinSites">${asinFieldsHtml(fields, i)}</div></div>`
-			: `<div class="ef-${k}"><label>${label}</label><input data-i="${i}" data-k="${k}" value="${esc(fields[k] || '')}" placeholder="${esc(EDITION_HINTS[k])}"></div>`
-		).join('') + '</div></div>'
-	).join('');
+	fillElement(byId('f_editions'), FORM_EDITIONS.map(({fields, also}, i)=>
+		buildElement('div', {class: 'editionCard', role: 'group', 'aria-label': `Edition ${i + 1}`},
+			buildElement('div', {class: 'editionCardHead'}, buildElement('span', {}, `Edition ${i + 1}`),
+				buildElement('button', {type: 'button', class: 'removeEdition', 'data-remove': i, title: 'Remove this edition'}, 'Remove')),
+			also.length > 0 && buildElement('p', {class: 'editionAlso'}, `Also on ${also.join(', ')}: changes here change it there too.`),
+			buildElement('div', {class: 'editionFields'}, Edition.FIELDS.map(([k, , label])=> k === 'asin'
+				? buildElement('div', {class: 'ef-asin', role: 'group', 'aria-label': label}, buildElement('label', {}, label), buildElement('div', {class: 'asinSites'}, asinFields(fields, i)))
+				: buildElement('div', {class: `ef-${k}`}, buildElement('label', {}, label),
+					buildElement('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k]})))))));
 }
 
 const editionsEditor = byId('f_editions');

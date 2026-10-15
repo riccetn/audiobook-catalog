@@ -65,7 +65,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   it starts **empty**, never with the demo data; one that can't be read is set aside under `.unreadable`; edits left under the
   old `audiobook-catalog-data` key by the removed `make serve` save are adopted when there is no catalog yet),
   `persist` (writes the whole catalog back; refuses when another tab wrote it since this page last read or wrote it),
-  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), the page links, the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
+  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below), the page links, the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`).
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are kept in localStorage
@@ -87,7 +87,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
-    (hence `--experimental-vm-modules`) with a hand-rolled fake DOM and a fake localStorage (`boot`'s `files`
+    (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
+    what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws) and a fake localStorage (`boot`'s `files`
     seed the stored catalog, by default from `sample/`; `files: null` for none). Tests reach what the
     modules export (`ctx.render()`, `get('CATALOG.books')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
@@ -142,6 +143,9 @@ The repo is public; the user's library is not.
   compact one-line helpers are fine. Comments explain *why* in plain sentences; JSDoc on
   non-obvious functions.
 - Status messages and errors are short, plain English; anything that changes many books shows a preview first.
+- Pages draw with the DOM API, never HTML strings: `buildElement(tag, attrs, ...children)` from `store.js` makes an element
+  (children are elements or text, always put in as text; an `on...` function in `attrs` is a listener), `fillElement(el, ...children)`
+  replaces what an element holds, and `joined(items, ', ')` puts a separator between children. No `innerHTML`.
 - American spelling everywhere in code, comments and docs. Text the page shows (status lines, previews, titles set
   from code) goes through `spell()` from `store.js`, which gives British spelling to a browser that prefers it
   (`prefersBritish`/`spelled`/`BRITISH_WORDS` in `modules/text.js`); the static HTML is respelled on load. Never respell data.
