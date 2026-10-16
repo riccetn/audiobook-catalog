@@ -20,6 +20,7 @@ import {HardcoverClient} from './hardcover-client.js';
  * @property {string[]} [read] dates read, oldest first: "2024-03-15", "2024-03" or "2024"; none means unknown, not unread
  * @property {string} [hardcoverId] Hardcover's book id
  * @property {Edition[]} [editions]
+ * @property {string} [id] the id it is stored under in this browser, which never changes (see CatalogRecords)
  */
 
 /**
@@ -55,9 +56,14 @@ const storedEditions = rec => rec && Array.isArray(rec.e) ? rec.e.filter(Text.is
 export class Book {
 	/** the keys of a stored book, in order */
 	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'hcb', 'e'];
+	// The key a backup keeps the book's id under, before the others. It is not one of KEYS, as it says which
+	// record the book is, not what the book is: text() and the comparisons built on it leave it out.
+	static ID_KEY = 'uid';
 
 	/** @param {BookInit} [init] */
-	constructor({title = '', authors = [], series, number, genres = [], read = [], hardcoverId, editions = []} = {}){
+	constructor({title = '', authors = [], series, number, genres = [], read = [], hardcoverId, editions = [], id} = {}){
+		/** @type {string | undefined} the id it is stored under (CatalogRecords gives one to a book that has none) */
+		this.id = id;
 		this.title = title;
 		/** @type {string[]} */
 		this.authors = [...authors];
@@ -101,7 +107,8 @@ export class Book {
 		delete this.extra[key];
 		/** @type {(ok: boolean, apply: () => void, reset: () => void) => void} */
 		const put = (ok, apply, reset) => { reset(); if(ok) apply(); else if(v !== undefined) this.extra[key] = v; };
-		if(key === 't') put(nonEmpty(v), () => { this.title = /** @type {string} */ (v); }, () => { this.title = ''; });
+		if(key === Book.ID_KEY) put(nonEmpty(v), () => { this.id = /** @type {string} */ (v); }, () => { this.id = undefined; });
+		else if(key === 't') put(nonEmpty(v), () => { this.title = /** @type {string} */ (v); }, () => { this.title = ''; });
 		else if(key === 'a') put(textList(v) && v.length > 0, () => { this.authors = [.../** @type {string[]} */ (v)]; }, () => { this.authors = []; });
 		else if(key === 'g') put(textList(v), () => { this.genres = [.../** @type {string[]} */ (v)]; }, () => { this.genres = []; });
 		else if(key === 'r') put(Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'), () => { this.read = [.../** @type {string[]} */ (v)]; }, () => { this.read = []; });
@@ -123,7 +130,8 @@ export class Book {
 	value(key){
 		/** @type {unknown} */
 		let v;
-		if(key === 't') v = this.title || undefined;
+		if(key === Book.ID_KEY) v = this.id;
+		else if(key === 't') v = this.title || undefined;
 		else if(key === 'a') v = this.authors.length ? [...this.authors] : undefined;
 		else if(key === 'g') v = this.genres.length ? [...this.genres] : undefined;
 		else if(key === 'r') v = this.read.length ? [...this.read] : undefined;
@@ -136,7 +144,7 @@ export class Book {
 	toJSON(){
 		/** @type {Record<string, unknown>} */
 		const out = {};
-		for(const k of Book.KEYS){ const v = this.value(k); if(v !== undefined) out[k] = v; }
+		for(const k of [Book.ID_KEY, ...Book.KEYS]){ const v = this.value(k); if(v !== undefined) out[k] = v; }
 		for(const [k, v] of Object.entries(this.extra)) if(!(k in out)) out[k] = v;
 		return out;
 	}
@@ -314,6 +322,9 @@ export class Book {
 			return i !== undefined && Number.isInteger(i) && books[i] && has(books[i]) ? books[i] : books.find(has);
 		};
 		const out = new Book();
+		// the merged book is the first one that has an id, so its record stays
+		const kept = books.find(b => b.id);
+		if(kept) out.id = kept.id;
 		const title = from('title', b => b.title !== '');
 		if(title) out.title = title.title;
 		const authors = from('authors', b => b.authors.length > 0);
@@ -491,36 +502,5 @@ export class Book {
 		}
 		const pickHcb = (/** @type {string[]} */ ids) => ids.find(id => owners.get(id) === 1) || ids[0];
 		return books.map(b => Book.fixSeriesTitle(Text.fixPeople(Book.fixEditions(Book.fixReadDates(b), pickHcb))));
-	}
-
-	/**
-	 * What in `raw` (stored books as read, before fixBooks) is from an older format: a sentence per kind, each
-	 * saying how many books it is and how they are read; any save writes them the current way. Empty when the
-	 * books are all in the current format.
-	 * @param {Unchecked} raw
-	 * @returns {string[]}
-	 */
-	static formatNotes(raw){
-		if(!Array.isArray(raw)) return [];
-		const notes = [];
-		if(raw.some(b => b && typeof b === 'object' && ['id', 'gr', 'isbn', 'n'].some(k => k in b))){
-			notes.push('some books keep their ids, ISBNs or narrator on the book, from before editions; they are read as editions');
-		}
-		const oldAsins = raw.filter(b => storedEditions(b).some(ed => 'id' in ed)).length;
-		if(oldAsins){
-			notes.push(`${oldAsins} book(s) keep an edition's ASIN as "id", from before ASINs were kept by site; it is read as the ` +
-				'audible.com ASIN');
-		}
-		const oldEditions = raw.filter(b => storedEditions(b).some(ed => 'hcb' in ed || Array.isArray(ed.isbn))).length;
-		if(oldEditions){
-			notes.push(`${oldEditions} book(s) keep a Hardcover book id on an edition or several ISBNs on one edition; they are read ` +
-				'with the id on the book and one edition per ISBN');
-		}
-		const textNames = raw.filter(b => b && typeof b === 'object' &&
-			(typeof b.a === 'string' || typeof b.n === 'string' || storedEditions(b).some(ed => typeof ed.n === 'string'))).length;
-		if(textNames) notes.push(`${textNames} book(s) keep their authors or narrators as one comma separated text; they are read as lists`);
-		const retitled = raw.filter(b => b && typeof b === 'object' && Book.fixSeriesTitle(b) !== b).length;
-		if(retitled) notes.push(`${retitled} title(s) still hold their series ("Title: Series, Book 3"); they are read with the series split off`);
-		return notes;
 	}
 }

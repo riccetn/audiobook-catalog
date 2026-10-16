@@ -9,9 +9,10 @@ served.
 
 ## Where the catalog lives
 
-The catalog (books, series info, author, narrator and publisher info and the list of books imports skip) is kept in the
-browser's `localStorage`, under the key `audiobook-catalog-device`, and "Not duplicates" marks under
-`audiobook-catalog-not-duplicates`. Every edit, import, Restore and Merge is saved there at once. All
+The catalog (books, series info, author, narrator and publisher info, the list of books imports skip and
+the "Not duplicates" marks) is kept in the browser's IndexedDB, in a database called `audiobook-catalog`,
+as a record per book, edition, series and person ([How the browser keeps it](data-format.md#how-the-browser-keeps-it)).
+Every edit, import, Restore and Merge is saved there at once, and a save writes only what changed. All
 pages of the app share it; if two tabs edit the catalog at once, the one that saves second refuses
 and asks you to reload it, rather than overwriting the other.
 
@@ -21,8 +22,18 @@ backup (below), and combine two that both changed with **Merge** ([Merge a backu
 
 The first time the app opens somewhere, the catalog is empty. The app asks the browser to keep its
 storage when space runs low, but clearing the site's data (or the browser deciding to) deletes it.
-If the stored catalog can't be read, it is set aside under `audiobook-catalog-device.unreadable` and
-the catalog starts empty; restore a backup.
+If the stored catalog can't be read, it is set aside (in the database's `meta` store, under `unreadable`)
+and the catalog starts empty; restore a backup. A browser that keeps no IndexedDB for the page (some
+private windows) shows the catalog but saves nothing, and says so: export a backup before you leave.
+
+**From localStorage**: until 2026-10 the catalog was kept in `localStorage`, under the key
+`audiobook-catalog-device`, with the "Not duplicates" marks under `audiobook-catalog-not-duplicates`. The
+first time the app opens in a browser that still has those, it moves them into IndexedDB (in the current
+format) and renames the keys to `audiobook-catalog-device.moved-to-indexeddb` and
+`audiobook-catalog-not-duplicates.moved-to-indexeddb`, a copy that is never read again. A catalog with a
+value IndexedDB has no place for (a value that isn't what its field holds, or a key no book has, which
+**Check** lists) is shown but not moved, and nothing is saved until it is fixed: export a backup, fix
+the values the message names, and Restore it.
 
 ## Backups
 
@@ -30,7 +41,10 @@ the catalog starts empty; restore a backup.
 imports skip and the "Not duplicates" marks, as one JSON file. It is the only copy of your catalog
 outside the browser, so export now and then and keep the files somewhere safe.
 
-**Restore** replaces the catalog with a backup. It also takes the data files of a catalog from
+**Restore** replaces the catalog with a backup; the books, editions, series and people keep the ids they
+were stored under (a backup carries them), so a Restore of this browser's own backup puts back the same
+records. A backup with a value the catalog has no place for is not restored, and the message names it.
+It also takes the data files of a catalog from
 before it lived in the browser: pick `books.json`, `series-info.json`, `authors.json`, `excluded.txt` and
 `not-duplicates.txt` (from `data/`) together. Only `books.json` is needed; series info and author info
 the files don't have are kept as they are, and the exclusions and marks are added to those kept already.

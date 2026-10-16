@@ -10,7 +10,7 @@ public/               the app, and all that a static server serves (make serve, 
   authors.html, narrators.html, publishers.html, credits.js    the authors, narrators and publishers, and each
                         one's page: bio, links, series and titles (authors.js, narrators.js and publishers.js
                         start credits.js with their kind)
-  store.js              shared by the pages: loads the catalog from localStorage and saves every edit there
+  store.js              shared by the pages: loads the catalog from IndexedDB and saves every edit there
   styles.css
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline
   modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Contributor, the importers and
@@ -25,8 +25,9 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 
 - `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`),
   and the browser smoke test (`app.smoke.test.mjs`), which executes each page's real modules against a small fake DOM built from
-  its HTML, with a fake `localStorage` holding the demo data (running ES modules in `node:vm` is what
-  needs the flag; Node prints an ExperimentalWarning for it).
+  its HTML, with a fake `localStorage` holding the demo data, which the page moves into a fake IndexedDB
+  (`tests/fake-indexeddb.mjs`) as a browser would (running ES modules in `node:vm` is what needs the flag;
+  Node prints an ExperimentalWarning for it).
 - `.github/workflows/ci.yml` runs the same on GitHub Actions. The smoke test also fails when `public/`
   holds a file the service worker doesn't cache, so nothing ends up served by accident.
 - `.github/workflows/pages.yml` publishes `public/` to GitHub Pages on pushes to `main`.
@@ -48,7 +49,7 @@ make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig
   loads nothing more.
 - Functions say what they take and give with `@param` and `@returns`; a variable that starts empty says
   what it will hold (`/** @type {string[]} */`).
-- The checker only knows what the code says. A catalog read from localStorage, a backup or a CSV is
+- The checker only knows what the code says. A catalog read from the old localStorage, a backup or a CSV is
   `Unchecked` (any) until the code has checked it: `Backup.read()` and `Book.fixBooks()` bring it to the
   current format, and `Validator.validate()` is what makes sure it describes `Book`s before `Book.fromJSON()` makes them.
 - `byId(id)` and `fieldById(id)` in `store.js` get the page's elements; they throw when the page lacks

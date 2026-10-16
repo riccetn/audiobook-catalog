@@ -11,7 +11,7 @@ import {Text} from './modules/text.js';
 import {Edition} from './modules/edition.js';
 import {Book} from './modules/book.js';
 import {Duplicates} from './modules/duplicates.js';
-import { CATALOG, addNotDuplicates, updateNav, persist, showIoStatus, startPage, byId, spell, buildElement, fillElement } from './store.js';
+import { CATALOG, addNotDuplicates, persist, showIoStatus, startPage, byId, spell, buildElement, fillElement } from './store.js';
 /** @import {Picks} from './modules/book.js' */
 /** @import {Child} from './store.js' */
 
@@ -175,6 +175,7 @@ export function mergeGroup(g){
 	const merged = Book.merge(idx.map(i=> CATALOG.books[i]), groupPicks(g));
 	const copy = CATALOG.clone();
 	const keep = Math.min(...idx);
+	merged.id = CATALOG.books[keep].id;   // the book kept in place stays the record it was
 	// an edition a box set shares with other titles gets what the merged one gained there too
 	copy.saveBook(keep, merged);
 	idx.filter(i=> i !== keep).sort((x, y)=> y - x).forEach(i=> copy.books.splice(i, 1));
@@ -197,8 +198,7 @@ export function keepApart(g){
 	const books = (DUP_GROUPS[g] || []).map(i=> CATALOG.books[i]);
 	addNotDuplicates(books.flatMap((x, k)=> books.slice(k + 1).map(y=> Duplicates.pairKey(x, y))));
 	if(DUP_MANUAL && DUP_MANUAL.join() === (DUP_GROUPS[g] || []).join()) forgetManualPair();
-	updateNav();
-	refreshPage();
+	refreshPage(); persist();
 }
 
 /**
@@ -230,8 +230,7 @@ export function joinBookEditions(i){
 export function keepEditionsApart(i){
 	if(!CATALOG.books[i]) return;
 	addNotDuplicates([Duplicates.editionsKey(CATALOG.books[i])]);
-	updateNav();
-	refreshPage();
+	refreshPage(); persist();
 }
 
 export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); });

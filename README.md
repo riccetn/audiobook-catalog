@@ -3,7 +3,7 @@
 A personal audiobook library, merged from Audible, Goodreads and Hardcover exports, grouped by series
 and searchable by title, author, series and genre. The app is four plain pages (the catalog, *Authors*,
 *Import & export* and *Duplicates*) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
-and the catalog is kept in the browser's local storage. There is no build step and no server code.
+and the catalog is kept in the browser's IndexedDB. There is no build step and no server code.
 
 - Vanilla JavaScript: no framework, no bundler, nothing the app loads from npm
 - Node 18+ for the tests; TypeScript (`npm install`) checks the code against its JSDoc types, without a build step

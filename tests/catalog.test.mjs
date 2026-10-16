@@ -24,7 +24,10 @@ import { GoodreadsImporter } from '../public/modules/goodreads-importer.js';
 import { GoodreadsExporter } from '../public/modules/goodreads-exporter.js';
 import { HardcoverClient } from '../public/modules/hardcover-client.js';
 import { HardcoverSync } from '../public/modules/hardcover-sync.js';
+import { CatalogRecords } from '../public/modules/catalog-records.js';
+import { CatalogDatabase, CatalogConflict } from '../public/modules/catalog-database.js';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
+import { FakeIndexedDB, FakeKeyRange } from './fake-indexeddb.mjs';
 
 // Books are written here as they are stored ({t, a, s, sn, ..., e}), and compared that way: json() gives
 // what toJSON() writes, so a Book, an Edition or a report of them compares with the stored form.
@@ -1500,15 +1503,6 @@ test('hardcoverAsker asks one query a request, pausing between them, and says pl
 	assert.equal(HardcoverClient.cleanToken('  bearer abc '), 'abc');
 });
 
-test('formatNotes says what in books.json is from an older format', () => {
-	assert.deepEqual(Book.formatNotes([{ t: 'Gull Isle', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0SET00001' } }] }]), []);
-	const notes = Book.formatNotes([{ t: 'Old Favorite', a: 'Ann Vale', e: [{ id: 'B0OLD00001' }] }]);
-	assert.equal(notes.length, 2);
-	assert.match(notes[0], /1 book\(s\) keep an edition's ASIN as "id"/);
-	assert.match(notes[1], /1 book\(s\) keep their authors or narrators as one comma separated text/);
-	assert.deepEqual(Book.formatNotes({}), []);
-});
-
 test('British spelling: the first English language decides; otherwise American', () => {
 	for (const langs of [['en-GB'], ['en_AU'], ['sv-SE', 'sv', 'en-GB', 'en-US'], ['en-IE'], ['en-Latn-NZ'], ['EN-in']]) assert.equal(Text.prefersBritish(langs), true, langs.join());
 	for (const langs of [[], ['en'], ['en-US', 'en-GB'], ['sv-SE', 'sv'], ['fr-CA'], ['de-GB']]) assert.equal(Text.prefersBritish(langs), false, langs.join());
@@ -1520,4 +1514,152 @@ test('spelled() respells the app\'s words for British readers, and leaves names 
 	assert.equal(Text.spelled('the catalogue', true), 'the catalogue');
 	assert.equal(Text.spelled('audiobook-catalog-backup, read:catalog, catalogs-x, cataloging', true), 'audiobook-catalog-backup, read:catalog, catalogs-x, cataloging');
 	assert.equal(Text.spelled('Check the catalog', false), 'Check the catalog');
+});
+
+// ------------------------------------------------------------------ IndexedDB records
+// Numbered ids, so tests can name them.
+const numbered = () => { let n = 0; return () => `id-${++n}`; };
+// A catalog's records, and the catalog they make again, as a backup has it (without the ids).
+const recordsOf = (catalog, newId = numbered()) => CatalogRecords.fromCatalog(catalog, newId);
+const withoutIds = x => JSON.parse(JSON.stringify(x), (k, v) => (k === 'uid' || k === 'ids' ? undefined : v));
+const BOX = { asin: { 'audible.com': 'B0BOX00001' }, n: ['Cy Hale'], p: 'Gull Audio' };
+const shelf = () => Catalog.fromJSON({
+	books: [
+		{ t: 'The Glass Orchard', a: ['Mira Tallis'], s: 'Orchard Cycle', sn: '1', g: ['Fantasy'], r: ['2024-01-05', '2025-02-03'], e: [BOX, { gr: '4001' }] },
+		{ t: 'Orchard Frost', a: ['Mira Tallis', 'Odo Wren'], s: 'Orchard Cycle', sn: '2', e: [BOX] },
+		{ t: 'Orchard Cycle, Books 1-2', a: ['Mira Tallis'], s: 'Orchard Cycle', sn: '1-2', e: [BOX] },
+		{ t: 'A Quiet Harbor', a: ['Odo Wren'], e: [{ isbn: '9780306406157', n: ['Mira Tallis'] }] },
+	],
+	seriesInfo: { 'Orchard Cycle': { total: 3, status: 'ongoing' } },
+	authors: { 'Mira Tallis': { bio: 'Writes about orchards.' } },
+	narrators: { 'Cy Hale': { url: 'https://example.com/cy' } },
+	excluded: ['B0GONE0001', 'Gone | Odo Wren'],
+});
+
+test('records: a catalog becomes records pointing at each other by id, and the same catalog again', () => {
+	const catalog = shelf();
+	const before = withoutIds(catalog);
+	const records = recordsOf(catalog);
+	assert.deepEqual(withoutIds(CatalogRecords.toCatalog(records)), before);
+	const [orchard, frost, set, harbor] = records.books;
+	assert.deepEqual(orchard, { id: 'id-1', title: 'The Glass Orchard', authorIds: [records.contributors.find(c => c.name === 'Mira Tallis' && c.kind === 'author').id],
+		genres: ['Fantasy'], read: ['2024-01-05', '2025-02-03'], editionIds: ['id-5', 'id-6'], position: 0, sortTitle: 'glass orchard', titleKey: 'the glass orchard',
+		firstAuthorKey: 'mira tallis', words: ['the', 'glass', 'orchard', 'mira', 'tallis'], seriesId: orchard.seriesId, seriesKey: 'orchardcycle',
+		isCollection: 0, numberKey: 1, numberEnd: 1, number: '1', lastRead: '2025-02-03' });
+	assert.deepEqual([set.isCollection, set.numberKey, set.numberEnd], [1, 1, 2]);
+	assert.equal(harbor.seriesId, undefined, 'a book without a series is in no series index');
+	// the box set's edition is one record on all three books
+	const box = records.editions.find(ed => ed.idKeys.includes('asin B0BOX00001'));
+	assert.deepEqual(box.bookIds, [orchard.id, frost.id, set.id]);
+	assert.ok([orchard, frost, set].every(b => b.editionIds.includes(box.id)));
+	assert.equal(records.editions.length, 3);
+	assert.deepEqual(records.series.map(x => [x.name, x.bookCount, x.owned, x.missing, x.total, x.lastRead]), [['Orchard Cycle', 3, 2, [3], 3, '2025-02-03']]);
+	// someone who writes one book and narrates another has a record for each
+	assert.deepEqual(records.contributors.filter(c => c.name === 'Mira Tallis').map(c => [c.kind, c.bookCount, c.bio]),
+		[['author', 3, 'Writes about orchards.'], ['narrator', 1, undefined]]);
+	assert.deepEqual(records.credits.filter(c => c.bookId === frost.id).map(c => c.kind), ['author', 'author', 'narrator', 'publisher']);
+	assert.deepEqual(records.exclusions, [{ entry: 'B0GONE0001', position: 0 }, { entry: 'Gone | Odo Wren', position: 1 }]);
+	// the catalog keeps the ids, so the next save finds the same records
+	assert.deepEqual(catalog.books.map(b => b.id), ['id-1', 'id-2', 'id-3', 'id-4']);
+	assert.deepEqual(CatalogRecords.changes(CatalogRecords.snapshot(records), recordsOf(catalog)).count, 0);
+});
+
+test('records: ids stay, a copy that differs or an id used twice gets its own, and a renamed series keeps its id', () => {
+	const catalog = shelf();
+	recordsOf(catalog);
+	const ids = catalog.books.map(b => b.id), seriesId = catalog.nameIds.series.get('Orchard Cycle');
+	// one copy of the box set's edition gains a description: it is an edition of its own now
+	catalog.books[1].editions[0].description = 'with an extra story';
+	// a book restored twice has the same id twice
+	catalog.books.push(catalog.books[3].clone());
+	catalog.renameSeries('Orchard Cycle', 'The Orchard Cycle');
+	const records = recordsOf(catalog, () => 'new');
+	assert.deepEqual(catalog.books.map(b => b.id), [...ids, 'new']);
+	assert.equal(catalog.books[1].editions[0].id, 'new');
+	assert.deepEqual(records.editions.find(ed => ed.id === catalog.books[0].editions[0].id).bookIds, [ids[0], ids[2]]);
+	assert.deepEqual(records.series.map(x => [x.id, x.name]), [[seriesId, 'The Orchard Cycle']]);
+	// a name no book has any more, and no info, loses its id
+	catalog.books.splice(3, 2);
+	recordsOf(catalog);
+	assert.equal(catalog.nameIds.authors.has('Odo Wren'), true, 'still on Orchard Frost');
+	assert.equal(catalog.nameIds.narrators.has('Mira Tallis'), false);
+});
+
+test('records: marks point at books, so they hold when a book is retitled', () => {
+	const catalog = shelf();
+	const [orchard, , , harbor] = catalog.books;
+	catalog.addNotDuplicates([Duplicates.pairKey(orchard, harbor), Duplicates.editionsKey(orchard), 'an old mark']);
+	const records = recordsOf(catalog);
+	assert.deepEqual(records.marks.map(m => [m.kind, m.bookIds, m.editionIds]), [
+		['notDuplicates', ['id-1', 'id-4'], undefined], ['keepSeparate', ['id-1'], ['id-5', 'id-6']], ['text', undefined, undefined]]);
+	records.books[0].title = 'The Glass Orchard (Revised)';
+	const back = CatalogRecords.toCatalog(records);
+	assert.ok(back.duplicates().markedNotSame(back.books[0], back.books[3]));
+	assert.ok(back.notDuplicates.has(Duplicates.editionsKey(back.books[0])));
+	assert.ok(back.notDuplicates.has('an old mark'));
+});
+
+test('records: what a record has no place for is named, so it is fixed before it is stored', () => {
+	const catalog = Catalog.fromJSON({ books: [{ t: 'Odd', a: ['Me'], g: 5, e: [{ len: '10h', x: 1 }] }], seriesInfo: {} });
+	assert.deepEqual(CatalogRecords.unstorable(catalog), ["book #0 ('Odd'): 'g'", "book #0 ('Odd') edition #1: 'len', 'x'"]);
+	assert.deepEqual(CatalogRecords.unstorable(shelf()), []);
+});
+
+test('the database saves only what changed, refuses a save over another tab\'s, and pages through an index', async () => {
+	const factory = new FakeIndexedDB();
+	const db = await CatalogDatabase.open(factory);
+	assert.equal(await db.load(), null, 'nothing saved yet');
+	const catalog = shelf();
+	const records = recordsOf(catalog);
+	const first = CatalogRecords.changes(new Map(), records);
+	assert.equal(await db.save(first, null), 1);
+	await assert.rejects(db.save(first, null), CatalogConflict, 'another tab saved first');
+	catalog.books[3].title = 'A Quieter Harbor';
+	const second = CatalogRecords.changes(first.snapshot, recordsOf(catalog));
+	assert.deepEqual(Object.keys(second.put), ['books', 'credits']);
+	assert.deepEqual(second.put.books.map(b => b.title), ['A Quieter Harbor']);
+	assert.equal(await db.save(second, 1), 2);
+	const loaded = await db.load();
+	assert.equal(loaded.revision, 2);
+	assert.deepEqual(withoutIds(CatalogRecords.toCatalog(loaded.records)), withoutIds(catalog));
+
+	// a page of books A-Z, the next page after its last row, one series in reading order, a narrator's titles
+	const ask = req => new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+	const tx = db.db.transaction(['books', 'credits'], 'readonly');
+	const byTitle = tx.objectStore('books').index('byTitle');
+	const page = await ask(byTitle.getAll(null, 2));
+	assert.deepEqual(page.map(b => b.title), ['The Glass Orchard', 'Orchard Cycle, Books 1-2']);
+	const last = page[page.length - 1];
+	assert.deepEqual((await ask(byTitle.getAll(FakeKeyRange.lowerBound([last.sortTitle, last.id], true), 2))).map(b => b.title), ['Orchard Frost', 'A Quieter Harbor']);
+	assert.equal(await ask(byTitle.count()), 4);
+	const series = records.series[0].id;
+	assert.deepEqual((await ask(tx.objectStore('books').index('bySeries').getAll(FakeKeyRange.bound([series], [series, []])))).map(b => b.number), ['1', '2', '1-2']);
+	const narrator = records.contributors.find(c => c.kind === 'narrator' && c.name === 'Mira Tallis').id;
+	assert.deepEqual((await ask(tx.objectStore('credits').index('byTitle').getAll(FakeKeyRange.bound([narrator], [narrator, []])))).map(c => c.bookId), ['id-4']);
+	assert.deepEqual((await ask(tx.objectStore('books').index('words').getAll(FakeKeyRange.bound('orch', 'orch\uffff')))).map(b => b.title).sort(),
+		['Orchard Cycle, Books 1-2', 'Orchard Frost', 'The Glass Orchard']);
+
+	// set aside: the catalog is emptied, what was stored is kept under meta
+	assert.equal(await db.setAside(loaded.records), 3);
+	assert.deepEqual(factory.records('books'), []);
+	assert.equal(factory.records('meta').find(m => m.key === 'unreadable').value.books.length, 4);
+});
+
+test('backups carry the ids: Restore keeps them, and Merge finds a book by its id first', () => {
+	const catalog = shelf();
+	recordsOf(catalog);
+	const backup = JSON.parse(JSON.stringify(catalog));
+	assert.equal(backup.books[0].uid, 'id-1');
+	assert.equal(backup.books[0].e[0].uid, 'id-5');
+	assert.deepEqual(backup.ids.series, { 'Orchard Cycle': catalog.nameIds.series.get('Orchard Cycle') });
+	assert.deepEqual(Validator.validate(backup.books, backup.seriesInfo).errors, [], 'the Check knows the ids');
+	const restored = Catalog.fromJSON(backup);
+	assert.deepEqual(restored.books.map(b => b.id), ['id-1', 'id-2', 'id-3', 'id-4']);
+	assert.deepEqual([...restored.nameIds.authors], [...catalog.nameIds.authors]);
+	// retitled on the other device: still the same book
+	backup.books[3].t = 'Harbor Lights';
+	const m = Backup.read(backup).mergeInto(catalog, 'backup');
+	assert.equal(m.added.length, 0);
+	assert.deepEqual(m.books.map(b => [b.id, b.title]).at(3), ['id-4', 'Harbor Lights']);
+	assert.throws(() => Backup.read({ books: [], ids: { series: { X: 5 } } }), /ids.series must map names to ids/);
 });

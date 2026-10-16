@@ -537,9 +537,8 @@ function saveSeriesForm(){
 			(entry && CATALOG.series.has(newName) ? '; its series info will be replaced by this.' : '.'));
 	}
 
-	let count = 0;
-	if(renamed) CATALOG.books.forEach(b=>{ if(b.series === name){ b.series = newName; count++; } });
-	CATALOG.series.delete(name);
+	// renamed on its books and in its info, keeping the id it is stored under
+	const count = renamed ? CATALOG.renameSeries(name, newName) : 0;
 	if(entry) CATALOG.series.set(newName, entry);
 	closeSeriesForm();
 	if(renamed && SERIES_FILTER === name) navigate({series: newName}, 'replace');
@@ -800,8 +799,9 @@ export function openEditForm(i){
 
 // The book form's editions: a card per edition with a field for each part, kept in FORM_EDITIONS as
 // the fields' text ({fields, also}) and read back only on Save, so a half-typed value is never lost
-// to a redraw. `also` names the other books an edition is on (a box set), as editing it edits it there.
-/** @type {{fields: Record<string, string>, also: string[]}[]} */
+// to a redraw. `also` names the other books an edition is on (a box set), as editing it edits it there,
+// and `id` is the id the edition is stored under, which it keeps when edited.
+/** @type {{fields: Record<string, string>, also: string[], id?: string}[]} */
 export let FORM_EDITIONS = [];
 
 /**
@@ -814,6 +814,7 @@ function setFormEditions(editions, index){
 	FORM_EDITIONS = editions.map(ed=> ({
 		fields: ed.fields(),
 		also: others.filter(k=> books[k].editions.some(x=> x.sameAs(ed))).map(k=> books[k].title),
+		id: ed.id,
 	}));
 	if(!FORM_EDITIONS.length) FORM_EDITIONS.push({fields: {}, also: []});
 	renderFormEditions();
@@ -930,8 +931,10 @@ function readFormEditions(){
 	const bad = [];
 	/** @type {string | null} */
 	let hcb = null;
-	FORM_EDITIONS.forEach(({fields}, i)=>{
+	FORM_EDITIONS.forEach(({fields, id}, i)=>{
 		const read = Edition.fromFields(fields);
+		// the edition keeps its id (several ISBNs make more editions, which are new)
+		if(read.editions.length) read.editions[0].id = id;
 		editions.push(...read.editions);
 		bad.push(...read.bad.map(x=> `edition ${i + 1}: ${x}`));
 		hcb = hcb || read.hcb;
@@ -983,6 +986,7 @@ byId('addForm').addEventListener('submit', async e=>{
 		if(id === null || EDIT_INDEX !== index || !byId('addForm').classList.contains('open')) return;
 	}
 	const b = new Book({
+		id: EDIT_INDEX === null ? undefined : CATALOG.books[EDIT_INDEX].id,   // an edited book stays the record it was
 		title: fieldById('f_t').value.trim(),
 		authors: Text.splitNames(fieldById('f_a').value),
 		genres: fieldById('f_g').value.split(',').map(x=>x.trim()).filter(Boolean),

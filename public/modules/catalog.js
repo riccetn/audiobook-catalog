@@ -13,6 +13,15 @@ import {Backup} from './backup.js';
 /** @import {Unchecked} from './text.js' */
 /** @import {Problems} from './validator.js' */
 /** @import {MergeReport, MergeOptions} from './merger.js' */
+/** @import {ContributorKind} from './contributor.js' */
+
+/** @typedef {'series' | ContributorKind} NamedKind what is known by its name on the books: a series, or an author, narrator or publisher */
+/**
+ * The ids that series, authors, narrators and publishers are stored under, by name (as the books write it),
+ * whether or not there is info about them. A name keeps its id while any book has it, and a series keeps
+ * its id when it is renamed (Catalog.renameSeries).
+ * @typedef {Record<NamedKind, Map<string, string>>} NameIds
+ */
 
 /**
  * The parts of a catalog; each may be left out.
@@ -24,12 +33,17 @@ import {Backup} from './backup.js';
  * @property {Map<string, Contributor>} [publishers] publisher name (as the editions' `publisher` has it) -> its info
  * @property {Exclusions} [exclusions] the books imports must never re-add
  * @property {Set<string>} [notDuplicates] the "Not duplicates" (and "Keep separate") marks of the duplicates page
+ * @property {NameIds} [nameIds]
  */
 
 /** The catalog. */
 export class Catalog {
+	/** @type {NamedKind[]} */
+	static NAMED_KINDS = ['series', ...Contributor.KINDS];
+
 	/** @param {CatalogInit} [init] */
-	constructor({books = [], series = new Map(), authors = new Map(), narrators = new Map(), publishers = new Map(), exclusions = new Exclusions(), notDuplicates = new Set()} = {}){
+	constructor({books = [], series = new Map(), authors = new Map(), narrators = new Map(), publishers = new Map(), exclusions = new Exclusions(), notDuplicates = new Set(),
+		nameIds = Catalog.emptyNameIds()} = {}){
 		this.books = books;
 		this.series = series;
 		this.authors = authors;
@@ -37,7 +51,11 @@ export class Catalog {
 		this.publishers = publishers;
 		this.exclusions = exclusions;
 		this.notDuplicates = notDuplicates;
+		this.nameIds = nameIds;
 	}
+
+	/** @returns {NameIds} no ids yet */
+	static emptyNameIds(){ return {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()}; }
 
 	/**
 	 * A catalog from the way it is stored, or a backup (Backup.read() says what it takes). Throws when it is
@@ -55,17 +73,22 @@ export class Catalog {
 	static fromBackup(backup){
 		return new Catalog({books: backup.books, series: backup.series || new Map(), authors: backup.authors || new Map(),
 			narrators: backup.narrators || new Map(), publishers: backup.publishers || new Map(),
-			exclusions: Exclusions.parse((backup.excluded || []).join('\n')), notDuplicates: new Set(backup.notDuplicates || [])});
+			exclusions: Exclusions.parse((backup.excluded || []).join('\n')), notDuplicates: new Set(backup.notDuplicates || []),
+			nameIds: backup.nameIds || Catalog.emptyNameIds()});
 	}
 
 	/**
+	 * The catalog as a backup holds it; `ids` (the ids of series and people by name) only when there are any.
 	 * @returns {{books: Book[], seriesInfo: Record<string, Series>, authors: Record<string, Contributor>, narrators: Record<string, Contributor>,
-	 *   publishers: Record<string, Contributor>, excluded: string[], notDuplicates: string[]}} the catalog as a backup holds it
+	 *   publishers: Record<string, Contributor>, excluded: string[], notDuplicates: string[], ids?: Record<NamedKind, Record<string, string>>}}
 	 */
 	toJSON(){
-		return {books: this.books, seriesInfo: Object.fromEntries(this.series), authors: Object.fromEntries(this.authors),
+		const json = {books: this.books, seriesInfo: Object.fromEntries(this.series), authors: Object.fromEntries(this.authors),
 			narrators: Object.fromEntries(this.narrators), publishers: Object.fromEntries(this.publishers),
 			excluded: this.exclusions.entries, notDuplicates: [...this.notDuplicates]};
+		if(!Catalog.NAMED_KINDS.some(kind => this.nameIds[kind].size)) return json;
+		const ids = /** @type {Record<NamedKind, Record<string, string>>} */ (Object.fromEntries(Catalog.NAMED_KINDS.map(kind => [kind, Object.fromEntries(this.nameIds[kind])])));
+		return {...json, ids};
 	}
 
 	/** @returns {Catalog} a copy, sharing nothing with this one */
@@ -76,7 +99,17 @@ export class Catalog {
 		return new Catalog({books: this.books.map(b => b.clone()),
 			series: new Map([...this.series].map(([name, s]) => [name, Series.fromJSON(name, copy(s))])),
 			authors: copyInfo(this.authors), narrators: copyInfo(this.narrators), publishers: copyInfo(this.publishers),
-			exclusions: this.exclusions.clone(), notDuplicates: new Set(this.notDuplicates)});
+			exclusions: this.exclusions.clone(), notDuplicates: new Set(this.notDuplicates), nameIds: Catalog.copyNameIds(this.nameIds)});
+	}
+
+	/**
+	 * @param {NameIds} ids
+	 * @returns {NameIds} a copy
+	 */
+	static copyNameIds(ids){
+		const out = Catalog.emptyNameIds();
+		for(const kind of Catalog.NAMED_KINDS) out[kind] = new Map(ids[kind]);
+		return out;
 	}
 
 	/**
@@ -91,6 +124,7 @@ export class Catalog {
 		this.publishers = other.publishers;
 		this.exclusions = other.exclusions;
 		this.notDuplicates = other.notDuplicates;
+		this.nameIds = other.nameIds;
 	}
 
 	// ------------------------------------------------------------------ the Check
@@ -212,6 +246,10 @@ export class Catalog {
 	renameSeries(name, newName){
 		let count = 0;
 		for(const b of this.books) if(b.series === name){ b.series = newName; count++; }
+		// the series keeps its id, unless it joins one that has its own
+		const ids = this.nameIds.series, id = ids.get(name);
+		ids.delete(name);
+		if(id !== undefined && !ids.has(newName)) ids.set(newName, id);
 		const info = this.series.get(name);
 		if(info){
 			this.series.delete(name);

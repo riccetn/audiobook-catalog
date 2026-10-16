@@ -3,15 +3,16 @@
 import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
 import {Backup} from './modules/backup.js';
+import {CatalogRecords} from './modules/catalog-records.js';
 import {AudibleImporter} from './modules/audible-importer.js';
 import {GoodreadsImporter} from './modules/goodreads-importer.js';
 import {GoodreadsExporter} from './modules/goodreads-exporter.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {HardcoverSync} from './modules/hardcover-sync.js';
 import {
-	CATALOG, LOCAL_SEEN, addNotDuplicates, localNow, persist, addExclusions, showIoStatus,
+	CATALOG, SEEN_REVISION, addNotDuplicates, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
-	hardcoverClient, startPage, FORMAT_NOTES, byId, fieldById, BRITISH, spell, buildElement, fillElement
+	hardcoverClient, startPage, byId, fieldById, BRITISH, spell, buildElement, fillElement
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
@@ -88,10 +89,19 @@ function readFiles(files){
  */
 async function importBackup(files){
 	try{
-		const {books, series, authors, narrators, publishers, excluded, notDuplicates} = Backup.readFiles(await readFiles(files));
+		const {books, series, authors, narrators, publishers, excluded, notDuplicates, nameIds} = Backup.readFiles(await readFiles(files));
 		const bad = books.some(b=> !b.title || !b.authors.length);
 		if(bad) throw new Error('missing title/author');
+		// the catalog is kept as records, which have no place for a value that isn't what its field holds
+		const unstorable = CatalogRecords.unstorable(new Catalog({books, series: series || undefined, authors: authors || undefined,
+			narrators: narrators || undefined, publishers: publishers || undefined}));
+		if(unstorable.length){
+			showIoStatus(`Not restored: fix these values in the backup first (they aren't what their field holds): ${unstorable.slice(0, 3).join('; ')}` +
+				(unstorable.length > 3 ? ` and ${unstorable.length - 3} more.` : '.'), true);
+			return;
+		}
 		CATALOG.books = books;
+		if(nameIds) CATALOG.nameIds = nameIds;          // the ids series and people were stored under, when the backup has them
 		if(series) CATALOG.series = series;           // older backups have no series info: keep the current one
 		if(authors) CATALOG.authors = authors;        // nor author info
 		if(narrators) CATALOG.narrators = narrators;  // nor narrator and publisher info
@@ -351,10 +361,9 @@ function mergeBackupFile(file){
 }
 
 // ------------------------------------------------------------ Check the catalog, box sets
-// The check lists errors, warnings and what is kept in an older format, which it offers to save in the
-// current one; box sets are previewed like an import and only applied when confirmed.
-/** @type {'format' | 'box-sets' | null} */
-export let PENDING_TIDY = null;   // 'format' or 'box-sets', while its preview is open
+// The check lists errors and warnings; box sets are previewed like an import and only applied when confirmed.
+/** @type {'box-sets' | null} */
+export let PENDING_TIDY = null;   // 'box-sets', while its preview is open
 
 /**
  * Show the check or the box sets in the preview; its confirm button (labeled `confirm`) shows when PENDING_TIDY is set.
@@ -387,13 +396,9 @@ function checkCatalog(){
 		`${withInfo.join(', ')} with info.`)];
 	if(errors.length) out.push(para(`Errors (${errors.length}):`, 'warn'), messageList(errors, 100));
 	if(warnings.length) out.push(para(`Needs a look (${warnings.length}):`, 'warn'), messageList(warnings, 100));
-	if(FORMAT_NOTES.length){
-		out.push(para('In an older format (read the current way here):'), messageList(FORMAT_NOTES, 100));
-		out.push(para('Save it to keep it in the current format; any edit does that too.'));
-	}
-	if(!errors.length && !warnings.length && !FORMAT_NOTES.length) out.push(para('No problems found.'));
-	PENDING_TIDY = FORMAT_NOTES.length ? 'format' : null;
-	showTidyPreview(spell('Check the catalog'), out, 'Save in the current format');
+	if(!errors.length && !warnings.length) out.push(para('No problems found.'));
+	PENDING_TIDY = null;
+	showTidyPreview(spell('Check the catalog'), out, '');
 }
 
 // Keep each box set as its own book and as its titles, in a copy of the catalog (Catalog.addBoxSets).
@@ -424,14 +429,7 @@ function previewBoxSets(){
 }
 
 function applyTidy(){
-	const pending = PENDING_TIDY;
 	closeImportPreview();
-	if(pending === 'format'){
-		// a save writes the books as the page holds them, which is the current format
-		persist();
-		if(!FORMAT_NOTES.length) showIoStatus('Saved in the current format.');
-		return;
-	}
 	// applied again, in case books were edited while the preview was open
 	const {copy, report, errors} = boxSetsIntoCopy();
 	if(errors.length){ showIoStatus(spell('The catalog changed and the box sets no longer validate; nothing was changed.'), true); return; }
@@ -501,16 +499,17 @@ async function runHardcover(mode, dryRun){
 	const show = () => { job.elapsed = Date.now() - started; showHardcoverJob(job); };
 	const ticker = setInterval(show, 1000);
 	show();
-	const before = JSON.stringify(CATALOG.books), seen = LOCAL_SEEN;
+	await whenSaved();   // this page's own saves don't count as an edit made while it ran
+	const before = JSON.stringify(CATALOG.books), seen = SEEN_REVISION;
 	const copy = CATALOG.clone();
 	const save = async (/** @type {boolean} */ changed) => {
-		if(JSON.stringify(CATALOG.books) !== before || localNow() !== seen){
+		if(JSON.stringify(CATALOG.books) !== before || await storedRevision() !== seen){
 			lines.err.push(spell('error: the catalog was edited while this ran (here or in another tab); nothing written, nothing sent to Hardcover. Run it again.'));
 			return false;
 		}
 		if(changed){
 			CATALOG.books = copy.books;
-			persist();
+			await persist();
 			refreshPage();
 			lines.out.push(spell('saved the catalog'));
 		}
