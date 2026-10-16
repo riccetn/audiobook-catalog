@@ -6,7 +6,7 @@ read them for workflows and the data format. This file covers what you need to c
 ## What this is
 
 A personal audiobook catalog: static pages (`index.html`, `import.html`, `duplicates.html`, `authors.html`,
-sharing `styles.css`) that run entirely in the browser and keep the catalog in `localStorage`. There is
+`narrators.html`, `publishers.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in `localStorage`. There is
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to run the tests.
 
@@ -45,7 +45,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   that is malformed is kept as it was (`extra`), so Check still reports it. Migrations and Check work on the stored JSON.
   - `Catalog`: books, `series` (`Map` of name -> `Series`), `authors` (`Map` of name -> `Author`), `exclusions`, `notDuplicates`;
     `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `saveBook`, `merge` (an import), `addBoxSets`,
-    `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`/`authorList`.
+    `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`/`authorList`,
+    `narratorWorks`/`narratorList` and `publisherWorks`/`publisherList` (all `creditedWorks`/`creditedList` with `authorsOf`/`narratorsOf`/`publishersOf`).
   - `Book` (`title authors series number genres read hardcoverId editions`): `exclusionEntries`, `isCollection`/`boxRange`,
     `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`formatNotes`.
   - `Edition` (`asins goodreadsId hardcoverId isbn narrators publisher released minutes description`): `sameAs`/`conflictsWith`/`fillFrom`,
@@ -65,9 +66,11 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   it starts **empty**, never with the demo data; one that can't be read is set aside under `.unreadable`; edits left under the
   old `audiobook-catalog-data` key by the removed `make serve` save are adopted when there is no catalog yet),
   `persist` (writes the whole catalog back; refuses when another tab wrote it since this page last read or wrote it),
-  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below), the page links, the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
+  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below), the page links
+  (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, read back with `nameFromPageHash`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
-  Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`).
+  Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`;
+  the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are kept in localStorage
   `audiobook-catalog-not-duplicates` (`notDuplicates` in backups).
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
@@ -82,6 +85,9 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `authors.js` (`authors.html`): the list of authors and an author's page (`#a=Name`): bio and links from
   `CATALOG.authors`, their series and titles from the books (`authorWorks`), and the author info form. Author
   names on the catalog's book cards link here.
+- `credits.js` (`narrators.html` and `publishers.html`, each started by its own `narrators.js`/`publishers.js` with
+  `startCreditsPage(kind)`): the list of narrators or publishers and one's page (`#n=Name`, `#p=Name`), their series and
+  titles from the editions (`narratorWorks`/`publisherWorks`); nothing is stored about them. Names on book cards link here.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).

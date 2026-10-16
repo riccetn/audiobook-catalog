@@ -125,7 +125,7 @@ h1{
 	width:100%; font-family:inherit; resize:vertical; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
 	background:var(--paper); color:var(--ink); font-size:.9rem;
 }
-/* an author's page (authors.html) */
+/* an author's, narrator's or publisher's page (authors.html, narrators.html, publishers.html) */
 .crumb a{color:var(--moss); font-weight:600; text-decoration:none;}
 .author-head{display:flex; align-items:baseline; gap:.4rem; margin-bottom:.4rem;}
 .author-name{font-family:'Lora',Georgia,serif; font-weight:600; font-size:1.35rem; margin:0;}

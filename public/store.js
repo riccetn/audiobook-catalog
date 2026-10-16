@@ -124,6 +124,30 @@ export function fillElement(el, ...children){ el.replaceChildren(...nodes(childr
  */
 export function joined(items, separator){ return items.flatMap((x, i)=> i ? [separator, x] : [x]); }
 
+// The addresses of an author's, a narrator's and a publisher's page, with spaces as + (as the catalog
+// page writes its own addresses), so every link to a page looks the same.
+const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
+/** @type {(name: string) => string} */
+export const authorPageHref = name=> 'authors.html#a=' + hashValue(name);
+/** @type {(name: string) => string} */
+export const narratorPageHref = name=> 'narrators.html#n=' + hashValue(name);
+/** @type {(name: string) => string} */
+export const publisherPageHref = name=> 'publishers.html#p=' + hashValue(name);
+
+/**
+ * The name an address of one of those pages holds after `key`= (#n=Ann+Vale), or null.
+ * @param {string} hash
+ * @param {string} key
+ * @returns {string | null}
+ */
+export function nameFromPageHash(hash, key){
+	const m = new RegExp(`^#${key}=(.*)$`).exec(String(hash || ''));
+	if(!m) return null;
+	let name = m[1].replace(/\+/g, ' ');
+	try{ name = decodeURIComponent(name); }catch(e){}
+	return name.trim() || null;
+}
+
 // The catalog the page shows. It stays this one object: a page that takes another catalog (Restore, an
 // import confirmed) moves it in with CATALOG.replaceWith().
 export const CATALOG = new Catalog();

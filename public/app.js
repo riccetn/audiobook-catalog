@@ -7,7 +7,7 @@ import {Book} from './modules/book.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
-import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined } from './store.js';
+import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref } from './store.js';
 /** @import {Child} from './store.js' */
 
 /** @typedef {{b: Book, i: number}} ListedBook a book shown, with its index in CATALOG.books */
@@ -48,7 +48,12 @@ function authorsOf(b){ return b.authors; }
  * Authors' names, each a link to their page on the authors page.
  * @type {(names: string[]) => Child[]}
  */
-const authorLinks = names => joined(names.map(x=> buildElement('a', {href: 'authors.html#a=' + encodeURIComponent(x).replace(/%20/g, '+')}, x)), ', ');
+const authorLinks = names => joined(names.map(x=> buildElement('a', {href: authorPageHref(x)}, x)), ', ');
+/**
+ * Narrators' names, each a link to their page on the narrators page.
+ * @type {(names: string[]) => Child[]}
+ */
+const narratorLinks = names => joined(names.map(x=> buildElement('a', {href: narratorPageHref(x)}, x)), ', ');
 /**
  * A series' status, as a tag.
  * @type {(status: string | undefined) => HTMLSpanElement}
@@ -608,7 +613,9 @@ function editionParts(ed, narrators){
 	const asins = ()=> joined(ed.asinList().map(([site, asin])=> [site + ' ', idLink(asinUrl(site), asin)]), ', ');
 	return joined(ed.parts().filter(([k])=> narrators || k !== 'n').map(([k, label, value])=>{
 		const url = urls[k];
-		return [label ? label + ' ' : '', k === 'asin' ? asins() : url ? idLink(url, value) : value];
+		const shown = k === 'asin' ? asins() : k === 'n' ? narratorLinks(ed.narrators)
+			: k === 'p' ? buildElement('a', {href: publisherPageHref(value)}, value) : url ? idLink(url, value) : value;
+		return [label ? label + ' ' : '', shown];
 	}), '; ');
 }
 
@@ -629,9 +636,9 @@ function bookHref(name, kind = 'book'){
 function bookCard({b, i}){
 	const books = CATALOG.books;
 	// the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
-	const narrators = [...new Set(b.editions.map(ed=> Text.namesText(ed.narrators)).filter(Boolean))];
+	const narrators = [...new Map(b.editions.filter(ed=> ed.narrators.length).map(ed=> [Text.namesText(ed.narrators), ed.narrators])).values()];
 	const differ = narrators.length > 1;
-	const meta = joined([authorLinks(authorsOf(b)), narrators.length ? 'narr. '+narrators.join(' / ') : null].filter(Boolean), ' \u2014 ');
+	const meta = joined([authorLinks(authorsOf(b)), narrators.length > 0 && ['narr. ', joined(narrators.map(narratorLinks), ' / ')]].filter(Boolean), ' \u2014 ');
 	const editions = b.editions.map(ed=>{
 		const also = (SHARED.get(ed) || []).map(k=>
 			buildElement('a', {href: bookHref(books[k].title)}, books[k].title + (books[k].number ? ` #${books[k].number}` : '')));

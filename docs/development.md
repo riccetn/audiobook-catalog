@@ -8,6 +8,8 @@ public/               the app, and all that a static server serves (make serve, 
   import.html, import.js    Audible, Goodreads and Hardcover imports, Goodreads CSV export, Check / Box sets, backups (Export / Restore / Merge)
   duplicates.html, duplicates.js    find and merge books entered twice
   authors.html, authors.js    the authors, and each author's page: bio, links, series and titles
+  narrators.html, publishers.html, credits.js    the narrators and publishers, and each one's page: series and titles
+                        (narrators.js and publishers.js start credits.js with their kind)
   store.js              shared by the pages: loads the catalog from localStorage and saves every edit there
   styles.css
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline

@@ -1174,6 +1174,21 @@ test('an author\'s works: their series in series order, then their other titles,
 	]);
 });
 
+test('narrators\' and publishers\' works come from the editions, each book once', () => {
+	const catalog = new Catalog({ books: Bs([
+		book('Second', 'Ann Vale', { s: 'Tide Saga', sn: '2', e: [{ n: ['Cy Hale'], p: 'Gull Audio' }, { n: ['Cy Hale', 'Di Moss'], p: 'Gull Audio' }] }),
+		book('First', 'Ann Vale', { s: 'Tide Saga', sn: '1', e: [{ n: ['Di Moss'], p: 'Gull Audio' }] }),
+		book('Apple Hill', 'Bo Reed', { e: [{ n: ['Cy Hale'], p: 'Harbor Sound' }] }),
+		book('Unread Edition', 'Bo Reed'),
+	]) });
+	assert.deepEqual(catalog.narratorList(), [{ name: 'Cy Hale', books: 2, series: 1 }, { name: 'Di Moss', books: 2, series: 1 }]);
+	assert.deepEqual(catalog.publisherList(), [{ name: 'Gull Audio', books: 2, series: 1 }, { name: 'Harbor Sound', books: 1, series: 0 }]);
+	const works = catalog.narratorWorks('Di Moss');
+	assert.deepEqual(works.series.map(s => [s.name, s.books.map(b => b.title)]), [['Tide Saga', ['First', 'Second']]]);
+	assert.deepEqual(catalog.publisherWorks('Harbor Sound').titles.map(b => b.title), ['Apple Hill']);
+	assert.deepEqual(catalog.narratorWorks('Nobody'), { series: [], titles: [] });
+});
+
 test('backups carry author info, and older ones have none', () => {
 	const authors = { 'Ann Vale': { bio: 'Hi.' } };
 	assert.deepEqual(json(Object.fromEntries(Backup.read({ books: [], authors }).authors)), authors);

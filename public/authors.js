@@ -5,7 +5,7 @@
 import {Author} from './modules/author.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
-import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined } from './store.js';
+import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, nameFromPageHash } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {Child} from './store.js' */
 
@@ -18,24 +18,10 @@ let EDITING = null;            // the author whose info the form is editing, or 
 /** @type {['url' | 'audible' | 'goodreads' | 'hardcover', string][]} */
 const LINKS = [['url', 'Website'], ['audible', 'Audible'], ['goodreads', 'Goodreads'], ['hardcover', 'Hardcover']];
 
-// Addresses as the catalog page writes them (spaces as +), so its links and these look the same.
-const enc = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
-const dec = (/** @type {string} */ v)=>{ try{ return decodeURIComponent(v.replace(/\+/g, ' ')); }catch(e){ return v; } };
-/** @type {(name: string) => string} */
-export const authorHref = name=> 'authors.html#a=' + enc(name);
-const bookHref = (/** @type {string} */ title)=> 'index.html#book=' + enc(title);
-const seriesHref = (/** @type {string} */ name)=> 'index.html#series=' + enc(name);
-
-/**
- * The author an address names (#a=Name), or null.
- * @param {string} hash
- * @returns {string | null}
- */
-function authorFromHash(hash){
-	const m = /^#a=(.*)$/.exec(String(hash || ''));
-	const name = m ? dec(m[1]).trim() : '';
-	return name || null;
-}
+const bookHref = (/** @type {string} */ title)=> 'index.html#book=' + encodeURIComponent(title).replace(/%20/g, '+');
+const seriesHref = (/** @type {string} */ name)=> 'index.html#series=' + encodeURIComponent(name).replace(/%20/g, '+');
+/** @type {(hash: string) => string | null} */
+const authorFromHash = hash=> nameFromPageHash(hash, 'a');
 
 /**
  * A bio as paragraphs: a blank line starts a new one, a single line break stays a line break.
@@ -63,7 +49,7 @@ function renderList(){
 	byId('subtitle').textContent = `${plural(all.length, 'author')} across ${plural(CATALOG.books.length, 'audiobook')}`;
 	fillElement(byId('authorBody'), shown.length ? shown.map(a=> buildElement('div', {class: 'srow'},
 		buildElement('div', {class: 'srow-head'},
-			buildElement('a', {class: 'srow-title', href: authorHref(a.name)}, a.name), ' ',
+			buildElement('a', {class: 'srow-title', href: authorPageHref(a.name)}, a.name), ' ',
 			buildElement('span', {class: 'srow-owned'}, `${plural(a.books, 'book')}${a.series ? ', ' + plural(a.series, 'series', 'series') : ''}`)),
 		bioLine(a.name)))
 		: buildElement('p', {class: 'empty'}, all.length ? 'No authors match your search.' : 'No books yet.'));
@@ -89,7 +75,7 @@ function bioLine(name){
 function bookLine(b, name){
 	const others = b.authors.filter(x=> x !== name);
 	return buildElement('li', {}, b.number && [buildElement('span', {class: 'num'}, '#' + b.number), ' '], buildElement('a', {href: bookHref(b.title)}, b.title),
-		others.length > 0 && [' ', buildElement('span', {class: 'with'}, 'with ', joined(others.map(x=> buildElement('a', {href: authorHref(x)}, x)), ', '))]);
+		others.length > 0 && [' ', buildElement('span', {class: 'with'}, 'with ', joined(others.map(x=> buildElement('a', {href: authorPageHref(x)}, x)), ', '))]);
 }
 
 /** @param {string} name */

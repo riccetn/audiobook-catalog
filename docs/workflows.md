@@ -49,6 +49,10 @@ which **Save in the current format** rewrites (any edit does that too).
 links to their website and their pages on Audible, Goodreads and Hardcover, and their series and titles.
 Author names on the books link there. See [Authors](authors.md).
 
+**Narrators and publishers**: the *Narrators* and *Publishers* pages list everyone named on the editions,
+each with a page of their series and titles; their names on the books link there. See
+[Narrators and publishers](narrators-publishers.md).
+
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
 the author site, or to add or remove that info. The form checks the same rules as **Check**.

@@ -214,7 +214,67 @@ export class Catalog {
 	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
 	 */
 	authorWorks(name){
-		const own = this.books.filter(b => b.authors.includes(name));
+		return this.creditedWorks(Catalog.authorsOf, name);
+	}
+
+	/**
+	 * Every author of the books, as [{name, books (how many), series (how many)}], by name.
+	 * @returns {{name: string, books: number, series: number}[]}
+	 */
+	authorList(){
+		return this.creditedList(Catalog.authorsOf);
+	}
+
+	/**
+	 * The books `name` narrates (any edition of them), as authorWorks() gives an author's.
+	 * @param {string} name
+	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
+	 */
+	narratorWorks(name){
+		return this.creditedWorks(Catalog.narratorsOf, name);
+	}
+
+	/**
+	 * Every narrator of the books' editions, as authorList() gives the authors.
+	 * @returns {{name: string, books: number, series: number}[]}
+	 */
+	narratorList(){
+		return this.creditedList(Catalog.narratorsOf);
+	}
+
+	/**
+	 * The books `name` publishes (any edition of them), as authorWorks() gives an author's.
+	 * @param {string} name
+	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
+	 */
+	publisherWorks(name){
+		return this.creditedWorks(Catalog.publishersOf, name);
+	}
+
+	/**
+	 * Every publisher of the books' editions, as authorList() gives the authors.
+	 * @returns {{name: string, books: number, series: number}[]}
+	 */
+	publisherList(){
+		return this.creditedList(Catalog.publishersOf);
+	}
+
+	/** @param {Book} b @returns {string[]} its authors */
+	static authorsOf(b){ return b.authors; }
+	/** @param {Book} b @returns {string[]} the narrators of all its editions, each once */
+	static narratorsOf(b){ return [...new Set(b.editions.flatMap(ed => ed.narrators))]; }
+	/** @param {Book} b @returns {string[]} the publishers of all its editions, each once */
+	static publishersOf(b){ return [...new Set(b.editions.map(ed => ed.publisher || '').filter(Boolean))]; }
+
+	/**
+	 * The books `namesOf` credits to `name`: {series: [{name, books}], titles} with each series' books in
+	 * series order and the books outside a series by title.
+	 * @param {(b: Book) => string[]} namesOf
+	 * @param {string} name
+	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
+	 */
+	creditedWorks(namesOf, name){
+		const own = this.books.filter(b => namesOf(b).includes(name));
 		/** @type {Map<string, Book[]>} */
 		const bySeries = new Map();
 		for(const b of own){
@@ -228,14 +288,15 @@ export class Catalog {
 	}
 
 	/**
-	 * Every author of the books, as [{name, books (how many), series (how many)}], by name.
+	 * Everyone `namesOf` credits on the books, as [{name, books (how many), series (how many)}], by name.
+	 * @param {(b: Book) => string[]} namesOf
 	 * @returns {{name: string, books: number, series: number}[]}
 	 */
-	authorList(){
+	creditedList(namesOf){
 		/** @type {Map<string, {name: string, books: number, series: Set<string>}>} */
 		const seen = new Map();
 		for(const b of this.books){
-			for(const name of new Set(b.authors)){
+			for(const name of new Set(namesOf(b))){
 				let entry = seen.get(name);
 				if(!entry) seen.set(name, entry = {name, books: 0, series: new Set()});
 				entry.books++;
