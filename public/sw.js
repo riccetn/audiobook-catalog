@@ -4,7 +4,7 @@
 const CACHE = 'audiobook-catalog-v5';
 const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'narrators.html', 'publishers.html', 'styles.css', 'store.js', 'app.js',
 	'import.js', 'duplicates.js', 'authors.js', 'credits.js', 'narrators.js', 'publishers.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
-	'modules/audible-importer.js', 'modules/author.js', 'modules/backup.js', 'modules/book.js', 'modules/catalog.js',
+	'modules/audible-importer.js', 'modules/contributor.js', 'modules/backup.js', 'modules/book.js', 'modules/catalog.js',
 	'modules/csv.js', 'modules/duplicates.js', 'modules/edition.js', 'modules/exclusions.js', 'modules/goodreads-exporter.js',
 	'modules/goodreads-importer.js', 'modules/hardcover-client.js', 'modules/hardcover-sync.js', 'modules/importer.js', 'modules/isbn.js',
 	'modules/merger.js', 'modules/series.js', 'modules/text.js', 'modules/validator.js'];

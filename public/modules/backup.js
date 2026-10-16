@@ -1,22 +1,25 @@
-// A backup of the catalog, as Export writes it: {books, seriesInfo, authors, excluded, notDuplicates}.
+// A backup of the catalog, as Export writes it: {books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates}.
 // Reading one (also the old data/ files picked together, and backups from before some parts existed),
 // and merging one made on another device into this catalog.
 import {Text} from './text.js';
 import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
-import {Author} from './author.js';
+import {Contributor} from './contributor.js';
 import {Exclusions} from './exclusions.js';
 import {Duplicates} from './duplicates.js';
 /** @import {Catalog} from './catalog.js' */
 /** @import {Unchecked} from './text.js' */
+/** @import {ContributorKind} from './contributor.js' */
 
 /**
  * What mergeInto() made of a backup and this catalog.
  * @typedef {object} BackupMerge
  * @property {Book[]} books
  * @property {Map<string, Series>} series
- * @property {Map<string, Author>} authors
+ * @property {Map<string, Contributor>} authors
+ * @property {Map<string, Contributor>} narrators
+ * @property {Map<string, Contributor>} publishers
  * @property {string[]} excluded entries new to the exclusions list
  * @property {string[]} notDuplicates marks new to this catalog
  * @property {Book[]} added
@@ -30,6 +33,12 @@ import {Duplicates} from './duplicates.js';
  * @property {string[]} authorsAdded
  * @property {string[]} authorsChanged
  * @property {string[]} authorsKept
+ * @property {string[]} narratorsAdded
+ * @property {string[]} narratorsChanged
+ * @property {string[]} narratorsKept
+ * @property {string[]} publishersAdded
+ * @property {string[]} publishersChanged
+ * @property {string[]} publishersKept
  */
 
 /**
@@ -37,7 +46,9 @@ import {Duplicates} from './duplicates.js';
  * @typedef {object} BackupInit
  * @property {Book[]} books
  * @property {Map<string, Series> | null} [series]
- * @property {Map<string, Author> | null} [authors]
+ * @property {Map<string, Contributor> | null} [authors]
+ * @property {Map<string, Contributor> | null} [narrators]
+ * @property {Map<string, Contributor> | null} [publishers]
  * @property {string[] | null} [excluded] the exclusions list's entries
  * @property {string[] | null} [notDuplicates] the "Not duplicates" marks
  */
@@ -57,18 +68,21 @@ function readBooks(list){
 /** A backup of the catalog. */
 export class Backup {
 	/** @param {BackupInit} init */
-	constructor({books, series = null, authors = null, excluded = null, notDuplicates = null}){
+	constructor({books, series = null, authors = null, narrators = null, publishers = null, excluded = null, notDuplicates = null}){
 		this.books = books;
 		this.series = series;
 		this.authors = authors;
+		this.narrators = narrators;
+		this.publishers = publishers;
 		this.excluded = excluded;
 		this.notDuplicates = notDuplicates;
 	}
 
 	/**
-	 * Read a backup exported from the page: {books: [...], seriesInfo: {...}, authors: {...}, excluded: [...],
-	 * notDuplicates: [...]}, or a plain array of books from before series info was exported. The books are
-	 * brought to the current format (Book.fixBooks). Series info, author info, the exclusions list entries and
+	 * Read a backup exported from the page: {books: [...], seriesInfo: {...}, authors: {...}, narrators: {...},
+	 * publishers: {...}, excluded: [...], notDuplicates: [...]}, or a plain array of books from before series info
+	 * was exported. The books are brought to the current format (Book.fixBooks). Series info, author, narrator
+	 * and publisher info, the exclusions list entries and
 	 * the "Not duplicates" marks are null when the backup predates them, so callers leave theirs alone.
 	 * Throws when it is neither, or a part of it is not what it should be.
 	 * @param {Unchecked} data
@@ -77,9 +91,12 @@ export class Backup {
 	static read(data){
 		if(Array.isArray(data)) return new Backup({books: readBooks(Book.fixBooks(data))});
 		if(data && typeof data === 'object' && Array.isArray(data.books)){
-			const {seriesInfo: info, authors, excluded, notDuplicates} = data;
+			const {seriesInfo: info, excluded, notDuplicates} = data;
 			if(info !== undefined && !Text.isObject(info)) throw new Error('seriesInfo is not an object');
-			if(authors !== undefined && !Text.isObject(authors)) throw new Error('authors is not an object');
+			for(const kind of Contributor.KINDS) if(data[kind] !== undefined && !Text.isObject(data[kind])) throw new Error(`${kind} is not an object`);
+			/** @type {(kind: ContributorKind) => Map<string, Contributor> | null} */
+			const people = kind => data[kind] === undefined ? null
+				: new Map(Object.entries(data[kind]).map(([name, entry]) => [name, Contributor.fromJSON(name, entry)]));
 			for(const [name, list] of [['excluded', excluded], ['notDuplicates', notDuplicates]]){
 				if(list !== undefined && !(Array.isArray(list) && list.every(x => typeof x === 'string'))){
 					throw new Error(`${name} is not a list of strings`);
@@ -88,7 +105,7 @@ export class Backup {
 			return new Backup({
 				books: readBooks(Book.fixBooks(data.books)),
 				series: info === undefined ? null : new Map(Object.entries(info).map(([name, entry]) => [name, Series.fromJSON(name, entry)])),
-				authors: authors === undefined ? null : new Map(Object.entries(authors).map(([name, entry]) => [name, Author.fromJSON(name, entry)])),
+				authors: people('authors'), narrators: people('narrators'), publishers: people('publishers'),
 				excluded: excluded === undefined ? null : excluded,
 				notDuplicates: notDuplicates === undefined ? null : notDuplicates,
 			});
@@ -99,7 +116,7 @@ export class Backup {
 	/**
 	 * What Restore was given, as read() reads a backup: either a backup, or the data files a catalog
 	 * kept before it lived in the browser, picked together and told apart by name (books.json,
-	 * series-info.json, authors.json, excluded.txt, not-duplicates.txt; a file renamed with a date, say, still
+	 * series-info.json, authors.json (and narrators.json, publishers.json), excluded.txt, not-duplicates.txt; a file renamed with a date, say, still
 	 * counts). `files` are [{name, text}]. Throws when there are no books among them.
 	 * @param {{name: string, text: string}[]} files
 	 * @returns {Backup}
@@ -119,6 +136,8 @@ export class Backup {
 			const json = JSON.parse(text);
 			if(base.startsWith('series-info')) picked.seriesInfo = json;
 			else if(base.startsWith('authors')) picked.authors = json;
+			else if(base.startsWith('narrators')) picked.narrators = json;
+			else if(base.startsWith('publishers')) picked.publishers = json;
 			else if(Array.isArray(json)) picked.books = json;
 			else if(Text.isObject(json) && Array.isArray(json.books)) backup = json;
 			else throw new Error(`${name}: not one of the catalog's files`);
@@ -136,12 +155,12 @@ export class Backup {
 	 * - a book both have (found as imports find books) keeps the union of their genres, dates read and
 	 *   editions; where title, author or series differ, `prefer` ('mine', the default, or 'backup') wins,
 	 *   and the book is listed in `conflicts`;
-	 * - series info and author info both have keep the preferred side's; the backup's excluded books, and
+	 * - series info and author, narrator and publisher info both have keep the preferred side's; the backup's excluded books, and
 	 *   its "Not duplicates" marks, are added to the catalog's.
-	 * Changes nothing it is given. Returns {books, series, authors, excluded (entries new to the catalog's
-	 * exclusions), notDuplicates (marks new to the catalog), added, updated, removed, skipped, conflicts:
-	 * [{mine, theirs}], infoAdded, infoChanged, infoKept, and the same for authors: authorsAdded,
-	 * authorsChanged, authorsKept}.
+	 * Changes nothing it is given. Returns {books, series, authors, narrators, publishers, excluded (entries new
+	 * to the catalog's exclusions), notDuplicates (marks new to the catalog), added, updated, removed, skipped,
+	 * conflicts: [{mine, theirs}], infoAdded, infoChanged, infoKept, and the same for authors: authorsAdded,
+	 * authorsChanged, authorsKept, for narrators (narratorsAdded, ...) and for publishers (publishersAdded, ...)}.
 	 * @param {Catalog} catalog
 	 * @param {'mine' | 'backup'} [prefer]
 	 * @returns {BackupMerge}
@@ -150,9 +169,10 @@ export class Backup {
 		const takeBackup = prefer === 'backup';
 		const books = catalog.books;
 		const out = books.map(b => b.clone());
-		/** @type {Omit<BackupMerge, 'books' | 'series' | 'authors'>} */
+		/** @type {Omit<BackupMerge, 'books' | 'series' | 'authors' | 'narrators' | 'publishers'>} */
 		const result = {added: [], updated: [], removed: [], skipped: [], conflicts: [], infoAdded: [], infoChanged: [], infoKept: [],
-			authorsAdded: [], authorsChanged: [], authorsKept: [], excluded: [], notDuplicates: []};
+			authorsAdded: [], authorsChanged: [], authorsKept: [], narratorsAdded: [], narratorsChanged: [], narratorsKept: [],
+			publishersAdded: [], publishersChanged: [], publishersKept: [], excluded: [], notDuplicates: []};
 
 		const ours = catalog.exclusions.clone();
 		const theirsOnly = new Exclusions();
@@ -232,6 +252,8 @@ export class Backup {
 		};
 		const series = mergeEntries(catalog.series, this.series, result.infoAdded, result.infoChanged, result.infoKept);
 		const authors = mergeEntries(catalog.authors, this.authors, result.authorsAdded, result.authorsChanged, result.authorsKept);
-		return {...result, books: kept, series, authors};
+		const narrators = mergeEntries(catalog.narrators, this.narrators, result.narratorsAdded, result.narratorsChanged, result.narratorsKept);
+		const publishers = mergeEntries(catalog.publishers, this.publishers, result.publishersAdded, result.publishersChanged, result.publishersKept);
+		return {...result, books: kept, series, authors, narrators, publishers};
 	}
 }

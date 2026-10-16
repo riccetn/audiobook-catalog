@@ -22,7 +22,7 @@ import {HardcoverClient} from './modules/hardcover-client.js';
  * @property {string} [err] what went wrong
  */
 
-// The catalog: {books, seriesInfo, authors, excluded}, the shape of a backup. (The key is the one the
+// The catalog: {books, seriesInfo, authors, narrators, publishers, excluded}, the shape of a backup. (The key is the one the
 // installed app kept its own catalog under, so a phone's catalog carries over as it is.)
 const CATALOG_KEY = 'audiobook-catalog-device';
 // Where edits waited for `make serve` to save them to data/, when the catalog still lived in files:
@@ -210,8 +210,8 @@ export function persist(){
 		return;
 	}
 	try{
-		const {books, seriesInfo, authors, excluded} = CATALOG.toJSON();   // the marks have a key of their own
-		localStorage.setItem(CATALOG_KEY, JSON.stringify({books, seriesInfo, authors, excluded}));
+		const {books, seriesInfo, authors, narrators, publishers, excluded} = CATALOG.toJSON();   // the marks have a key of their own
+		localStorage.setItem(CATALOG_KEY, JSON.stringify({books, seriesInfo, authors, narrators, publishers, excluded}));
 		LOCAL_SEEN = localNow();
 		FORMAT_NOTES = [];    // written as the page holds it, which is the current format
 	}catch(e){
@@ -235,7 +235,7 @@ function askToKeepStorage(){
 }
 
 /**
- * The stored catalog as a backup ({books, seriesInfo, authors, excluded}), or null when there is none
+ * The stored catalog as a backup ({books, seriesInfo, authors, narrators, publishers, excluded}), or null when there is none
  * yet. Edits from before, still waiting for `make serve` to save them to data/, are taken as the catalog.
  * @returns {Unchecked}
  */

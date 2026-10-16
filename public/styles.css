@@ -114,14 +114,14 @@ h1{
 	width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
 	background:var(--paper); color:var(--ink); font-size:.9rem;
 }
-#authorForm{
+#creditForm{
 	display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
 	padding:1rem; margin-bottom:1.5rem;
 }
-#authorForm.open{display:block;}
-#authorForm h3{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
-#authorForm label{display:block; font-size:.78rem; color:var(--ink-soft); margin:.5rem 0 .2rem;}
-#authorForm input, #authorForm textarea{
+#creditForm.open{display:block;}
+#creditForm h3{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
+#creditForm label{display:block; font-size:.78rem; color:var(--ink-soft); margin:.5rem 0 .2rem;}
+#creditForm input, #creditForm textarea{
 	width:100%; font-family:inherit; resize:vertical; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px;
 	background:var(--paper); color:var(--ink); font-size:.9rem;
 }

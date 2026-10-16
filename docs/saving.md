@@ -9,7 +9,7 @@ served.
 
 ## Where the catalog lives
 
-The catalog (books, series info, author info and the list of books imports skip) is kept in the
+The catalog (books, series info, author, narrator and publisher info and the list of books imports skip) is kept in the
 browser's `localStorage`, under the key `audiobook-catalog-device`, and "Not duplicates" marks under
 `audiobook-catalog-not-duplicates`. Every edit, import, Restore and Merge is saved there at once. All
 pages of the app share it; if two tabs edit the catalog at once, the one that saves second refuses
@@ -26,7 +26,7 @@ the catalog starts empty; restore a backup.
 
 ## Backups
 
-**Export** on *Import & export* downloads a backup: the books, series and author info, the list of books
+**Export** on *Import & export* downloads a backup: the books, series, author, narrator and publisher info, the list of books
 imports skip and the "Not duplicates" marks, as one JSON file. It is the only copy of your catalog
 outside the browser, so export now and then and keep the files somewhere safe.
 

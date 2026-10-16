@@ -7,13 +7,13 @@ public/               the app, and all that a static server serves (make serve, 
   index.html, app.js    the catalog: browse by series or all books, edit books and series info
   import.html, import.js    Audible, Goodreads and Hardcover imports, Goodreads CSV export, Check / Box sets, backups (Export / Restore / Merge)
   duplicates.html, duplicates.js    find and merge books entered twice
-  authors.html, authors.js    the authors, and each author's page: bio, links, series and titles
-  narrators.html, publishers.html, credits.js    the narrators and publishers, and each one's page: series and titles
-                        (narrators.js and publishers.js start credits.js with their kind)
+  authors.html, narrators.html, publishers.html, credits.js    the authors, narrators and publishers, and each
+                        one's page: bio, links, series and titles (authors.js, narrators.js and publishers.js
+                        start credits.js with their kind)
   store.js              shared by the pages: loads the catalog from localStorage and saves every edit there
   styles.css
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline
-  modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Author, the importers and
+  modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Contributor, the importers and
                         exporter, merge, validation, Hardcover (no browser APIs, so the tests run them in Node)
 package.json          "type": "module" (every .js file is an ES module) and TypeScript, the type checker
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
@@ -42,7 +42,7 @@ npm install       # once: installs TypeScript into node_modules/
 make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig.json, and jsconfig.sw.json for sw.js)
 ```
 
-- The catalog's parts are classes in `modules/`: `Catalog`, `Book`, `Edition`, `Series`, `Author`, ... A module
+- The catalog's parts are classes in `modules/`: `Catalog`, `Book`, `Edition`, `Series`, `Contributor`, ... A module
   that only needs a type (a report of an import, a merge or a Hardcover run is a `@typedef` in the module that
   makes it) brings it in with `/** @import {MergeReport} from './merger.js' */`, a comment, so the browser
   loads nothing more.

@@ -11,7 +11,7 @@ import { Isbn } from '../public/modules/isbn.js';
 import { Edition } from '../public/modules/edition.js';
 import { Book } from '../public/modules/book.js';
 import { Series } from '../public/modules/series.js';
-import { Author } from '../public/modules/author.js';
+import { Contributor } from '../public/modules/contributor.js';
 import { Exclusions } from '../public/modules/exclusions.js';
 import { Validator } from '../public/modules/validator.js';
 import { Merger } from '../public/modules/merger.js';
@@ -60,13 +60,15 @@ const DATA = path.join(root, 'sample');
 const read = file => fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 const loadBooks = file => Book.fixBooks(JSON.parse(read(file)));
 const loadSeriesInfo = file => JSON.parse(read(file));
-const loadAuthors = file => JSON.parse(read(file));
+const loadContributors = file => JSON.parse(read(file));
 
 test('demo data validates without errors or warnings', () => {
 	assert.deepEqual(Validator.validate(loadBooks(path.join(DATA, 'books.json')), loadSeriesInfo(path.join(DATA, 'series-info.json'))),
 		{ errors: [], warnings: [] });
-	assert.deepEqual(Validator.validateAuthors(loadBooks(path.join(DATA, 'books.json')), loadAuthors(path.join(DATA, 'authors.json'))),
-		{ errors: [], warnings: [] });
+	for (const kind of ['authors', 'narrators', 'publishers']) {
+		assert.deepEqual(Validator.validateContributors(loadBooks(path.join(DATA, 'books.json')), kind, loadContributors(path.join(DATA, `${kind}.json`))),
+			{ errors: [], warnings: [] }, kind);
+	}
 });
 
 test('demo data has what the smoke test needs', () => {
@@ -1128,12 +1130,12 @@ test('merging a backup: author info only the backup has is added; where both dif
 // ------------------------------------------------------------------ authors
 test('author info: validated against the books, links checked against their sites', () => {
 	const books = [book('Lantern Road', 'Ann Vale')];
-	assert.deepEqual(Validator.validateAuthors(books, {}), { errors: [], warnings: [] });
-	assert.deepEqual(Validator.validateAuthors(books, undefined), { errors: [], warnings: [] });
-	assert.deepEqual(Validator.validateAuthors(books, { 'Ann Vale': { bio: 'Hi.\n\nMore.', url: 'https://example.com/',
+	assert.deepEqual(Validator.validateContributors(books, 'authors', {}), { errors: [], warnings: [] });
+	assert.deepEqual(Validator.validateContributors(books, 'authors', undefined), { errors: [], warnings: [] });
+	assert.deepEqual(Validator.validateContributors(books, 'authors', { 'Ann Vale': { bio: 'Hi.\n\nMore.', url: 'https://example.com/',
 		audible: 'https://www.audible.co.uk/author/Ann-Vale/X1', goodreads: 'https://www.goodreads.com/author/show/1.Ann',
 		hardcover: 'https://hardcover.app/authors/ann-vale' } }), { errors: [], warnings: [] });
-	const { errors, warnings } = Validator.validateAuthors(books, {
+	const { errors, warnings } = Validator.validateContributors(books, 'authors', {
 		'Ann Vale': { bio: '', url: 'example.com', audible: 'https://hardcover.app/authors/ann-vale', note: 'x' },
 		'Cy Hale': 'not an object',
 	});
@@ -1147,14 +1149,37 @@ test('author info: validated against the books, links checked against their site
 		"authors['Ann Vale']: 'audible' should be an address on Audible, not 'https://hardcover.app/authors/ann-vale'",
 		"authors: 'Cy Hale' matches no author in books.json",
 	]);
-	assert.deepEqual(Validator.validateAuthors(books, []).errors, ['authors: must map author names to their info']);
+	assert.deepEqual(Validator.validateContributors(books, 'authors', []).errors, ['authors: must map author names to their info']);
+});
+
+test('narrator and publisher info: names come from the editions, and backups carry and merge it', () => {
+	const books = [book('Lantern Road', 'Ann Vale', { e: [{ n: ['Cy Hale'], p: 'Gull Audio' }] })];
+	assert.deepEqual(Validator.validateContributors(books, 'narrators', { 'Cy Hale': { bio: 'Reads.' }, 'Ann Vale': { bio: 'Writes.' } }),
+		{ errors: [], warnings: ["narrators: 'Ann Vale' matches no narrator in books.json"] });
+	assert.deepEqual(Validator.validateContributors(books, 'publishers', { 'Gull Audio': { hardcover: 'https://hardcover.app/publishers/gull' } }),
+		{ errors: [], warnings: [] });
+	assert.deepEqual(Validator.validateContributors(books, 'publishers', { 'Gull Audio': { url: 'gull' } }).errors,
+		["publishers['Gull Audio']: 'url' must be a web address starting with http:// or https://"]);
+	// the Check looks at all three
+	const catalog = Catalog.fromJSON({ books, narrators: { Nobody: { bio: 'Hi.' } }, publishers: { 'Gull Audio': { note: 'x' } } });
+	const found = catalog.validate({ contributors: true });
+	assert.deepEqual([found.errors, found.warnings], [["publishers['Gull Audio']: unknown keys ['note']"], ["narrators: 'Nobody' matches no narrator in books.json"]]);
+	// backups: read, older ones have none, and merging adds the backup's
+	assert.equal(Backup.read({ books: [] }).narrators, null);
+	assert.throws(() => Backup.read({ books: [], publishers: [] }), /publishers is not an object/);
+	const mine = Catalog.fromJSON({ books, narrators: { 'Cy Hale': { bio: 'Mine.' } } });
+	const m = Backup.read({ books, narrators: { 'Cy Hale': { bio: 'Theirs.' } }, publishers: { 'Gull Audio': { bio: 'Theirs.' } } }).mergeInto(mine);
+	assert.deepEqual([m.narratorsKept, m.publishersAdded], [['Cy Hale'], ['Gull Audio']]);
+	assert.deepEqual(json(Object.fromEntries(m.narrators)), { 'Cy Hale': { bio: 'Mine.' } });
+	assert.deepEqual(json(mine.clone()).publishers, {});
+	assert.deepEqual(Object.keys(json(mine)), ['books', 'seriesInfo', 'authors', 'narrators', 'publishers', 'excluded', 'notDuplicates']);
 });
 
 test('author info is tidied: a bio keeps its paragraphs, empty fields are dropped', () => {
-	assert.deepEqual(json(Author.tidy('Ann Vale', { bio: '  First  line.\r\nSecond\u00a0line.\n\n\n\nNew  paragraph. ', url: ' https://example.com/ ', goodreads: '  ' })),
+	assert.deepEqual(json(Contributor.tidy('Ann Vale', { bio: '  First  line.\r\nSecond\u00a0line.\n\n\n\nNew  paragraph. ', url: ' https://example.com/ ', goodreads: '  ' })),
 		{ bio: 'First line.\nSecond line.\n\nNew paragraph.', url: 'https://example.com/' });
-	assert.equal(Author.tidy('Ann Vale', { bio: ' ', url: '' }), null);
-	assert.equal(Author.tidy('Ann Vale', 'nope'), null);
+	assert.equal(Contributor.tidy('Ann Vale', { bio: ' ', url: '' }), null);
+	assert.equal(Contributor.tidy('Ann Vale', 'nope'), null);
 });
 
 test('an author\'s works: their series in series order, then their other titles, co-written books included', () => {

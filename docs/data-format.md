@@ -1,7 +1,7 @@
 # Data format
 
 The catalog is kept in the browser ([Running the app and keeping your catalog](saving.md)) in the
-shape a backup has: `{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`.
+shape a backup has: `{"books": [...], "seriesInfo": {...}, "authors": {...}, "narrators": {...}, "publishers": {...}, "excluded": [...], "notDuplicates": [...]}`.
 The books (`books.json` before the catalog moved into the browser) are a list of titles, with short keys to keep it small:
 
 | key  | meaning                                             | required |
@@ -90,6 +90,20 @@ book's `a` exactly) to what you keep about them; every field is optional:
 Links must start with `http://` or `https://`; **Check** warns when one is on another site than
 its key says, or when an entry matches no author of any book (an author renamed on their books). The
 series and titles on an author's page are not stored here: they come from the books.
+
+## Narrators and publishers
+
+The narrator info (`narrators`) and publisher info (`publishers`) work the same way, with the same keys:
+`narrators` maps a narrator's name (as an edition's `n` writes it) and `publishers` a publisher's name (as an
+edition's `p` writes it) to a bio and links. For a narrator, `audible` is usually an Audible search by
+narrator and `goodreads` and `hardcover` their author pages there (both sites list narrators as authors);
+for a publisher, `hardcover` is its publisher page (`https://hardcover.app/publishers/...`). Both are
+optional (missing means `{}`), and **Check** warns, as for authors, about an entry that matches no edition.
+
+```json
+{"narrators": {"Ingrid Voss": {"bio": "Narrates fantasy.", "hardcover": "https://hardcover.app/authors/ingrid-voss"}},
+ "publishers": {"Kestrel Row Audio": {"url": "https://example.com/", "hardcover": "https://hardcover.app/publishers/kestrel-row-audio"}}}
+```
 
 **Check** checks all of this and warns about suspicious entries.
 

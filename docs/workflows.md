@@ -34,8 +34,8 @@ when Hardcover renames the book). Every change is saved in the browser as you ma
 [Running the app and keeping your catalog](saving.md)).
 
 **Back up and move the catalog**: **Export** on the *Import & export* page downloads a backup with the
-books, the series info, the author info, the list of books imports must skip and the pairs marked
-**Not duplicates** (`{"books": [...], "seriesInfo": {...}, "authors": {...}, "excluded": [...], "notDuplicates": [...]}`).
+books, the series info, the author, narrator and publisher info, the list of books imports must skip and the pairs marked
+**Not duplicates** (`{"books": [...], "seriesInfo": {...}, "authors": {...}, "narrators": {...}, "publishers": {...}, "excluded": [...], "notDuplicates": [...]}`).
 **Restore** replaces the catalog with one. Backups from before series info was exported (a plain list of
 books), or before the author info or the exclusions were, still work and keep what the catalog has; the
 backup's exclusions and **Not duplicates** marks are added to the ones it already has. When both
@@ -50,7 +50,7 @@ links to their website and their pages on Audible, Goodreads and Hardcover, and 
 Author names on the books link there. See [Authors](authors.md).
 
 **Narrators and publishers**: the *Narrators* and *Publishers* pages list everyone named on the editions,
-each with a page of their series and titles; their names on the books link there. See
+each with a page of their bio, links, series and titles; their names on the books link there. See
 [Narrators and publishers](narrators-publishers.md).
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or

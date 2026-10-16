@@ -6,7 +6,8 @@ import {Isbn} from './isbn.js';
 import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
-import {Author} from './author.js';
+import {Contributor} from './contributor.js';
+/** @import {ContributorKind} from './contributor.js' */
 import {HardcoverClient} from './hardcover-client.js';
 /** @import {Unchecked} from './text.js' */
 
@@ -202,38 +203,53 @@ export class Validator {
 	}
 
 	/**
-	 * Check stored author info against the stored books. Returns {errors, warnings}: a malformed entry is an
-	 * error; an entry for a name no book has (an author renamed on their books) and a link to another
-	 * site than its field says are warnings.
+	 * Check stored author, narrator or publisher info (`kind`) against the stored books. Returns {errors,
+	 * warnings}: a malformed entry is an error; an entry for a name no book has (an author renamed on their
+	 * books) and a link to another site than its field says are warnings.
 	 * @param {Unchecked} books
-	 * @param {Unchecked} authors
+	 * @param {ContributorKind} kind
+	 * @param {Unchecked} entries
 	 * @returns {Problems}
 	 */
-	static validateAuthors(books, authors){
+	static validateContributors(books, kind, entries){
 		/** @type {string[]} */
 		const errors = [];
 		/** @type {string[]} */
 		const warnings = [];
-		if(authors === undefined || authors === null) return {errors, warnings};
-		if(!Text.isObject(authors)) return {errors: ['authors: must map author names to their info'], warnings};
-		const names = new Set((Array.isArray(books) ? books : []).flatMap(b => Text.isObject(b) && Array.isArray(b.a) ? b.a : []));
-		for(const [name, entry] of Object.entries(authors)){
-			const label = `authors[${repr(name)}]`;
-			if(!names.has(name)) warnings.push(`authors: ${repr(name)} matches no author in books.json`);
+		const one = {authors: 'author', narrators: 'narrator', publishers: 'publisher'}[kind];
+		if(entries === undefined || entries === null) return {errors, warnings};
+		if(!Text.isObject(entries)) return {errors: [`${kind}: must map ${one} names to their info`], warnings};
+		const names = new Set((Array.isArray(books) ? books : []).flatMap(b => Validator.contributorNames(b, kind)));
+		for(const [name, entry] of Object.entries(entries)){
+			const label = `${kind}[${repr(name)}]`;
+			if(!names.has(name)) warnings.push(`${kind}: ${repr(name)} matches no ${one} in books.json`);
 			if(!Text.isObject(entry)){ errors.push(`${label}: not an object`); continue; }
-			const unknown = Object.keys(entry).filter(k => !/** @type {string[]} */ (Author.KEYS).includes(k)).sort();
+			const unknown = Object.keys(entry).filter(k => !/** @type {string[]} */ (Contributor.KEYS).includes(k)).sort();
 			if(unknown.length) errors.push(`${label}: unknown keys ${repr(unknown)}`);
-			for(const k of Author.KEYS){
+			for(const k of Contributor.KEYS){
 				if(!(k in entry)) continue;
 				const v = entry[k];
 				if(typeof v !== 'string' || !v.trim()){ errors.push(`${label}: ${repr(k)} must be a non-empty string when present`); continue; }
 				if(k === 'bio') continue;
 				const host = Text.webHost(v.trim());
 				if(!host){ errors.push(`${label}: ${repr(k)} must be a web address starting with http:// or https://`); continue; }
-				const site = Author.SITES[k];
+				const site = Contributor.SITES[k];
 				if(site && !site[1](host)) warnings.push(`${label}: ${repr(k)} should be an address on ${site[0]}, not ${repr(v)}`);
 			}
 		}
 		return {errors, warnings};
+	}
+
+	/**
+	 * The names a stored book gives for `kind`: its authors, or its editions' narrators or publishers.
+	 * @param {Unchecked} b
+	 * @param {ContributorKind} kind
+	 * @returns {unknown[]}
+	 */
+	static contributorNames(b, kind){
+		if(!Text.isObject(b)) return [];
+		if(kind === 'authors') return Array.isArray(b.a) ? b.a : [];
+		const editions = Array.isArray(b.e) ? b.e.filter(Text.isObject) : [];
+		return kind === 'narrators' ? editions.flatMap(ed => Array.isArray(ed.n) ? ed.n : []) : editions.map(ed => ed.p);
 	}
 }
