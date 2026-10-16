@@ -42,8 +42,7 @@ backup's exclusions and **Not duplicates** marks are added to the ones it alread
 catalogs have changed, merge the backup instead: see [Merge a backup from another device](backups.md).
 
 **Check the catalog**: **Check** on the *Import & export* page lists errors and warnings (a series
-info entry no book has, an untidy name, a link to the wrong site...) and anything kept in an older format,
-which **Save in the current format** rewrites (any edit does that too).
+info entry no book has, an untidy name, a link to the wrong site...).
 
 **Authors' bios and links**: the *Authors* page lists every author; each author's page shows a bio,
 links to their website and their pages on Audible, Goodreads and Hardcover, and their series and titles.

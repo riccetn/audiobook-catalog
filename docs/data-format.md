@@ -1,7 +1,8 @@
 # Data format
 
-The catalog is kept in the browser ([Running the app and keeping your catalog](saving.md)) in the
-shape a backup has: `{"books": [...], "seriesInfo": {...}, "authors": {...}, "narrators": {...}, "publishers": {...}, "excluded": [...], "notDuplicates": [...]}`.
+A backup ([Running the app and keeping your catalog](saving.md)) is one JSON file:
+`{"books": [...], "seriesInfo": {...}, "authors": {...}, "narrators": {...}, "publishers": {...}, "excluded": [...], "notDuplicates": [...], "ids": {...}}`.
+The browser keeps the same catalog as records in IndexedDB ([How the browser keeps it](#how-the-browser-keeps-it), below).
 The books (`books.json` before the catalog moved into the browser) are a list of titles, with short keys to keep it small:
 
 | key  | meaning                                             | required |
@@ -14,6 +15,7 @@ The books (`books.json` before the catalog moved into the browser) are a list of
 | `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
 | `hcb` | Hardcover's id of the book (`"77"`), the number in `hardcover.app/id/book/…`; every edition of it is an edition of this book |  |
 | `e`  | list of the title's editions (below)                |          |
+| `uid` | the id the book is stored under in the browser, which never changes (written first) |  |
 
 Each title can have several **editions** (the Audible release, a UK release with another narrator, a
 dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
@@ -30,6 +32,7 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 | `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
 | `len`  | length in whole minutes (`642`)                                          |
 | `desc` | your own description of the edition, free text (`"UK edition"`, `"First edition"`, `"Dramatized adaptation"`, `"Audio CD"`) |
+| `uid`  | the id the edition is stored under in the browser, which never changes; a box set's copies share it (written first) |
 
 ```json
 {"t":"The Salt Road","a":["Marisol Quenby"],"s":"The Lantern Coast","sn":"1","hcb":"77",
@@ -60,8 +63,8 @@ an edition of its own), and the Hardcover book id moves to the book (a box set's
 its titles, gives way to the book's own). Until 2026-10 the authors and narrators were one comma
 separated text (`"a": "Ann Vale, Bo Reed"`); that is read as a list, split at commas, semicolons, `&`
 and `and` (a suffix such as `Jr.` stays with its name). Until 2026-10 an edition had one ASIN, `id`,
-which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). **Check** on the *Import & export* page
-mentions all of these, and any save (**Save in the current format** after a **Check**, any edit or import) writes them in the new shape.
+which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). A backup or Restore in an older
+shape is read this way, and the browser keeps the catalog in the current one.
 
 The series info (`seriesInfo`, `series-info.json` before) maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
@@ -106,6 +109,39 @@ optional (missing means `{}`), and **Check** warns, as for authors, about an ent
 ```
 
 **Check** checks all of this and warns about suspicious entries.
+
+## Ids
+
+`ids` maps each series, author, narrator and publisher name to the id it is stored under:
+`{"series": {"The Lantern Coast": "3f2b…"}, "authors": {…}, "narrators": {…}, "publishers": {…}}`. With the books' and
+editions' `uid`, it lets a Restore put back the same records, and a **Merge** find a book by its id first
+(before its ASIN, title or place in a series), even when it was retitled on the other device. Backups
+without ids still work: whatever has none gets a new one.
+
+## How the browser keeps it
+
+The browser keeps the catalog in IndexedDB, database `audiobook-catalog`, as plain objects with
+descriptive field names. Every record has an id that never changes (`crypto.randomUUID()`), and records
+point at each other by id, so renaming a series changes one record. Fields marked *derived* are written
+from the others on every save, only so an index can sort or filter without reading other records
+(`modules/catalog-records.js`). Every index that sorts ends with the record's key, so a page can ask for
+the next rows after the last one it shows (`IDBKeyRange.lowerBound([sortTitle, id], true)`), which is
+how a list can be paged or scrolled without loading all of it.
+
+| store | key | holds | indexes |
+|-------|-----|-------|---------|
+| `books` | `id` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `hardcoverId`, `editionIds` (in order), `position` (the catalog's order); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `words` | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `genres` and `words` (multiEntry), `hardcoverId` |
+| `editions` | `id` | `bookIds` (a box set's edition is one record on all its titles), `asins`, `goodreadsId`, `hardcoverId`, `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`; derived: `idKeys` (`"asin B0…"`, `"gr 4242"`, `"hc 501"`, `"isbn 978…"`) | `bookIds`, `idKeys`, `narratorIds` (multiEntry), `publisherId` |
+| `series` | `id` | `name`, `total`, `status`, `note`, `url`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id] |
+| `contributors` | `id` | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `audible`, `goodreads`, `hardcover`; derived: `sortName`, `bookCount` | `kindName` [kind, name] (unique), `byName` [kind, sortName, id] |
+| `credits` | [contributorId, bookId] | derived: who is credited on which book, as what, with the book's `sortTitle`, `seriesId` and `numberKey` | `byTitle` [contributorId, sortTitle, bookId], `bySeries` [contributorId, seriesId, numberKey, bookId], `bookId` |
+| `marks` | `id` | "Not duplicates" (`bookIds`), "Keep separate" (`bookIds`, `editionIds`), or a mark that matched no book (`key`, its text) | `bookIds` (multiEntry) |
+| `exclusions` | `entry` | an entry of the exclusions list, and its `position` in it | |
+| `meta` | `key` | `revision` (bumped by every save; a save refuses when another tab saved since the page read it), and `unreadable` (a catalog set aside) | |
+
+Every series a book names and every person a book or edition credits has a record, with info or without.
+A value the classes keep aside because it isn't what its field holds has no place in a record, so a
+catalog or backup with one is not stored until it is fixed (see [Where the catalog lives](saving.md#where-the-catalog-lives)).
 
 ## Tidy names and spacing
 

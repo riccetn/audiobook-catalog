@@ -8,7 +8,7 @@ import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 import {Exclusions} from './exclusions.js';
 import {Duplicates} from './duplicates.js';
-/** @import {Catalog} from './catalog.js' */
+/** @import {Catalog, NameIds, NamedKind} from './catalog.js' */
 /** @import {Unchecked} from './text.js' */
 /** @import {ContributorKind} from './contributor.js' */
 
@@ -51,6 +51,7 @@ import {Duplicates} from './duplicates.js';
  * @property {Map<string, Contributor> | null} [publishers]
  * @property {string[] | null} [excluded] the exclusions list's entries
  * @property {string[] | null} [notDuplicates] the "Not duplicates" marks
+ * @property {NameIds | null} [nameIds] the ids of series and people by name (`ids`), from a backup that has them
  */
 
 /**
@@ -68,7 +69,7 @@ function readBooks(list){
 /** A backup of the catalog. */
 export class Backup {
 	/** @param {BackupInit} init */
-	constructor({books, series = null, authors = null, narrators = null, publishers = null, excluded = null, notDuplicates = null}){
+	constructor({books, series = null, authors = null, narrators = null, publishers = null, excluded = null, notDuplicates = null, nameIds = null}){
 		this.books = books;
 		this.series = series;
 		this.authors = authors;
@@ -76,6 +77,7 @@ export class Backup {
 		this.publishers = publishers;
 		this.excluded = excluded;
 		this.notDuplicates = notDuplicates;
+		this.nameIds = nameIds;
 	}
 
 	/**
@@ -103,6 +105,7 @@ export class Backup {
 				}
 			}
 			return new Backup({
+				nameIds: Backup.readIds(data.ids),
 				books: readBooks(Book.fixBooks(data.books)),
 				series: info === undefined ? null : new Map(Object.entries(info).map(([name, entry]) => [name, Series.fromJSON(name, entry)])),
 				authors: people('authors'), narrators: people('narrators'), publishers: people('publishers'),
@@ -111,6 +114,26 @@ export class Backup {
 			});
 		}
 		throw new Error('expected a list of books or {books, seriesInfo, excluded}');
+	}
+
+	/**
+	 * The ids of series and people by name, as a backup keeps them (`ids`: {series: {name: id}, authors: ...});
+	 * null when it has none. Throws when they are not that.
+	 * @param {unknown} ids
+	 * @returns {NameIds | null}
+	 */
+	static readIds(ids){
+		if(ids === undefined) return null;
+		if(!Text.isObject(ids)) throw new Error('ids is not an object');
+		/** @type {NameIds} */
+		const out = {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()};
+		for(const kind of /** @type {NamedKind[]} */ (['series', ...Contributor.KINDS])){
+			const named = ids[kind];
+			if(named === undefined) continue;
+			if(!Text.isObject(named) || !Object.values(named).every(v => typeof v === 'string' && v.trim())) throw new Error(`ids.${kind} must map names to ids`);
+			out[kind] = new Map(/** @type {[string, string][]} */ (Object.entries(named)));
+		}
+		return out;
 	}
 
 	/**
@@ -191,9 +214,13 @@ export class Backup {
 		/** @type {Set<number>} */
 		const matched = new Set();
 		const label = (/** @type {Book} */ b) => JSON.stringify([b.title, b.authors, b.series || '', b.number || '']);
-		// A book of the backup is one of ours by its title first, then its place in a series, then its ids
-		// (which a box set's titles share), and each of ours matches one book of the backup at most.
+		// A book of the backup is one of ours by the id it is stored under (a backup of this catalog, or of
+		// one restored from it), else by its title first, then its place in a series, then its ids (which a
+		// box set's titles share), and each of ours matches one book of the backup at most.
+		const byId = new Map(out.map((b, i) => [b.id, i]));
 		const findOurs = (/** @type {Book} */ book) => {
+			const same = book.id === undefined ? undefined : byId.get(book.id);
+			if(same !== undefined && !matched.has(same)) return same;
 			const rank = (/** @type {string} */ k) => k.startsWith('["title"') ? 0 : k.startsWith('["series"') ? 1 : 2;
 			for(const k of book.lookupKeys().sort((x, y) => rank(x) - rank(y))){
 				const i = (index.get(k) || []).find(x => !matched.has(x));
@@ -214,6 +241,7 @@ export class Backup {
 			const mine = out[i];
 			if(label(mine) !== label(theirs)) result.conflicts.push({mine: mine.clone(), theirs});
 			const merged = Book.merge(takeBackup ? [theirs, mine] : [mine, theirs]);
+			merged.id = mine.id;   // still our book, whichever side's values won
 			// an edition without ids that both sides have is still one edition
 			const seen = new Set();
 			merged.editions = merged.editions.filter(x => { const k = JSON.stringify(Edition.KEYS.map(f => x.value(f))); return !seen.has(k) && !!seen.add(k); });

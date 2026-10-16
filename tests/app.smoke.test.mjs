@@ -12,6 +12,8 @@ import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 import { Book } from '../public/modules/book.js';
 import { Exclusions } from '../public/modules/exclusions.js';
 import { Duplicates } from '../public/modules/duplicates.js';
+import { CatalogRecords } from '../public/modules/catalog-records.js';
+import { FakeIndexedDB } from './fake-indexeddb.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The app is the public/ folder, what a static server serves; the demo data stays outside it.
@@ -204,8 +206,30 @@ function stored(files) {
 		narrators: json('narrators.json', '{}'), publishers: json('publishers.json', '{}'), excluded: Exclusions.parse(files['excluded.txt'] || '').entries };
 	return JSON.stringify(catalog);
 }
-// What the page keeps in localStorage now.
-const kept = storage => JSON.parse(storage.get(CATALOG_KEY));
+// A backup (or anything else) without the ids books, editions, series and people are stored under.
+const withoutIds = json => JSON.parse(JSON.stringify(json), (k, v) => (k === 'uid' || k === 'ids' ? undefined : v));
+// The browser's IndexedDB that goes with a localStorage (a Map), so pages booted with the same storage are
+// tabs of one browser. Its ids are numbered, so tests can name them.
+const DATABASES = new WeakMap();
+function databaseOf(storage) {
+	if (!DATABASES.has(storage)) {
+		const database = new FakeIndexedDB();
+		let n = 0;
+		database.newId = () => `id-${++n}`;
+		DATABASES.set(storage, database);
+	}
+	return DATABASES.get(storage);
+}
+// Once the saves of every page of this browser are done.
+const settled = storage => Promise.all((databaseOf(storage).pages || []).map(page => page.saved()));
+// What the pages keep in IndexedDB, once their saves are done, as a backup has it (without the ids); null when nothing was saved.
+async function kept(storage) {
+	await settled(storage);
+	const database = databaseOf(storage);
+	if (!database.records('meta').length) return null;
+	const records = Object.fromEntries(CatalogRecords.STORE_NAMES.map(store => [store, database.records(store)]));
+	return JSON.parse(JSON.stringify(CatalogRecords.toCatalog(records), (k, v) => (k === 'uid' || k === 'ids' ? undefined : v)));
+}
 
 /**
  * Load the page into a fresh fake browser. `storage` is a Map standing in for localStorage; unless it
@@ -213,6 +237,7 @@ const kept = storage => JSON.parse(storage.get(CATALOG_KEY));
  * there is none when `files` is null.
  */
 async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null, languages = ['en-US', 'en'] } = {}) {
+	await settled(storage);   // a page loaded after another saved reads what it saved
 	if (files && !storage.has(CATALOG_KEY)) storage.set(CATALOG_KEY, stored(files));
 	if (files && files['not-duplicates.txt'] && !storage.has(NOT_DUP_KEY)) {
 		storage.set(NOT_DUP_KEY, JSON.stringify(Duplicates.parseMarks(files['not-duplicates.txt'])));
@@ -263,8 +288,10 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 	const addEventListener = (type, fn) => (windowListeners[type] ||= []).push(fn);
 	const navigator = { languages };
 	const Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
-	const context = vm.createContext({ document, Node, navigator, localStorage, fetch, FileReader, location, history, addEventListener,
-		console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
+	const database = databaseOf(storage);
+	const crypto = { randomUUID: () => database.newId() };
+	const context = vm.createContext({ document, Node, navigator, localStorage, indexedDB: database, crypto, fetch, FileReader, location, history,
+		addEventListener, console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
 	const [entry] = entryOf(page);
 	const namespaces = await runModules(entry, context);
 	// What the modules export, live: CATALOG is whatever store.js holds now, and Book, Edition etc. the page's own classes.
@@ -281,11 +308,17 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 	// what they import, so a missing import still fails here as it would in a browser.
 	const inScope = vm.runInContext('(function (code) { with (this) return eval(code); })', context);
 	const run = code => inScope.call(exported, code);
-	// Values cross the VM boundary as JSON so deepEqual is not confused by a different Object.prototype.
-	const get = expr => JSON.parse(run(`JSON.stringify(${expr})`));
+	// Values cross the VM boundary as JSON so deepEqual is not confused by a different Object.prototype. The ids
+	// books and editions are stored under (`uid`) are left out, as most tests compare values; withIds() keeps them.
+	const get = expr => JSON.parse(run(`JSON.stringify(${expr})`), (k, v) => (k === 'uid' ? undefined : v));
+	const withIds = expr => JSON.parse(run(`JSON.stringify(${expr})`));
 	// ctx.render(), ctx.CATALOG etc. are the exports; anything else (ctx.location, ctx.Blob = ...) the page's globals.
 	const ctx = new Proxy(context, { get: (target, key) => (key in exported ? exported[key] : target[key]) });
-	return { ctx, els, storage, get, run, fire };
+	// what the page saves, saved: persist() writes in the background
+	const saved = () => run('whenSaved()');
+	const booted = { ctx, els, storage, database, get, withIds, run, fire, saved };
+	(database.pages ||= []).push(booted);
+	return booted;
 }
 
 for (const page of PAGES) {
@@ -480,6 +513,29 @@ test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Good
 	run("CATALOG.books[0].editions = [{asin: { 'audible.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' }}].map(e => Edition.fromJSON(e))");
 	ctx.render();
 	assert.match(els.results.innerHTML, /ASIN audible\.co\.uk <a href="https:\/\/www\.audible\.co\.uk\/pd\/TESTASIN02"[^>]*>TESTASIN02<\/a>, amazon\.com <a href="https:\/\/www\.amazon\.com\/dp\/TESTASIN03"[^>]*>TESTASIN03<\/a><\/div>/);
+});
+
+test('a book edited in the form keeps its id, and so do its editions, a box set\'s shared one included', async () => {
+	const box = { asin: { 'audible.com': 'B0BOX00001' } };
+	const books = [{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [box, { gr: '4001' }] }, { t: 'Gull Light', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [box] }];
+	const { ctx, els, withIds, database, saved } = await boot({ files: { 'books.json': JSON.stringify(books) } });
+	await saved();
+	const before = withIds('CATALOG.books');
+	assert.deepEqual(database.records('editions').map(ed => ed.bookIds.length), [2, 1], 'the box set\'s edition is one record');
+	ctx.setView('library');
+	ctx.openEditForm(0);
+	Object.assign(els.f_t, { value: 'Tidewater Rising' });
+	typeEdition(els, 0, 'p', 'Gull Audio');
+	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+	await saved();
+	const after = withIds('CATALOG.books');
+	assert.equal(after[0].t, 'Tidewater Rising');
+	assert.deepEqual(after.map(b => [b.uid, b.e.map(ed => ed.uid)]), before.map(b => [b.uid, b.e.map(ed => ed.uid)]));
+	assert.equal(after[1].e[0].p, 'Gull Audio', 'the edit reached the other title');
+	const records = database.records('editions');
+	assert.deepEqual(records.map(ed => [ed.id, ed.bookIds.length]), [[before[0].e[0].uid, 2], [before[0].e[1].uid, 1]], 'still one record each');
+	assert.ok(records[0].publisherId);
+	assert.deepEqual(database.records('books').map(b => b.title), ['Tidewater Rising', 'Gull Light']);
 });
 
 test('the book form has a field for each site an edition has an ASIN on, and adds one for another site', async () => {
@@ -821,19 +877,77 @@ test('with no catalog in this browser it starts empty, not with the demo, and sa
 	assert.deepEqual(get('CATALOG.toJSON().seriesInfo'), {});
 	assert.equal(els.subtitle.textContent, 'Your catalog is empty');
 	assert.match(els.results.innerHTML, /No books yet\. .*<a href="import\.html">Import &amp; export<\/a>/);
-	assert.equal(storage.has(CATALOG_KEY), false, 'nothing is stored before the first edit');
+	assert.equal((await kept(storage)), null, 'nothing is stored before the first edit');
 	run("CATALOG.books.push(new Book({ title: 'First', authors: ['Me'] }))");
-	run('persist()');
-	assert.deepEqual(kept(storage), { books: [{ t: 'First', a: ['Me'] }], seriesInfo: {}, authors: {}, narrators: {}, publishers: {}, excluded: [] });
+	await run('persist()');
+	assert.deepEqual((await kept(storage)), { books: [{ t: 'First', a: ['Me'] }], seriesInfo: {}, authors: {}, narrators: {}, publishers: {}, excluded: [], notDuplicates: [] });
 });
 
 test('the catalog is kept in this browser, from one page load to the next', async () => {
 	const first = await boot();
 	first.run("CATALOG.books[0].title = 'Edited Locally'");
-	first.run('persist()');
-	const again = await boot({ storage: new Map(first.storage) });
+	await first.run('persist()');
+	const again = await boot({ storage: first.storage });
 	assert.equal(again.get('CATALOG.books[0].title'), 'Edited Locally');
 	assert.equal(again.get('CATALOG.books.length'), demoBooks.length);
+	assert.deepEqual(again.withIds('CATALOG.books.map(b => b.id)'), first.withIds('CATALOG.books.map(b => b.id)'), 'each book keeps its id');
+});
+
+test('the catalog localStorage kept is moved to IndexedDB on the first load, and kept aside as it was', async () => {
+	const storage = new Map();
+	const { get, withIds, database } = await boot({ storage, files: { ...DEMO, 'not-duplicates.txt': 'x\n' } });
+	const before = storage.get(CATALOG_KEY + '.moved-to-indexeddb');
+	assert.ok(before, 'the old copy is renamed, not deleted');
+	assert.equal(storage.has(CATALOG_KEY), false);
+	assert.equal(storage.get(NOT_DUP_KEY + '.moved-to-indexeddb'), '["x"]');
+	assert.deepEqual((await kept(storage)).books, demoBooks, 'IndexedDB holds the same books');
+	assert.deepEqual((await kept(storage)).notDuplicates, ['x'], 'a mark that matches no book is kept as its text');
+	assert.equal(database.records('books').length, demoBooks.length);
+	// a box set's titles share one edition record, which lists them all
+	const shared = database.records('editions').filter(ed => ed.bookIds.length > 1);
+	assert.ok(shared.length, 'the demo has a box set');
+	for (const ed of shared) for (const id of ed.bookIds) assert.ok(database.records('books').find(b => b.id === id).editionIds.includes(ed.id));
+	assert.deepEqual(get('CATALOG.books'), demoBooks);
+	assert.ok(withIds('CATALOG.books').every(b => b.uid), 'every book has its id');
+	// a second load reads IndexedDB, not what localStorage has now
+	storage.set(CATALOG_KEY, JSON.stringify({ books: [{ t: 'Not this', a: ['Me'] }] }));
+	const again = await boot({ storage });
+	assert.equal(again.get('CATALOG.books.length'), demoBooks.length);
+});
+
+test('a catalog with values that are not what their field holds is shown but not moved, until fixed', async () => {
+	const storage = new Map([[CATALOG_KEY, JSON.stringify({ books: [{ t: 'Odd', a: ['Me'], g: 5, x: 1 }] })]]);
+	const { get, els } = await boot({ storage, files: null });
+	assert.equal(get('CATALOG.books[0].title'), 'Odd', 'the page shows it');
+	assert.equal((await kept(storage)), null, 'nothing is written');
+	assert.ok(storage.has(CATALOG_KEY), 'localStorage still has it');
+	assert.match(els.ioStatus.textContent, /^Not saved: these values can't be kept.*book #0 \('Odd'\): 'g', 'x'/);
+});
+
+test('without IndexedDB the page shows the catalog localStorage has, and says nothing is saved', async () => {
+	const storage = new Map();
+	databaseOf(storage).broken = true;
+	const { get, els, run } = await boot({ storage });
+	assert.deepEqual(get('CATALOG.books'), demoBooks);
+	assert.match(els.ioStatus.textContent, /^Not saved: this browser won't keep the catalog/);
+	await run('persist()');
+	assert.match(els.ioStatus.textContent, /^Not saved/);
+	assert.ok(storage.has(CATALOG_KEY), 'what localStorage has stays');
+});
+
+test('a stored catalog that does not fit together is set aside, and the catalog starts empty', async () => {
+	const storage = new Map();
+	const first = await boot({ storage });
+	await first.saved();
+	// a book that lists an edition there is no record of
+	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 1); req.onsuccess = () => resolve({ db: req.result }); });
+	await new Promise(resolve => { const tx = db.transaction('editions', 'readwrite'); tx.objectStore('editions').clear(); tx.oncomplete = resolve; });
+	const { get, els, database } = await boot({ storage });
+	assert.deepEqual(get('CATALOG.books'), []);
+	assert.match(els.ioStatus.textContent, /set aside/);
+	const aside = database.records('meta').find(m => m.key === 'unreadable');
+	assert.equal(aside.value.books.length, demoBooks.length, 'what was stored is kept');
+	assert.equal(database.records('books').length, 0);
 });
 
 test('edits from before, which waited for make serve to save them, become the catalog', async () => {
@@ -843,6 +957,8 @@ test('edits from before, which waited for make serve to save them, become the ca
 	assert.deepEqual(get('CATALOG.toJSON().seriesInfo'), old.info);
 	assert.deepEqual(get('CATALOG.exclusions.entries'), ['BGONE']);
 	assert.equal(storage.has(CATALOG_KEY), false);
+	assert.equal(storage.has('audiobook-catalog-data'), false, 'moved to IndexedDB');
+	assert.deepEqual((await kept(storage)).books, old.data);
 });
 
 test('a catalog this browser can\'t read is set aside, not overwritten', async () => {
@@ -903,6 +1019,7 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 	await imp.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: backup }], value: '' } });
 	assert.doesNotMatch(imp.els.ioStatus.textContent, /Couldn't read/);
 	assert.deepEqual(imp.get('CATALOG.books'), [{ t: 'From Backup', a: ['Ann Vale'], r: ['2023-01-05'] }]);
+	await imp.saved();
 	// back on the catalog page
 	const back = await boot({ files: { 'books.json': mine }, storage });
 	back.ctx.setView('library');
@@ -957,8 +1074,13 @@ test('Export includes series and author info, and Import brings them back', asyn
 	first.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
 	first.els.exportBtn.listeners.click[0]();
 	const backup = JSON.parse(blobs[0]);
-	assert.deepEqual(backup, { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), authors: JSON.parse(DEMO_AUTHORS),
+	assert.deepEqual(withoutIds(backup), { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), authors: JSON.parse(DEMO_AUTHORS),
 		narrators: JSON.parse(DEMO_NARRATORS), publishers: JSON.parse(DEMO_PUBLISHERS), excluded: [], notDuplicates: [] });
+	// with the ids everything is stored under, so a Restore keeps them
+	assert.equal(backup.books[0].uid, 'id-1');
+	assert.ok(backup.books.every(b => b.uid && (b.e || []).every(ed => ed.uid)));
+	assert.equal(Object.keys(backup.ids.series).length, new Set(demoBooks.map(b => b.s).filter(Boolean)).size);
+	assert.ok(Object.keys(backup.ids.narrators).length);
 
 	// into a page that has no series info: it comes back, and survives a reload
 	const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
@@ -970,7 +1092,10 @@ test('Export includes series and author info, and Import brings them back', asyn
 	assert.deepEqual(other.get('CATALOG.toJSON().seriesInfo'), backup.seriesInfo);
 	assert.deepEqual(other.get('CATALOG.toJSON().authors'), backup.authors);
 	assert.deepEqual(other.get('[CATALOG.toJSON().narrators, CATALOG.toJSON().publishers]'), [backup.narrators, backup.publishers]);
-	const reloaded = await boot({ files, storage: new Map(other.storage) });
+	await other.saved();
+	assert.deepEqual(other.database.records('books').map(b => b.id).sort(), backup.books.map(b => b.uid).sort(), 'the books keep their ids');
+	assert.deepEqual(other.database.records('series').map(x => x.id).sort(), Object.values(backup.ids.series).sort());
+	const reloaded = await boot({ files, storage: other.storage });
 	assert.deepEqual(reloaded.get('CATALOG.toJSON().seriesInfo'), backup.seriesInfo);
 	assert.deepEqual(reloaded.get('CATALOG.toJSON().authors'), backup.authors);
 	assert.deepEqual(reloaded.get('[CATALOG.toJSON().narrators, CATALOG.toJSON().publishers]'), [backup.narrators, backup.publishers]);
@@ -997,8 +1122,9 @@ test('Restore takes the data files of a catalog from before it lived in the brow
 		{ name: 'not-duplicates.txt', text: pair + '\n' },
 	] } });
 	assert.match(els.ioStatus.textContent, /^Restored 2 books and info for 1 series; 1 more excluded from imports\.$/);
-	assert.deepEqual(kept(storage), { books, seriesInfo: { 'Gull Isle': { total: 3, status: 'ongoing' } },
-		authors: { 'Ann Vale': { bio: 'Writes about the sea.' } }, narrators: { 'Cy Hale': { bio: 'Reads sea stories.' } }, publishers: {}, excluded: ['BGONE'] });
+	assert.deepEqual((await kept(storage)), { books, seriesInfo: { 'Gull Isle': { total: 3, status: 'ongoing' } },
+		authors: { 'Ann Vale': { bio: 'Writes about the sea.' } }, narrators: { 'Cy Hale': { bio: 'Reads sea stories.' } }, publishers: {}, excluded: ['BGONE'],
+		notDuplicates: [pair] });
 	assert.deepEqual(get('[...CATALOG.notDuplicates]'), [pair]);
 	assert.equal(els.dupCount.textContent, '');
 
@@ -1008,6 +1134,10 @@ test('Restore takes the data files of a catalog from before it lived in the brow
 		assert.match(els.ioStatus.textContent, /Couldn't read that/);
 		assert.equal(get('CATALOG.books.length'), 2);
 	}
+	// nor with a value the catalog has no place for, which is named
+	await els.importFile.listeners.change[0]({ target: { value: '', files: [{ name: 'b.json', text: JSON.stringify({ books: [{ t: 'Odd', a: ['Me'], g: 5 }] }) }] } });
+	assert.equal(els.ioStatus.textContent, "Not restored: fix these values in the backup first (they aren't what their field holds): book #0 ('Odd'): 'g'.");
+	assert.equal(get('CATALOG.books.length'), 2);
 });
 
 // Press a book's remove button twice (the second press confirms), as in the library view.
@@ -1027,7 +1157,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 	removeBook(ctx, 1);
 	assert.deepEqual(get('CATALOG.books'), [{ t: 'Keep', a: ['Ann Vale'] }]);
 	assert.equal(els.ioStatus.textContent, 'Removed Gone; imports will skip it.');
-	assert.deepEqual(kept(storage).excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
+	assert.deepEqual((await kept(storage)).excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
 
 	// on the import page, an import (Audible by id, or Goodreads by title) does not bring it back
 	const imp = await boot({ page: 'import.html', files, storage });
@@ -1041,7 +1171,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 	assert.match(imp.els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
 
 	// a reload keeps the exclusions along with the edit
-	const reloaded = await boot({ files, storage: new Map(storage) });
+	const reloaded = await boot({ files, storage });
 	assert.deepEqual(reloaded.get('CATALOG.exclusions.entries'), ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
 
 	// Export has the whole list; Import adds it to another page's list
@@ -1151,7 +1281,7 @@ test('series info can be edited, added and removed in the page', async () => {
 	assert.deepEqual(get(`CATALOG.series.get(${JSON.stringify(name)})`),
 		{ total: 7, status: 'ongoing', note: 'book 8 is announced', url: 'https://example.com/author' });
 	assert.match(els.results.innerHTML, /7 owned|owned of 7/);
-	assert.deepEqual(kept(storage).seriesInfo[name].total, 7);
+	assert.deepEqual((await kept(storage)).seriesInfo[name].total, 7);
 
 	// invalid input is refused with a message, and nothing changes
 	ctx.openSeriesForm(name);
@@ -1192,6 +1322,8 @@ test('a series can be renamed from its series info form, on every book in it', a
 	const count = demoBooks.filter(b => b.s === name).length;
 	assert.ok(count > 0);
 
+	await kept(storage);
+	const seriesId = databaseOf(storage).records('series').find(x => x.name === name).id;
 	// shown from the series itself: the page follows the new name
 	ctx.openSeries(name);
 	ctx.openSeriesForm(name);
@@ -1205,8 +1337,9 @@ test('a series can be renamed from its series info form, on every book in it', a
 	assert.equal(get(`CATALOG.series.has(${JSON.stringify(name)})`), false);
 	assert.equal(get('SERIES_FILTER'), 'The Renamed Saga');
 	assert.match(els.ioStatus.textContent, new RegExp(`Renamed .* on ${count} book`));
-	const saved = kept(storage);
+	const saved = (await kept(storage));
 	assert.ok(saved.seriesInfo['The Renamed Saga']);
+	assert.deepEqual(databaseOf(storage).records('series').filter(x => x.name === 'The Renamed Saga').map(x => x.id), [seriesId], 'it keeps its id');
 	assert.equal(saved.books.filter(b => b.s === 'The Renamed Saga').length, count);
 
 	// a series without info is renamed without having to add some
@@ -1312,12 +1445,13 @@ test('an edit is not saved over changes another tab made meanwhile', async () =>
 	const storage = new Map();
 	const one = await boot({ files, storage });
 	const two = await boot({ page: 'duplicates.html', files, storage });
-	one.run("CATALOG.books[0].title = 'Edited Here'; persist();");
-	two.run("CATALOG.books[1].title = 'Edited There'; persist();");
+	await one.run("CATALOG.books[0].title = 'Edited Here'; persist();");
+	await two.run("CATALOG.books[1].title = 'Edited There'; persist();");
 	assert.match(two.els.ioStatus.textContent, /changed in another tab/);
-	assert.equal(kept(storage).books[0].t, 'Edited Here');
-	one.run("CATALOG.books[1].title = 'Again Here'; persist();");      // the tab that saved last can keep going
-	assert.equal(kept(storage).books[1].t, 'Again Here');
+	assert.equal((await kept(storage)).books[0].t, 'Edited Here');
+	assert.equal((await kept(storage)).books[1].t, 'Yours', 'the other tab saved nothing');
+	await one.run("CATALOG.books[1].title = 'Again Here'; persist();");      // the tab that saved last can keep going
+	assert.equal((await kept(storage)).books[1].t, 'Again Here');
 });
 
 test('merging keeps editions apart when asked, and books merged that way can be joined later', async () => {
@@ -1350,7 +1484,7 @@ test('merging keeps editions apart when asked, and books merged that way can be 
 	// "Keep separate" is remembered in this browser
 	ctx.keepEditionsApart(get('SPLIT[0]'));
 	assert.deepEqual(get('SPLIT'), []);
-	const again = await boot({ page: 'duplicates.html', files: { 'books.json': JSON.stringify(get('CATALOG.books')) }, storage: new Map([...storage].filter(([k]) => k !== CATALOG_KEY)) });
+	const again = await boot({ page: 'duplicates.html', storage });
 	assert.deepEqual(again.get('SPLIT'), []);
 	assert.equal(again.els.dupCount.textContent, '');
 });
@@ -1383,7 +1517,7 @@ test('"Not duplicates" marks are kept in this browser and travel in backups', as
 
 	// marking the other pair keeps it too
 	ctx.keepApart(0);
-	assert.deepEqual(JSON.parse(storage.get(NOT_DUP_KEY)), [ledger, pairKey(2, 3)]);
+	assert.deepEqual((await kept(storage)).notDuplicates, [ledger, pairKey(2, 3)]);
 	assert.deepEqual(get('DUP_GROUPS'), []);
 	assert.equal(els.dupCount.textContent, '');
 
@@ -1422,9 +1556,9 @@ test('Merge previews a backup from another device and keeps both sides\' changes
 	assert.deepEqual(get('CATALOG.books'), backup.books);
 	assert.deepEqual(get('CATALOG.exclusions.entries'), ['BGONE9']);
 	assert.deepEqual(get('[...CATALOG.notDuplicates]'), ['["editions","id B1"]']);
-	assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-not-duplicates')), ['["editions","id B1"]']);
+	assert.deepEqual((await kept(storage)).notDuplicates, ['["editions","id B1"]']);
 	assert.match(els.ioStatus.textContent, /^Merged: 1 added, 2 updated, 0 removed\./);
-	assert.deepEqual(kept(storage).books, backup.books);
+	assert.deepEqual((await kept(storage)).books, backup.books);
 	assert.ok(!els.importPreview.classList.contains('open'));
 
 	// merging the same backup again has nothing to do
@@ -1475,7 +1609,7 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 	// the real run keeps the catalog before sending, and the browser asks before leaving the page meanwhile
 	await els.importConfirm.listeners.click[0]();
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Lantern Hours', 'Tidewater']);
-	assert.deepEqual(kept(storage).books.map(b => b.t), ['Lantern Hours', 'Tidewater']);
+	assert.deepEqual((await kept(storage)).books.map(b => b.t), ['Lantern Hours', 'Tidewater']);
 	assert.equal(get('CATALOG.books[0].hardcoverId'), '80', 'the Hardcover ids found are kept');
 	assert.deepEqual(state.shelf.at(-1), { id: 102, book_id: 80, edition_id: 801, status_id: 3, user_book_reads: [{ finished_at: '2024-05-01', edition_id: 801 }] });
 	assert.ok(leaving.prevented, 'leaving during the run is asked about');
@@ -1663,8 +1797,8 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	assert.match(els.creditBody.innerHTML, /<p>Builds clockwork worlds\.<\/p><p>Lives by a canal\.<\/p>/);
 	assert.match(els.ioStatus.textContent, /^Saved author info for Wendell Ashcombe\.$/);
 	// kept in this browser, and loaded again with the page
-	assert.deepEqual(kept(storage).authors['Wendell Ashcombe'], entry);
-	const again = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', storage: new Map(storage) });
+	assert.deepEqual((await kept(storage)).authors['Wendell Ashcombe'], entry);
+	const again = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', storage });
 	assert.deepEqual(again.get("CATALOG.authors.get('Wendell Ashcombe')"), entry);
 
 	// editing shows what is there; emptying every field, or Remove, removes the entry
@@ -1693,7 +1827,7 @@ test('narrator and publisher info can be added on their pages, with links checke
 	els.cf_audible.value = 'https://www.audible.com/search?searchNarrator=Tobias+Frane';
 	submit();
 	assert.deepEqual(get("CATALOG.narrators.get('Tobias Frane')"), { bio: 'Reads sea stories.', audible: 'https://www.audible.com/search?searchNarrator=Tobias+Frane' });
-	assert.deepEqual(kept(storage).narrators['Tobias Frane'], { bio: 'Reads sea stories.', audible: 'https://www.audible.com/search?searchNarrator=Tobias+Frane' });
+	assert.deepEqual((await kept(storage)).narrators['Tobias Frane'], { bio: 'Reads sea stories.', audible: 'https://www.audible.com/search?searchNarrator=Tobias+Frane' });
 	assert.match(els.creditBody.innerHTML, /<div class="author-bio"><p>Reads sea stories\.<\/p><\/div><p class="author-links"><a class="authorlink" href="https:\/\/www\.audible\.com\/search\?searchNarrator=Tobias\+Frane" target="_blank" rel="noopener">Audible ↗<\/a><\/p>/);
 	assert.equal(els.ioStatus.textContent, 'Saved narrator info for Tobias Frane.');
 
@@ -1704,23 +1838,18 @@ test('narrator and publisher info can be added on their pages, with links checke
 	assert.equal(pub.els.cf_hardcover.getAttribute('placeholder'), 'https://hardcover.app/publishers/...');
 });
 
-test('Check on the import page lists problems and older formats, and saves the catalog in the current one', async () => {
+test('Check on the import page lists problems; a catalog in an older format is kept in the current one at once', async () => {
 	const mine = JSON.stringify([{ t: 'Old Favorite', a: 'Ann Vale', id: 'B0OLD00001' }]);
 	const info = JSON.stringify({ Nowhere: { total: 3, status: 'ongoing' } });
 	const { els, storage } = await boot({ page: 'import.html', files: { 'books.json': mine, 'series-info.json': info } });
+	// moving it to IndexedDB wrote it the current way
+	assert.deepEqual((await kept(storage)).books, [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
 	els.checkBtn.listeners.click[0]();
 	const report = els.importPreviewBody.innerHTML;
 	assert.match(report, /1 books, 0 series, 1 with release info, 0 authors, 0 narrators, 0 publishers with info/);
 	assert.match(report, /Errors \(1\):.*'Nowhere' matches no series/s);
-	assert.match(report, /some books keep their ids, ISBNs or narrator on the book/);
-	assert.equal(els.importConfirm.style.display, '');
-	assert.equal(els.importConfirm.textContent, 'Save in the current format');
-	els.importConfirm.listeners.click[0]();
-	assert.deepEqual(kept(storage).books, [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
-	assert.equal(els.ioStatus.textContent, 'Saved in the current format.');
-	els.checkBtn.listeners.click[0]();
-	assert.doesNotMatch(els.importPreviewBody.innerHTML, /older format/, 'the save wrote the current format');
 	assert.equal(els.importConfirm.style.display, 'none');
+	assert.equal(els.importCancel.textContent, 'Close');
 });
 
 test('Box sets on the import page adds a set beside the titles sharing its edition, once confirmed', async () => {

@@ -6,7 +6,7 @@ read them for workflows and the data format. This file covers what you need to c
 ## What this is
 
 A personal audiobook catalog: static pages (`index.html`, `import.html`, `duplicates.html`, `authors.html`,
-`narrators.html`, `publishers.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in `localStorage`. There is
+`narrators.html`, `publishers.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to run the tests.
 
@@ -43,43 +43,50 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   each other), so the tests run them in Node as they are. Each class holds descriptive fields in memory and reads/writes the
   stored short keys with `fromJSON`/`toJSON` (so `JSON.stringify(catalog)` is the stored shape); a value it doesn't know or
   that is malformed is kept as it was (`extra`), so Check still reports it. Migrations and Check work on the stored JSON.
-  - `Catalog`: books, `series` (`Map` of name -> `Series`), `authors`, `narrators`, `publishers` (`Map`s of name -> `Contributor`), `exclusions`, `notDuplicates`;
+  - `Catalog`: books, `series` (`Map` of name -> `Series`), `authors`, `narrators`, `publishers` (`Map`s of name -> `Contributor`), `exclusions`, `notDuplicates`,
+    `nameIds` (the ids series and people are stored under, by name; `renameSeries` keeps a series' id);
     `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `saveBook`, `merge` (an import), `addBoxSets`,
     `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`/`authorList`,
     `narratorWorks`/`narratorList` and `publisherWorks`/`publisherList` (all `creditedWorks`/`creditedList` with `authorsOf`/`narratorsOf`/`publishersOf`).
-  - `Book` (`title authors series number genres read hardcoverId editions`): `exclusionEntries`, `isCollection`/`boxRange`,
-    `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`formatNotes`.
-  - `Edition` (`asins goodreadsId hardcoverId isbn narrators publisher released minutes description`): `sameAs`/`conflictsWith`/`fillFrom`,
+  - `Book` (`id title authors series number genres read hardcoverId editions`): `exclusionEntries`, `isCollection`/`boxRange`,
+    `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`.
+  - `Edition` (`id asins goodreadsId hardcoverId isbn narrators publisher released minutes description`): `sameAs`/`conflictsWith`/`fillFrom`,
     `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards), `parseAsins`/`asinsText`, `splitIsbns`/`fixAsin`.
   - `Series` (series info `total status note url`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`), `Contributor` (an author's, narrator's or publisher's info: `KEYS`, `SITES`, `KINDS`, `tidy`),
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`),
     `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
+  - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `assignIds`, `fromCatalog`/`toCatalog`,
+    `unstorable`, `snapshot`/`changes` for saving only what changed) and `CatalogDatabase` (`open`, `load`, `save` with the
+    revision check that throws `CatalogConflict`, `setAside`; the browser's `indexedDB` is passed in).
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`) and
     `HardcoverSync` (`run`, `read`, `lookups`/`addIds`, `planExport`).
   Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
   others bring them in with `/** @import {MergeReport} from './merger.js' */`.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
-  loading (`startPage(init, page)`: reads the catalog from localStorage
-  `audiobook-catalog-device` as a backup-shaped `{books, seriesInfo, authors, narrators, publishers, excluded}`, run through `Catalog.fromJSON` (`Backup.read`); with none
-  it starts **empty**, never with the demo data; one that can't be read is set aside under `.unreadable`; edits left under the
-  old `audiobook-catalog-data` key by the removed `make serve` save are adopted when there is no catalog yet),
-  `persist` (writes the whole catalog back; refuses when another tab wrote it since this page last read or wrote it),
+  loading (`startPage(init, page)`: reads every record from IndexedDB (`CatalogDatabase`, `CatalogRecords.toCatalog`); with none
+  it starts **empty**, never with the demo data; one that can't be read is set aside (meta `unreadable`); when nothing was saved
+  yet, the catalog localStorage kept (`audiobook-catalog-device`, backup-shaped, plus `audiobook-catalog-not-duplicates`, or the
+  old `audiobook-catalog-data` edits) is read through `Catalog.fromJSON`, saved, and its keys renamed `….moved-to-indexeddb`;
+  without IndexedDB the page shows that catalog and saves nothing),
+  `persist` (async, queued; writes only the records that changed, with the ids `fromCatalog` gives; refuses when another tab saved
+  since this page last read or wrote (`SEEN_REVISION`), or when `CatalogRecords.unstorable` names values a record can't hold;
+  `whenSaved`, `storedRevision`),
   the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below), the page links
   (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, read back with `nameFromPageHash`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`;
   the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
-  Pairs marked "Not duplicates" (and editions marked "Keep separate") are kept in localStorage
-  `audiobook-catalog-not-duplicates` (`notDuplicates` in backups).
+  Pairs marked "Not duplicates" (and editions marked "Keep separate") are text marks in memory (`notDuplicates` in backups),
+  stored as `marks` records pointing at book (and edition) ids, so they survive a retitle.
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
   the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
 - `app.js` (`index.html`): series overview, all books (an empty catalog says where books come from), the book and
   series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
-- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`CATALOG.validate`, plus
-  `Book.formatNotes` and **Save in the current format**) and Box sets (`addBoxSets`), the Hardcover panel (`HardcoverSync.run`
+- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`CATALOG.validate`)
+  and Box sets (`addBoxSets`), the Hardcover panel (`HardcoverSync.run`
   in the page, on a copy of the catalog), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so there is no series lookup from Audible.
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
@@ -93,8 +100,10 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
-    what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws) and a fake localStorage (`boot`'s `files`
-    seed the stored catalog, by default from `sample/`; `files: null` for none). Tests reach what the
+    what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws), a fake localStorage (`boot`'s `files`
+    seed the old localStorage catalog, by default from `sample/`, which the page moves to IndexedDB; `files: null` for none) and a fake
+    IndexedDB (`tests/fake-indexeddb.mjs`; pages booted with the same `storage` Map share it, like tabs, and their ids are `id-1`, ...;
+    `await kept(storage)` is what is stored, once the saves are done; `get` leaves out `uid`, `withIds` keeps it). Tests reach what the
     modules export (`ctx.render()`, `get('CATALOG.books')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
@@ -102,9 +111,10 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 
-The catalog (in localStorage and in backups) is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates}`. `books` is a list of titles with short keys `t a s sn g r hcb e` (title, list of authors, series,
-series number as text, genres, dates read, Hardcover book id, editions). Each edition in `e` has `asin gr hc isbn n p d len desc`
-(ASINs by site, `{"audible.com": "B0…", "amazon.com": "B0…"}`, Goodreads book id, Hardcover edition id, one ISBN, list of narrators, publisher, release date,
+A backup is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}`; the browser keeps the same catalog as
+IndexedDB records (below). `books` is a list of titles with short keys `uid t a s sn g r hcb e` (the id it is stored under, title, list of authors, series,
+series number as text, genres, dates read, Hardcover book id, editions). Each edition in `e` has `uid asin gr hc isbn n p d len desc`
+(its stored id (a box set's copies share it), ASINs by site, `{"audible.com": "B0…", "amazon.com": "B0…"}`, Goodreads book id, Hardcover edition id, one ISBN, list of narrators, publisher, release date,
 length in minutes, free-text description) and must not be empty. `asin`, `gr` and `hc` name an edition
 (`Edition.IDS`; `ids('asin')` gives an ASIN of any site, and only another ASIN on the same site disagrees) and match books; the ISBN names an edition too (`conflictsWith`: another ISBN is another
 edition) but never matches books. Editions with an ISBN list or an `hcb`, from before, are split and the
@@ -119,6 +129,11 @@ missing means `{}`) maps an author's name (as in `a`) to `{bio, url, audible, go
 full addresses), and `narrators` and `publishers` (likewise optional) map a narrator's name (as in an edition's `n`) or
 a publisher's (as in `p`) to the same; they travel like series info, and an
 entry whose name no book has is a warning, not an error.
+`ids` maps series, author, narrator and publisher names to their ids (`Catalog.nameIds`); a backup without ids gets new ones.
+IndexedDB (`CatalogRecords.STORES`, documented in `docs/data-format.md`): stores `books editions series contributors credits marks exclusions meta`,
+plain objects with descriptive fields, ids from `crypto.randomUUID()` that never change, references by id (a box set's edition is
+one record with `bookIds`), derived fields (sort keys, counts, `credits`) rewritten on every save and never read back, and every
+sorting index ending in the key so lists can be paged. There is no `extra`: a value a class keeps aside is not stored.
 `excluded` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` entries that imports must never re-add; code only
 ever adds to it (Restore and Merge add a backup's to it too). `notDuplicates` (pairs marked "Not duplicates" on the
 Duplicates page) is add-only too. Restore also reads the old `data/` files (`books.json`, `series-info.json`, `authors.json`, `narrators.json`, `publishers.json`,

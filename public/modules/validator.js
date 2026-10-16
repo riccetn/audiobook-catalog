@@ -49,8 +49,9 @@ export class Validator {
 			const label = isObj(b) ? `book #${i} (${repr(b.t === undefined ? '?' : b.t)})` : `book #${i}`;
 			if(!isObj(b)){ errors.push(`${label}: not an object`); return; }
 			for(const k of Object.keys(b)){
-				if(!Book.KEYS.includes(k)) errors.push(`${label}: unknown key ${repr(k)}`);
+				if(!Book.KEYS.includes(k) && k !== Book.ID_KEY) errors.push(`${label}: unknown key ${repr(k)}`);
 			}
+			if(Book.ID_KEY in b && !nonEmpty(b[Book.ID_KEY])) errors.push(`${label}: ${repr(Book.ID_KEY)} must be a non-empty string when present`);
 			if(!nonEmpty(b.t)) errors.push(`${label}: missing 't'`);
 			if(!('a' in b)) errors.push(`${label}: missing 'a'`);
 			else if(!nameList(b.a)) errors.push(`${label}: 'a' must be a non-empty list of authors' names`);
@@ -89,8 +90,10 @@ export class Validator {
 					if(other.i === i) errors.push(`${label}: lists the edition with ${names[field]} ${v} twice`);
 					else if(other.titleKey === titleKey) errors.push(`${label}: duplicate ${names[field]} ${v} (also ${other.label})`);
 					else if(field === 'asin' || !ed.ids('asin').length || !other.ed.ids('asin').length){
-						// a box set's edition on each of its titles: fine, as long as the copies agree
-						if(JSON.stringify(Edition.order(Edition.tidyJSON(stored))) !== JSON.stringify(Edition.order(Edition.tidyJSON(other.stored)))){
+						// a box set's edition on each of its titles: fine, as long as the copies agree (on more than their id)
+						/** @type {(x: Unchecked) => string} */
+						const values = x => { const {[Edition.ID_KEY]: id, ...rest} = Edition.order(Edition.tidyJSON(x)); return JSON.stringify(rest); };
+						if(values(stored) !== values(other.stored)){
 							warnings.push(`${label}: the edition with ${names[field]} ${v} differs from its copy on ${other.label}`);
 						}
 					}
@@ -169,8 +172,9 @@ export class Validator {
 	static validateEdition(ed, label, errors, warnings){
 		if(!Text.isObject(ed)){ errors.push(`${label}: not an object`); return; }
 		for(const k of Object.keys(ed)){
-			if(!/** @type {string[]} */ (Edition.KEYS).includes(k)) errors.push(`${label}: unknown key ${repr(k)}`);
+			if(!/** @type {string[]} */ (Edition.KEYS).includes(k) && k !== Edition.ID_KEY) errors.push(`${label}: unknown key ${repr(k)}`);
 		}
+		if(Edition.ID_KEY in ed && !nonEmpty(ed[Edition.ID_KEY])) errors.push(`${label}: ${repr(Edition.ID_KEY)} must be a non-empty string when present`);
 		for(const k of ['gr', 'hc', 'p', 'd', 'desc']){
 			if(k in ed && !nonEmpty(ed[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
 		}
@@ -183,7 +187,7 @@ export class Validator {
 			}
 		}
 		if('n' in ed && !nameList(ed.n)) errors.push(`${label}: 'n' must be a non-empty list of narrators' names`);
-		if(!Object.keys(ed).length) errors.push(`${label}: is empty`);
+		if(!Object.keys(ed).some(k => k !== Edition.ID_KEY)) errors.push(`${label}: is empty`);
 		if(nonEmpty(ed.gr) && !Edition.GOODREADS_ID.test(ed.gr.trim())){
 			errors.push(`${label}: 'gr' must be a Goodreads book id (digits only), not ${repr(ed.gr)}`);
 		}

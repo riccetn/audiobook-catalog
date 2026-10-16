@@ -1,9 +1,11 @@
-// What every page shares: the catalog, kept in this browser's localStorage and nowhere else, the
+// What every page shares: the catalog, kept in this browser's IndexedDB and nowhere else, the
 // status line and the page links. Each page's own module starts with startPage(), handing it a refresh()
 // that redraws the page from CATALOG.
 import {Text} from './modules/text.js';
-import {Book} from './modules/book.js';
 import {Catalog} from './modules/catalog.js';
+import {CatalogRecords} from './modules/catalog-records.js';
+import {CatalogDatabase, CatalogConflict} from './modules/catalog-database.js';
+/** @import {RecordSet, Snapshot} from './modules/catalog-records.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
 /** @import {Unchecked} from './modules/text.js' */
 
@@ -21,13 +23,6 @@ import {HardcoverClient} from './modules/hardcover-client.js';
  * @property {string} [out] what it had to say
  * @property {string} [err] what went wrong
  */
-
-// The catalog: {books, seriesInfo, authors, narrators, publishers, excluded}, the shape of a backup. (The key is the one the
-// installed app kept its own catalog under, so a phone's catalog carries over as it is.)
-const CATALOG_KEY = 'audiobook-catalog-device';
-// Where edits waited for `make serve` to save them to data/, when the catalog still lived in files:
-// {data, info, authors, excluded}. Only read, once, when there is no catalog yet.
-const OLD_EDITS_KEY = 'audiobook-catalog-data';
 
 // British spelling ("catalogue") when the browser's first English language is a British one, else American.
 export const BRITISH = (() => { try{ return Text.prefersBritish(navigator.languages || [navigator.language]); }catch(e){ return false; } })();
@@ -151,48 +146,40 @@ export function nameFromPageHash(hash, key){
 // The catalog the page shows. It stays this one object: a page that takes another catalog (Restore, an
 // import confirmed) moves it in with CATALOG.replaceWith().
 export const CATALOG = new Catalog();
-/** @type {string[]} */
-export let FORMAT_NOTES = [];         // what in the stored catalog is from an older format (Book.formatNotes); any save rewrites it
-/** @type {string | null} */
-export let LOCAL_SEEN = null;         // what this page last read from or wrote to localStorage[CATALOG_KEY]
+/** @type {number | null} */
+export let SEEN_REVISION = null;      // the revision of the stored catalog this page last read or wrote; null while none was ever saved
+
+/** @type {CatalogDatabase | null} */
+let DATABASE = null;
+/** @type {Snapshot} */
+let SAVED = new Map();               // the records as this page last read or wrote them, so a save writes only what changed
+let SAVE_REFUSED = '';                // why nothing can be saved in this browser, when nothing can
+/** @type {Promise<void>} */
+let SAVING = Promise.resolve();       // the saves asked for, one after another
+let STARTUP_NOTICE = '';
 
 // The page's own hook, from startPage(): onHardcoverJob(job), when the page has it, does more with each
 // update of a Hardcover run (see showHardcoverJob).
 /** @type {((job: HardcoverJob | null) => void) | null} */
 let onHardcoverJob = null;
 
-// Pairs of books marked "Not duplicates", and books whose editions were marked "Keep separate", on the
-// duplicates page. Kept in this browser beside the catalog; backups carry them too.
-const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
-/** @returns {string[]} the marks kept in this browser */
-function storedNotDuplicates(){
-	try{
-		const saved = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || '[]');
-		if(Array.isArray(saved)) return saved.filter(x=> typeof x === 'string');
-	}catch(e){}
-	return [];
-}
-
 /**
- * Add marks to CATALOG.notDuplicates (and this browser's copy); returns how many were new.
+ * Add "Not duplicates" (or "Keep separate") marks of the duplicates page to CATALOG.notDuplicates; returns
+ * how many were new. Like any change, persist() saves them.
  * @param {string[]} entries
  * @returns {number}
  */
 export function addNotDuplicates(entries){
-	const added = CATALOG.addNotDuplicates(entries);
-	saveNotDuplicates();
-	return added;
+	return CATALOG.addNotDuplicates(entries);
 }
 
-// The marks are kept apart from the catalog, so a page that only marks a pair saves only them.
-export function saveNotDuplicates(){
-	try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify([...CATALOG.notDuplicates])); }catch(e){}
+/** @returns {Promise<number | null>} the revision of the catalog as it is stored now (another tab may have saved since) */
+export async function storedRevision(){
+	try{ return DATABASE ? await DATABASE.revision() : null; }catch(e){ return null; }
 }
 
-/** @returns {string | null} the catalog as localStorage holds it now */
-export function localNow(){
-	try{ return localStorage.getItem(CATALOG_KEY); }catch(e){ return null; }
-}
+/** @returns {Promise<void>} when the saves asked for so far are done */
+export function whenSaved(){ return SAVING; }
 
 // The page links: the duplicates link says how many duplicates and books with split editions there are.
 export function updateNav(){
@@ -201,22 +188,37 @@ export function updateNav(){
 	byId('dupCount').textContent = n ? ` (${n})` : '';
 }
 
-// Keep the catalog as the page holds it now. Another page or tab that saved meanwhile would be
-// overwritten, so then nothing is saved.
+/**
+ * Keep the catalog as the page holds it now. Saves are made one after another, and each writes only the
+ * records that changed. Another page or tab that saved meanwhile would be overwritten, so then nothing is
+ * saved. Pages need not wait for it; it says on the status line when a save fails.
+ * @returns {Promise<void>}
+ */
 export function persist(){
 	updateNav();
-	if(localNow() !== LOCAL_SEEN){
-		showIoStatus(spell('The catalog was changed in another tab. Reload this page to see that; this change was not saved.'), true);
+	return SAVING = SAVING.then(saveNow);
+}
+
+async function saveNow(){
+	if(!DATABASE){ showIoStatus(SAVE_REFUSED, true); return; }
+	const unstorable = CatalogRecords.unstorable(CATALOG);
+	if(unstorable.length){
+		showIoStatus(spell(`Not saved: these values can't be kept, as they aren't what their field holds: ${unstorable.slice(0, 3).join('; ')}` +
+			`${unstorable.length > 3 ? ` and ${unstorable.length - 3} more` : ''}. Export a backup, fix them there (Check lists them) and Restore it.`), true);
 		return;
 	}
+	const changes = CatalogRecords.changes(SAVED, CatalogRecords.fromCatalog(CATALOG));
+	if(!changes.count && SEEN_REVISION !== null) return;
 	try{
-		const {books, seriesInfo, authors, narrators, publishers, excluded} = CATALOG.toJSON();   // the marks have a key of their own
-		localStorage.setItem(CATALOG_KEY, JSON.stringify({books, seriesInfo, authors, narrators, publishers, excluded}));
-		LOCAL_SEEN = localNow();
-		FORMAT_NOTES = [];    // written as the page holds it, which is the current format
+		const first = SEEN_REVISION === null;
+		SEEN_REVISION = await DATABASE.save(changes, SEEN_REVISION);
+		SAVED = changes.snapshot;
+		if(first) setAsideOldCatalog();
 	}catch(e){
-		// nothing else holds this catalog, so say so instead of losing the edit quietly
-		showIoStatus(spell('Not saved: this browser refused to store the catalog (is its storage full?). Export a backup.'), true);
+		showIoStatus(e instanceof CatalogConflict
+			? spell('The catalog was changed in another tab. Reload this page to see that; this change was not saved.')
+			// nothing else holds this catalog, so say so instead of losing the edit quietly
+			: spell('Not saved: this browser refused to store the catalog (is its storage full?). Export a backup.'), true);
 	}
 }
 
@@ -234,38 +236,89 @@ function askToKeepStorage(){
 	try{ navigator.storage.persist().catch(()=>{}); }catch(e){}
 }
 
-/**
- * The stored catalog as a backup ({books, seriesInfo, authors, narrators, publishers, excluded}), or null when there is none
- * yet. Edits from before, still waiting for `make serve` to save them to data/, are taken as the catalog.
- * @returns {Unchecked}
- */
-function storedCatalog(){
-	const raw = localNow();
-	if(raw) return JSON.parse(raw);
-	const old = JSON.parse(localStorage.getItem(OLD_EDITS_KEY) || 'null');
-	if(old && Array.isArray(old.data)) return {books: old.data, seriesInfo: old.info, authors: old.authors, excluded: old.excluded};
-	return null;
-}
-
-// Load the catalog kept in this browser; with none, it starts empty. One that can't be read is set
-// aside (under CATALOG_KEY + '.unreadable'), not overwritten by the next edit.
-function loadCatalog(){
+// Load the catalog kept in this browser; with none, it starts empty. One that can't be read is set aside
+// (under meta's `unreadable`), not overwritten by the next edit. When nothing was saved yet, the catalog
+// localStorage kept before is moved over.
+async function loadCatalog(){
 	try{
-		const saved = storedCatalog();
-		if(saved){
-			const notes = Book.formatNotes(saved.books);   // before Catalog.fromJSON migrates them
-			const notDuplicates = CATALOG.notDuplicates;
-			CATALOG.replaceWith(Catalog.fromJSON(saved));
-			CATALOG.notDuplicates = notDuplicates;
-			FORMAT_NOTES = notes;
-		}
+		DATABASE = await CatalogDatabase.open(indexedDB);
 	}catch(e){
-		try{ localStorage.setItem(CATALOG_KEY + '.unreadable', localNow() || ''); localStorage.removeItem(CATALOG_KEY); }catch(err){}
+		SAVE_REFUSED = spell("Not saved: this browser won't keep the catalog for this page (it has no IndexedDB here). Export a backup before you leave.");
+		STARTUP_NOTICE = SAVE_REFUSED;
+		readOldCatalog();
+		return;
+	}
+	/** @type {{records: RecordSet, revision: number} | null} */
+	let stored = null;
+	try{
+		stored = await DATABASE.load();
+		if(!stored){
+			// a catalog from before it lived in IndexedDB is saved there at once (and is in the current format then)
+			if(readOldCatalog()) await persist();
+			return;
+		}
+		CATALOG.replaceWith(CatalogRecords.toCatalog(stored.records));
+		SEEN_REVISION = stored.revision;
+		SAVED = CatalogRecords.snapshot(stored.records);
+	}catch(e){
+		try{
+			SEEN_REVISION = await DATABASE.setAside(stored ? stored.records : Text.errorText(e));
+			SAVED = new Map();
+		}catch(err){
+			DATABASE = null;
+			SAVE_REFUSED = spell("Not saved: the catalog kept in this browser can't be read or set aside. Export a backup.");
+		}
 		STARTUP_NOTICE = spell("Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.");
 	}
-	LOCAL_SEEN = localNow();
 }
-let STARTUP_NOTICE = '';
+
+// localStorage held the catalog before IndexedDB did: under CATALOG_KEY as a backup ({books, seriesInfo, authors, narrators,
+// publishers, excluded}; the key is the one the installed app kept its own catalog under), with the "Not duplicates"
+// marks under NOT_DUP_KEY, and the edits that waited for `make serve` to save them to data/, from when the catalog still
+// lived in files, under OLD_EDITS_KEY ({data, info, authors, excluded}). Once moved, each is kept under its name +
+// MOVED_SUFFIX, a copy that is never read again.
+const CATALOG_KEY = 'audiobook-catalog-device';
+const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
+const OLD_EDITS_KEY = 'audiobook-catalog-data';
+const MOVED_SUFFIX = '.moved-to-indexeddb';
+
+/**
+ * Read the catalog localStorage kept into CATALOG; returns whether there was one. One that can't be read
+ * is set aside (under CATALOG_KEY + '.unreadable'), and the catalog starts empty.
+ * @returns {boolean}
+ */
+function readOldCatalog(){
+	/** @type {(key: string) => string | null} */
+	const item = key => { try{ return localStorage.getItem(key); }catch(e){ return null; } };
+	try{
+		const raw = item(CATALOG_KEY), old = JSON.parse(item(OLD_EDITS_KEY) || 'null');
+		/** @type {Unchecked} */
+		const saved = raw ? JSON.parse(raw)
+			: old && Array.isArray(old.data) ? {books: old.data, seriesInfo: old.info, authors: old.authors, excluded: old.excluded} : null;
+		if(!saved) return false;
+		const catalog = Catalog.fromJSON(saved);
+		const marks = JSON.parse(item(NOT_DUP_KEY) || '[]');
+		if(Array.isArray(marks)) catalog.addNotDuplicates(marks.filter(x=> typeof x === 'string'));
+		CATALOG.replaceWith(catalog);
+		return true;
+	}catch(e){
+		try{ localStorage.setItem(CATALOG_KEY + '.unreadable', item(CATALOG_KEY) || ''); localStorage.removeItem(CATALOG_KEY); }catch(err){}
+		STARTUP_NOTICE = spell("Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.");
+		return false;
+	}
+}
+
+// Once IndexedDB holds the catalog, what localStorage kept is renamed, so it is never read again but not lost.
+function setAsideOldCatalog(){
+	for(const key of [CATALOG_KEY, NOT_DUP_KEY, OLD_EDITS_KEY]){
+		try{
+			const value = localStorage.getItem(key);
+			if(value === null) continue;
+			localStorage.setItem(key + MOVED_SUFFIX, value);
+			localStorage.removeItem(key);
+		}catch(e){}
+	}
+}
 
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let ioStatusTimer;
@@ -393,8 +446,7 @@ export function showHardcoverJob(job){
  */
 export async function startPage(init, page = {}){
 	({onHardcoverJob = null} = page);
-	CATALOG.notDuplicates = new Set(storedNotDuplicates());
-	loadCatalog();
+	await loadCatalog();
 	askToKeepStorage();
 	init();
 	updateNav();

@@ -21,6 +21,7 @@ import {HardcoverClient} from './hardcover-client.js';
  * @property {string} [released] release date: "2021-05-04", "2021-05" or "2021"
  * @property {number} [minutes] length in whole minutes
  * @property {string} [description] your own description of the edition ("UK edition")
+ * @property {string} [id] the id it is stored under in this browser, which never changes; a box set's copies share it
  */
 
 // A Goodreads book id, as an edition keeps it: the number in goodreads.com/book/show/12345.
@@ -66,6 +67,9 @@ const storedAsinOn = (ed, site) => {
 export class Edition {
 	/** @type {EditionKey[]} the keys of a stored edition, in order */
 	static KEYS = ['asin', 'gr', 'hc', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
+	// The key a backup keeps the edition's id under, before the others; like Book.ID_KEY it is not one of KEYS.
+	// ("id" was an edition's ASIN before ASINs were kept by site; see fixAsin.)
+	static ID_KEY = 'uid';
 	// The ids that name one edition (and match books in imports). An ISBN names one edition too, but one
 	// ISBN may be on several books (a boxed set's), so it never makes two books the same.
 	/** @type {EditionId[]} */
@@ -90,7 +94,9 @@ export class Edition {
 	])];
 
 	/** @param {EditionInit} [init] */
-	constructor({asins = {}, goodreadsId, hardcoverId, isbn, narrators = [], publisher, released, minutes, description} = {}){
+	constructor({asins = {}, goodreadsId, hardcoverId, isbn, narrators = [], publisher, released, minutes, description, id} = {}){
+		/** @type {string | undefined} the id it is stored under (CatalogRecords gives one to an edition that has none) */
+		this.id = id;
 		/** @type {Record<string, string>} ASINs by site */
 		this.asins = {...asins};
 		/** @type {string | undefined} */
@@ -134,7 +140,12 @@ export class Edition {
 	 */
 	set(key, v){
 		delete this.extra[key];
-		if(key === 'asin'){
+		if(key === Edition.ID_KEY){
+			this.id = undefined;
+			if(nonEmpty(v)) this.id = v;
+			else if(v !== undefined) this.extra[key] = v;
+		}
+		else if(key === 'asin'){
 			this.asins = {};
 			if(Text.isObject(v) && Object.keys(v).length && Object.entries(v).every(([site, x]) => site && nonEmpty(x))) this.asins = {...v};
 			else if(v !== undefined) this.extra[key] = v;
@@ -166,7 +177,8 @@ export class Edition {
 	value(key){
 		/** @type {unknown} */
 		let v;
-		if(key === 'asin') v = Object.keys(this.asins).length ? Edition.orderAsins(this.asins) : undefined;
+		if(key === Edition.ID_KEY) v = this.id;
+		else if(key === 'asin') v = Object.keys(this.asins).length ? Edition.orderAsins(this.asins) : undefined;
 		else if(key === 'n') v = this.narrators.length ? [...this.narrators] : undefined;
 		else if(key === 'len') v = this.minutes;
 		else if(Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
@@ -177,7 +189,7 @@ export class Edition {
 	toJSON(){
 		/** @type {Record<string, unknown>} */
 		const out = {};
-		for(const k of Edition.KEYS){ const v = this.value(k); if(v !== undefined) out[k] = v; }
+		for(const k of [Edition.ID_KEY, ...Edition.KEYS]){ const v = this.value(k); if(v !== undefined) out[k] = v; }
 		for(const [k, v] of Object.entries(this.extra)) if(!(k in out)) out[k] = v;
 		return out;
 	}
@@ -185,8 +197,8 @@ export class Edition {
 	/** @returns {Edition} a copy, sharing nothing with this one */
 	clone(){ return Edition.fromJSON(JSON.parse(JSON.stringify(this))); }
 
-	/** Whether it holds nothing at all (an edition must not be empty). */
-	isEmpty(){ return !Object.keys(this.toJSON()).length; }
+	/** Whether it holds nothing at all but its id (an edition must not be empty). */
+	isEmpty(){ return !Object.keys(this.toJSON()).some(k => k !== Edition.ID_KEY); }
 
 	/** @returns {Edition} a copy with tidy text in every field, and its ISBN in the 13-digit form */
 	tidied(){ return Edition.fromJSON(Edition.tidyJSON(this.toJSON())); }
@@ -564,7 +576,7 @@ export class Edition {
 		const from = /** @type {Record<string, any>} */ (ed);
 		/** @type {Record<string, any>} */
 		const out = {};
-		for(const k of Edition.KEYS) if(from[k] !== undefined) out[k] = from[k];
+		for(const k of [Edition.ID_KEY, ...Edition.KEYS]) if(from[k] !== undefined) out[k] = from[k];
 		for(const k of Object.keys(from)) if(!(k in out)) out[k] = from[k];
 		return /** @type {T} */ (out);
 	}

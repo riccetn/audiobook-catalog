@@ -90,9 +90,32 @@ export class Duplicates {
 	 * @returns {string}
 	 */
 	static pairKey(x, y, normalize){
+		return [Duplicates.bookKey(x, normalize), Duplicates.bookKey(y, normalize)].sort().join(' ');
+	}
+
+	/**
+	 * One book's half of a pairKey(): what identifies its title.
+	 * @param {Book} b
+	 * @param {(text: unknown) => string} [normalize]
+	 * @returns {string}
+	 */
+	static bookKey(b, normalize){
 		const n = normalize || Text.norm;
-		const id = (/** @type {Book} */ b) => Text.key(n(b.title), n(Book.firstName(b.authors)), Series.key(n(b.series)), String(b.number || '').trim());
-		return [id(x), id(y)].sort().join(' ');
+		return Text.key(n(b.title), n(Book.firstName(b.authors)), Series.key(n(b.series)), String(b.number || '').trim());
+	}
+
+	/**
+	 * The two halves (bookKey()s) of a pairKey(), or null when `mark` is not one.
+	 * @param {string} mark
+	 * @returns {[string, string] | null}
+	 */
+	static pairHalves(mark){
+		// each half is a JSON list of texts, so the pair splits where "] [" ends one list and starts the other
+		for(let at = mark.indexOf('] ['); at >= 0; at = mark.indexOf('] [', at + 1)){
+			const x = mark.slice(0, at + 1), y = mark.slice(at + 2);
+			try{ if(Array.isArray(JSON.parse(x)) && Array.isArray(JSON.parse(y))) return [x, y]; }catch(e){}
+		}
+		return null;
 	}
 
 	/**
