@@ -1,9 +1,9 @@
 // The catalog itself: the books, the series info, the author info, the exclusions list and the "Not
 // duplicates" marks, and what is done to them as a whole. It is stored (in localStorage and in backups) as
-// {books, seriesInfo, authors, excluded, notDuplicates}; toJSON() writes that and fromJSON() reads it.
+// {books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates}; toJSON() writes that and fromJSON() reads it.
 import {Book} from './book.js';
 import {Series} from './series.js';
-import {Author} from './author.js';
+import {Contributor} from './contributor.js';
 import {Edition} from './edition.js';
 import {Exclusions} from './exclusions.js';
 import {Validator} from './validator.js';
@@ -19,7 +19,9 @@ import {Backup} from './backup.js';
  * @typedef {object} CatalogInit
  * @property {Book[]} [books]
  * @property {Map<string, Series>} [series] series name (as the books' `series` have it) -> its info
- * @property {Map<string, Author>} [authors] author name (as the books' `authors` have it) -> their info
+ * @property {Map<string, Contributor>} [authors] author name (as the books' `authors` have it) -> their info
+ * @property {Map<string, Contributor>} [narrators] narrator name (as the editions' `narrators` have it) -> their info
+ * @property {Map<string, Contributor>} [publishers] publisher name (as the editions' `publisher` has it) -> its info
  * @property {Exclusions} [exclusions] the books imports must never re-add
  * @property {Set<string>} [notDuplicates] the "Not duplicates" (and "Keep separate") marks of the duplicates page
  */
@@ -27,10 +29,12 @@ import {Backup} from './backup.js';
 /** The catalog. */
 export class Catalog {
 	/** @param {CatalogInit} [init] */
-	constructor({books = [], series = new Map(), authors = new Map(), exclusions = new Exclusions(), notDuplicates = new Set()} = {}){
+	constructor({books = [], series = new Map(), authors = new Map(), narrators = new Map(), publishers = new Map(), exclusions = new Exclusions(), notDuplicates = new Set()} = {}){
 		this.books = books;
 		this.series = series;
 		this.authors = authors;
+		this.narrators = narrators;
+		this.publishers = publishers;
 		this.exclusions = exclusions;
 		this.notDuplicates = notDuplicates;
 	}
@@ -50,12 +54,17 @@ export class Catalog {
 	 */
 	static fromBackup(backup){
 		return new Catalog({books: backup.books, series: backup.series || new Map(), authors: backup.authors || new Map(),
+			narrators: backup.narrators || new Map(), publishers: backup.publishers || new Map(),
 			exclusions: Exclusions.parse((backup.excluded || []).join('\n')), notDuplicates: new Set(backup.notDuplicates || [])});
 	}
 
-	/** @returns {{books: Book[], seriesInfo: Record<string, Series>, authors: Record<string, Author>, excluded: string[], notDuplicates: string[]}} the catalog as a backup holds it */
+	/**
+	 * @returns {{books: Book[], seriesInfo: Record<string, Series>, authors: Record<string, Contributor>, narrators: Record<string, Contributor>,
+	 *   publishers: Record<string, Contributor>, excluded: string[], notDuplicates: string[]}} the catalog as a backup holds it
+	 */
 	toJSON(){
 		return {books: this.books, seriesInfo: Object.fromEntries(this.series), authors: Object.fromEntries(this.authors),
+			narrators: Object.fromEntries(this.narrators), publishers: Object.fromEntries(this.publishers),
 			excluded: this.exclusions.entries, notDuplicates: [...this.notDuplicates]};
 	}
 
@@ -63,9 +72,10 @@ export class Catalog {
 	clone(){
 		/** @type {(x: unknown) => unknown} */
 		const copy = x => JSON.parse(JSON.stringify(x));
+		const copyInfo = (/** @type {Map<string, Contributor>} */ info) => new Map([...info].map(([name, c]) => [name, Contributor.fromJSON(name, copy(c))]));
 		return new Catalog({books: this.books.map(b => b.clone()),
 			series: new Map([...this.series].map(([name, s]) => [name, Series.fromJSON(name, copy(s))])),
-			authors: new Map([...this.authors].map(([name, a]) => [name, Author.fromJSON(name, copy(a))])),
+			authors: copyInfo(this.authors), narrators: copyInfo(this.narrators), publishers: copyInfo(this.publishers),
 			exclusions: this.exclusions.clone(), notDuplicates: new Set(this.notDuplicates)});
 	}
 
@@ -77,24 +87,28 @@ export class Catalog {
 		this.books = other.books;
 		this.series = other.series;
 		this.authors = other.authors;
+		this.narrators = other.narrators;
+		this.publishers = other.publishers;
 		this.exclusions = other.exclusions;
 		this.notDuplicates = other.notDuplicates;
 	}
 
 	// ------------------------------------------------------------------ the Check
 	/**
-	 * What is wrong with the books and series info (Validator.validate), and with the author info when
-	 * `authors` (Validator.validateAuthors).
-	 * @param {{authors?: boolean}} [opts]
+	 * What is wrong with the books and series info (Validator.validate), and with the author, narrator and
+	 * publisher info when `contributors` (Validator.validateContributors).
+	 * @param {{contributors?: boolean}} [opts]
 	 * @returns {Problems}
 	 */
-	validate({authors = false} = {}){
+	validate({contributors = false} = {}){
 		const json = JSON.parse(JSON.stringify(this));
 		const problems = Validator.validate(json.books, json.seriesInfo);
-		if(authors){
-			const people = Validator.validateAuthors(json.books, json.authors);
-			problems.errors.push(...people.errors);
-			problems.warnings.push(...people.warnings);
+		if(contributors){
+			for(const kind of Contributor.KINDS){
+				const found = Validator.validateContributors(json.books, kind, json[kind]);
+				problems.errors.push(...found.errors);
+				problems.warnings.push(...found.warnings);
+			}
 		}
 		return problems;
 	}
@@ -214,7 +228,67 @@ export class Catalog {
 	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
 	 */
 	authorWorks(name){
-		const own = this.books.filter(b => b.authors.includes(name));
+		return this.creditedWorks(Catalog.authorsOf, name);
+	}
+
+	/**
+	 * Every author of the books, as [{name, books (how many), series (how many)}], by name.
+	 * @returns {{name: string, books: number, series: number}[]}
+	 */
+	authorList(){
+		return this.creditedList(Catalog.authorsOf);
+	}
+
+	/**
+	 * The books `name` narrates (any edition of them), as authorWorks() gives an author's.
+	 * @param {string} name
+	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
+	 */
+	narratorWorks(name){
+		return this.creditedWorks(Catalog.narratorsOf, name);
+	}
+
+	/**
+	 * Every narrator of the books' editions, as authorList() gives the authors.
+	 * @returns {{name: string, books: number, series: number}[]}
+	 */
+	narratorList(){
+		return this.creditedList(Catalog.narratorsOf);
+	}
+
+	/**
+	 * The books `name` publishes (any edition of them), as authorWorks() gives an author's.
+	 * @param {string} name
+	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
+	 */
+	publisherWorks(name){
+		return this.creditedWorks(Catalog.publishersOf, name);
+	}
+
+	/**
+	 * Every publisher of the books' editions, as authorList() gives the authors.
+	 * @returns {{name: string, books: number, series: number}[]}
+	 */
+	publisherList(){
+		return this.creditedList(Catalog.publishersOf);
+	}
+
+	/** @param {Book} b @returns {string[]} its authors */
+	static authorsOf(b){ return b.authors; }
+	/** @param {Book} b @returns {string[]} the narrators of all its editions, each once */
+	static narratorsOf(b){ return [...new Set(b.editions.flatMap(ed => ed.narrators))]; }
+	/** @param {Book} b @returns {string[]} the publishers of all its editions, each once */
+	static publishersOf(b){ return [...new Set(b.editions.map(ed => ed.publisher || '').filter(Boolean))]; }
+
+	/**
+	 * The books `namesOf` credits to `name`: {series: [{name, books}], titles} with each series' books in
+	 * series order and the books outside a series by title.
+	 * @param {(b: Book) => string[]} namesOf
+	 * @param {string} name
+	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
+	 */
+	creditedWorks(namesOf, name){
+		const own = this.books.filter(b => namesOf(b).includes(name));
 		/** @type {Map<string, Book[]>} */
 		const bySeries = new Map();
 		for(const b of own){
@@ -228,14 +302,15 @@ export class Catalog {
 	}
 
 	/**
-	 * Every author of the books, as [{name, books (how many), series (how many)}], by name.
+	 * Everyone `namesOf` credits on the books, as [{name, books (how many), series (how many)}], by name.
+	 * @param {(b: Book) => string[]} namesOf
 	 * @returns {{name: string, books: number, series: number}[]}
 	 */
-	authorList(){
+	creditedList(namesOf){
 		/** @type {Map<string, {name: string, books: number, series: Set<string>}>} */
 		const seen = new Map();
 		for(const b of this.books){
-			for(const name of new Set(b.authors)){
+			for(const name of new Set(namesOf(b))){
 				let entry = seen.get(name);
 				if(!entry) seen.set(name, entry = {name, books: 0, series: new Set()});
 				entry.books++;

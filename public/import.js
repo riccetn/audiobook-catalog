@@ -44,7 +44,7 @@ function download(text, type, name){
 }
 
 function exportBackup(){
-	// {books, seriesInfo, authors, excluded, notDuplicates} (Catalog.toJSON)
+	// {books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates} (Catalog.toJSON)
 	download(JSON.stringify(CATALOG, null, '\t'), 'application/json', 'audiobook-catalog-backup');
 	showIoStatus('Backup downloaded.');
 }
@@ -88,12 +88,14 @@ function readFiles(files){
  */
 async function importBackup(files){
 	try{
-		const {books, series, authors, excluded, notDuplicates} = Backup.readFiles(await readFiles(files));
+		const {books, series, authors, narrators, publishers, excluded, notDuplicates} = Backup.readFiles(await readFiles(files));
 		const bad = books.some(b=> !b.title || !b.authors.length);
 		if(bad) throw new Error('missing title/author');
 		CATALOG.books = books;
 		if(series) CATALOG.series = series;           // older backups have no series info: keep the current one
 		if(authors) CATALOG.authors = authors;        // nor author info
+		if(narrators) CATALOG.narrators = narrators;  // nor narrator and publisher info
+		if(publishers) CATALOG.publishers = publishers;
 		const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
 		addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
 		refreshPage(); persist();
@@ -253,10 +255,11 @@ function mergeIntoCatalog(backup){
 	const prefer = /** @type {'mine' | 'backup'} */ (fieldById('mergePreferSelect').value);
 	const m = backup.mergeInto(CATALOG, prefer);
 	// series info left without books is expected after a series was renamed; anything else blocks
-	const merged = new Catalog({books: m.books, series: m.series, authors: m.authors});
-	const errors = merged.validate({authors: true}).errors.filter(e=> !/^series-info: .* matches no series/.test(e));
+	const merged = new Catalog({books: m.books, series: m.series, authors: m.authors, narrators: m.narrators, publishers: m.publishers});
+	const errors = merged.validate({contributors: true}).errors.filter(e=> !/^series-info: .* matches no series/.test(e));
 	const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length +
-		m.authorsAdded.length + m.authorsChanged.length + m.excluded.length + m.notDuplicates.length;
+		m.authorsAdded.length + m.authorsChanged.length + m.narratorsAdded.length + m.narratorsChanged.length +
+		m.publishersAdded.length + m.publishersChanged.length + m.excluded.length + m.notDuplicates.length;
 	return {m, errors, changes};
 }
 
@@ -280,9 +283,14 @@ function previewMerge(){
 	if(m.infoAdded.length || infoDiffer){
 		out.push(para(`Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : spell("this catalog's")})` : '')));
 	}
-	const authorsDiffer = m.authorsChanged.length + m.authorsKept.length;
-	if(m.authorsAdded.length || authorsDiffer){
-		out.push(para(`Author info: ${m.authorsAdded.length} added` + (authorsDiffer ? `, ${authorsDiffer} differing (keeping ${m.authorsChanged.length ? "the backup's" : spell("this catalog's")})` : '')));
+	for(const [label, added, changed, kept] of /** @type {[string, string[], string[], string[]][]} */ ([
+		['Author info', m.authorsAdded, m.authorsChanged, m.authorsKept],
+		['Narrator info', m.narratorsAdded, m.narratorsChanged, m.narratorsKept],
+		['Publisher info', m.publishersAdded, m.publishersChanged, m.publishersKept]])){
+		const differ = changed.length + kept.length;
+		if(added.length || differ){
+			out.push(para(`${label}: ${added.length} added` + (differ ? `, ${differ} differing (keeping ${changed.length ? "the backup's" : spell("this catalog's")})` : '')));
+		}
 	}
 	if(m.excluded.length) out.push(para(`More books excluded from imports: ${m.excluded.length}`));
 	if(m.notDuplicates.length) out.push(para(`More books marked "Not duplicates": ${m.notDuplicates.length}`));
@@ -311,6 +319,8 @@ function applyMerge(){
 	CATALOG.books = m.books;
 	CATALOG.series = m.series;
 	CATALOG.authors = m.authors;
+	CATALOG.narrators = m.narrators;
+	CATALOG.publishers = m.publishers;
 	addExclusions(m.excluded);
 	addNotDuplicates(m.notDuplicates);
 	refreshPage(); persist();
@@ -368,12 +378,13 @@ function showTidyPreview(title, body, confirm){
 }
 
 function checkCatalog(){
-	const {errors, warnings} = CATALOG.validate({authors: true});
+	const {errors, warnings} = CATALOG.validate({contributors: true});
 	const series = new Set(CATALOG.books.filter(b=> b.series).map(b=> b.series)).size;
-	const authors = CATALOG.authors.size;
+	const count = (/** @type {number} */ n, /** @type {string} */ word)=> `${n} ${word}${n === 1 ? '' : 's'}`;
+	const withInfo = [count(CATALOG.authors.size, 'author'), count(CATALOG.narrators.size, 'narrator'), count(CATALOG.publishers.size, 'publisher')];
 	/** @type {Child[]} */
 	const out = [para(`${CATALOG.books.length} books, ${series} series, ${CATALOG.series.size} with release info, ` +
-		`${authors} author${authors === 1 ? '' : 's'} with info.`)];
+		`${withInfo.join(', ')} with info.`)];
 	if(errors.length) out.push(para(`Errors (${errors.length}):`, 'warn'), messageList(errors, 100));
 	if(warnings.length) out.push(para(`Needs a look (${warnings.length}):`, 'warn'), messageList(warnings, 100));
 	if(FORMAT_NOTES.length){

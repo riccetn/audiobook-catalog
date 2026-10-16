@@ -27,7 +27,8 @@ library, restore a backup, or add books by hand with **+ Add a book**.
 - The catalog page browses by series or all books and edits books and series info; *Import & export*
   imports CSVs, runs Hardcover, checks the catalog, makes backups and merges them; *Duplicates* merges books entered twice.
 - *Authors* gives each author a page with a short bio, links to their website and their Audible, Goodreads
-  and Hardcover pages, and their series and titles ([Authors](docs/authors.md)).
+  and Hardcover pages, and their series and titles ([Authors](docs/authors.md)). *Narrators* and *Publishers*
+  do the same for everyone named on the editions ([Narrators and publishers](docs/narrators-publishers.md)).
 - Every edit is saved in the browser as you make it. Each browser (and each phone) keeps its own
   catalog, so **Export** a backup now and then: it is the only copy outside the browser.
 - The pages speak British English ("catalogue") when your browser's first English language is a British
@@ -38,7 +39,8 @@ library, restore a backup, or add books by hand with **+ Add a book**.
 - [Everyday workflows](docs/workflows.md): editing, series info, missing books, removing and merging
   books, ISBNs, dates read, links
 - [Authors](docs/authors.md): author pages with a bio, links, and their series and titles
-- [Data format](docs/data-format.md): books, editions, box sets, series info, author info, tidy names
+- [Narrators and publishers](docs/narrators-publishers.md): a page for each narrator and publisher with a bio, links, and their series and titles
+- [Data format](docs/data-format.md): books, editions, box sets, series info, author, narrator and publisher info, tidy names
   and known data quirks
 - [Audible](docs/audible.md): importing your Audible library
 - [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads

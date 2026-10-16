@@ -19,40 +19,42 @@
 	<nav class="pages">
 		<a href="index.html">Catalog</a>
 		<a href="authors.html" class="current" aria-current="page">Authors</a>
+		<a href="narrators.html">Narrators</a>
+		<a href="publishers.html">Publishers</a>
 		<a href="import.html">Import &amp; export</a>
 		<a href="duplicates.html">Duplicates<span id="dupCount"></span></a>
 	</nav>
 	<p class="sub" id="subtitle">Loading&hellip;</p>
 
 	<div class="crumb" id="crumb">
-		<a href="authors.html" id="backToAuthors">&larr; All authors</a>
+		<a href="authors.html">&larr; All authors</a>
 	</div>
 
-	<div class="controls" id="authorControls">
+	<div class="controls" id="creditControls">
 		<input type="text" id="q" placeholder="Search authors&hellip;">
 	</div>
 
 	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
 	<p id="ioStatus" class="ioStatus"></p>
 
-	<form id="authorForm" class="infoForm">
-		<h3 id="authorFormTitle">Author info</h3>
-		<div><label>Short bio</label><textarea id="af_bio" rows="4"></textarea></div>
-		<div><label>Personal website</label><input id="af_url" placeholder="https://"></div>
+	<form id="creditForm" class="infoForm">
+		<h3 id="creditFormTitle">Author info</h3>
+		<div><label for="cf_bio">Short bio</label><textarea id="cf_bio" rows="4"></textarea></div>
+		<div><label for="cf_url" id="cf_url_label">Website</label><input id="cf_url" placeholder="https://"></div>
 		<div class="formrow">
-			<div><label>Audible author page</label><input id="af_audible" placeholder="https://www.audible.com/author/..."></div>
-			<div><label>Goodreads author page</label><input id="af_goodreads" placeholder="https://www.goodreads.com/author/show/..."></div>
+			<div><label for="cf_audible" id="cf_audible_label">Audible page</label><input id="cf_audible" placeholder="https://www.audible.com/..."></div>
+			<div><label for="cf_goodreads" id="cf_goodreads_label">Goodreads page</label><input id="cf_goodreads" placeholder="https://www.goodreads.com/..."></div>
 		</div>
-		<div><label>Hardcover author page</label><input id="af_hardcover" placeholder="https://hardcover.app/authors/..."></div>
-		<p id="authorFormError" class="formError"></p>
+		<div><label for="cf_hardcover" id="cf_hardcover_label">Hardcover page</label><input id="cf_hardcover" placeholder="https://hardcover.app/..."></div>
+		<p id="creditFormError" class="formError"></p>
 		<div class="formbtns">
-			<button type="submit" class="save" id="authorSaveBtn">Save author info</button>
-			<button type="button" id="authorRemoveBtn">Remove info</button>
-			<button type="button" id="cancelAuthor">Cancel</button>
+			<button type="submit" class="save" id="creditSaveBtn">Save author info</button>
+			<button type="button" id="creditRemoveBtn">Remove info</button>
+			<button type="button" id="cancelCredit">Cancel</button>
 		</div>
 	</form>
 
-	<div id="authorBody"></div>
+	<div id="creditBody"></div>
 </div>
 
 <script type="module" src="authors.js"></script>
