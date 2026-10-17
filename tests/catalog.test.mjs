@@ -74,6 +74,11 @@ test('external catalogs: an id gives the address of its page, and the address gi
 		['goodreads', 'author', '7', 'https://www.goodreads.com/author/show/7'],
 		['hardcover', 'book', '77', 'https://hardcover.app/id/book/77'],
 		['hardcover', 'edition', '501', 'https://hardcover.app/id/edition/501'],
+		['hardcover', 'series', '3101', 'https://hardcover.app/id/series/3101'],
+		['hardcover', 'author', '4101', 'https://hardcover.app/id/author/4101'],
+		['hardcover', 'narrator', '4102', 'https://hardcover.app/id/author/4102'],
+		['hardcover', 'publisher', '5101', 'https://hardcover.app/id/publisher/5101'],
+		// the name in the address, kept when Hardcover couldn't be asked for the number
 		['hardcover', 'series', 'gull-isle', 'https://hardcover.app/series/gull-isle'],
 		['hardcover', 'author', 'ann-vale', 'https://hardcover.app/authors/ann-vale'],
 		['hardcover', 'publisher', 'gull-audio', 'https://hardcover.app/publishers/gull-audio'],
@@ -108,6 +113,8 @@ test('external catalogs: an id gives the address of its page, and the address gi
 		['https://m.goodreads.com/book/show/4242-the-salt-road', 'edition', 'goodreads', '4242'],
 		['goodreads.com/author/show/7.Ann_Vale', 'author', 'goodreads', '7'],
 		['https://hardcover.app/books/the-salt-road/editions/501', 'edition', 'hardcover', '501'],
+		['https://hardcover.app/id/authors/4101/collections', 'author', 'hardcover', '4101'],
+		['hardcover.app/authors/ann-vale/books?page=2', 'author', 'hardcover', 'ann-vale'],
 		['https://openlibrary.org/works/OL123W/The_Salt_Road?edition=x', 'book', 'openlibrary', 'OL123W'],
 		['openlibrary.org/books/ol456m', 'edition', 'openlibrary', 'OL456M'],
 		['http://www.isfdb.org/cgi-bin/publisher.cgi?54977=', 'publisher', 'isfdb', '54977'],
@@ -129,6 +136,27 @@ test('external catalogs: an id gives the address of its page, and the address gi
 	assert.equal(ExternalCatalog.url('wikidata', 'edition', 'Q1'), null);
 	// every catalog says what it is
 	for (const def of ExternalCatalog.ALL) assert.ok(def.description && Object.keys(def.kinds).length, def.key);
+});
+
+test('external catalogs: a Hardcover series or person is kept by its number, or by the name in its address as a fallback', () => {
+	assert.ok(ExternalCatalog.isId('hardcover', 'author', '4101') && ExternalCatalog.isId('hardcover', 'author', 'ann-vale'));
+	assert.ok(!ExternalCatalog.isFallbackId('hardcover', 'author', '4101'));
+	assert.ok(ExternalCatalog.isFallbackId('hardcover', 'publisher', 'gull-audio'));
+	assert.ok(!ExternalCatalog.isFallbackId('hardcover', 'book', 'tidewater'), 'a book has no fallback');
+	assert.ok(!ExternalCatalog.isId('hardcover', 'series', 'not a slug'));
+	assert.deepEqual(ExternalCatalog.readId('ann-vale', 'narrator', 'hardcover'), { catalog: 'hardcover', id: 'ann-vale' });
+	assert.deepEqual(ExternalCatalog.problems({ hardcover: 'ann-vale' }, 'author'), { errors: [], warnings: [] }, 'a name kept before is still fine');
+});
+
+test('HardcoverClient.idBySlug finds the number of a series, author or publisher by the name in its address', async () => {
+	const hc = fakeHardcover(hardcoverState());
+	const client = new HardcoverClient('tok-123', hc.fetch, async () => {});
+	assert.deepEqual(await HardcoverClient.idBySlug(client, 'series', 'the-lantern-coast'), { id: '3101', name: 'The Lantern Coast' });
+	assert.deepEqual(await HardcoverClient.idBySlug(client, 'narrator', 'w-ashcombe'), { id: '4101', name: 'W. Ashcombe' }, 'one merged into another is that one');
+	assert.deepEqual(await HardcoverClient.idBySlug(client, 'publisher', 'kestrel-row-audio'), { id: '5101', name: 'Kestrel Row Audio' });
+	assert.equal(await HardcoverClient.idBySlug(client, 'author', 'nobody'), null);
+	assert.deepEqual(hc.sent.map(s => s.query.split('(')[0]), ['query SeriesBySlug', 'query AuthorBySlug', 'query PublisherBySlug', 'query AuthorBySlug']);
+	await assert.rejects(HardcoverClient.idBySlug(new HardcoverClient('bad', hc.fetch, async () => {}), 'author', 'x'), /refused your token/);
 });
 
 test('external catalogs: a form field takes an id or an address, and ids are tidied and checked', () => {

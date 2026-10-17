@@ -1294,14 +1294,16 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 	assert.equal(els.sf_ext_hardcover.value, 'the-lantern-coast-sample');
 	els.sf_ext_audible.value = 'https://www.audible.com/series/The-Lantern-Coast-Audiobooks/B0LANTERN1?ref=x';
 	els.sf_ext_goodreads.value = '';
-	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+	await els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+	// Hardcover's series by the name in its address, as no token is saved to look up its number
 	assert.deepEqual(get("CATALOG.series.get('The Lantern Coast').external"), { 'audible.com': 'B0LANTERN1', hardcover: 'the-lantern-coast-sample' });
+	assert.match(els.ioStatus.textContent, /^Saved series info for The Lantern Coast\. Kept Hardcover's series by the name in its address, as no Hardcover API token is saved/);
 	assert.deepEqual((await kept(storage)).seriesInfo['The Lantern Coast'].ext, { 'audible.com': 'B0LANTERN1', hardcover: 'the-lantern-coast-sample' });
 	assert.match(els.results.innerHTML, /<a class="authorlink" href="https:\/\/www\.audible\.com\/series\/B0LANTERN1" target="_blank" rel="noopener">Audible ↗<\/a>/);
 	// something that is neither is refused
 	ctx.openSeriesForm('The Lantern Coast');
 	els.sf_ext_goodreads.value = 'https://www.goodreads.com/book/show/4242';
-	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+	await els.seriesForm.listeners.submit[0]({ preventDefault() {} });
 	assert.match(els.seriesFormError.textContent, /Goodreads: https:\/\/www\.goodreads\.com\/book\/show\/4242/);
 	els.cancelSeries.listeners.click[0]();
 
@@ -1887,13 +1889,13 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	// an address gives the id; an Audible address names its site
 	els.cf_ext_hardcover.value = 'https://hardcover.app/authors/wendell';
 	els.cf_ext_audible.value = 'https://www.audible.co.uk/author/Wendell-Ashcombe/B0WENDELL1?ref=x';
-	submit();
+	await submit();
 	assert.ok(!els.creditForm.classList.contains('open'));
 	const entry = { bio: 'Builds clockwork worlds.\n\nLives by a canal.', url: 'https://wendell.example/', ext: { 'audible.co.uk': 'B0WENDELL1', hardcover: 'wendell' } };
 	assert.deepEqual(get("CATALOG.authors.get('Wendell Ashcombe')"), entry);
 	assert.match(els.creditBody.innerHTML, /<p>Builds clockwork worlds\.<\/p><p>Lives by a canal\.<\/p>/);
 	assert.match(els.creditBody.innerHTML, /<a class="authorlink" href="https:\/\/www\.audible\.co\.uk\/author\/B0WENDELL1" target="_blank" rel="noopener">Audible \(audible\.co\.uk\) ↗<\/a> <a class="authorlink" href="https:\/\/hardcover\.app\/authors\/wendell" target="_blank" rel="noopener">Hardcover ↗<\/a>/);
-	assert.match(els.ioStatus.textContent, /^Saved author info for Wendell Ashcombe\.$/);
+	assert.match(els.ioStatus.textContent, /^Saved author info for Wendell Ashcombe\. Kept Hardcover's author by the name in its address/);
 	// kept in this browser, and loaded again with the page
 	assert.deepEqual((await kept(storage)).authors['Wendell Ashcombe'], entry);
 	const again = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', storage });
@@ -1909,6 +1911,61 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	assert.equal(get("CATALOG.authors.get('Wendell Ashcombe') || null"), null);
 	assert.match(els.ioStatus.textContent, /Removed author info for Wendell Ashcombe/);
 	assert.ok(get("CATALOG.authors.has('Marisol Quenby')"), 'the other authors keep theirs');
+});
+
+test('a Hardcover address in the series or info form is looked up for its number, and kept as it is when Hardcover can\'t be asked', async () => {
+	const hc = fakeHardcover(hardcoverState());
+	const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };   // the pause between requests
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const { els, get } = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', hardcover: hc.fetch, setTimeout, storage });
+	const edit = () => els.creditBody.querySelector('.aedit').listeners.click[0]();
+	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
+	edit();
+	els.cf_ext_hardcover.value = 'https://hardcover.app/authors/wendell-ashcombe/books';
+	await submit();
+	assert.deepEqual(get("CATALOG.authors.get('Wendell Ashcombe').external"), { hardcover: '4101' });
+	assert.equal(els.ioStatus.textContent, 'Saved author info for Wendell Ashcombe. Found on Hardcover: Wendell Ashcombe (author 4101).');
+	assert.match(els.creditBody.innerHTML, /<a class="authorlink" href="https:\/\/hardcover\.app\/id\/author\/4101" target="_blank" rel="noopener">Hardcover ↗<\/a>/);
+	assert.deepEqual(hc.sent.at(-1).variables, { slug: 'wendell-ashcombe' });
+
+	// as soon as the field is left; one merged into another is that one
+	edit();
+	els.cf_ext_hardcover.value = 'w-ashcombe';
+	await els.cf_ext_hardcover.listeners.change[0]();
+	assert.equal(els.cf_ext_hardcover.value, '4101');
+	// a number, or an address by number, is not looked up
+	const asked = hc.sent.length;
+	els.cf_ext_hardcover.value = 'https://hardcover.app/id/authors/4102';
+	await submit();
+	assert.deepEqual(get("CATALOG.authors.get('Wendell Ashcombe').external"), { hardcover: '4102' });
+	assert.equal(hc.sent.length, asked);
+
+	// a name Hardcover has no page for is refused
+	edit();
+	els.cf_ext_hardcover.value = 'https://hardcover.app/authors/nobody-here';
+	await submit();
+	assert.equal(els.creditFormError.textContent, 'Hardcover has no author at https://hardcover.app/authors/nobody-here.');
+	assert.deepEqual(get("CATALOG.authors.get('Wendell Ashcombe').external"), { hardcover: '4102' });
+	// when Hardcover can't be asked, the name in the address is kept, and still links to its page
+	storage.set('audiobook-catalog-hardcover-token', 'expired');
+	await submit();
+	assert.deepEqual(get("CATALOG.authors.get('Wendell Ashcombe').external"), { hardcover: 'nobody-here' });
+	assert.match(els.ioStatus.textContent, /Kept Hardcover's author by the name in its address, as Hardcover couldn't be asked for its number \(Hardcover refused your token/);
+	assert.match(els.creditBody.innerHTML, /href="https:\/\/hardcover\.app\/authors\/nobody-here"/);
+
+	// a series' and a publisher's likewise
+	storage.set('audiobook-catalog-hardcover-token', 'tok-123');
+	const index = await boot({ hardcover: hc.fetch, setTimeout, storage });
+	index.ctx.openSeriesForm('The Lantern Coast');
+	index.els.sf_ext_hardcover.value = 'hardcover.app/series/the-lantern-coast';
+	await index.els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+	assert.equal(index.get("CATALOG.series.get('The Lantern Coast').external.hardcover"), '3101');
+	const pub = await boot({ page: 'publishers.html', hash: '#p=Kestrel+Row+Audio', hardcover: hc.fetch, setTimeout, storage });
+	pub.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	assert.equal(pub.els.cf_ext_hardcover.value, 'kestrel-row-audio-sample', 'a name kept before stays until the form is saved');
+	pub.els.cf_ext_hardcover.value = 'kestrel-row-audio';
+	await pub.els.creditForm.listeners.submit[0]({ preventDefault() {} });
+	assert.equal(pub.get("CATALOG.publishers.get('Kestrel Row Audio').external.hardcover"), '5101');
 });
 
 test('narrator and publisher info can be added on their pages, with links checked', async () => {

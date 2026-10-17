@@ -25,6 +25,16 @@ paste the address of the book's page (`https://hardcover.app/books/the-salt-road
 book's id with the same token. An edition's
 address in an edition's *Hardcover edition* field needs no lookup: it holds the edition's id.
 
+**A series', author's, narrator's or publisher's Hardcover id.** These are kept by their number on Hardcover too
+(linked as `https://hardcover.app/id/author/4101`, which keeps working when Hardcover renames the page). Their pages'
+addresses have a name in them instead (`https://hardcover.app/authors/marisol-quenby`), so when you paste one, or
+the name alone, into the Hardcover field of the series or info form, the page asks Hardcover for the number as
+soon as you leave the field (or when you save), with the same token. If Hardcover can't be asked (no token saved,
+offline, the token refused), the name is kept instead and the status line says so; it links to the page by its
+address until Hardcover renames it. Saving the form again later, with Hardcover reachable, swaps it for the
+number. A name Hardcover has no page for is refused. Entries saved before Hardcover ids were numbers keep their
+names until their form is saved.
+
 - **Import** reads the books on your Hardcover *Read* shelf, like any import (it only adds, see [How imports avoid clobbering your edits](imports.md)).
   A book read as an audiobook edition on Hardcover is added if it is new; a book you read in another
   format, or without an edition picked, only fills in a book you already have. Each gets Hardcover's book

@@ -59,7 +59,7 @@ each with a page of their bio, links, series and titles; their names on the book
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
 the author site, the series' ids on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
-`https://hardcover.app/series/the-lantern-coast`; the series links to each), or to add or remove that info.
+`https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each), or to add or remove that info.
 The form checks the same rules as **Check**.
 The same form renames the series: change its name and every book in the series gets the new name
 (a series without info is renamed without adding any). Renaming it to a series you already have

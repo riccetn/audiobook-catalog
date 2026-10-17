@@ -69,7 +69,7 @@ browser keeps the catalog in the current one.
 The series info (`seriesInfo`, `series-info.json` before) maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://...", "ext": {...}}`.
 `total` is the number of books released so far; `url` (an author or publisher site) and `ext` (the
-series' ids in [external catalogs](#external-catalogs), `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "the-lantern-coast"}`) are optional.
+series' ids in [external catalogs](#external-catalogs), `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "3101"}`) are optional.
 
 ## Authors
 
@@ -85,7 +85,7 @@ book's `a` exactly) to what you keep about them; every field is optional:
 |---------|----------------------------------------------------------------------|
 | `bio`   | a short bio, free text; a blank line (`\n\n`) starts a new paragraph |
 | `url`   | the author's own website                                             |
-| `ext`   | their ids in [external catalogs](#external-catalogs): their author page's ASIN on an Audible or Amazon site, the number of their Goodreads page, the name in their Hardcover page's address. The page links to each |
+| `ext`   | their ids in [external catalogs](#external-catalogs): their author page's ASIN on an Audible or Amazon site, the number of their Goodreads page, their number on Hardcover (or, when Hardcover couldn't be asked for it, the name in their Hardcover page's address). The page links to each |
 | `links` | other pages about them, as a list of addresses: where an author page's address from before could not be read as an id, it is kept here |
 
 Links must start with `http://` or `https://`; **Check** warns when an id is not one its catalog
@@ -101,13 +101,13 @@ The narrator info (`narrators`) and publisher info (`publishers`) work the same 
 edition's `p` writes it) to a bio and links. For a narrator, the Audible id is their name as Audible's
 narrator search takes it, and Goodreads' and Hardcover's ids are their author pages' (both sites list
 narrators as authors), and so is BookBrainz's; for a publisher, Audible's id is its name as Audible's publisher search takes it
-and Hardcover's the name in its publisher page's address (Goodreads has no publisher pages). Both can also have a
+and Hardcover's its number there (Goodreads has no publisher pages). Both can also have a
 Wikidata item, and a publisher an ISFDB and a BookBrainz id. Both are
 optional (missing means `{}`), and **Check** warns, as for authors, about an entry that matches no edition.
 
 ```json
-{"narrators": {"Ingrid Voss": {"bio": "Narrates fantasy.", "ext": {"audible.com": "Ingrid Voss", "hardcover": "ingrid-voss"}}},
- "publishers": {"Kestrel Row Audio": {"url": "https://example.com/", "ext": {"hardcover": "kestrel-row-audio"}}}}
+{"narrators": {"Ingrid Voss": {"bio": "Narrates fantasy.", "ext": {"audible.com": "Ingrid Voss", "hardcover": "4102"}}},
+ "publishers": {"Kestrel Row Audio": {"url": "https://example.com/", "ext": {"hardcover": "5101"}}}}
 ```
 
 ## External catalogs
@@ -122,7 +122,7 @@ pasted into a form. The key in `ext` is the catalog's:
 | `audible.com`, `audible.co.uk`, `audible.de`, `audible.fr`, `audible.it`, `audible.es`, `audible.ca`, `audible.com.au`, `audible.in`, `audible.co.jp` | an Audible store | an edition's ASIN (`/pd/B0…`), a series' (`/series/B0…`) and an author's (`/author/B0…`); a narrator's or publisher's name, for Audible's search |
 | `amazon.com`, `amazon.co.uk`, … (each Audible store's Amazon twin, and `amazon.se`, `amazon.nl`, `amazon.pl`, `amazon.com.br`, `amazon.com.mx`) | an Amazon store | an edition's ASIN (`/dp/B0…`) and an author's (`/stores/author/B0…`) |
 | `goodreads` | Goodreads | a book's work (`/work/editions/99`), an edition (`/book/show/4242`), a series (`/series/90001`), an author or narrator (`/author/show/1234`) |
-| `hardcover` | Hardcover | a book (`/id/book/77`), an edition (`/id/edition/501`), a series (`/series/the-lantern-coast`), an author or narrator (`/authors/marisol-quenby`), a publisher (`/publishers/kestrel-row-audio`) |
+| `hardcover` | Hardcover | a book (`/id/book/77`), an edition (`/id/edition/501`), a series (`/id/series/3101`), an author or narrator (`/id/author/4101`), a publisher (`/id/publisher/5101`), each by its number; a series' or person's page by the name in its address (`/authors/marisol-quenby`) when Hardcover couldn't be asked for the number |
 | `openlibrary` | Open Library (`openlibrary.org`) | a book's work (`/works/OL123W`), an edition (`/books/OL456M`), an author (`/authors/OL789A`) |
 | `isfdb` | ISFDB, the Internet Speculative Fiction Database (`isfdb.org`) | a book's title (`/cgi-bin/title.cgi?194342`), an edition, which ISFDB calls a publication (`pl.cgi?…`), a series (`pe.cgi?…`), an author (`ea.cgi?…`), a publisher (`publisher.cgi?…`) |
 | `bookbrainz` | BookBrainz (`bookbrainz.org`) | a book's work (`/work/…`), an edition (`/edition/…`), a series, an author or narrator (`/author/…`), a publisher, each by its UUID |

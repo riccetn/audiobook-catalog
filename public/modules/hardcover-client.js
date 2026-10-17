@@ -55,6 +55,16 @@ export class HardcoverClient {
 		bookBySlug: `query BookBySlug($slug: String!) {
 	books(where: {slug: {_eq: $slug}}, limit: 1) { id canonical_id title }
 }`,
+		// a series, author (narrators are authors there) or publisher by the name in its page's address
+		seriesBySlug: `query SeriesBySlug($slug: String!) {
+	series(where: {slug: {_eq: $slug}}, limit: 1) { id canonical_id name }
+}`,
+		authorBySlug: `query AuthorBySlug($slug: String!) {
+	authors(where: {slug: {_eq: $slug}}, limit: 1) { id canonical_id name }
+}`,
+		publisherBySlug: `query PublisherBySlug($slug: String!) {
+	publishers(where: {slug: {_eq: $slug}}, limit: 1) { id canonical_id name }
+}`,
 		editionBook: `query EditionBook($id: Int!) {
 	editions(where: {id: {_eq: $id}}) { book_id book { title } }
 }`,
@@ -266,5 +276,25 @@ export class HardcoverClient {
 		if(!Text.isObject(book) || !Number.isInteger(book.id)) throw new Error(`Hardcover has no book at hardcover.app/books/${url.slug}`);
 		// a book merged into another one lives on as that one
 		return {id: String(Number.isInteger(book.canonical_id) ? book.canonical_id : book.id), title: typeof book.title === 'string' ? book.title : ''};
+	}
+
+	/**
+	 * The number of the Hardcover series, author (a narrator is one there) or publisher whose page's address
+	 * has `slug` in it (hardcover.app/authors/ann-vale), as {id, name}; null when Hardcover has none. Throws
+	 * with a short reason when Hardcover can't be asked.
+	 * @param {HardcoverClient} client
+	 * @param {'series' | 'author' | 'narrator' | 'publisher'} kind
+	 * @param {string} slug
+	 * @returns {Promise<{id: string, name: string} | null>}
+	 */
+	static async idBySlug(client, kind, slug){
+		const [query, table] = kind === 'series' ? [HardcoverClient.QUERIES.seriesBySlug, 'series']
+			: kind === 'publisher' ? [HardcoverClient.QUERIES.publisherBySlug, 'publishers'] : [HardcoverClient.QUERIES.authorBySlug, 'authors'];
+		const [row] = (await client.ask(query, {slug}))[table] || [];
+		// a publisher's id is a bigint, which Hardcover may send as text
+		const number = (/** @type {unknown} */ x) => Number.isInteger(x) || (typeof x === 'string' && HARDCOVER_ID.test(x)) ? String(x) : null;
+		if(!Text.isObject(row) || !number(row.id)) return null;
+		// one merged into another lives on as that one
+		return {id: /** @type {string} */ (number(row.canonical_id) || number(row.id)), name: typeof row.name === 'string' ? row.name : ''};
 	}
 }

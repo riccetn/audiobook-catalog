@@ -14,6 +14,9 @@ import {Text} from './text.js';
  * @property {boolean} [upper] its ids are kept in capitals (ASINs)
  * @property {string} [stored] what a kept id may be, when that is more than `id` allows (an ASIN of a
  *   hand-made catalog may be shorter than ten letters and digits; an address only ever has ten)
+ * @property {KindPattern} [fallback] another id the catalog's pages may be kept under, when the usual one
+ *   can't be had: Hardcover's author is kept by its number, or by the name in its address while Hardcover
+ *   can't be asked for the number. An id is the usual one's when it matches both
  */
 /**
  * An external catalog. Its definition is plain data, so it could be stored like any other entry.
@@ -80,6 +83,18 @@ function amazon(site){
 		}};
 }
 
+/**
+ * A Hardcover page by its number (hardcover.app/id/author/12, which Hardcover sends on to the page's
+ * address), or by the name in that address (hardcover.app/authors/ann-vale) as a fallback.
+ * @param {string} model what Hardcover calls it in an address by id
+ * @param {string} path the start of its page's address
+ * @returns {KindPattern}
+ */
+function hardcoverById(model, path){
+	return {id: NUMBER, url: `https://hardcover.app/id/${model}/{id}`, also: [`https://hardcover.app/id/${model.replace(/s?$/, 's')}/{id}`],
+		fallback: {id: SLUG, url: `https://hardcover.app/${path}/{id}`}};
+}
+
 /** @type {CatalogDefinition[]} */
 const DEFINITIONS = [
 	...Object.values(AUDIBLE_STORES).map(audible),
@@ -94,14 +109,14 @@ const DEFINITIONS = [
 			narrator: {id: NUMBER, url: 'https://www.goodreads.com/author/show/{id}', also: ['https://www.goodreads.com/author/show/{id}-*', 'https://www.goodreads.com/author/show/{id}.*']},
 		}},
 	{key: 'hardcover', name: 'Hardcover', group: 'hardcover', family: 'hardcover',
-		description: 'Hardcover: a book or edition by its number (its address by id keeps working when the book is renamed), a series, author, narrator or publisher by the name in its address',
+		description: 'Hardcover: a book, edition, series, author, narrator or publisher by its number (its address by id keeps working when it is renamed); a series or person by the name in its address while Hardcover can\'t be asked for the number',
 		kinds: {
 			book: {id: NUMBER, url: 'https://hardcover.app/id/book/{id}', also: ['https://hardcover.app/id/books/{id}']},
 			edition: {id: NUMBER, url: 'https://hardcover.app/id/edition/{id}', also: ['https://hardcover.app/id/editions/{id}', 'https://hardcover.app/books/*/editions/{id}']},
-			series: {id: SLUG, url: 'https://hardcover.app/series/{id}'},
-			author: {id: SLUG, url: 'https://hardcover.app/authors/{id}'},
-			narrator: {id: SLUG, url: 'https://hardcover.app/authors/{id}'},
-			publisher: {id: SLUG, url: 'https://hardcover.app/publishers/{id}'},
+			series: hardcoverById('series', 'series'),
+			author: hardcoverById('author', 'authors'),
+			narrator: hardcoverById('author', 'authors'),
+			publisher: hardcoverById('publisher', 'publishers'),
 		}},
 	// The open catalogs: their data is free to use, and they have APIs a later lookup could use.
 	{key: 'openlibrary', name: 'Open Library', group: 'openlibrary', family: 'openlibrary',
@@ -177,6 +192,19 @@ function compile(pattern, id){
 		re += `/?\\?(?:[^#]*&)?${Text.escapeRegExp(name)}=([^&#]+)`;
 	}
 	return {re: new RegExp(re + '(?:[/?#&].*)?$', 'i'), query: query !== undefined};
+}
+
+/**
+ * The pattern (a kind's own, or its fallback) an id is kept under; null when it is neither's.
+ * @param {KindPattern} pattern
+ * @param {string} id
+ * @returns {KindPattern | null}
+ */
+function patternOf(pattern, id){
+	for(const of of [pattern, pattern.fallback]){
+		if(of && new RegExp(`^(?:${of.stored || of.id})$`, of.upper ? 'i' : '').test(id)) return of;
+	}
+	return null;
 }
 
 /** @type {Map<string, {re: RegExp, query: boolean}[]>} each catalog's and kind's patterns, compiled once */
@@ -262,7 +290,20 @@ export class ExternalCatalog {
 	static isId(key, kind, id){
 		const def = BY_KEY.get(key), pattern = def && def.kinds[kind];
 		if(!pattern) return ASIN_SITE.test(key) && kind === 'edition' && typeof id === 'string' && new RegExp(`^${ANY_ASIN}$`).test(id);
-		return typeof id === 'string' && new RegExp(`^(?:${pattern.stored || pattern.id})$`, pattern.upper ? 'i' : '').test(id);
+		return typeof id === 'string' && patternOf(pattern, id) !== null;
+	}
+
+	/**
+	 * Whether an id is the catalog's fallback for this kind of thing (a Hardcover author kept by the name in
+	 * its address, not its number), which is worth looking up for the usual one.
+	 * @param {string} key
+	 * @param {ExternalKind} kind
+	 * @param {unknown} id
+	 * @returns {boolean}
+	 */
+	static isFallbackId(key, kind, id){
+		const def = BY_KEY.get(key), pattern = def && def.kinds[kind];
+		return !!pattern && typeof id === 'string' && patternOf(pattern, id) === pattern.fallback;
 	}
 
 	/**
@@ -274,7 +315,9 @@ export class ExternalCatalog {
 	 */
 	static url(key, kind, id){
 		const def = BY_KEY.get(key), pattern = def && def.kinds[kind];
-		return pattern && id ? pattern.url.replace('{id}', encodeURIComponent(id)) : null;
+		if(!pattern || !id) return null;
+		// a fallback id's page is its own (Hardcover's by name); anything else is put in the usual address
+		return (patternOf(pattern, id) || pattern).url.replace('{id}', encodeURIComponent(id));
 	}
 
 	/**
@@ -311,7 +354,9 @@ export class ExternalCatalog {
 			if(!pattern || (keys && !keys.includes(def.key))) continue;
 			const cacheKey = def.key + ' ' + kind;
 			let compiled = COMPILED.get(cacheKey);
-			if(!compiled) COMPILED.set(cacheKey, compiled = [...(pattern.also || []), pattern.url].map(p => compile(p, pattern.id)));
+			// the usual id's addresses first, then the fallback's
+			if(!compiled) COMPILED.set(cacheKey, compiled = [pattern, ...(pattern.fallback ? [pattern.fallback] : [])]
+				.flatMap(of => [...(of.also || []), of.url].map(p => compile(p, of.id))));
 			for(const {re, query} of compiled){
 				const m = re.exec(value);
 				if(!m) continue;

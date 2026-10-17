@@ -64,7 +64,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save) and `CatalogDatabase` (`open`, `load`, `save` with the
     revision check that throws `CatalogConflict`, `setAside`; the browser's `indexedDB` is passed in).
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
-    (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`) and
+    (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
     `HardcoverSync` (`run`, `read`, `lookups`/`addIds`, `planExport`).
   Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
   others bring them in with `/** @import {MergeReport} from './merger.js' */`.
@@ -82,7 +82,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group) and `externalLinks`, the page links
   (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, read back with `nameFromPageHash`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
-  Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
+  Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init, {refresh})` (the import page also passes `onHardcoverJob`;
   the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are text marks in memory (`notDuplicates` in backups),

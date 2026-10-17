@@ -10,7 +10,7 @@ import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined,
-	authorPageHref, narratorPageHref, publisherPageHref, nameFromPageHash, externalFields, fillExternalFields, readExternalFields, externalLinks } from './store.js';
+	authorPageHref, narratorPageHref, publisherPageHref, nameFromPageHash, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 /** @import {Child} from './store.js' */
@@ -213,9 +213,14 @@ function homeCreditForm(){
 	if(EDITING !== null && EDITING !== SHOWN) closeCreditForm();
 }
 
-function saveCreditForm(){
+async function saveCreditForm(){
 	const name = EDITING;
 	if(name === null) return;
+	// a Hardcover address is looked up for its number first, unless the form is closed or moved meanwhile
+	const lookup = lookupHardcoverField('cf_ext_', KIND.one);
+	const hardcover = lookup ? await lookup : {error: '', note: ''};
+	if(EDITING !== name) return;
+	if(hardcover.error){ byId('creditFormError').textContent = hardcover.error; return; }
 	const had = kept().get(name);
 	const external = readExternalFields('cf_ext_', KIND.one, had ? had.external : {});
 	if(external.bad.length){ byId('creditFormError').textContent = `Not an id or address there: ${external.bad.join('; ')}.`; return; }
@@ -230,7 +235,7 @@ function saveCreditForm(){
 	}
 	if(entry) kept().set(name, entry); else kept().delete(name);
 	closeCreditForm(); render(); persist();
-	showIoStatus((entry ? `Saved ${KIND.one} info for ${name}.` : `Removed ${KIND.one} info for ${name}.`));
+	showIoStatus((entry ? `Saved ${KIND.one} info for ${name}.` : `Removed ${KIND.one} info for ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
 function removeCreditInfo(){
@@ -263,7 +268,7 @@ export function startCreditsPage(kind){
 	byId('cf_url_label').textContent = KIND.site[0];
 	byId('cf_url').setAttribute('placeholder', KIND.site[1]);
 	fillElement(byId('cf_ext'), externalFields('cf_ext_', KIND.one));
-	byId('creditForm').addEventListener('submit', e=>{ e.preventDefault(); saveCreditForm(); });
+	byId('creditForm').addEventListener('submit', e=>{ e.preventDefault(); return saveCreditForm(); });
 	byId('creditRemoveBtn').addEventListener('click', removeCreditInfo);
 	byId('cancelCredit').addEventListener('click', closeCreditForm);
 	byId('q').addEventListener('input', render);
