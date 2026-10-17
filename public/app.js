@@ -487,7 +487,7 @@ export function openSeries(id){ navigate({view: 'library', series: id, book: nul
  * A book is shown on its own, without the filters, which might hide it.
  * @param {string} id
  */
-function openBook(id){ navigate({view: 'library', series: null, book: id, q: '', author: '', genre: '', read: ''}); }
+export function openBook(id){ navigate({view: 'library', series: null, book: id, q: '', author: '', genre: '', read: ''}); }
 
 // Back and forward (and an address typed or pasted in): show what the address says. The browser puts
 // the scroll position back itself, as the page is redrawn before this returns.
@@ -553,6 +553,10 @@ export function render(){
 
 	if(filtered.length === 0){
 		out.push(buildElement('p', {class: 'empty'}, 'No books match. Try clearing a filter.'));
+	} else if(BOOK_FILTER !== null){
+		fillElement(byId('results'), filtered.map(bookDetails));
+		placeBookForm();
+		return;
 	}
 
 	seriesNames.forEach(name=>{
@@ -795,19 +799,25 @@ const idLink = (catalog, kind, id)=>{
 };
 
 /**
- * An edition as Edition.format() writes it, with each ASIN linking to the book on its site, and its other
- * external ids to the book there (Hardcover's links by id keep working when it renames the book).
+ * An edition's parts as a details list's rows (Edition.parts()), with each ASIN linking to the book on its
+ * site, and its other external ids to the book there (Hardcover's links by id keep working when it renames
+ * the book); its description heads it instead.
  * @param {Edition} ed
- * @param {boolean} narrators whether to name its narrators (not when the book's line names them all)
- * @returns {Child[]}
+ * @returns {[string, Child][]}
  */
-function editionParts(ed, narrators){
+function editionRows(ed){
 	const asins = ()=> joined(ed.asinList().map(([site, asin])=> [site + ' ', idLink(site, 'edition', asin)]), ', ');
-	return joined(ed.parts().filter(([k])=> narrators || k !== 'n').map(([k, label, value])=>{
-		const shown = k === 'asin' ? asins() : k === 'n' ? narratorLinks(ed.narrators)
-			: k === 'p' ? buildElement('a', {href: publisherPageHref(value)}, value) : k.startsWith('ext:') ? idLink(k.slice(4), 'edition', value) : value;
-		return [label ? label + ' ' : '', shown];
-	}), '; ');
+	return ed.parts().filter(([k])=> k !== 'desc').map(([k, label, value])=> [label, k === 'asin' ? asins() : k === 'n' ? narratorLinks(ed.narrators)
+		: k === 'p' ? buildElement('a', {href: publisherPageHref(value)}, value) : k.startsWith('ext:') ? idLink(k.slice(4), 'edition', value) : value]);
+}
+
+/**
+ * A details list (dl) of the rows that have a value.
+ * @param {[string, Child | false | undefined][]} rows
+ * @returns {HTMLElement}
+ */
+function detailList(rows){
+	return buildElement('dl', {class: 'details'}, rows.filter(([, value])=> value).map(([label, value])=> [buildElement('dt', {}, label), buildElement('dd', {}, value)]));
 }
 
 /**
@@ -829,37 +839,74 @@ function seriesHref(id){
 }
 
 /**
+ * The narrators of all of a book's editions, each edition's together ("Ann Vale, Bo Reed / Cy Hale").
+ * @param {Book} b
+ * @returns {Child}
+ */
+function bookNarrators(b){
+	const narrators = [...new Map(b.editions.filter(ed=> ed.narrators.length).map(ed=> [Text.namesText(ed.narrators), ed.narrators])).values()];
+	return narrators.length > 0 && ['narr. ', joined(narrators.map(narratorLinks), ' / ')];
+}
+
+/**
+ * A book's edit, merge and remove buttons.
+ * @param {string} id the book's
+ * @returns {HTMLDivElement}
+ */
+function bookActions(id){
+	const picked = MERGE_FROM === id, from = CATALOG.book(MERGE_FROM);
+	const mergeLabel = picked ? 'Cancel merge' : !from ? 'Merge with another book' : `Merge with ${from.title}`;
+	return buildElement('div', {class: 'book-actions'},
+		buildElement('button', {class: 'iconbtn edit', 'data-id': id, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(id)}, '✎'), ' ',
+		buildElement('button', {class: 'iconbtn merge', 'data-id': id, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(id)}, '⇄'), ' ',
+		buildElement('button', {class: 'iconbtn del', 'data-id': id, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '×'));
+}
+
+/**
+ * A book in the list: only what tells it apart (its title, authors, narrators and when it was read); its
+ * title links to its details (bookDetails).
  * @param {Book} b
  * @returns {HTMLDivElement}
  */
 function bookCard(b){
 	const id = /** @type {string} */ (b.id);
-	// the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
-	const narrators = [...new Map(b.editions.filter(ed=> ed.narrators.length).map(ed=> [Text.namesText(ed.narrators), ed.narrators])).values()];
-	const differ = narrators.length > 1;
-	const meta = joined([authorLinks(b.authors), narrators.length > 0 && ['narr. ', joined(narrators.map(narratorLinks), ' / ')]].filter(Boolean), ' \u2014 ');
-	const editions = b.editions.map(ed=>{
-		const also = (SHARED.get(ed) || []).map(other=>
-			buildElement('a', {href: bookHref(other)}, other.title + (other.number ? ` #${other.number}` : '')));
-		return buildElement('div', {class: 'edition'}, editionParts(ed, differ),
-			also.length > 0 && [buildElement('br'), buildElement('span', {class: 'also'}, 'Also in this edition: ', joined(also, ', '))]);
-	});
-	const picked = MERGE_FROM === id, from = CATALOG.book(MERGE_FROM);
-	const mergeLabel = picked ? 'Cancel merge' : !from ? 'Merge with another book' : `Merge with ${from.title}`;
-	return buildElement('div', {class: 'book' + (picked ? ' picked' : ''), 'data-id': id},
-		buildElement('div', {class: 'num'}, b.number || '\u2022'),
+	return buildElement('div', {class: 'book' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
+		buildElement('div', {class: 'num'}, b.number || '•'),
 		buildElement('div', {class: 'info'},
 			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b)}, b.title)),
-			buildElement('div', {class: 'meta'}, meta),
-			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', ')),
-			Object.keys(b.external).length > 0 && buildElement('div', {class: 'ids'},
-				joined(Object.entries(ExternalCatalog.order(b.external) || {}).map(([key, id])=> [`${ExternalCatalog.name(key)} book `, idLink(key, 'book', id)]), '; ')),
-			editions,
-			b.genres.length > 0 && buildElement('div', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))),
-		buildElement('div', {class: 'book-actions'},
-			buildElement('button', {class: 'iconbtn edit', 'data-id': id, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(id)}, '\u270E'), ' ',
-			buildElement('button', {class: 'iconbtn merge', 'data-id': id, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(id)}, '\u21C4'), ' ',
-			buildElement('button', {class: 'iconbtn del', 'data-id': id, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '\u00D7')));
+			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
+			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', '))),
+		bookActions(id));
+}
+
+/**
+ * A book shown on its own (#book=<id>): everything about it, with each edition's parts.
+ * @param {Book} b
+ * @returns {HTMLDivElement}
+ */
+function bookDetails(b){
+	const id = /** @type {string} */ (b.id);
+	const series = b.series && CATALOG.idFor('series', b.series);
+	const editions = b.editions.map((ed, i)=>{
+		const also = (SHARED.get(ed) || []).map(other=>
+			buildElement('a', {href: bookHref(other)}, other.title + (other.number ? ` #${other.number}` : '')));
+		return buildElement('div', {class: 'edition'},
+			buildElement('h3', {}, b.editions.length > 1 ? `Edition ${i + 1}` : 'Edition', ed.description && ': ' + ed.description),
+			detailList([...editionRows(ed), ['Also in this edition', also.length > 0 && joined(also, ', ')]]));
+	});
+	return buildElement('div', {class: 'book book-details' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
+		buildElement('div', {class: 'num'}, b.number || '•'),
+		buildElement('div', {class: 'info'},
+			buildElement('h2', {class: 'title'}, b.title),
+			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
+			detailList([
+				['Series', series && [buildElement('a', {href: seriesHref(series)}, b.series), b.number && ` #${b.number}`]],
+				['Read', b.read.length > 0 && b.read.join(', ')],
+				['Genres', b.genres.length > 0 && buildElement('span', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))],
+				...Object.entries(ExternalCatalog.order(b.external) || {}).map(([key, value])=>
+					/** @type {[string, Child]} */ ([`${ExternalCatalog.name(key)} book`, idLink(key, 'book', value)]))]),
+			editions),
+		bookActions(id));
 }
 
 /**

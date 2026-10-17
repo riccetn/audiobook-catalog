@@ -2,6 +2,12 @@
 
 **Add new Audible purchases or Goodreads books**: see [Audible](audible.md) and [Goodreads](goodreads.md).
 
+**A book's card and its details**: a book's card in the list shows only its title, series number, authors,
+narrators and dates read. Its title opens the book's details (`#book=…`): its series and number, dates read,
+genres, its ids in external catalogs, and each of its editions with every part (description, narrators,
+ASINs, other catalogs' ids, ISBN, publisher, release date, length, and the other books of a box set it is on).
+The edit, merge and remove buttons are on both.
+
 **Edit in the app**
 
 Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
@@ -27,10 +33,10 @@ editions), or the address of its page (`https://www.goodreads.com/work/editions/
 Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address. Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. The narrator is on the edition too: the card
-lists the narrators of all a book's editions, and each edition line names its own when they differ;
+lists the narrators of all a book's editions, and the book's details name each edition's;
 searching finds narrators and descriptions. To tie a box set to
 its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on each title: the details you typed on one
-are copied to the others. On the card, each of an edition's ASINs links to the book on its site
+are copied to the others. In a book's details, each of an edition's ASINs links to the book on its site
 (`audible.co.uk/pd/…`, `amazon.com/dp/…`), its Goodreads id to the book on Goodreads, and its Hardcover ids
 to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
 when Hardcover renames the book). Every change is saved in the browser as you make it (see
@@ -115,8 +121,8 @@ searching for an ASIN, a Goodreads id or a publisher works too.
 
 **Link to a series, a book or a search**: the address after the `#` says what the catalog shows, so
 you can bookmark it, share it with yourself or reload it: `#series=…` (a series, from its name in the
-overview), `#standalone`, `#book=…` (a book's title on its card links here, as do the other titles of a
-box set), `#books` (all books), and the search and filters on top:
+overview), `#standalone`, `#book=…` (the book's details: its title on its card links here, as do the other titles of a
+box set in their details), `#books` (all books), and the search and filters on top:
 `#books&q=quenby&genre=Fantasy&read=2023` (`read=undated` for books with no date read), or
 `#q=coast&missing` in the series overview. The browser's back and forward buttons step through what
 you looked at: each series, book, view and filter you pick is one step, and so is a search, however

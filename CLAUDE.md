@@ -101,7 +101,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
 - `app.js` (`index.html`): series overview (from the series records alone), all books (50 at a time, `PAGE_SIZE`, `showMore`;
-  `refreshView` reads what is shown again; an empty catalog says where books come from), the book and
+  `refreshView` reads what is shown again; an empty catalog says where books come from; a book's card, `bookCard`, holds only its title, number,
+authors, narrators and dates read, and `#book=<id>` shows everything else, `bookDetails`), the book and
   series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=<id>,<id>`.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`CATALOG.validate`)
   and Box sets (`addBoxSets`), the Hardcover panel (`HardcoverSync.run`

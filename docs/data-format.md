@@ -45,7 +45,7 @@ audible.com ASIN.
 
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those
 titles, with the same ASIN, Goodreads id or ISBN; that shared identifier is what ties them together.
-The page shows "Also in this edition: …" on each of them, and editing the edition on one updates it on
+The details of each of them show "Also in this edition: …", and editing the edition on one updates it on
 the others. **Check** warns when the copies disagree. A box set is also a book of its own, whose
 series number is the range it holds (`"sn": "2-3"`), with the same edition. Imports keep a box set this
 way, as its own book and as its titles ([Box sets](imports.md#box-sets)), and **Box sets** on the
