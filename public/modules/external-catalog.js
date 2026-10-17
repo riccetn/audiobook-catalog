@@ -1,5 +1,5 @@
 // The catalogs outside this one that books, editions, series and people have ids in: each Audible and
-// Amazon site, Goodreads and Hardcover. The catalog keeps only the ids, under the catalog's key
+// Amazon site, Goodreads, Hardcover, Open Library, ISFDB, BookBrainz and Wikidata. The catalog keeps only the ids, under the catalog's key
 // (`{"audible.com": "B0…", "goodreads": "4242"}`); each catalog's definition says how to make the address
 // of an id and how to read the id back out of an address, for each kind of thing it has pages for.
 import {Text} from './text.js';
@@ -36,6 +36,11 @@ const ASIN = '[A-Za-z0-9]{10}', ANY_ASIN = '[A-Za-z0-9]+';
 const NUMBER = '\\d+';
 const SLUG = '[A-Za-z0-9][A-Za-z0-9-]*';
 const NAME = '.+';
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+/** @type {(letter: string) => string} an Open Library id: OL, a number and the letter of its kind (W, M or A) */
+const OPEN_LIBRARY = letter => `OL\\d+${letter}`;
+/** @type {KindPattern} a Wikidata item, whatever it is */
+const WIKIDATA_ITEM = {id: 'Q\\d+', upper: true, url: 'https://www.wikidata.org/wiki/{id}', also: ['https://www.wikidata.org/entity/{id}']};
 
 // Audible's stores and their sites; an Amazon site per store, and a few without one.
 /** @type {Record<string, string>} */
@@ -98,6 +103,38 @@ const DEFINITIONS = [
 			narrator: {id: SLUG, url: 'https://hardcover.app/authors/{id}'},
 			publisher: {id: SLUG, url: 'https://hardcover.app/publishers/{id}'},
 		}},
+	// The open catalogs: their data is free to use, and they have APIs a later lookup could use.
+	{key: 'openlibrary', name: 'Open Library', group: 'openlibrary', family: 'openlibrary',
+		description: "Open Library, the Internet Archive's open catalog: a book's work (OL…W), an edition (OL…M), an author (OL…A)",
+		kinds: {
+			book: {id: OPEN_LIBRARY('W'), upper: true, url: 'https://openlibrary.org/works/{id}'},
+			edition: {id: OPEN_LIBRARY('M'), upper: true, url: 'https://openlibrary.org/books/{id}'},
+			author: {id: OPEN_LIBRARY('A'), upper: true, url: 'https://openlibrary.org/authors/{id}'},
+		}},
+	{key: 'isfdb', name: 'ISFDB', group: 'isfdb', family: 'isfdb',
+		description: 'The Internet Speculative Fiction Database: a book (a title), an edition (a publication), a series, an author, a publisher, each by its number',
+		kinds: {
+			book: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/title.cgi?{id}'},
+			edition: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/pl.cgi?{id}'},
+			series: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/pe.cgi?{id}'},
+			author: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/ea.cgi?{id}'},
+			publisher: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/publisher.cgi?{id}'},
+		}},
+	{key: 'bookbrainz', name: 'BookBrainz', group: 'bookbrainz', family: 'bookbrainz',
+		description: "BookBrainz, MetaBrainz's open book database: a book (a work), an edition, a series, an author or narrator, a publisher, each by its id (a UUID)",
+		kinds: {
+			book: {id: UUID, url: 'https://bookbrainz.org/work/{id}'},
+			edition: {id: UUID, url: 'https://bookbrainz.org/edition/{id}'},
+			series: {id: UUID, url: 'https://bookbrainz.org/series/{id}'},
+			author: {id: UUID, url: 'https://bookbrainz.org/author/{id}'},
+			narrator: {id: UUID, url: 'https://bookbrainz.org/author/{id}'},
+			publisher: {id: UUID, url: 'https://bookbrainz.org/publisher/{id}'},
+		}},
+	// Wikidata's items don't say what they are in their address, and few audiobook editions have one, so
+	// it gives no edition ids: an item pasted in an edition's field would be taken for the book's.
+	{key: 'wikidata', name: 'Wikidata', group: 'wikidata', family: 'wikidata',
+		description: 'Wikidata: the item (Q…) of a book, a series, an author, a narrator or a publisher',
+		kinds: {book: WIKIDATA_ITEM, series: WIKIDATA_ITEM, author: WIKIDATA_ITEM, narrator: WIKIDATA_ITEM, publisher: WIKIDATA_ITEM}},
 ];
 
 /** @type {CatalogGroup[]} */
@@ -106,6 +143,10 @@ const GROUPS = [
 	{key: 'amazon', name: 'Amazon', default: 'amazon.com'},
 	{key: 'goodreads', name: 'Goodreads', default: 'goodreads'},
 	{key: 'hardcover', name: 'Hardcover', default: 'hardcover'},
+	{key: 'openlibrary', name: 'Open Library', default: 'openlibrary'},
+	{key: 'isfdb', name: 'ISFDB', default: 'isfdb'},
+	{key: 'bookbrainz', name: 'BookBrainz', default: 'bookbrainz'},
+	{key: 'wikidata', name: 'Wikidata', default: 'wikidata'},
 ];
 
 /** @type {Map<string, CatalogDefinition>} */
@@ -128,6 +169,8 @@ function compile(pattern, id){
 		t === '**/' ? '(?:[^/?#]+/)*' : t === '*' ? '[^/?#]*' : t === '{id}' ? `(${id})` : Text.escapeRegExp(t)).join('');
 	let re = '^(?:https?://)?(?:www\\.|m\\.)?' + Text.escapeRegExp(host) + pathRe(path);
 	if(query === undefined) re += '(?=[/?#]|$)';
+	// the whole query is the id (ISFDB's "title.cgi?194342", often written with a "=" after it)
+	else if(query === '{id}') return {re: new RegExp(re + `\\?(${id})=?(?:[&#].*)?$`, 'i'), query: false};
 	else {
 		// a search's id is one of its parameters, wherever it is among them
 		const [name] = query.split('=');

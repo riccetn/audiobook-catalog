@@ -77,6 +77,22 @@ test('external catalogs: an id gives the address of its page, and the address gi
 		['hardcover', 'series', 'gull-isle', 'https://hardcover.app/series/gull-isle'],
 		['hardcover', 'author', 'ann-vale', 'https://hardcover.app/authors/ann-vale'],
 		['hardcover', 'publisher', 'gull-audio', 'https://hardcover.app/publishers/gull-audio'],
+		['openlibrary', 'book', 'OL123W', 'https://openlibrary.org/works/OL123W'],
+		['openlibrary', 'edition', 'OL456M', 'https://openlibrary.org/books/OL456M'],
+		['openlibrary', 'author', 'OL789A', 'https://openlibrary.org/authors/OL789A'],
+		['isfdb', 'book', '194342', 'https://www.isfdb.org/cgi-bin/title.cgi?194342'],
+		['isfdb', 'edition', '1039718', 'https://www.isfdb.org/cgi-bin/pl.cgi?1039718'],
+		['isfdb', 'series', '512', 'https://www.isfdb.org/cgi-bin/pe.cgi?512'],
+		['isfdb', 'author', '77', 'https://www.isfdb.org/cgi-bin/ea.cgi?77'],
+		['isfdb', 'publisher', '54977', 'https://www.isfdb.org/cgi-bin/publisher.cgi?54977'],
+		['bookbrainz', 'book', '0a1b2c3d-0000-4000-8000-000000000001', 'https://bookbrainz.org/work/0a1b2c3d-0000-4000-8000-000000000001'],
+		['bookbrainz', 'edition', '0a1b2c3d-0000-4000-8000-000000000002', 'https://bookbrainz.org/edition/0a1b2c3d-0000-4000-8000-000000000002'],
+		['bookbrainz', 'series', '0a1b2c3d-0000-4000-8000-000000000003', 'https://bookbrainz.org/series/0a1b2c3d-0000-4000-8000-000000000003'],
+		['bookbrainz', 'narrator', '0a1b2c3d-0000-4000-8000-000000000004', 'https://bookbrainz.org/author/0a1b2c3d-0000-4000-8000-000000000004'],
+		['bookbrainz', 'publisher', '0a1b2c3d-0000-4000-8000-000000000005', 'https://bookbrainz.org/publisher/0a1b2c3d-0000-4000-8000-000000000005'],
+		['wikidata', 'book', 'Q1001', 'https://www.wikidata.org/wiki/Q1001'],
+		['wikidata', 'narrator', 'Q1002', 'https://www.wikidata.org/wiki/Q1002'],
+		['wikidata', 'publisher', 'Q1003', 'https://www.wikidata.org/wiki/Q1003'],
 	];
 	for (const [catalog, kind, id, url] of pages) {
 		assert.equal(ExternalCatalog.url(catalog, kind, id), url, `${catalog} ${kind}`);
@@ -92,15 +108,25 @@ test('external catalogs: an id gives the address of its page, and the address gi
 		['https://m.goodreads.com/book/show/4242-the-salt-road', 'edition', 'goodreads', '4242'],
 		['goodreads.com/author/show/7.Ann_Vale', 'author', 'goodreads', '7'],
 		['https://hardcover.app/books/the-salt-road/editions/501', 'edition', 'hardcover', '501'],
+		['https://openlibrary.org/works/OL123W/The_Salt_Road?edition=x', 'book', 'openlibrary', 'OL123W'],
+		['openlibrary.org/books/ol456m', 'edition', 'openlibrary', 'OL456M'],
+		['http://www.isfdb.org/cgi-bin/publisher.cgi?54977=', 'publisher', 'isfdb', '54977'],
+		['isfdb.org/cgi-bin/title.cgi?194342', 'book', 'isfdb', '194342'],
+		['https://m.wikidata.org/wiki/q1002', 'narrator', 'wikidata', 'Q1002'],
+		['http://www.wikidata.org/entity/Q1001', 'book', 'wikidata', 'Q1001'],
 	]) assert.deepEqual(ExternalCatalog.fromAddress(text, kind), { catalog, id }, text);
 	// a page of another kind, another site, or no address at all names nothing
 	for (const [text, kind] of [['https://www.goodreads.com/book/show/4242', 'series'], ['https://hardcover.app/books/the-salt-road', 'edition'],
-		['https://www.kobo.com/dp/B0SALTROAD', 'edition'], ['B0SALTROAD', 'edition'], ['', 'author'], ['https://www.goodreads.com/author/show/ann', 'author']])
+		['https://www.kobo.com/dp/B0SALTROAD', 'edition'], ['B0SALTROAD', 'edition'], ['', 'author'], ['https://www.goodreads.com/author/show/ann', 'author'],
+		['https://www.isfdb.org/cgi-bin/title.cgi?194342', 'edition'], ['https://openlibrary.org/works/OL123M', 'book'], ['https://www.wikidata.org/wiki/Q1001', 'edition']])
 		assert.equal(ExternalCatalog.fromAddress(text, kind), null, text);
 	// Goodreads has no publisher pages, so no publisher ids
 	assert.equal(ExternalCatalog.url('goodreads', 'publisher', '1'), null);
 	assert.equal(ExternalCatalog.siteOf('https://hardcover.app/books/the-salt-road'), 'hardcover');
 	assert.equal(ExternalCatalog.siteOf('https://example.com/hardcover.app'), null);
+	assert.equal(ExternalCatalog.siteOf('https://www.isfdb.org/cgi-bin/ea.cgi?77'), 'isfdb');
+	// a Wikidata item doesn't say whether it is a book or an edition, so it is only ever the book's
+	assert.equal(ExternalCatalog.url('wikidata', 'edition', 'Q1'), null);
 	// every catalog says what it is
 	for (const def of ExternalCatalog.ALL) assert.ok(def.description && Object.keys(def.kinds).length, def.key);
 });
@@ -113,6 +139,10 @@ test('external catalogs: a form field takes an id or an address, and ids are tid
 	assert.deepEqual(ExternalCatalog.tidy({ goodreads: ' 7 ', 'audible.com': 'B0X' }), { 'audible.com': 'B0X', goodreads: '7' });
 	assert.deepEqual(ExternalCatalog.problems({ hardcover: 'x' }, 'book').errors, ["'x' is not Hardcover's id of a book"]);
 	assert.deepEqual(ExternalCatalog.problems({ hardcover: 'ann-vale' }, 'author'), { errors: [], warnings: [] });
+	assert.deepEqual(ExternalCatalog.readId('ol456m', 'edition', 'openlibrary'), { catalog: 'openlibrary', id: 'OL456M' });
+	assert.deepEqual(ExternalCatalog.readId('q1001', 'series', 'wikidata'), { catalog: 'wikidata', id: 'Q1001' });
+	assert.deepEqual(ExternalCatalog.problems({ openlibrary: 'OL123W', wikidata: 'Q1' }, 'edition').errors,
+		["'OL123W' is not Open Library's id of an edition", 'Wikidata has no edition pages, so no edition id']);
 });
 
 // ------------------------------------------------------------------ data
@@ -865,6 +895,11 @@ test('editions as text: formatted for the card and read back from the form', () 
 			{ desc: 'Audio CD' }, { desc: 'First edition' }],
 		bad: ['Goodreads x', 'second description'], book: {},
 	});
+	// every catalog is named as the card names it, its edition's id or (with "book") the book's
+	const ids = { goodreads: '4242', openlibrary: 'OL456M', isfdb: '1039718', bookbrainz: '0a1b2c3d-0000-4000-8000-000000000002' };
+	assert.equal(E({ ext: ids }).format(), 'Goodreads 4242; Open Library OL456M; ISFDB 1039718; BookBrainz 0a1b2c3d-0000-4000-8000-000000000002');
+	assert.deepEqual(json(Edition.parse(`${E({ ext: ids }).format()}; Open Library book OL123W; ISFDB edition https://www.isfdb.org/cgi-bin/pl.cgi?1039718=; Wikidata Q1`)),
+		{ editions: [{ ext: ids }], bad: ['Wikidata Q1'], book: { openlibrary: 'OL123W' } });
 });
 
 test('ASINs by site: read from text, an ASIN without a site is audible.com\'s, and old "id" ASINs are audible.com\'s', () => {

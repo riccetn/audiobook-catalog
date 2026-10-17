@@ -69,7 +69,7 @@ browser keeps the catalog in the current one.
 The series info (`seriesInfo`, `series-info.json` before) maps a series name (it must match `s` exactly) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://...", "ext": {...}}`.
 `total` is the number of books released so far; `url` (an author or publisher site) and `ext` (the
-series' ids on Audible, Goodreads and Hardcover, `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "the-lantern-coast"}`) are optional.
+series' ids in [external catalogs](#external-catalogs), `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "the-lantern-coast"}`) are optional.
 
 ## Authors
 
@@ -100,8 +100,9 @@ The narrator info (`narrators`) and publisher info (`publishers`) work the same 
 `narrators` maps a narrator's name (as an edition's `n` writes it) and `publishers` a publisher's name (as an
 edition's `p` writes it) to a bio and links. For a narrator, the Audible id is their name as Audible's
 narrator search takes it, and Goodreads' and Hardcover's ids are their author pages' (both sites list
-narrators as authors); for a publisher, Audible's id is its name as Audible's publisher search takes it
-and Hardcover's the name in its publisher page's address (Goodreads has no publisher pages). Both are
+narrators as authors), and so is BookBrainz's; for a publisher, Audible's id is its name as Audible's publisher search takes it
+and Hardcover's the name in its publisher page's address (Goodreads has no publisher pages). Both can also have a
+Wikidata item, and a publisher an ISFDB and a BookBrainz id. Both are
 optional (missing means `{}`), and **Check** warns, as for authors, about an entry that matches no edition.
 
 ```json
@@ -122,6 +123,10 @@ pasted into a form. The key in `ext` is the catalog's:
 | `amazon.com`, `amazon.co.uk`, … (each Audible store's Amazon twin, and `amazon.se`, `amazon.nl`, `amazon.pl`, `amazon.com.br`, `amazon.com.mx`) | an Amazon store | an edition's ASIN (`/dp/B0…`) and an author's (`/stores/author/B0…`) |
 | `goodreads` | Goodreads | a book's work (`/work/editions/99`), an edition (`/book/show/4242`), a series (`/series/90001`), an author or narrator (`/author/show/1234`) |
 | `hardcover` | Hardcover | a book (`/id/book/77`), an edition (`/id/edition/501`), a series (`/series/the-lantern-coast`), an author or narrator (`/authors/marisol-quenby`), a publisher (`/publishers/kestrel-row-audio`) |
+| `openlibrary` | Open Library (`openlibrary.org`) | a book's work (`/works/OL123W`), an edition (`/books/OL456M`), an author (`/authors/OL789A`) |
+| `isfdb` | ISFDB, the Internet Speculative Fiction Database (`isfdb.org`) | a book's title (`/cgi-bin/title.cgi?194342`), an edition, which ISFDB calls a publication (`pl.cgi?…`), a series (`pe.cgi?…`), an author (`ea.cgi?…`), a publisher (`publisher.cgi?…`) |
+| `bookbrainz` | BookBrainz (`bookbrainz.org`) | a book's work (`/work/…`), an edition (`/edition/…`), a series, an author or narrator (`/author/…`), a publisher, each by its UUID |
+| `wikidata` | Wikidata (`wikidata.org`) | the item (`/wiki/Q1001`) of a book, a series, an author, a narrator or a publisher; not of an edition, since an item's address doesn't say whether it is a book or an edition |
 
 Every ASIN, on any Audible or Amazon site, names the same edition wherever it is found, so an import
 from one site matches an edition another site gave. **Check** reports an id its catalog doesn't give

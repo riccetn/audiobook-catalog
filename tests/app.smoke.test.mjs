@@ -1312,6 +1312,32 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	assert.equal(get("CATALOG.books[0].idOn('goodreads')"), '990001');
 	assert.match(els.results.innerHTML, /Goodreads book <a href="https:\/\/www\.goodreads\.com\/work\/editions\/990001" target="_blank" rel="noopener">990001<\/a>/);
+
+	// and its work on Open Library, and its item on Wikidata
+	ctx.openEditForm(0);
+	els.f_ext_openlibrary.value = 'https://openlibrary.org/works/OL123W/The_Salt_Road';
+	els.f_ext_wikidata.value = 'q1001';
+	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+	assert.deepEqual(get('CATALOG.books[0].external'), { goodreads: '990001', openlibrary: 'OL123W', wikidata: 'Q1001' });
+});
+
+test('an edition has fields for Goodreads and Hardcover, and one for another catalog once it is picked or used', async () => {
+	const { ctx, els, get } = await boot();
+	ctx.setView('library');
+	ctx.openEditForm(0);
+	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="ext:goodreads"/);
+	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="ext:hardcover"/);
+	assert.doesNotMatch(els.f_editions.innerHTML, /data-k="ext:openlibrary"/);
+	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another catalog<\/option><option value="openlibrary">Open Library<\/option><option value="isfdb">ISFDB<\/option><option value="bookbrainz">BookBrainz<\/option><\/select>/);
+	els.f_editions.listeners.change[0]({ target: { dataset: { addSite: '0' }, value: 'isfdb' } });
+	assert.match(els.f_editions.innerHTML, /<label>ISFDB edition<\/label><input data-i="0" data-k="ext:isfdb" value="" placeholder="id or isfdb\.org address"/);
+	typeEdition(els, 0, 'ext:isfdb', 'https://www.isfdb.org/cgi-bin/pl.cgi?1039718=');
+	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+	assert.equal(get("CATALOG.books[0].editions[0].idOn('isfdb')"), '1039718');
+	// an edition with an id there shows its field
+	ctx.openEditForm(0);
+	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="ext:isfdb" value="1039718"/);
+	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another catalog<\/option><option value="openlibrary">Open Library<\/option><option value="bookbrainz">BookBrainz<\/option><\/select>/);
 });
 
 test('series info can be edited, added and removed in the page', async () => {

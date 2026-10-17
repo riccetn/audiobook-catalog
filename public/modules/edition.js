@@ -1,5 +1,5 @@
 // An edition of a book: its ids in external catalogs (an ASIN per Audible and Amazon site, Goodreads,
-// Hardcover; see ExternalCatalog), its ISBN, narrators, publisher, release date, length and your own
+// Hardcover, Open Library, ...; see ExternalCatalog), its ISBN, narrators, publisher, release date, length and your own
 // description of it ("UK edition"). A box set is one edition on each of its titles, linked by the ids the
 // copies share (sameAs).
 import {Text} from './text.js';
@@ -22,7 +22,11 @@ import {ExternalCatalog} from './external-catalog.js';
  * @property {string} [id] the id it is stored under in this browser, which never changes; a box set's copies share it
  */
 
-const EDITION_PART = /^(asin|goodreads(?:\s+id)?|gr|hardcover(?:\s+book)?(?:\s+id)?|isbns?|publisher|released?|length|narrated\s+by|narrators?|description)\b:?\s*(.*)$/i;
+// The catalogs other than Audible's and Amazon's sites, as format() names them: "Open Library OL1M"
+// (an edition's id), "Hardcover book 77" (the book's).
+const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => def.family !== 'asin');
+const CATALOG_LABEL = `(?:${OTHER_CATALOGS.map(def => Text.escapeRegExp(def.name).replace(/ /g, '\\s+')).join('|')})(?:\\s+(?:book|edition))?(?:\\s+id)?`;
+const EDITION_PART = new RegExp(`^(asin|${CATALOG_LABEL}|gr|isbns?|publisher|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`, 'i');
 // Before ids were kept by external catalog, an edition kept them under keys of their own: its ASINs by
 // site ("asin"), before that one ASIN ("id", audible.com's), its Goodreads id ("gr") and Hardcover id ("hc").
 /** @type {Record<string, string>} */
@@ -447,15 +451,16 @@ export class Edition {
 					Object.assign(ext, read.asins);
 					continue;
 				}
-				else if(label === 'goodreads' || label === 'gr' || label.startsWith('hardcover')){
-					const catalog = label.startsWith('hardcover') ? 'hardcover' : 'goodreads', kind = /book$/.test(label) ? 'book' : 'edition';
+				const named = label === 'gr' ? ExternalCatalog.get('goodreads') : OTHER_CATALOGS.find(def => label.replace(/\s+/g, ' ').startsWith(def.name.toLowerCase()));
+				if(named){
+					const catalog = named.key, kind = /\sbook$/.test(label) ? 'book' : 'edition';
 					const found = ExternalCatalog.readId(value, kind, catalog);
 					if(!found){ bad.push(part); continue; }
 					if(kind === 'book'){ if(!book[catalog]) book[catalog] = found.id; }
 					else put(found, ext, part);
 					continue;
 				}
-				else if(label === 'publisher') [field, v] = ['p', value];
+				if(label === 'publisher') [field, v] = ['p', value];
 				else if(label.startsWith('narrat')) [field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
 				else if(label === 'description') [field, v] = ['desc', ed.desc ? null : value];
 				else if(label.startsWith('releas')) [field, v] = ['d', date];

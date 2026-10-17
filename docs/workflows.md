@@ -9,8 +9,9 @@ list; `+ Add a book` opens it at the top, with the series and author filled in f
 series you are looking at, and the author picked in the author filter (else the author of every book in the
 series). *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
-another Amazon or Audible site), Goodreads id, Hardcover edition, ISBN (hyphens and ISBN-10s are fine), publisher,
-release date (`2021-05`) and length (`10h 42m`). The ASIN, Goodreads and Hardcover edition fields also take the address of the book's
+another Amazon or Audible site), Goodreads id, Hardcover edition (*+ Another catalog* adds a field for its id on Open
+Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publisher,
+release date (`2021-05`) and length (`10h 42m`). The ASIN and other catalogs' edition fields also take the address of the book's
 page on that site (`https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0…`, `https://www.amazon.com/dp/B0…`,
 `https://www.goodreads.com/book/show/4242-the-salt-road`, `https://hardcover.app/books/the-salt-road/editions/501`):
 when you leave the field it shows just the id, and an Audible or Amazon page's ASIN moves to the field for
@@ -22,7 +23,8 @@ it, the address of the book's page (`https://hardcover.app/books/the-salt-road`)
 pages: the page looks the book up on Hardcover and puts its id in the field (when you leave the field, or
 when you save). That needs your Hardcover API token, saved on the *Import & export* page (see
 [Hardcover](hardcover.md)). The Goodreads book field takes the id of the book's work on Goodreads (all its
-editions), or the address of its page (`https://www.goodreads.com/work/editions/99`). Several authors, or several narrators of an
+editions), or the address of its page (`https://www.goodreads.com/work/editions/99`); the Open Library, ISFDB, BookBrainz and
+Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address. Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
@@ -46,7 +48,7 @@ catalogs have changed, merge the backup instead: see [Merge a backup from anothe
 info entry no book has, an untidy name, a link to the wrong site...).
 
 **Authors' bios and links**: the *Authors* page lists every author; each author's page shows a bio,
-links to their website and their pages on Audible, Goodreads and Hardcover, and their series and titles.
+links to their website and their pages on Audible, Goodreads, Hardcover and the other catalogs, and their series and titles.
 Author names on the books link there. See [Authors](authors.md).
 
 **Narrators and publishers**: the *Narrators* and *Publishers* pages list everyone named on the editions,
@@ -55,7 +57,7 @@ each with a page of their bio, links, series and titles; their names on the book
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
-the author site, the series' ids on Audible, Goodreads and Hardcover (the id, or the address of the series'
+the author site, the series' ids on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
 `https://hardcover.app/series/the-lantern-coast`; the series links to each), or to add or remove that info.
 The form checks the same rules as **Check**.
