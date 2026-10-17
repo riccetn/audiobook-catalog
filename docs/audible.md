@@ -3,8 +3,8 @@
 ## Add new Audible purchases
 
 1. Export your library with the Audible Library Extractor.
-2. On the *Import & export* page, press **Audible CSV** and pick the export. For an export from another
-   site than audible.com, pick the site under the buttons first, so its ASINs are kept as that site's.
+2. On the *Import & export* page, press **Import CSV** in the **Audible** panel and pick the export. For an export from another
+   site than audible.com, pick the site beside the button first, so its ASINs are kept as that site's.
 3. The page shows what would change: what is already there, which Audible and Goodreads ids get filled
    in, what is new and what needs a look (for example a book Audible files under several series).
    Nothing changes until you press **Add books**; then, like any edit, it is saved in the browser

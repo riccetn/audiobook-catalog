@@ -2,7 +2,7 @@
 
 ## Import from Goodreads
 
-**Goodreads CSV** under *Add books from an export* on the *Import & export* page takes Goodreads' library
+**Import CSV** in the **Goodreads** panel of the *Import & export* page takes Goodreads' library
 export; it works like [the Audible import](audible.md#add-new-audible-purchases). Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. The edition's narrator comes from the "Additional Authors" column, which is a guess
 (it never replaces a narrator you already have).
@@ -14,7 +14,7 @@ become the title `The First Adventure` in series `Fantasy Adventures`, number `1
 
 ## Export to Goodreads
 
-**Goodreads CSV** under *Export to Goodreads* on the *Import & export* page downloads the catalog as a Goodreads library export,
+**Download CSV** in the **Goodreads** panel of the *Import & export* page downloads the catalog as a Goodreads library export,
 the format Goodreads' [import page](https://www.goodreads.com/review/import) takes. Every book goes on the
 *read* shelf, also those with no date read (a missing date means unknown, not unread), with the series in
 the title (`The First Adventure (Fantasy Adventures, #1)`), the first author as *Author* and the rest as

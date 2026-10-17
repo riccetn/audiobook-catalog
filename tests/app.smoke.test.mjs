@@ -1146,6 +1146,7 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 	// preview: nothing changed yet
 	assert.ok(els.importPreview.classList.contains('open'));
 	assert.equal(els.importPreviewTitle.textContent, 'Audible import');
+	assert.equal(els.importPreview.place, 'after audiblePanel');   // under the panel that asked for it
 	assert.match(els.importPreviewBody.innerHTML, /Already in the catalog: 1/);
 	assert.match(els.importPreviewBody.innerHTML, /ASINs filled in on existing books: 1/);
 	assert.match(els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
@@ -1221,6 +1222,7 @@ test('importing a Goodreads CSV can be canceled', async () => {
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
 	assert.equal(els.importPreviewTitle.textContent, 'Goodreads import');
+	assert.equal(els.importPreview.place, 'after goodreadsPanel');
 	assert.match(els.importPreviewBody.innerHTML, /Zzz New Book — Nobody Yet  \[Zzz Saga #2\]/);
 	els.importCancel.listeners.click[0]();
 	await idle();
@@ -1872,6 +1874,7 @@ test('Merge previews a backup from another device and keeps both sides\' changes
 	els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
 	await idle();
 	assert.equal(els.importPreviewTitle.textContent, 'Merge a backup');
+	assert.equal(els.importPreview.place, 'after backupPanel');
 	assert.ok(els.mergePrefer.classList.contains('show'));
 	assert.match(els.importPreviewBody.innerHTML, /New from the backup: 1<\/p><ul><li>New There — Ann Vale/);
 	assert.match(els.importPreviewBody.innerHTML, /keeping this catalog's: 1<\/p><ul><li>Renamed — Ann Vale \/ backup: Renamed Twice/);
@@ -1936,6 +1939,7 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
 	assert.ok(!els.bgTask.classList.contains('show'));
 	assert.equal(els.importPreviewTitle.textContent, 'Sync with Hardcover: preview');
+	assert.equal(els.importPreview.place, 'after hardcoverPanel');
 	assert.match(els.importPreviewBody.innerHTML, /\+ Tidewater - Ann Vale/);
 	assert.match(els.importPreviewBody.innerHTML, /books to put on your Read shelf: 1\n {4}\+ Lantern Hours - R\. T\. Hale/);
 	assert.doesNotMatch(els.importPreviewBody.innerHTML, /dry run/);
@@ -2264,6 +2268,7 @@ test('Check on the import page lists problems; a catalog in an older format is k
 	els.checkBtn.listeners.click[0]();
 	await idle();
 	const report = els.importPreviewBody.innerHTML;
+	assert.equal(els.importPreview.place, 'after checkPanel');
 	assert.match(report, /1 books, 0 series, 1 with release info, 0 authors, 0 narrators, 0 publishers with info/);
 	assert.match(report, /Errors \(1\):.*'Nowhere' matches no series/s);
 	assert.equal(els.importConfirm.style.display, 'none');

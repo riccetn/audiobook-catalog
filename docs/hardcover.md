@@ -10,7 +10,7 @@ Hardcover, and **Remove token** forgets it. Only save it on a device that is you
 same site can read it too: on GitHub Pages every project site of an account (`<name>.github.io/...`)
 shares one site, so host the app on its own (sub)domain if you publish other pages there.
 
-**Import**, **Export** and **Sync** first show what would happen, and nothing changes, here or on
+**Import**, **Export** and **Import and export** first show what would happen, and nothing changes, here or on
 Hardcover, until you confirm; confirming runs it. The catalog is saved before anything is sent to
 Hardcover. While it runs, a banner on top shows what it is doing (reading your shelves, finding your books
 on Hardcover, putting them on your shelf...), how far it has got (`12 of 40`) and how long it has been
@@ -53,7 +53,7 @@ names until their form is saved.
   that book, so a box set's edition on a title with its own book id is left out. A book with no date read goes on *Read* without a
   read. Dates without a day (`2024-03`) can't be sent and are counted; books Hardcover can't be found by
   are listed: give them a `Hardcover <edition id>` in the edit form (the number in the edition's address).
-- **Sync** imports, then exports.
+- **Import and export** imports, then exports.
 
 Nothing is ever changed or removed on either side: a book on another Hardcover shelf (*Want to Read*,
 *Did Not Finish*, ...) is listed and left alone, and ratings and reviews are not touched. Running it again

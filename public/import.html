@@ -28,27 +28,114 @@
 	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
 	<p id="ioStatus" class="ioStatus"></p>
 
-	<section class="panel">
-		<h2>Add books from an export</h2>
-		<p>Pick an Audible Library Extractor CSV or a Goodreads library export. You see what would change before anything does.</p>
-		<div class="rowbtns">
-			<button class="iconbtn2" id="importAudibleBtn" title="Add finished books from an Audible Library Extractor CSV">Audible CSV</button>
-			<button class="iconbtn2" id="importGoodreadsBtn" title="Add read audiobooks from a Goodreads library export CSV">Goodreads CSV</button>
-			<input type="file" id="importCsvFile" accept=".csv,text/csv" style="display:none">
+	<h2 class="pageSection">External catalogs</h2>
+	<p class="hint">Each import shows what would change before anything does, and only adds: it never changes or removes a book.</p>
+
+	<section class="panel" id="audiblePanel">
+		<h2>Audible <span class="via">CSV file</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Import</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="importAudibleBtn" title="Add finished books from an Audible Library Extractor CSV">Import CSV</button>
+				<label>ASINs from
+					<select id="audibleImportSite" title="The Audible site your library export is from">
+						<option value="audible.com">audible.com</option>
+						<option value="audible.co.uk">audible.co.uk</option>
+						<option value="audible.de">audible.de</option>
+						<option value="audible.fr">audible.fr</option>
+						<option value="audible.it">audible.it</option>
+						<option value="audible.es">audible.es</option>
+						<option value="audible.ca">audible.ca</option>
+						<option value="audible.com.au">audible.com.au</option>
+						<option value="audible.in">audible.in</option>
+						<option value="audible.co.jp">audible.co.jp</option>
+					</select></label>
+			</div>
+			<p class="ioNote">Adds the finished books in an Audible Library Extractor CSV.</p>
 		</div>
-		<p><label>The Audible CSV's ASINs are from
-			<select id="audibleImportSite" title="The Audible site your library export is from">
-				<option value="audible.com">audible.com</option>
-				<option value="audible.co.uk">audible.co.uk</option>
-				<option value="audible.de">audible.de</option>
-				<option value="audible.fr">audible.fr</option>
-				<option value="audible.it">audible.it</option>
-				<option value="audible.es">audible.es</option>
-				<option value="audible.ca">audible.ca</option>
-				<option value="audible.com.au">audible.com.au</option>
-				<option value="audible.in">audible.in</option>
-				<option value="audible.co.jp">audible.co.jp</option>
-			</select></label></p>
+		<div class="ioRow">
+			<span class="ioLabel">Export</span>
+			<p class="ioNote">Audible can't take a list of books.</p>
+		</div>
+	</section>
+
+	<section class="panel" id="goodreadsPanel">
+		<h2>Goodreads <span class="via">CSV file</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Import</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="importGoodreadsBtn" title="Add read audiobooks from a Goodreads library export CSV">Import CSV</button>
+			</div>
+			<p class="ioNote">Adds the read audiobooks in a Goodreads library export.</p>
+		</div>
+		<div class="ioRow">
+			<span class="ioLabel">Export</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="exportGoodreadsBtn" title="Download a CSV for Goodreads' import">Download CSV</button>
+			</div>
+			<p class="ioNote">A CSV of every book for Goodreads' <a href="https://www.goodreads.com/review/import" target="_blank" rel="noopener">import page</a>: on the <em>read</em> shelf, with the latest date read, genres as shelves, and the Goodreads id and ISBN of an edition so Goodreads picks that edition.</p>
+		</div>
+	</section>
+
+	<section class="panel" id="hardcoverPanel">
+		<h2>Hardcover <span class="via">Online</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Import</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="hardcoverImportBtn" title="Add the books on your Hardcover Read shelf">Import</button>
+			</div>
+			<p class="ioNote">Adds the books on your Hardcover <em>Read</em> shelf.</p>
+		</div>
+		<div class="ioRow">
+			<span class="ioLabel">Export</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="hardcoverExportBtn" title="Put your books on your Hardcover Read shelf">Export</button>
+				<button class="iconbtn2" id="hardcoverSyncBtn" title="Import, then export">Import and export</button>
+			</div>
+			<p class="ioNote">Puts your books on your Read shelf with their dates read. Nothing on Hardcover is changed or removed.</p>
+		</div>
+		<div class="ioRow">
+			<span class="ioLabel">Token</span>
+			<div class="rowbtns">
+				<input type="password" id="hardcoverToken" placeholder="Hardcover API token" autocomplete="off" spellcheck="false">
+				<button class="iconbtn2" id="hardcoverTokenSave" title="Keep this token in this browser">Save token</button>
+				<button class="iconbtn2" id="hardcoverTokenRemove" title="Forget the token in this browser">Remove token</button>
+			</div>
+			<p class="ioNote" id="hardcoverTokenState"></p>
+		</div>
+	</section>
+
+	<h2 class="pageSection">This catalog</h2>
+
+	<section class="panel" id="backupPanel">
+		<h2>Backups <span class="via">JSON file</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Backup</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="exportBtn" title="Download a backup JSON file">Export</button>
+				<button class="iconbtn2" id="importBtn" title="Restore from a backup JSON file, or from data files">Restore</button>
+				<button class="iconbtn2" id="mergeBtn" title="Merge a backup from another device into this catalog">Merge</button>
+				<input type="file" id="importFile" accept="application/json,.json,.txt,text/plain" multiple style="display:none">
+				<input type="file" id="mergeFile" accept="application/json" style="display:none">
+			</div>
+			<p class="ioNote">The catalog lives in this browser only, so export a backup now and then: it has the books, the series and author info
+				and the list of books imports skip. Restore replaces the catalog with a backup, or with the data files of a catalog
+				from before it lived in the browser (pick <code>books.json</code>, <code>series-info.json</code>, <code>authors.json</code>,
+				<code>excluded.txt</code> and <code>not-duplicates.txt</code> together). Merge combines a backup from another device (your phone, say) with this catalog when both have changed.</p>
+		</div>
+	</section>
+
+	<section class="panel" id="checkPanel">
+		<h2>Check</h2>
+		<div class="ioRow">
+			<span class="ioLabel">Check</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="checkBtn" title="Check the books, series info and author info for problems">Check</button>
+				<button class="iconbtn2" id="boxSetsBtn" title="Keep each box set as its own book and as its titles">Box sets</button>
+			</div>
+			<p class="ioNote">Check lists errors and anything that needs a look. Box sets keeps each box set both as its own book and
+				as its titles, as imports do now; it shows what it would add before changing anything.</p>
+		</div>
 	</section>
 
 	<div id="importPreview" class="importPreview">
@@ -61,55 +148,7 @@
 			<button type="button" id="importCancel">Cancel</button>
 		</div>
 	</div>
-
-	<section class="panel" id="hardcoverPanel">
-		<h2>Hardcover</h2>
-		<p><strong>Import</strong> adds the books on your Hardcover <em>Read</em> shelf, <strong>Export</strong> puts your books on it with their dates read, and <strong>Sync</strong> does both. Nothing is changed or removed on either side, and you see what would happen first.</p>
-		<div class="rowbtns">
-			<button class="iconbtn2" id="hardcoverImportBtn" title="Add the books on your Hardcover Read shelf">Import</button>
-			<button class="iconbtn2" id="hardcoverExportBtn" title="Put your books on your Hardcover Read shelf">Export</button>
-			<button class="iconbtn2" id="hardcoverSyncBtn" title="Import, then export">Sync</button>
-		</div>
-		<p id="hardcoverTokenState"></p>
-		<div class="rowbtns">
-			<input type="password" id="hardcoverToken" placeholder="Hardcover API token" autocomplete="off" spellcheck="false">
-			<button class="iconbtn2" id="hardcoverTokenSave" title="Keep this token in this browser">Save token</button>
-			<button class="iconbtn2" id="hardcoverTokenRemove" title="Forget the token in this browser">Remove token</button>
-		</div>
-	</section>
-
-	<section class="panel">
-		<h2>Check the catalog</h2>
-		<p>Check lists errors and anything that needs a look. Box sets keeps each box set both as its own book and
-			as its titles, as imports do now; it shows what it would add before changing anything.</p>
-		<div class="rowbtns">
-			<button class="iconbtn2" id="checkBtn" title="Check the books, series info and author info for problems">Check</button>
-			<button class="iconbtn2" id="boxSetsBtn" title="Keep each box set as its own book and as its titles">Box sets</button>
-		</div>
-	</section>
-
-	<section class="panel">
-		<h2>Export to Goodreads</h2>
-		<p>Downloads a CSV of every book for Goodreads' <a href="https://www.goodreads.com/review/import" target="_blank" rel="noopener">import page</a>: on the <em>read</em> shelf, with the latest date read, genres as shelves, and the Goodreads id and ISBN of an edition so Goodreads picks that edition.</p>
-		<div class="rowbtns">
-			<button class="iconbtn2" id="exportGoodreadsBtn" title="Download a CSV for Goodreads' import">Goodreads CSV</button>
-		</div>
-	</section>
-
-	<section class="panel">
-		<h2>Backups</h2>
-		<p>The catalog lives in this browser only, so export a backup now and then: it has the books, the series and author info
-			and the list of books imports skip. Restore replaces the catalog with a backup, or with the data files of a catalog
-			from before it lived in the browser (pick <code>books.json</code>, <code>series-info.json</code>, <code>authors.json</code>,
-			<code>excluded.txt</code> and <code>not-duplicates.txt</code> together). Merge combines a backup from another device (your phone, say) with this catalog when both have changed.</p>
-		<div class="rowbtns">
-			<button class="iconbtn2" id="exportBtn" title="Download a backup JSON file">Export</button>
-			<button class="iconbtn2" id="importBtn" title="Restore from a backup JSON file, or from data files">Restore</button>
-			<button class="iconbtn2" id="mergeBtn" title="Merge a backup from another device into this catalog">Merge</button>
-			<input type="file" id="importFile" accept="application/json,.json,.txt,text/plain" multiple style="display:none">
-			<input type="file" id="mergeFile" accept="application/json" style="display:none">
-		</div>
-	</section>
+	<input type="file" id="importCsvFile" accept=".csv,text/csv" style="display:none">
 </div>
 
 <script type="module" src="import.js"></script>

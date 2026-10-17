@@ -69,6 +69,17 @@ h1{
 .panel .option{display:block; margin-top:.6rem; color:var(--ink-soft);}
 .rowbtns select, .rowbtns input{padding:.45rem .6rem; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.82rem;}
 .rowbtns input{flex:1 1 14rem; min-width:0;}
+.pageSection{margin:1.6rem 0 .3rem; font-family:'Lora',Georgia,serif; font-size:1.15rem; font-weight:600;}
+.panel h2 .via{margin-left:.4rem; padding:.1rem .45rem; border:1px solid var(--line); border-radius:6px; font-family:system-ui,sans-serif; font-size:.72rem; font-weight:600; color:var(--ink-soft); vertical-align:middle;}
+/* every catalog's panel has the same rows: a label, its buttons, and a line on what they do */
+.ioRow{display:grid; grid-template-columns:4.5rem minmax(0,1fr); column-gap:.8rem; align-items:center; padding:.6rem 0; border-top:1px solid var(--line);}
+.ioRow:first-of-type{border-top:none;}
+.ioLabel{font-weight:600; color:var(--ink-soft);}
+.ioRow .ioNote{grid-column:2; margin:.35rem 0 0; font-size:.82rem;}
+.ioRow .ioLabel + .ioNote{grid-column:2; margin:0;}
+.ioRow .ioNote:empty{display:none;}
+.ioRow label{color:var(--ink-soft);}
+.ioRow .ioNote a{color:var(--moss);}
 .ioStatus{font-size:.78rem; color:var(--moss); margin:-.6rem 0 1rem; min-height:1em;}
 .ioStatus.err{color:#b0453f;}
 /* a Hardcover run going on in the background (store.js) */
