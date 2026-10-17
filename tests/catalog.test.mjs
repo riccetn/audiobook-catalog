@@ -1770,7 +1770,7 @@ test('records: what a record has no place for is named, so it is fixed before it
 
 test('the database saves only what changed, refuses a save over another tab\'s, and pages through an index', async () => {
 	const factory = new FakeIndexedDB();
-	const db = await CatalogDatabase.open(factory);
+	const db = await CatalogDatabase.open(factory, undefined, FakeKeyRange);
 	assert.equal(await db.load(), null, 'nothing saved yet');
 	const catalog = shelf();
 	const records = recordsOf(catalog);
@@ -1801,6 +1801,29 @@ test('the database saves only what changed, refuses a save over another tab\'s, 
 	assert.deepEqual((await ask(tx.objectStore('credits').index('byTitle').getAll(FakeKeyRange.bound([narrator], [narrator, []])))).map(c => c.bookId), ['id-4']);
 	assert.deepEqual((await ask(tx.objectStore('books').index('words').getAll(FakeKeyRange.bound('orch', 'orch\uffff')))).map(b => b.title).sort(),
 		['Orchard Cycle, Books 1-2', 'Orchard Frost', 'The Glass Orchard']);
+
+	// the same through a reader: one transaction, keyset pages, prefixes, distinct keys, a walk that keeps nothing
+	factory.resetReads();
+	const read = await db.read(async r => {
+		const first = await r.page('books', 'byTitle', null, 2);
+		const next = await r.page('books', 'byTitle', [first[1].sortTitle, first[1].id], 2);
+		const inSeries = await r.under('books', 'bySeries', [series]);
+		const genres = await r.keys('books', 'genres');
+		const byKey = await r.get('books', [inSeries[0].id, 'no-such-id', inSeries[0].id]);
+		/** @type {string[]} */
+		const walked = [];
+		await r.walk('books', 'byTitle', null, b => walked.push(b.title));
+		return {first, next, inSeries, genres, byKey, walked, count: await r.count('books')};
+	});
+	assert.equal(read.revision, 2);
+	assert.deepEqual(read.result.first.map(b => b.title), ['The Glass Orchard', 'Orchard Cycle, Books 1-2']);
+	assert.deepEqual(read.result.next.map(b => b.title), ['Orchard Frost', 'A Quieter Harbor']);
+	assert.deepEqual(read.result.inSeries.map(b => b.number), ['1', '2', '1-2']);
+	assert.deepEqual(read.result.genres, [...new Set(records.books.flatMap(b => b.genres))].sort());
+	assert.deepEqual(read.result.byKey.map(b => b.id), [read.result.inSeries[0].id]);
+	assert.equal(read.result.walked.length, 4);
+	assert.equal(read.result.count, 4);
+	assert.equal(factory.reads('books'), 2 + 2 + 3 + 1 + 4, 'distinct keys and counts read no records');
 
 	// set aside: the catalog is emptied, what was stored is kept under meta
 	assert.equal(await db.setAside(loaded.records), 3);
@@ -1881,7 +1904,7 @@ test('records: external ids are kept by catalog and indexed; records from before
 		};
 		req.onerror = () => reject(req.error);
 	});
-	const db = await CatalogDatabase.open(factory);
+	const db = await CatalogDatabase.open(factory, undefined, FakeKeyRange);
 	const books = db.db.transaction('books', 'readonly').objectStore('books');
 	assert.ok(books.indexNames.contains('externalKeys') && !books.indexNames.contains('hardcoverId'), 'the indexes are brought up to date');
 	const loaded = await db.load();

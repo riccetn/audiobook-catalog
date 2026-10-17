@@ -39,6 +39,142 @@ function committed(tx){
 	});
 }
 
+/**
+ * Reads in one read-only transaction, so what they return is one revision of the catalog: records by key,
+ * a page of an index (keyset paging: the next page starts after the last key shown), an index's distinct
+ * keys, and counts. The key ranges come from the browser's IDBKeyRange, which the database was opened with.
+ */
+export class CatalogReader {
+	/**
+	 * @param {IDBTransaction} tx
+	 * @param {typeof IDBKeyRange} keyRange
+	 */
+	constructor(tx, keyRange){
+		this.tx = tx;
+		this.keyRange = keyRange;
+	}
+
+	/**
+	 * The store, or one of its indexes.
+	 * @param {string} store
+	 * @param {string} [index]
+	 * @returns {IDBObjectStore | IDBIndex}
+	 */
+	source(store, index){
+		const os = this.tx.objectStore(store);
+		return index ? os.index(index) : os;
+	}
+
+	/**
+	 * The records under these keys, in their order, leaving out keys with none.
+	 * @param {string} store
+	 * @param {IDBValidKey[]} keys
+	 * @returns {Promise<any[]>}
+	 */
+	async get(store, keys){
+		const os = this.tx.objectStore(store);
+		const found = await Promise.all([...new Set(keys)].map(key => requested(os.get(key))));
+		return found.filter(rec => rec !== undefined);
+	}
+
+	/**
+	 * The records with keys in `query` (a key, an IDBKeyRange, or null for all), in index order, at most `count`.
+	 * @param {string} store
+	 * @param {string | undefined} index
+	 * @param {IDBValidKey | IDBKeyRange | null} [query]
+	 * @param {number} [count]
+	 * @returns {Promise<any[]>}
+	 */
+	all(store, index, query = null, count){
+		return requested(this.source(store, index).getAll(query, count));
+	}
+
+	/**
+	 * The records whose index key starts with `prefix` (a compound key's first parts), in index order.
+	 * @param {string} store
+	 * @param {string} index
+	 * @param {IDBValidKey[]} prefix
+	 * @param {number} [count]
+	 * @returns {Promise<any[]>}
+	 */
+	under(store, index, prefix, count){
+		return this.all(store, index, this.keyRange.bound(prefix, [...prefix, []]), count);
+	}
+
+	/**
+	 * Up to `count` records after `after` (an index key shown last; null for the first page), in index
+	 * order, and below `upper` when given, e.g. the next books of one person (["id-7"] + [[]] as the end).
+	 * @param {string} store
+	 * @param {string | undefined} index
+	 * @param {IDBValidKey | null} after
+	 * @param {number} count
+	 * @param {IDBValidKey} [lower] where the list starts (when `after` is null)
+	 * @param {IDBValidKey} [upper] where it ends
+	 * @returns {Promise<any[]>}
+	 */
+	page(store, index, after, count, lower, upper){
+		const from = after !== null ? after : lower;
+		const open = after !== null;
+		const range = from === undefined ? (upper === undefined ? null : this.keyRange.upperBound(upper, true))
+			: upper === undefined ? this.keyRange.lowerBound(from, open) : this.keyRange.bound(from, upper, open, true);
+		return this.all(store, index, range, count);
+	}
+
+	/**
+	 * The distinct keys of an index (a multiEntry index's values: every genre), in order, without reading any record.
+	 * @param {string} store
+	 * @param {string} index
+	 * @returns {Promise<IDBValidKey[]>}
+	 */
+	keys(store, index){
+		return new Promise((resolve, reject) => {
+			/** @type {IDBValidKey[]} */
+			const out = [];
+			const req = this.source(store, index).openKeyCursor(null, 'nextunique');
+			req.onsuccess = () => {
+				const cursor = req.result;
+				if(!cursor){ resolve(out); return; }
+				out.push(cursor.key);
+				cursor.continue();
+			};
+			req.onerror = () => reject(req.error);
+		});
+	}
+
+	/**
+	 * How many records have keys in `query` (all of them with none).
+	 * @param {string} store
+	 * @param {string} [index]
+	 * @param {IDBValidKey | IDBKeyRange | null} [query]
+	 * @returns {Promise<number>}
+	 */
+	count(store, index, query = null){
+		return requested(this.source(store, index).count(query ?? undefined));
+	}
+
+	/**
+	 * Go through the records with keys in `query` one at a time, in index order, keeping none: `each` gets
+	 * every record's value as the cursor reaches it.
+	 * @param {string} store
+	 * @param {string | undefined} index
+	 * @param {IDBValidKey | IDBKeyRange | null} query
+	 * @param {(value: any) => void} each
+	 * @returns {Promise<void>}
+	 */
+	walk(store, index, query, each){
+		return new Promise((resolve, reject) => {
+			const req = this.source(store, index).openCursor(query);
+			req.onsuccess = () => {
+				const cursor = req.result;
+				if(!cursor){ resolve(); return; }
+				each(cursor.value);
+				cursor.continue();
+			};
+			req.onerror = () => reject(req.error);
+		});
+	}
+}
+
 /** The open database. */
 export class CatalogDatabase {
 	static NAME = 'audiobook-catalog';
@@ -48,18 +184,23 @@ export class CatalogDatabase {
 	/** @type {(StoreName | 'meta')[]} every store, the records' and meta */
 	static ALL_STORES = [...CatalogRecords.STORE_NAMES, 'meta'];
 
-	/** @param {IDBDatabase} db */
-	constructor(db){
+	/**
+	 * @param {IDBDatabase} db
+	 * @param {typeof IDBKeyRange} keyRange
+	 */
+	constructor(db, keyRange){
 		this.db = db;
+		this.keyRange = keyRange;
 	}
 
 	/**
 	 * Open (and on first use, make) the database.
 	 * @param {IDBFactory} factory the browser's indexedDB
 	 * @param {string} [name]
+	 * @param {typeof IDBKeyRange} [keyRange] the browser's IDBKeyRange
 	 * @returns {Promise<CatalogDatabase>}
 	 */
-	static open(factory, name = CatalogDatabase.NAME){
+	static open(factory, name = CatalogDatabase.NAME, keyRange = globalThis.IDBKeyRange){
 		return new Promise((resolve, reject) => {
 			const req = factory.open(name, CatalogDatabase.VERSION);
 			req.onupgradeneeded = () => CatalogDatabase.upgrade(req.result, /** @type {IDBTransaction} */ (req.transaction));
@@ -67,7 +208,7 @@ export class CatalogDatabase {
 				const db = req.result;
 				// a newer version of the app, opened in another tab, needs this connection out of its way
 				db.onversionchange = () => db.close();
-				resolve(new CatalogDatabase(db));
+				resolve(new CatalogDatabase(db, keyRange));
 			};
 			req.onerror = () => reject(req.error);
 			req.onblocked = () => reject(new Error('an older version of the app is open in another tab; close it'));
@@ -90,6 +231,20 @@ export class CatalogDatabase {
 			for(const [index, keyPath, options] of spec.indexes) if(!os.indexNames.contains(index)) os.createIndex(index, keyPath, options);
 		}
 		if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath: 'key'});
+	}
+
+	/**
+	 * Read with `fn` in one read-only transaction (see CatalogReader); returns what it returns, and the
+	 * revision the records are (null when nothing was ever saved).
+	 * @template T
+	 * @param {(reader: CatalogReader) => Promise<T>} fn
+	 * @returns {Promise<{result: T, revision: number | null}>}
+	 */
+	async read(fn){
+		const tx = this.db.transaction(CatalogDatabase.ALL_STORES, 'readonly');
+		const reader = new CatalogReader(tx, this.keyRange);
+		const [meta, result] = await Promise.all([requested(tx.objectStore('meta').get('revision')), fn(reader)]);
+		return {result, revision: meta ? meta.value : null};
 	}
 
 	/** @returns {Promise<number | null>} the revision saved last, or null when nothing was ever saved */

@@ -13,7 +13,7 @@ import { Book } from '../public/modules/book.js';
 import { Exclusions } from '../public/modules/exclusions.js';
 import { Duplicates } from '../public/modules/duplicates.js';
 import { CatalogRecords } from '../public/modules/catalog-records.js';
-import { FakeIndexedDB } from './fake-indexeddb.mjs';
+import { FakeIndexedDB, FakeKeyRange } from './fake-indexeddb.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The app is the public/ folder, what a static server serves; the demo data stays outside it.
@@ -291,7 +291,7 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 	const Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 	const database = databaseOf(storage);
 	const crypto = { randomUUID: () => database.newId() };
-	const context = vm.createContext({ document, Node, navigator, localStorage, indexedDB: database, crypto, fetch, FileReader, location, history,
+	const context = vm.createContext({ document, Node, navigator, localStorage, indexedDB: database, IDBKeyRange: FakeKeyRange, crypto, fetch, FileReader, location, history,
 		addEventListener, console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
 	const [entry] = entryOf(page);
 	const namespaces = await runModules(entry, context);
