@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 /**
  * A stand-in for Hardcover's GraphQL API, answering the queries the page sends from `state`: {shelf
- * (user_books rows), books, editions (rows by id), goodreads ({Goodreads id: Hardcover book id})}.
+ * (user_books rows), books, editions (rows by id), goodreads ({Goodreads id: Hardcover book id}), series, authors,
+ * publishers (lists of rows with a slug)}.
  * Mutations change `state.shelf`. Built from Hardcover's published schema; the real API is not reached.
  */
 export function fakeHardcover(state) {
@@ -22,6 +23,11 @@ export function fakeHardcover(state) {
 		if (query.startsWith('query Books')) return answer({ books: variables.ids.map(id => state.books[id]).filter(Boolean) });
 		if (query.startsWith('query Editions')) return answer({ editions: pick(variables.ids) });
 		if (query.startsWith('query BookBySlug')) return answer({ books: Object.values(state.books).filter(b => b.slug === variables.slug).slice(0, 1) });
+		const bySlug = /^query (Series|Author|Publisher)BySlug/.exec(query);
+		if (bySlug) {
+			const table = { Series: 'series', Author: 'authors', Publisher: 'publishers' }[bySlug[1]];
+			return answer({ [table]: (state[table] || []).filter(row => row.slug === variables.slug).slice(0, 1) });
+		}
 		if (query.startsWith('query EditionBook')) {
 			const e = state.editions[variables.id];
 			return answer({ editions: e ? [{ book_id: e.book_id, book: { title: state.books[e.book_id].title } }] : [] });
@@ -67,6 +73,9 @@ export const hardcoverState = () => ({
 		811: { id: 811, book_id: 81, isbn_13: '9780000000002', reading_format_id: 1, contributions: [] },
 	},
 	goodreads: { 4242: 81 },
+	series: [{ id: 3101, slug: 'the-lantern-coast', name: 'The Lantern Coast' }],
+	authors: [{ id: 4101, slug: 'wendell-ashcombe', name: 'Wendell Ashcombe' }, { id: 4102, slug: 'w-ashcombe', canonical_id: 4101, name: 'W. Ashcombe' }],
+	publishers: [{ id: 5101, slug: 'kestrel-row-audio', name: 'Kestrel Row Audio' }],
 	shelf: [
 		{ id: 1, book_id: 77, edition_id: 501, status_id: 3, user_book_reads: [{ finished_at: '2024-03-15' }] },
 		{ id: 2, book_id: 78, edition_id: 601, status_id: 3, user_book_reads: [] },

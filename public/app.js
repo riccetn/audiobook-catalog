@@ -9,7 +9,7 @@ import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref,
-	externalFields, fillExternalFields, readExternalFields, externalLinks } from './store.js';
+	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField } from './store.js';
 /** @import {Child} from './store.js' */
 
 /** @typedef {{b: Book, i: number}} ListedBook a book shown, with its index in CATALOG.books */
@@ -507,10 +507,15 @@ function closeSeriesForm(){
 	byId('seriesFormError').textContent = '';
 }
 
-function saveSeriesForm(){
+async function saveSeriesForm(){
 	const name = EDIT_SERIES;
 	if(name === null) return;
 	const showError = (/** @type {string} */ text)=> { byId('seriesFormError').textContent = text; };
+	// a Hardcover address is looked up for its number first, unless the form is closed or moved meanwhile
+	const lookup = lookupHardcoverField('sf_ext_', 'series');
+	const hardcover = lookup ? await lookup : {error: '', note: ''};
+	if(EDIT_SERIES !== name) return;
+	if(hardcover.error) return showError(hardcover.error);
 	const newName = Text.tidy(fieldById('sf_name').value);
 	if(!newName) return showError('Give the series a name.');
 	const renamed = newName !== name;
@@ -552,9 +557,9 @@ function saveSeriesForm(){
 	closeSeriesForm();
 	if(renamed && SERIES_FILTER === name) navigate({series: newName}, 'replace');
 	render(); persist();
-	showIoStatus(renamed
+	showIoStatus((renamed
 		? `Renamed ${name} to ${newName} on ${count} book${count === 1 ? '' : 's'}.`
-		: `Saved series info for ${name}.`);
+		: `Saved series info for ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
 function removeSeriesInfo(){
@@ -565,7 +570,7 @@ function removeSeriesInfo(){
 	showIoStatus(`Removed series info for ${name}.`);
 }
 
-byId('seriesForm').addEventListener('submit', e=>{ e.preventDefault(); saveSeriesForm(); });
+byId('seriesForm').addEventListener('submit', e=>{ e.preventDefault(); return saveSeriesForm(); });
 byId('seriesRemoveBtn').addEventListener('click', removeSeriesInfo);
 byId('cancelSeries').addEventListener('click', closeSeriesForm);
 

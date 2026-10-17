@@ -24,7 +24,7 @@ no narrator or publisher pages, so its field keeps the name Audible searches for
 of an Audible search (search for the name and pick *Narrator* or *Publisher* in the filters), for example
 `https://www.audible.com/search?searchNarrator=...`, and the link goes to that search. Hardcover lists
 narrators as authors (`https://hardcover.app/authors/...`) and has publisher pages
-(`https://hardcover.app/publishers/...`); Goodreads lists narrators as authors too, and has no publisher
+(`https://hardcover.app/publishers/...`), and is asked for the number of either (see [Hardcover](hardcover.md)); Goodreads lists narrators as authors too, and has no publisher
 pages, so a publisher has no Goodreads field. Each field takes the id or the address of the page, as on an
 author's page. Clearing every field, or **Remove info**, removes the entry.
 

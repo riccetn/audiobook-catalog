@@ -424,8 +424,11 @@ export function externalFields(prefix, kind, except = []){
 	return ExternalCatalog.groupsFor(kind).filter(g=> !except.includes(g.key)).map(g=>{
 		const sites = ExternalCatalog.forKind(kind).filter(def=> def.group === g.key);
 		const example = sites.length > 1 ? g.default : /** @type {string} */ ((ExternalCatalog.url(sites[0].key, kind, 'x') || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0]);
+		// Hardcover's address of a series or person is looked up for its number as soon as the field is left
+		const lookup = g.key === 'hardcover' && kind !== 'book' && kind !== 'edition'
+			? {onchange: async ()=> { const found = await lookupHardcoverField(prefix, kind); if(found && found.note) showIoStatus(found.note); }} : {};
 		return buildElement('div', {}, buildElement('label', {for: prefix + g.key}, g.name),
-			buildElement('input', {id: prefix + g.key, 'data-group': g.key, placeholder: `id, or its address on ${example}`}));
+			buildElement('input', {id: prefix + g.key, 'data-group': g.key, placeholder: `id, or its address on ${example}`, ...lookup}));
 	});
 }
 
@@ -528,6 +531,50 @@ export async function lookupHardcoverBook(text){
 	const token = browserHardcoverToken();
 	if(!token) throw new Error('to look it up on Hardcover, save your Hardcover API token on the Import & export page first');
 	return HardcoverClient.bookId(hardcoverClient(token), text);
+}
+
+/** @typedef {{error: string, note: string}} HardcoverFieldLookup why the field can't be saved, or what to say about it */
+/** @typedef {Promise<HardcoverFieldLookup> & {text?: string}} HardcoverFieldLookupOnItsWay */
+/** @type {WeakMap<Element, HardcoverFieldLookupOnItsWay>} each field's lookup on its way, so a Save waits for it */
+const HARDCOVER_FIELD_LOOKUPS = new WeakMap();
+
+/**
+ * Hardcover keeps a series, author, narrator or publisher by its number, which its links by id keep working
+ * with when it is renamed, but its pages' addresses (what gets pasted) have a name in them. When the Hardcover
+ * field externalFields() made holds such an address (or the name alone), this asks Hardcover for the number
+ * (with the token saved in this browser) and puts it in the field. When Hardcover can't be asked (no token,
+ * offline, refused), the name is kept: its page's address still works until Hardcover renames it.
+ * Resolves to {error} when Hardcover has no such page, else {note} (what was found, or why the name was kept);
+ * null when there is nothing to look up (a number, or nothing), so a form can save at once.
+ * @param {string} prefix
+ * @param {'series' | 'author' | 'narrator' | 'publisher'} kind
+ * @returns {Promise<HardcoverFieldLookup> | null}
+ */
+export function lookupHardcoverField(prefix, kind){
+	const field = document.getElementById(prefix + 'hardcover');
+	const text = field ? Text.tidy(/** @type {HTMLInputElement} */ (field).value) : '';
+	const found = text ? ExternalCatalog.readId(text, kind, 'hardcover') : null;
+	if(!field || !found || !ExternalCatalog.isFallbackId('hardcover', kind, found.id)) return null;
+	const onItsWay = HARDCOVER_FIELD_LOOKUPS.get(field);
+	if(onItsWay && onItsWay.text === text) return onItsWay;
+	const slug = found.id, address = ExternalCatalog.url('hardcover', kind, slug);
+	const kept = (/** @type {string} */ why)=> ({error: '', note: `Kept Hardcover's ${kind} by the name in its address, as ${why}.`});
+	/** @type {HardcoverFieldLookupOnItsWay} */
+	const lookup = (async ()=>{
+		const token = browserHardcoverToken();
+		if(!token) return kept('no Hardcover API token is saved on the Import & export page to look up its number');
+		/** @type {{id: string, name: string} | null} */
+		let row;
+		try{ row = await HardcoverClient.idBySlug(hardcoverClient(token), kind, slug); }
+		catch(err){ return kept(`Hardcover couldn't be asked for its number (${Text.errorText(err)})`); }
+		if(!row) return {error: `Hardcover has no ${kind} at ${address}.`, note: ''};
+		if(Text.tidy(/** @type {HTMLInputElement} */ (field).value) === text) /** @type {HTMLInputElement} */ (field).value = row.id;
+		return {error: '', note: `Found on Hardcover: ${row.name || slug} (${kind} ${row.id}).`};
+	})();
+	lookup.text = text;
+	HARDCOVER_FIELD_LOOKUPS.set(field, lookup);
+	lookup.finally(()=>{ if(HARDCOVER_FIELD_LOOKUPS.get(field) === lookup) HARDCOVER_FIELD_LOOKUPS.delete(field); });
+	return lookup;
 }
 
 // ------------------------------------------------------------ Hardcover runs

@@ -20,7 +20,7 @@ paragraphs (leave a blank line between them). The website must start with `https
 The Audible, Amazon, Goodreads, Hardcover, Open Library, ISFDB, BookBrainz and Wikidata fields keep the author's id there: type it, or paste the
 address of their page from the browser's address bar (`https://www.audible.co.uk/author/Name/B0...` on any
 Audible store, `https://www.amazon.com/stores/author/B0...`, `https://www.goodreads.com/author/show/1234...`,
-`https://hardcover.app/authors/name`, `https://openlibrary.org/authors/OL789A`, `https://www.isfdb.org/cgi-bin/ea.cgi?77`,
+`https://hardcover.app/authors/name` (Hardcover is asked for the author's number, see [Hardcover](hardcover.md)), `https://openlibrary.org/authors/OL789A`, `https://www.isfdb.org/cgi-bin/ea.cgi?77`,
 `https://www.wikidata.org/wiki/Q1001`, ...) and the id is read from it. A bare id in the Audible or Amazon field is
 audible.com's or amazon.com's; for another store, paste the address, and the field shows it that way. The
 form refuses what is neither an id nor an address there (a Hardcover address in the Goodreads field, say).
