@@ -1757,6 +1757,39 @@ test('the database saves only what changed, refuses a save over another tab\'s, 
 	assert.equal(factory.records('meta').find(m => m.key === 'unreadable').value.books.length, 4);
 });
 
+test('a save takes in what another tab saved, unless both changed the same entry', () => {
+	const base = recordsOf(shelf());
+	const saved = CatalogRecords.snapshot(base);
+	const mine = CatalogRecords.toCatalog(base), theirs = CatalogRecords.toCatalog(base);
+	// here: a book added to the series, by an author new to the catalog, and an exclusion
+	mine.books.push(Book.fromJSON({ t: 'Orchard Thaw', a: ['Lio Marsh'], s: 'Orchard Cycle', sn: '3' }));
+	mine.addExclusions(['Mine | Me']);
+	// there: the series info and another book changed, a book removed, the same new author added
+	theirs.series.get('Orchard Cycle').total = 4;
+	theirs.books[1].read = ['2026-01-01'];
+	theirs.books.splice(3, 1);
+	theirs.books.push(Book.fromJSON({ t: 'Lio Alone', a: ['Lio Marsh'] }));
+	const their = recordsOf(theirs, () => `there-${Math.random()}`);
+	const { records, conflicts } = CatalogRecords.merge(saved, recordsOf(mine, () => `here-${Math.random()}`), their);
+	assert.deepEqual(conflicts, []);
+	const merged = CatalogRecords.toCatalog(records);
+	assert.deepEqual(merged.books.map(b => b.title), ['The Glass Orchard', 'Orchard Frost', 'Orchard Cycle, Books 1-2', 'Orchard Thaw', 'Lio Alone']);
+	assert.deepEqual(merged.books[1].read, ['2026-01-01']);
+	assert.equal(merged.series.get('Orchard Cycle').total, 4);
+	assert.deepEqual(merged.exclusions.entries.slice(-1), ['Mine | Me']);
+	// the author both tabs added is one again once saved
+	const again = recordsOf(merged);
+	assert.equal(again.contributors.filter(c => c.name === 'Lio Marsh').length, 1);
+	assert.deepEqual(merged.books.slice(3).map(b => b.authors), [['Lio Marsh'], ['Lio Marsh']]);
+
+	// the same book changed on both sides, or changed here and removed there
+	const here = CatalogRecords.toCatalog(base), there = CatalogRecords.toCatalog(base);
+	here.books[0].title = 'Glass Orchard'; there.books[0].title = 'The Glass Orchard (Revised)';
+	here.books[3].genres = ['Sea']; there.books.splice(3, 1);
+	here.series.get('Orchard Cycle').total = 5; there.series.get('Orchard Cycle').total = 5;   // alike: no conflict
+	assert.deepEqual(CatalogRecords.merge(saved, recordsOf(here), recordsOf(there)).conflicts, ['"Glass Orchard"', '"A Quiet Harbor"']);
+});
+
 test('records: external ids are kept by catalog and indexed; records from before them are read and saved again', async () => {
 	const catalog = Catalog.fromJSON({
 		books: [{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: { hardcover: '77' }, e: [{ ext: { 'audible.com': 'B0TIDEWAT1', goodreads: '4242' } }] }],

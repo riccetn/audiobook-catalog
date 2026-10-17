@@ -233,4 +233,17 @@ export function keepEditionsApart(i){
 	refreshPage(); persist();
 }
 
-export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); });
+/**
+ * After a save took in what another tab changed (store.js): the pair picked by hand is found again by the
+ * books' ids, as their places in CATALOG.books may have changed.
+ * @param {Book[]} before the books as they were
+ */
+function redraw(before){
+	if(DUP_MANUAL){
+		const pair = DUP_MANUAL.map(i=> CATALOG.books.findIndex(b=> b.id === before[i].id));
+		if(pair.includes(-1)) forgetManualPair(); else DUP_MANUAL = pair;
+	}
+	refreshPage();
+}
+
+export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); }, {refresh: redraw});

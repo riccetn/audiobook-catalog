@@ -61,7 +61,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `assignIds`, `fromCatalog`/`toCatalog`,
-    `unstorable`, `snapshot`/`changes` for saving only what changed) and `CatalogDatabase` (`open`, `load`, `save` with the
+    `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save) and `CatalogDatabase` (`open`, `load`, `save` with the
     revision check that throws `CatalogConflict`, `setAside`; the browser's `indexedDB` is passed in).
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`) and
@@ -74,15 +74,16 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   yet, the catalog localStorage kept (`audiobook-catalog-device`, backup-shaped, plus `audiobook-catalog-not-duplicates`, or the
   old `audiobook-catalog-data` edits) is read through `Catalog.fromJSON`, saved, and its keys renamed `….moved-to-indexeddb`;
   without IndexedDB the page shows that catalog and saves nothing),
-  `persist` (async, queued; writes only the records that changed, with the ids `fromCatalog` gives; refuses when another tab saved
-  since this page last read or wrote (`SEEN_REVISION`), or when `CatalogRecords.unstorable` names values a record can't hold;
+  `persist` (async, queued; writes only the records that changed, with the ids `fromCatalog` gives; when another tab saved
+  since this page last read or wrote (`SEEN_REVISION`), first takes in what it changed (`catchUp`: `CatalogRecords.merge`, then
+  the page's `refresh(before)` from `startPage`), and refuses when both changed the same record, or when `CatalogRecords.unstorable` names values a record can't hold;
   `whenSaved`, `storedRevision`),
   the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below),
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group) and `externalLinks`, the page links
   (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, read back with `nameFromPageHash`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
-  Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`;
+  Each page script ends with `export const READY = startPage(init, {refresh})` (the import page also passes `onHardcoverJob`;
   the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are text marks in memory (`notDuplicates` in backups),
   stored as `marks` records pointing at book (and edition) ids, so they survive a retitle.

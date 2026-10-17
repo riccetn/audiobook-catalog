@@ -161,7 +161,7 @@ how a list can be paged or scrolled without loading all of it.
 | `credits` | [contributorId, bookId] | derived: who is credited on which book, as what, with the book's `sortTitle`, `seriesId` and `numberKey` | `byTitle` [contributorId, sortTitle, bookId], `bySeries` [contributorId, seriesId, numberKey, bookId], `bookId` |
 | `marks` | `id` | "Not duplicates" (`bookIds`), "Keep separate" (`bookIds`, `editionIds`), or a mark that matched no book (`key`, its text) | `bookIds` (multiEntry) |
 | `exclusions` | `entry` | an entry of the exclusions list, and its `position` in it | |
-| `meta` | `key` | `revision` (bumped by every save; a save refuses when another tab saved since the page read it), and `unreadable` (a catalog set aside) | |
+| `meta` | `key` | `revision` (bumped by every save; when another tab saved since the page read it, the page takes in the records that tab changed before it saves, and refuses when both changed the same record), and `unreadable` (a catalog set aside) | |
 
 Every series a book names and every person a book or edition credits has a record, with info or without.
 The database is version 2: version 1 kept the ids under fields of their own (an edition's `asins`,

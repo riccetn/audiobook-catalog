@@ -21,7 +21,7 @@ export let SERIES_FILTER = null;      // series name, '__standalone__', or null
 /** @type {string | null} */
 export let BOOK_FILTER = null;        // title of the book linked to (#book=...), or null
 /** @type {number | null} */
-let EDIT_INDEX = null;         // index into CATALOG.books being edited, or null when adding new
+export let EDIT_INDEX = null;         // index into CATALOG.books being edited, or null when adding new
 /** @type {string | null} */
 let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
 /** @type {string | null} */
@@ -1086,6 +1086,19 @@ export function pickMergeBook(i){
 	render();
 }
 
-// After a save to disk tidied the books (store.js).
+/**
+ * After a save took in what another tab changed (store.js): the book being edited is found again by its id,
+ * as the other tab may have removed books before it, or the book itself.
+ * @param {Book[]} before the books as they were
+ */
+function redraw(before){
+	if(EDIT_INDEX !== null){
+		const b = before[EDIT_INDEX], i = CATALOG.books.findIndex(x=> x.id === b.id);
+		if(i >= 0) EDIT_INDEX = i;
+		else { closeForm(); showIoStatus(spell(`${b.title} was removed in another tab.`), true); }
+	}
+	populateFilters(); render();
+}
+
 // The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
-export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); });
+export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); }, {refresh: redraw});

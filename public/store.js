@@ -6,6 +6,7 @@ import {Catalog} from './modules/catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogDatabase, CatalogConflict} from './modules/catalog-database.js';
 /** @import {RecordSet, Snapshot} from './modules/catalog-records.js' */
+/** @import {Book} from './modules/book.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 /** @import {ExternalKind} from './modules/external-catalog.js' */
@@ -160,10 +161,13 @@ let SAVE_REFUSED = '';                // why nothing can be saved in this browse
 let SAVING = Promise.resolve();       // the saves asked for, one after another
 let STARTUP_NOTICE = '';
 
-// The page's own hook, from startPage(): onHardcoverJob(job), when the page has it, does more with each
-// update of a Hardcover run (see showHardcoverJob).
+// The page's own hooks, from startPage(): onHardcoverJob(job), when the page has it, does more with each
+// update of a Hardcover run (see showHardcoverJob); redrawPage() draws the page again when a save took in
+// what another tab changed.
 /** @type {((job: HardcoverJob | null) => void) | null} */
 let onHardcoverJob = null;
+/** @type {((before: Book[]) => void) | null} */
+let redrawPage = null;
 
 /**
  * Add "Not duplicates" (or "Keep separate") marks of the duplicates page to CATALOG.notDuplicates; returns
@@ -192,8 +196,9 @@ export function updateNav(){
 
 /**
  * Keep the catalog as the page holds it now. Saves are made one after another, and each writes only the
- * records that changed. Another page or tab that saved meanwhile would be overwritten, so then nothing is
- * saved. Pages need not wait for it; it says on the status line when a save fails.
+ * records that changed. When another page or tab saved meanwhile, what it changed is taken in first
+ * (catchUp), so edits of different entries in different tabs all stay; when both changed the same entry,
+ * nothing is saved. Pages need not wait for it; it says on the status line when a save fails.
  * @returns {Promise<void>}
  */
 export function persist(){
@@ -209,19 +214,60 @@ async function saveNow(){
 			`${unstorable.length > 3 ? ` and ${unstorable.length - 3} more` : ''}. Export a backup, fix them there (Check lists them) and Restore it.`), true);
 		return;
 	}
-	const changes = CatalogRecords.changes(SAVED, CatalogRecords.fromCatalog(CATALOG));
-	if(!changes.count && SEEN_REVISION !== null) return;
-	try{
-		const first = SEEN_REVISION === null;
-		SEEN_REVISION = await DATABASE.save(changes, SEEN_REVISION);
-		SAVED = changes.snapshot;
-		if(first) setAsideOldCatalog();
-	}catch(e){
-		showIoStatus(e instanceof CatalogConflict
-			? spell('The catalog was changed in another tab. Reload this page to see that; this change was not saved.')
-			// nothing else holds this catalog, so say so instead of losing the edit quietly
-			: spell('Not saved: this browser refused to store the catalog (is its storage full?). Export a backup.'), true);
+	// another tab may save again while this page takes in its last save, so this page tries a few times
+	for(let tries = 1; ; tries++){
+		const changes = CatalogRecords.changes(SAVED, CatalogRecords.fromCatalog(CATALOG));
+		if(!changes.count && SEEN_REVISION !== null) return;
+		try{
+			const first = SEEN_REVISION === null;
+			SEEN_REVISION = await DATABASE.save(changes, SEEN_REVISION);
+			SAVED = changes.snapshot;
+			if(first) setAsideOldCatalog();
+			return;
+		}catch(e){
+			if(!(e instanceof CatalogConflict)){
+				// nothing else holds this catalog, so say so instead of losing the edit quietly
+				showIoStatus(spell('Not saved: this browser refused to store the catalog (is its storage full?). Export a backup.'), true);
+				return;
+			}
+			const both = tries < 3 ? await catchUp() : [];
+			if(both){
+				showIoStatus(spell(both.length
+					? `Not saved: ${both.slice(0, 3).join(', ')}${both.length > 3 ? ` and ${both.length - 3} more` : ''} changed in another tab too. Reload this page to see that, then make this change again.`
+					: 'The catalog was changed in another tab. Reload this page to see that; this change was not saved.'), true);
+				return;
+			}
+		}
 	}
+}
+
+/**
+ * Another tab saved since this page last read or wrote the catalog: take what it changed into CATALOG,
+ * so the next save writes this page's changes over the other tab's, and redraw the page. Returns null when
+ * that was done, else what both changed (an empty list when the two can't be put together otherwise), and
+ * then CATALOG is as it was.
+ * @returns {Promise<string[] | null>}
+ */
+async function catchUp(){
+	// a page that never read a stored catalog (its first save moves the one localStorage kept) has nothing to go by
+	if(!DATABASE || SEEN_REVISION === null) return [];
+	/** @type {Book[]} */
+	let before;
+	try{
+		const stored = await DATABASE.load();
+		if(!stored) return [];
+		const {records, conflicts} = CatalogRecords.merge(SAVED, CatalogRecords.fromCatalog(CATALOG), stored.records);
+		if(conflicts.length) return conflicts;
+		before = CATALOG.books;
+		CATALOG.replaceWith(CatalogRecords.toCatalog(records));
+		SAVED = CatalogRecords.snapshot(stored.records);
+		SEEN_REVISION = stored.revision;
+	}catch(e){
+		return [];
+	}
+	if(redrawPage) redrawPage(before);
+	updateNav();
+	return null;
 }
 
 /**
@@ -519,12 +565,14 @@ export function showHardcoverJob(job){
 
 /**
  * Load the catalog kept in this browser (empty the first time), then let the page draw itself with
- * `init`. `page.onHardcoverJob` is optional (see showHardcoverJob).
+ * `init`. `page.refresh(before)` draws it again after a save took in another tab's changes (`before` are
+ * the books the page had, as their places in CATALOG.books may have changed); it and
+ * `page.onHardcoverJob` (see showHardcoverJob) are optional.
  * @param {() => void} init
- * @param {{onHardcoverJob?: (job: HardcoverJob | null) => void}} [page]
+ * @param {{refresh?: (before: Book[]) => void, onHardcoverJob?: (job: HardcoverJob | null) => void}} [page]
  */
 export async function startPage(init, page = {}){
-	({onHardcoverJob = null} = page);
+	({onHardcoverJob = null, refresh: redrawPage = null} = page);
 	await loadCatalog();
 	askToKeepStorage();
 	init();

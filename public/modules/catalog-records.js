@@ -198,6 +198,19 @@ export class CatalogRecords {
 	};
 	/** @type {StoreName[]} */
 	static STORE_NAMES = ['books', 'editions', 'series', 'contributors', 'credits', 'marks', 'exclusions'];
+	// The derived fields of each store's records (see fromCatalog), which a save works out again from the
+	// rest; credits are derived as a whole. Two tabs changed the same thing only when they changed a
+	// record's other fields.
+	/** @type {Record<StoreName, string[] | null>} */
+	static DERIVED = {
+		books: ['position', 'sortTitle', 'titleKey', 'firstAuthorKey', 'words', 'externalKeys', 'seriesKey', 'isCollection', 'numberKey', 'numberEnd', 'lastRead'],
+		editions: ['bookIds', 'idKeys'],
+		series: ['sortName', 'bookCount', 'owned', 'missing', 'lastRead', 'externalKeys'],
+		contributors: ['sortName', 'bookCount', 'externalKeys'],
+		credits: null,
+		marks: [],
+		exclusions: ['position'],
+	};
 	// The numberKey of a book in a series without a number, so it sorts after the numbered ones.
 	static UNNUMBERED = Number.MAX_SAFE_INTEGER;
 
@@ -552,6 +565,66 @@ export class CatalogRecords {
 			out.set(store, new Map(/** @type {Record<string, any>[]} */ (records[store]).map(rec => [JSON.stringify(CatalogRecords.keyOf(store, rec)), JSON.stringify(rec)])));
 		}
 		return out;
+	}
+
+	/**
+	 * Take in what another tab saved: `base` is the records as this page last read or wrote them, `mine` the
+	 * records it has now and `theirs` the records stored now. A record only one side changed (added, edited
+	 * or removed) is taken from that side; one both changed alike is kept; one both changed differently is a
+	 * conflict, named in `conflicts` (an entry as the page shows it), and then the records are of no use.
+	 * Books and exclusions keep this page's order, with the other tab's new ones after them. Derived fields
+	 * and credits are left as they come: toCatalog() doesn't read them, and the next save writes them again.
+	 * @param {Snapshot} base
+	 * @param {RecordSet} mine
+	 * @param {RecordSet} theirs
+	 * @returns {{records: RecordSet, conflicts: string[]}}
+	 */
+	static merge(base, mine, theirs){
+		/** @type {string[]} */
+		const conflicts = [];
+		/** @type {Record<string, any>} */
+		const records = {credits: theirs.credits};
+		/** @type {(ids: string[] | undefined) => string} the first of these books, by title */
+		const titleOf = ids => {
+			const rec = [...mine.books, ...theirs.books].find(b => (ids || []).includes(b.id));
+			return rec ? `"${rec.title}"` : 'a book';
+		};
+		/** @type {(store: StoreName, rec: Record<string, any>) => string} */
+		const label = (store, rec) => store === 'books' ? `"${rec.title}"` : store === 'editions' ? `an edition of ${titleOf(rec.bookIds)}`
+			: store === 'series' ? `the series ${rec.name}` : store === 'contributors' ? rec.name
+			: store === 'marks' ? `a mark on ${titleOf(rec.bookIds)}` : rec.entry;
+		for(const store of CatalogRecords.STORE_NAMES){
+			const derived = CatalogRecords.DERIVED[store];
+			if(!derived) continue;
+			/** @type {(rec: Record<string, any> | undefined) => string | undefined} a record's own values, as text */
+			const own = rec => rec && JSON.stringify(Object.entries(rec).filter(([k]) => !derived.includes(k)).sort(([x], [y]) => x < y ? -1 : x > y ? 1 : 0));
+			/** @type {(list: Record<string, any>[]) => Map<string, Record<string, any>>} */
+			const byKey = list => new Map(list.map(rec => [JSON.stringify(CatalogRecords.keyOf(store, rec)), rec]));
+			const was = base.get(store) || new Map();
+			const my = byKey(/** @type {Record<string, any>[]} */ (mine[store])), their = byKey(/** @type {Record<string, any>[]} */ (theirs[store]));
+			/** @type {Record<string, any>[]} */
+			const out = [];
+			for(const key of new Set([...my.keys(), ...their.keys(), ...was.keys()])){
+				const before = was.has(key) ? own(JSON.parse(/** @type {string} */ (was.get(key)))) : undefined;
+				const m = own(my.get(key)), t = own(their.get(key));
+				let pick = their.get(key);
+				if(m !== before && t !== m){
+					if(t === before) pick = my.get(key);
+					else conflicts.push(label(store, /** @type {Record<string, any>} */ (my.get(key) || their.get(key))));
+				}
+				if(pick) out.push(pick);
+			}
+			if(derived.includes('position')){
+				const rank = /** @type {(rec: Record<string, any>) => number} */ (rec => {
+					const key = JSON.stringify(CatalogRecords.keyOf(store, rec)), m = my.get(key), t = their.get(key);
+					return m ? m.position : my.size + (t ? t.position : 0);
+				});
+				out.sort((x, y) => rank(x) - rank(y));
+				records[store] = out.map((rec, position) => ({...rec, position}));
+			}
+			else records[store] = out;
+		}
+		return {records: /** @type {RecordSet} */ (records), conflicts};
 	}
 
 	/**

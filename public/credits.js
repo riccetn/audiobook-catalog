@@ -269,5 +269,5 @@ export function startCreditsPage(kind){
 	byId('q').addEventListener('input', render);
 	addEventListener('hashchange', showAddress);
 	addEventListener('popstate', showAddress);
-	return startPage(()=>{ SHOWN = nameFromPageHash(location.hash, KIND.hashKey); render(); });
+	return startPage(()=>{ SHOWN = nameFromPageHash(location.hash, KIND.hashKey); render(); }, {refresh: render});
 }
