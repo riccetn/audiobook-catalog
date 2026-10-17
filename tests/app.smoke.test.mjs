@@ -2326,3 +2326,124 @@ test('a browser that prefers British English sees "catalogue"; any other sees "c
 	assert.match(us.ctx.document.title, /Audiobook Catalog$/);
 	assert.match(us.ctx.document.body.innerHTML, /<h1>Audiobook Catalog<\/h1>/);
 });
+
+// ------------------------------------------------------------------ a page holds only what it shows
+const SAGAS = JSON.stringify([
+	...['1', '2', '3'].map(n => ({ t: `Gull ${n}`, a: ['Ann Vale'], s: 'Gull Isle', sn: n, e: [{ n: ['Cy Hale'] }] })),
+	...['1', '2', '3', '4', '5'].map(n => ({ t: `Fern ${n}`, a: ['Bo Reed'], s: 'Fern Saga', sn: n })),
+]);
+// A browser that has the catalog in IndexedDB already, and a page booted on it that has read nothing yet.
+async function movedIn(files, options = {}) {
+	const storage = new Map();
+	await boot({ storage, files });
+	await kept(storage);
+	databaseOf(storage).resetReads();
+	return boot({ storage, files: null, ...options });
+}
+
+test('the series overview reads no book, and a series page only the books of that series', async () => {
+	const { ctx, get, database } = await movedIn({ 'books.json': SAGAS });
+	await idle();
+	assert.match(ctx.document.getElementById('results').innerHTML, /Gull Isle/);
+	assert.equal(database.reads('books'), 0, 'the overview is drawn from the series records');
+	assert.equal(get('CATALOG.books.length'), 0);
+	ctx.openSeries(seriesIdOf(get, 'Gull Isle'));
+	await idle();
+	assert.equal(database.reads('books'), 3);
+	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Gull 1', 'Gull 2', 'Gull 3']);
+});
+
+test('all books shows 50 at a time, and Show more reads the next ones', async () => {
+	const books = Array.from({ length: 60 }, (_, i) => ({ t: `Pebble ${String(i + 1).padStart(2, '0')}`, a: ['Ann Vale'] }));
+	const { ctx, els, get, database } = await movedIn({ 'books.json': JSON.stringify(books) });
+	ctx.setView('library');
+	await idle();
+	assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 50);
+	assert.equal(els.resultCount.textContent, '50 of 60 shown');
+	assert.equal(get('CATALOG.books.length'), 50, 'the page holds only the books it shows');
+	assert.equal(database.reads('books'), 50);
+	const more = els.results.querySelector('#showMore');
+	assert.equal(more.textContent, 'Show 10 more');
+	more.dispatch('click');
+	await idle();
+	assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 60);
+	assert.equal(els.resultCount.textContent, '60 shown');
+	assert.equal(els.results.querySelector('#showMore'), null);
+	assert.equal(database.reads('books'), 60, 'only the books not read yet');
+});
+
+test('an edit on a page that holds some books keeps every other record, and the counts follow', async () => {
+	const { ctx, els, get, storage, database } = await movedIn({ 'books.json': SAGAS });
+	ctx.openSeries(seriesIdOf(get, 'Gull Isle'));
+	await idle();
+	ctx.openEditForm(bookIdOf(get, 'Gull 3'));
+	els.f_s.value = 'Fern Saga';
+	els.f_sn.value = '6';
+	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+	await idle();
+	const books = (await kept(storage)).books;
+	assert.equal(books.length, 8);
+	assert.deepEqual(books.find(b => b.t === 'Fern 4'), { t: 'Fern 4', a: ['Bo Reed'], s: 'Fern Saga', sn: '4' }, 'a book the page never read');
+	assert.deepEqual(books.find(b => b.t === 'Gull 3').s, 'Fern Saga');
+	const count = store => Object.fromEntries(database.records(store).map(x => [x.name, [x.bookCount, x.seriesCount]]));
+	assert.deepEqual(count('series'), { 'Fern Saga': [6, undefined], 'Gull Isle': [2, undefined] });
+	assert.deepEqual(count('contributors'), { 'Ann Vale': [3, 2], 'Bo Reed': [5, 1], 'Cy Hale': [3, 2] });
+	assert.equal(database.records('credits').length, 8 + 3);
+
+	// removing the last books of a series drops it, and a person left without books
+	for (const title of ['Gull 1', 'Gull 2']) {
+		const btn = els.results.querySelector(`.iconbtn.del[data-id="${bookIdOf(get, title)}"]`);
+		btn.dispatch('click');
+		btn.dispatch('click');
+		await idle();
+	}
+	assert.deepEqual(count('series'), { 'Fern Saga': [6, undefined] });
+	assert.deepEqual(count('contributors'), { 'Ann Vale': [1, 1], 'Bo Reed': [5, 1], 'Cy Hale': [1, 1] });
+	assert.equal((await kept(storage)).books.length, 6);
+});
+
+test('the Duplicates count is kept with the revision it was counted at, and counted again once the catalog changed', async () => {
+	const books = JSON.stringify([{ t: 'Ledger', a: ['Priya Ostrander'] }, { t: 'Ledger', a: ['Priya Ostrander'], r: ['2024'] }, { t: 'Other', a: ['Ann Vale'] }]);
+	const { els, run, storage, database } = await movedIn({ 'books.json': books });
+	await idle();
+	assert.equal(els.dupCount.textContent, ' (1)');
+	assert.equal(database.reads('books'), 0, 'the count kept is shown without reading the books');
+	const revision = () => database.records('meta').find(m => m.key === 'revision').value;
+	assert.equal(database.records('meta').find(m => m.key === 'duplicates').revision, revision());
+
+	// a page holding the whole catalog keeps the count with each save; one that holds some counts it after
+	const dup = await boot({ page: 'duplicates.html', storage });
+	await dup.run("CATALOG.books.push(new Book({ title: 'Other', authors: ['Ann Vale'] })); persist();");
+	assert.deepEqual(database.records('meta').find(m => m.key === 'duplicates'), { key: 'duplicates', value: 2, revision: revision() });
+	await run('updateNav()');
+	await idle();
+	assert.equal(els.dupCount.textContent, ' (2)');
+	// a page that holds some books counts again after its save, reading every book, and keeps the count
+	const home = await boot({ storage });
+	home.ctx.setView('library');
+	await idle();
+	database.resetReads();
+	await home.run("CATALOG.books.push(new Book({ title: 'Ledger', authors: ['Ann Vale'] }), new Book({ title: 'Ledger', authors: ['Ann Vale'] })); persist();");
+	await idle();
+	assert.equal(home.els.dupCount.textContent, ' (3)');
+	assert.ok(database.reads('books') >= 6, 'every book was read to count them');
+	assert.deepEqual(database.records('meta').find(m => m.key === 'duplicates'), { key: 'duplicates', value: 3, revision: revision() });
+	database.resetReads();
+	const next = await boot({ storage });
+	await idle();
+	assert.equal(next.els.dupCount.textContent, ' (3)');
+	assert.equal(database.reads('books'), 0);
+});
+
+test('the authors list reads no book, and an author\'s page only their books', async () => {
+	const { els, fire, ctx, database, readable } = await movedIn({ 'books.json': SAGAS }, { page: 'authors.html' });
+	await idle();
+	assert.match(readable(els.creditBody.innerHTML), /Ann Vale<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
+	assert.equal(els.subtitle.textContent, '2 authors across 8 audiobooks');
+	assert.equal(database.reads('books'), 0);
+	ctx.location.hash = '#a=Bo+Reed';
+	fire('hashchange');
+	await idle();
+	assert.equal(els.subtitle.textContent, '5 audiobooks in 1 series');
+	assert.equal(database.reads('books'), 5);
+});
