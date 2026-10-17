@@ -252,7 +252,7 @@ function previewImport(kind, text, fileName){
 		: report.backfilled.length ? 'Save ASINs' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
 		: report.editionsAdded.length ? 'Save editions' : report.isbnsFilled.length ? 'Save ISBNs' : 'Save edition details';
 	byId('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
-	byId('importPreview').classList.add('open');
+	openPreview(`${kind}Panel`);
 }
 
 function applyImport(){
@@ -344,7 +344,7 @@ function previewMerge(){
 	confirmBtn.style.display = ok ? '' : 'none';
 	confirmBtn.textContent = 'Merge';
 	byId('importCancel').textContent = ok ? 'Cancel' : 'Close';
-	byId('importPreview').classList.add('open');
+	openPreview('backupPanel');
 }
 
 function applyMerge(){
@@ -410,8 +410,7 @@ function showTidyPreview(title, body, confirm){
 	confirmBtn.style.display = PENDING_TIDY ? '' : 'none';
 	confirmBtn.textContent = confirm;
 	byId('importCancel').textContent = PENDING_TIDY ? 'Cancel' : 'Close';
-	byId('importPreview').classList.add('open');
-	byId('importPreview').scrollIntoView();   // it opens at the top, far above these buttons
+	openPreview('checkPanel');
 }
 
 function checkCatalog(){
@@ -474,7 +473,7 @@ function applyTidy(){
 const HARDCOVER_MODES = {
 	import: {title: 'Import from Hardcover', confirm: 'Import'},
 	export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
-	sync: {title: 'Sync with Hardcover', confirm: 'Sync'},
+	sync: {title: 'Sync with Hardcover', confirm: 'Import and export'},
 };
 /** @type {HardcoverMode | null} */
 export let PENDING_HARDCOVER = null;   // the mode, while its preview is open
@@ -601,7 +600,7 @@ function showHardcoverResult(mode, result, pending){
 	confirmBtn.style.display = PENDING_HARDCOVER ? '' : 'none';
 	confirmBtn.textContent = HARDCOVER_MODES[mode].confirm;
 	byId('importCancel').textContent = PENDING_HARDCOVER ? 'Cancel' : 'Close';
-	byId('importPreview').classList.add('open');
+	openPreview('hardcoverPanel');
 }
 
 /** @param {HardcoverMode} mode */
@@ -615,6 +614,17 @@ function applyHardcover(){
 	if(!mode) return;
 	closeImportPreview();
 	return runHardcover(mode, false);
+}
+
+/**
+ * Open the preview right under the panel whose button asked for it, so it is next to what it is about.
+ * @param {string} panelId
+ */
+function openPreview(panelId){
+	const preview = byId('importPreview');
+	byId(panelId).after(preview);
+	preview.classList.add('open');
+	preview.scrollIntoView({block: 'nearest'});
 }
 
 function closeImportPreview(){
