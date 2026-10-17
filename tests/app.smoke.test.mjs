@@ -1495,16 +1495,30 @@ test('the merge button pairs two books by hand and opens them on the duplicates 
 	assert.deepEqual(stale.get('DUP_GROUPS'), []);
 });
 
-test('an edit is not saved over changes another tab made meanwhile', async () => {
-	const files = { 'books.json': JSON.stringify([{ t: 'Mine', a: ['Me'] }, { t: 'Yours', a: ['You'] }]) };
+test('edits of different books in two tabs are both saved, and the same book edited in both is not', async () => {
+	const files = { 'books.json': JSON.stringify([{ t: 'Mine', a: ['Me'] }, { t: 'Yours', a: ['You'] }, { t: 'Theirs', a: ['Them'] }]) };
 	const storage = new Map();
 	const one = await boot({ files, storage });
 	const two = await boot({ page: 'duplicates.html', files, storage });
 	await one.run("CATALOG.books[0].title = 'Edited Here'; persist();");
 	await two.run("CATALOG.books[1].title = 'Edited There'; persist();");
-	assert.match(two.els.ioStatus.textContent, /changed in another tab/);
-	assert.equal((await kept(storage)).books[0].t, 'Edited Here');
-	assert.equal((await kept(storage)).books[1].t, 'Yours', 'the other tab saved nothing');
+	assert.equal(two.els.ioStatus.textContent, '');
+	assert.deepEqual((await kept(storage)).books.map(b => b.t), ['Edited Here', 'Edited There', 'Theirs']);
+	assert.equal(two.get('CATALOG.books[0].title'), 'Edited Here', 'the tab saving second took in the first one\'s edit');
+
+	// one tab removes a book and adds one; the other tab's page shows that once it saves an edit of its own
+	await two.run("CATALOG.books.splice(0, 1); CATALOG.books.push(new Book({title: 'Added There', authors: ['Them']})); persist();");
+	one.ctx.openEditForm(2);
+	await one.run("CATALOG.books[2].title = 'Retitled Here'; persist();");
+	assert.deepEqual((await kept(storage)).books.map(b => b.t), ['Edited There', 'Retitled Here', 'Added There']);
+	assert.deepEqual(one.get('CATALOG.books').map(b => b.t), ['Edited There', 'Retitled Here', 'Added There']);
+	assert.equal(one.get('EDIT_INDEX'), 1, 'the form still edits the book it was opened on');
+
+	// both tabs change one book: the second save is refused, and nothing it held is written
+	await one.run("CATALOG.books[0].title = 'Both Here'; persist();");
+	await two.run("CATALOG.books[0].title = 'Both There'; CATALOG.books[2].title = 'Also There'; persist();");
+	assert.match(two.els.ioStatus.textContent, /"Both There" changed in another tab too/);
+	assert.deepEqual((await kept(storage)).books.map(b => b.t), ['Both Here', 'Retitled Here', 'Added There']);
 	await one.run("CATALOG.books[1].title = 'Again Here'; persist();");      // the tab that saved last can keep going
 	assert.equal((await kept(storage)).books[1].t, 'Again Here');
 });

@@ -13,8 +13,11 @@ The catalog (books, series info, author, narrator and publisher info, the list o
 the "Not duplicates" marks) is kept in the browser's IndexedDB, in a database called `audiobook-catalog`,
 as a record per book, edition, series and person ([How the browser keeps it](data-format.md#how-the-browser-keeps-it)).
 Every edit, import, Restore and Merge is saved there at once, and a save writes only what changed. All
-pages of the app share it; if two tabs edit the catalog at once, the one that saves second refuses
-and asks you to reload it, rather than overwriting the other.
+pages of the app share it, and tabs can edit it at once: a tab that saves after another one did takes in
+what the other changed first, so edits of different books, series or people in different tabs are all
+kept (the tab shows the other's changes from then on). When both tabs changed the same entry (a book, an
+edition, a series, a person), the tab that saves second saves nothing, names the entry and asks you to
+reload it and make the change again, rather than overwriting the other.
 
 Each browser keeps its own catalog, tied to the address the app is served from: `localhost:8000` and
 your GitHub Pages site are two catalogs, and so are two browsers on one PC. Move a catalog with a
