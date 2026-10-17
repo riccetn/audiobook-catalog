@@ -1213,7 +1213,7 @@ test('a Goodreads import fills in dates read on books that have none', async () 
 
 test('importing a Goodreads CSV can be canceled', async () => {
 	const { els, get } = await boot({ page: 'import.html' });
-	const before = get('CATALOG.books.length');
+	const before = demoBooks.length;
 	const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n'
 		+ '"Zzz New Book (Zzz Saga, #2)",Nobody Yet,,Audible Audio,read,fantasy\n';
 	els.importGoodreadsBtn.listeners.click[0]();
@@ -1351,11 +1351,13 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 	await idle();
 	imp.els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'l.csv', text:
 		'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\nx,Gone,,Ann Vale,,Finished,BGONE2\n' }], value: '' } });
+	await idle();
 	assert.match(imp.els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
 	imp.els.importGoodreadsBtn.listeners.click[0]();
 	await idle();
 	imp.els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'g.csv', text:
 		'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\nGone,Ann Vale,,Audible Audio,read,\n' }], value: '' } });
+	await idle();
 	assert.match(imp.els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
 
 	// a reload keeps the exclusions along with the edit
@@ -2026,6 +2028,7 @@ test('an author\'s page shows their bio, their links, and their series and title
 	// another author's page, by its address: her series, and a book outside it she wrote with someone else
 	ctx.location.hash = '#a=Priya+Ostrander';
 	fire('hashchange');
+	await idle();
 	const priya = readable(els.creditBody.innerHTML);
 	assert.match(priya, /Halloway &amp; Finch<\/a> <span class="n">2 owned of 2<\/span> <span class="status complete">/);
 	assert.match(priya, /Outside a series <span class="n">1 book<\/span>/);
@@ -2035,13 +2038,16 @@ test('an author\'s page shows their bio, their links, and their series and title
 	// an author without info or series
 	ctx.location.hash = '#a=Odalys+Rennick';
 	fire('hashchange');
+	await idle();
 	assert.match(readable(els.creditBody.innerHTML), /No bio or links yet/);
 	assert.match(readable(els.creditBody.innerHTML), /Titles <span class="n">1 book<\/span>/);
 	ctx.location.hash = '#a=Nobody+Here';
 	fire('hashchange');
+	await idle();
 	assert.equal(els.subtitle.textContent, 'No books by this author in the catalog.');
 	ctx.location.hash = '';
 	fire('hashchange');
+	await idle();
 	assert.equal(ctx.SHOWN, null);
 	assert.match(readable(els.creditBody.innerHTML), /class="srow-title"/);
 });
@@ -2086,9 +2092,11 @@ test('a narrator\'s page shows the series and titles they read, with their autho
 	assert.match(html, /Outside a series <span class="n">1 book<\/span>.*Apple Hill<\/a> <span class="with">by <a [^>]*>Bo Reed<\/a>, <a [^>]*>Ann Vale<\/a>/);
 	ctx.location.hash = '#n=Nobody+Here';
 	fire('hashchange');
+	await idle();
 	assert.equal(els.subtitle.textContent, 'No books narrated by them in the catalog.');
 	ctx.location.hash = '';
 	fire('hashchange');
+	await idle();
 	assert.equal(ctx.SHOWN, null);
 	assert.match(readable(els.creditBody.innerHTML), /class="srow-title"/);
 });
@@ -2100,6 +2108,7 @@ test('the publishers page lists the editions\' publishers, and a publisher\'s pa
 	assert.match(readable(els.creditBody.innerHTML), /<a class="srow-title" href="publishers\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
 	ctx.location.hash = '#p=Kestrel+Row+Audio';
 	fire('hashchange');
+	await idle();
 	assert.equal(els.subtitle.textContent, '3 audiobooks in 1 series');
 	assert.match(readable(els.creditBody.innerHTML), /The Orchard Cycle<\/a> <span class="n">3 books<\/span>/);
 	assert.doesNotMatch(readable(els.creditBody.innerHTML), /class="with">with/, 'a publisher\'s page names no other publishers');
@@ -2156,7 +2165,7 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	await idle();
 	assert.equal(get("CATALOG.infoByName('authors').get('Wendell Ashcombe') || null"), null);
 	assert.match(els.ioStatus.textContent, /Removed author info for Wendell Ashcombe/);
-	assert.ok(get("CATALOG.infoByName('authors').has('Marisol Quenby')"), 'the other authors keep theirs');
+	assert.ok((await kept(storage)).authors['Marisol Quenby'], 'the other authors keep theirs');
 });
 
 test('a Hardcover address in the series or info form is looked up for its number, and kept as it is when Hardcover can\'t be asked', async () => {
@@ -2296,12 +2305,14 @@ test('a browser that prefers British English sees "catalogue"; any other sees "c
 	const titled = JSON.stringify([{ t: 'The Catalog of Stars', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]);
 	for (const page of PAGES) {
 		const { ctx } = await boot({ page, languages: ['sv-SE', 'en-GB'], files: { 'books.json': titled } });
+		await idle();
 		assert.match(ctx.document.title, /Audiobook Catalogue$/, page);
 		// (the body holds what the page drew too; the Hardcover scope read:catalog is a name, and stays)
 		assert.ok(!/(?<!:)\b[Cc]atalog\b/.test(ctx.document.body.innerHTML), `${page} has no American spelling left`);
 		assert.match(ctx.document.body.innerHTML, /<h1>Audiobook Catalogue<\/h1>/, page);
 	}
 	const uk = await boot({ page: 'import.html', languages: ['en-AU'], files: { 'books.json': titled } });
+	await idle();
 	assert.equal(uk.els.subtitle.textContent, '1 audiobooks in the catalogue');
 	const app = await boot({ languages: ['en-GB'], files: { 'books.json': titled } });
 	app.ctx.setView('library');
@@ -2310,6 +2321,7 @@ test('a browser that prefers British English sees "catalogue"; any other sees "c
 	assert.equal(app.ctx.document.title, 'All books — Audiobook Catalogue');
 
 	const us = await boot({ page: 'import.html', languages: ['fr-FR', 'fr'], files: { 'books.json': titled } });
+	await idle();
 	assert.equal(us.els.subtitle.textContent, '1 audiobooks in the catalog');
 	assert.match(us.ctx.document.title, /Audiobook Catalog$/);
 	assert.match(us.ctx.document.body.innerHTML, /<h1>Audiobook Catalog<\/h1>/);

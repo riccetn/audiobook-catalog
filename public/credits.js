@@ -4,17 +4,19 @@
 // what you keep about them (CATALOG.authors, .narrators, .publishers: a short bio, their own site, their
 // ids on Audible, Amazon, Goodreads and Hardcover, which link to their pages there, and other links) and the series and titles of theirs you have, worked out from
 // the books. Each page's own script (authors.js, narrators.js, publishers.js) starts this one with its kind.
-// Loading and saving live in store.js.
+// The list reads only the kind's records (each keeps how many books and series they have); someone's page
+// loads their record and their books. Loading and saving live in store.js.
 import {Text} from './modules/text.js';
-import {Catalog} from './modules/catalog.js';
 import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
-import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined,
+import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, queryCatalog, byId, fieldById, spell, buildElement, fillElement, joined,
 	authorPageHref, narratorPageHref, publisherPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 /** @import {Child} from './store.js' */
+/** @import {CatalogReader} from './modules/catalog-database.js' */
+/** @import {ContributorRecord} from './modules/catalog-records.js' */
 
 /**
  * What differs between the three pages.
@@ -27,8 +29,6 @@ import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buil
  * @property {string} none the subtitle of someone with no books
  * @property {[string, string]} site their own site's form label and example
  * @property {(name: string) => string} href the address of someone's page
- * @property {(b: Book) => string[]} namesOf who the kind credits on a book
- * @property {() => {name: string, books: number, series: number}[]} list
  * @property {(name: string) => {series: {name: string, books: Book[]}[], titles: Book[]}} works
  */
 
@@ -36,19 +36,27 @@ import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buil
 export const CREDIT_KINDS = {
 	author: {infoKey: 'authors', hashKey: 'a', one: 'author', many: 'authors', title: 'Authors', none: 'No books by this author in the catalog.',
 		site: ['Personal website', 'https://'],
-		href: authorPageHref, namesOf: Catalog.authorsOf, list: ()=> CATALOG.authorList(), works: name=> CATALOG.authorWorks(name)},
+		href: authorPageHref, works: name=> CATALOG.authorWorks(name)},
 	narrator: {infoKey: 'narrators', hashKey: 'n', one: 'narrator', many: 'narrators', title: 'Narrators', none: 'No books narrated by them in the catalog.',
 		site: ['Personal website', 'https://'],
-		href: narratorPageHref, namesOf: Catalog.narratorsOf, list: ()=> CATALOG.narratorList(), works: name=> CATALOG.narratorWorks(name)},
+		href: narratorPageHref, works: name=> CATALOG.narratorWorks(name)},
 	publisher: {infoKey: 'publishers', hashKey: 'p', one: 'publisher', many: 'publishers', title: 'Publishers', none: 'No books from this publisher in the catalog.',
 		site: ['Website', 'https://'],
-		href: publisherPageHref, namesOf: Catalog.publishersOf, list: ()=> CATALOG.publisherList(), works: name=> CATALOG.publisherWorks(name)},
+		href: publisherPageHref, works: name=> CATALOG.publisherWorks(name)},
 };
 
 /** @type {CreditKind} */
 export let KIND = CREDIT_KINDS.author;
 /** @type {string | null} */
 export let SHOWN = null;              // the id of the author, narrator or publisher shown (#a=...), or null for the list
+/**
+ * Someone on the list: their name, how many books and series they have, the first line of their bio, and
+ * for a narrator or publisher the authors of most of their books (and how many authors there are).
+ * @typedef {{id: string, name: string, books: number, series: number, bio: string, topAuthors: string[], authorCount: number}} ListEntry
+ */
+/** @type {ListEntry[]} */
+export let LIST = [];                 // the list, while it is shown
+let TOTAL_BOOKS = 0;                  // how many books the catalog has, for the list's subtitle
 /** @type {string | null} */
 let EDITING = null;                   // the id of whose info the form is editing, or null
 
@@ -62,8 +70,6 @@ const nameLinks = (names, href)=> joined(names.map(x=> buildElement('a', {href: 
 const kept = ()=> CATALOG[KIND.infoKey];
 /** @type {(id: string) => string} the name of the one stored under `id` */
 const nameOf = id=> CATALOG.nameOf(KIND.infoKey, id) ?? '';
-/** @type {(name: string) => Contributor | undefined} what the catalog keeps about `name` */
-const infoOf = name=> { const id = CATALOG.nameIds[KIND.infoKey].get(name); return id === undefined ? undefined : kept().get(id); };
 
 /**
  * A bio as paragraphs: a blank line starts a new one, a single line break stays a line break.
@@ -84,39 +90,64 @@ export function render(){
 
 function renderCreditList(){
 	const q = fieldById('q').value.trim().toLowerCase();
-	const all = KIND.list();
+	const all = LIST;
 	const shown = q ? all.filter(x=> x.name.toLowerCase().includes(q)) : all;
-	byId('subtitle').textContent = `${plural(all.length, KIND.one)} across ${plural(CATALOG.books.length, 'audiobook')}`;
+	byId('subtitle').textContent = `${plural(all.length, KIND.one)} across ${plural(TOTAL_BOOKS, 'audiobook')}`;
 	fillElement(byId('creditBody'), shown.length ? shown.map(x=> buildElement('div', {class: 'srow'},
 		buildElement('div', {class: 'srow-head'},
 			buildElement('a', {class: 'srow-title', href: KIND.href(x.name)}, x.name), ' ',
 			buildElement('span', {class: 'srow-owned'}, `${plural(x.books, 'book')}${x.series ? ', ' + plural(x.series, 'series', 'series') : ''}`)),
-		bioLine(x.name) || (KIND !== CREDIT_KINDS.author && topAuthorsLine(x.name))))
+		bioLine(x) || (KIND !== CREDIT_KINDS.author && topAuthorsLine(x))))
 		: buildElement('p', {class: 'empty'}, all.length ? `No ${KIND.many} match your search.`
 			: KIND === CREDIT_KINDS.author ? 'No books yet.' : `No ${KIND.many} yet: they come from the books' editions.`));
 }
 
 /**
  * The first line of someone's bio, for the list; null when there is none.
- * @param {string} name
+ * @param {ListEntry} x
  * @returns {HTMLParagraphElement | null}
  */
-function bioLine(name){
-	const info = infoOf(name);
-	return info && info.bio ? buildElement('p', {class: 'srow-note'}, info.bio.split('\n')[0]) : null;
+function bioLine(x){
+	return x.bio ? buildElement('p', {class: 'srow-note'}, x.bio.split('\n')[0]) : null;
 }
 
 /**
  * The authors whose books someone narrates or publishes most, for the list: "Mostly Ann Vale, Bo Reed".
- * @param {string} name
+ * @param {ListEntry} x
  * @returns {HTMLParagraphElement | null}
  */
-function topAuthorsLine(name){
-	/** @type {Map<string, number>} */
-	const count = new Map();
-	for(const b of CATALOG.books) if(KIND.namesOf(b).includes(name)) for(const a of b.authors) count.set(a, (count.get(a) || 0) + 1);
-	const top = [...count].sort((x, y)=> y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, 3).map(([a])=> a);
-	return top.length ? buildElement('p', {class: 'srow-note'}, (count.size > top.length ? 'Mostly ' : 'Books by ') + top.join(', ')) : null;
+function topAuthorsLine(x){
+	return x.topAuthors.length ? buildElement('p', {class: 'srow-note'}, (x.authorCount > x.topAuthors.length ? 'Mostly ' : 'Books by ') + x.topAuthors.join(', ')) : null;
+}
+
+/**
+ * The list, from the kind's records alone (and the names of the authors they name).
+ * @param {CatalogReader} r
+ * @returns {Promise<{list: ListEntry[], total: number}>}
+ */
+async function readList(r){
+	/** @type {ContributorRecord[]} */
+	const records = (await r.under('contributors', 'byName', [KIND.one])).filter(c=> c.bookCount > 0);
+	/** @type {ContributorRecord[]} */
+	const authors = await r.get('contributors', records.flatMap(c=> c.topAuthorIds || []));
+	const authorName = new Map(authors.map(a=> [a.id, a.name]));
+	const list = records.map(c=> ({id: c.id, name: c.name, books: c.bookCount, series: c.seriesCount, bio: c.bio || '',
+		topAuthors: /** @type {string[]} */ ((c.topAuthorIds || []).map(id=> authorName.get(id)).filter(x=> x !== undefined)), authorCount: c.authorCount || 0}));
+	return {list: list.sort((x, y)=> x.name.localeCompare(y.name)), total: await r.count('books')};
+}
+
+// What the page shows: the list, or someone's record and their books.
+async function loadShown(){
+	if(SHOWN === null){
+		const {list, total} = await queryCatalog(readList);
+		LIST = list;
+		TOTAL_BOOKS = total;
+		return;
+	}
+	const id = SHOWN;
+	LIST = [];
+	const credited = await queryCatalog(r=> r.allKeys('credits', 'byTitle', r.keyRange.bound([id], [id, []])));
+	await loadRecords({books: credited.map(key=> /** @type {string} */ (/** @type {IDBValidKey[]} */ (key)[1])), contributors: [id]});
 }
 
 /**
@@ -260,22 +291,47 @@ function removeCreditInfo(){
 // authors.html is the list, authors.html#a=id an author's page (likewise #n= and #p=); links between
 // them change the address, so Back and Forward step through them.
 /**
- * The id of the one the address names (by their id, or their name), or null for the list. A name no book
- * has gets an id too, so their page says so and info can be added for them.
- * @returns {string | null}
+ * The id of the one the address names (by their id, or their name, as stored), or null for the list. A
+ * name no book has gets an id too, so their page says so and info can be added for them.
+ * @returns {Promise<string | null>}
  */
-function shownInAddress(){
+async function shownInAddress(){
 	const value = valueFromPageHash(location.hash, KIND.hashKey);
-	return value === null ? null : idFromAddress(KIND.infoKey, value) ?? CATALOG.idFor(KIND.infoKey, value);
+	if(value === null) return null;
+	const stored = await queryCatalog(async r=>{
+		/** @type {ContributorRecord[]} */
+		const [rec] = await r.get('contributors', [value]);
+		if(rec && rec.kind === KIND.one) return rec.id;
+		/** @type {ContributorRecord[]} */
+		const [named] = await r.all('contributors', 'kindName', [KIND.one, value]);
+		return named ? named.id : null;
+	});
+	return stored ?? idFromAddress(KIND.infoKey, value) ?? CATALOG.idFor(KIND.infoKey, value);
 }
 
+/**
+ * Show what the address names, once what it needs is loaded.
+ * @returns {Promise<void>}
+ */
 export function showAddress(){
-	const id = shownInAddress();
-	if(id === SHOWN && byId('creditBody').hasChildNodes()) return;
-	const moved = id !== SHOWN;
-	SHOWN = id;
-	render();
-	if(moved && typeof scrollTo === 'function') scrollTo(0, 0);
+	return afterSaving(async ()=>{
+		const id = await shownInAddress();
+		if(id === SHOWN && byId('creditBody').hasChildNodes()) return;
+		const moved = id !== SHOWN;
+		SHOWN = id;
+		await loadShown();
+		render();
+		if(moved && typeof scrollTo === 'function') scrollTo(0, 0);
+	});
+}
+
+// After a save took in what another tab changed: read what is shown again.
+function refreshShown(){
+	return afterSaving(async ()=>{
+		await loadShown();
+		if(SHOWN !== null && CATALOG.nameOf(KIND.infoKey, SHOWN) === undefined){ SHOWN = null; await loadShown(); }
+		render();
+	});
 }
 
 /**
@@ -294,5 +350,5 @@ export function startCreditsPage(kind){
 	byId('q').addEventListener('input', render);
 	addEventListener('hashchange', showAddress);
 	addEventListener('popstate', showAddress);
-	return startPage(()=>{ SHOWN = shownInAddress(); render(); }, {whole: true, refresh: ()=>{ if(SHOWN !== null && CATALOG.nameOf(KIND.infoKey, SHOWN) === undefined) SHOWN = null; render(); }});
+	return startPage(async ()=>{ SHOWN = await shownInAddress(); await loadShown(); render(); }, {refresh: refreshShown});
 }
