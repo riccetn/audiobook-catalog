@@ -28,14 +28,14 @@ address in an edition's *Hardcover edition* field needs no lookup: it holds the 
 - **Import** reads the books on your Hardcover *Read* shelf, like any import (it only adds, see [How imports avoid clobbering your edits](imports.md)).
   A book read as an audiobook edition on Hardcover is added if it is new; a book you read in another
   format, or without an edition picked, only fills in a book you already have. Each gets Hardcover's book
-  id (`hcb`) and an edition with Hardcover's edition id (`hc`), the ASIN (as amazon.com's, the site Hardcover uses), ISBN, narrator, publisher, release
+  id (`ext.hardcover` on the book) and an edition with Hardcover's edition id (`ext.hardcover` on the edition), the ASIN (as amazon.com's, the site Hardcover uses), ISBN, narrator, publisher, release
   date and length Hardcover has, and every finished date of its reads (Hardcover keeps them all, so a book you have
   gains the dates it lacks; `2024-03-15` counts as there when you have `2024-03`). A book on Hardcover with
   no finished date gets none, which here means the date is unknown. A box set you read on Hardcover, found
   by its edition on your titles, gives its dates to each of those titles, and is added as their collection
   when they are numbers in a row of one series ([Box sets](imports.md#box-sets)).
 - **Export** finds each of your books without a Hardcover book id by its editions' Hardcover id, ASIN, ISBN
-  or Goodreads id, saves the book's id (`hcb`) on the book and the edition's (`hc`) on the edition (an ISBN or
+  or Goodreads id, saves the book's id on the book and the edition's on the edition (an ISBN or
   Goodreads id only gives the book's id, since it is often the print edition), and puts the books that aren't on your Hardcover shelves yet on *Read*, with
   each dated read as a Hardcover read. A book already on *Read* gains the reads it lacks. A box set is one
   Hardcover book, so titles that share its id go on Hardcover once; a title with its own Hardcover book

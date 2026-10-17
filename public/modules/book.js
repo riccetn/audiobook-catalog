@@ -1,12 +1,12 @@
-// A title in the catalog: its authors, series and number in it, genres, the dates you read it, its
-// Hardcover book id and its editions. What makes two records one book (the keys imports match by), and
+// A title in the catalog: its authors, series and number in it, genres, the dates you read it, its ids
+// in external catalogs (Hardcover's and Goodreads' book, which every edition of it is an edition of) and
+// its editions. What makes two records one book (the keys imports match by), and
 // how books stored in an older format are read.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {Edition} from './edition.js';
 import {Series} from './series.js';
-import {HardcoverClient} from './hardcover-client.js';
-/** @import {EditionId} from './edition.js' */
+import {ExternalCatalog} from './external-catalog.js';
 /** @import {Unchecked} from './text.js' */
 
 /**
@@ -18,22 +18,23 @@ import {HardcoverClient} from './hardcover-client.js';
  * @property {string} [number] number in the series, as text: "3", "2.5", or a box set's range "4-6"
  * @property {string[]} [genres]
  * @property {string[]} [read] dates read, oldest first: "2024-03-15", "2024-03" or "2024"; none means unknown, not unread
- * @property {string} [hardcoverId] Hardcover's book id
+ * @property {Record<string, string>} [external] its ids by external catalog: {"hardcover": "77", "goodreads": "1234"}
  * @property {Edition[]} [editions]
  * @property {string} [id] the id it is stored under in this browser, which never changes (see CatalogRecords)
  */
 
 /**
  * Which book's value mergeBooks keeps, as an index into the books merged; by default the first that has one.
- * @typedef {{title?: number, authors?: number, series?: number, hardcoverId?: number, joinEditions?: boolean}} Picks
+ * For `external`, the picked book's ids come first, and the others add the catalogs it has no id in.
+ * @typedef {{title?: number, authors?: number, series?: number, external?: number, joinEditions?: boolean}} Picks
  */
 
 // Before editions, a book held its ASIN, Goodreads id and ISBNs itself; fixEditions() moves them.
 const LEGACY_KEYS = ['id', 'gr', 'isbn'];
 const TRAILING_BOOK_N = new RegExp(',?\\s*' + Text.WORD_START + 'book\\s*\\d+\\s*$', 'iu');
 // The stored keys that hold a text, and the field each is kept in.
-/** @type {Record<string, 'title' | 'series' | 'number' | 'hardcoverId'>} */
-const TEXT_FIELDS = {t: 'title', s: 'series', sn: 'number', hcb: 'hardcoverId'};
+/** @type {Record<string, 'title' | 'series' | 'number'>} */
+const TEXT_FIELDS = {t: 'title', s: 'series', sn: 'number'};
 
 /**
  * @param {unknown} v
@@ -55,13 +56,13 @@ const storedEditions = rec => rec && Array.isArray(rec.e) ? rec.e.filter(Text.is
 /** A title in the catalog. */
 export class Book {
 	/** the keys of a stored book, in order */
-	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'hcb', 'e'];
+	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'ext', 'e'];
 	// The key a backup keeps the book's id under, before the others. It is not one of KEYS, as it says which
 	// record the book is, not what the book is: text() and the comparisons built on it leave it out.
 	static ID_KEY = 'uid';
 
 	/** @param {BookInit} [init] */
-	constructor({title = '', authors = [], series, number, genres = [], read = [], hardcoverId, editions = [], id} = {}){
+	constructor({title = '', authors = [], series, number, genres = [], read = [], external = {}, editions = [], id} = {}){
 		/** @type {string | undefined} the id it is stored under (CatalogRecords gives one to a book that has none) */
 		this.id = id;
 		this.title = title;
@@ -75,8 +76,8 @@ export class Book {
 		this.genres = [...genres];
 		/** @type {string[]} none means the date is unknown, not that it is unread */
 		this.read = [...read];
-		/** @type {string | undefined} Hardcover's book id */
-		this.hardcoverId = hardcoverId;
+		/** @type {Record<string, string>} its ids by external catalog */
+		this.external = {...external};
 		/** @type {Edition[]} */
 		this.editions = [...editions];
 		/** @type {Record<string, unknown>} what the stored book holds that is not a book's value (the Check reports it) */
@@ -84,7 +85,7 @@ export class Book {
 	}
 
 	/**
-	 * A book from the way it is stored (`{t, a, s, sn, g, r, hcb, e}`), in the current format (fixBooks()
+	 * A book from the way it is stored (`{t, a, s, sn, g, r, ext, e}`), in the current format (fixBooks()
 	 * brings an older one to it). A value that is not what its key holds, and a key a book has not, is
 	 * kept aside as it is and written back by toJSON(), so the Check still reports it. Throws when it is
 	 * not an object.
@@ -112,6 +113,7 @@ export class Book {
 		else if(key === 'a') put(textList(v) && v.length > 0, () => { this.authors = [.../** @type {string[]} */ (v)]; }, () => { this.authors = []; });
 		else if(key === 'g') put(textList(v), () => { this.genres = [.../** @type {string[]} */ (v)]; }, () => { this.genres = []; });
 		else if(key === 'r') put(Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'), () => { this.read = [.../** @type {string[]} */ (v)]; }, () => { this.read = []; });
+		else if(key === 'ext') put(ExternalCatalog.isIds(v), () => { this.external = {.../** @type {Record<string, string>} */ (v)}; }, () => { this.external = {}; });
 		else if(key === 'e'){
 			put(Array.isArray(v) && v.length > 0 && v.every(Text.isObject), () => { this.editions = /** @type {unknown[]} */ (v).map(Edition.fromJSON); }, () => { this.editions = []; });
 		}
@@ -135,6 +137,7 @@ export class Book {
 		else if(key === 'a') v = this.authors.length ? [...this.authors] : undefined;
 		else if(key === 'g') v = this.genres.length ? [...this.genres] : undefined;
 		else if(key === 'r') v = this.read.length ? [...this.read] : undefined;
+		else if(key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
 		else if(key === 'e') v = this.editions.length ? this.editions.map(ed => ed.toJSON()) : undefined;
 		else if(Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
 		return v === undefined ? this.extra[key] : v;
@@ -170,11 +173,21 @@ export class Book {
 
 	// ------------------------------------------------------------------ what it is
 	/**
-	 * The ASINs (`field` 'asin', of every site), Goodreads ids ('gr') or Hardcover edition ids ('hc') of its editions.
-	 * @param {EditionId} field
+	 * Its own id in an external catalog ("hardcover"), or null; its editions have ids of their own.
+	 * @param {string} catalog
+	 * @returns {string | null}
+	 */
+	idOn(catalog){
+		const v = Object.hasOwn(this.external, catalog) ? this.external[catalog] : null;
+		return typeof v === 'string' && v ? v : null;
+	}
+
+	/**
+	 * Its editions' ids of one family (ExternalCatalog.family): 'asin' (of every site), 'goodreads' or 'hardcover'.
+	 * @param {string} family
 	 * @returns {string[]}
 	 */
-	ids(field){ return [...new Set(this.editions.flatMap(ed => ed.ids(field)))]; }
+	ids(family){ return [...new Set(this.editions.flatMap(ed => ed.ids(family)))]; }
 
 	/** @returns {string[]} the ISBNs of all its editions, without repeats */
 	isbns(){ return [...new Set(this.editions.flatMap(ed => ed.isbns()))]; }
@@ -210,14 +223,14 @@ export class Book {
 	}
 
 	/**
-	 * Identity keys, strongest first: its editions' ASINs, Goodreads and Hardcover ids, then its Hardcover
-	 * book id (another edition of it), then series, then title.
+	 * Identity keys, strongest first: its editions' external ids (ASINs, Goodreads and Hardcover ids), then
+	 * its own (another edition of it), then series, then title.
 	 * @returns {string[]}
 	 */
 	keys(){
 		const keys = [];
-		for(const field of Edition.IDS) for(const id of this.ids(field)) keys.push(Text.key(field, id));
-		if(this.hardcoverId) keys.push(Text.key('hcb', this.hardcoverId));
+		for(const id of new Set(this.editions.flatMap(ed => ed.idKeys()))) keys.push(Text.key('ext', id));
+		for(const [catalog, id] of Object.entries(ExternalCatalog.order(this.external) || {})) keys.push(Text.key('book', catalog, id));
 		// a title or series of only punctuation or symbols has an empty key, which must not match anything
 		if(this.series && this.number && Series.norm(this.series)) keys.push(Text.key('series', this.authorKey(), Series.norm(this.series), this.number.trim()));
 		if(Text.norm(this.title)) keys.push(Text.key('title', Text.norm(this.title), this.authorKey()));
@@ -256,8 +269,8 @@ export class Book {
 		const clean = v => Text.tidy(String(v || '').replace(/[#|]/g, ' '));
 		const entries = [];
 		for(const id of this.ids('asin')) if(clean(id)) entries.push(clean(id));
-		for(const gr of this.ids('gr')) if(Edition.GOODREADS_ID.test(gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
-		for(const hc of this.ids('hc')) if(HardcoverClient.ID.test(hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
+		for(const gr of this.ids('goodreads')) if(ExternalCatalog.isId('goodreads', 'edition', gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
+		for(const hc of this.ids('hardcover')) if(ExternalCatalog.isId('hardcover', 'edition', hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
 		if(clean(this.title) && clean(Text.namesText(this.authors))) entries.push(`${clean(this.title)} | ${clean(Text.namesText(this.authors))}`);
 		return entries;
 	}
@@ -292,12 +305,12 @@ export class Book {
 
 	/**
 	 * A test of whether an edition is also on another of `books` (a box set's edition, on each of its
-	 * titles): it shares an ASIN, Goodreads id, Hardcover id or ISBN with an edition of another book.
+	 * titles): it shares an external id or ISBN with an edition of another book.
 	 * @param {Book[]} books
 	 * @returns {(ed: Edition) => boolean}
 	 */
 	static sharedEditionTest(books){
-		const ids = (/** @type {Edition} */ ed) => [...Edition.IDS.flatMap(k => ed.ids(k).map(v => k + ' ' + v)), ...ed.isbns().map(x => 'isbn ' + x)];
+		const ids = (/** @type {Edition} */ ed) => [...ed.idKeys(), ...ed.isbns().map(x => 'isbn ' + x)];
 		/** @type {Map<string, number>} */
 		const owners = new Map();
 		for(const b of books) for(const id of new Set(b.editions.flatMap(ids))) owners.set(id, (owners.get(id) || 0) + 1);
@@ -306,7 +319,7 @@ export class Book {
 
 	/**
 	 * One book made of several entries for the same title. `pick` says, for the title, the authors, the
-	 * series (and its number) and the Hardcover book id, which entry's value to keep, as an index into
+	 * series (and its number) and the external ids, which entry's value to keep, as an index into
 	 * `books`; by default the first entry that has one. Genres and dates read are combined, and so are
 	 * editions: an edition that shares an ASIN, Goodreads id or ISBN with one already kept fills in what it
 	 * lacks, the others are added. With `pick.joinEditions`, editions that do not disagree on an ASIN or
@@ -316,7 +329,7 @@ export class Book {
 	 * @returns {Book}
 	 */
 	static merge(books, pick = {}){
-		/** @type {(field: 'title' | 'authors' | 'series' | 'hardcoverId', has: (b: Book) => boolean) => Book | undefined} */
+		/** @type {(field: 'title' | 'authors' | 'series' | 'external', has: (b: Book) => boolean) => Book | undefined} */
 		const from = (field, has) => {
 			const i = pick[field];
 			return i !== undefined && Number.isInteger(i) && books[i] && has(books[i]) ? books[i] : books.find(has);
@@ -336,8 +349,10 @@ export class Book {
 		}
 		out.genres = [...new Set(books.flatMap(b => b.genres))];
 		out.read = [...new Set(books.flatMap(b => b.read))].sort();
-		const hardcover = from('hardcoverId', b => !!b.hardcoverId);
-		if(hardcover) out.hardcoverId = hardcover.hardcoverId;
+		const external = from('external', b => Object.keys(b.external).length > 0);
+		for(const b of external ? [external, ...books] : books){
+			for(const [catalog, id] of Object.entries(b.external)) if(!out.idOn(catalog)) out.external[catalog] = id;
+		}
 		/** @type {Edition[]} */
 		const editions = [];
 		for(const ed of books.flatMap(b => b.editions)){
@@ -375,8 +390,8 @@ export class Book {
 	 * moved to editions) goes on each of its editions that has none, or on a new edition when it has none.
 	 * An edition with several ISBNs becomes one edition per ISBN (Edition.splitIsbns), and the Hardcover book
 	 * id its editions held before it moved to the book ("hcb") goes on the book; when they name different
-	 * Hardcover books, `pickHcb(ids)` chooses (by default the first). An edition's ASIN from before ASINs
-	 * were kept by site ("id") becomes its audible.com ASIN (Edition.fixAsin). An empty `e` is dropped.
+	 * Hardcover books, `pickHcb(ids)` chooses (by default the first). The editions' ids from before they were
+	 * kept by external catalog go under `ext` (Edition.fixIds). An empty `e` is dropped.
 	 * @param {Unchecked} rec
 	 * @param {(ids: string[]) => string} [pickHcb]
 	 * @returns {Unchecked}
@@ -391,18 +406,16 @@ export class Book {
 			if(LEGACY_KEYS.includes(k)) legacy[k] = v; else if(k !== 'n') out[k] = v;
 		}
 		/** @type {Unchecked} */
-		let editions = Array.isArray(rec.e) ? rec.e.flatMap((/** @type {Unchecked} */ ed) => Text.isObject(ed) ? Edition.splitIsbns(Edition.fixAsin(ed)) : [ed]) : rec.e;
-		const fixedLegacy = Object.keys(legacy).length ? Edition.splitIsbns(Edition.fixAsin(legacy)) : [];
+		let editions = Array.isArray(rec.e) ? rec.e.flatMap((/** @type {Unchecked} */ ed) => Text.isObject(ed) ? Edition.splitIsbns(Edition.fixIds(ed)) : [ed]) : rec.e;
+		const fixedLegacy = Object.keys(legacy).length ? Edition.splitIsbns(Edition.fixIds(legacy)) : [];
 		if(fixedLegacy.length){
 			editions = Array.isArray(editions) ? editions.map((/** @type {Unchecked} */ ed) => Text.isObject(ed) ? {...ed} : ed) : [];
 			const [first, ...more] = fixedLegacy;
 			const firstEd = Edition.fromJSON(first);
-			/** @type {EditionId[]} */
-			const ids = ['asin', 'gr'];
 			const at = editions.findIndex((/** @type {Unchecked} */ ed) => {
 				if(!Text.isObject(ed)) return false;
 				const x = Edition.fromJSON(ed);
-				return x.sameAs(firstEd) && ids.some(k => x.sharesId(firstEd, k));
+				return x.sameAs(firstEd) && x.sharesId(firstEd);
 			});
 			if(at >= 0){
 				const same = Edition.fromJSON(editions[at]);
@@ -433,12 +446,34 @@ export class Book {
 		}
 		if(Array.isArray(editions) && !editions.length) editions = undefined;
 		if(editions === undefined) delete out.e; else out.e = editions;
-		if(hcbs.length && out.hcb === undefined){
+		if(hcbs.length && out.hcb === undefined && !(Text.isObject(out.ext) && out.ext.hardcover !== undefined)){
 			// on the book, before its editions as usual
 			const e = out.e;
 			delete out.e;
 			out.hcb = pickHcb ? pickHcb(hcbs) : hcbs[0];
 			if(e !== undefined) out.e = e;
+		}
+		return out;
+	}
+
+	/**
+	 * A stored book with its own ids under `ext`, by external catalog: the Hardcover book id it kept as "hcb"
+	 * before goes in `ext.hardcover`, unless `ext` has another one, when it is left for the Check to report.
+	 * @param {Unchecked} rec
+	 * @returns {Unchecked}
+	 */
+	static fixIds(rec){
+		if(!Text.isObject(rec) || !('hcb' in rec) || typeof rec.hcb !== 'string' || (rec.ext !== undefined && !Text.isObject(rec.ext))) return rec;
+		const hcb = rec.hcb.trim(), had = Text.isObject(rec.ext) ? rec.ext.hardcover : undefined;
+		if(hcb && had !== undefined && had !== hcb) return rec;
+		const ext = hcb ? {...(rec.ext || {}), hardcover: hcb} : rec.ext;
+		/** @type {Record<string, any>} */
+		const out = {};
+		// in its place among the keys, before the editions
+		for(const [k, v] of Object.entries(rec)){
+			if(k === 'hcb'){ if(ext && !('ext' in out)) out.ext = ExternalCatalog.order(ext); }
+			else if(k === 'ext'){ if(!('ext' in out) && ext) out.ext = ExternalCatalog.order(ext); }
+			else out[k] = v;
 		}
 		return out;
 	}
@@ -469,10 +504,11 @@ export class Book {
 	 * @returns {Unchecked}
 	 */
 	static tidyJSON(rec){
-		const out = {...Text.fixPeople(Book.fixEditions(Book.fixReadDates(rec)))};
-		for(const key of ['t', 's', 'sn', 'hcb']){
+		const out = {...Text.fixPeople(Book.fixIds(Book.fixEditions(Book.fixReadDates(rec))))};
+		for(const key of ['t', 's', 'sn']){
 			if(typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
+		if(Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
 		if(Array.isArray(out.a)) out.a = Text.tidyNames(out.a);
 		if(Array.isArray(out.g)){
 			out.g = out.g.map((/** @type {unknown} */ x) => typeof x === 'string' ? Text.tidy(x) : x).filter((/** @type {unknown} */ x) => x !== '');
@@ -485,7 +521,7 @@ export class Book {
 	}
 
 	/**
-	 * Stored books in the current format: fixReadDates(), fixEditions(), Text.fixPeople() and fixSeriesTitle()
+	 * Stored books in the current format: fixReadDates(), fixEditions(), fixIds(), Text.fixPeople() and fixSeriesTitle()
 	 * on every book of a list; anything that is not a list is returned as is. A book whose editions name
 	 * several Hardcover books keeps the one no other book's editions name (the others are a box set's,
 	 * whose edition is on each of its titles).
@@ -501,6 +537,6 @@ export class Book {
 			for(const id of ids) owners.set(id, (owners.get(id) || 0) + 1);
 		}
 		const pickHcb = (/** @type {string[]} */ ids) => ids.find(id => owners.get(id) === 1) || ids[0];
-		return books.map(b => Book.fixSeriesTitle(Text.fixPeople(Book.fixEditions(Book.fixReadDates(b), pickHcb))));
+		return books.map(b => Book.fixSeriesTitle(Text.fixPeople(Book.fixIds(Book.fixEditions(Book.fixReadDates(b), pickHcb)))));
 	}
 }

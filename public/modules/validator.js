@@ -8,7 +8,7 @@ import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 /** @import {ContributorKind} from './contributor.js' */
-import {HardcoverClient} from './hardcover-client.js';
+import {ExternalCatalog} from './external-catalog.js';
 /** @import {Unchecked} from './text.js' */
 
 /** @typedef {{errors: string[], warnings: string[]}} Problems what the Check found */
@@ -42,9 +42,10 @@ export class Validator {
 		if(!Array.isArray(books)) return {errors: ['books.json must contain a list'], warnings};
 		const isObj = Text.isObject;
 
-		// ASIN / Goodreads id -> the first edition seen with it; a box set is one edition on several titles
-		const seen = {asin: new Map(), gr: new Map(), hc: new Map()};
-		const names = {asin: 'ASIN', gr: 'Goodreads id', hc: 'Hardcover id'};
+		// an external id ("asin B0…", "goodreads 4242") -> the first edition seen with it; a box set is one edition on several titles
+		const seen = new Map();
+		/** @type {(family: string) => string} */
+		const nameOf = family => family === 'asin' ? 'ASIN' : `${ExternalCatalog.name(family)} id`;
 		books.forEach((b, i) => {
 			const label = isObj(b) ? `book #${i} (${repr(b.t === undefined ? '?' : b.t)})` : `book #${i}`;
 			if(!isObj(b)){ errors.push(`${label}: not an object`); return; }
@@ -55,10 +56,14 @@ export class Validator {
 			if(!nonEmpty(b.t)) errors.push(`${label}: missing 't'`);
 			if(!('a' in b)) errors.push(`${label}: missing 'a'`);
 			else if(!nameList(b.a)) errors.push(`${label}: 'a' must be a non-empty list of authors' names`);
-			for(const k of ['s', 'sn', 'hcb']){
+			for(const k of ['s', 'sn']){
 				if(k in b && !nonEmpty(b[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
 			}
-			if(nonEmpty(b.hcb) && !HardcoverClient.ID.test(b.hcb.trim())) errors.push(`${label}: 'hcb' must be a Hardcover book id (digits only), not ${repr(b.hcb)}`);
+			if('ext' in b){
+				const found = ExternalCatalog.problems(b.ext, 'book');
+				errors.push(...found.errors.map(e => `${label}: ${e}`));
+				warnings.push(...found.warnings.map(w => `${label}: ${w}`));
+			}
 			if('g' in b && !(Array.isArray(b.g) && b.g.every(nonEmpty))){
 				errors.push(`${label}: 'g' must be a list of non-empty strings`);
 			}
@@ -84,17 +89,18 @@ export class Validator {
 			for(const isbn of new Set(isbns.filter((x, j) => isbns.indexOf(x) !== j))) warnings.push(`${label}: lists ISBN ${isbn} on two editions`);
 			editions.forEach((ed, j) => {
 				const stored = storedEditions(b)[j];
-				for(const field of Edition.IDS) for(const v of ed.ids(field)){
-					const other = seen[field].get(v);
-					if(!other){ seen[field].set(v, {i, label, titleKey, ed, stored}); continue; }
-					if(other.i === i) errors.push(`${label}: lists the edition with ${names[field]} ${v} twice`);
-					else if(other.titleKey === titleKey) errors.push(`${label}: duplicate ${names[field]} ${v} (also ${other.label})`);
-					else if(field === 'asin' || !ed.ids('asin').length || !other.ed.ids('asin').length){
+				for(const key of ed.idKeys()){
+					const family = key.slice(0, key.indexOf(' ')), v = key.slice(key.indexOf(' ') + 1);
+					const other = seen.get(key);
+					if(!other){ seen.set(key, {i, label, titleKey, ed, stored}); continue; }
+					if(other.i === i) errors.push(`${label}: lists the edition with ${nameOf(family)} ${v} twice`);
+					else if(other.titleKey === titleKey) errors.push(`${label}: duplicate ${nameOf(family)} ${v} (also ${other.label})`);
+					else if(family === 'asin' || !ed.ids('asin').length || !other.ed.ids('asin').length){
 						// a box set's edition on each of its titles: fine, as long as the copies agree (on more than their id)
 						/** @type {(x: Unchecked) => string} */
 						const values = x => { const {[Edition.ID_KEY]: id, ...rest} = Edition.order(Edition.tidyJSON(x)); return JSON.stringify(rest); };
 						if(values(stored) !== values(other.stored)){
-							warnings.push(`${label}: the edition with ${names[field]} ${v} differs from its copy on ${other.label}`);
+							warnings.push(`${label}: the edition with ${nameOf(family)} ${v} differs from its copy on ${other.label}`);
 						}
 					}
 				}
@@ -156,6 +162,11 @@ export class Validator {
 			if('url' in entry && !(typeof entry.url === 'string' && /^https?:\/\//.test(entry.url))){
 				errors.push(`series-info[${repr(name)}]: url must start with http:// or https://`);
 			}
+			if('ext' in entry){
+				const found = ExternalCatalog.problems(entry.ext, 'series');
+				errors.push(...found.errors.map(e => `series-info[${repr(name)}]: ${e}`));
+				warnings.push(...found.warnings.map(w => `series-info[${repr(name)}]: ${w}`));
+			}
 			const unknown = Object.keys(entry).filter(k => !Series.KEYS.includes(k)).sort();
 			if(unknown.length) errors.push(`series-info[${repr(name)}]: unknown keys ${repr(unknown)}`);
 		}
@@ -175,23 +186,16 @@ export class Validator {
 			if(!/** @type {string[]} */ (Edition.KEYS).includes(k) && k !== Edition.ID_KEY) errors.push(`${label}: unknown key ${repr(k)}`);
 		}
 		if(Edition.ID_KEY in ed && !nonEmpty(ed[Edition.ID_KEY])) errors.push(`${label}: ${repr(Edition.ID_KEY)} must be a non-empty string when present`);
-		for(const k of ['gr', 'hc', 'p', 'd', 'desc']){
+		for(const k of ['p', 'd', 'desc']){
 			if(k in ed && !nonEmpty(ed[k])) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
 		}
-		if('asin' in ed){
-			const pairs = Text.isObject(ed.asin) ? Object.entries(ed.asin) : [];
-			if(!pairs.length) errors.push(`${label}: 'asin' must be the edition's ASINs by site, e.g. {"audible.com": "B0..."}`);
-			for(const [site, v] of pairs){
-				if(!Edition.ASIN_SITE.test(site)) errors.push(`${label}: ${repr(site)} is not an Amazon or Audible site (e.g. audible.com, amazon.co.uk)`);
-				if(!nonEmpty(v)) errors.push(`${label}: the ASIN on ${site} must be a non-empty string`);
-			}
+		if('ext' in ed){
+			const found = ExternalCatalog.problems(ed.ext, 'edition');
+			errors.push(...found.errors.map(e => `${label}: ${e}`));
+			warnings.push(...found.warnings.map(w => `${label}: ${w}`));
 		}
 		if('n' in ed && !nameList(ed.n)) errors.push(`${label}: 'n' must be a non-empty list of narrators' names`);
 		if(!Object.keys(ed).some(k => k !== Edition.ID_KEY)) errors.push(`${label}: is empty`);
-		if(nonEmpty(ed.gr) && !Edition.GOODREADS_ID.test(ed.gr.trim())){
-			errors.push(`${label}: 'gr' must be a Goodreads book id (digits only), not ${repr(ed.gr)}`);
-		}
-		if(nonEmpty(ed.hc) && !HardcoverClient.ID.test(ed.hc.trim())) errors.push(`${label}: 'hc' must be a Hardcover id (digits only), not ${repr(ed.hc)}`);
 		if(nonEmpty(ed.d) && Text.parseDate(ed.d) !== ed.d){
 			errors.push(`${label}: 'd' must be a release date (YYYY-MM-DD, YYYY-MM or YYYY), not ${repr(ed.d)}`);
 		}
@@ -208,8 +212,8 @@ export class Validator {
 
 	/**
 	 * Check stored author, narrator or publisher info (`kind`) against the stored books. Returns {errors,
-	 * warnings}: a malformed entry is an error; an entry for a name no book has (an author renamed on their
-	 * books) and a link to another site than its field says are warnings.
+	 * warnings}: a malformed entry, or an id that isn't one, is an error; an entry for a name no book has (an
+	 * author renamed on their books) and an id in a catalog this app doesn't know are warnings.
 	 * @param {Unchecked} books
 	 * @param {ContributorKind} kind
 	 * @param {Unchecked} entries
@@ -230,15 +234,28 @@ export class Validator {
 			if(!Text.isObject(entry)){ errors.push(`${label}: not an object`); continue; }
 			const unknown = Object.keys(entry).filter(k => !/** @type {string[]} */ (Contributor.KEYS).includes(k)).sort();
 			if(unknown.length) errors.push(`${label}: unknown keys ${repr(unknown)}`);
-			for(const k of Contributor.KEYS){
+			for(const k of ['bio', 'url']){
 				if(!(k in entry)) continue;
 				const v = entry[k];
-				if(typeof v !== 'string' || !v.trim()){ errors.push(`${label}: ${repr(k)} must be a non-empty string when present`); continue; }
-				if(k === 'bio') continue;
-				const host = Text.webHost(v.trim());
-				if(!host){ errors.push(`${label}: ${repr(k)} must be a web address starting with http:// or https://`); continue; }
-				const site = Contributor.SITES[k];
-				if(site && !site[1](host)) warnings.push(`${label}: ${repr(k)} should be an address on ${site[0]}, not ${repr(v)}`);
+				if(typeof v !== 'string' || !v.trim()) errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
+				else if(k === 'url' && !Text.webHost(v.trim())) errors.push(`${label}: 'url' must be a web address starting with http:// or https://`);
+			}
+			if('ext' in entry){
+				const found = ExternalCatalog.problems(entry.ext, Contributor.ONE[kind]);
+				errors.push(...found.errors.map(e => `${label}: ${e}`));
+				warnings.push(...found.warnings.map(w => `${label}: ${w}`));
+			}
+			if('links' in entry){
+				const links = entry.links;
+				if(!Array.isArray(links) || !links.length) errors.push(`${label}: 'links' must be a list of web addresses`);
+				else for(const v of links){
+					if(typeof v !== 'string' || !Text.webHost(v.trim())) errors.push(`${label}: link ${repr(v)} must be a web address starting with http:// or https://`);
+					else {
+						// a page the patterns can read is better kept as its id, so it can be matched and linked
+						const found = ExternalCatalog.fromAddress(v, Contributor.ONE[kind]);
+						if(found) warnings.push(`${label}: link ${repr(v)} is a page on ${ExternalCatalog.name(found.catalog)}; keep its id ${repr(found.id)} instead`);
+					}
+				}
 			}
 		}
 		return {errors, warnings};

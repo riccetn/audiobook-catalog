@@ -242,16 +242,6 @@ export class HardcoverClient {
 	}
 
 	/**
-	 * A book's or an edition's page on Hardcover, by its id (Hardcover redirects to the current address).
-	 * @param {'book' | 'edition'} kind
-	 * @param {string} id
-	 * @returns {string}
-	 */
-	static url(kind, id){
-		return `https://hardcover.app/id/${kind}/${encodeURIComponent(id)}`;
-	}
-
-	/**
 	 * The Hardcover book that `text` names (a book id, or an address as parseUrl() reads it), asking
 	 * Hardcover through `client` only when the address doesn't hold the book's id: a book's page by its slug,
 	 * an edition by the edition's book. Returns {id, title (when Hardcover was asked)}; throws with a short

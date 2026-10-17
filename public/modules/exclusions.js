@@ -103,8 +103,8 @@ export class Exclusions {
 	 * @returns {boolean}
 	 */
 	covers(book){
-		return book.ids('asin').some(id => this.ids.has(id)) || book.ids('gr').some(gr => this.grs.has(gr)) ||
-			book.ids('hc').some(hc => this.hcs.has(hc)) ||
+		return book.ids('asin').some(id => this.ids.has(id)) || book.ids('goodreads').some(gr => this.grs.has(gr)) ||
+			book.ids('hardcover').some(hc => this.hcs.has(hc)) ||
 			(Text.norm(book.title) !== '' && this.titles.has(Text.key(Text.norm(book.title), book.authorKey()))) || book.isbns().some(isbn => this.isbns.has(isbn));
 	}
 

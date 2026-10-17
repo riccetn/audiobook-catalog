@@ -1,20 +1,18 @@
-// An edition of a book: its ids on Audible and Amazon (an ASIN per site), Goodreads and Hardcover, its
-// ISBN, narrators, publisher, release date, length and your own description of it ("UK edition"). A box
-// set is one edition on each of its titles, linked by the ids the copies share (sameAs).
+// An edition of a book: its ids in external catalogs (an ASIN per Audible and Amazon site, Goodreads,
+// Hardcover; see ExternalCatalog), its ISBN, narrators, publisher, release date, length and your own
+// description of it ("UK edition"). A box set is one edition on each of its titles, linked by the ids the
+// copies share (sameAs).
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
-import {HardcoverClient} from './hardcover-client.js';
+import {ExternalCatalog} from './external-catalog.js';
 /** @import {Unchecked} from './text.js' */
 
-/** @typedef {'asin' | 'gr' | 'hc'} EditionId the ids that name an edition (Edition.IDS) */
-/** @typedef {'asin' | 'gr' | 'hc' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc'} EditionKey the keys of an edition as it is stored */
+/** @typedef {'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc'} EditionKey the keys of an edition as it is stored */
 
 /**
  * What a new Edition is made of; every part is optional.
  * @typedef {object} EditionInit
- * @property {Record<string, string>} [asins] ASINs by site: {"audible.com": "B0…", "amazon.com": "B0…"}
- * @property {string} [goodreadsId]
- * @property {string} [hardcoverId] Hardcover's edition id
+ * @property {Record<string, string>} [external] its ids by external catalog: {"audible.com": "B0…", "goodreads": "4242", "hardcover": "501"}
  * @property {string} [isbn] one ISBN, the 13-digit form (another ISBN is another edition)
  * @property {string[]} [narrators]
  * @property {string} [publisher]
@@ -24,27 +22,12 @@ import {HardcoverClient} from './hardcover-client.js';
  * @property {string} [id] the id it is stored under in this browser, which never changes; a box set's copies share it
  */
 
-// A Goodreads book id, as an edition keeps it: the number in goodreads.com/book/show/12345.
-const GOODREADS_ID = /^\d+$/;
-// A book's page on Goodreads: goodreads.com/book/show/12345-the-salt-road, or 12345.The_Salt_Road.
-const GOODREADS_URL = /^(?:https?:\/\/)?(?:www\.|m\.)?goodreads\.com\/book\/show\/(\d+)(?=[-._/?#]|$)/i;
-// Each Amazon and Audible site may give one edition an ASIN of its own, so an edition keeps them by the
-// site's address: {"audible.com": "B0...", "amazon.com": "B0..."}. An ASIN from before sites were kept
-// (the edition's "id") and one from an Audible import is audible.com's; one that Hardcover or Goodreads
-// gives is amazon.com's, the site they use.
-const ASIN_SITE = /^(?:audible|amazon)\.(?:[a-z]{2,3}|com?\.[a-z]{2})$/;
-const AUDIBLE_SITE = 'audible.com', AMAZON_SITE = 'amazon.com';
-// Audible's stores and their sites, for the ASIN fields of the book form.
-/** @type {Record<string, string>} */
-const AUDIBLE_STORES = {us: 'audible.com', uk: 'audible.co.uk', de: 'audible.de', fr: 'audible.fr', it: 'audible.it',
-	es: 'audible.es', ca: 'audible.ca', au: 'audible.com.au', in: 'audible.in', jp: 'audible.co.jp'};
-// An ASIN's page: amazon.com/dp/B0X, audible.com/pd/Some-Title-Audiobook/B0X, amazon.com/gp/product/B0X.
-const ASIN_URL = /^(?:https?:\/\/)?(?:www\.)?((?:audible|amazon)\.[a-z.]+)\/(?:[^?#]*\/)?(?:dp|pd|product)\/(?:[^/?#]*\/)?([A-Za-z0-9]{10})(?=[/?#]|$)/i;
 const EDITION_PART = /^(asin|goodreads(?:\s+id)?|gr|hardcover(?:\s+book)?(?:\s+id)?|isbns?|publisher|released?|length|narrated\s+by|narrators?|description)\b:?\s*(.*)$/i;
+// Before ids were kept by external catalog, an edition kept them under keys of their own: its ASINs by
+// site ("asin"), before that one ASIN ("id", audible.com's), its Goodreads id ("gr") and Hardcover id ("hc").
+/** @type {Record<string, string>} */
+const OLD_ID_KEYS = {gr: 'goodreads', hc: 'hardcover'};
 
-// Audible's sites before Amazon's, then by address, so an edition's ASINs are always listed alike.
-/** @type {(x: string, y: string) => number} */
-const siteOrder = (x, y) => (Number(y.startsWith('audible.')) - Number(x.startsWith('audible.'))) || (x < y ? -1 : x > y ? 1 : 0);
 // A list of names, as the narrators are kept.
 /**
  * @param {unknown} v
@@ -56,53 +39,30 @@ function nameList(v){ return Array.isArray(v) && v.length > 0 && v.every(x => ty
  * @returns {v is string}
  */
 function nonEmpty(v){ return typeof v === 'string' && v.trim() !== ''; }
-// The ASIN a stored edition has on one site, or null.
-/** @type {(ed: Unchecked, site: string) => string | null} */
-const storedAsinOn = (ed, site) => {
-	const v = Text.isObject(ed) && Text.isObject(ed.asin) ? ed.asin[site] : null;
-	return typeof v === 'string' && v ? v : null;
-};
+/** @type {(key: string) => boolean} whether a catalog's ids are ASINs */
+const isAsinSite = key => ExternalCatalog.family(key) === 'asin';
 
 /** An edition of a book. */
 export class Edition {
 	/** @type {EditionKey[]} the keys of a stored edition, in order */
-	static KEYS = ['asin', 'gr', 'hc', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
+	static KEYS = ['ext', 'isbn', 'n', 'p', 'd', 'len', 'desc'];
 	// The key a backup keeps the edition's id under, before the others; like Book.ID_KEY it is not one of KEYS.
-	// ("id" was an edition's ASIN before ASINs were kept by site; see fixAsin.)
+	// ("id" was an edition's ASIN before ASINs were kept by site; see fixIds.)
 	static ID_KEY = 'uid';
-	// The ids that name one edition (and match books in imports). An ISBN names one edition too, but one
-	// ISBN may be on several books (a boxed set's), so it never makes two books the same.
-	/** @type {EditionId[]} */
-	static IDS = ['asin', 'gr', 'hc'];
 	// The fields of the page's edition editor: [key, the label parse() reads, the label the page shows].
+	// 'ext' stands for the external ids, a field for each catalog (fieldLabel()).
 	/** @type {[EditionKey, string, string][]} */
 	static FIELDS = [
-		['desc', 'Description', 'Description'], ['n', 'Narrated by', 'Narrators'],
-		['asin', 'ASIN', 'ASINs'], ['gr', 'Goodreads', 'Goodreads id'], ['hc', 'Hardcover', 'Hardcover edition'],
+		['desc', 'Description', 'Description'], ['n', 'Narrated by', 'Narrators'], ['ext', '', 'ASINs'],
 		['isbn', 'ISBN', 'ISBN'], ['p', 'Publisher', 'Publisher'], ['d', 'Released', 'Released'], ['len', 'Length', 'Length'],
 	];
-	static GOODREADS_ID = GOODREADS_ID;
-	static ASIN_SITE = ASIN_SITE;
-	static AUDIBLE_SITE = AUDIBLE_SITE;
-	static AMAZON_SITE = AMAZON_SITE;
-	static AUDIBLE_STORES = AUDIBLE_STORES;
-	// The sites the book form offers an ASIN field for: each Audible store's site and its Amazon twin, and
-	// a few Amazon sites without an Audible store. An edition's ASIN on another site still gets its field.
-	static ASIN_SITES = [...new Set([
-		...Object.values(AUDIBLE_STORES).flatMap(site => [site, site.replace(/^audible\./, 'amazon.')]),
-		'amazon.se', 'amazon.nl', 'amazon.pl', 'amazon.com.br', 'amazon.com.mx',
-	])];
 
 	/** @param {EditionInit} [init] */
-	constructor({asins = {}, goodreadsId, hardcoverId, isbn, narrators = [], publisher, released, minutes, description, id} = {}){
+	constructor({external = {}, isbn, narrators = [], publisher, released, minutes, description, id} = {}){
 		/** @type {string | undefined} the id it is stored under (CatalogRecords gives one to an edition that has none) */
 		this.id = id;
-		/** @type {Record<string, string>} ASINs by site */
-		this.asins = {...asins};
-		/** @type {string | undefined} */
-		this.goodreadsId = goodreadsId;
-		/** @type {string | undefined} Hardcover's edition id */
-		this.hardcoverId = hardcoverId;
+		/** @type {Record<string, string>} its ids by external catalog */
+		this.external = {...external};
 		/** @type {string | undefined} */
 		this.isbn = isbn;
 		/** @type {string[]} */
@@ -120,9 +80,9 @@ export class Edition {
 	}
 
 	/**
-	 * An edition from the way it is stored (`{asin, gr, hc, isbn, n, p, d, len, desc}`), in the current
-	 * format. A value that is not what its key holds, and a key an edition has not, is kept aside as it is
-	 * and written back by toJSON(), so the Check still reports it. Throws when it is not an object.
+	 * An edition from the way it is stored (`{ext, isbn, n, p, d, len, desc}`), in the current format. A
+	 * value that is not what its key holds, and a key an edition has not, is kept aside as it is and written
+	 * back by toJSON(), so the Check still reports it. Throws when it is not an object.
 	 * @param {Unchecked} json
 	 * @returns {Edition}
 	 */
@@ -145,9 +105,9 @@ export class Edition {
 			if(nonEmpty(v)) this.id = v;
 			else if(v !== undefined) this.extra[key] = v;
 		}
-		else if(key === 'asin'){
-			this.asins = {};
-			if(Text.isObject(v) && Object.keys(v).length && Object.entries(v).every(([site, x]) => site && nonEmpty(x))) this.asins = {...v};
+		else if(key === 'ext'){
+			this.external = {};
+			if(ExternalCatalog.isIds(v)) this.external = {...v};
 			else if(v !== undefined) this.extra[key] = v;
 		}
 		else if(key === 'n'){
@@ -178,7 +138,7 @@ export class Edition {
 		/** @type {unknown} */
 		let v;
 		if(key === Edition.ID_KEY) v = this.id;
-		else if(key === 'asin') v = Object.keys(this.asins).length ? Edition.orderAsins(this.asins) : undefined;
+		else if(key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
 		else if(key === 'n') v = this.narrators.length ? [...this.narrators] : undefined;
 		else if(key === 'len') v = this.minutes;
 		else if(Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
@@ -205,34 +165,41 @@ export class Edition {
 
 	// ------------------------------------------------------------------ ids
 	/**
-	 * The ASINs as [site, ASIN] pairs, Audible's sites first, e.g. [["audible.com", "B0X"], ["amazon.com", "B0Y"]].
+	 * Its external ids as [catalog, id] pairs in the usual order, e.g. [["audible.com", "B0X"], ["goodreads", "4242"]].
 	 * @returns {[string, string][]}
 	 */
-	asinList(){
-		return Object.entries(this.asins).filter(([site, v]) => site && typeof v === 'string' && v).sort(([x], [y]) => siteOrder(x, y));
+	externalList(){
+		return /** @type {[string, string][]} */ (Object.entries(ExternalCatalog.order(this.external) || {}));
 	}
 
 	/**
-	 * The ASIN on one site ("audible.com"), or null.
-	 * @param {string} site
+	 * Its id in one external catalog ("audible.com", "goodreads"), or null.
+	 * @param {string} catalog
 	 * @returns {string | null}
 	 */
-	asinOn(site){
-		const v = Object.hasOwn(this.asins, site) ? this.asins[site] : null;
+	idOn(catalog){
+		const v = Object.hasOwn(this.external, catalog) ? this.external[catalog] : null;
 		return typeof v === 'string' && v ? v : null;
 	}
 
 	/**
-	 * The values of one of the ids, as a list: the ASINs of every site (`field` 'asin', each once), or the
-	 * Goodreads id ('gr') or Hardcover edition id ('hc').
-	 * @param {EditionId} field
+	 * The ASINs as [site, ASIN] pairs, Audible's sites first, e.g. [["audible.com", "B0X"], ["amazon.com", "B0Y"]].
+	 * @returns {[string, string][]}
+	 */
+	asinList(){ return this.externalList().filter(([key]) => isAsinSite(key)); }
+
+	/**
+	 * Its ids of one family (ExternalCatalog.family), each once: 'asin' gives the ASINs of every site.
+	 * @param {string} family
 	 * @returns {string[]}
 	 */
-	ids(field){
-		if(field === 'asin') return [...new Set(this.asinList().map(([, v]) => v))];
-		const v = field === 'gr' ? this.goodreadsId : this.hardcoverId;
-		return v ? [v] : [];
-	}
+	ids(family){ return [...new Set(this.externalList().filter(([key]) => ExternalCatalog.family(key) === family).map(([, v]) => v))]; }
+
+	/**
+	 * Its external ids as matching compares them, each once: "asin B0X" (whichever site), "goodreads 4242".
+	 * @returns {string[]}
+	 */
+	idKeys(){ return [...new Set(this.externalList().map(([key, v]) => ExternalCatalog.family(key) + ' ' + v))]; }
 
 	/** @returns {string[]} the ISBN, 13-digit, in a list; [] when there is none (or not a valid one) */
 	isbns(){
@@ -241,69 +208,61 @@ export class Edition {
 	}
 
 	/**
-	 * Whether both editions have an id of this kind in common (an ASIN counts whatever site it is on).
+	 * Whether both editions have an external id in common (an ASIN counts whatever site it is on).
 	 * @param {Edition} other
-	 * @param {EditionId} field
 	 * @returns {boolean}
 	 */
-	sharesId(other, field){
-		const theirs = other.ids(field);
-		return this.ids(field).some(v => theirs.includes(v));
+	sharesId(other){
+		const theirs = other.idKeys();
+		return this.idKeys().some(k => theirs.includes(k));
 	}
 
 	/**
-	 * Whether the editions have different ids of this kind: another ASIN on the same site, another Goodreads or Hardcover id.
-	 * @param {Edition} other
-	 * @param {EditionId} field
-	 * @returns {boolean}
-	 */
-	idsDisagree(other, field){
-		if(field === 'asin') return this.asinList().some(([site, v]) => other.asinOn(site) !== null && other.asinOn(site) !== v);
-		const [mine] = this.ids(field), [theirs] = other.ids(field);
-		return !!(mine && theirs && mine !== theirs);
-	}
-
-	/**
-	 * Whether the editions disagree on an ASIN (on one site), their Goodreads id, Hardcover id or ISBN, so they cannot be one edition.
+	 * Whether the editions disagree on an id, so they cannot be one edition: another id in the same
+	 * catalog (another ASIN on the same site, another Goodreads or Hardcover id), or another ISBN.
 	 * @param {Edition} other
 	 * @returns {boolean}
 	 */
 	conflictsWith(other){
-		if(Edition.IDS.some(k => this.idsDisagree(other, k))) return true;
+		if(this.externalList().some(([key, v]) => other.idOn(key) !== null && other.idOn(key) !== v)) return true;
 		const a = this.isbns(), b = other.isbns();
 		return a.length > 0 && b.length > 0 && a[0] !== b[0];
 	}
 
 	/**
-	 * Whether two editions are the same edition: they share an ASIN (on any site), a Goodreads id, a
-	 * Hardcover id or the ISBN, and disagree on none of them. A box set is one edition listed on each of its titles.
+	 * Whether two editions are the same edition: they share an external id (an ASIN on any site) or the
+	 * ISBN, and disagree on none of them. A box set is one edition listed on each of its titles.
 	 * @param {Edition} other
 	 * @returns {boolean}
 	 */
 	sameAs(other){
 		if(this.conflictsWith(other)) return false;
-		if(Edition.IDS.some(k => this.sharesId(other, k))) return true;
+		if(this.sharesId(other)) return true;
 		const isbns = other.isbns();
 		return this.isbns().some(isbn => isbns.includes(isbn));
 	}
 
 	/**
-	 * Give this edition (in place) what `from` has and it lacks, including the ASINs of sites it has none for.
-	 * Nothing it has is changed. Returns the keys it gained.
+	 * Give this edition (in place) what `from` has and it lacks, including the ids of catalogs it has none
+	 * in. Nothing it has is changed. Returns what it gained: its keys, and "ext:" and the catalog for each id.
 	 * @param {Edition} from
-	 * @returns {EditionKey[]}
+	 * @returns {string[]}
 	 */
 	fillFrom(from){
-		/** @type {EditionKey[]} */
+		/** @type {string[]} */
 		const gained = [];
 		for(const k of Edition.KEYS){
+			if(k === 'ext'){
+				for(const [key, v] of from.externalList()){
+					if(this.idOn(key) !== null || (this.value('ext') === undefined && 'ext' in this.extra)) continue;
+					this.external = {...this.external, [key]: v};
+					gained.push('ext:' + key);
+				}
+				continue;
+			}
 			const theirs = from.value(k);
 			if(theirs === undefined) continue;
-			if(k === 'asin' && Object.keys(this.asins).length && Object.keys(from.asins).length){
-				const more = from.asinList().filter(([site]) => this.asinOn(site) === null);
-				if(more.length){ this.asins = {...this.asins, ...Object.fromEntries(more)}; gained.push(k); }
-			}
-			else if(this.value(k) === undefined){
+			if(this.value(k) === undefined){
 				this.set(k, JSON.parse(JSON.stringify(theirs)));
 				gained.push(k);
 			}
@@ -312,9 +271,8 @@ export class Edition {
 	}
 
 	/**
-	 * Whether several editions could all be one edition: none disagree with another on the ASIN or
-	 * Goodreads id. The usual case is one book imported twice, once with its Audible ASIN and once with
-	 * its Goodreads id.
+	 * Whether several editions could all be one edition: none disagree with another on an id. The usual
+	 * case is one book imported twice, once with its Audible ASIN and once with its Goodreads id.
 	 * @param {Edition[]} editions
 	 * @returns {boolean}
 	 */
@@ -335,18 +293,18 @@ export class Edition {
 
 	// ------------------------------------------------------------------ as text
 	/**
-	 * The parts of the edition as format() writes them, as [key, label, value] (the description has
-	 * no label), so the page can turn some of them into links.
-	 * @returns {[EditionKey, string, string][]}
+	 * The parts of the edition as format() writes them, as [key, label, value] (the description has no
+	 * label): the ASINs are one part ('asin'), each other external id one of its own ('ext:goodreads'), so
+	 * the page can turn them into links.
+	 * @returns {[string, string, string][]}
 	 */
 	parts(){
-		/** @type {[EditionKey, string, string][]} */
+		/** @type {[string, string, string][]} */
 		const parts = [];
 		if(this.description) parts.push(['desc', '', this.description]);
 		if(this.narrators.length) parts.push(['n', 'Narrated by', Text.namesText(this.narrators)]);
 		if(this.asinList().length) parts.push(['asin', 'ASIN', this.asinsText()]);
-		if(this.goodreadsId) parts.push(['gr', 'Goodreads', this.goodreadsId]);
-		if(this.hardcoverId) parts.push(['hc', 'Hardcover', this.hardcoverId]);
+		for(const [key, v] of this.externalList()) if(!isAsinSite(key)) parts.push(['ext:' + key, ExternalCatalog.name(key), v]);
 		if(this.isbn) parts.push(['isbn', 'ISBN', this.isbn]);
 		if(this.publisher) parts.push(['p', 'Publisher', this.publisher]);
 		if(this.released) parts.push(['d', 'Released', this.released]);
@@ -370,16 +328,25 @@ export class Edition {
 	}
 
 	/**
-	 * The edition as the text of each of the editor's fields, e.g. {'asin:audible.com': 'B0X', len: '10h 42m',
-	 * n: 'Ann Vale, Bo Reed', ...}: each site's ASIN has a field of its own, `asin:` and the site.
+	 * The edition as the text of each of the editor's fields, e.g. {'ext:audible.com': 'B0X', 'ext:goodreads':
+	 * '4242', len: '10h 42m', n: 'Ann Vale, Bo Reed', ...}: each external catalog's id has a field of its own,
+	 * `ext:` and the catalog.
 	 * @returns {Record<string, string>}
 	 */
 	fields(){
 		/** @type {Record<string, string>} */
-		const fields = Object.fromEntries(this.parts().filter(([k]) => k !== 'asin').map(([k, , value]) => [k, value]));
-		for(const [site, asin] of this.asinList()) fields['asin:' + site] = asin;
+		const fields = Object.fromEntries(this.parts().filter(([k]) => k !== 'asin' && !k.startsWith('ext:')).map(([k, , value]) => [k, value]));
+		for(const [key, v] of this.externalList()) fields['ext:' + key] = v;
 		return fields;
 	}
+
+	/**
+	 * The editor's label for a catalog's id field: an Audible or Amazon site for an ASIN ("audible.co.uk"),
+	 * else the catalog and "edition" ("Hardcover edition").
+	 * @param {string} catalog
+	 * @returns {string}
+	 */
+	static fieldLabel(catalog){ return isAsinSite(catalog) ? catalog : `${ExternalCatalog.name(catalog)} edition`; }
 
 	/**
 	 * Read ASINs written as asinsText() writes them, "audible.com B0X, amazon.com B0Y": each ASIN after (or
@@ -396,12 +363,14 @@ export class Edition {
 		/** @type {string[]} */
 		const bad = [];
 		const tokens = String(text || '').split(/[\s,;]+/).map(x => x.replace(/^[(\[]+|[)\]:]+$/g, '')).filter(Boolean);
-		const siteOf = (/** @type {string} */ t) => { const s = t.toLowerCase().replace(/^www\./, ''); return ASIN_SITE.test(s) ? s : null; };
+		const siteOf = (/** @type {string} */ t) => { const s = t.toLowerCase().replace(/^www\./, ''); return ExternalCatalog.ASIN_SITE.test(s) ? s : null; };
 		// an ASIN is ten letters and digits; a shorter one, from a hand-made catalog, is taken as it is
 		const isAsin = (/** @type {string} */ t) => /^[A-Za-z0-9]+$/.test(t);
 		for(let i = 0; i < tokens.length; i++){
-			const t = tokens[i], url = ASIN_URL.exec(t), s = siteOf(t);
-			if(url){ found.push([siteOf(url[1]), url[2].toUpperCase()]); if(!siteOf(url[1])) bad.push(t); }
+			const t = tokens[i], s = siteOf(t);
+			const url = ExternalCatalog.fromAddress(t, 'edition', ExternalCatalog.ASIN_SITES);
+			if(url) found.push([url.catalog, url.id]);
+			else if(/^(?:https?:\/\/)?(?:www\.)?(?:audible|amazon)\.[a-z.]+\//i.test(t)) bad.push(t);
 			else if(s && i + 1 < tokens.length && isAsin(tokens[i + 1])) found.push([s, tokens[++i].toUpperCase()]);
 			else if(s && found.length && found[found.length - 1][0] === null && isAsin(tokens[i - 1])) found[found.length - 1][0] = s;
 			else if(isAsin(t)) found.push([null, t.toUpperCase()]);
@@ -410,58 +379,60 @@ export class Edition {
 		/** @type {Record<string, string>} */
 		const asins = {};
 		for(const [s, v] of found){
-			const at = s || site || AUDIBLE_SITE;
+			const at = s || site || ExternalCatalog.AUDIBLE_SITE;
 			if(asins[at] && asins[at] !== v) bad.push(`${at} ${v}`); else asins[at] = v;
 		}
-		return {asins: Edition.orderAsins(asins), bad};
+		return {asins: /** @type {Record<string, string> | null} */ (ExternalCatalog.order(asins)), bad};
 	}
 
 	/**
-	 * The id a pasted address names, and the book form's field it belongs in: {field: 'asin:audible.co.uk',
+	 * The id a pasted address names, and the book form's field it belongs in: {field: 'ext:audible.co.uk',
 	 * id: 'B0X'} for a book's page on an Audible or Amazon site (each site has a field of its own), {field:
-	 * 'gr', id: '12345'} for its page on Goodreads, {field: 'hc', id: '501'} for an edition's page on Hardcover.
-	 * null for anything else: an id, or a Hardcover book's address, which names the book, not the edition.
+	 * 'ext:goodreads', id: '12345'} for its page on Goodreads, {field: 'ext:hardcover', id: '501'} for an
+	 * edition's page on Hardcover. null for anything else: an id, or a Hardcover book's address, which names
+	 * the book, not the edition.
 	 * @param {unknown} text
 	 * @returns {{field: string, id: string} | null}
 	 */
 	static idFromAddress(text){
-		const value = String(text || '').trim();
-		const asin = ASIN_URL.exec(value), site = asin ? asin[1].toLowerCase() : '';
-		if(asin && ASIN_SITE.test(site)) return {field: 'asin:' + site, id: asin[2].toUpperCase()};
-		const goodreads = GOODREADS_URL.exec(value);
-		if(goodreads) return {field: 'gr', id: goodreads[1]};
-		const hardcover = HardcoverClient.parseUrl(value);
-		return hardcover && hardcover.edition ? {field: 'hc', id: hardcover.edition} : null;
+		const found = ExternalCatalog.fromAddress(text, 'edition');
+		return found ? {field: 'ext:' + found.catalog, id: found.id} : null;
 	}
 
 	/**
 	 * Read editions written one per line as format() writes them. Parts are separated by ';' and
 	 * start with their label; a bare ISBN, date or length is recognized without one, and other text
 	 * without a label is the edition's description (one per edition). A line with several ISBNs is that
-	 * many editions (splitIsbns). "Hardcover book 123" names the book, not the edition. An edition's address
-	 * on Hardcover (hardcover.app/books/the-salt-road/editions/501, with or without the label) gives its id.
-	 * Returns {editions, bad (the parts that could not be read), hcb (the Hardcover book id, or null)}.
+	 * many editions (splitIsbns). "Hardcover book 123" names the book, not the edition. The address of an
+	 * edition's page in an external catalog (hardcover.app/books/the-salt-road/editions/501, with or
+	 * without the label) gives its id, and the address of a book's page the book's.
+	 * Returns {editions, bad (the parts that could not be read), book (the book's external ids found)}.
 	 * @param {unknown} text
-	 * @returns {{editions: Edition[], bad: string[], hcb: string | null}}
+	 * @returns {{editions: Edition[], bad: string[], book: Record<string, string>}}
 	 */
 	static parse(text){
 		/** @type {Edition[]} */
 		const editions = [];
 		/** @type {string[]} */
 		const bad = [];
-		/** @type {string | null} */
-		let hcb = null;
+		/** @type {Record<string, string>} */
+		const book = {};
+		/** @type {(found: {catalog: string, id: string}, ext: Record<string, string>, part: string) => void} */
+		const put = ({catalog, id}, ext, part) => { if(ext[catalog] && ext[catalog] !== id) bad.push(part); else ext[catalog] = id; };
 		for(const line of String(text || '').split(/\r\n|\r|\n/)){
 			// a stored edition once splitIsbns() has made one per ISBN: until then `isbn` is a list
 			/** @type {Record<string, any>} */
 			const ed = {};
+			/** @type {Record<string, string>} */
+			const ext = {};
 			for(const part of line.split(';').map(x => Text.tidy(x)).filter(Boolean)){
-				// an edition's address on Hardcover names the edition, a book's /id/ address the book
-				const url = HardcoverClient.parseUrl(part);
-				if(url){
-					if(url.edition) ed.hc = url.edition; else if(url.book) hcb = hcb || url.book; else bad.push(part);
-					continue;
-				}
+				// an edition's address names the edition, a book's address the book
+				const edition = ExternalCatalog.fromAddress(part, 'edition');
+				const ofBook = edition ? null : ExternalCatalog.fromAddress(part, 'book');
+				if(edition){ put(edition, ext, part); continue; }
+				if(ofBook){ if(!book[ofBook.catalog]) book[ofBook.catalog] = ofBook.id; continue; }
+				// another page there (a book's by its name, say) names nothing the edition keeps
+				if(ExternalCatalog.siteOf(part)){ bad.push(part); continue; }
 				const m = EDITION_PART.exec(part);
 				const label = m ? m[1].toLowerCase().replace(/\s+id$/, '') : '', value = m ? m[2].trim() : part;
 				const isbns = Isbn.parseList(value), date = Text.parseDate(value), minutes = Text.parseLength(value);
@@ -472,19 +443,17 @@ export class Edition {
 				let v = null;
 				if(label === 'asin'){
 					const read = Edition.parseAsins(value);
-					if(read.bad.length || !read.asins){ bad.push(part); continue; }
-					const both = {...(ed.asin || {})};
-					if(Object.entries(read.asins).some(([site, x]) => both[site] && both[site] !== x)){ bad.push(part); continue; }
-					ed.asin = Edition.orderAsins({...both, ...read.asins});
+					if(read.bad.length || !read.asins || Object.entries(read.asins).some(([site, x]) => ext[site] && ext[site] !== x)){ bad.push(part); continue; }
+					Object.assign(ext, read.asins);
 					continue;
 				}
-				else if(label === 'goodreads' || label === 'gr'){
-					const url = GOODREADS_URL.exec(value);
-					[field, v] = ['gr', GOODREADS_ID.test(value) ? value : url ? url[1] : null];
-				}
-				else if(label.startsWith('hardcover')){
-					const kind = /book$/.test(label) ? 'book' : 'edition', url = HardcoverClient.parseUrl(value);
-					[field, v] = [kind === 'book' ? 'hcb' : 'hc', HardcoverClient.ID.test(value) ? value : url && url[/** @type {'book' | 'edition'} */ (kind)] || null];
+				else if(label === 'goodreads' || label === 'gr' || label.startsWith('hardcover')){
+					const catalog = label.startsWith('hardcover') ? 'hardcover' : 'goodreads', kind = /book$/.test(label) ? 'book' : 'edition';
+					const found = ExternalCatalog.readId(value, kind, catalog);
+					if(!found){ bad.push(part); continue; }
+					if(kind === 'book'){ if(!book[catalog]) book[catalog] = found.id; }
+					else put(found, ext, part);
+					continue;
 				}
 				else if(label === 'publisher') [field, v] = ['p', value];
 				else if(label.startsWith('narrat')) [field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
@@ -497,74 +466,65 @@ export class Edition {
 				else if(!label && !ed.desc) [field, v] = ['desc', value];
 				if(!v){ bad.push(part); continue; }
 				if(field === 'isbn') ed.isbn = [...new Set([...(ed.isbn || []), ...v])];
-				else if(field === 'hcb') hcb = hcb || v;
 				else if(field) ed[field] = v;
 			}
+			if(Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
 			if(Object.keys(ed).length) editions.push(...Edition.splitIsbns(Edition.order(ed)).map(Edition.fromJSON));
 		}
-		return {editions, bad, hcb};
+		return {editions, bad, book};
 	}
 
 	/**
 	 * Read one edition from the editor's fields (as fields() gives them), checking each the way parse()
 	 * checks a part with that label. Each field is read on its own, so a description or narrator list may
-	 * hold a ';'. Several ISBNs make that many editions (splitIsbns); a Hardcover book's address in the
-	 * Hardcover field names the book. Returns {editions (none when every field is empty), bad (the fields
-	 * that could not be read, as "Label value"), hcb (or null)}.
+	 * hold a ';'. An external catalog's field holds an id or the address of the edition's page there (an
+	 * Audible or Amazon page names its own site); the address of a book's page names the book. Several ISBNs
+	 * make that many editions (splitIsbns). Returns {editions (none when every field is empty), bad (the
+	 * fields that could not be read, as "Label value"), book (the book's external ids found)}.
 	 * @param {Record<string, string | undefined>} fields
-	 * @returns {{editions: Edition[], bad: string[], hcb: string | null}}
+	 * @returns {{editions: Edition[], bad: string[], book: Record<string, string>}}
 	 */
 	static fromFields(fields){
 		// a stored edition once splitIsbns() has made one per ISBN: until then `isbn` is a list
 		/** @type {Record<string, any>} */
 		const ed = {};
+		/** @type {Record<string, string>} */
+		const ext = {};
 		/** @type {string[]} */
 		const bad = [];
-		/** @type {string | null} */
-		let hcb = null;
-		// each site's field holds that site's ASIN (or the address of the book's page there)
+		/** @type {Record<string, string>} */
+		const book = {};
 		for(const [k, text] of Object.entries(fields)){
-			const site = k.startsWith('asin:') ? k.slice(5) : null, value = Text.tidy(String(text || ''));
-			if(!site || !value) continue;
-			const read = Edition.parseAsins(value, site);
-			const both = {...(ed.asin || {})};
-			if(read.bad.length || !read.asins || Object.entries(read.asins).some(([at, x]) => both[at] && both[at] !== x)){ bad.push(`ASIN ${site} ${value}`); continue; }
-			ed.asin = Edition.orderAsins({...both, ...read.asins});
+			const catalog = k.startsWith('ext:') ? k.slice(4) : null, value = Text.tidy(String(text || ''));
+			if(!catalog || !value) continue;
+			const label = isAsinSite(catalog) ? `ASIN ${catalog}` : Edition.fieldLabel(catalog);
+			// the id, or an address: of the edition on this catalog, or (for an ASIN) on another site, or of the book
+			const found = ExternalCatalog.readId(value, 'edition', catalog)
+				|| [ExternalCatalog.fromAddress(value, 'edition')].find(x => x && ExternalCatalog.family(x.catalog) === ExternalCatalog.family(catalog)) || null;
+			const ofBook = found ? null : ExternalCatalog.fromAddress(value, 'book', [catalog]);
+			if(ofBook){ if(!book[catalog]) book[catalog] = ofBook.id; continue; }
+			if(!found || (ext[found.catalog] && ext[found.catalog] !== found.id)){ bad.push(`${label} ${value}`); continue; }
+			ext[found.catalog] = found.id;
 		}
 		for(const [k, label, shown] of Edition.FIELDS){
 			const value = Text.tidy(String(fields[k] || ''));
-			if(!value) continue;
+			if(!value || k === 'ext') continue;
 			if(k === 'desc'){ ed.desc = value; continue; }
 			if(k === 'n'){ ed.n = Text.splitNames(value); if(!ed.n.length) delete ed.n; continue; }
-			const read = Edition.parse(k === 'hc' && HardcoverClient.parseUrl(value) ? value : `${label} ${value.replace(/;/g, ',')}`);
-			// each field's own values: ISBNs, a site -> ASIN object, a list of narrators, a text
+			const read = Edition.parse(`${label} ${value.replace(/;/g, ',')}`);
+			// each field's own values: ISBNs, a list of narrators, a text
 			/** @type {any[]} */
 			const got = read.editions.flatMap(x => k === 'isbn' ? x.isbns() : x.value(k) !== undefined ? [x.value(k)] : []);
-			if(read.hcb && k === 'hc') hcb = read.hcb;
-			else if(read.bad.length || !got.length) bad.push(`${shown} ${value}`);
-			else if(k === 'asin'){
-				if(Object.entries(got[0]).some(([at, x]) => ed.asin && ed.asin[at] && ed.asin[at] !== x)) bad.push(`${shown} ${value}`);
-				else ed.asin = Edition.orderAsins({...(ed.asin || {}), ...got[0]});
-			}
+			if(read.bad.length || !got.length) bad.push(`${shown} ${value}`);
 			else ed[k] = k === 'isbn' ? got : got[0];
 		}
-		return {editions: Object.keys(ed).length ? Edition.splitIsbns(Edition.order(ed)).map(Edition.fromJSON) : [], bad, hcb};
+		if(Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
+		return {editions: Object.keys(ed).length ? Edition.splitIsbns(Edition.order(ed)).map(Edition.fromJSON) : [], bad, book};
 	}
 
 	// ------------------------------------------------------------------ as stored
 	// What follows works on editions as they are stored, which may be in an older format or not right at
 	// all; reading the catalog (Book.fixBooks) brings them to the current format.
-
-	/**
-	 * ASINs ordered by site (Audible's sites first), as an object; null when there are none.
-	 * @param {Record<string, unknown>} asins
-	 * @returns {Record<string, string> | null}
-	 */
-	static orderAsins(asins){
-		const pairs = /** @type {[string, string][]} */ (Object.entries(asins).filter(([site, v]) => site && typeof v === 'string' && v))
-			.sort(([x], [y]) => siteOrder(x, y));
-		return pairs.length ? Object.fromEntries(pairs) : null;
-	}
 
 	/**
 	 * A stored edition with its keys in the usual order (unknown keys last, for the Check to report).
@@ -606,19 +566,37 @@ export class Edition {
 	}
 
 	/**
-	 * A stored edition with the ASIN it kept as "id", from before ASINs were kept by site, as its audible.com ASIN.
-	 * An "id" that disagrees with the audible.com ASIN the edition has is left for the Check to report.
+	 * A stored edition with its ids under `ext`, by external catalog, as they are kept now: the ASINs it kept
+	 * by site ("asin"), the ASIN it kept as "id" before that (audible.com's), its Goodreads id ("gr") and
+	 * Hardcover id ("hc"). An old id that disagrees with the one `ext` has for its catalog, or that is not
+	 * text, is left where it is for the Check to report.
 	 * @param {Unchecked} ed
 	 * @returns {Unchecked}
 	 */
-	static fixAsin(ed){
-		if(!Text.isObject(ed) || !('id' in ed)) return ed;
-		const {id, ...rest} = ed;
-		if(typeof id === 'string' && !id.trim()) return rest;
-		if(typeof id !== 'string' || !(rest.asin === undefined || Text.isObject(rest.asin))) return ed;
-		const had = storedAsinOn(rest, AUDIBLE_SITE);
-		if(had && had !== id.trim()) return ed;
-		return Edition.order({...rest, asin: Edition.orderAsins({...(rest.asin || {}), [AUDIBLE_SITE]: id.trim()})});
+	static fixIds(ed){
+		if(!Text.isObject(ed) || !['id', 'asin', 'gr', 'hc'].some(k => k in ed)) return ed;
+		if(ed.ext !== undefined && !Text.isObject(ed.ext)) return ed;
+		/** @type {Record<string, any>} */
+		const out = {...ed};
+		/** @type {Record<string, unknown>} */
+		const ext = {...(ed.ext || {})};
+		/** @type {(catalog: string, v: unknown) => boolean} whether the old key's id went into ext */
+		const move = (catalog, v) => {
+			if(typeof v !== 'string') return false;
+			if(!v.trim()) return true;
+			if(ext[catalog] !== undefined && ext[catalog] !== v.trim()) return false;
+			ext[catalog] = v.trim();
+			return true;
+		};
+		if('asin' in out && Text.isObject(out.asin) && Object.entries(out.asin).every(([site, v]) => typeof v === 'string' && !(ext[site] !== undefined && ext[site] !== v.trim()))){
+			for(const [site, v] of Object.entries(out.asin)) move(site, v);
+			delete out.asin;
+		}
+		if('id' in out && move(ExternalCatalog.AUDIBLE_SITE, out.id)) delete out.id;
+		for(const [key, catalog] of Object.entries(OLD_ID_KEYS)) if(key in out && move(catalog, out[key])) delete out[key];
+		const ordered = ExternalCatalog.order(ext);
+		if(ordered) out.ext = ordered; else delete out.ext;
+		return Edition.order(out);
 	}
 
 	/**
@@ -629,13 +607,10 @@ export class Edition {
 	static tidyJSON(ed){
 		if(!Text.isObject(ed)) return ed;
 		const out = Text.fixPeople({...ed});
-		for(const key of ['gr', 'hc', 'p', 'd', 'desc']){
+		for(const key of ['p', 'd', 'desc']){
 			if(typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
-		if(Text.isObject(out.asin)){
-			out.asin = Object.fromEntries(Object.entries(out.asin).map(([site, v]) => [Text.tidy(site).toLowerCase(), typeof v === 'string' ? Text.tidy(v) : v])
-				.sort(([x], [y]) => siteOrder(x, y)));
-		}
+		if(Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
 		if(Array.isArray(out.n)) out.n = Text.tidyNames(out.n);
 		// the 13-digit form; anything that is not an ISBN is kept (tidied) for the Check to report
 		if(typeof out.isbn === 'string') out.isbn = Isbn.parse(out.isbn) || Text.tidy(out.isbn);
@@ -644,5 +619,5 @@ export class Edition {
 }
 
 // The stored keys that hold a text, and the field each is kept in.
-/** @type {Record<string, 'goodreadsId' | 'hardcoverId' | 'isbn' | 'publisher' | 'released' | 'description'>} */
-const TEXT_FIELDS = {gr: 'goodreadsId', hc: 'hardcoverId', isbn: 'isbn', p: 'publisher', d: 'released', desc: 'description'};
+/** @type {Record<string, 'isbn' | 'publisher' | 'released' | 'description'>} */
+const TEXT_FIELDS = {isbn: 'isbn', p: 'publisher', d: 'released', desc: 'description'};

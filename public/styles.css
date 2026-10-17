@@ -206,6 +206,9 @@ h1{
 .formrow{display:flex; gap:.6rem;}
 .formrow > div{flex:1;}
 .formrow > .formrow-btn{flex:0 0 auto; display:flex; align-items:flex-end;}
+/* a field per external catalog: as many in a row as fit */
+.extFields{flex-wrap:wrap;}
+.extFields > div{flex:1 1 11rem;}
 .formrow-btn button{
 	padding:.5rem .8rem; border-radius:6px; border:1px solid var(--line); cursor:pointer;
 	font-size:.85rem; background:var(--paper); color:var(--ink); white-space:nowrap;

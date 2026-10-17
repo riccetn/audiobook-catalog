@@ -13,19 +13,17 @@ The books (`books.json` before the catalog moved into the browser) are a list of
 | `sn` | position in series, as text (`"3"`, `"4-6"` for a box set, which is listed after the series' titles) |  |
 | `g`  | list of genre/tag strings                           |          |
 | `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
-| `hcb` | Hardcover's id of the book (`"77"`), the number in `hardcover.app/id/book/…`; every edition of it is an edition of this book |  |
+| `ext` | the book's own ids in [external catalogs](#external-catalogs) (`{"hardcover": "77", "goodreads": "99"}`): Hardcover's book, whose every edition is an edition of this book, and Goodreads' work |  |
 | `e`  | list of the title's editions (below)                |          |
 | `uid` | the id the book is stored under in the browser, which never changes (written first) |  |
 
 Each title can have several **editions** (the Audible release, a UK release with another narrator, a
 dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
-the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go by:
+its ids in external catalogs and its ISBN are what imports and box sets go by:
 
 | key    | meaning                                                                  |
 |--------|--------------------------------------------------------------------------|
-| `asin` | the edition's ASINs, by site: `{"audible.com": "B0…", "amazon.com": "B0…"}`. Amazon and each of its Audible and Amazon sites may give one edition an ASIN of its own, so each is kept under its site's address (`audible.com`, `audible.co.uk`, `amazon.com`, `amazon.de`, …). Re-imports recognize the book by any of them; only another ASIN on the same site makes another edition |
-| `gr`   | Goodreads book id, the number in `goodreads.com/book/show/…` (`"4242"`), so re-imports recognize the book |
-| `hc`   | Hardcover's id of this edition (`"501"`), so Hardcover imports and exports recognize it      |
+| `ext`  | the edition's ids in [external catalogs](#external-catalogs): `{"audible.com": "B0…", "amazon.com": "B0…", "goodreads": "4242", "hardcover": "501"}`. Each Audible and Amazon site may give one edition an ASIN of its own, so each is kept under its site's address (`audible.com`, `audible.co.uk`, `amazon.com`, `amazon.de`, …); Goodreads' id is the number in `goodreads.com/book/show/…`, Hardcover's the one in `hardcover.app/id/edition/…`. Re-imports recognize the book by any of them (an ASIN on any site); only another id in the same catalog (another ASIN on the same site) makes another edition |
 | `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page saves |
 | `n`    | list of this edition's narrators, one name each (`["Tobias Frane"]`)     |
 | `p`    | publisher                                                                |
@@ -35,9 +33,9 @@ the ASIN, Goodreads id, Hardcover id and ISBN are what imports and box sets go b
 | `uid`  | the id the edition is stored under in the browser, which never changes; a box set's copies share it (written first) |
 
 ```json
-{"t":"The Salt Road","a":["Marisol Quenby"],"s":"The Lantern Coast","sn":"1","hcb":"77",
- "e":[{"asin":{"audible.com":"B0SAMPLE01","amazon.com":"B0SAMPLE03"},"gr":"9001","hc":"501","isbn":"9780000000002","n":["Tobias Frane"],"p":"Gullwing Audio","d":"2019-04-02","len":642},
-      {"asin":{"audible.co.uk":"B0SAMPLE02"},"n":["Hollis Marr","Dana Whitlock"],"desc":"UK edition"}]}
+{"t":"The Salt Road","a":["Marisol Quenby"],"s":"The Lantern Coast","sn":"1","ext":{"hardcover":"77"},
+ "e":[{"ext":{"audible.com":"B0SAMPLE01","amazon.com":"B0SAMPLE03","goodreads":"9001","hardcover":"501"},"isbn":"9780000000002","n":["Tobias Frane"],"p":"Gullwing Audio","d":"2019-04-02","len":642},
+      {"ext":{"audible.co.uk":"B0SAMPLE02"},"n":["Hollis Marr","Dana Whitlock"],"desc":"UK edition"}]}
 ```
 
 **Which site an ASIN is from**: an Audible import's ASINs are from the Audible site you pick (audible.com
@@ -63,12 +61,15 @@ an edition of its own), and the Hardcover book id moves to the book (a box set's
 its titles, gives way to the book's own). Until 2026-10 the authors and narrators were one comma
 separated text (`"a": "Ann Vale, Bo Reed"`); that is read as a list, split at commas, semicolons, `&`
 and `and` (a suffix such as `Jr.` stays with its name). Until 2026-10 an edition had one ASIN, `id`,
-which is read as its audible.com ASIN (`"asin": {"audible.com": …}`). A backup or Restore in an older
-shape is read this way, and the browser keeps the catalog in the current one.
+which is read as its audible.com ASIN. Until 2026-10 the ids had keys of their own: an edition's ASINs
+by site in `asin`, its Goodreads id in `gr` and its Hardcover id in `hc`, and the book's Hardcover id
+in `hcb`; they are read into `ext`. A backup or Restore in an older shape is read this way, and the
+browser keeps the catalog in the current one.
 
 The series info (`seriesInfo`, `series-info.json` before) maps a series name (it must match `s` exactly) to
-`{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://..."}`.
-`total` is the number of books released so far; `url` (an author or publisher site) is optional.
+`{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://...", "ext": {...}}`.
+`total` is the number of books released so far; `url` (an author or publisher site) and `ext` (the
+series' ids on Audible, Goodreads and Hardcover, `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "the-lantern-coast"}`) are optional.
 
 ## Authors
 
@@ -77,36 +78,54 @@ book's `a` exactly) to what you keep about them; every field is optional:
 
 ```json
 {"Marisol Quenby": {"bio": "Writes seafaring fantasy.\n\nLives by the sea.", "url": "https://example.com/",
-  "audible": "https://www.audible.com/author/Marisol-Quenby/SAMPLEA001",
-  "goodreads": "https://www.goodreads.com/author/show/0.Marisol_Quenby",
-  "hardcover": "https://hardcover.app/authors/marisol-quenby"}}
+  "ext": {"audible.com": "B0SAMPLEA1", "goodreads": "1234", "hardcover": "marisol-quenby"}}}
 ```
 
-| key         | meaning                                                              |
-|-------------|----------------------------------------------------------------------|
-| `bio`       | a short bio, free text; a blank line (`\n\n`) starts a new paragraph |
-| `url`       | the author's own website                                             |
-| `audible`   | their author page on Audible (any store, `audible.com`, `audible.co.uk`, ...) |
-| `goodreads` | their author page on Goodreads                                       |
-| `hardcover` | their author page on Hardcover                                       |
+| key     | meaning                                                              |
+|---------|----------------------------------------------------------------------|
+| `bio`   | a short bio, free text; a blank line (`\n\n`) starts a new paragraph |
+| `url`   | the author's own website                                             |
+| `ext`   | their ids in [external catalogs](#external-catalogs): their author page's ASIN on an Audible or Amazon site, the number of their Goodreads page, the name in their Hardcover page's address. The page links to each |
+| `links` | other pages about them, as a list of addresses: where an author page's address from before could not be read as an id, it is kept here |
 
-Links must start with `http://` or `https://`; **Check** warns when one is on another site than
-its key says, or when an entry matches no author of any book (an author renamed on their books). The
+Links must start with `http://` or `https://`; **Check** warns when an id is not one its catalog
+gives, when one of `links` is an external catalog's page (keep its id in `ext` instead), and when an
+entry matches no author of any book (an author renamed on their books). Until 2026-10 the entry kept
+the addresses of their pages as `audible`, `goodreads` and `hardcover`; each is read into `ext`. The
 series and titles on an author's page are not stored here: they come from the books.
 
 ## Narrators and publishers
 
 The narrator info (`narrators`) and publisher info (`publishers`) work the same way, with the same keys:
 `narrators` maps a narrator's name (as an edition's `n` writes it) and `publishers` a publisher's name (as an
-edition's `p` writes it) to a bio and links. For a narrator, `audible` is usually an Audible search by
-narrator and `goodreads` and `hardcover` their author pages there (both sites list narrators as authors);
-for a publisher, `hardcover` is its publisher page (`https://hardcover.app/publishers/...`). Both are
+edition's `p` writes it) to a bio and links. For a narrator, the Audible id is their name as Audible's
+narrator search takes it, and Goodreads' and Hardcover's ids are their author pages' (both sites list
+narrators as authors); for a publisher, Audible's id is its name as Audible's publisher search takes it
+and Hardcover's the name in its publisher page's address (Goodreads has no publisher pages). Both are
 optional (missing means `{}`), and **Check** warns, as for authors, about an entry that matches no edition.
 
 ```json
-{"narrators": {"Ingrid Voss": {"bio": "Narrates fantasy.", "hardcover": "https://hardcover.app/authors/ingrid-voss"}},
- "publishers": {"Kestrel Row Audio": {"url": "https://example.com/", "hardcover": "https://hardcover.app/publishers/kestrel-row-audio"}}}
+{"narrators": {"Ingrid Voss": {"bio": "Narrates fantasy.", "ext": {"audible.com": "Ingrid Voss", "hardcover": "ingrid-voss"}}},
+ "publishers": {"Kestrel Row Audio": {"url": "https://example.com/", "ext": {"hardcover": "kestrel-row-audio"}}}}
 ```
+
+## External catalogs
+
+Books, editions, series and people keep only the ids other catalogs give them, never the address of
+their page there: the app knows, for each catalog, how its pages' addresses are made
+(`modules/external-catalog.js`), so it makes the link from the id, and reads the id out of an address
+pasted into a form. The key in `ext` is the catalog's:
+
+| key | catalog | ids it gives |
+|-----|---------|--------------|
+| `audible.com`, `audible.co.uk`, `audible.de`, `audible.fr`, `audible.it`, `audible.es`, `audible.ca`, `audible.com.au`, `audible.in`, `audible.co.jp` | an Audible store | an edition's ASIN (`/pd/B0…`), a series' (`/series/B0…`) and an author's (`/author/B0…`); a narrator's or publisher's name, for Audible's search |
+| `amazon.com`, `amazon.co.uk`, … (each Audible store's Amazon twin, and `amazon.se`, `amazon.nl`, `amazon.pl`, `amazon.com.br`, `amazon.com.mx`) | an Amazon store | an edition's ASIN (`/dp/B0…`) and an author's (`/stores/author/B0…`) |
+| `goodreads` | Goodreads | a book's work (`/work/editions/99`), an edition (`/book/show/4242`), a series (`/series/90001`), an author or narrator (`/author/show/1234`) |
+| `hardcover` | Hardcover | a book (`/id/book/77`), an edition (`/id/edition/501`), a series (`/series/the-lantern-coast`), an author or narrator (`/authors/marisol-quenby`), a publisher (`/publishers/kestrel-row-audio`) |
+
+Every ASIN, on any Audible or Amazon site, names the same edition wherever it is found, so an import
+from one site matches an edition another site gave. **Check** reports an id its catalog doesn't give
+(`"4242x"` for Goodreads) and warns about a key it doesn't know.
 
 **Check** checks all of this and warns about suspicious entries.
 
@@ -130,16 +149,20 @@ how a list can be paged or scrolled without loading all of it.
 
 | store | key | holds | indexes |
 |-------|-----|-------|---------|
-| `books` | `id` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `hardcoverId`, `editionIds` (in order), `position` (the catalog's order); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `words` | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `genres` and `words` (multiEntry), `hardcoverId` |
-| `editions` | `id` | `bookIds` (a box set's edition is one record on all its titles), `asins`, `goodreadsId`, `hardcoverId`, `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`; derived: `idKeys` (`"asin B0…"`, `"gr 4242"`, `"hc 501"`, `"isbn 978…"`) | `bookIds`, `idKeys`, `narratorIds` (multiEntry), `publisherId` |
-| `series` | `id` | `name`, `total`, `status`, `note`, `url`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id] |
-| `contributors` | `id` | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `audible`, `goodreads`, `hardcover`; derived: `sortName`, `bookCount` | `kindName` [kind, name] (unique), `byName` [kind, sortName, id] |
+| `books` | `id` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external` (its ids by catalog), `editionIds` (in order), `position` (the catalog's order); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `words`, `externalKeys` (`"hardcover 77"`) | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `genres`, `words` and `externalKeys` (multiEntry) |
+| `editions` | `id` | `bookIds` (a box set's edition is one record on all its titles), `external` (its ids by catalog), `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`; derived: `idKeys` (`"asin B0…"` for an ASIN on any site, `"goodreads 4242"`, `"hardcover 501"`, `"isbn 978…"`) | `bookIds`, `idKeys`, `narratorIds` (multiEntry), `publisherId` |
+| `series` | `id` | `name`, `total`, `status`, `note`, `url`, `external`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead`, `externalKeys` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id], `externalKeys` (multiEntry) |
+| `contributors` | `id` | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `external`, `links`; derived: `sortName`, `bookCount`, `externalKeys` | `kindName` [kind, name] (unique), `byName` [kind, sortName, id], `externalKeys` (multiEntry) |
 | `credits` | [contributorId, bookId] | derived: who is credited on which book, as what, with the book's `sortTitle`, `seriesId` and `numberKey` | `byTitle` [contributorId, sortTitle, bookId], `bySeries` [contributorId, seriesId, numberKey, bookId], `bookId` |
 | `marks` | `id` | "Not duplicates" (`bookIds`), "Keep separate" (`bookIds`, `editionIds`), or a mark that matched no book (`key`, its text) | `bookIds` (multiEntry) |
 | `exclusions` | `entry` | an entry of the exclusions list, and its `position` in it | |
 | `meta` | `key` | `revision` (bumped by every save; a save refuses when another tab saved since the page read it), and `unreadable` (a catalog set aside) | |
 
 Every series a book names and every person a book or edition credits has a record, with info or without.
+The database is version 2: version 1 kept the ids under fields of their own (an edition's `asins`,
+`goodreadsId` and `hardcoverId`, a book's `hardcoverId`, a person's `audible`, `goodreads` and
+`hardcover` addresses) and indexed the books' `hardcoverId`; a page that finds records like that reads
+them, and saves them again the current way at once.
 A value the classes keep aside because it isn't what its field holds has no place in a record, so a
 catalog or backup with one is not stored until it is fixed (see [Where the catalog lives](saving.md#where-the-catalog-lives)).
 

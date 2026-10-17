@@ -157,6 +157,11 @@ class FakeObjectStore {
 		this.data.indexes.set(name, { keyPath, unique, multiEntry });
 		return new FakeIndex(this, name);
 	}
+	deleteIndex(name) {
+		if (this.transaction.mode !== 'versionchange') throw new DOMException('indexes are removed in an upgrade', 'InvalidStateError');
+		if (!this.data.indexes.has(name)) throw new DOMException(`no index ${name}`, 'NotFoundError');
+		this.data.indexes.delete(name);
+	}
 }
 
 const names = list => Object.assign([...list].sort(), { contains: n => list.includes(n), item: i => [...list].sort()[i] ?? null });
@@ -178,7 +183,9 @@ class FakeTransaction {
 	}
 	objectStore(name) {
 		if (this.finished) throw new DOMException('the transaction has finished', 'InvalidStateError');
-		if (!this.storeNames.includes(name)) throw new DOMException(`${name} is not in this transaction`, 'NotFoundError');
+		// an upgrade reaches every store there is
+		const known = this.mode === 'versionchange' ? this.db.data.stores.has(name) : this.storeNames.includes(name);
+		if (!known) throw new DOMException(`${name} is not in this transaction`, 'NotFoundError');
 		return new FakeObjectStore(this, name);
 	}
 	request(source, run) {

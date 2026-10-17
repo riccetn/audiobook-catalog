@@ -48,11 +48,15 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `saveBook`, `merge` (an import), `addBoxSets`,
     `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`/`authorList`,
     `narratorWorks`/`narratorList` and `publisherWorks`/`publisherList` (all `creditedWorks`/`creditedList` with `authorsOf`/`narratorsOf`/`publishersOf`).
-  - `Book` (`id title authors series number genres read hardcoverId editions`): `exclusionEntries`, `isCollection`/`boxRange`,
-    `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`.
-  - `Edition` (`id asins goodreadsId hardcoverId isbn narrators publisher released minutes description`): `sameAs`/`conflictsWith`/`fillFrom`,
-    `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards), `parseAsins`/`asinsText`, `splitIsbns`/`fixAsin`.
-  - `Series` (series info `total status note url`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`), `Contributor` (an author's, narrator's or publisher's info: `KEYS`, `SITES`, `KINDS`, `tidy`),
+  - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`,
+    `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`fixIds`.
+  - `Edition` (`id external isbn narrators publisher released minutes description`): `idOn`/`ids`/`idKeys`, `sameAs`/`conflictsWith`/`fillFrom`,
+    `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`/`fixIds`.
+  - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads and Hardcover, with a
+    description and, per kind (`book edition series author narrator publisher`), the id's pattern and its page's address; `GROUPS` (one form
+    field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
+    typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
+  - `Series` (series info `total status note url external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`),
     `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
@@ -73,7 +77,9 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `persist` (async, queued; writes only the records that changed, with the ids `fromCatalog` gives; refuses when another tab saved
   since this page last read or wrote (`SEEN_REVISION`), or when `CatalogRecords.unstorable` names values a record can't hold;
   `whenSaved`, `storedRevision`),
-  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below), the page links
+  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below),
+  the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
+  `ExternalCatalog` group) and `externalLinks`, the page links
   (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, read back with `nameFromPageHash`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook` and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init)` (the import page also passes `{onHardcoverJob}`;
@@ -112,21 +118,22 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 ## Data model (short form; full table in `docs/data-format.md`)
 
 A backup is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}`; the browser keeps the same catalog as
-IndexedDB records (below). `books` is a list of titles with short keys `uid t a s sn g r hcb e` (the id it is stored under, title, list of authors, series,
-series number as text, genres, dates read, Hardcover book id, editions). Each edition in `e` has `uid asin gr hc isbn n p d len desc`
-(its stored id (a box set's copies share it), ASINs by site, `{"audible.com": "B0…", "amazon.com": "B0…"}`, Goodreads book id, Hardcover edition id, one ISBN, list of narrators, publisher, release date,
-length in minutes, free-text description) and must not be empty. `asin`, `gr` and `hc` name an edition
-(`Edition.IDS`; `ids('asin')` gives an ASIN of any site, and only another ASIN on the same site disagrees) and match books; the ISBN names an edition too (`conflictsWith`: another ISBN is another
+IndexedDB records (below). `books` is a list of titles with short keys `uid t a s sn g r ext e` (the id it is stored under, title, list of authors, series,
+series number as text, genres, dates read, its own external ids (`{"hardcover": "77", "goodreads": "99"}`), editions). Each edition in `e` has `uid ext isbn n p d len desc`
+(its stored id (a box set's copies share it), its ids by external catalog, `{"audible.com": "B0…", "amazon.com": "B0…", "goodreads": "4242", "hardcover": "501"}`, one ISBN, list of narrators, publisher, release date,
+length in minutes, free-text description) and must not be empty. Entries keep only ids, never addresses: `ExternalCatalog` makes the link
+from an id and reads the id out of a pasted address. An edition's `ext` names it
+(`idKeys`, `"asin B0…"` for any site's ASIN; `ids('asin')` gives an ASIN of any site, and only another id under the same key disagrees) and matches books; the ISBN names an edition too (`conflictsWith`: another ISBN is another
 edition) but never matches books. Editions with an ISBN list or an `hcb`, from before, are split and the
-id lifted to the book on load (`Edition.splitIsbns`, `Book.fixBooks`); an edition's old one-ASIN `id` becomes its audible.com ASIN (`fixAsin`).
+id lifted to the book on load (`Edition.splitIsbns`, `Book.fixBooks`); the old keys `id`/`asin`/`gr`/`hc` on an edition and `hcb` on a book become `ext` (`Edition.fixIds`, `Book.fixIds`).
 Audible imports' ASINs are the picked Audible site's (audible.com by default), Hardcover's and Goodreads' amazon.com's. A box set is one edition copied onto each of its titles, linked by the shared
 identifier (`sameAs`), and also a book of its own numbered with its range (`"1-3"`). Books from before editions (with `id`/`gr`/`isbn`/`n` on the book) are
 migrated on load by `Book.fixBooks`, and so are authors and narrators written as one comma separated
 string (`Text.fixPeople`/`splitNames`; `namesText` joins a list back for display). Matching and "Not duplicates"
 keys use the first author (`Book.firstAuthor`/`firstName`). A missing `r` means the read date is unknown, not unread. `seriesInfo` maps a series
-name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url}`. `authors` (optional;
-missing means `{}`) maps an author's name (as in `a`) to `{bio, url, audible, goodreads, hardcover}` (links as
-full addresses), and `narrators` and `publishers` (likewise optional) map a narrator's name (as in an edition's `n`) or
+name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url, ext}`. `authors` (optional;
+missing means `{}`) maps an author's name (as in `a`) to `{bio, url, ext, links}` (ids by catalog, and other addresses; the old `audible`/`goodreads`/`hardcover`
+addresses are read into `ext` by `Contributor.fixLinks`), and `narrators` and `publishers` (likewise optional) map a narrator's name (as in an edition's `n`) or
 a publisher's (as in `p`) to the same; they travel like series info, and an
 entry whose name no book has is a warning, not an error.
 `ids` maps series, author, narrator and publisher names to their ids (`Catalog.nameIds`); a backup without ids gets new ones.
@@ -134,13 +141,15 @@ IndexedDB (`CatalogRecords.STORES`, documented in `docs/data-format.md`): stores
 plain objects with descriptive fields, ids from `crypto.randomUUID()` that never change, references by id (a box set's edition is
 one record with `bookIds`), derived fields (sort keys, counts, `credits`) rewritten on every save and never read back, and every
 sorting index ending in the key so lists can be paged. There is no `extra`: a value a class keeps aside is not stored.
+The database is version 2 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`); `toCatalog` still reads
+version 1's records (ids under fields of their own), and `startPage` saves them again at once (`CatalogRecords.outdated`).
 `excluded` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` entries that imports must never re-add; code only
 ever adds to it (Restore and Merge add a backup's to it too). `notDuplicates` (pairs marked "Not duplicates" on the
 Duplicates page) is add-only too. Restore also reads the old `data/` files (`books.json`, `series-info.json`, `authors.json`, `narrators.json`, `publishers.json`,
 `excluded.txt`, `not-duplicates.txt`) picked together (`Backup.readFiles`).
 
 Invariants the code relies on:
-- Imports only add books, never overwrite. Matching order: any edition's ASIN (any site), `gr` or `hc`, then the book's `hcb`, then first author + series + number
+- Imports only add books, never overwrite. Matching order: any edition's external id (an ASIN on any site), then the book's Hardcover id, then first author + series + number
   (spelling-insensitive), then author + title (forgiving Audible's long titles, never mistaking a
   boxed set for book 1). A box set with a range and an id is kept as its own book and gives its edition to each title (`Merger`). A match may gain dates read and editions: an incoming edition fills in the
   edition it shares an identifier with (and that edition's box-set copies), or the match's only

@@ -1,15 +1,16 @@
 // The authors, narrators and publishers pages: everyone the books credit as one of them, and one
 // person's or publisher's page (authors.html#a=Name, narrators.html#n=Name, publishers.html#p=Name) with
-// what you keep about them (CATALOG.authors, .narrators, .publishers: a short bio, their own site and their
-// pages on Audible, Goodreads and Hardcover) and the series and titles of theirs you have, worked out from
+// what you keep about them (CATALOG.authors, .narrators, .publishers: a short bio, their own site, their
+// ids on Audible, Amazon, Goodreads and Hardcover, which link to their pages there, and other links) and the series and titles of theirs you have, worked out from
 // the books. Each page's own script (authors.js, narrators.js, publishers.js) starts this one with its kind.
 // Loading and saving live in store.js.
+import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
 import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined,
-	authorPageHref, narratorPageHref, publisherPageHref, nameFromPageHash } from './store.js';
+	authorPageHref, narratorPageHref, publisherPageHref, nameFromPageHash, externalFields, fillExternalFields, readExternalFields, externalLinks } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 /** @import {Child} from './store.js' */
@@ -19,11 +20,11 @@ import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buil
  * @typedef {object} CreditKind
  * @property {ContributorKind} infoKey where the catalog keeps their info: CATALOG.narrators
  * @property {string} hashKey the address's key: #n=Name
- * @property {string} one 'narrator'
+ * @property {'author' | 'narrator' | 'publisher'} one 'narrator' (also what an external catalog calls them)
  * @property {string} many 'narrators'
  * @property {string} title the page's title: 'Narrators'
  * @property {string} none the subtitle of someone with no books
- * @property {Record<'url' | 'audible' | 'goodreads' | 'hardcover', [string, string]>} fields each link's form label and example
+ * @property {[string, string]} site their own site's form label and example
  * @property {(name: string) => string} href the address of someone's page
  * @property {(b: Book) => string[]} namesOf who the kind credits on a book
  * @property {() => {name: string, books: number, series: number}[]} list
@@ -33,16 +34,13 @@ import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buil
 /** @type {Record<'author' | 'narrator' | 'publisher', CreditKind>} */
 export const CREDIT_KINDS = {
 	author: {infoKey: 'authors', hashKey: 'a', one: 'author', many: 'authors', title: 'Authors', none: 'No books by this author in the catalog.',
-		fields: {url: ['Personal website', 'https://'], audible: ['Audible author page', 'https://www.audible.com/author/...'],
-			goodreads: ['Goodreads author page', 'https://www.goodreads.com/author/show/...'], hardcover: ['Hardcover author page', 'https://hardcover.app/authors/...']},
+		site: ['Personal website', 'https://'],
 		href: authorPageHref, namesOf: Catalog.authorsOf, list: ()=> CATALOG.authorList(), works: name=> CATALOG.authorWorks(name)},
 	narrator: {infoKey: 'narrators', hashKey: 'n', one: 'narrator', many: 'narrators', title: 'Narrators', none: 'No books narrated by them in the catalog.',
-		fields: {url: ['Personal website', 'https://'], audible: ['Audible narrator search', 'https://www.audible.com/search?searchNarrator=...'],
-			goodreads: ['Goodreads author page', 'https://www.goodreads.com/author/show/...'], hardcover: ['Hardcover page', 'https://hardcover.app/authors/...']},
+		site: ['Personal website', 'https://'],
 		href: narratorPageHref, namesOf: Catalog.narratorsOf, list: ()=> CATALOG.narratorList(), works: name=> CATALOG.narratorWorks(name)},
 	publisher: {infoKey: 'publishers', hashKey: 'p', one: 'publisher', many: 'publishers', title: 'Publishers', none: 'No books from this publisher in the catalog.',
-		fields: {url: ['Website', 'https://'], audible: ['Audible publisher search', 'https://www.audible.com/search?searchProvider=...'],
-			goodreads: ['Goodreads page', 'https://www.goodreads.com/...'], hardcover: ['Hardcover publisher page', 'https://hardcover.app/publishers/...']},
+		site: ['Website', 'https://'],
 		href: publisherPageHref, namesOf: Catalog.publishersOf, list: ()=> CATALOG.publisherList(), works: name=> CATALOG.publisherWorks(name)},
 };
 
@@ -52,10 +50,6 @@ export let KIND = CREDIT_KINDS.author;
 export let SHOWN = null;              // the author, narrator or publisher shown (#a=...), or null for the list
 /** @type {string | null} */
 let EDITING = null;                   // whose info the form is editing, or null
-
-// The links a page can have, in the order they are shown, with their names there.
-/** @type {['url' | 'audible' | 'goodreads' | 'hardcover', string][]} */
-const LINKS = [['url', 'Website'], ['audible', 'Audible'], ['goodreads', 'Goodreads'], ['hardcover', 'Hardcover']];
 
 const bookHref = (/** @type {string} */ title)=> 'index.html#book=' + encodeURIComponent(title).replace(/%20/g, '+');
 const seriesHref = (/** @type {string} */ name)=> 'index.html#series=' + encodeURIComponent(name).replace(/%20/g, '+');
@@ -161,8 +155,11 @@ function renderCreditPage(name){
 		? `${plural(count, 'audiobook')}${series.length ? ' in ' + plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
 		: spell(KIND.none);
 	const label = kept().has(name) ? `Edit ${KIND.one} info` : `Add ${KIND.one} info`;
-	const links = LINKS.filter(([k])=> info[k]).map(([k, text])=>
-		buildElement('a', {class: 'authorlink', href: info[k] || '', target: '_blank', rel: 'noopener'}, `${text} ↗`));
+	/** @type {(href: string, text: string) => HTMLAnchorElement} */
+	const link = (href, text)=> buildElement('a', {class: 'authorlink', href, target: '_blank', rel: 'noopener'}, `${text} ↗`);
+	// their own site, their pages in external catalogs, then any other link (by its site's name)
+	const links = [info.url && link(info.url, 'Website'), ...externalLinks(info.external, KIND.one),
+		...info.links.map(href=> link(href, (Text.webHost(href) || href).replace(/^www\./, '')))].filter(x=> !!x);
 	/** @type {Child[]} */
 	const out = [
 		buildElement('div', {class: 'author-head'}, buildElement('h2', {class: 'author-name'}, name),
@@ -193,7 +190,8 @@ export function openCreditForm(name){
 	const one = KIND.one[0].toUpperCase() + KIND.one.slice(1);
 	byId('creditFormTitle').textContent = (kept().has(name) ? `${one} info: ` : `Add ${KIND.one} info: `) + name;
 	fieldById('cf_bio').value = info.bio || '';
-	LINKS.forEach(([k])=> { fieldById('cf_' + k).value = info[k] || ''; });
+	fieldById('cf_url').value = info.url || '';
+	fillExternalFields('cf_ext_', KIND.one, info.external);
 	byId('creditFormError').textContent = '';
 	byId('creditSaveBtn').textContent = `Save ${KIND.one} info`;
 	byId('creditRemoveBtn').style.display = kept().has(name) ? '' : 'none';
@@ -218,15 +216,16 @@ function homeCreditForm(){
 function saveCreditForm(){
 	const name = EDITING;
 	if(name === null) return;
-	const entry = Contributor.tidy(name, {
-		bio: fieldById('cf_bio').value,
-		...Object.fromEntries(LINKS.map(([k])=> [k, fieldById('cf_' + k).value])),
-	});
-	// the same rules as Check, applied to this entry alone; a link to the wrong site is only a warning
-	// there, but here it is most likely pasted into the wrong field
+	const had = kept().get(name);
+	const external = readExternalFields('cf_ext_', KIND.one, had ? had.external : {});
+	if(external.bad.length){ byId('creditFormError').textContent = `Not an id or address there: ${external.bad.join('; ')}.`; return; }
+	// the links the form has no field for are kept
+	const entry = Contributor.tidy(name, {bio: fieldById('cf_bio').value, url: fieldById('cf_url').value, ext: external.ids, links: had ? had.links : []});
+	// the same rules as Check, applied to this entry alone; an id in a catalog this app doesn't know is only
+	// a warning there, but here it is most likely a mistake
 	if(entry){
 		const {errors, warnings} = Validator.validateContributors(JSON.parse(JSON.stringify(CATALOG.books)), KIND.infoKey, {[name]: entry.toJSON()});
-		const problems = [...errors, ...warnings.filter(w=> !/matches no/.test(w))].map(e=> e.replace(/^\w+\[[^\]]*\]: /, ''));
+		const problems = [...errors, ...warnings.filter(w=> !/matches no|is a page on/.test(w))].map(e=> e.replace(/^\w+\[[^\]]*\]: /, ''));
 		if(problems.length){ byId('creditFormError').textContent = problems.join('; '); return; }
 	}
 	if(entry) kept().set(name, entry); else kept().delete(name);
@@ -261,10 +260,9 @@ export function showAddress(){
  */
 export function startCreditsPage(kind){
 	KIND = CREDIT_KINDS[kind];
-	for(const [k, [label, example]] of Object.entries(KIND.fields)){
-		byId(`cf_${k}_label`).textContent = label;
-		byId('cf_' + k).setAttribute('placeholder', example);
-	}
+	byId('cf_url_label').textContent = KIND.site[0];
+	byId('cf_url').setAttribute('placeholder', KIND.site[1]);
+	fillElement(byId('cf_ext'), externalFields('cf_ext_', KIND.one));
 	byId('creditForm').addEventListener('submit', e=>{ e.preventDefault(); saveCreditForm(); });
 	byId('creditRemoveBtn').addEventListener('click', removeCreditInfo);
 	byId('cancelCredit').addEventListener('click', closeCreditForm);

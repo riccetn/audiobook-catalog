@@ -7,6 +7,7 @@ import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Importer} from './importer.js';
 import {HardcoverClient} from './hardcover-client.js';
+import {ExternalCatalog} from './external-catalog.js';
 /** @import {Unchecked} from './text.js' */
 /** @import {Step, HardcoverLookups, HardcoverFound} from './hardcover-client.js' */
 /** @import {Catalog} from './catalog.js' */
@@ -191,9 +192,9 @@ export class HardcoverSync {
 	 * @returns {Edition}
 	 */
 	static edition(edition){
-		const ed = new Edition({hardcoverId: String(edition.id)});
 		// Hardcover's ASIN is amazon.com's
-		if(typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim())) ed.asins = {[Edition.AMAZON_SITE]: edition.asin.trim()};
+		const asin = typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim()) ? edition.asin.trim() : null;
+		const ed = new Edition({external: {...asin ? {[ExternalCatalog.AMAZON_SITE]: asin} : {}, hardcover: String(edition.id)}});
 		// the ISBN-10 and ISBN-13 of an edition are one ISBN; should they differ, the ISBN-13 wins
 		const isbn = [edition.isbn_13, edition.isbn_10].map(Isbn.parse).find(Boolean);
 		if(isbn) ed.isbn = isbn;
@@ -251,7 +252,7 @@ export class HardcoverSync {
 			const reads = Array.isArray(ub.user_book_reads) ? ub.user_book_reads : [];
 			const dates = [...new Set(reads.map((/** @type {unknown} */ r) => Text.isObject(r) && Text.parseDate(r.finished_at)).filter(d => typeof d === 'string'))].sort();
 			if(dates.length) rec.r = dates;
-			rec.hcb = String(ub.book_id);
+			rec.ext = {hardcover: String(ub.book_id)};
 			if(Text.isObject(edition)) rec.e = [HardcoverSync.edition(edition).toJSON()];
 			const read = Importer.book(Book.fixSeriesTitle(rec));
 			result.books.push(read);
@@ -267,7 +268,7 @@ export class HardcoverSync {
 	 * @returns {number[]}
 	 */
 	static exportEditions(books){
-		const ids = books.filter(b => b.hardcoverId).flatMap(b => b.editions).map(ed => ed.hardcoverId)
+		const ids = books.filter(b => b.idOn('hardcover')).flatMap(b => b.editions).map(ed => ed.idOn('hardcover'))
 			.filter(hc => typeof hc === 'string' && HardcoverClient.ID.test(hc));
 		return [...new Set(ids)].map(Number);
 	}
@@ -279,11 +280,12 @@ export class HardcoverSync {
 	 */
 	static lookups(books){
 		const ids = {hc: new Set(), asin: new Set(), isbn: new Set(), gr: new Set()};
-		for(const ed of books.filter(b => !b.hardcoverId).flatMap(b => b.editions)){
-			if(ed.hardcoverId && HardcoverClient.ID.test(ed.hardcoverId)) ids.hc.add(Number(ed.hardcoverId));
+		for(const ed of books.filter(b => !b.idOn('hardcover')).flatMap(b => b.editions)){
+			const hc = ed.idOn('hardcover'), gr = ed.idOn('goodreads');
+			if(hc && HardcoverClient.ID.test(hc)) ids.hc.add(Number(hc));
 			ed.ids('asin').forEach(asin => ids.asin.add(asin));
 			ed.isbns().forEach(isbn => ids.isbn.add(isbn));
-			if(ed.goodreadsId) ids.gr.add(ed.goodreadsId);
+			if(gr) ids.gr.add(gr);
 		}
 		return Object.fromEntries(Object.entries(ids).map(([k, v]) => [k, [...v]]));
 	}
@@ -301,14 +303,15 @@ export class HardcoverSync {
 	static addIds(books, found){
 		const filled = [], shared = Book.sharedEditionTest(books);
 		for(const b of books){
-			if(b.hardcoverId) continue;
+			if(b.idOn('hardcover')) continue;
 			let gained = false;
 			for(const ed of [...b.editions.filter(x => !shared(x)), ...b.editions.filter(shared)]){
-				const hit = (ed.hardcoverId && found.hc.get(ed.hardcoverId)) || ed.ids('asin').map(asin => found.asin.get(asin)).find(Boolean) ||
-					ed.isbns().map(isbn => found.isbn.get(isbn)).find(Boolean) || (ed.goodreadsId && found.gr.get(ed.goodreadsId));
+				const hc = ed.idOn('hardcover'), gr = ed.idOn('goodreads');
+				const hit = (hc && found.hc.get(hc)) || ed.ids('asin').map(asin => found.asin.get(asin)).find(Boolean) ||
+					ed.isbns().map(isbn => found.isbn.get(isbn)).find(Boolean) || (gr && found.gr.get(gr));
 				if(!hit) continue;
-				if(hit.hc && !ed.hardcoverId){ ed.hardcoverId = hit.hc; gained = true; }
-				if(!b.hardcoverId){ b.hardcoverId = hit.hcb; gained = true; }
+				if(hit.hc && !ed.idOn('hardcover')){ ed.external = {...ed.external, hardcover: hit.hc}; gained = true; }
+				if(!b.idOn('hardcover')){ b.external = {...b.external, hardcover: hit.hcb}; gained = true; }
 			}
 			if(gained) filled.push(b);
 		}
@@ -341,20 +344,20 @@ export class HardcoverSync {
 		for(const ub of shelf) if(Text.isObject(ub) && !onShelf.has(ub.book_id)) onShelf.set(ub.book_id, ub);
 		/** @type {Map<string, number>} */
 		const owners = new Map();   // Hardcover book id -> how many of your books are it
-		for(const b of books) if(b.hardcoverId) owners.set(b.hardcoverId, (owners.get(b.hardcoverId) || 0) + 1);
+		for(const b of books){ const hcb = b.idOn('hardcover'); if(hcb) owners.set(hcb, (owners.get(hcb) || 0) + 1); }
 		const shared = Book.sharedEditionTest(books);
 		/** @type {Map<string, {edition: string | null, dates: Set<string>, books: Book[]}>} */
 		const wanted = new Map();   // Hardcover book id -> {edition, dates, books}
 		for(const b of books){
-			const hcb = b.hardcoverId;
+			const hcb = b.idOn('hardcover');
 			if(!hcb){ plan.unknown.push(b); continue; }
-			const editions = b.editions.filter(ed => ed.hardcoverId);
-			const ed = editionBooks ? editions.find(x => editionBooks.get(x.hardcoverId || '') === hcb)
+			const editions = b.editions.filter(ed => ed.idOn('hardcover'));
+			const ed = editionBooks ? editions.find(x => editionBooks.get(x.idOn('hardcover') || '') === hcb)
 				: editions.find(x => !shared(x)) || ((owners.get(hcb) || 0) > 1 || b.isCollection() ? editions[0] : null);
 			const exact = b.read.filter(d => /^\d{4}-\d\d-\d\d$/.test(d));
 			for(const d of b.read) if(!exact.includes(d)) plan.inexact.push([b, d]);
 			const w = wanted.get(hcb) || {edition: null, dates: new Set(), books: []};
-			if(!w.edition && ed && ed.hardcoverId) w.edition = ed.hardcoverId;
+			if(!w.edition && ed && ed.idOn('hardcover')) w.edition = ed.idOn('hardcover');
 			exact.forEach(d => w.dates.add(d));
 			w.books.push(b);
 			wanted.set(hcb, w);

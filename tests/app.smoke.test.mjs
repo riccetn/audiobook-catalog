@@ -244,10 +244,11 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 	}
 	const html = read(page);
 	const body = parseBody(html);
-	const els = {};
-	for (const el of body.querySelectorAll('[id]')) els[el.id] = el;
+	// the page's elements by id, the ones the page makes (form fields drawn from code) included
+	const byId = id => body.querySelectorAll('[id]').find(el => el.id === id) || null;
+	const els = new Proxy({}, { get: (_, id) => (typeof id === 'string' ? byId(id) || undefined : undefined) });
 	const document = {
-		getElementById: id => els[id] || null,
+		getElementById: byId,
 		querySelectorAll: selector => body.querySelectorAll(selector),
 		querySelector: selector => body.querySelector(selector),
 		createElement: tag => new FakeElement(tag),
@@ -373,7 +374,7 @@ test('search narrows the library view', async () => {
 test('text from the catalog is shown as text, never read as HTML', async () => {
 	const odd = '<img src=x onerror=alert(1)> & "Co"';
 	// twice, so the duplicates page shows it too
-	const mine = JSON.stringify([{ t: odd, a: [odd], s: odd, sn: '1', g: [odd], e: [{ desc: odd, n: [odd] }] }, { t: odd, a: [odd], e: [{ gr: '42' }] }]);
+	const mine = JSON.stringify([{ t: odd, a: [odd], s: odd, sn: '1', g: [odd], e: [{ desc: odd, n: [odd] }] }, { t: odd, a: [odd], e: [{ ext: { goodreads: '42' } }] }]);
 	const info = JSON.stringify({ [odd]: { total: 2, status: 'ongoing', note: odd } });
 	const authors = JSON.stringify({ [odd]: { bio: odd } });
 	const files = { 'books.json': mine, 'series-info.json': info, 'authors.json': authors };
@@ -487,22 +488,22 @@ test('back and forward step through series, books, filters and searches', async 
 
 test('editing a book keeps its editions', async () => {
 	const { ctx, els, get, run } = await boot();
-	run("CATALOG.books[0].editions = [{asin: { 'audible.com': 'TESTASIN01' }, gr: '4242', p: 'Gull Audio', len: 642}, {asin: { 'audible.com': 'TESTASIN02' }}].map(e => Edition.fromJSON(e))");
+	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {ext: { 'audible.com': 'TESTASIN02' }}].map(e => Edition.fromJSON(e))");
 	ctx.setView('library');
 	ctx.openEditForm(0);
 	assert.equal(els.formTitle.textContent, 'Edit book');
-	assert.deepEqual(formEditions(get), [{ 'asin:audible.com': 'TESTASIN01', gr: '4242', p: 'Gull Audio', len: '10h 42m' }, { 'asin:audible.com': 'TESTASIN02' }]);
+	assert.deepEqual(formEditions(get), [{ 'ext:audible.com': 'TESTASIN01', 'ext:goodreads': '4242', p: 'Gull Audio', len: '10h 42m' }, { 'ext:audible.com': 'TESTASIN02' }]);
 	assert.match(els.f_editions.innerHTML, /Edition 2/);
 	assert.match(els.f_editions.innerHTML, /<input data-i="0" data-k="len" value="10h 42m"/);
 	els.f_t.value = 'Renamed In The App';
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	assert.deepEqual(get('({t: CATALOG.books[0].title, e: CATALOG.books[0].editions})'),
-		{ t: 'Renamed In The App', e: [{ asin: { 'audible.com': 'TESTASIN01' }, gr: '4242', p: 'Gull Audio', len: 642 }, { asin: { 'audible.com': 'TESTASIN02' } }] });
+		{ t: 'Renamed In The App', e: [{ ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642 }, { ext: { 'audible.com': 'TESTASIN02' } }] });
 });
 
 test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Goodreads', async () => {
 	const { ctx, els, run } = await boot();
-	run("CATALOG.books[0].editions = [{asin: { 'audible.com': 'TESTASIN01' }, gr: '4242', p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e))");
+	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e))");
 	ctx.setView('library');
 	ctx.render();
 	const html = els.results.innerHTML;
@@ -510,14 +511,14 @@ test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Good
 	// an edition without either id has no links
 	assert.match(html, /<div class="edition">ISBN 9780000000002<\/div>/);
 	// each site's ASIN links to the book on that site
-	run("CATALOG.books[0].editions = [{asin: { 'audible.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' }}].map(e => Edition.fromJSON(e))");
+	run("CATALOG.books[0].editions = [{ext: { 'audible.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' }}].map(e => Edition.fromJSON(e))");
 	ctx.render();
 	assert.match(els.results.innerHTML, /ASIN audible\.co\.uk <a href="https:\/\/www\.audible\.co\.uk\/pd\/TESTASIN02"[^>]*>TESTASIN02<\/a>, amazon\.com <a href="https:\/\/www\.amazon\.com\/dp\/TESTASIN03"[^>]*>TESTASIN03<\/a><\/div>/);
 });
 
 test('a book edited in the form keeps its id, and so do its editions, a box set\'s shared one included', async () => {
-	const box = { asin: { 'audible.com': 'B0BOX00001' } };
-	const books = [{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [box, { gr: '4001' }] }, { t: 'Gull Light', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [box] }];
+	const box = { ext: { 'audible.com': 'B0BOX00001' } };
+	const books = [{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [box, { ext: { goodreads: '4001' } }] }, { t: 'Gull Light', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [box] }];
 	const { ctx, els, withIds, database, saved } = await boot({ files: { 'books.json': JSON.stringify(books) } });
 	await saved();
 	const before = withIds('CATALOG.books');
@@ -540,37 +541,37 @@ test('a book edited in the form keeps its id, and so do its editions, a box set\
 
 test('the book form has a field for each site an edition has an ASIN on, and adds one for another site', async () => {
 	const { ctx, els, get, run } = await boot();
-	run("CATALOG.books[0].editions = [{asin: { 'audible.com': 'TESTASIN01', 'amazon.co.uk': 'TESTASIN02' }}, {gr: '4242'}].map(e => Edition.fromJSON(e))");
+	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', 'amazon.co.uk': 'TESTASIN02' }}, {ext: { goodreads: '4242' }}].map(e => Edition.fromJSON(e))");
 	ctx.setView('library');
 	ctx.openEditForm(0);
 	// audible.com and the sites in use have a field; the others wait in the list
-	assert.match(els.f_editions.innerHTML, /<label>audible\.com<\/label><input data-i="0" data-k="asin:audible\.com" value="TESTASIN01"/);
-	assert.match(els.f_editions.innerHTML, /data-k="asin:amazon\.co\.uk" value="TESTASIN02"/);
-	assert.match(els.f_editions.innerHTML, /<label>audible\.com<\/label><input data-i="1" data-k="asin:audible\.com" value=""/);
-	assert.doesNotMatch(els.f_editions.innerHTML, /data-k="asin:amazon\.com"/);
+	assert.match(els.f_editions.innerHTML, /<label>audible\.com<\/label><input data-i="0" data-k="ext:audible\.com" value="TESTASIN01"/);
+	assert.match(els.f_editions.innerHTML, /data-k="ext:amazon\.co\.uk" value="TESTASIN02"/);
+	assert.match(els.f_editions.innerHTML, /<label>audible\.com<\/label><input data-i="1" data-k="ext:audible\.com" value=""/);
+	assert.doesNotMatch(els.f_editions.innerHTML, /data-k="ext:amazon\.com"/);
 	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another site<\/option><option value="amazon\.com">/);
 	// picking a site from the list gives it a field
 	els.f_editions.listeners.change[0]({ target: { dataset: { addSite: '0' }, value: 'amazon.com' } });
-	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="asin:amazon\.com" value=""/);
-	typeEdition(els, 0, 'asin:amazon.com', 'https://www.amazon.com/dp/TESTASIN03?ref=x');
-	typeEdition(els, 1, 'asin:audible.com', 'testasin04');
+	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="ext:amazon\.com" value=""/);
+	typeEdition(els, 0, 'ext:amazon.com', 'https://www.amazon.com/dp/TESTASIN03?ref=x');
+	typeEdition(els, 1, 'ext:audible.com', 'testasin04');
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-	assert.deepEqual(get('CATALOG.books[0].editions'), [{ asin: { 'audible.com': 'TESTASIN01', 'amazon.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' } },
-		{ asin: { 'audible.com': 'TESTASIN04' }, gr: '4242' }]);
+	assert.deepEqual(get('CATALOG.books[0].editions'), [{ ext: { 'audible.com': 'TESTASIN01', 'amazon.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' } },
+		{ ext: { 'audible.com': 'TESTASIN04', goodreads: '4242' } }]);
 	// emptying a site's field drops that ASIN; something that isn't an ASIN is named
 	ctx.openEditForm(0);
-	typeEdition(els, 0, 'asin:amazon.co.uk', '');
-	typeEdition(els, 1, 'asin:audible.com', 'not an asin');
+	typeEdition(els, 0, 'ext:amazon.co.uk', '');
+	typeEdition(els, 1, 'ext:audible.com', 'not an asin');
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	assert.match(els.formError.textContent, /Not understood: edition 2: ASIN audible\.com not an asin/);
-	typeEdition(els, 1, 'asin:audible.com', 'TESTASIN04');
+	typeEdition(els, 1, 'ext:audible.com', 'TESTASIN04');
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-	assert.deepEqual(get('CATALOG.books[0].editions[0]'), { asin: { 'audible.com': 'TESTASIN01', 'amazon.com': 'TESTASIN03' } });
+	assert.deepEqual(get('CATALOG.books[0].editions[0]'), { ext: { 'audible.com': 'TESTASIN01', 'amazon.com': 'TESTASIN03' } });
 });
 
 test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardcover, and the edit form keeps them', async () => {
 	const { ctx, els, get, run } = await boot();
-	run("CATALOG.books[0].hardcoverId = '808'; CATALOG.books[0].editions = [{asin: { 'audible.com': 'TESTASIN01' }, hc: '31337'}].map(e => Edition.fromJSON(e))");
+	run("CATALOG.books[0].external = { hardcover: '808' }; CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', hardcover: '31337' }}].map(e => Edition.fromJSON(e))");
 	ctx.setView('library');
 	ctx.render();
 	assert.match(els.results.innerHTML, /<div class="ids">Hardcover book <a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a><\/div>/);
@@ -581,9 +582,9 @@ test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardc
 	els.q.value = '';
 	ctx.openEditForm(0);
 	assert.equal(els.f_hcb.value, '808');
-	assert.deepEqual(formEditions(get), [{ 'asin:audible.com': 'TESTASIN01', hc: '31337' }]);
+	assert.deepEqual(formEditions(get), [{ 'ext:audible.com': 'TESTASIN01', 'ext:hardcover': '31337' }]);
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-	assert.deepEqual(get('[CATALOG.books[0].hardcoverId, CATALOG.books[0].editions]'), ['808', [{ asin: { 'audible.com': 'TESTASIN01' }, hc: '31337' }]]);
+	assert.deepEqual(get("[CATALOG.books[0].idOn('hardcover'), CATALOG.books[0].editions]"), ['808', [{ ext: { 'audible.com': 'TESTASIN01', hardcover: '31337' } }]]);
 
 	// a Hardcover book id is a number; a book's address in an edition's Hardcover field goes on the book
 	ctx.openEditForm(0);
@@ -592,9 +593,9 @@ test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardc
 	assert.match(els.formError.textContent, /Not a Hardcover book id: abc/);
 	els.f_hcb.value = '';
 	addEdition(els);
-	typeEdition(els, 1, 'hc', 'https://hardcover.app/id/book/909');
+	typeEdition(els, 1, 'ext:hardcover', 'https://hardcover.app/id/book/909');
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
-	assert.deepEqual(get('[CATALOG.books[0].hardcoverId, CATALOG.books[0].editions]'), ['909', [{ asin: { 'audible.com': 'TESTASIN01' }, hc: '31337' }]]);
+	assert.deepEqual(get("[CATALOG.books[0].idOn('hardcover'), CATALOG.books[0].editions]"), ['909', [{ ext: { 'audible.com': 'TESTASIN01', hardcover: '31337' } }]]);
 });
 
 test('the Hardcover book field takes the address of a book or edition on Hardcover, and looks up its id', async () => {
@@ -608,12 +609,12 @@ test('the Hardcover book field takes the address of a book or edition on Hardcov
 	els.f_hcb.value = 'https://hardcover.app/books/tidewater';
 	await submit();
 	assert.match(els.formError.textContent, /Couldn't find the Hardcover book: to look it up on Hardcover, save your Hardcover API token/);
-	assert.equal(get("CATALOG.books[0].hardcoverId || null"), null);
+	assert.equal(get("CATALOG.books[0].idOn('hardcover') || null"), null);
 	assert.equal(hc.sent.length, 0);
 
 	storage.set('audiobook-catalog-hardcover-token', 'tok-123');
 	await submit();
-	assert.equal(get('CATALOG.books[0].hardcoverId'), '77');
+	assert.equal(get("CATALOG.books[0].idOn('hardcover')"), '77');
 	assert.match(els.ioStatus.textContent, /Found on Hardcover: Tidewater \(book 77\)/);
 	// pasting an edition's address fills in its book's id as soon as the field is left
 	ctx.openEditForm(0);
@@ -625,7 +626,7 @@ test('the Hardcover book field takes the address of a book or edition on Hardcov
 	els.f_hcb.value = 'hardcover.app/id/book/81';
 	const asked = hc.sent.length;
 	await submit();
-	assert.equal(get('CATALOG.books[0].hardcoverId'), '81');
+	assert.equal(get("CATALOG.books[0].idOn('hardcover')"), '81');
 	assert.equal(hc.sent.length, asked);
 
 });
@@ -663,17 +664,17 @@ test('an address pasted in an edition id field becomes the id when the field is 
 	const field = k => els.f_editions.querySelector(`input[data-i="0"][data-k="${k}"]`);
 	const leave = (k, value) => { const input = field(k); input.value = value; typeEdition(els, 0, k, value); input.dispatch('focusout', { relatedTarget: field('isbn') }); return input; };
 	// the field's own id
-	assert.equal(leave('gr', 'https://www.goodreads.com/book/show/4242-the-salt-road').value, '4242');
-	assert.equal(leave('hc', 'https://hardcover.app/books/the-salt-road/editions/501').value, '501');
-	assert.equal(leave('asin:audible.com', 'https://www.audible.com/pd/The-Salt-Road-Audiobook/B0SALTROAD?qid=1').value, 'B0SALTROAD');
+	assert.equal(leave('ext:goodreads', 'https://www.goodreads.com/book/show/4242-the-salt-road').value, '4242');
+	assert.equal(leave('ext:hardcover', 'https://hardcover.app/books/the-salt-road/editions/501').value, '501');
+	assert.equal(leave('ext:audible.com', 'https://www.audible.com/pd/The-Salt-Road-Audiobook/B0SALTROAD?qid=1').value, 'B0SALTROAD');
 	// another site's page: its ASIN goes to that site's field, which is added
-	assert.equal(leave('asin:audible.com', 'https://www.amazon.co.uk/dp/B0SALTUK01').value, '');
-	assert.equal(field('asin:amazon.co.uk').getAttribute('value'), 'B0SALTUK01');
-	assert.deepEqual(get('FORM_EDITIONS[0].fields'), { gr: '4242', hc: '501', 'asin:audible.com': '', 'asin:amazon.co.uk': 'B0SALTUK01' });
+	assert.equal(leave('ext:audible.com', 'https://www.amazon.co.uk/dp/B0SALTUK01').value, '');
+	assert.equal(field('ext:amazon.co.uk').getAttribute('value'), 'B0SALTUK01');
+	assert.deepEqual(get('FORM_EDITIONS[0].fields'), { 'ext:goodreads': '4242', 'ext:hardcover': '501', 'ext:audible.com': '', 'ext:amazon.co.uk': 'B0SALTUK01' });
 	// a site whose field holds another ASIN keeps the address, for Save to report
-	assert.equal(leave('asin:audible.com', 'https://www.amazon.co.uk/dp/B0OTHER001').value, 'https://www.amazon.co.uk/dp/B0OTHER001');
+	assert.equal(leave('ext:audible.com', 'https://www.amazon.co.uk/dp/B0OTHER001').value, 'https://www.amazon.co.uk/dp/B0OTHER001');
 	// anything else is left as typed
-	assert.equal(leave('gr', 'not an address').value, 'not an address');
+	assert.equal(leave('ext:goodreads', 'not an address').value, 'not an address');
 });
 
 test('dates read: shown on the card, edited in the form, and filterable by year', async () => {
@@ -756,10 +757,10 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
 	assert.match(els.formError.textContent, /Not understood: edition 1: ISBN 9780306406158/);
 	assert.deepEqual(get('CATALOG.books[1].editions'), [{ isbn: '9780306406157' }]);
 	typeEdition(els, 0, 'isbn', '');
-	typeEdition(els, 0, 'gr', 'twelve');
+	typeEdition(els, 0, 'ext:goodreads', 'twelve');
 	typeEdition(els, 0, 'd', 'someday');
 	els.addForm.listeners.submit[0]({ preventDefault() {} });
-	assert.match(els.formError.textContent, /Not understood: edition 1: Goodreads id twelve; edition 1: Released someday/);
+	assert.match(els.formError.textContent, /Not understood: edition 1: Goodreads edition twelve; edition 1: Released someday/);
 	// removing the only card leaves an empty one, which is no edition
 	removeEdition(els, 0);
 	assert.deepEqual(formEditions(get), [{}]);
@@ -785,14 +786,14 @@ test('narrators and descriptions live on editions: shown on the card, searchable
 
 	ctx.openEditForm(salt);
 	assert.equal(formEditions(get)[0].n, 'Tobias Frane');
-	assert.equal(formEditions(get)[0]['asin:audible.com'], 'SAMPLE0001');
-	assert.equal(formEditions(get)[0]['asin:amazon.com'], 'SAMPLE0201');
+	assert.equal(formEditions(get)[0]['ext:audible.com'], 'SAMPLE0001');
+	assert.equal(formEditions(get)[0]['ext:amazon.com'], 'SAMPLE0201');
 	addEdition(els);
 	typeEdition(els, 2, 'desc', 'Dramatized adaptation; unabridged');
 	typeEdition(els, 2, 'n', 'A full cast');
-	typeEdition(els, 2, 'gr', '777');
+	typeEdition(els, 2, 'ext:goodreads', '777');
 	els.addForm.listeners.submit[0]({ preventDefault() {} });
-	assert.deepEqual(get(`CATALOG.books[${salt}].editions[2]`), { gr: '777', n: ['A full cast'], desc: 'Dramatized adaptation; unabridged' });
+	assert.deepEqual(get(`CATALOG.books[${salt}].editions[2]`), { ext: { goodreads: '777' }, n: ['A full cast'], desc: 'Dramatized adaptation; unabridged' });
 });
 
 test('box sets: kept as their own book, last in the series, and not counted as one more title', async () => {
@@ -827,7 +828,7 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 });
 
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
-	const mine = JSON.stringify([{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2020'] }]);
+	const mine = JSON.stringify([{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }], r: ['2020'] }]);
 	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
 		+ 'Old Favorite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
@@ -836,7 +837,7 @@ test('a Goodreads import adds the ISBN to the edition of books already there', a
 	assert.match(els.importPreviewBody.innerHTML, /ISBNs added to existing books: 1/);
 	assert.equal(els.importConfirm.textContent, 'Save ISBNs');
 	els.importConfirm.listeners.click[0]();
-	assert.deepEqual(get('CATALOG.books[0].editions'), [{ asin: { 'audible.com': 'B1' }, isbn: '9780306406157' }]);
+	assert.deepEqual(get('CATALOG.books[0].editions'), [{ ext: { 'audible.com': 'B1' }, isbn: '9780306406157' }]);
 	assert.match(els.ioStatus.textContent, /added ISBNs to 1 book/);
 });
 
@@ -863,9 +864,9 @@ test('authors are lists: the author filter offers each author on its own, and th
 });
 
 test('authors and narrators written as comma separated text load as lists', async () => {
-	const mine = JSON.stringify([{ t: 'Old Style', a: 'Ann Vale, Bo Reed', e: [{ asin: { 'audible.com': 'B1' }, n: 'Cy Hale, Di Moss' }] }]);
+	const mine = JSON.stringify([{ t: 'Old Style', a: 'Ann Vale, Bo Reed', e: [{ ext: { 'audible.com': 'B1' }, n: 'Cy Hale, Di Moss' }] }]);
 	const { ctx, els, get } = await boot({ files: { 'books.json': mine } });
-	assert.deepEqual(get('CATALOG.books'), [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ asin: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }]);
+	assert.deepEqual(get('CATALOG.books'), [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }]);
 	ctx.setView('library');
 	assert.match(els.authorFilter.innerHTML, /<option value="Bo Reed">/);
 	assert.match(els.results.innerHTML, /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. <a href="narrators\.html#n=Cy\+Hale">Cy Hale<\/a>, <a href="narrators\.html#n=Di\+Moss">Di Moss<\/a><\/div>/);
@@ -891,6 +892,33 @@ test('the catalog is kept in this browser, from one page load to the next', asyn
 	assert.equal(again.get('CATALOG.books[0].title'), 'Edited Locally');
 	assert.equal(again.get('CATALOG.books.length'), demoBooks.length);
 	assert.deepEqual(again.withIds('CATALOG.books.map(b => b.id)'), first.withIds('CATALOG.books.map(b => b.id)'), 'each book keeps its id');
+});
+
+test('records saved before ids were kept by external catalog are read, and saved again the current way', async () => {
+	const storage = new Map();
+	const { database } = await boot({ storage });
+	await kept(storage);
+	// make the stored records look as the app before this one wrote them
+	const stores = database.data.get('audiobook-catalog').stores;
+	for (const { value } of stores.get('editions').records.values()) {
+		const { external = {} } = value;
+		delete value.external;
+		value.asins = Object.fromEntries(Object.entries(external).filter(([k]) => k.includes('.')));
+		if (external.goodreads) value.goodreadsId = external.goodreads;
+	}
+	for (const { value } of stores.get('contributors').records.values()) {
+		if (value.external && value.external.hardcover) value.hardcover = `https://hardcover.app/authors/${value.external.hardcover}`;
+		delete value.external; delete value.externalKeys;
+	}
+	for (const { value } of stores.get('books').records.values()) delete value.externalKeys;
+	const revision = database.records('meta').find(m => m.key === 'revision').value;
+	const again = await boot({ storage });
+	await kept(storage);
+	assert.ok(database.records('meta').find(m => m.key === 'revision').value > revision, 'saved again at once');
+	assert.ok(database.records('editions').every(ed => ed.external && !ed.asins));
+	assert.ok(database.records('books').every(b => Array.isArray(b.externalKeys)));
+	assert.deepEqual(again.get('CATALOG.books'), demoBooks);
+	assert.deepEqual(again.get("CATALOG.authors.get('Marisol Quenby').external.hardcover"), 'marisol-quenby-sample');
 });
 
 test('the catalog localStorage kept is moved to IndexedDB on the first load, and kept aside as it was', async () => {
@@ -940,7 +968,7 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	const first = await boot({ storage });
 	await first.saved();
 	// a book that lists an edition there is no record of
-	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 1); req.onsuccess = () => resolve({ db: req.result }); });
+	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 2); req.onsuccess = () => resolve({ db: req.result }); });
 	await new Promise(resolve => { const tx = db.transaction('editions', 'readwrite'); tx.objectStore('editions').clear(); tx.oncomplete = resolve; });
 	const { get, els, database } = await boot({ storage });
 	assert.deepEqual(get('CATALOG.books'), []);
@@ -994,8 +1022,8 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 	els.importConfirm.listeners.click[0]();
 	assert.ok(!els.importPreview.classList.contains('open'));
 	assert.deepEqual(get('CATALOG.books'), [
-		{ t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5', e: [{ asin: { 'audible.com': 'B5' } }] },
-		{ t: 'A Crown of Embers 6: Ashfall', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '6', e: [{ asin: { 'audible.com': 'B6' }, n: ['A. B. Quill'] }] },
+		{ t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5', e: [{ ext: { 'audible.com': 'B5' } }] },
+		{ t: 'A Crown of Embers 6: Ashfall', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '6', e: [{ ext: { 'audible.com': 'B6' }, n: ['A. B. Quill'] }] },
 	]);
 	assert.match(els.ioStatus.textContent, /Added 1 book, filled in 1 ASIN/);
 
@@ -1027,7 +1055,7 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 });
 
 test('a Goodreads import fills in dates read on books that have none', async () => {
-	const mine = JSON.stringify([{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
+	const mine = JSON.stringify([{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]);
 	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
 		+ 'Old Favorite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
@@ -1036,7 +1064,7 @@ test('a Goodreads import fills in dates read on books that have none', async () 
 	assert.match(els.importPreviewBody.innerHTML, /Dates read filled in on existing books: 1/);
 	assert.equal(els.importConfirm.textContent, 'Save dates read');
 	els.importConfirm.listeners.click[0]();
-	assert.deepEqual(get('CATALOG.books'), [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }], r: ['2023-11-04'] }]);
+	assert.deepEqual(get('CATALOG.books'), [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }], r: ['2023-11-04'] }]);
 	assert.match(els.ioStatus.textContent, /filled in dates read on 1 book/);
 });
 
@@ -1259,6 +1287,33 @@ test('series show which books are missing, and can be filtered to those', async 
 	assert.match(els2.results.innerHTML, /class="series-note">[^<]*missing #/);
 });
 
+test('a series and a book keep their ids in external catalogs, typed as an id or pasted as an address', async () => {
+	const { ctx, els, get, storage } = await boot();
+	ctx.openSeriesForm('The Lantern Coast');
+	assert.equal(els.sf_ext_goodreads.value, '90001');
+	assert.equal(els.sf_ext_hardcover.value, 'the-lantern-coast-sample');
+	els.sf_ext_audible.value = 'https://www.audible.com/series/The-Lantern-Coast-Audiobooks/B0LANTERN1?ref=x';
+	els.sf_ext_goodreads.value = '';
+	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+	assert.deepEqual(get("CATALOG.series.get('The Lantern Coast').external"), { 'audible.com': 'B0LANTERN1', hardcover: 'the-lantern-coast-sample' });
+	assert.deepEqual((await kept(storage)).seriesInfo['The Lantern Coast'].ext, { 'audible.com': 'B0LANTERN1', hardcover: 'the-lantern-coast-sample' });
+	assert.match(els.results.innerHTML, /<a class="authorlink" href="https:\/\/www\.audible\.com\/series\/B0LANTERN1" target="_blank" rel="noopener">Audible ↗<\/a>/);
+	// something that is neither is refused
+	ctx.openSeriesForm('The Lantern Coast');
+	els.sf_ext_goodreads.value = 'https://www.goodreads.com/book/show/4242';
+	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+	assert.match(els.seriesFormError.textContent, /Goodreads: https:\/\/www\.goodreads\.com\/book\/show\/4242/);
+	els.cancelSeries.listeners.click[0]();
+
+	// a book's Goodreads work, by its address
+	ctx.setView('library');
+	ctx.openEditForm(0);
+	els.f_ext_goodreads.value = 'https://www.goodreads.com/work/editions/990001-the-salt-road';
+	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+	assert.equal(get("CATALOG.books[0].idOn('goodreads')"), '990001');
+	assert.match(els.results.innerHTML, /Goodreads book <a href="https:\/\/www\.goodreads\.com\/work\/editions\/990001" target="_blank" rel="noopener">990001<\/a>/);
+});
+
 test('series info can be edited, added and removed in the page', async () => {
 	const { ctx, els, get, storage } = await boot();
 	const info = JSON.parse(DEMO_INFO);
@@ -1377,10 +1432,10 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 
 test('duplicates page: found, merged with the picked title, or kept apart', async () => {
 	const mine = JSON.stringify([
-		{ t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ asin: { 'audible.com': 'B1' } }] },
-		{ t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }] },
-		{ t: 'Salt Road', a: ['Marisol Quenby'], n: ['Tobias Frane'], s: 'Lantern Coast', sn: '1', r: ['2023-06-02'], e: [{ gr: '4242' }] },
-		{ t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ asin: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }] },
+		{ t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', g: ['Fantasy'], e: [{ ext: { 'audible.com': 'B1' } }] },
+		{ t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ ext: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }] },
+		{ t: 'Salt Road', a: ['Marisol Quenby'], n: ['Tobias Frane'], s: 'Lantern Coast', sn: '1', r: ['2023-06-02'], e: [{ ext: { goodreads: '4242' } }] },
+		{ t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ ext: { 'audible.com': 'BBOX' }, p: 'Gull Audio' }] },
 		{ t: 'The Ledger', a: ['Priya Ostrander'] },
 		{ t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
 	]);
@@ -1401,7 +1456,7 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
 	ctx.mergeGroup(0);
 	assert.equal(get('CATALOG.books.length'), 5);
 	assert.deepEqual(get('CATALOG.books[0]'), { t: 'Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1',
-		g: ['Fantasy'], r: ['2023-06-02'], e: [{ asin: { 'audible.com': 'B1' }, gr: '4242', n: ['Tobias Frane'] }] });   // Audible's and Goodreads' records of one edition
+		g: ['Fantasy'], r: ['2023-06-02'], e: [{ ext: { 'audible.com': 'B1', goodreads: '4242' }, n: ['Tobias Frane'] }] });   // Audible's and Goodreads' records of one edition
 	assert.match(els.ioStatus.textContent, /^Merged 2 entries into Salt Road\./);
 	assert.equal(get('CATALOG.exclusions.size'), 0);              // the removed entry's ids live on in the kept book
 	assert.deepEqual(get('DUP_GROUPS'), [[3, 4]]);
@@ -1456,12 +1511,12 @@ test('an edit is not saved over changes another tab made meanwhile', async () =>
 
 test('merging keeps editions apart when asked, and books merged that way can be joined later', async () => {
 	const mine = JSON.stringify([
-		{ t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ asin: { 'audible.com': 'B1' }, len: 642 }] },
-		{ t: 'Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ gr: '4242', p: 'Gull Audio' }] },
-		{ t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ asin: { 'audible.com': 'B2' } }, { gr: '777', isbn: '9780306406157' }] },
-		{ t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ asin: { 'audible.com': 'B3' } }, { asin: { 'audible.com': 'B3X' } }] },
-		{ t: 'Box Set', a: ['Marisol Quenby'], e: [{ asin: { 'audible.com': 'BBOX' } }, { gr: '888' }] },
-		{ t: 'Other In Box', a: ['Marisol Quenby'], e: [{ asin: { 'audible.com': 'BBOX' } }] },
+		{ t: 'The Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ ext: { 'audible.com': 'B1' }, len: 642 }] },
+		{ t: 'Salt Road', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '1', e: [{ ext: { goodreads: '4242' }, p: 'Gull Audio' }] },
+		{ t: 'Beacons', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '2', e: [{ ext: { 'audible.com': 'B2' } }, { ext: { goodreads: '777' }, isbn: '9780306406157' }] },
+		{ t: 'The Drowned Chart', a: ['Marisol Quenby'], s: 'Lantern Coast', sn: '3', e: [{ ext: { 'audible.com': 'B3' } }, { ext: { 'audible.com': 'B3X' } }] },
+		{ t: 'Box Set', a: ['Marisol Quenby'], e: [{ ext: { 'audible.com': 'BBOX' } }, { ext: { goodreads: '888' } }] },
+		{ t: 'Other In Box', a: ['Marisol Quenby'], e: [{ ext: { 'audible.com': 'BBOX' } }] },
 	]);
 	const files = { 'books.json': mine };
 	const { ctx, els, get, run, storage } = await boot({ page: 'duplicates.html', files });
@@ -1475,11 +1530,11 @@ test('merging keeps editions apart when asked, and books merged that way can be 
 	run('DUP_PICKS[0].joinEditions = false; renderDuplicates()');
 	assert.match(els.dupBody.innerHTML, /class="dup-joinbox" data-g="0">/);
 	ctx.mergeGroup(0);
-	assert.deepEqual(get('CATALOG.books[0].editions'), [{ asin: { 'audible.com': 'B1' }, len: 642 }, { gr: '4242', p: 'Gull Audio' }]);
+	assert.deepEqual(get('CATALOG.books[0].editions'), [{ ext: { 'audible.com': 'B1' }, len: 642 }, { ext: { goodreads: '4242' }, p: 'Gull Audio' }]);
 	// ...and the merged book is now offered for joining, like Beacons
 	assert.deepEqual(get('SPLIT'), [0, 1]);
 	ctx.joinBookEditions(0);
-	assert.deepEqual(get('CATALOG.books[0].editions'), [{ asin: { 'audible.com': 'B1' }, gr: '4242', p: 'Gull Audio', len: 642 }]);
+	assert.deepEqual(get('CATALOG.books[0].editions'), [{ ext: { 'audible.com': 'B1', goodreads: '4242' }, p: 'Gull Audio', len: 642 }]);
 	assert.match(els.ioStatus.textContent, /^The Salt Road now has one edition\./);
 	// "Keep separate" is remembered in this browser
 	ctx.keepEditionsApart(get('SPLIT[0]'));
@@ -1536,8 +1591,8 @@ test('"Not duplicates" marks are kept in this browser and travel in backups', as
 });
 
 test('Merge previews a backup from another device and keeps both sides\' changes', async () => {
-	const mine = JSON.stringify([{ t: 'Here', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
-	const backup = { books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] },
+	const mine = JSON.stringify([{ t: 'Here', a: ['Ann Vale'] }, { t: 'Renamed', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]);
+	const backup = { books: [{ t: 'Here', a: ['Ann Vale'], r: ['2025-06-01'] }, { t: 'Renamed Twice', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] },
 		{ t: 'New There', a: ['Ann Vale'] }], seriesInfo: {}, excluded: ['BGONE9'], notDuplicates: ['["editions","id B1"]'] };
 	const { els, get, storage } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	els.mergeFile.listeners.change[0]({ target: { files: [{ name: 'phone.json', text: JSON.stringify(backup) }], value: '' } });
@@ -1568,7 +1623,7 @@ test('Merge previews a backup from another device and keeps both sides\' changes
 });
 
 test('the page runs a Hardcover sync itself, with a token kept in this browser', async () => {
-	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }];
+	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] }];
 	const state = hardcoverState();
 	const hc = fakeHardcover(state);
 	let leaving = null;   // what leaving the page during the run would do
@@ -1610,7 +1665,7 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 	await els.importConfirm.listeners.click[0]();
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Lantern Hours', 'Tidewater']);
 	assert.deepEqual((await kept(storage)).books.map(b => b.t), ['Lantern Hours', 'Tidewater']);
-	assert.equal(get('CATALOG.books[0].hardcoverId'), '80', 'the Hardcover ids found are kept');
+	assert.equal(get("CATALOG.books[0].idOn('hardcover')"), '80', 'the Hardcover ids found are kept');
 	assert.deepEqual(state.shelf.at(-1), { id: 102, book_id: 80, edition_id: 801, status_id: 3, user_book_reads: [{ finished_at: '2024-05-01', edition_id: 801 }] });
 	assert.ok(leaving.prevented, 'leaving during the run is asked about');
 	const after = { preventDefault() { this.prevented = true; } };
@@ -1622,7 +1677,7 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 });
 
 test('a Hardcover run in the page writes and sends nothing when the catalog is edited meanwhile, or Hardcover cannot be reached', async () => {
-	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ asin: { 'audible.com': 'B0LANTERN1' } }] }];
+	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] }];
 	const state = hardcoverState();
 	const hc = fakeHardcover(state);
 	let edit = false;
@@ -1641,7 +1696,7 @@ test('a Hardcover run in the page writes and sends nothing when the catalog is e
 	await els.importConfirm.listeners.click[0]();
 	assert.match(els.importPreviewBody.innerHTML, /the catalog was edited while this ran .*nothing written, nothing sent to Hardcover/);
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
-	assert.equal(get('CATALOG.books[0].hardcoverId || null'), null);
+	assert.equal(get("CATALOG.books[0].idOn('hardcover') || null"), null);
 	assert.match(els.ioStatus.textContent, /Not everything went through/);
 
 	const offline = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, setTimeout, storage });
@@ -1784,17 +1839,20 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	submit();
 	assert.match(els.creditFormError.textContent, /'url' must be a web address/);
 	els.cf_url.value = 'https://wendell.example/';
-	els.cf_goodreads.value = 'https://hardcover.app/authors/wendell';   // pasted into the wrong field
+	els.cf_ext_goodreads.value = 'https://hardcover.app/authors/wendell';   // pasted into the wrong field
 	submit();
-	assert.match(els.creditFormError.textContent, /'goodreads' should be an address on Goodreads/);
+	assert.equal(els.creditFormError.textContent, 'Not an id or address there: Goodreads: https://hardcover.app/authors/wendell.');
 	assert.equal(get("CATALOG.authors.get('Wendell Ashcombe') || null"), null);
-	els.cf_goodreads.value = '';
-	els.cf_hardcover.value = 'https://hardcover.app/authors/wendell';
+	els.cf_ext_goodreads.value = '';
+	// an address gives the id; an Audible address names its site
+	els.cf_ext_hardcover.value = 'https://hardcover.app/authors/wendell';
+	els.cf_ext_audible.value = 'https://www.audible.co.uk/author/Wendell-Ashcombe/B0WENDELL1?ref=x';
 	submit();
 	assert.ok(!els.creditForm.classList.contains('open'));
-	const entry = { bio: 'Builds clockwork worlds.\n\nLives by a canal.', url: 'https://wendell.example/', hardcover: 'https://hardcover.app/authors/wendell' };
+	const entry = { bio: 'Builds clockwork worlds.\n\nLives by a canal.', url: 'https://wendell.example/', ext: { 'audible.co.uk': 'B0WENDELL1', hardcover: 'wendell' } };
 	assert.deepEqual(get("CATALOG.authors.get('Wendell Ashcombe')"), entry);
 	assert.match(els.creditBody.innerHTML, /<p>Builds clockwork worlds\.<\/p><p>Lives by a canal\.<\/p>/);
+	assert.match(els.creditBody.innerHTML, /<a class="authorlink" href="https:\/\/www\.audible\.co\.uk\/author\/B0WENDELL1" target="_blank" rel="noopener">Audible \(audible\.co\.uk\) ↗<\/a> <a class="authorlink" href="https:\/\/hardcover\.app\/authors\/wendell" target="_blank" rel="noopener">Hardcover ↗<\/a>/);
 	assert.match(els.ioStatus.textContent, /^Saved author info for Wendell Ashcombe\.$/);
 	// kept in this browser, and loaded again with the page
 	assert.deepEqual((await kept(storage)).authors['Wendell Ashcombe'], entry);
@@ -1804,7 +1862,8 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	// editing shows what is there; emptying every field, or Remove, removes the entry
 	editClick();
 	assert.equal(els.creditFormTitle.textContent, 'Author info: Wendell Ashcombe');
-	assert.equal(els.cf_hardcover.value, entry.hardcover);
+	assert.equal(els.cf_ext_hardcover.value, 'wendell');
+	assert.equal(els.cf_ext_audible.value, 'https://www.audible.co.uk/author/B0WENDELL1', 'the address, so the site is kept');
 	assert.equal(els.creditRemoveBtn.style.display, '');
 	els.creditRemoveBtn.listeners.click[0]();
 	assert.equal(get("CATALOG.authors.get('Wendell Ashcombe') || null"), null);
@@ -1816,26 +1875,26 @@ test('narrator and publisher info can be added on their pages, with links checke
 	const { els, get, storage } = await boot({ page: 'narrators.html', hash: '#n=Tobias+Frane' });
 	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
 	assert.match(els.creditBody.innerHTML, /No bio or links yet/);
-	assert.equal(els.cf_audible_label.textContent, 'Audible narrator search');
 	els.creditBody.querySelector('.aedit').listeners.click[0]();
 	assert.equal(els.creditFormTitle.textContent, 'Add narrator info: Tobias Frane');
 	assert.equal(els.creditSaveBtn.textContent, 'Save narrator info');
 	els.cf_bio.value = 'Reads sea stories.';
-	els.cf_audible.value = 'https://www.goodreads.com/author/show/1.Tobias';
+	els.cf_ext_audible.value = 'https://www.goodreads.com/author/show/1.Tobias';
 	submit();
-	assert.match(els.creditFormError.textContent, /'audible' should be an address on Audible/);
-	els.cf_audible.value = 'https://www.audible.com/search?searchNarrator=Tobias+Frane';
+	assert.match(els.creditFormError.textContent, /Not an id or address there: Audible: https:\/\/www\.goodreads\.com/);
+	els.cf_ext_audible.value = 'https://www.audible.com/search?searchNarrator=Tobias+Frane';
 	submit();
-	assert.deepEqual(get("CATALOG.narrators.get('Tobias Frane')"), { bio: 'Reads sea stories.', audible: 'https://www.audible.com/search?searchNarrator=Tobias+Frane' });
-	assert.deepEqual((await kept(storage)).narrators['Tobias Frane'], { bio: 'Reads sea stories.', audible: 'https://www.audible.com/search?searchNarrator=Tobias+Frane' });
-	assert.match(els.creditBody.innerHTML, /<div class="author-bio"><p>Reads sea stories\.<\/p><\/div><p class="author-links"><a class="authorlink" href="https:\/\/www\.audible\.com\/search\?searchNarrator=Tobias\+Frane" target="_blank" rel="noopener">Audible ↗<\/a><\/p>/);
+	assert.deepEqual(get("CATALOG.narrators.get('Tobias Frane')"), { bio: 'Reads sea stories.', ext: { 'audible.com': 'Tobias Frane' } });
+	assert.deepEqual((await kept(storage)).narrators['Tobias Frane'], { bio: 'Reads sea stories.', ext: { 'audible.com': 'Tobias Frane' } });
+	assert.match(els.creditBody.innerHTML, /<div class="author-bio"><p>Reads sea stories\.<\/p><\/div><p class="author-links"><a class="authorlink" href="https:\/\/www\.audible\.com\/search\?searchNarrator=Tobias%20Frane" target="_blank" rel="noopener">Audible ↗<\/a><\/p>/);
 	assert.equal(els.ioStatus.textContent, 'Saved narrator info for Tobias Frane.');
 
 	// a publisher's page shows what the demo data keeps about it
 	const pub = await boot({ page: 'publishers.html', hash: '#p=Kestrel+Row+Audio' });
 	assert.match(pub.els.creditBody.innerHTML, /Kestrel Row Audio is a small audiobook studio/);
 	assert.match(pub.els.creditBody.innerHTML, /<a class="authorlink" href="https:\/\/hardcover\.app\/publishers\/[^"]*" target="_blank" rel="noopener">Hardcover ↗<\/a>/);
-	assert.equal(pub.els.cf_hardcover.getAttribute('placeholder'), 'https://hardcover.app/publishers/...');
+	assert.equal(pub.els.cf_ext_hardcover.getAttribute('placeholder'), 'id, or its address on hardcover.app');
+	assert.ok(!pub.els.cf_ext.innerHTML.includes('cf_ext_goodreads'), 'Goodreads has no publisher pages');
 });
 
 test('Check on the import page lists problems; a catalog in an older format is kept in the current one at once', async () => {
@@ -1843,7 +1902,7 @@ test('Check on the import page lists problems; a catalog in an older format is k
 	const info = JSON.stringify({ Nowhere: { total: 3, status: 'ongoing' } });
 	const { els, storage } = await boot({ page: 'import.html', files: { 'books.json': mine, 'series-info.json': info } });
 	// moving it to IndexedDB wrote it the current way
-	assert.deepEqual((await kept(storage)).books, [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B0OLD00001' } }] }]);
+	assert.deepEqual((await kept(storage)).books, [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B0OLD00001' } }] }]);
 	els.checkBtn.listeners.click[0]();
 	const report = els.importPreviewBody.innerHTML;
 	assert.match(report, /1 books, 0 series, 1 with release info, 0 authors, 0 narrators, 0 publishers with info/);
@@ -1853,7 +1912,7 @@ test('Check on the import page lists problems; a catalog in an older format is k
 });
 
 test('Box sets on the import page adds a set beside the titles sharing its edition, once confirmed', async () => {
-	const set = { asin: { 'audible.com': 'B0SET00001' } };
+	const set = { ext: { 'audible.com': 'B0SET00001' } };
 	const mine = JSON.stringify([
 		{ t: 'Gull Isle', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [set] },
 		{ t: 'Second Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [set] },
@@ -1881,7 +1940,7 @@ test('Series info without note should not be rendered as "undefined"', async() =
 });
 
 test('a browser that prefers British English sees "catalogue"; any other sees "catalog", and the data is never respelled', async () => {
-	const titled = JSON.stringify([{ t: 'The Catalog of Stars', a: ['Ann Vale'], e: [{ asin: { 'audible.com': 'B1' } }] }]);
+	const titled = JSON.stringify([{ t: 'The Catalog of Stars', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]);
 	for (const page of PAGES) {
 		const { ctx } = await boot({ page, languages: ['sv-SE', 'en-GB'], files: { 'books.json': titled } });
 		assert.match(ctx.document.title, /Audiobook Catalogue$/, page);

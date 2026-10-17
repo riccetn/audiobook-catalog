@@ -16,7 +16,8 @@ import {Contributor} from './contributor.js';
 import {Exclusions} from './exclusions.js';
 import {Duplicates} from './duplicates.js';
 import {Catalog} from './catalog.js';
-/** @import {ContributorKind, ContributorKey} from './contributor.js' */
+import {ExternalCatalog} from './external-catalog.js';
+/** @import {ContributorKind} from './contributor.js' */
 /** @import {NamedKind} from './catalog.js' */
 /** @import {SeriesStatus} from './series.js' */
 
@@ -31,7 +32,7 @@ import {Catalog} from './catalog.js';
  * @property {string} [number] "3", "2.5", or a box set's range "4-6"
  * @property {string[]} genres
  * @property {string[]} read
- * @property {string} [hardcoverId]
+ * @property {Record<string, string>} [external] its own ids by external catalog ({"hardcover": "77"})
  * @property {string[]} editionIds in the book's order
  * @property {number} position
  * @property {string} sortTitle
@@ -43,25 +44,24 @@ import {Catalog} from './catalog.js';
  * @property {number} [numberEnd] with a series: the last number of a range, else numberKey
  * @property {string} [lastRead]
  * @property {string[]} words the words of its title and authors, for search
+ * @property {string[]} externalKeys its own external ids, "hardcover 77", to find it by one
  */
 /**
  * An edition, which a box set's titles share: `bookIds` lists them all. The rest after `description` is derived.
  * @typedef {object} EditionRecord
  * @property {string} id
  * @property {string[]} bookIds
- * @property {Record<string, string>} asins
- * @property {string} [goodreadsId]
- * @property {string} [hardcoverId]
+ * @property {Record<string, string>} external its ids by external catalog ({"audible.com": "B0…", "goodreads": "4242"})
  * @property {string} [isbn]
  * @property {string[]} narratorIds
  * @property {string} [publisherId]
  * @property {string} [released]
  * @property {number} [minutes]
  * @property {string} [description]
- * @property {string[]} idKeys "asin B0…", "gr 12345", "hc 678", "isbn 978…", for matching imports
+ * @property {string[]} idKeys "asin B0…" (whichever site), "goodreads 12345", "hardcover 678", "isbn 978…", for matching imports
  */
 /**
- * A series any book names, or that has info. The rest after `url` is derived from its books.
+ * A series any book names, or that has info. The rest after `external` is derived from its books.
  * @typedef {object} SeriesRecord
  * @property {string} id
  * @property {string} name
@@ -69,26 +69,30 @@ import {Catalog} from './catalog.js';
  * @property {SeriesStatus} [status]
  * @property {string} [note]
  * @property {string} [url]
+ * @property {Record<string, string>} [external] its ids by external catalog
  * @property {string} sortName
  * @property {number} bookCount
  * @property {number} owned how many of its titles there are (Series.owned)
  * @property {number[]} [missing] the numbers up to its total that no book has, when the total is a count
  * @property {string} [lastRead]
+ * @property {string[]} externalKeys its external ids, "goodreads 123"
  */
 /** @typedef {'author' | 'narrator' | 'publisher'} CreditKind */
 /**
- * An author, narrator or publisher any book names, or that has info. `sortName` and `bookCount` are derived.
+ * An author, narrator or publisher any book names, or that has info. `sortName`, `bookCount` and `externalKeys` are derived.
+ * (Before ids were kept by external catalog, a record kept the addresses of their pages as `audible`,
+ * `goodreads` and `hardcover`; toCatalog() still reads them.)
  * @typedef {object} ContributorRecord
  * @property {string} id
  * @property {CreditKind} kind
  * @property {string} name
  * @property {string} [bio]
  * @property {string} [url]
- * @property {string} [audible]
- * @property {string} [goodreads]
- * @property {string} [hardcover]
+ * @property {Record<string, string>} [external] their ids by external catalog
+ * @property {string[]} [links] other pages about them
  * @property {string} sortName
  * @property {number} bookCount
+ * @property {string[]} externalKeys their external ids, "audible.com B0…"
  */
 /**
  * Someone credited on a book (derived: rewritten from the books on every save).
@@ -143,8 +147,9 @@ const CONTRIBUTOR_KIND = {author: 'authors', narrator: 'narrators', publisher: '
 /** @type {(ed: Edition) => string} */
 const editionValues = ed => JSON.stringify(Edition.KEYS.map(k => ed.value(k)));
 /** @type {(ed: Edition) => string[]} */
-const editionIdKeys = ed => [...new Set([...ed.ids('asin').map(x => 'asin ' + x), ...ed.ids('gr').map(x => 'gr ' + x),
-	...ed.ids('hc').map(x => 'hc ' + x), ...ed.isbns().map(x => 'isbn ' + x)])];
+const editionIdKeys = ed => [...new Set([...ed.idKeys(), ...ed.isbns().map(x => 'isbn ' + x)])];
+/** @type {(ids: Record<string, string>) => string[]} external ids as an index finds them: "hardcover 77" */
+const externalKeys = ids => Object.entries(ExternalCatalog.order(ids) || {}).map(([catalog, id]) => catalog + ' ' + id);
 /** @type {(list: string[]) => string | undefined} */
 const latest = list => list.length ? [...list].sort()[list.length - 1] : undefined;
 
@@ -162,7 +167,7 @@ export class CatalogRecords {
 			['byAuthorSeries', ['firstAuthorKey', 'seriesKey', 'number']],
 			['genres', 'genres', {multiEntry: true}],
 			['words', 'words', {multiEntry: true}],
-			['hardcoverId', 'hardcoverId'],
+			['externalKeys', 'externalKeys', {multiEntry: true}],
 		]},
 		editions: {keyPath: 'id', indexes: [
 			['bookIds', 'bookIds', {multiEntry: true}],
@@ -174,10 +179,12 @@ export class CatalogRecords {
 			['name', 'name', {unique: true}],
 			['byName', ['sortName', 'id']],
 			['byStatus', ['status', 'sortName', 'id']],
+			['externalKeys', 'externalKeys', {multiEntry: true}],
 		]},
 		contributors: {keyPath: 'id', indexes: [
 			['kindName', ['kind', 'name'], {unique: true}],
 			['byName', ['kind', 'sortName', 'id']],
+			['externalKeys', 'externalKeys', {multiEntry: true}],
 		]},
 		credits: {keyPath: ['contributorId', 'bookId'], indexes: [
 			['byTitle', ['contributorId', 'sortTitle', 'bookId']],
@@ -302,7 +309,7 @@ export class CatalogRecords {
 			const rec = {id: /** @type {string} */ (b.id), title: b.title, authorIds: [...new Set(b.authors)].map(name => idOf('authors', name)),
 				genres: [...b.genres], read: [...b.read], editionIds: b.editions.map(ed => /** @type {string} */ (ed.id)), position,
 				sortTitle: CatalogRecords.sortKey(b.title), titleKey: Text.norm(b.title), firstAuthorKey: b.authorKey(),
-				words: [...new Set(Text.norm([b.title, ...b.authors].join(' ')).split(' ').filter(Boolean))]};
+				words: [...new Set(Text.norm([b.title, ...b.authors].join(' ')).split(' ').filter(Boolean))], externalKeys: externalKeys(b.external)};
 			if(b.series){
 				rec.seriesId = idOf('series', b.series);
 				rec.seriesKey = Series.norm(b.series);
@@ -312,7 +319,7 @@ export class CatalogRecords {
 				rec.numberEnd = range ? range[1] : rec.numberKey;
 			}
 			if(b.number) rec.number = b.number;
-			if(b.hardcoverId) rec.hardcoverId = b.hardcoverId;
+			if(Object.keys(b.external).length) rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(b.external));
 			const lastRead = latest(b.read);
 			if(lastRead) rec.lastRead = lastRead;
 			return rec;
@@ -326,10 +333,8 @@ export class CatalogRecords {
 				const had = editions.get(id);
 				if(had){ if(!had.bookIds.includes(books[i].id)) had.bookIds.push(books[i].id); continue; }
 				/** @type {EditionRecord} */
-				const rec = {id, bookIds: [books[i].id], asins: {...ed.asins}, narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)),
+				const rec = {id, bookIds: [books[i].id], external: /** @type {Record<string, string>} */ (ExternalCatalog.order(ed.external) || {}), narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)),
 					idKeys: editionIdKeys(ed)};
-				if(ed.goodreadsId) rec.goodreadsId = ed.goodreadsId;
-				if(ed.hardcoverId) rec.hardcoverId = ed.hardcoverId;
 				if(ed.isbn) rec.isbn = ed.isbn;
 				if(ed.publisher) rec.publisherId = idOf('publishers', ed.publisher);
 				if(ed.released) rec.released = ed.released;
@@ -347,12 +352,13 @@ export class CatalogRecords {
 			const own = seriesBooks.get(name) || [];
 			const info = catalog.series.get(name);
 			/** @type {SeriesRecord} */
-			const rec = {id, name, sortName: CatalogRecords.sortKey(name), bookCount: own.length, owned: Series.owned(own)};
+			const rec = {id, name, sortName: CatalogRecords.sortKey(name), bookCount: own.length, owned: Series.owned(own), externalKeys: externalKeys(info ? info.external : {})};
 			if(info){
 				if(info.total !== undefined) rec.total = info.total;
 				if(info.status !== undefined) rec.status = info.status;
 				if(info.note !== undefined) rec.note = info.note;
 				if(info.url !== undefined) rec.url = info.url;
+				if(Object.keys(info.external).length) rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(info.external));
 			}
 			const missing = Series.missingNumbers(own, rec.total);
 			if(missing) rec.missing = missing;
@@ -381,10 +387,16 @@ export class CatalogRecords {
 		});
 		/** @type {ContributorRecord[]} */
 		const contributors = Contributor.KINDS.flatMap(kind => [...ids[kind]].map(([name, id]) => {
-			/** @type {ContributorRecord} */
-			const rec = {id, kind: CREDIT_KIND[kind], name, sortName: CatalogRecords.sortKey(name), bookCount: bookCount.get(id) || 0};
 			const info = catalog[kind].get(name);
-			if(info) for(const k of Contributor.KEYS) if(info[k] !== undefined) rec[k] = info[k];
+			/** @type {ContributorRecord} */
+			const rec = {id, kind: CREDIT_KIND[kind], name, sortName: CatalogRecords.sortKey(name), bookCount: bookCount.get(id) || 0,
+				externalKeys: externalKeys(info ? info.external : {})};
+			if(info){
+				if(info.bio !== undefined) rec.bio = info.bio;
+				if(info.url !== undefined) rec.url = info.url;
+				if(Object.keys(info.external).length) rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(info.external));
+				if(info.links.length) rec.links = [...info.links];
+			}
 			return rec;
 		}));
 
@@ -444,18 +456,19 @@ export class CatalogRecords {
 		for(const s of byName(records.series)){
 			names.set(s.id, s.name);
 			catalog.nameIds.series.set(s.name, s.id);
-			if(s.total !== undefined || s.status !== undefined || s.note !== undefined || s.url !== undefined){
-				catalog.series.set(s.name, new Series(s.name, {total: s.total, status: s.status, note: s.note, url: s.url}));
+			if(s.total !== undefined || s.status !== undefined || s.note !== undefined || s.url !== undefined || s.external !== undefined){
+				catalog.series.set(s.name, new Series(s.name, {total: s.total, status: s.status, note: s.note, url: s.url, external: s.external}));
 			}
 		}
 		for(const c of byName(records.contributors)){
 			const kind = CONTRIBUTOR_KIND[c.kind];
 			names.set(c.id, c.name);
 			catalog.nameIds[kind].set(c.name, c.id);
-			/** @type {Partial<Record<ContributorKey, string>>} */
-			const info = {};
-			for(const k of Contributor.KEYS) if(c[k] !== undefined) info[k] = c[k];
-			if(Object.keys(info).length) catalog[kind].set(c.name, new Contributor(c.name, info));
+			// a record from before ids were kept by external catalog has its pages' addresses (fixLinks)
+			const {bio, url, external, links, audible, goodreads, hardcover} = /** @type {ContributorRecord & {audible?: string, goodreads?: string, hardcover?: string}} */ (c);
+			const stored = Object.fromEntries(Object.entries({bio, url, ext: external, links, audible, goodreads, hardcover}).filter(([, v]) => v !== undefined));
+			const entry = Contributor.fromJSON(c.name, Contributor.fixLinks(stored, kind));
+			if(Object.keys(entry.toJSON()).length) catalog[kind].set(c.name, entry);
 		}
 		/** @type {(id: string, what: string) => string} */
 		const nameOf = (id, what) => {
@@ -467,11 +480,13 @@ export class CatalogRecords {
 		catalog.books = [...records.books].sort((x, y) => x.position - y.position).map(rec => new Book({
 			id: rec.id, title: rec.title, authors: rec.authorIds.map(id => nameOf(id, 'author')),
 			series: rec.seriesId === undefined ? undefined : nameOf(rec.seriesId, 'series'), number: rec.number,
-			genres: rec.genres, read: rec.read, hardcoverId: rec.hardcoverId,
+			genres: rec.genres, read: rec.read,
+			// a record from before ids were kept by external catalog has `hardcoverId`
+			external: rec.external || (/** @type {{hardcoverId?: string}} */ (rec).hardcoverId ? {hardcover: /** @type {string} */ (/** @type {{hardcoverId?: string}} */ (rec).hardcoverId)} : {}),
 			editions: rec.editionIds.map(id => {
 				const ed = editions.get(id);
 				if(!ed) throw new Error(`no edition is stored under ${id}`);
-				return new Edition({id: ed.id, asins: ed.asins, goodreadsId: ed.goodreadsId, hardcoverId: ed.hardcoverId, isbn: ed.isbn,
+				return new Edition({id: ed.id, external: CatalogRecords.editionExternal(ed), isbn: ed.isbn,
 					narrators: ed.narratorIds.map(n => nameOf(n, 'narrator')), publisher: ed.publisherId === undefined ? undefined : nameOf(ed.publisherId, 'publisher'),
 					released: ed.released, minutes: ed.minutes, description: ed.description});
 			}),
@@ -490,6 +505,28 @@ export class CatalogRecords {
 			else if(m.key) catalog.notDuplicates.add(m.key);
 		}
 		return catalog;
+	}
+
+	/**
+	 * Whether records are in an older shape than fromCatalog() writes (from before ids were kept by external
+	 * catalog), so the page saves them again at once and their indexes find them.
+	 * @param {RecordSet} records
+	 * @returns {boolean}
+	 */
+	static outdated(records){
+		return [...records.books, ...records.series, ...records.contributors].some(rec => !Array.isArray(rec.externalKeys)) ||
+			records.editions.some(ed => !ed.external);
+	}
+
+	/**
+	 * An edition record's external ids; a record from before they were kept by external catalog has its
+	 * ASINs by site (`asins`), `goodreadsId` and `hardcoverId`.
+	 * @param {EditionRecord & {asins?: Record<string, string>, goodreadsId?: string, hardcoverId?: string}} ed
+	 * @returns {Record<string, string>}
+	 */
+	static editionExternal(ed){
+		if(ed.external) return ed.external;
+		return {...ed.asins || {}, ...ed.goodreadsId ? {goodreads: ed.goodreadsId} : {}, ...ed.hardcoverId ? {hardcover: ed.hardcoverId} : {}};
 	}
 
 	/**

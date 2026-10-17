@@ -8,6 +8,7 @@
     "total": 5,
     "status": "ongoing",
     "note": "book 5 is announced (fictional demo data)",
-    "url": "https://example.com/"
+    "url": "https://example.com/",
+    "ext": {"goodreads": "90001", "hardcover": "the-lantern-coast-sample"}
   }
 }

@@ -21,7 +21,8 @@ The Hardcover book has its own field, which takes the book's id or, since the Ha
 it, the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions'
 pages: the page looks the book up on Hardcover and puts its id in the field (when you leave the field, or
 when you save). That needs your Hardcover API token, saved on the *Import & export* page (see
-[Hardcover](hardcover.md)). Several authors, or several narrators of an
+[Hardcover](hardcover.md)). The Goodreads book field takes the id of the book's work on Goodreads (all its
+editions), or the address of its page (`https://www.goodreads.com/work/editions/99`). Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and each edition line names its own when they differ;
@@ -54,7 +55,10 @@ each with a page of their bio, links, series and titles; their names on the book
 
 **Update release info for a series**: press the pencil next to a series (in the series overview or
 above its books) to edit how many books are released, whether it is ongoing or complete, the note and
-the author site, or to add or remove that info. The form checks the same rules as **Check**.
+the author site, the series' ids on Audible, Goodreads and Hardcover (the id, or the address of the series'
+page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
+`https://hardcover.app/series/the-lantern-coast`; the series links to each), or to add or remove that info.
+The form checks the same rules as **Check**.
 The same form renames the series: change its name and every book in the series gets the new name
 (a series without info is renamed without adding any). Renaming it to a series you already have
 moves its books into that one; the first **Save** says so and the second does it, and if the form has

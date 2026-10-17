@@ -43,7 +43,8 @@ function committed(tx){
 export class CatalogDatabase {
 	static NAME = 'audiobook-catalog';
 	// Bump it, and add to upgrade(), whenever the stores or their indexes change.
-	static VERSION = 1;
+	// 2: the books' `hardcoverId` index became `externalKeys`, which series and contributors have too.
+	static VERSION = 2;
 	/** @type {(StoreName | 'meta')[]} every store, the records' and meta */
 	static ALL_STORES = [...CatalogRecords.STORE_NAMES, 'meta'];
 
@@ -61,7 +62,7 @@ export class CatalogDatabase {
 	static open(factory, name = CatalogDatabase.NAME){
 		return new Promise((resolve, reject) => {
 			const req = factory.open(name, CatalogDatabase.VERSION);
-			req.onupgradeneeded = () => CatalogDatabase.upgrade(req.result);
+			req.onupgradeneeded = () => CatalogDatabase.upgrade(req.result, /** @type {IDBTransaction} */ (req.transaction));
 			req.onsuccess = () => {
 				const db = req.result;
 				// a newer version of the app, opened in another tab, needs this connection out of its way
@@ -74,15 +75,19 @@ export class CatalogDatabase {
 	}
 
 	/**
-	 * Make the stores and indexes the database lacks.
+	 * Make the stores and indexes the database lacks, and remove the indexes it no longer has. The records
+	 * stay as they are: CatalogRecords.toCatalog() reads an older record too, and the next save writes it
+	 * in the current shape.
 	 * @param {IDBDatabase} db
+	 * @param {IDBTransaction} tx the upgrade's
 	 */
-	static upgrade(db){
+	static upgrade(db, tx){
 		for(const store of CatalogRecords.STORE_NAMES){
-			if(db.objectStoreNames.contains(store)) continue;
 			const spec = CatalogRecords.STORES[store];
-			const made = db.createObjectStore(store, {keyPath: spec.keyPath});
-			for(const [index, keyPath, options] of spec.indexes) made.createIndex(index, keyPath, options);
+			const os = db.objectStoreNames.contains(store) ? tx.objectStore(store) : db.createObjectStore(store, {keyPath: spec.keyPath});
+			const wanted = spec.indexes.map(([index]) => index);
+			for(const index of [...os.indexNames]) if(!wanted.includes(index)) os.deleteIndex(index);
+			for(const [index, keyPath, options] of spec.indexes) if(!os.indexNames.contains(index)) os.createIndex(index, keyPath, options);
 		}
 		if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath: 'key'});
 	}
