@@ -996,7 +996,7 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	const first = await boot({ storage });
 	await first.saved();
 	// a book that lists an edition there is no record of
-	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 2); req.onsuccess = () => resolve({ db: req.result }); });
+	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 3); req.onsuccess = () => resolve({ db: req.result }); });
 	await new Promise(resolve => { const tx = db.transaction('editions', 'readwrite'); tx.objectStore('editions').clear(); tx.oncomplete = resolve; });
 	const { get, els, database } = await boot({ storage });
 	assert.deepEqual(get('CATALOG.books'), []);

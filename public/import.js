@@ -657,4 +657,4 @@ byId('importFile').addEventListener('change', e=>{
 	if(files.length) return importBackup(files);
 });
 
-export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); }, {refresh: refreshPage, onHardcoverJob});
+export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); }, {whole: true, refresh: refreshPage, onHardcoverJob});

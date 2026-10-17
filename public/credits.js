@@ -294,5 +294,5 @@ export function startCreditsPage(kind){
 	byId('q').addEventListener('input', render);
 	addEventListener('hashchange', showAddress);
 	addEventListener('popstate', showAddress);
-	return startPage(()=>{ SHOWN = shownInAddress(); render(); }, {refresh: ()=>{ if(SHOWN !== null && CATALOG.nameOf(KIND.infoKey, SHOWN) === undefined) SHOWN = null; render(); }});
+	return startPage(()=>{ SHOWN = shownInAddress(); render(); }, {whole: true, refresh: ()=>{ if(SHOWN !== null && CATALOG.nameOf(KIND.infoKey, SHOWN) === undefined) SHOWN = null; render(); }});
 }

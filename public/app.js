@@ -1142,4 +1142,4 @@ function redraw(before){
 }
 
 // The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
-export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); }, {refresh: redraw});
+export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); }, {whole: true, refresh: redraw});
