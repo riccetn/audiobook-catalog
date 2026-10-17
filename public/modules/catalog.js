@@ -163,7 +163,7 @@ export class Catalog {
 		const neu = book.editions;
 		const others = books.map((b, k) => k).filter(k => k !== index);
 		/** @type {(x: Edition, ed: Edition) => boolean} */
-		const linked = (x, ed) => Edition.IDS.some(f => x.sharesId(ed, f)) && !x.conflictsWith(ed);
+		const linked = (x, ed) => x.sharesId(ed) && !x.conflictsWith(ed);
 		const befores = neu.map((ed, j) => old.find(x => x.sameAs(ed)) || (old.length === neu.length ? old[j] : undefined));
 		/** @type {(x: Edition, y: Edition | undefined) => boolean} */
 		const same = (x, y) => y !== undefined && JSON.stringify(x) === JSON.stringify(y);

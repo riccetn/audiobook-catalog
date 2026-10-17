@@ -7,6 +7,8 @@ import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogDatabase, CatalogConflict} from './modules/catalog-database.js';
 /** @import {RecordSet, Snapshot} from './modules/catalog-records.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
+import {ExternalCatalog} from './modules/external-catalog.js';
+/** @import {ExternalKind} from './modules/external-catalog.js' */
 /** @import {Unchecked} from './modules/text.js' */
 
 /**
@@ -260,6 +262,8 @@ async function loadCatalog(){
 		CATALOG.replaceWith(CatalogRecords.toCatalog(stored.records));
 		SEEN_REVISION = stored.revision;
 		SAVED = CatalogRecords.snapshot(stored.records);
+		// records from an older version of the app are saved again in the current shape
+		if(CatalogRecords.outdated(stored.records)) await persist();
 	}catch(e){
 		try{
 			SEEN_REVISION = await DATABASE.setAside(stored ? stored.records : Text.errorText(e));
@@ -356,6 +360,81 @@ export function byId(id){
  */
 export function fieldById(id){
 	return /** @type {FormField} */ (byId(id));
+}
+
+// ------------------------------------------------------------ external ids in forms and on pages
+// A form has a field per group of external catalogs (Audible, Amazon, Goodreads, Hardcover) that has pages
+// for what the form edits; each takes an id or the address of the page there, and the catalog keeps the id.
+
+/**
+ * The fields for the external ids of a kind of thing, each a <div> with a label and an input whose id is
+ * `prefix` and the group ("sf_ext_goodreads"); `except` leaves groups out (a field of their own elsewhere).
+ * @param {string} prefix
+ * @param {ExternalKind} kind
+ * @param {string[]} [except]
+ * @returns {HTMLDivElement[]}
+ */
+export function externalFields(prefix, kind, except = []){
+	return ExternalCatalog.groupsFor(kind).filter(g=> !except.includes(g.key)).map(g=>{
+		const sites = ExternalCatalog.forKind(kind).filter(def=> def.group === g.key);
+		const example = sites.length > 1 ? g.default : /** @type {string} */ ((ExternalCatalog.url(sites[0].key, kind, 'x') || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0]);
+		return buildElement('div', {}, buildElement('label', {for: prefix + g.key}, g.name),
+			buildElement('input', {id: prefix + g.key, 'data-group': g.key, placeholder: `id, or its address on ${example}`}));
+	});
+}
+
+/**
+ * Put an entry's external ids in the fields externalFields() made.
+ * @param {string} prefix
+ * @param {ExternalKind} kind
+ * @param {Record<string, string>} ids
+ */
+export function fillExternalFields(prefix, kind, ids){
+	for(const g of ExternalCatalog.groupsFor(kind)){
+		const field = document.getElementById(prefix + g.key);
+		if(field) /** @type {HTMLInputElement} */ (field).value = ExternalCatalog.fieldText(ids, kind, g.key);
+	}
+}
+
+/**
+ * The external ids in the fields externalFields() made, as {ids, bad (the fields that hold neither an id nor
+ * an address there, as "Goodreads: text")}. The ids an entry has in catalogs no field stands for are kept.
+ * @param {string} prefix
+ * @param {ExternalKind} kind
+ * @param {Record<string, string>} [had] the entry's ids before
+ * @returns {{ids: Record<string, string>, bad: string[]}}
+ */
+export function readExternalFields(prefix, kind, had = {}){
+	const groups = ExternalCatalog.groupsFor(kind).filter(g=> document.getElementById(prefix + g.key));
+	const shown = new Set(groups.map(g=> g.key));
+	/** @type {Record<string, string>} */
+	const ids = Object.fromEntries(Object.entries(had).filter(([key])=> { const g = ExternalCatalog.groupOf(key); return !g || !shown.has(g.key); }));
+	/** @type {string[]} */
+	const bad = [];
+	for(const g of groups){
+		const text = Text.tidy(fieldById(prefix + g.key).value);
+		if(!text) continue;
+		const found = ExternalCatalog.readId(text, kind, g.key);
+		if(found) ids[found.catalog] = found.id; else bad.push(`${g.name}: ${text}`);
+	}
+	return {ids, bad};
+}
+
+/**
+ * Links to an entry's pages in external catalogs ("Goodreads ↗"), one per id; an Audible or Amazon site
+ * other than the group's usual one says which ("Audible (audible.co.uk) ↗").
+ * @param {Record<string, string>} ids
+ * @param {ExternalKind} kind
+ * @param {string} [cls] the links' class
+ * @returns {HTMLAnchorElement[]}
+ */
+export function externalLinks(ids, kind, cls = 'authorlink'){
+	return Object.entries(ExternalCatalog.order(ids) || {}).flatMap(([key, id])=>{
+		const url = ExternalCatalog.url(key, kind, id), g = ExternalCatalog.groupOf(key);
+		if(!url) return [];
+		const name = g ? (g.default === key ? g.name : `${g.name} (${key})`) : ExternalCatalog.name(key);
+		return [buildElement('a', {class: cls, href: url, target: '_blank', rel: 'noopener'}, `${name} \u2197`)];
+	});
 }
 
 // ------------------------------------------------------------ Hardcover from the page

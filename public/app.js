@@ -7,7 +7,9 @@ import {Book} from './modules/book.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
-import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref } from './store.js';
+import {ExternalCatalog} from './modules/external-catalog.js';
+import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref,
+	externalFields, fillExternalFields, readExternalFields, externalLinks } from './store.js';
 /** @import {Child} from './store.js' */
 
 /** @typedef {{b: Book, i: number}} ListedBook a book shown, with its index in CATALOG.books */
@@ -61,6 +63,8 @@ const narratorLinks = names => joined(names.map(x=> buildElement('a', {href: nar
 const statusTag = status=> buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing');
 /** @type {(url: string) => HTMLAnchorElement} */
 const authorSiteLink = url=> buildElement('a', {class: 'authorlink', href: url, target: '_blank', rel: 'noopener'}, 'author site \u2197');
+/** @type {(info: Series) => Child[]} the series' pages in external catalogs */
+const seriesLinks = info=> externalLinks(info.external, 'series').map(a=> [' ', a]);
 
 /**
  * Series numbers you don't own yet, from series-info.json's released total; null when that is unknown.
@@ -151,8 +155,8 @@ function matches(b, q, author, genre, read){
 	if(read === UNDATED){ if(b.read.length) return false; }
 	else if(read && !readYears(b).includes(read)) return false;
 	if(q){
-		const hay = [b.title,...authorsOf(b),b.series,...b.genres,...b.editions.flatMap(ed=>[...ed.asinList().map(([, asin])=> asin), ed.goodreadsId, ed.hardcoverId,
-			Text.namesText(ed.narrators), ed.publisher, ed.description, ed.isbn]), b.hardcoverId]
+		const hay = [b.title,...authorsOf(b),b.series,...b.genres,...b.editions.flatMap(ed=>[...ed.externalList().map(([, id])=> id),
+			Text.namesText(ed.narrators), ed.publisher, ed.description, ed.isbn]), ...Object.values(b.external)]
 			.filter(x=> typeof x === 'string').join(' ').toLowerCase();
 		// an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
 		const isbn = Isbn.parse(q);
@@ -392,7 +396,7 @@ export function render(){
 		}
 		out.push(buildElement('div', {class: 'series-group'},
 			buildElement('p', {class: 'series-title'}, buildElement('a', {href: bookHref(name, 'series')}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books.map(x=> x.b))),
-				' ', seriesEditButton(name), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)]]),
+				' ', seriesEditButton(name), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)]),
 			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
 			books.map(bookCard)));
 	});
@@ -451,7 +455,7 @@ function renderSeriesOverview(){
 				buildElement('span', {class: 'srow-owned'}, `${Series.owned(books)} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
 				seriesEditButton(name)),
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'}, authorLinks(authors)),
-				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)]],
+				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
 				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
 			info && info.note && buildElement('p', {class: 'srow-note'}, info.note)));
 	});
@@ -488,6 +492,7 @@ export function openSeriesForm(name){
 	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') : 'ongoing';
 	fieldById('sf_note').value = info ? info.note || '' : '';
 	fieldById('sf_url').value = info ? info.url || '' : '';
+	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
 	byId('seriesFormError').textContent = '';
 	byId('seriesRemoveBtn').style.display = info ? '' : 'none';
 	const form = byId('seriesForm');
@@ -512,8 +517,11 @@ function saveSeriesForm(){
 	const totalTyped = fieldById('sf_total').value.trim();
 	const note = Text.tidy(fieldById('sf_note').value);
 	const url = fieldById('sf_url').value.trim();
+	const had = CATALOG.series.get(name);
+	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
+	if(external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
 	// a rename of a series without info doesn't have to add some
-	const keepInfo = !renamed || CATALOG.series.has(name) || totalTyped || note || url;
+	const keepInfo = !renamed || CATALOG.series.has(name) || totalTyped || note || url || Object.keys(external.ids).length;
 	/** @type {Series | null} */
 	let entry = null;
 	if(keepInfo){
@@ -522,6 +530,7 @@ function saveSeriesForm(){
 		const typed = {total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase(),
 			status: fieldById('sf_status').value, note};
 		if(url) typed.url = url;
+		if(Object.keys(external.ids).length) typed.ext = ExternalCatalog.order(external.ids);
 		// the same rules as Check, applied to just this series (checked before the rename,
 		// under the name its books have now)
 		const {errors} = Validator.validate(JSON.parse(JSON.stringify(CATALOG.books)), {[name]: typed});
@@ -569,7 +578,7 @@ function sharedEditions(){
 	/** @type {Map<string, [number, Edition][]>} */
 	const byKey = new Map();
 	/** @type {(ed: Edition) => string[]} */
-	const keys = ed=> [...Edition.IDS.flatMap(k=> ed.ids(k).map(v=> k + ' ' + v)), ...ed.isbns().map(x=> 'isbn ' + x)];
+	const keys = ed=> [...ed.idKeys(), ...ed.isbns().map(x=> 'isbn ' + x)];
 	CATALOG.books.forEach((b,i)=> b.editions.forEach(ed=> keys(ed).forEach(k=>{
 		let list = byKey.get(k);
 		if(!list) byKey.set(k, list = []);
@@ -586,34 +595,27 @@ function sharedEditions(){
 	return shared;
 }
 
-const GOODREADS_URL = 'https://www.goodreads.com/book/show/';
-
 /**
- * An ASIN's page on its site: audible.co.uk/pd/B0X, amazon.com/dp/B0X.
- * @type {(site: string) => string}
+ * An id, linking to its page in its external catalog (ExternalCatalog.url); just the id when there is none.
+ * @type {(catalog: string, kind: 'book' | 'edition', id: string) => Child}
  */
-const asinUrl = site=> `https://www.${site}/${site.startsWith('audible.') ? 'pd' : 'dp'}/`;
+const idLink = (catalog, kind, id)=>{
+	const url = ExternalCatalog.url(catalog, kind, id);
+	return url ? buildElement('a', {href: url, target: '_blank', rel: 'noopener'}, id) : id;
+};
 
 /**
- * An edition as Edition.format() writes it, with each ASIN linking to the book on its site, and the
- * Goodreads id and Hardcover ids to the book there (Hardcover's links by id keep working when it renames the book).
- * @type {(url: string, id: string) => HTMLAnchorElement}
- */
-const idLink = (url, id)=> buildElement('a', {href: url + encodeURIComponent(id), target: '_blank', rel: 'noopener'}, id);
-
-/**
+ * An edition as Edition.format() writes it, with each ASIN linking to the book on its site, and its other
+ * external ids to the book there (Hardcover's links by id keep working when it renames the book).
  * @param {Edition} ed
  * @param {boolean} narrators whether to name its narrators (not when the book's line names them all)
  * @returns {Child[]}
  */
 function editionParts(ed, narrators){
-	/** @type {Partial<Record<string, string>>} */
-	const urls = {gr: GOODREADS_URL, hc: HardcoverClient.url('edition', '')};
-	const asins = ()=> joined(ed.asinList().map(([site, asin])=> [site + ' ', idLink(asinUrl(site), asin)]), ', ');
+	const asins = ()=> joined(ed.asinList().map(([site, asin])=> [site + ' ', idLink(site, 'edition', asin)]), ', ');
 	return joined(ed.parts().filter(([k])=> narrators || k !== 'n').map(([k, label, value])=>{
-		const url = urls[k];
 		const shown = k === 'asin' ? asins() : k === 'n' ? narratorLinks(ed.narrators)
-			: k === 'p' ? buildElement('a', {href: publisherPageHref(value)}, value) : url ? idLink(url, value) : value;
+			: k === 'p' ? buildElement('a', {href: publisherPageHref(value)}, value) : k.startsWith('ext:') ? idLink(k.slice(4), 'edition', value) : value;
 		return [label ? label + ' ' : '', shown];
 	}), '; ');
 }
@@ -652,7 +654,8 @@ function bookCard({b, i}){
 			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b.title)}, b.title)),
 			buildElement('div', {class: 'meta'}, meta),
 			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', ')),
-			b.hardcoverId && buildElement('div', {class: 'ids'}, 'Hardcover book ', idLink(HardcoverClient.url('book', ''), b.hardcoverId)),
+			Object.keys(b.external).length > 0 && buildElement('div', {class: 'ids'},
+				joined(Object.entries(ExternalCatalog.order(b.external) || {}).map(([key, id])=> [`${ExternalCatalog.name(key)} book `, idLink(key, 'book', id)]), '; ')),
 			editions,
 			b.genres.length > 0 && buildElement('div', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))),
 		buildElement('div', {class: 'book-actions'},
@@ -784,7 +787,8 @@ export function openEditForm(i){
 	fieldById('f_t').value = b.title;
 	fieldById('f_a').value = authorsOf(b).join(', ');
 	fieldById('f_g').value = b.genres.join(', ');
-	fieldById('f_hcb').value = b.hardcoverId || '';
+	fieldById('f_hcb').value = b.idOn('hardcover') || '';
+	fillExternalFields('f_ext_', 'book', b.external);
 	fieldById('f_s').value = b.series || '';
 	fieldById('f_sn').value = b.number || '';
 	fieldById('f_r').value = b.read.join(', ');
@@ -821,14 +825,18 @@ function setFormEditions(editions, index){
 }
 
 /** @type {Record<string, string>} */
-const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', asin: 'B0… or its address', gr: 'id or goodreads.com address',
-	hc: 'id or hardcover.app address', isbn: '978…', p: 'e.g. Gullwing Audio', d: 'e.g. 2021-05', len: 'e.g. 10h 42m'};
+const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', asin: 'B0… or its address', isbn: '978…', p: 'e.g. Gullwing Audio',
+	d: 'e.g. 2021-05', len: 'e.g. 10h 42m'};
+/** @type {(catalog: string) => string} the hint in a catalog's id field: "id or goodreads.com address" */
+const externalHint = catalog=> `id or ${(ExternalCatalog.url(catalog, 'edition', '0') || catalog).replace(/^https?:\/\/(www\.)?/, '').split('/')[0]} address`;
+// The catalogs other than Audible's and Amazon's sites that an edition has a field for (Goodreads, Hardcover).
+const OTHER_EDITION_CATALOGS = ExternalCatalog.forKind('edition').filter(def=> def.family !== 'asin').map(def=> def.key);
 
 // An edition's ASINs: a field for each site it has one on (audible.com's always, as an ASIN usually is),
 // and a list to add a field for another site, so the card only shows the sites in use.
-const DEFAULT_ASIN_SITE = 'audible.com';
+const DEFAULT_ASIN_SITE = ExternalCatalog.AUDIBLE_SITE;
 /** @type {(fields: Record<string, string>) => string[]} */
-const asinSitesOf = fields=> [DEFAULT_ASIN_SITE, ...Object.keys(fields).filter(k=> k.startsWith('asin:')).map(k=> k.slice(5))]
+const asinSitesOf = fields=> [DEFAULT_ASIN_SITE, ...Object.keys(fields).filter(k=> k.startsWith('ext:') && ExternalCatalog.family(k.slice(4)) === 'asin').map(k=> k.slice(4))]
 	.filter((site, j, all)=> all.indexOf(site) === j);
 
 /**
@@ -838,10 +846,10 @@ const asinSitesOf = fields=> [DEFAULT_ASIN_SITE, ...Object.keys(fields).filter(k
  */
 function asinFields(fields, i){
 	const sites = asinSitesOf(fields);
-	const more = Edition.ASIN_SITES.filter(site=> !sites.includes(site));
+	const more = ExternalCatalog.ASIN_SITES.filter(site=> !sites.includes(site));
 	return [
 		...sites.map(site=> buildElement('div', {class: 'ef-site'}, buildElement('label', {}, site),
-			buildElement('input', {'data-i': i, 'data-k': 'asin:' + site, value: fields['asin:' + site] || '', placeholder: EDITION_HINTS.asin}))),
+			buildElement('input', {'data-i': i, 'data-k': 'ext:' + site, value: fields['ext:' + site] || '', placeholder: EDITION_HINTS.asin}))),
 		...more.length ? [buildElement('div', {class: 'ef-site'}, buildElement('label', {}, '\u00A0'),
 			buildElement('select', {'data-add-site': i, 'aria-label': 'Add an ASIN for another site'},
 				buildElement('option', {value: ''}, '+ Another site'), more.map(site=> buildElement('option', {value: site}, site))))] : [],
@@ -854,8 +862,10 @@ function renderFormEditions(){
 			buildElement('div', {class: 'editionCardHead'}, buildElement('span', {}, `Edition ${i + 1}`),
 				buildElement('button', {type: 'button', class: 'removeEdition', 'data-remove': i, title: 'Remove this edition'}, 'Remove')),
 			also.length > 0 && buildElement('p', {class: 'editionAlso'}, `Also on ${also.join(', ')}: changes here change it there too.`),
-			buildElement('div', {class: 'editionFields'}, Edition.FIELDS.map(([k, , label])=> k === 'asin'
-				? buildElement('div', {class: 'ef-asin', role: 'group', 'aria-label': label}, buildElement('label', {}, label), buildElement('div', {class: 'asinSites'}, asinFields(fields, i)))
+			buildElement('div', {class: 'editionFields'}, Edition.FIELDS.map(([k, , label])=> k === 'ext'
+				? [buildElement('div', {class: 'ef-asin', role: 'group', 'aria-label': label}, buildElement('label', {}, label), buildElement('div', {class: 'asinSites'}, asinFields(fields, i))),
+					OTHER_EDITION_CATALOGS.map(catalog=> buildElement('div', {class: `ef-ext ef-${catalog}`}, buildElement('label', {}, Edition.fieldLabel(catalog)),
+						buildElement('input', {'data-i': i, 'data-k': 'ext:' + catalog, value: fields['ext:' + catalog] || '', placeholder: externalHint(catalog)})))]
 				: buildElement('div', {class: `ef-${k}`}, buildElement('label', {}, label),
 					buildElement('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k]})))))));
 }
@@ -872,12 +882,12 @@ editionsEditor.addEventListener('change', e=>{
 	const target = /** @type {HTMLSelectElement | null} */ (e.target);
 	const i = target && target.dataset ? target.dataset.addSite : undefined, site = target ? target.value : '';
 	if(i === undefined || !site || !FORM_EDITIONS[Number(i)]) return;
-	FORM_EDITIONS[Number(i)].fields['asin:' + site] = FORM_EDITIONS[Number(i)].fields['asin:' + site] || '';
+	FORM_EDITIONS[Number(i)].fields['ext:' + site] = FORM_EDITIONS[Number(i)].fields['ext:' + site] || '';
 	renderFormEditions();
-	const input = editionsEditor.querySelector ? /** @type {HTMLInputElement | null} */ (editionsEditor.querySelector(`input[data-i="${i}"][data-k="asin:${site}"]`)) : null;
+	const input = editionsEditor.querySelector ? /** @type {HTMLInputElement | null} */ (editionsEditor.querySelector(`input[data-i="${i}"][data-k="ext:${site}"]`)) : null;
 	if(input) input.focus();
 });
-// An address pasted into an id field (an ASIN, Goodreads id or Hardcover edition) becomes the id it names
+// An address pasted into an id field (an ASIN, Goodreads or Hardcover edition) becomes the id it names
 // when the field is left, in the field for it: an Amazon or Audible page's ASIN goes to its site's field,
 // which is added when the card has none. When that field holds another id the address stays, and Save says why.
 editionsEditor.addEventListener('focusout', e=>{
@@ -885,7 +895,7 @@ editionsEditor.addEventListener('focusout', e=>{
 	const target = /** @type {HTMLInputElement | null} */ (event.target);
 	const {i, k} = target && target.dataset || {};
 	const edition = FORM_EDITIONS[Number(i)];
-	if(!target || !k || !edition || !(k.startsWith('asin:') || k === 'gr' || k === 'hc')) return;
+	if(!target || !k || !edition || !k.startsWith('ext:')) return;
 	const found = Edition.idFromAddress(target.value);
 	if(!found) return;
 	const {field, id} = found, there = Text.tidy(edition.fields[field] || '');
@@ -921,25 +931,26 @@ byId('addEditionBtn').addEventListener('click', ()=>{
 });
 
 /**
- * The editions in the form, as {editions, bad (e.g. "edition 2: Released 2021-13"), hcb}.
- * @returns {{editions: Edition[], bad: string[], hcb: string | null}}
+ * The editions in the form, as {editions, bad (e.g. "edition 2: Released 2021-13"), book (the book's
+ * external ids, from a book's address pasted in an edition's field)}.
+ * @returns {{editions: Edition[], bad: string[], book: Record<string, string>}}
  */
 function readFormEditions(){
 	/** @type {Edition[]} */
 	const editions = [];
 	/** @type {string[]} */
 	const bad = [];
-	/** @type {string | null} */
-	let hcb = null;
+	/** @type {Record<string, string>} */
+	const book = {};
 	FORM_EDITIONS.forEach(({fields, id}, i)=>{
 		const read = Edition.fromFields(fields);
 		// the edition keeps its id (several ISBNs make more editions, which are new)
 		if(read.editions.length) read.editions[0].id = id;
 		editions.push(...read.editions);
 		bad.push(...read.bad.map(x=> `edition ${i + 1}: ${x}`));
-		hcb = hcb || read.hcb;
+		for(const [catalog, x] of Object.entries(read.book)) if(!book[catalog]) book[catalog] = x;
 	});
-	return {editions, bad, hcb};
+	return {editions, bad, book};
 }
 
 // The Hardcover book field also takes the address of the book's or an edition's page on hardcover.app (the
@@ -976,6 +987,9 @@ function resolveHardcoverField(){
 	return lookup;
 }
 byId('f_hcb').addEventListener('change', ()=>{ resolveHardcoverField(); });
+// the book's ids in external catalogs other than Hardcover (whose field looks the book up), and the series'
+fillElement(byId('f_bookExt'), externalFields('f_ext_', 'book', ['hardcover']));
+fillElement(byId('sf_ext'), externalFields('sf_ext_', 'series'));
 
 byId('addForm').addEventListener('submit', async e=>{
 	e.preventDefault();
@@ -1001,13 +1015,22 @@ byId('addForm').addEventListener('submit', async e=>{
 		return;
 	}
 	b.read = dates;
-	const {editions, bad: badParts, hcb} = readFormEditions();
-	const hardcover = fieldById('f_hcb').value.trim() || hcb;
-	if(hardcover && !/^\d+$/.test(hardcover)){
+	const {editions, bad: badParts, book: fromEditions} = readFormEditions();
+	const hardcover = fieldById('f_hcb').value.trim() || fromEditions.hardcover;
+	if(hardcover && !ExternalCatalog.isId('hardcover', 'book', hardcover)){
 		byId('formError').textContent = `Not a Hardcover book id: ${hardcover}. It is the number in hardcover.app/id/book/12345, or paste the address of the book's page on hardcover.app in the Hardcover book field.`;
 		return;
 	}
-	if(hardcover) b.hardcoverId = hardcover;
+	// the book's other external ids (Goodreads' book), from their fields or a book's address in an edition's
+	const had = EDIT_INDEX === null ? {} : CATALOG.books[EDIT_INDEX].external;
+	const external = readExternalFields('f_ext_', 'book', had);
+	if(external.bad.length){
+		byId('formError').textContent = `Not a book's id or address there: ${external.bad.join('; ')}.`;
+		return;
+	}
+	b.external = {...fromEditions, ...external.ids};
+	delete b.external.hardcover;
+	if(hardcover) b.external.hardcover = hardcover;
 	// "book #0 ('Title') edition #2: needs an ..." -> "edition #2: needs an ..."
 	const problems = (editions.length ? Validator.validate([{t: b.title, a: b.authors, e: JSON.parse(JSON.stringify(editions))}], {}).errors : [])
 		.map(e=> e.includes(' edition #') ? e.slice(e.indexOf(' edition #') + 1) : e);

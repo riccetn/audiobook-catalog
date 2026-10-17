@@ -1,6 +1,6 @@
 // The Goodreads importer: a Goodreads library export CSV, of which audio editions on the "read" shelf are kept.
 import {Text} from './text.js';
-import {Edition} from './edition.js';
+import {ExternalCatalog} from './external-catalog.js';
 import {Series} from './series.js';
 import {Csv} from './csv.js';
 import {Importer} from './importer.js';
@@ -37,11 +37,14 @@ export class GoodreadsImporter extends Importer {
 		/** @type {Record<string, any>} */
 		const edition = {};
 		// Goodreads' own id for the edition; spreadsheet programs sometimes save it as ="12345".
+		/** @type {Record<string, string>} */
+		const ext = {};
 		const gr = cell(row, 'Book Id').replace(/[="\s]/g, '');
-		if(Edition.GOODREADS_ID.test(gr)) edition.gr = gr;
 		// Goodreads' own export has no ASIN, but a CSV made like it may; an ASIN Goodreads knows is amazon.com's
 		const asin = cell(row, 'ASIN').replace(/[="\s]/g, '').toUpperCase();
-		if(/^[A-Z0-9]{10}$/.test(asin)) edition.asin = {[Edition.AMAZON_SITE]: asin};
+		if(/^[A-Z0-9]{10}$/.test(asin)) ext[ExternalCatalog.AMAZON_SITE] = asin;
+		if(ExternalCatalog.isId('goodreads', 'edition', gr)) ext.goodreads = gr;
+		if(Object.keys(ext).length) edition.ext = ext;
 		// Goodreads files narrators under "Additional Authors"; treat that as a best guess.
 		if(Text.splitNames(cell(row, 'Additional Authors')).length) edition.n = Text.splitNames(cell(row, 'Additional Authors'));
 		const isbns = Csv.rowIsbns(row);

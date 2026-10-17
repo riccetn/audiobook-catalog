@@ -6,7 +6,7 @@
 export; it works like [the Audible import](audible.md#add-new-audible-purchases). Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. The edition's narrator comes from the "Additional Authors" column, which is a guess
 (it never replaces a narrator you already have).
-Each book keeps Goodreads' *Book Id* as its edition's `gr`, with the edition's *Publisher* and *Year Published*,
+Each book keeps Goodreads' *Book Id* as its edition's Goodreads id (`ext.goodreads`), with the edition's *Publisher* and *Year Published*,
 so a later export still finds it after you rename it; books already in the catalog get their Goodreads id
 filled in the first time an export matches them. Goodreads puts the series in the title, as
 `The First Adventure (Fantasy Adventures, #1)` or `The First Adventure: Fantasy Adventures, Book 1`; both

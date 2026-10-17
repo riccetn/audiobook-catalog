@@ -6,6 +6,10 @@ import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
 
+// The prefix an edition's id has in a "Keep separate" mark, by its family (ExternalCatalog.family).
+/** @type {Record<string, string>} */
+const MARK_PREFIX = {asin: 'id', goodreads: 'gr', hardcover: 'hc'};
+
 /** Finds duplicates among books. */
 export class Duplicates {
 	/**
@@ -26,7 +30,7 @@ export class Duplicates {
 	 */
 	groups(){
 		const books = this.books;
-		const isId = (/** @type {string} */ k) => /^\["(asin|gr|hc|hcb)"/.test(k);
+		const isId = (/** @type {string} */ k) => /^\["(ext|book)"/.test(k);
 		/** @type {Map<string, number[]>} */
 		const byKey = new Map();
 		books.forEach((b, i) => {
@@ -120,13 +124,14 @@ export class Duplicates {
 
 	/**
 	 * Key for "these editions of a book are different editions": the ids they carry, in any order. An ASIN
-	 * is written "id B0...", whatever its site, as it was when editions kept one ASIN, so marks made then hold.
+	 * is written "id B0...", whatever its site, as it was when editions kept one ASIN, and Goodreads' and
+	 * Hardcover's ids "gr …" and "hc …", as they were before ids were kept by external catalog, so marks made then hold.
 	 * @param {Book} book
 	 * @returns {string}
 	 */
 	static editionsKey(book){
 		const ids = book.editions.flatMap(ed => [
-			...Edition.IDS.flatMap(k => ed.ids(k).map(v => (k === 'asin' ? 'id' : k) + ' ' + v)),
+			...ed.idKeys().map(k => k.replace(/^\S+/, family => MARK_PREFIX[family] || family)),
 			...ed.isbns().map(x => 'isbn ' + x),
 		]);
 		return Text.key('editions', ...[...new Set(ids)].sort());

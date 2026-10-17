@@ -15,11 +15,14 @@ written by two authors is on both pages, with a link to the other one. Each titl
 to it in the catalog.
 
 **Add or edit the bio and links**: press the pencil next to the author's name. The bio keeps its
-paragraphs (leave a blank line between them). Paste each link from the browser's address bar, for
-example `https://www.audible.com/author/...` (any Audible store), `https://www.goodreads.com/author/show/...`
-and `https://hardcover.app/authors/...`; the form refuses an address that doesn't start with `https://`
-(or `http://`), or that is on another site than its field says. Clearing every field, or **Remove info**,
-removes the entry. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
+paragraphs (leave a blank line between them). The website must start with `https://` (or `http://`).
+The Audible, Amazon, Goodreads and Hardcover fields keep the author's id there: type it, or paste the
+address of their page from the browser's address bar (`https://www.audible.co.uk/author/Name/B0...` on any
+Audible store, `https://www.amazon.com/stores/author/B0...`, `https://www.goodreads.com/author/show/1234...`,
+`https://hardcover.app/authors/name`) and the id is read from it. A bare id in the Audible or Amazon field is
+audible.com's or amazon.com's; for another store, paste the address, and the field shows it that way. The
+form refuses what is neither an id nor an address there (a Hardcover address in the Goodreads field, say).
+Clearing every field, or **Remove info**, removes the entry. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
 
 The info is kept by the author's name exactly as the books write it. If you rename an author on their
 books, their entry stays under the old name: **Check** warns that it matches no author; copy the bio and

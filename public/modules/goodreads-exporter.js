@@ -26,7 +26,7 @@ export class GoodreadsExporter {
 	write(books){
 		/** @type {Map<string, Set<Book>>} */
 		const owners = new Map();   // "gr:123" / "asin:B0..." / "isbn:978..." -> books carrying it
-		const edKeys = (/** @type {Edition} */ ed) => [...ed.ids('asin').map(v => 'asin:' + v), ...ed.ids('gr').map(v => 'gr:' + v), ...ed.isbns().map(i => 'isbn:' + i)];
+		const edKeys = (/** @type {Edition} */ ed) => [...ed.ids('asin').map(v => 'asin:' + v), ...ed.ids('goodreads').map(v => 'gr:' + v), ...ed.isbns().map(i => 'isbn:' + i)];
 		books.forEach(book => book.editions.forEach(ed => edKeys(ed).forEach(k => {
 			let set = owners.get(k);
 			if(!set) owners.set(k, set = new Set());
@@ -42,7 +42,7 @@ export class GoodreadsExporter {
 			const dates = book.read.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
 			/** @type {Record<string, string>} */
 			const row = {
-				'Book Id': ed.goodreadsId || '',
+				'Book Id': ed.idOn('goodreads') || '',
 				'Title': book.title + series,
 				'Author': book.authors[0],
 				'Additional Authors': book.authors.slice(1).join(', '),
@@ -58,7 +58,7 @@ export class GoodreadsExporter {
 			};
 			lines.push(GoodreadsExporter.COLUMNS.map(c => Csv.field(row[c])).join(','));
 			report.books++;
-			if(!ed.goodreadsId && !isbn) report.withoutIds++;
+			if(!ed.idOn('goodreads') && !isbn) report.withoutIds++;
 			if(!dates.length) report.withoutDate++;
 		}
 		return {csv: lines.join('\n') + '\n', ...report};
@@ -74,7 +74,7 @@ export class GoodreadsExporter {
 	 */
 	static edition(book, shared){
 		const own = book.editions.filter(ed => book.isCollection() || !shared(ed));   // a box set's own book is the set
-		const rank = (/** @type {Edition} */ ed) => (ed.goodreadsId ? 2 : 0) + (ed.isbns().length ? 1 : 0);
+		const rank = (/** @type {Edition} */ ed) => (ed.idOn('goodreads') ? 2 : 0) + (ed.isbns().length ? 1 : 0);
 		return own.reduce((/** @type {Edition | null} */ best, ed) => (!best || rank(ed) > rank(best) ? ed : best), null);
 	}
 }

@@ -98,7 +98,7 @@ export class Backup {
 			for(const kind of Contributor.KINDS) if(data[kind] !== undefined && !Text.isObject(data[kind])) throw new Error(`${kind} is not an object`);
 			/** @type {(kind: ContributorKind) => Map<string, Contributor> | null} */
 			const people = kind => data[kind] === undefined ? null
-				: new Map(Object.entries(data[kind]).map(([name, entry]) => [name, Contributor.fromJSON(name, entry)]));
+				: new Map(Object.entries(data[kind]).map(([name, entry]) => [name, Contributor.fromJSON(name, Contributor.fixLinks(entry, kind))]));
 			for(const [name, list] of [['excluded', excluded], ['notDuplicates', notDuplicates]]){
 				if(list !== undefined && !(Array.isArray(list) && list.every(x => typeof x === 'string'))){
 					throw new Error(`${name} is not a list of strings`);

@@ -1,7 +1,7 @@
 // The Audible importer: an Audible Library Extractor CSV, of which only finished books are kept. Audible's
 // catalog doesn't allow browser requests, so there is nothing more to ask Audible.
 import {Text} from './text.js';
-import {Edition} from './edition.js';
+import {ExternalCatalog} from './external-catalog.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Csv} from './csv.js';
@@ -23,7 +23,7 @@ export class AudibleImporter extends Importer {
 	/** @param {string} [site] the Audible site whose ASINs the export has (audible.com unless said) */
 	constructor(site){
 		super();
-		this.site = site || Edition.AUDIBLE_SITE;
+		this.site = site || ExternalCatalog.AUDIBLE_SITE;
 	}
 
 	get label(){ return 'Audible'; }
@@ -74,7 +74,7 @@ export class AudibleImporter extends Importer {
 		if(tags.length) rec.g = tags;
 		/** @type {Record<string, any>} */
 		const edition = {};
-		if(asin) edition.asin = {[this.site]: asin};
+		if(asin) edition.ext = {[this.site]: asin};
 		if(Text.splitNames(cell(row, 'Narrators')).length) edition.n = Text.splitNames(cell(row, 'Narrators'));
 		const isbns = Csv.rowIsbns(row);
 		if(isbns.length) edition.isbn = isbns;

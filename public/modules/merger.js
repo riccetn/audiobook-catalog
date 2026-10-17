@@ -5,7 +5,7 @@ import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Exclusions} from './exclusions.js';
-/** @import {EditionKey} from './edition.js' */
+import {ExternalCatalog} from './external-catalog.js';
 
 /**
  * What merge() did: the books (as added, or the existing book) on each list.
@@ -30,9 +30,15 @@ import {Exclusions} from './exclusions.js';
  * @property {(book: Book) => boolean} [addable] whether an unmatched book may be added
  */
 
-// Which report list a book goes on when one of its editions gains a value.
-/** @type {Record<EditionKey, 'backfilled' | 'goodreadsFilled' | 'hardcoverFilled' | 'isbnsFilled' | 'detailsFilled'>} */
-const FILLED_REPORT = {asin: 'backfilled', gr: 'goodreadsFilled', hc: 'hardcoverFilled', isbn: 'isbnsFilled', n: 'detailsFilled', p: 'detailsFilled', d: 'detailsFilled', len: 'detailsFilled', desc: 'detailsFilled'};
+// Which report list a book goes on when one of its editions (or the book) gains a value: an edition's key,
+// or "ext:" and the catalog of an id (Edition.fillFrom).
+/** @type {(gained: string) => 'backfilled' | 'goodreadsFilled' | 'hardcoverFilled' | 'isbnsFilled' | 'detailsFilled'} */
+const filledReport = gained => {
+	if(gained === 'isbn') return 'isbnsFilled';
+	if(!gained.startsWith('ext:')) return 'detailsFilled';
+	const family = ExternalCatalog.family(gained.slice(4));
+	return family === 'asin' ? 'backfilled' : family === 'goodreads' ? 'goodreadsFilled' : family === 'hardcover' ? 'hardcoverFilled' : 'detailsFilled';
+};
 
 /** Adds books to a list of books, the way imports do. */
 export class Merger {
@@ -119,7 +125,7 @@ export class Merger {
 			const shared = book.editions.filter(x => !x.conflictsWith(ed) && copiesOf(x).some(([j]) => j !== i && set.includes(j)));
 			const target = book.editions.find(x => x.sameAs(ed)) || (shared.length === 1 ? shared[0] : undefined);
 			if(target){
-				for(const field of target.fillFrom(ed)) note(report[FILLED_REPORT[field]], book);
+				for(const field of target.fillFrom(ed)) note(report[filledReport(field)], book);
 			} else {
 				book.editions = [...book.editions, ed.clone()];
 				note(report.editionsAdded, book);
@@ -144,10 +150,10 @@ export class Merger {
 		 */
 		const mergeBoxSet = (rec, original, [lo, hi]) => {
 			// without an id or ISBN there is nothing to tie the titles together, so the set stays one book
-			if(!rec.editions.some(ed => Edition.IDS.some(k => ed.ids(k).length) || ed.isbns().length)) return false;
+			if(!rec.editions.some(ed => ed.idKeys().length || ed.isbns().length)) return false;
 			const editions = rec.editions.map(ed => setEdition(ed, rec.title));
 			const author = rec.authorKey(), series = Series.norm(rec.series);
-			const ownsSet = (/** @type {Book} */ b) => b.editions.some(x => editions.some(ed => Edition.IDS.some(k => x.sharesId(ed, k)) && x.sameAs(ed)));
+			const ownsSet = (/** @type {Book} */ b) => b.editions.some(x => editions.some(ed => x.sharesId(ed) && x.sameAs(ed)));
 			const titleNumber = (/** @type {Book} */ b) => b.authorKey() === author && Series.norm(b.series || '') === series && /^\d+$/.test(String(b.number || '').trim()) ?
 				Number(String(b.number).trim()) : null;
 			/** @type {number[]} */
@@ -219,15 +225,16 @@ export class Merger {
 				report.matched++;
 				// A book of another Hardcover book that finds a book by a box set's edition finds the book that is
 				// that Hardcover book, when there is one: the set kept as its own book, or another of its titles.
-				if(rec.hardcoverId && book.hardcoverId !== rec.hardcoverId){
-					const set = existing.findIndex((b, i) => i !== match && b.hardcoverId === rec.hardcoverId &&
+				const hardcover = rec.idOn('hardcover');
+				if(hardcover && book.idOn('hardcover') !== hardcover){
+					const set = existing.findIndex((b, i) => i !== match && b.idOn('hardcover') === hardcover &&
 						b.editions.some(x => rec.editions.some(ed => x.sameAs(ed))));
 					if(set >= 0){ match = set; book = existing[set]; }
 				}
 				const isSet = book.isCollection();
 				// A Hardcover book other than this one, found by a box set's edition, is the box set: reading it
 				// was reading each of its titles, and so is reading a set kept as its own book.
-				const boxSet = !!(rec.hardcoverId && book.hardcoverId && rec.hardcoverId !== book.hardcoverId);
+				const boxSet = !!(hardcover && book.idOn('hardcover') && hardcover !== book.idOn('hardcover'));
 				/** @type {Edition[]} */
 				const setEditions = [];
 				const readers = new Set([match]);
@@ -239,7 +246,7 @@ export class Merger {
 						const copies = copiesOf(target);
 						if(boxSet || isSet) copies.forEach(([i]) => readers.add(i));
 						if(boxSet && copies.length) setEditions.push(target);
-						for(const field of target.fillFrom(ed)) note(report[FILLED_REPORT[field]], book);
+						for(const field of target.fillFrom(ed)) note(report[filledReport(field)], book);
 						for(const [i, copy] of copies){ copy.fillFrom(target); indexBook(i); }
 					} else if(own.length){
 						book.editions = [...own, ed.clone()];
@@ -248,13 +255,15 @@ export class Merger {
 						// a book without editions just gains the ids it lacked, as before editions existed
 						const first = new Edition();
 						book.editions = [first];
-						for(const field of first.fillFrom(ed)) note(report[FILLED_REPORT[field]], book);
+						for(const field of first.fillFrom(ed)) note(report[filledReport(field)], book);
 					}
 					indexBook(match);
 				}
-				if(rec.hardcoverId && !book.hardcoverId){
-					book.hardcoverId = rec.hardcoverId;
-					note(report.hardcoverFilled, book);
+				// the book's own external ids it lacks (Hardcover's or Goodreads' book)
+				for(const [catalog, id] of Object.entries(rec.external)){
+					if(book.idOn(catalog)) continue;
+					book.external = {...book.external, [catalog]: id};
+					note(report[filledReport('ext:' + catalog)], book);
 					indexBook(match);
 				}
 				for(const i of readers) giveDates(existing[i], rec);
@@ -309,7 +318,7 @@ export class Merger {
 		const done = new Set();
 		for(const b of [...books]){
 			for(const ed of b.editions){
-				if(done.has(ed) || !Edition.IDS.some(k => ed.ids(k).length)) continue;
+				if(done.has(ed) || !ed.idKeys().length) continue;
 				const copies = books.flatMap(x => x.editions.filter(y => y.sameAs(ed)).map(y => /** @type {[Book, Edition]} */ ([x, y])));
 				copies.forEach(([, y]) => done.add(y));
 				const holders = [...new Set(copies.map(([x]) => x))];
