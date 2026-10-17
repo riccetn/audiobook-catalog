@@ -7,6 +7,7 @@ import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogDatabase, CatalogConflict} from './modules/catalog-database.js';
 /** @import {RecordSet, Snapshot} from './modules/catalog-records.js' */
 /** @import {Book} from './modules/book.js' */
+/** @import {NamedKind} from './modules/catalog.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 /** @import {ExternalKind} from './modules/external-catalog.js' */
@@ -122,28 +123,41 @@ export function fillElement(el, ...children){ el.replaceChildren(...nodes(childr
  */
 export function joined(items, separator){ return items.flatMap((x, i)=> i ? [separator, x] : [x]); }
 
-// The addresses of an author's, a narrator's and a publisher's page, with spaces as + (as the catalog
-// page writes its own addresses), so every link to a page looks the same.
+// The addresses of an author's, a narrator's and a publisher's page: by the id they are stored under, so a
+// link holds while their name is spelled another way (spaces as +, as the catalog page writes its own addresses).
 const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
 /** @type {(name: string) => string} */
-export const authorPageHref = name=> 'authors.html#a=' + hashValue(name);
+export const authorPageHref = name=> 'authors.html#a=' + hashValue(CATALOG.idFor('authors', name));
 /** @type {(name: string) => string} */
-export const narratorPageHref = name=> 'narrators.html#n=' + hashValue(name);
+export const narratorPageHref = name=> 'narrators.html#n=' + hashValue(CATALOG.idFor('narrators', name));
 /** @type {(name: string) => string} */
-export const publisherPageHref = name=> 'publishers.html#p=' + hashValue(name);
+export const publisherPageHref = name=> 'publishers.html#p=' + hashValue(CATALOG.idFor('publishers', name));
 
 /**
- * The name an address of one of those pages holds after `key`= (#n=Ann+Vale), or null.
+ * What an address of one of those pages holds after `key`= (#n=id), or null: the id there, as it is.
  * @param {string} hash
  * @param {string} key
  * @returns {string | null}
  */
-export function nameFromPageHash(hash, key){
+export function valueFromPageHash(hash, key){
 	const m = new RegExp(`^#${key}=(.*)$`).exec(String(hash || ''));
 	if(!m) return null;
-	let name = m[1].replace(/\+/g, ' ');
-	try{ name = decodeURIComponent(name); }catch(e){}
-	return name.trim() || null;
+	let value = m[1].replace(/\+/g, ' ');
+	try{ value = decodeURIComponent(value); }catch(e){}
+	return value.trim() || null;
+}
+
+/**
+ * The id of the series or person an address names: by their id, or by their name (a link from before
+ * addresses had ids). Null when it names neither.
+ * @param {NamedKind} kind
+ * @param {string | null} value
+ * @returns {string | null}
+ */
+export function idFromAddress(kind, value){
+	if(value === null) return null;
+	if(CATALOG.nameOf(kind, value) !== undefined) return value;
+	return CATALOG.nameIds[kind].get(value) ?? null;
 }
 
 // The catalog the page shows. It stays this one object: a page that takes another catalog (Restore, an
@@ -169,16 +183,6 @@ let onHardcoverJob = null;
 /** @type {((before: Book[]) => void) | null} */
 let redrawPage = null;
 
-/**
- * Add "Not duplicates" (or "Keep separate") marks of the duplicates page to CATALOG.notDuplicates; returns
- * how many were new. Like any change, persist() saves them.
- * @param {string[]} entries
- * @returns {number}
- */
-export function addNotDuplicates(entries){
-	return CATALOG.addNotDuplicates(entries);
-}
-
 /** @returns {Promise<number | null>} the revision of the catalog as it is stored now (another tab may have saved since) */
 export async function storedRevision(){
 	try{ return DATABASE ? await DATABASE.revision() : null; }catch(e){ return null; }
@@ -202,6 +206,7 @@ export function updateNav(){
  * @returns {Promise<void>}
  */
 export function persist(){
+	CATALOG.assignIds();   // a book or name just added has its id before the page draws it again
 	updateNav();
 	return SAVING = SAVING.then(saveNow);
 }
@@ -348,7 +353,7 @@ function readOldCatalog(){
 		if(!saved) return false;
 		const catalog = Catalog.fromJSON(saved);
 		const marks = JSON.parse(item(NOT_DUP_KEY) || '[]');
-		if(Array.isArray(marks)) catalog.addNotDuplicates(marks.filter(x=> typeof x === 'string'));
+		if(Array.isArray(marks)) catalog.addMarkTexts(marks.filter(x=> typeof x === 'string'));
 		CATALOG.replaceWith(catalog);
 		return true;
 	}catch(e){
@@ -621,6 +626,7 @@ export function showHardcoverJob(job){
 export async function startPage(init, page = {}){
 	({onHardcoverJob = null, refresh: redrawPage = null} = page);
 	await loadCatalog();
+	CATALOG.assignIds();   // the page knows every entry by its id (a catalog that can't be saved has none yet)
 	askToKeepStorage();
 	init();
 	updateNav();

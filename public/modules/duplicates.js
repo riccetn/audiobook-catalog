@@ -1,6 +1,9 @@
 // Books that look like one title entered twice, and books whose editions look like one edition recorded
 // twice. Pairs you said are different books ("Not duplicates"), and books whose editions you said are
-// different ("Keep separate"), are remembered as marks (pairKey(), editionsKey()) so they are not offered again.
+// different ("Keep separate"), are remembered as marks so they are not offered again. A mark points at the
+// books (and editions) by the ids they are stored under, so it holds when a book is retitled; backups
+// write it as text (pairKey(), editionsKey()), which holds across catalogs, and a text mark is kept as it
+// is until it matches books (Catalog.resolveMarks).
 import {Text} from './text.js';
 import {Edition} from './edition.js';
 import {Book} from './book.js';
@@ -10,15 +13,27 @@ import {Series} from './series.js';
 /** @type {Record<string, string>} */
 const MARK_PREFIX = {asin: 'id', goodreads: 'gr', hardcover: 'hc'};
 
+/**
+ * A mark of the duplicates page: two books that are "Not duplicates", a book whose editions are to be kept
+ * separate ("Keep separate") with the editions it had when they were marked, or a mark as its text (from a
+ * backup, or one whose books are not known), under `id` (pairMark(), keepMark(), textMark() make them).
+ * @typedef {object} Mark
+ * @property {string} id
+ * @property {'notDuplicates' | 'keepSeparate' | 'text'} kind
+ * @property {string[]} [bookIds]
+ * @property {string[]} [editionIds] keepSeparate: the editions the book had when they were marked
+ * @property {string} [key] keepSeparate and text: the mark's text (editionsKey() for keepSeparate)
+ */
+
 /** Finds duplicates among books. */
 export class Duplicates {
 	/**
 	 * @param {Book[]} books
-	 * @param {Set<string>} [marks] pairKey()s of pairs that are different books, and editionsKey()s of books whose editions are different
+	 * @param {Map<string, Mark>} [marks] the marks by their id: pairs that are different books, and books whose editions are different
 	 */
 	constructor(books, marks){
 		this.books = books;
-		this.marks = marks || new Set();
+		this.marks = marks || new Map();
 	}
 
 	/**
@@ -70,19 +85,63 @@ export class Duplicates {
 		const shared = Book.sharedEditionTest(books);
 		return books.map((b, i) => i).filter(i => {
 			const editions = books[i].editions;
-			return Edition.joinable(editions) && !editions.some(shared) && !this.marks.has(Duplicates.editionsKey(books[i]));
+			return Edition.joinable(editions) && !editions.some(shared) && !this.markedSeparate(books[i]);
 		});
 	}
 
 	/**
-	 * Whether the pair x, y is marked as different books, under its key now or as marked before.
+	 * Whether the pair x, y is marked as different books: by their ids, or by a mark's text.
 	 * @param {Book} x
 	 * @param {Book} y
 	 * @returns {boolean}
 	 */
 	markedNotSame(x, y){
-		return this.marks.has(Duplicates.pairKey(x, y)) || this.marks.has(Duplicates.pairKey(x, y, Text.asciiNorm));
+		const marks = this.marks;
+		return (x.id !== undefined && y.id !== undefined && marks.has(Duplicates.pairMark(x, y).id)) ||
+			marks.has(Duplicates.textMark(Duplicates.pairKey(x, y)).id) || marks.has(Duplicates.textMark(Duplicates.pairKey(x, y, Text.asciiNorm)).id);
 	}
+
+	/**
+	 * Whether the editions of `b` are marked as different editions: the ones it has now, by their ids or by a mark's text.
+	 * @param {Book} b
+	 * @returns {boolean}
+	 */
+	markedSeparate(b){
+		const own = Duplicates.keepMark(b);
+		return (own.kind === 'keepSeparate' && this.marks.has(own.id)) || this.marks.has(Duplicates.textMark(Duplicates.editionsKey(b)).id);
+	}
+
+	/**
+	 * The mark "x and y are different books", by their ids (as text when either has none yet).
+	 * @param {Book} x
+	 * @param {Book} y
+	 * @returns {Mark}
+	 */
+	static pairMark(x, y){
+		if(x.id === undefined || y.id === undefined) return Duplicates.textMark(Duplicates.pairKey(x, y));
+		const bookIds = [x.id, y.id].sort();
+		return {id: `pair ${bookIds.join(' ')}`, kind: 'notDuplicates', bookIds};
+	}
+
+	/**
+	 * The mark "the editions `b` has are different editions", by the ids of the book and its editions (as
+	 * text when any has none yet).
+	 * @param {Book} b
+	 * @returns {Mark}
+	 */
+	static keepMark(b){
+		const key = Duplicates.editionsKey(b);
+		if(b.id === undefined || b.editions.some(ed => ed.id === undefined)) return Duplicates.textMark(key);
+		const editionIds = b.editions.map(ed => /** @type {string} */ (ed.id)).sort();
+		return {id: `keep ${b.id} ${editionIds.join(' ')}`, kind: 'keepSeparate', bookIds: [b.id], editionIds, key};
+	}
+
+	/**
+	 * A mark as its text: a pairKey() or an editionsKey(), or anything a backup has.
+	 * @param {string} key
+	 * @returns {Mark}
+	 */
+	static textMark(key){ return {id: `text ${key}`, kind: 'text', key}; }
 
 	/**
 	 * Key for "these two books are different books", so a pair you dismissed is not offered again.

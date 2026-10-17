@@ -2,7 +2,8 @@
 
 The *Authors* page lists every author in the catalog, with how many of their books and series you
 have; the search box narrows the list by name. Click an author (or an author's name on a book in the
-catalog) to open their page, `authors.html#a=Marisol+Quenby`:
+catalog) to open their page. Its address names the author by the id the catalog keeps for them, which stays the
+same when you correct the name; an address with the name, `authors.html#a=Marisol+Quenby`, opens the same page:
 
 - a short bio, if you wrote one;
 - links to their own website and their author pages on Audible, Goodreads, Hardcover, Open Library, ISFDB,
