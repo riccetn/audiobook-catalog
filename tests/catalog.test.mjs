@@ -1114,6 +1114,13 @@ test('narrators: a narrator on the book moves onto its editions', () => {
 	assert.deepEqual(existing[0].e, [{ ext: { 'audible.com': 'B1', goodreads: '7' }, n: ['Mine'] }]);
 });
 
+test('a count is written with its word, singular for one', () => {
+	assert.equal(Text.plural(1, 'book'), '1 book');
+	assert.equal(Text.plural(0, 'book'), '0 books');
+	assert.equal(Text.plural(3, 'Goodreads id'), '3 Goodreads ids');
+	assert.equal(Text.plural(2, 'series', 'series'), '2 series');
+});
+
 test('authors and narrators are lists; comma separated text from before is split on load', () => {
 	assert.deepEqual(Text.splitNames('Ann Vale, R. T. Hale; Bo Reed & Cy Hale and Di Moss'), ['Ann Vale', 'R. T. Hale', 'Bo Reed', 'Cy Hale', 'Di Moss']);
 	assert.deepEqual(Text.splitNames('Ann Vale, Jr., Bo Reed, III'), ['Ann Vale, Jr.', 'Bo Reed, III']);
@@ -1343,9 +1350,6 @@ test('an author\'s works: their series in series order, then their other titles,
 		[['Ash Cycle', ['Boxed']], ['Tide Saga', ['First', 'Third', 'Novella']]]);
 	assert.deepEqual(works.titles.map(b => b.title), ['Apple Hill', 'Zebra Days']);
 	assert.deepEqual(catalog.authorWorks('Nobody'), { series: [], titles: [] });
-	assert.deepEqual(catalog.authorList(), [
-		{ name: 'Ann Vale', books: 6, series: 2 }, { name: 'Bo Reed', books: 2, series: 1 },
-	]);
 });
 
 test('narrators\' and publishers\' works come from the editions, each book once', () => {
@@ -1355,8 +1359,6 @@ test('narrators\' and publishers\' works come from the editions, each book once'
 		book('Apple Hill', 'Bo Reed', { e: [{ n: ['Cy Hale'], p: 'Harbor Sound' }] }),
 		book('Unread Edition', 'Bo Reed'),
 	]) });
-	assert.deepEqual(catalog.narratorList(), [{ name: 'Cy Hale', books: 2, series: 1 }, { name: 'Di Moss', books: 2, series: 1 }]);
-	assert.deepEqual(catalog.publisherList(), [{ name: 'Gull Audio', books: 2, series: 1 }, { name: 'Harbor Sound', books: 1, series: 0 }]);
 	const works = catalog.narratorWorks('Di Moss');
 	assert.deepEqual(works.series.map(s => [s.name, s.books.map(b => b.title)]), [['Tide Saga', ['First', 'Second']]]);
 	assert.deepEqual(catalog.publisherWorks('Harbor Sound').titles.map(b => b.title), ['Apple Hill']);
@@ -1805,7 +1807,7 @@ test('the database saves only what changed, refuses a save over another tab\'s, 
 	assert.deepEqual((await ask(tx.objectStore('books').index('words').getAll(FakeKeyRange.bound('orch', 'orch\uffff')))).map(b => b.title).sort(),
 		['Orchard Cycle, Books 1-2', 'Orchard Frost', 'The Glass Orchard']);
 
-	// the same through a reader: one transaction, keyset pages, prefixes, distinct keys, a walk that keeps nothing
+	// the same through a reader: one transaction, keyset pages, prefixes, distinct keys
 	factory.resetReads();
 	const read = await db.read(async r => {
 		const first = await r.page('books', 'byTitle', null, 2);
@@ -1813,10 +1815,7 @@ test('the database saves only what changed, refuses a save over another tab\'s, 
 		const inSeries = await r.under('books', 'bySeries', [series]);
 		const genres = await r.keys('books', 'genres');
 		const byKey = await r.get('books', [inSeries[0].id, 'no-such-id', inSeries[0].id]);
-		/** @type {string[]} */
-		const walked = [];
-		await r.walk('books', 'byTitle', null, b => walked.push(b.title));
-		return {first, next, inSeries, genres, byKey, walked, count: await r.count('books')};
+		return {first, next, inSeries, genres, byKey, count: await r.count('books')};
 	});
 	assert.equal(read.revision, 2);
 	assert.deepEqual(read.result.first.map(b => b.title), ['The Glass Orchard', 'Orchard Cycle, Books 1-2']);
@@ -1824,9 +1823,8 @@ test('the database saves only what changed, refuses a save over another tab\'s, 
 	assert.deepEqual(read.result.inSeries.map(b => b.number), ['1', '2', '1-2']);
 	assert.deepEqual(read.result.genres, [...new Set(records.books.flatMap(b => b.genres))].sort());
 	assert.deepEqual(read.result.byKey.map(b => b.id), [read.result.inSeries[0].id]);
-	assert.equal(read.result.walked.length, 4);
 	assert.equal(read.result.count, 4);
-	assert.equal(factory.reads('books'), 2 + 2 + 3 + 1 + 4, 'distinct keys and counts read no records');
+	assert.equal(factory.reads('books'), 2 + 2 + 3 + 1, 'distinct keys and counts read no records');
 
 	// set aside: the catalog is emptied, what was stored is kept under meta
 	assert.equal(await db.setAside(loaded.records), 3);

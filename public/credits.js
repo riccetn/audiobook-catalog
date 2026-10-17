@@ -33,7 +33,7 @@ import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, qu
  */
 
 /** @type {Record<'author' | 'narrator' | 'publisher', CreditKind>} */
-export const CREDIT_KINDS = {
+const CREDIT_KINDS = {
 	author: {infoKey: 'authors', hashKey: 'a', one: 'author', many: 'authors', title: 'Authors', none: 'No books by this author in the catalog.',
 		site: ['Personal website', 'https://'],
 		href: authorPageHref, works: name=> CATALOG.authorWorks(name)},
@@ -46,7 +46,7 @@ export const CREDIT_KINDS = {
 };
 
 /** @type {CreditKind} */
-export let KIND = CREDIT_KINDS.author;
+let KIND = CREDIT_KINDS.author;
 /** @type {string | null} */
 export let SHOWN = null;              // the id of the author, narrator or publisher shown (#a=...), or null for the list
 /**
@@ -55,7 +55,7 @@ export let SHOWN = null;              // the id of the author, narrator or publi
  * @typedef {{id: string, name: string, books: number, series: number, bio: string, topAuthors: string[], authorCount: number}} ListEntry
  */
 /** @type {ListEntry[]} */
-export let LIST = [];                 // the list, while it is shown
+let LIST = [];                 // the list, while it is shown
 let TOTAL_BOOKS = 0;                  // how many books the catalog has, for the list's subtitle
 /** @type {string | null} */
 let EDITING = null;                   // the id of whose info the form is editing, or null
@@ -63,7 +63,6 @@ let EDITING = null;                   // the id of whose info the form is editin
 const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
 const bookHref = (/** @type {Book} */ b)=> 'index.html#book=' + hashValue(b.id || '');
 const seriesHref = (/** @type {string} */ name)=> 'index.html#series=' + hashValue(CATALOG.idFor('series', name));
-const plural = (/** @type {number} */ n, /** @type {string} */ word, many = word + 's')=> `${n} ${n === 1 ? word : many}`;
 /** @type {(names: string[], href: (name: string) => string) => Child[]} */
 const nameLinks = (names, href)=> joined(names.map(x=> buildElement('a', {href: href(x)}, x)), ', ');
 /** @returns {Map<string, Contributor>} what the catalog keeps about the page's kind, by id */
@@ -92,11 +91,11 @@ function renderCreditList(){
 	const q = fieldById('q').value.trim().toLowerCase();
 	const all = LIST;
 	const shown = q ? all.filter(x=> x.name.toLowerCase().includes(q)) : all;
-	byId('subtitle').textContent = `${plural(all.length, KIND.one)} across ${plural(TOTAL_BOOKS, 'audiobook')}`;
+	byId('subtitle').textContent = `${Text.plural(all.length, KIND.one)} across ${Text.plural(TOTAL_BOOKS, 'audiobook')}`;
 	fillElement(byId('creditBody'), shown.length ? shown.map(x=> buildElement('div', {class: 'srow'},
 		buildElement('div', {class: 'srow-head'},
 			buildElement('a', {class: 'srow-title', href: KIND.href(x.name)}, x.name), ' ',
-			buildElement('span', {class: 'srow-owned'}, `${plural(x.books, 'book')}${x.series ? ', ' + plural(x.series, 'series', 'series') : ''}`)),
+			buildElement('span', {class: 'srow-owned'}, `${Text.plural(x.books, 'book')}${x.series ? ', ' + Text.plural(x.series, 'series', 'series') : ''}`)),
 		bioLine(x) || (KIND !== CREDIT_KINDS.author && topAuthorsLine(x))))
 		: buildElement('p', {class: 'empty'}, all.length ? `No ${KIND.many} match your search.`
 			: KIND === CREDIT_KINDS.author ? 'No books yet.' : `No ${KIND.many} yet: they come from the books' editions.`));
@@ -176,7 +175,7 @@ function creditBookLine(b, name){
  */
 function seriesHeading(s){
 	const link = buildElement('a', {href: seriesHref(s.name)}, s.name);
-	if(KIND !== CREDIT_KINDS.author) return buildElement('p', {class: 'series-title'}, link, ' ', buildElement('span', {class: 'n'}, plural(s.books.length, 'book')));
+	if(KIND !== CREDIT_KINDS.author) return buildElement('p', {class: 'series-title'}, link, ' ', buildElement('span', {class: 'n'}, Text.plural(s.books.length, 'book')));
 	const si = CATALOG.seriesInfo(s.name);
 	return buildElement('p', {class: 'series-title'}, link,
 		' ', buildElement('span', {class: 'n'}, `${Series.owned(s.books)} owned${si ? ' of ' + si.total : ''}`),
@@ -190,7 +189,7 @@ function renderCreditPage(id){
 	const {series, titles} = KIND.works(name);
 	const count = series.reduce((n, s)=> n + s.books.length, 0) + titles.length;
 	byId('subtitle').textContent = count
-		? `${plural(count, 'audiobook')}${series.length ? ' in ' + plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
+		? `${Text.plural(count, 'audiobook')}${series.length ? ' in ' + Text.plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
 		: spell(KIND.none);
 	const label = kept().has(id) ? `Edit ${KIND.one} info` : `Add ${KIND.one} info`;
 	/** @type {(href: string, text: string) => HTMLAnchorElement} */
@@ -210,7 +209,7 @@ function renderCreditPage(id){
 		buildElement('ul', {class: 'author-books'}, s.books.map(b=> creditBookLine(b, name))))));
 	if(titles.length){
 		out.push(buildElement('div', {class: 'series-group'},
-			buildElement('p', {class: 'series-title'}, series.length ? 'Outside a series' : 'Titles', ' ', buildElement('span', {class: 'n'}, plural(titles.length, 'book'))),
+			buildElement('p', {class: 'series-title'}, series.length ? 'Outside a series' : 'Titles', ' ', buildElement('span', {class: 'n'}, Text.plural(titles.length, 'book'))),
 			buildElement('ul', {class: 'author-books'}, titles.map(b=> creditBookLine(b, name)))));
 	}
 	fillElement(byId('creditBody'), out);
@@ -222,7 +221,7 @@ function renderCreditPage(id){
  * this browser (see persist in store.js).
  * @param {string} id the id they are stored under
  */
-export function openCreditForm(id){
+function openCreditForm(id){
 	const name = nameOf(id);
 	const info = kept().get(id) || new Contributor(name);
 	EDITING = id;

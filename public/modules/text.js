@@ -137,6 +137,15 @@ export class Text {
 	}
 
 	/**
+	 * A count with its word: (1, "book") -> "1 book", (3, "book") -> "3 books", (2, "series", "series") -> "2 series".
+	 * @param {number} n
+	 * @param {string} word
+	 * @param {string} [many] the word for any other count than one
+	 * @returns {string}
+	 */
+	static plural(n, word, many = word + 's'){ return `${n} ${n === 1 ? word : many}`; }
+
+	/**
 	 * Names as a list. Before they were lists, the authors ("a") and an edition's narrators ("n") were one
 	 * comma separated string; that is split (splitNames). A list keeps its names as they are, without
 	 * repeats or empty ones; anything else is left for the Check to report. Returns null for no names.

@@ -185,28 +185,6 @@ export class CatalogReader {
 	count(store, index, query = null){
 		return requested(this.source(store, index).count(query ?? undefined));
 	}
-
-	/**
-	 * Go through the records with keys in `query` one at a time, in index order, keeping none: `each` gets
-	 * every record's value as the cursor reaches it.
-	 * @param {string} store
-	 * @param {string | undefined} index
-	 * @param {IDBValidKey | IDBKeyRange | null} query
-	 * @param {(value: any) => void} each
-	 * @returns {Promise<void>}
-	 */
-	walk(store, index, query, each){
-		return new Promise((resolve, reject) => {
-			const req = this.source(store, index).openCursor(query);
-			req.onsuccess = () => {
-				const cursor = req.result;
-				if(!cursor){ resolve(); return; }
-				each(cursor.value);
-				cursor.continue();
-			};
-			req.onerror = () => reject(req.error);
-		});
-	}
 }
 
 /** @import {BookRecord, EditionRecord, SeriesRecord, ContributorRecord, CreditRecord} from './catalog-records.js' */
@@ -332,8 +310,6 @@ export class MemoryReader {
 	}
 	/** @type {CatalogReader['count']} */
 	async count(store, index, query = null){ return this.entries(store, index).filter(([key]) => MemoryReader.inRange(query, key)).length; }
-	/** @type {CatalogReader['walk']} */
-	async walk(store, index, query, each){ for(const rec of await this.all(store, index, query)) each(rec); }
 }
 
 /** A save's writes and what it works out again, in its readwrite transaction (see CatalogDatabase.save). */

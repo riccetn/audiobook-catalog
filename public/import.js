@@ -155,7 +155,7 @@ const IMPORTERS = {
 /** @type {ImportKind} */
 let IMPORT_KIND = 'audible';
 /** @type {Book[] | null} */
-export let PENDING_IMPORT = null;   // the books of the import previewed, until it is applied or canceled
+let PENDING_IMPORT = null;   // the books of the import previewed, until it is applied or canceled
 
 /**
  * Merge into a copy of the catalog, so nothing changes until the result is known to be valid.
@@ -218,7 +218,7 @@ function previewImport(kind, text, fileName){
 	byId('mergePrefer').classList.remove('show');
 
 	/** @type {Child[]} */
-	const out = [para(`${result.books.length} finished book${result.books.length === 1 ? '' : 's'} read from ${fileName}`)];
+	const out = [para(`${Text.plural(result.books.length, 'finished book')} read from ${fileName}`)];
 	out.push(para(spell(`Already in the catalog: ${report.matched}`)));
 	if(result.skippedUnfinished) out.push(para(`Not finished yet, skipped: ${result.skippedUnfinished}`));
 	if(report.backfilled.length) out.push(para(`ASINs filled in on existing books: ${report.backfilled.length}`));
@@ -248,7 +248,7 @@ function previewImport(kind, text, fileName){
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
 	confirmBtn.textContent = report.added.length
-		? `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`
+		? `Add ${Text.plural(report.added.length, 'book')}`
 		: report.backfilled.length ? 'Save ASINs' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
 		: report.editionsAdded.length ? 'Save editions' : report.isbnsFilled.length ? 'Save ISBNs' : 'Save edition details';
 	byId('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
@@ -266,13 +266,13 @@ function applyImport(){
 	const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
 	CATALOG.books = copy.books;
 	refreshPage(); persist();
-	const done = `Added ${added} book${added === 1 ? '' : 's'}` +
-		(backfilled ? `, filled in ${backfilled} ASIN${backfilled === 1 ? '' : 's'}` : '') +
-		(withGr ? `, filled in ${withGr} Goodreads id${withGr === 1 ? '' : 's'}` : '') +
-		(dated ? `, filled in dates read on ${dated} book${dated === 1 ? '' : 's'}` : '') +
-		(withIsbns ? `, added ISBNs to ${withIsbns} book${withIsbns === 1 ? '' : 's'}` : '') +
-		(withEditions ? `, added editions to ${withEditions} book${withEditions === 1 ? '' : 's'}` : '') +
-		(withDetails ? `, filled in edition details on ${withDetails} book${withDetails === 1 ? '' : 's'}` : '') + '.';
+	const done = `Added ${Text.plural(added, 'book')}` +
+		(backfilled ? `, filled in ${Text.plural(backfilled, 'ASIN')}` : '') +
+		(withGr ? `, filled in ${Text.plural(withGr, 'Goodreads id')}` : '') +
+		(dated ? `, filled in dates read on ${Text.plural(dated, 'book')}` : '') +
+		(withIsbns ? `, added ISBNs to ${Text.plural(withIsbns, 'book')}` : '') +
+		(withEditions ? `, added editions to ${Text.plural(withEditions, 'book')}` : '') +
+		(withDetails ? `, filled in edition details on ${Text.plural(withDetails, 'book')}` : '') + '.';
 	showIoStatus(done);
 }
 
@@ -391,7 +391,7 @@ function mergeBackupFile(file){
 // ------------------------------------------------------------ Check the catalog, box sets
 // The check lists errors and warnings; box sets are previewed like an import and only applied when confirmed.
 /** @type {'box-sets' | null} */
-export let PENDING_TIDY = null;   // 'box-sets', while its preview is open
+let PENDING_TIDY = null;   // 'box-sets', while its preview is open
 
 /**
  * Show the check or the box sets in the preview; its confirm button (labeled `confirm`) shows when PENDING_TIDY is set.
@@ -417,8 +417,7 @@ function showTidyPreview(title, body, confirm){
 function checkCatalog(){
 	const {errors, warnings} = CATALOG.validate({contributors: true});
 	const series = new Set(CATALOG.books.filter(b=> b.series).map(b=> b.series)).size;
-	const count = (/** @type {number} */ n, /** @type {string} */ word)=> `${n} ${word}${n === 1 ? '' : 's'}`;
-	const withInfo = [count(CATALOG.authors.size, 'author'), count(CATALOG.narrators.size, 'narrator'), count(CATALOG.publishers.size, 'publisher')];
+	const withInfo = [Text.plural(CATALOG.authors.size, 'author'), Text.plural(CATALOG.narrators.size, 'narrator'), Text.plural(CATALOG.publishers.size, 'publisher')];
 	/** @type {Child[]} */
 	const out = [para(`${CATALOG.books.length} books, ${series} series, ${CATALOG.series.size} with release info, ` +
 		`${withInfo.join(', ')} with info.`)];
@@ -441,7 +440,7 @@ function previewBoxSets(){
 	const {report, errors} = boxSetsIntoCopy();
 	/** @type {Child[]} */
 	const out = [para(`Box sets: ${report.boxSets.length}`),
-		messageList(report.boxSets.map(b=> `${b.title} \u2014 ${Text.namesText(b.authors)}: ${b.titles} title${b.titles === 1 ? '' : 's'} already here`))];
+		messageList(report.boxSets.map(b=> `${b.title} \u2014 ${Text.namesText(b.authors)}: ${Text.plural(b.titles, 'title')} already here`))];
 	if(report.excluded.length) out.push(para(`Skipped (excluded from imports): ${report.excluded.length}`));
 	out.push(para(`New: ${report.added.length}`), messageList(report.added.map(bookLine)));
 	if(report.boxSets.some(b=> b.added)){
@@ -453,7 +452,7 @@ function previewBoxSets(){
 		out.push(para('Every box set is already kept both as its own book and as its titles.'));
 	}
 	PENDING_TIDY = errors.length || !report.added.length ? null : 'box-sets';
-	showTidyPreview('Box sets', out, `Add ${report.added.length} book${report.added.length === 1 ? '' : 's'}`);
+	showTidyPreview('Box sets', out, `Add ${Text.plural(report.added.length, 'book')}`);
 }
 
 function applyTidy(){
@@ -464,7 +463,7 @@ function applyTidy(){
 	CATALOG.books = copy.books;
 	refreshPage(); persist();
 	const added = report.added.length;
-	showIoStatus(`Added ${added} book${added === 1 ? '' : 's'} for box sets.`);
+	showIoStatus(`Added ${Text.plural(added, 'book')} for box sets.`);
 }
 
 // ------------------------------------------------------------ Hardcover
