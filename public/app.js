@@ -829,8 +829,28 @@ const EDITION_HINTS = {desc: 'e.g. UK edition', n: 'e.g. Ann Vale, Bo Reed', asi
 	d: 'e.g. 2021-05', len: 'e.g. 10h 42m'};
 /** @type {(catalog: string) => string} the hint in a catalog's id field: "id or goodreads.com address" */
 const externalHint = catalog=> `id or ${(ExternalCatalog.url(catalog, 'edition', '0') || catalog).replace(/^https?:\/\/(www\.)?/, '').split('/')[0]} address`;
-// The catalogs other than Audible's and Amazon's sites that an edition has a field for (Goodreads, Hardcover).
+// The catalogs other than Audible's and Amazon's sites that an edition can have an id in: Goodreads' and
+// Hardcover's fields are always there, the others' only once the edition has one or one is picked from a list.
 const OTHER_EDITION_CATALOGS = ExternalCatalog.forKind('edition').filter(def=> def.family !== 'asin').map(def=> def.key);
+const USUAL_EDITION_CATALOGS = ['goodreads', 'hardcover'];
+
+/**
+ * An edition's fields for its ids in catalogs other than Audible and Amazon, and a list to add one for another.
+ * @param {Record<string, string>} fields
+ * @param {number} i the edition's card
+ * @returns {HTMLDivElement[]}
+ */
+function otherCatalogFields(fields, i){
+	const shown = OTHER_EDITION_CATALOGS.filter(catalog=> USUAL_EDITION_CATALOGS.includes(catalog) || ('ext:' + catalog) in fields);
+	const more = OTHER_EDITION_CATALOGS.filter(catalog=> !shown.includes(catalog));
+	return [
+		...shown.map(catalog=> buildElement('div', {class: `ef-ext ef-${catalog}`}, buildElement('label', {}, Edition.fieldLabel(catalog)),
+			buildElement('input', {'data-i': i, 'data-k': 'ext:' + catalog, value: fields['ext:' + catalog] || '', placeholder: externalHint(catalog)}))),
+		...more.length ? [buildElement('div', {class: 'ef-ext ef-more'}, buildElement('label', {}, '\u00A0'),
+			buildElement('select', {'data-add-site': i, 'aria-label': 'Add an id in another catalog'},
+				buildElement('option', {value: ''}, '+ Another catalog'), more.map(catalog=> buildElement('option', {value: catalog}, ExternalCatalog.name(catalog)))))] : [],
+	];
+}
 
 // An edition's ASINs: a field for each site it has one on (audible.com's always, as an ASIN usually is),
 // and a list to add a field for another site, so the card only shows the sites in use.
@@ -864,8 +884,7 @@ function renderFormEditions(){
 			also.length > 0 && buildElement('p', {class: 'editionAlso'}, `Also on ${also.join(', ')}: changes here change it there too.`),
 			buildElement('div', {class: 'editionFields'}, Edition.FIELDS.map(([k, , label])=> k === 'ext'
 				? [buildElement('div', {class: 'ef-asin', role: 'group', 'aria-label': label}, buildElement('label', {}, label), buildElement('div', {class: 'asinSites'}, asinFields(fields, i))),
-					OTHER_EDITION_CATALOGS.map(catalog=> buildElement('div', {class: `ef-ext ef-${catalog}`}, buildElement('label', {}, Edition.fieldLabel(catalog)),
-						buildElement('input', {'data-i': i, 'data-k': 'ext:' + catalog, value: fields['ext:' + catalog] || '', placeholder: externalHint(catalog)})))]
+					otherCatalogFields(fields, i)]
 				: buildElement('div', {class: `ef-${k}`}, buildElement('label', {}, label),
 					buildElement('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k]})))))));
 }
@@ -877,7 +896,7 @@ editionsEditor.addEventListener('input', e=>{
 	const {i, k} = target.dataset || {};
 	if(k && FORM_EDITIONS[Number(i)]) FORM_EDITIONS[Number(i)].fields[k] = target.value;
 });
-// "+ ASIN on another site": a field for that site, ready to type in
+// "+ Another site" (for an ASIN) or "+ Another catalog": a field for it, ready to type in
 editionsEditor.addEventListener('change', e=>{
 	const target = /** @type {HTMLSelectElement | null} */ (e.target);
 	const i = target && target.dataset ? target.dataset.addSite : undefined, site = target ? target.value : '';

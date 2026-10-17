@@ -189,7 +189,7 @@ h1{
 /* one field per site the edition has an ASIN on, and the list that adds another */
 .asinSites{display:grid; grid-template-columns:repeat(auto-fill, minmax(10rem, 1fr)); gap:0 .5rem;}
 .asinSites label{font-weight:normal;}
-#addForm .asinSites select{width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink-soft); font-family:inherit; font-size:.9rem;}
+#addForm .asinSites select, #addForm .ef-more select{width:100%; padding:.5rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink-soft); font-family:inherit; font-size:.9rem;}
 #addForm .editionFields input{background:var(--card);}
 .removeEdition, .addEdition{
 	padding:.3rem .7rem; border-radius:6px; border:1px solid var(--line); cursor:pointer;
