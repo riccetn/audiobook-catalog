@@ -262,4 +262,4 @@ function redraw(){
 	refreshPage();
 }
 
-export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); }, {refresh: redraw});
+export const READY = startPage(()=>{ DUP_MANUAL = manualPair(); refreshPage(); }, {whole: true, refresh: redraw});

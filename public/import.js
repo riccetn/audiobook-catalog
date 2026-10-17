@@ -1,5 +1,6 @@
 // The import and export page: adding books from Audible and Goodreads exports, Hardcover, and backups.
-// Loading and saving live in store.js.
+// It shows only how many books there are until an action needs every book (an import, Check, Box sets,
+// Hardcover, Export, Restore or Merge), and then holds the whole catalog. Loading and saving live in store.js.
 import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
 import {Backup} from './modules/backup.js';
@@ -12,7 +13,7 @@ import {HardcoverSync} from './modules/hardcover-sync.js';
 import {
 	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
-	hardcoverClient, startPage, byId, fieldById, BRITISH, spell, buildElement, fillElement
+	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, BRITISH, spell, buildElement, fillElement
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
@@ -23,7 +24,26 @@ import {
 /** @typedef {'audible' | 'goodreads'} ImportKind */
 
 function refreshPage(){
-	byId('subtitle').textContent = spell(`${CATALOG.books.length} audiobooks in the catalog`);
+	return afterSaving(async ()=>{
+		const count = await queryCatalog(r=> r.count('books'));
+		byId('subtitle').textContent = spell(`${count} audiobooks in the catalog`);
+	});
+}
+
+/**
+ * Run `task` once the page holds the whole catalog, which it keeps from then on; undefined when it can't be read.
+ * @template T
+ * @param {() => T} task
+ * @returns {Promise<T | undefined>}
+ */
+async function withWholeCatalog(task){
+	try{
+		await wholeCatalog();
+	}catch(e){
+		showIoStatus(spell(`Couldn't read the catalog kept in this browser: ${Text.errorText(e)}. Reload the page.`), true);
+		return undefined;
+	}
+	return task();
 }
 
 /**
@@ -88,6 +108,7 @@ function readFiles(files){
  * @param {File[]} files
  */
 async function importBackup(files){
+	if(!await withWholeCatalog(()=> true)) return;   // what it replaces is all of it
 	try{
 		const {books, series, authors, narrators, publishers, excluded, notDuplicates, nameIds} = Backup.readFiles(await readFiles(files));
 		const bad = books.some(b=> !b.title || !b.authors.length);
@@ -349,7 +370,8 @@ function applyMerge(){
  */
 function mergeBackupFile(file){
 	const reader = new FileReader();
-	reader.onload = e=>{
+	reader.onload = async e=>{
+		if(!await withWholeCatalog(()=> true)) return;
 		try{
 			const backup = Backup.read(JSON.parse(readText(e)));
 			if(backup.books.some(b=> !b.title || !b.authors.length)) throw new Error('missing title/author');
@@ -497,6 +519,8 @@ async function runHardcover(mode, dryRun){
 	if(PAGE_RUN) return;
 	const token = browserHardcoverToken();
 	if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
+	if(!await withWholeCatalog(()=> true)) return;
+	if(PAGE_RUN) return;
 	const started = Date.now();
 	/** @type {{out: string[], err: string[]}} */
 	const lines = {out: [], err: []};
@@ -610,7 +634,8 @@ function closeImportPreview(){
  */
 function importCsv(kind, file){
 	const reader = new FileReader();
-	reader.onload = e=>{
+	reader.onload = async e=>{
+		if(!await withWholeCatalog(()=> true)) return;
 		try{
 			previewImport(kind, readText(e), file.name);
 		}catch(err){
@@ -637,10 +662,10 @@ byId('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(fal
 byId('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
 byId('importCancel').addEventListener('click', closeImportPreview);
 
-byId('checkBtn').addEventListener('click', checkCatalog);
-byId('boxSetsBtn').addEventListener('click', previewBoxSets);
-byId('exportBtn').addEventListener('click', exportBackup);
-byId('exportGoodreadsBtn').addEventListener('click', exportGoodreads);
+byId('checkBtn').addEventListener('click', ()=> withWholeCatalog(checkCatalog));
+byId('boxSetsBtn').addEventListener('click', ()=> withWholeCatalog(previewBoxSets));
+byId('exportBtn').addEventListener('click', ()=> withWholeCatalog(exportBackup));
+byId('exportGoodreadsBtn').addEventListener('click', ()=> withWholeCatalog(exportGoodreads));
 byId('importBtn').addEventListener('click', ()=> byId('importFile').click());
 byId('mergeBtn').addEventListener('click', ()=> byId('mergeFile').click());
 byId('mergeFile').addEventListener('change', e=>{

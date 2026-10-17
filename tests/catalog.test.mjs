@@ -1691,7 +1691,10 @@ test('records: a catalog becomes records pointing at each other by id, and the s
 	assert.deepEqual(orchard, { id: 'id-1', title: 'The Glass Orchard', authorIds: [records.contributors.find(c => c.name === 'Mira Tallis' && c.kind === 'author').id],
 		genres: ['Fantasy'], read: ['2024-01-05', '2025-02-03'], editionIds: ['id-5', 'id-6'], position: 0, sortTitle: 'glass orchard', titleKey: 'the glass orchard',
 		firstAuthorKey: 'mira tallis', words: ['the', 'glass', 'orchard', 'mira', 'tallis'], seriesId: orchard.seriesId, seriesKey: 'orchardcycle',
-		isCollection: 0, numberKey: 1, numberEnd: 1, number: '1', lastRead: '2025-02-03', externalKeys: [] });
+		isCollection: 0, numberKey: 1, numberEnd: 1, number: '1', lastRead: '2025-02-03', externalKeys: [], readYears: ['2024', '2025'], search: orchard.search });
+	assert.ok(orchard.search.startsWith('the glass orchard mira tallis orchard cycle fantasy b0box00001'), 'what a search looks in');
+	assert.deepEqual(harbor.readYears, ['undated']);
+	assert.equal(harbor.standalone, 1);
 	assert.deepEqual([set.isCollection, set.numberKey, set.numberEnd], [1, 1, 2]);
 	assert.equal(harbor.seriesId, undefined, 'a book without a series is in no series index');
 	// the box set's edition is one record on all three books
@@ -1699,7 +1702,7 @@ test('records: a catalog becomes records pointing at each other by id, and the s
 	assert.deepEqual(box.bookIds, [orchard.id, frost.id, set.id]);
 	assert.ok([orchard, frost, set].every(b => b.editionIds.includes(box.id)));
 	assert.equal(records.editions.length, 3);
-	assert.deepEqual(records.series.map(x => [x.name, x.bookCount, x.owned, x.missing, x.total, x.lastRead]), [['Orchard Cycle', 3, 2, [3], 3, '2025-02-03']]);
+	assert.deepEqual(records.series.map(x => [x.name, x.bookCount, x.owned, x.missing, x.total, x.lastRead, x.authorIds.length]), [['Orchard Cycle', 3, 2, [3], 3, '2025-02-03', 2]]);
 	// someone who writes one book and narrates another has a record for each
 	assert.deepEqual(records.contributors.filter(c => c.name === 'Mira Tallis').map(c => [c.kind, c.bookCount, c.bio]),
 		[['author', 3, 'Writes about orchards.'], ['narrator', 1, undefined]]);
@@ -1770,18 +1773,18 @@ test('records: what a record has no place for is named, so it is fixed before it
 
 test('the database saves only what changed, refuses a save over another tab\'s, and pages through an index', async () => {
 	const factory = new FakeIndexedDB();
-	const db = await CatalogDatabase.open(factory);
+	const db = await CatalogDatabase.open(factory, undefined, FakeKeyRange);
 	assert.equal(await db.load(), null, 'nothing saved yet');
 	const catalog = shelf();
 	const records = recordsOf(catalog);
 	const first = CatalogRecords.changes(new Map(), records);
-	assert.equal(await db.save(first, null), 1);
+	assert.equal((await db.save(first, null)).revision, 1);
 	await assert.rejects(db.save(first, null), CatalogConflict, 'another tab saved first');
 	catalog.books[3].title = 'A Quieter Harbor';
 	const second = CatalogRecords.changes(first.snapshot, recordsOf(catalog));
-	assert.deepEqual(Object.keys(second.put), ['books', 'credits']);
+	assert.deepEqual(Object.keys(second.put), ['books'], 'credits are worked out by the save');
 	assert.deepEqual(second.put.books.map(b => b.title), ['A Quieter Harbor']);
-	assert.equal(await db.save(second, 1), 2);
+	assert.equal((await db.save(second, 1)).revision, 2);
 	const loaded = await db.load();
 	assert.equal(loaded.revision, 2);
 	assert.deepEqual(withoutIds(CatalogRecords.toCatalog(loaded.records)), withoutIds(catalog));
@@ -1801,6 +1804,29 @@ test('the database saves only what changed, refuses a save over another tab\'s, 
 	assert.deepEqual((await ask(tx.objectStore('credits').index('byTitle').getAll(FakeKeyRange.bound([narrator], [narrator, []])))).map(c => c.bookId), ['id-4']);
 	assert.deepEqual((await ask(tx.objectStore('books').index('words').getAll(FakeKeyRange.bound('orch', 'orch\uffff')))).map(b => b.title).sort(),
 		['Orchard Cycle, Books 1-2', 'Orchard Frost', 'The Glass Orchard']);
+
+	// the same through a reader: one transaction, keyset pages, prefixes, distinct keys, a walk that keeps nothing
+	factory.resetReads();
+	const read = await db.read(async r => {
+		const first = await r.page('books', 'byTitle', null, 2);
+		const next = await r.page('books', 'byTitle', [first[1].sortTitle, first[1].id], 2);
+		const inSeries = await r.under('books', 'bySeries', [series]);
+		const genres = await r.keys('books', 'genres');
+		const byKey = await r.get('books', [inSeries[0].id, 'no-such-id', inSeries[0].id]);
+		/** @type {string[]} */
+		const walked = [];
+		await r.walk('books', 'byTitle', null, b => walked.push(b.title));
+		return {first, next, inSeries, genres, byKey, walked, count: await r.count('books')};
+	});
+	assert.equal(read.revision, 2);
+	assert.deepEqual(read.result.first.map(b => b.title), ['The Glass Orchard', 'Orchard Cycle, Books 1-2']);
+	assert.deepEqual(read.result.next.map(b => b.title), ['Orchard Frost', 'A Quieter Harbor']);
+	assert.deepEqual(read.result.inSeries.map(b => b.number), ['1', '2', '1-2']);
+	assert.deepEqual(read.result.genres, [...new Set(records.books.flatMap(b => b.genres))].sort());
+	assert.deepEqual(read.result.byKey.map(b => b.id), [read.result.inSeries[0].id]);
+	assert.equal(read.result.walked.length, 4);
+	assert.equal(read.result.count, 4);
+	assert.equal(factory.reads('books'), 2 + 2 + 3 + 1 + 4, 'distinct keys and counts read no records');
 
 	// set aside: the catalog is emptied, what was stored is kept under meta
 	assert.equal(await db.setAside(loaded.records), 3);
@@ -1881,7 +1907,7 @@ test('records: external ids are kept by catalog and indexed; records from before
 		};
 		req.onerror = () => reject(req.error);
 	});
-	const db = await CatalogDatabase.open(factory);
+	const db = await CatalogDatabase.open(factory, undefined, FakeKeyRange);
 	const books = db.db.transaction('books', 'readonly').objectStore('books');
 	assert.ok(books.indexNames.contains('externalKeys') && !books.indexNames.contains('hardcoverId'), 'the indexes are brought up to date');
 	const loaded = await db.load();

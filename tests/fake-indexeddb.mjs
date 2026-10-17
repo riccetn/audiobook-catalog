@@ -1,6 +1,7 @@
 // A small in-memory IndexedDB for the tests (no npm packages): databases with object stores under a key
 // path, indexes (compound and multiEntry, unique ones refusing a second record), key ranges, getAll with
-// a count, transactions that commit once their requests are done and roll back when aborted. Requests
+// a count, getAllKeys, cursors (openCursor/openKeyCursor, in any direction, `unique` ones skipping repeated
+// keys), transactions that commit once their requests are done and roll back when aborted. Requests
 // complete asynchronously, one at a time in the order they were made, as in a browser. It does what the
 // app and its tests use, and throws on anything else rather than doing it wrongly.
 
@@ -72,6 +73,43 @@ export class FakeKeyRange {
 }
 const inRange = (query, key) => query === undefined || query === null ? true : query instanceof FakeKeyRange ? query.includes(key) : cmp(query, key) === 0;
 
+// The records a source (a store or an index) is asked for, as [key, primaryKey, value] in its order, for
+// the direction a cursor goes: 'next', 'nextunique' (the first record of each key), 'prev', 'prevunique'.
+function directed(entries, direction = 'next') {
+	if (!['next', 'nextunique', 'prev', 'prevunique'].includes(direction)) throw new TypeError(`not a cursor direction: ${direction}`);
+	let list = direction.startsWith('prev') ? [...entries].reverse() : entries;
+	if (direction.endsWith('unique')) {
+		// prevunique still gives each key's first record, as a browser does
+		const firsts = new Map();
+		for (const e of entries) { const id = JSON.stringify(e[0]); if (!firsts.has(id)) firsts.set(id, e); }
+		list = list.filter(e => firsts.get(JSON.stringify(e[0])) === e);
+	}
+	return list;
+}
+
+// A cursor over `list` ([key, primaryKey, value]), the result of `req`: continue() moves it on, by a
+// request of its own in the transaction, and the request's onsuccess runs again (result null at the end).
+class FakeCursor {
+	constructor(req, list, withValue, direction, read) {
+		Object.assign(this, { request: req, list, withValue, direction, read, at: -1 });
+		this.source = req.source;
+	}
+	get key() { return structuredClone(this.list[this.at][0]); }
+	get primaryKey() { return structuredClone(this.list[this.at][1]); }
+	get value() { return this.withValue ? structuredClone(this.list[this.at][2]) : undefined; }
+	// Move to the next record (at or after `key`, in the cursor's direction); the cursor itself, or null past the end.
+	step(key) {
+		const ahead = this.direction.startsWith('prev') ? -1 : 1;
+		do this.at++;
+		while (key !== undefined && this.at < this.list.length && cmp(this.list[this.at][0], key) * ahead < 0);
+		if (this.at >= this.list.length) return null;
+		this.read(this.withValue ? 1 : 0);
+		return this;
+	}
+	continue(key) { this.request.transaction.again(this.request, () => this.step(key)); }
+	advance(count) { this.request.transaction.again(this.request, () => { for (let i = 1; i < count; i++) this.at++; return this.step(); }); }
+}
+
 class FakeRequest {
 	constructor(source, transaction) {
 		Object.assign(this, { source, transaction, result: undefined, error: null, readyState: 'pending', onsuccess: null, onerror: null });
@@ -92,11 +130,17 @@ class FakeIndex {
 		}
 		return out.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
 	}
+	read(n) { this.objectStore.read(n); }
 	getAll(query, count) {
-		return this.objectStore.transaction.request(this, () => this.entries(query).slice(0, count || undefined).map(e => structuredClone(e[2])));
+		return this.objectStore.transaction.request(this, () => { const list = this.entries(query).slice(0, count || undefined); this.read(list.length); return list.map(e => structuredClone(e[2])); });
 	}
-	get(query) { return this.objectStore.transaction.request(this, () => { const e = this.entries(query)[0]; return e ? structuredClone(e[2]) : undefined; }); }
+	getAllKeys(query, count) {
+		return this.objectStore.transaction.request(this, () => this.entries(query).slice(0, count || undefined).map(e => structuredClone(e[1])));
+	}
+	get(query) { return this.objectStore.transaction.request(this, () => { const e = this.entries(query)[0]; if (e) this.read(1); return e ? structuredClone(e[2]) : undefined; }); }
 	count(query) { return this.objectStore.transaction.request(this, () => this.entries(query).length); }
+	openCursor(query, direction) { return this.objectStore.transaction.cursor(this, () => this.entries(query), true, direction); }
+	openKeyCursor(query, direction) { return this.objectStore.transaction.cursor(this, () => this.entries(query), false, direction); }
 }
 
 class FakeObjectStore {
@@ -112,9 +156,14 @@ class FakeObjectStore {
 		return [...this.data.records.values()].filter(r => inRange(query, r.key)).sort((x, y) => cmp(x.key, y.key));
 	}
 	writable() { if (this.transaction.mode === 'readonly') throw new DOMException('the transaction is read-only', 'ReadOnlyError'); }
-	get(query) { return this.transaction.request(this, () => { const r = this.entries(query)[0]; return r ? structuredClone(r.value) : undefined; }); }
-	getAll(query, count) { return this.transaction.request(this, () => this.entries(query).slice(0, count || undefined).map(r => structuredClone(r.value))); }
+	// Count the records handed out (for tests that check a page reads only what it shows).
+	read(n) { const reads = this.transaction.db.data.reads; reads.set(this.name, (reads.get(this.name) || 0) + n); }
+	get(query) { return this.transaction.request(this, () => { const r = this.entries(query)[0]; if (r) this.read(1); return r ? structuredClone(r.value) : undefined; }); }
+	getAll(query, count) { return this.transaction.request(this, () => { const list = this.entries(query).slice(0, count || undefined); this.read(list.length); return list.map(r => structuredClone(r.value)); }); }
+	getAllKeys(query, count) { return this.transaction.request(this, () => this.entries(query).slice(0, count || undefined).map(r => structuredClone(r.key))); }
 	count(query) { return this.transaction.request(this, () => this.entries(query).length); }
+	openCursor(query, direction) { return this.transaction.cursor(this, () => this.entries(query).map(r => [r.key, r.key, r.value]), true, direction); }
+	openKeyCursor(query, direction) { return this.transaction.cursor(this, () => this.entries(query).map(r => [r.key, r.key, r.value]), false, direction); }
 	put(value) {
 		this.writable();
 		const copy = structuredClone(value);
@@ -195,6 +244,20 @@ class FakeTransaction {
 		this.next();
 		return req;
 	}
+	// A cursor request: its result is a cursor on the first record (or null), and each continue() runs again.
+	cursor(source, entries, withValue, direction = 'next') {
+		return this.request(source, function () {
+			const req = this;
+			return new FakeCursor(req, directed(entries(), direction), withValue, direction, n => source.read(n)).step();
+		});
+	}
+	// The same request again (a cursor's continue): `run` gives its new result.
+	again(req, run) {
+		if (this.finished) throw new DOMException('the transaction has finished', 'TransactionInactiveError');
+		req.readyState = 'pending';
+		this.queue.push([req, run]);
+		this.next();
+	}
 	// Run the next request on a later turn; with none left after its callbacks (and what they await), commit.
 	next() {
 		if (this.running) return;
@@ -206,7 +269,7 @@ class FakeTransaction {
 			if (!item) { this.commit(); return; }
 			const [req, run] = item;
 			try {
-				req.result = run();
+				req.result = run.call(req);
 				req.readyState = 'done';
 				if (req.onsuccess) req.onsuccess({ target: req, type: 'success' });
 			} catch (error) {
@@ -263,7 +326,7 @@ class FakeDatabase {
 /** The fake indexedDB: what a page gets as `indexedDB`. Pass one to several pages for tabs of one browser. */
 export class FakeIndexedDB {
 	constructor() {
-		this.data = new Map();   // name -> {version, stores: Map}
+		this.data = new Map();   // name -> {version, stores: Map, reads: Map of store -> records handed out}
 		this.broken = false;     // true: opening fails, as in a browser that keeps no databases
 	}
 	open(name, version = 1) {
@@ -276,7 +339,7 @@ export class FakeIndexedDB {
 				return;
 			}
 			let data = this.data.get(name);
-			if (!data) this.data.set(name, data = { version: 0, stores: new Map() });
+			if (!data) this.data.set(name, data = { version: 0, stores: new Map(), reads: new Map() });
 			if (version < data.version) {
 				req.error = new DOMException('the database is newer than asked for', 'VersionError');
 				if (req.onerror) req.onerror({ target: req, type: 'error' });
@@ -303,6 +366,12 @@ export class FakeIndexedDB {
 		});
 		return req;
 	}
+	/** How many records of a store were handed out (by get, getAll or a cursor's value) since the last resetReads(). */
+	reads(store, name = 'audiobook-catalog') {
+		const data = this.data.get(name);
+		return data ? data.reads.get(store) || 0 : 0;
+	}
+	resetReads(name = 'audiobook-catalog') { const data = this.data.get(name); if (data) data.reads.clear(); }
 	/** What a store holds now, as plain values in key order (for tests to look at). */
 	records(store, name = 'audiobook-catalog') {
 		const data = this.data.get(name);
