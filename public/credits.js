@@ -1,5 +1,6 @@
 // The authors, narrators and publishers pages: everyone the books credit as one of them, and one
-// person's or publisher's page (authors.html#a=Name, narrators.html#n=Name, publishers.html#p=Name) with
+// person's or publisher's page (authors.html#a=id, narrators.html#n=id, publishers.html#p=id, by the id they
+// are stored under; a name there, from a link of before, works too) with
 // what you keep about them (CATALOG.authors, .narrators, .publishers: a short bio, their own site, their
 // ids on Audible, Amazon, Goodreads and Hardcover, which link to their pages there, and other links) and the series and titles of theirs you have, worked out from
 // the books. Each page's own script (authors.js, narrators.js, publishers.js) starts this one with its kind.
@@ -10,7 +11,7 @@ import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined,
-	authorPageHref, narratorPageHref, publisherPageHref, nameFromPageHash, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField } from './store.js';
+	authorPageHref, narratorPageHref, publisherPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 /** @import {Child} from './store.js' */
@@ -19,7 +20,7 @@ import { CATALOG, persist, showIoStatus, startPage, byId, fieldById, spell, buil
  * What differs between the three pages.
  * @typedef {object} CreditKind
  * @property {ContributorKind} infoKey where the catalog keeps their info: CATALOG.narrators
- * @property {string} hashKey the address's key: #n=Name
+ * @property {string} hashKey the address's key: #n=id
  * @property {'author' | 'narrator' | 'publisher'} one 'narrator' (also what an external catalog calls them)
  * @property {string} many 'narrators'
  * @property {string} title the page's title: 'Narrators'
@@ -47,17 +48,22 @@ export const CREDIT_KINDS = {
 /** @type {CreditKind} */
 export let KIND = CREDIT_KINDS.author;
 /** @type {string | null} */
-export let SHOWN = null;              // the author, narrator or publisher shown (#a=...), or null for the list
+export let SHOWN = null;              // the id of the author, narrator or publisher shown (#a=...), or null for the list
 /** @type {string | null} */
-let EDITING = null;                   // whose info the form is editing, or null
+let EDITING = null;                   // the id of whose info the form is editing, or null
 
-const bookHref = (/** @type {string} */ title)=> 'index.html#book=' + encodeURIComponent(title).replace(/%20/g, '+');
-const seriesHref = (/** @type {string} */ name)=> 'index.html#series=' + encodeURIComponent(name).replace(/%20/g, '+');
+const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
+const bookHref = (/** @type {Book} */ b)=> 'index.html#book=' + hashValue(b.id || '');
+const seriesHref = (/** @type {string} */ name)=> 'index.html#series=' + hashValue(CATALOG.idFor('series', name));
 const plural = (/** @type {number} */ n, /** @type {string} */ word, many = word + 's')=> `${n} ${n === 1 ? word : many}`;
 /** @type {(names: string[], href: (name: string) => string) => Child[]} */
 const nameLinks = (names, href)=> joined(names.map(x=> buildElement('a', {href: href(x)}, x)), ', ');
-/** @returns {Map<string, Contributor>} what the catalog keeps about the page's kind */
+/** @returns {Map<string, Contributor>} what the catalog keeps about the page's kind, by id */
 const kept = ()=> CATALOG[KIND.infoKey];
+/** @type {(id: string) => string} the name of the one stored under `id` */
+const nameOf = id=> CATALOG.nameOf(KIND.infoKey, id) ?? '';
+/** @type {(name: string) => Contributor | undefined} what the catalog keeps about `name` */
+const infoOf = name=> { const id = CATALOG.nameIds[KIND.infoKey].get(name); return id === undefined ? undefined : kept().get(id); };
 
 /**
  * A bio as paragraphs: a blank line starts a new one, a single line break stays a line break.
@@ -72,7 +78,7 @@ export function render(){
 	homeCreditForm();
 	byId('crumb').classList.toggle('show', SHOWN !== null);
 	byId('creditControls').style.display = SHOWN === null ? '' : 'none';
-	document.title = (SHOWN === null ? KIND.title : SHOWN) + spell(' · Audiobook Catalog');
+	document.title = (SHOWN === null ? KIND.title : nameOf(SHOWN)) + spell(' · Audiobook Catalog');
 	if(SHOWN === null) renderCreditList(); else renderCreditPage(SHOWN);
 }
 
@@ -96,7 +102,7 @@ function renderCreditList(){
  * @returns {HTMLParagraphElement | null}
  */
 function bioLine(name){
-	const info = kept().get(name);
+	const info = infoOf(name);
 	return info && info.bio ? buildElement('p', {class: 'srow-note'}, info.bio.split('\n')[0]) : null;
 }
 
@@ -126,7 +132,7 @@ function creditBookLine(b, name){
 	const others = isAuthor ? b.authors.filter(x=> x !== name)
 		: KIND === CREDIT_KINDS.narrator ? [...new Set(b.editions.filter(ed=> ed.narrators.includes(name)).flatMap(ed=> ed.narrators))].filter(x=> x !== name)
 		: [];
-	return buildElement('li', {}, b.number && [buildElement('span', {class: 'num'}, '#' + b.number), ' '], buildElement('a', {href: bookHref(b.title)}, b.title),
+	return buildElement('li', {}, b.number && [buildElement('span', {class: 'num'}, '#' + b.number), ' '], buildElement('a', {href: bookHref(b)}, b.title),
 		!isAuthor && b.authors.length > 0 && [' ', buildElement('span', {class: 'with'}, 'by ', nameLinks(b.authors, authorPageHref))],
 		others.length > 0 && [' ', buildElement('span', {class: 'with'}, 'with ', nameLinks(others, KIND.href))]);
 }
@@ -140,21 +146,22 @@ function creditBookLine(b, name){
 function seriesHeading(s){
 	const link = buildElement('a', {href: seriesHref(s.name)}, s.name);
 	if(KIND !== CREDIT_KINDS.author) return buildElement('p', {class: 'series-title'}, link, ' ', buildElement('span', {class: 'n'}, plural(s.books.length, 'book')));
-	const si = CATALOG.series.get(s.name);
+	const si = CATALOG.seriesInfo(s.name);
 	return buildElement('p', {class: 'series-title'}, link,
 		' ', buildElement('span', {class: 'n'}, `${Series.owned(s.books)} owned${si ? ' of ' + si.total : ''}`),
 		si && [' ', buildElement('span', {class: `status ${si.status}`}, si.status === 'complete' ? 'complete' : 'ongoing')]);
 }
 
-/** @param {string} name */
-function renderCreditPage(name){
-	const info = kept().get(name) || new Contributor(name);
+/** @param {string} id */
+function renderCreditPage(id){
+	const name = nameOf(id);
+	const info = kept().get(id) || new Contributor(name);
 	const {series, titles} = KIND.works(name);
 	const count = series.reduce((n, s)=> n + s.books.length, 0) + titles.length;
 	byId('subtitle').textContent = count
 		? `${plural(count, 'audiobook')}${series.length ? ' in ' + plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
 		: spell(KIND.none);
-	const label = kept().has(name) ? `Edit ${KIND.one} info` : `Add ${KIND.one} info`;
+	const label = kept().has(id) ? `Edit ${KIND.one} info` : `Add ${KIND.one} info`;
 	/** @type {(href: string, text: string) => HTMLAnchorElement} */
 	const link = (href, text)=> buildElement('a', {class: 'authorlink', href, target: '_blank', rel: 'noopener'}, `${text} ↗`);
 	// their own site, their pages in external catalogs, then any other link (by its site's name)
@@ -163,7 +170,7 @@ function renderCreditPage(name){
 	/** @type {Child[]} */
 	const out = [
 		buildElement('div', {class: 'author-head'}, buildElement('h2', {class: 'author-name'}, name),
-			buildElement('button', {class: 'iconbtn aedit', title: label, 'aria-label': label, onclick: ()=> openCreditForm(name)}, '✎')),
+			buildElement('button', {class: 'iconbtn aedit', title: label, 'aria-label': label, onclick: ()=> openCreditForm(id)}, '✎')),
 		info.bio && buildElement('div', {class: 'author-bio'}, bioParagraphs(info.bio)),
 		links.length > 0 && buildElement('p', {class: 'author-links'}, joined(links, ' ')),
 		!info.bio && !links.length && buildElement('p', {class: 'hint'}, 'No bio or links yet: add them with ✎.'),
@@ -182,19 +189,20 @@ function renderCreditPage(name){
 /**
  * Edits someone's entry in CATALOG.authors (or .narrators, .publishers); like every edit, it is kept in
  * this browser (see persist in store.js).
- * @param {string} name
+ * @param {string} id the id they are stored under
  */
-export function openCreditForm(name){
-	const info = kept().get(name) || new Contributor(name);
-	EDITING = name;
+export function openCreditForm(id){
+	const name = nameOf(id);
+	const info = kept().get(id) || new Contributor(name);
+	EDITING = id;
 	const one = KIND.one[0].toUpperCase() + KIND.one.slice(1);
-	byId('creditFormTitle').textContent = (kept().has(name) ? `${one} info: ` : `Add ${KIND.one} info: `) + name;
+	byId('creditFormTitle').textContent = (kept().has(id) ? `${one} info: ` : `Add ${KIND.one} info: `) + name;
 	fieldById('cf_bio').value = info.bio || '';
 	fieldById('cf_url').value = info.url || '';
 	fillExternalFields('cf_ext_', KIND.one, info.external);
 	byId('creditFormError').textContent = '';
 	byId('creditSaveBtn').textContent = `Save ${KIND.one} info`;
-	byId('creditRemoveBtn').style.display = kept().has(name) ? '' : 'none';
+	byId('creditRemoveBtn').style.display = kept().has(id) ? '' : 'none';
 	const form = byId('creditForm');
 	form.classList.add('open');
 	form.scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -214,14 +222,15 @@ function homeCreditForm(){
 }
 
 async function saveCreditForm(){
-	const name = EDITING;
-	if(name === null) return;
+	const id = EDITING;
+	if(id === null) return;
+	const name = nameOf(id);
 	// a Hardcover address is looked up for its number first, unless the form is closed or moved meanwhile
 	const lookup = lookupHardcoverField('cf_ext_', KIND.one);
 	const hardcover = lookup ? await lookup : {error: '', note: ''};
-	if(EDITING !== name) return;
+	if(EDITING !== id) return;
 	if(hardcover.error){ byId('creditFormError').textContent = hardcover.error; return; }
-	const had = kept().get(name);
+	const had = kept().get(id);
 	const external = readExternalFields('cf_ext_', KIND.one, had ? had.external : {});
 	if(external.bad.length){ byId('creditFormError').textContent = `Not an id or address there: ${external.bad.join('; ')}.`; return; }
 	// the links the form has no field for are kept
@@ -233,27 +242,38 @@ async function saveCreditForm(){
 		const problems = [...errors, ...warnings.filter(w=> !/matches no|is a page on/.test(w))].map(e=> e.replace(/^\w+\[[^\]]*\]: /, ''));
 		if(problems.length){ byId('creditFormError').textContent = problems.join('; '); return; }
 	}
-	if(entry) kept().set(name, entry); else kept().delete(name);
+	if(entry) kept().set(id, entry); else kept().delete(id);
 	closeCreditForm(); render(); persist();
 	showIoStatus((entry ? `Saved ${KIND.one} info for ${name}.` : `Removed ${KIND.one} info for ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
 function removeCreditInfo(){
-	const name = EDITING;
-	if(name === null || !kept().has(name)) return;
-	kept().delete(name);
+	const id = EDITING;
+	if(id === null || !kept().has(id)) return;
+	const name = nameOf(id);
+	kept().delete(id);
 	closeCreditForm(); render(); persist();
 	showIoStatus(`Removed ${KIND.one} info for ${name}.`);
 }
 
 // ------------------------------------------------------------------ the address
-// authors.html is the list, authors.html#a=Name an author's page (likewise #n= and #p=); links between
+// authors.html is the list, authors.html#a=id an author's page (likewise #n= and #p=); links between
 // them change the address, so Back and Forward step through them.
+/**
+ * The id of the one the address names (by their id, or their name), or null for the list. A name no book
+ * has gets an id too, so their page says so and info can be added for them.
+ * @returns {string | null}
+ */
+function shownInAddress(){
+	const value = valueFromPageHash(location.hash, KIND.hashKey);
+	return value === null ? null : idFromAddress(KIND.infoKey, value) ?? CATALOG.idFor(KIND.infoKey, value);
+}
+
 export function showAddress(){
-	const name = nameFromPageHash(location.hash, KIND.hashKey);
-	if(name === SHOWN && byId('creditBody').hasChildNodes()) return;
-	const moved = name !== SHOWN;
-	SHOWN = name;
+	const id = shownInAddress();
+	if(id === SHOWN && byId('creditBody').hasChildNodes()) return;
+	const moved = id !== SHOWN;
+	SHOWN = id;
 	render();
 	if(moved && typeof scrollTo === 'function') scrollTo(0, 0);
 }
@@ -274,5 +294,5 @@ export function startCreditsPage(kind){
 	byId('q').addEventListener('input', render);
 	addEventListener('hashchange', showAddress);
 	addEventListener('popstate', showAddress);
-	return startPage(()=>{ SHOWN = nameFromPageHash(location.hash, KIND.hashKey); render(); }, {refresh: render});
+	return startPage(()=>{ SHOWN = shownInAddress(); render(); }, {refresh: ()=>{ if(SHOWN !== null && CATALOG.nameOf(KIND.infoKey, SHOWN) === undefined) SHOWN = null; render(); }});
 }

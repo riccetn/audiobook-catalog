@@ -43,9 +43,11 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   each other), so the tests run them in Node as they are. Each class holds descriptive fields in memory and reads/writes the
   stored short keys with `fromJSON`/`toJSON` (so `JSON.stringify(catalog)` is the stored shape); a value it doesn't know or
   that is malformed is kept as it was (`extra`), so Check still reports it. Migrations and Check work on the stored JSON.
-  - `Catalog`: books, `series` (`Map` of name -> `Series`), `authors`, `narrators`, `publishers` (`Map`s of name -> `Contributor`), `exclusions`, `notDuplicates`,
-    `nameIds` (the ids series and people are stored under, by name; `renameSeries` keeps a series' id);
-    `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `saveBook`, `merge` (an import), `addBoxSets`,
+  - `Catalog`: books, `series` (`Map` of id -> `Series`), `authors`, `narrators`, `publishers` (`Map`s of id -> `Contributor`), `exclusions`,
+    `marks` ("Not duplicates" and "Keep separate", by id: `markNotDuplicates`, `markKeepSeparate`, `markTexts`/`addMarkTexts`, `resolveMarks`),
+    `nameIds` (the ids series and people are known by, by name: `idFor` (gives a new name one), `nameOf`, `namesOf`, `seriesInfo`,
+    `infoByName`/`replaceInfo` for the name-keyed backup shape; `renameSeries` keeps a series' id), `assignIds` (before every save);
+    `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `book(id)`, `saveBook(id, book)`, `merge` (an import), `addBoxSets`,
     `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`/`authorList`,
     `narratorWorks`/`narratorList` and `publisherWorks`/`publisherList` (all `creditedWorks`/`creditedList` with `authorsOf`/`narratorsOf`/`publishersOf`).
   - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`,
@@ -60,7 +62,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`),
     `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
-  - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `assignIds`, `fromCatalog`/`toCatalog`,
+  - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save) and `CatalogDatabase` (`open`, `load`, `save` with the
     revision check that throws `CatalogConflict`, `setAside`; the browser's `indexedDB` is passed in).
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
@@ -81,25 +83,27 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below),
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group) and `externalLinks`, the page links
-  (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, read back with `nameFromPageHash`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
+  (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id of the name; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init, {refresh})` (the import page also passes `onHardcoverJob`;
   the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
-  Pairs marked "Not duplicates" (and editions marked "Keep separate") are text marks in memory (`notDuplicates` in backups),
-  stored as `marks` records pointing at book (and edition) ids, so they survive a retitle.
+  Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
+  addresses (`#series=<id>`, `#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
+  Pairs marked "Not duplicates" (and editions marked "Keep separate") are `CATALOG.marks` by book (and edition) ids, so they
+  survive a retitle; backups carry them as text (`markTexts`/`addMarkTexts`), and a text that matches no book stays a text mark.
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
   the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
 - `app.js` (`index.html`): series overview, all books (an empty catalog says where books come from), the book and
-  series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=i,j`.
+  series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=<id>,<id>`.
 - `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`CATALOG.validate`)
   and Box sets (`addBoxSets`), the Hardcover panel (`HardcoverSync.run`
   in the page, on a copy of the catalog), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so there is no series lookup from Audible.
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
   `publishers.js` with `startCreditsPage(kind)`; `CREDIT_KINDS` holds what differs): the list of authors, narrators or
-  publishers and one's page (`#a=Name`, `#n=Name`, `#p=Name`): bio and links from `CATALOG.authors` (`.narrators`,
-  `.publishers`), their series and titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the info
+  publishers and one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`): bio and links from `CATALOG.authors` (`.narrators`,
+  `.publishers`, by id), their series and titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the info
   form. Names on the catalog's book cards link here.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).

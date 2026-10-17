@@ -16,7 +16,7 @@ import {Duplicates} from './duplicates.js';
  * What mergeInto() made of a backup and this catalog.
  * @typedef {object} BackupMerge
  * @property {Book[]} books
- * @property {Map<string, Series>} series
+ * @property {Map<string, Series>} series by name
  * @property {Map<string, Contributor>} authors
  * @property {Map<string, Contributor>} narrators
  * @property {Map<string, Contributor>} publishers
@@ -201,7 +201,8 @@ export class Backup {
 		const theirsOnly = new Exclusions();
 		result.excluded = (this.excluded || []).map(e => ours.add(e)).filter(e => typeof e === 'string');
 		result.excluded.forEach(e => theirsOnly.add(e));
-		result.notDuplicates = Duplicates.parseMarks((this.notDuplicates || []).join('\n')).filter(k => !catalog.notDuplicates.has(k));
+		const oursMarks = new Set(catalog.markTexts());
+		result.notDuplicates = Duplicates.parseMarks((this.notDuplicates || []).join('\n')).filter(k => !oursMarks.has(k));
 
 		// Each key leads to every book that has it: a box set's titles share their edition's ASIN.
 		/** @type {Map<string, number[]>} */
@@ -278,10 +279,10 @@ export class Backup {
 			}
 			return out;
 		};
-		const series = mergeEntries(catalog.series, this.series, result.infoAdded, result.infoChanged, result.infoKept);
-		const authors = mergeEntries(catalog.authors, this.authors, result.authorsAdded, result.authorsChanged, result.authorsKept);
-		const narrators = mergeEntries(catalog.narrators, this.narrators, result.narratorsAdded, result.narratorsChanged, result.narratorsKept);
-		const publishers = mergeEntries(catalog.publishers, this.publishers, result.publishersAdded, result.publishersChanged, result.publishersKept);
+		const series = mergeEntries(catalog.infoByName('series'), this.series, result.infoAdded, result.infoChanged, result.infoKept);
+		const authors = mergeEntries(catalog.infoByName('authors'), this.authors, result.authorsAdded, result.authorsChanged, result.authorsKept);
+		const narrators = mergeEntries(catalog.infoByName('narrators'), this.narrators, result.narratorsAdded, result.narratorsChanged, result.narratorsKept);
+		const publishers = mergeEntries(catalog.infoByName('publishers'), this.publishers, result.publishersAdded, result.publishersChanged, result.publishersKept);
 		return {...result, books: kept, series, authors, narrators, publishers};
 	}
 }

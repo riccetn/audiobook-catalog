@@ -7,7 +7,8 @@ narrate or publish (the three with the most books, "Mostly ..." when there are m
 narrows the list by name.
 
 Click a name (or a narrator's or publisher's name on a book in the catalog) to open their page,
-`narrators.html#n=Ingrid+Voss` or `publishers.html#p=Kestrel+Row+Audio`:
+named by their id in the catalog (an address with the name, `narrators.html#n=Ingrid+Voss` or
+`publishers.html#p=Kestrel+Row+Audio`, works too):
 
 - a short bio, if you wrote one;
 - links to their own website and their pages on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (whichever

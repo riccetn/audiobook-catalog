@@ -55,8 +55,10 @@ const mergeBackup = (books, info, exclusions, backup, prefer, notDuplicates, aut
 	const m = Backup.read(backup).mergeInto(catalog, prefer);
 	return { ...json(m), seriesInfo: json(Object.fromEntries(m.series)), authors: json(Object.fromEntries(m.authors)) };
 };
-// The duplicate groups among books as stored.
-const findDuplicates = (books, marks) => new Duplicates(Bs(books), marks).groups();
+// "Not duplicates" marks as text (a backup's), as the catalog keeps them.
+const textMarks = texts => new Map(texts.map(t => [Duplicates.textMark(t).id, Duplicates.textMark(t)]));
+// The duplicate groups among books as stored, but for those `marks` (as text) keep apart.
+const findDuplicates = (books, marks = []) => new Duplicates(Bs(books), textMarks(marks)).groups();
 
 // ------------------------------------------------------------------ external catalogs
 test('external catalogs: an id gives the address of its page, and the address gives the id back', () => {
@@ -235,7 +237,7 @@ test('"Not duplicates" marks made before other scripts were told apart still cou
 	assert.equal(new Duplicates(books).groups().length, 1);
 	const old = Duplicates.pairKey(books[0], books[1], t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim());
 	assert.notEqual(old, Duplicates.pairKey(books[0], books[1]));
-	assert.deepEqual(new Duplicates(books, new Set([old])).groups(), []);
+	assert.deepEqual(new Duplicates(books, textMarks([old])).groups(), []);
 });
 
 test('first author ignores co-authors', () => {
@@ -1013,17 +1015,20 @@ test('saving a book keeps the copies of a shared edition in step', () => {
 		book('Three', 'A', ed({ ext: { 'audible.com': 'BBOX' }, p: 'Gull Audio' })),
 		book('Other', 'A', ed({ ext: { 'audible.com': 'B9' }, isbn: [ISBN_BOX] })),
 	]) });
+	catalog.books.forEach((b, i) => { b.id = `book-${i}`; });
 	const books = () => json(catalog.books);
 	// editing the box set on one title edits it on the other; an edition sharing only an ISBN is left alone
-	assert.equal(catalog.saveBook(0, B(book('Two', 'A', ed({ ext: { 'audible.com': 'BBOX' }, p: 'Kestrel Audio', isbn: [ISBN_BOX] }, { ext: { 'audible.com': 'B2' } })))), 1);
+	assert.equal(catalog.saveBook('book-0', B(book('Two', 'A', ed({ ext: { 'audible.com': 'BBOX' }, p: 'Kestrel Audio', isbn: [ISBN_BOX] }, { ext: { 'audible.com': 'B2' } })))), 1);
 	assert.deepEqual(books().map(b => b.e[0]), [{ ext: { 'audible.com': 'BBOX' }, p: 'Kestrel Audio', isbn: [ISBN_BOX] }, { ext: { 'audible.com': 'BBOX' }, p: 'Kestrel Audio', isbn: [ISBN_BOX] }, { ext: { 'audible.com': 'B9' }, isbn: [ISBN_BOX] }]);
 	// a new title typed with the box set's ASIN is linked to it and gets its details
 	const four = book('Four', 'A', ed({ ext: { 'audible.com': 'BBOX' }, len: 900 }));
 	assert.equal(catalog.saveBook(null, B(four)), 2);
+	assert.ok(catalog.books[3].id, 'a book added gets an id');
 	assert.deepEqual(books()[3].e, [{ ext: { 'audible.com': 'BBOX' }, isbn: [ISBN_BOX], p: 'Kestrel Audio', len: 900 }]);
 	assert.deepEqual(books()[1].e, books()[3].e);
 	// removing the edition from one title leaves the others
-	assert.equal(catalog.saveBook(3, B(book('Four', 'A'))), 0);
+	assert.equal(catalog.saveBook(catalog.books[3].id, B(book('Four', 'A'))), 0);
+	assert.throws(() => catalog.saveBook('nobody', B(book('Five', 'A'))), /no book is stored under nobody/);
 	assert.equal(books()[1].e[0].ext['audible.com'], 'BBOX');
 });
 
@@ -1041,7 +1046,7 @@ test('findDuplicates pairs books an import would match, but not a box set\'s tit
 	// same series and number; Audible's long title for "Beacons"; different authors and the boxed set stay apart
 	assert.deepEqual(findDuplicates(books), [[0, 3], [1, 4]]);
 	// a pair marked as different books is not offered again, whichever way round
-	const notSame = new Set([Duplicates.pairKey(B(books[4]), B(books[1]))]);
+	const notSame = [Duplicates.pairKey(B(books[4]), B(books[1]))];
 	assert.deepEqual(findDuplicates(books, notSame), [[0, 3]]);
 	assert.deepEqual(findDuplicates([]), []);
 });
@@ -1087,7 +1092,7 @@ test('editions that do not disagree on an ASIN, Goodreads id or ISBN can be join
 		book('One', 'A', ed({ ext: { 'audible.com': 'B4' } })),
 	]);
 	assert.deepEqual(new Duplicates(books).splitEditions(), [0]);
-	assert.deepEqual(new Duplicates(books, new Set([Duplicates.editionsKey(books[0])])).splitEditions(), []);
+	assert.deepEqual(new Duplicates(books, textMarks([Duplicates.editionsKey(books[0])])).splitEditions(), []);
 	assert.equal(Duplicates.editionsKey(B(book('x', 'y', ed({ ext: { goodreads: '7' } }, { ext: { 'audible.com': 'B1' } })))), Duplicates.editionsKey(books[0]));
 });
 
@@ -1291,7 +1296,7 @@ test('author info from before ids: the address of each page becomes its id, and 
 	assert.deepEqual(Contributor.fixLinks({ bio: 'Hi.' }, 'authors'), { bio: 'Hi.' }, 'nothing to do');
 	// the catalog reads an old entry in the current format
 	const catalog = Catalog.fromJSON({ books: [book('A', 'Ann Vale')], authors: { 'Ann Vale': { goodreads: 'https://www.goodreads.com/author/show/1' } } });
-	assert.deepEqual(json(catalog.authors.get('Ann Vale')), { ext: { goodreads: '1' } });
+	assert.deepEqual(json(catalog.infoByName('authors').get('Ann Vale')), { ext: { goodreads: '1' } });
 	assert.deepEqual(ExternalCatalog.url('goodreads', 'author', '1'), 'https://www.goodreads.com/author/show/1');
 });
 
@@ -1315,7 +1320,8 @@ test('narrator and publisher info: names come from the editions, and backups car
 	assert.deepEqual([m.narratorsKept, m.publishersAdded], [['Cy Hale'], ['Gull Audio']]);
 	assert.deepEqual(json(Object.fromEntries(m.narrators)), { 'Cy Hale': { bio: 'Mine.' } });
 	assert.deepEqual(json(mine.clone()).publishers, {});
-	assert.deepEqual(Object.keys(json(mine)), ['books', 'seriesInfo', 'authors', 'narrators', 'publishers', 'excluded', 'notDuplicates']);
+	assert.deepEqual(Object.keys(json(mine)), ['books', 'seriesInfo', 'authors', 'narrators', 'publishers', 'excluded', 'notDuplicates', 'ids']);
+	assert.deepEqual(Object.keys(json(Catalog.fromJSON({ books: [] }))), ['books', 'seriesInfo', 'authors', 'narrators', 'publishers', 'excluded', 'notDuplicates'], 'no ids when there are none');
 });
 
 test('author info is tidied: a bio keeps its paragraphs, empty fields are dropped', () => {
@@ -1728,15 +1734,32 @@ test('records: ids stay, a copy that differs or an id used twice gets its own, a
 test('records: marks point at books, so they hold when a book is retitled', () => {
 	const catalog = shelf();
 	const [orchard, , , harbor] = catalog.books;
-	catalog.addNotDuplicates([Duplicates.pairKey(orchard, harbor), Duplicates.editionsKey(orchard), 'an old mark']);
+	// marks as a backup has them, before the books have ids: kept as text, and they count already
+	assert.equal(catalog.addMarkTexts([Duplicates.pairKey(orchard, harbor), Duplicates.editionsKey(orchard), 'an old mark']), 3);
+	assert.ok(catalog.duplicates().markedNotSame(orchard, harbor));
 	const records = recordsOf(catalog);
 	assert.deepEqual(records.marks.map(m => [m.kind, m.bookIds, m.editionIds]), [
 		['notDuplicates', ['id-1', 'id-4'], undefined], ['keepSeparate', ['id-1'], ['id-5', 'id-6']], ['text', undefined, undefined]]);
-	records.books[0].title = 'The Glass Orchard (Revised)';
+	// in memory they point at the books too, so a retitle keeps them, and a backup has them by the new title
+	orchard.title = 'The Glass Orchard (Revised)';
+	assert.ok(catalog.duplicates().markedNotSame(orchard, harbor));
+	assert.ok(catalog.duplicates().markedSeparate(orchard));
+	assert.deepEqual(catalog.markTexts(), [Duplicates.pairKey(orchard, harbor), Duplicates.editionsKey(orchard), 'an old mark']);
+	assert.equal(catalog.addMarkTexts([Duplicates.pairKey(orchard, harbor)]), 0, 'a mark it has already');
+	records.books[0].title = 'Glass Orchard';
 	const back = CatalogRecords.toCatalog(records);
 	assert.ok(back.duplicates().markedNotSame(back.books[0], back.books[3]));
-	assert.ok(back.notDuplicates.has(Duplicates.editionsKey(back.books[0])));
-	assert.ok(back.notDuplicates.has('an old mark'));
+	assert.ok(back.markTexts().includes(Duplicates.editionsKey(back.books[0])));
+	assert.ok(back.markTexts().includes('an old mark'));
+	// marked by hand: by id; a book given another edition is offered again, and a book removed takes its pair mark along
+	const frost = back.books[1];
+	assert.equal(back.markNotDuplicates([back.books[2], frost]), 1);
+	assert.ok(back.marks.has(`pair ${[back.books[2].id, frost.id].sort().join(' ')}`));
+	back.books[0].editions.push(E({ ext: { goodreads: '4002' } }));
+	back.books.splice(2, 1);
+	back.assignIds();
+	assert.ok(!back.duplicates().markedSeparate(back.books[0]));
+	assert.deepEqual([...back.marks.values()].map(m => m.kind), ['notDuplicates', 'text', 'text']);
 });
 
 test('records: what a record has no place for is named, so it is fixed before it is stored', () => {
@@ -1793,7 +1816,7 @@ test('a save takes in what another tab saved, unless both changed the same entry
 	mine.books.push(Book.fromJSON({ t: 'Orchard Thaw', a: ['Lio Marsh'], s: 'Orchard Cycle', sn: '3' }));
 	mine.addExclusions(['Mine | Me']);
 	// there: the series info and another book changed, a book removed, the same new author added
-	theirs.series.get('Orchard Cycle').total = 4;
+	theirs.seriesInfo('Orchard Cycle').total = 4;
 	theirs.books[1].read = ['2026-01-01'];
 	theirs.books.splice(3, 1);
 	theirs.books.push(Book.fromJSON({ t: 'Lio Alone', a: ['Lio Marsh'] }));
@@ -1803,7 +1826,7 @@ test('a save takes in what another tab saved, unless both changed the same entry
 	const merged = CatalogRecords.toCatalog(records);
 	assert.deepEqual(merged.books.map(b => b.title), ['The Glass Orchard', 'Orchard Frost', 'Orchard Cycle, Books 1-2', 'Orchard Thaw', 'Lio Alone']);
 	assert.deepEqual(merged.books[1].read, ['2026-01-01']);
-	assert.equal(merged.series.get('Orchard Cycle').total, 4);
+	assert.equal(merged.seriesInfo('Orchard Cycle').total, 4);
 	assert.deepEqual(merged.exclusions.entries.slice(-1), ['Mine | Me']);
 	// the author both tabs added is one again once saved
 	const again = recordsOf(merged);
@@ -1814,7 +1837,7 @@ test('a save takes in what another tab saved, unless both changed the same entry
 	const here = CatalogRecords.toCatalog(base), there = CatalogRecords.toCatalog(base);
 	here.books[0].title = 'Glass Orchard'; there.books[0].title = 'The Glass Orchard (Revised)';
 	here.books[3].genres = ['Sea']; there.books.splice(3, 1);
-	here.series.get('Orchard Cycle').total = 5; there.series.get('Orchard Cycle').total = 5;   // alike: no conflict
+	here.seriesInfo('Orchard Cycle').total = 5; there.seriesInfo('Orchard Cycle').total = 5;   // alike: no conflict
 	assert.deepEqual(CatalogRecords.merge(saved, recordsOf(here), recordsOf(there)).conflicts, ['"Glass Orchard"', '"A Quiet Harbor"']);
 });
 
@@ -1866,7 +1889,7 @@ test('records: external ids are kept by catalog and indexed; records from before
 	const back = CatalogRecords.toCatalog(loaded.records);
 	assert.deepEqual(json(back.books[0]).ext, { hardcover: '77' });
 	assert.deepEqual(json(back.books[0]).e[0].ext, { 'audible.com': 'B0TIDEWAT1', goodreads: '4242' });
-	assert.deepEqual(json(back.authors.get('Ann Vale')), { ext: { 'audible.com': 'B0ANNVALE1', hardcover: 'ann-vale' } });
+	assert.deepEqual(json(back.infoByName('authors').get('Ann Vale')), { ext: { 'audible.com': 'B0ANNVALE1', hardcover: 'ann-vale' } });
 });
 
 test('backups carry the ids: Restore keeps them, and Merge finds a book by its id first', () => {

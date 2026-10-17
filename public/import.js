@@ -10,7 +10,7 @@ import {GoodreadsExporter} from './modules/goodreads-exporter.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {HardcoverSync} from './modules/hardcover-sync.js';
 import {
-	CATALOG, SEEN_REVISION, addNotDuplicates, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
+	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
 	hardcoverClient, startPage, byId, fieldById, BRITISH, spell, buildElement, fillElement
 } from './store.js';
@@ -100,14 +100,20 @@ async function importBackup(files){
 				(unstorable.length > 3 ? ` and ${unstorable.length - 3} more.` : '.'), true);
 			return;
 		}
+		// the info kept is by name here, as it is moved over to the ids its names have
+		const keptInfo = /** @type {const} */ (['series', 'authors', 'narrators', 'publishers']).map(kind=> /** @type {const} */ ([kind, CATALOG.infoByName(kind)]));
+		// and the marks are taken as text, to point them at the books restored
+		const keptMarks = CATALOG.markTexts();
 		CATALOG.books = books;
+		CATALOG.marks = new Map();
 		if(nameIds) CATALOG.nameIds = nameIds;          // the ids series and people were stored under, when the backup has them
-		if(series) CATALOG.series = series;           // older backups have no series info: keep the current one
-		if(authors) CATALOG.authors = authors;        // nor author info
-		if(narrators) CATALOG.narrators = narrators;  // nor narrator and publisher info
-		if(publishers) CATALOG.publishers = publishers;
+		for(const [kind, had] of keptInfo){
+			// older backups have no series info, nor author, narrator and publisher info: keep the current one
+			const restored = {series, authors, narrators, publishers}[kind];
+			CATALOG.replaceInfo(kind, restored || had);
+		}
 		const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
-		addNotDuplicates(notDuplicates || []);                  // likewise the pairs marked "Not duplicates"
+		CATALOG.addMarkTexts([...keptMarks, ...notDuplicates || []]);   // likewise the pairs marked "Not duplicates"
 		refreshPage(); persist();
 		showIoStatus(`Restored ${books.length} books` + (series ? ` and info for ${series.size} series` : '') +
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
@@ -327,12 +333,12 @@ function applyMerge(){
 	closeImportPreview();
 	if(errors.length || !changes){ showIoStatus(spell('The catalog changed and the merge no longer applies; nothing was changed.'), true); return; }
 	CATALOG.books = m.books;
-	CATALOG.series = m.series;
-	CATALOG.authors = m.authors;
-	CATALOG.narrators = m.narrators;
-	CATALOG.publishers = m.publishers;
+	CATALOG.replaceInfo('series', m.series);
+	CATALOG.replaceInfo('authors', m.authors);
+	CATALOG.replaceInfo('narrators', m.narrators);
+	CATALOG.replaceInfo('publishers', m.publishers);
 	addExclusions(m.excluded);
-	addNotDuplicates(m.notDuplicates);
+	CATALOG.addMarkTexts(m.notDuplicates);
 	refreshPage(); persist();
 	showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.`);
 }

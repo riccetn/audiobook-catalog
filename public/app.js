@@ -9,25 +9,25 @@ import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref,
-	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField } from './store.js';
+	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress } from './store.js';
 /** @import {Child} from './store.js' */
-
-/** @typedef {{b: Book, i: number}} ListedBook a book shown, with its index in CATALOG.books */
 
 /** @type {'series' | 'library'} */
 export let VIEW = 'series';           // 'series' | 'library'
+// Series and books are known by the ids they are stored under, so a series renamed or a book retitled
+// (here or in another tab) is still the one shown or edited.
 /** @type {string | null} */
-export let SERIES_FILTER = null;      // series name, '__standalone__', or null
+export let SERIES_FILTER = null;      // the id of the series shown, '__standalone__', or null
 /** @type {string | null} */
-export let BOOK_FILTER = null;        // title of the book linked to (#book=...), or null
-/** @type {number | null} */
-export let EDIT_INDEX = null;         // index into CATALOG.books being edited, or null when adding new
+export let BOOK_FILTER = null;        // the id of the book linked to (#book=...), or null
 /** @type {string | null} */
-let EDIT_SERIES = null;        // name of the series whose info is being edited, or null
+export let EDIT_ID = null;            // the id of the book being edited, or null when adding new
+/** @type {string | null} */
+let EDIT_SERIES = null;        // the id of the series whose info is being edited, or null
 /** @type {string | null} */
 let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
-/** @type {number | null} */
-let MERGE_FROM = null;         // index of the first book picked with its merge button, or null
+/** @type {string | null} */
+let MERGE_FROM = null;         // the id of the first book picked with its merge button, or null
 
 // Filter value for books with no date read, in the "Read any time" select.
 const UNDATED = '__undated__';
@@ -133,7 +133,12 @@ function populateFilters(){
 	fillElement(gSel, option('', 'All genres'), genres.map(g=> option(g, g)));
 	fillElement(rSel, option('', 'Read any time'), years.map(y=> option(y, `Read in ${y}`)), option(UNDATED, 'No date read'));
 	aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
-	MERGE_FROM = null;             // the books changed, so an index picked for merging may be stale
+	if(!CATALOG.book(MERGE_FROM)) MERGE_FROM = null;   // the book picked for merging is gone
+}
+
+/** @returns {string | null} the name of the series SERIES_FILTER shows, if it shows one */
+function shownSeriesName(){
+	return SERIES_FILTER === null || SERIES_FILTER === '__standalone__' ? null : CATALOG.nameOf('series', SERIES_FILTER) ?? null;
 }
 
 /**
@@ -142,13 +147,14 @@ function populateFilters(){
  * @param {string} author
  * @param {string} genre
  * @param {string} read
+ * @param {string | null} series the name of the series shown (shownSeriesName)
  * @returns {boolean}
  */
-function matches(b, q, author, genre, read){
-	if(BOOK_FILTER !== null && b.title !== BOOK_FILTER) return false;
+function matches(b, q, author, genre, read, series){
+	if(BOOK_FILTER !== null && b.id !== BOOK_FILTER) return false;
 	if(SERIES_FILTER){
 		if(SERIES_FILTER === '__standalone__'){ if(b.series) return false; }
-		else if(b.series !== SERIES_FILTER) return false;
+		else if(series === null || b.series !== series) return false;
 	}
 	if(author && !authorsOf(b).includes(author)) return false;
 	if(genre && !b.genres.includes(genre)) return false;
@@ -177,8 +183,9 @@ function showView(){
 	byId('toggleAdd').style.display = showLibControls ? '' : 'none';
 	byId('missingFilter').style.display = showLibControls ? 'none' : '';
 	const crumb = byId('crumb');
-	const label = v !== 'library' ? null : BOOK_FILTER !== null ? BOOK_FILTER
-		: SERIES_FILTER === '__standalone__' ? 'Standalone books' : SERIES_FILTER;
+	const book = CATALOG.book(BOOK_FILTER);
+	const label = v !== 'library' ? null : BOOK_FILTER !== null ? (book ? book.title : 'No such book')
+		: SERIES_FILTER === '__standalone__' ? 'Standalone books' : SERIES_FILTER !== null ? shownSeriesName() || 'No such series' : null;
 	crumb.classList.toggle('show', !!label);
 	byId('crumbLabel').textContent = label || '';
 	document.title = (label ? label + ' — ' : v === 'library' ? 'All books — ' : '') + spell('Audiobook Catalog');
@@ -189,15 +196,17 @@ function showView(){
 // What is shown lives in the address after the #, so a series, a book or a search can be linked to,
 // bookmarked and reloaded, and the browser's back and forward buttons step through what you looked at:
 //   (nothing)            the series overview      #q=gull&missing     ...searched, only series with gaps
-//   #books               all books                #series=The+Gull+Saga, #standalone, #book=Ember+Road
+//   #books               all books                #series=<id>, #standalone, #book=<id>
 //   &q=...&author=...&genre=...&read=2024 (or read=undated) narrow the books shown.
+// A series and a book are named by the id they are stored under, so a link holds when they are renamed;
+// an address from before, with a series' name or a book's title, is still understood.
 
 /**
  * What is shown: the view, the series or book shown on its own, and the search and filters.
  * @typedef {object} ViewState
  * @property {'series' | 'library'} view
- * @property {string | null} series a series name, '__standalone__', or null
- * @property {string | null} book a book's title, or null
+ * @property {string | null} series a series' id, '__standalone__', or null
+ * @property {string | null} book a book's id, or null
  * @property {string} q
  * @property {string} author
  * @property {string} genre
@@ -253,8 +262,11 @@ function stateFromHash(hash){
 		if(i < 0) p.set(dec(part), true); else p.set(dec(part.slice(0, i)), dec(part.slice(i + 1)));
 	});
 	const text = (/** @type {string} */ k)=>{ const v = p.get(k); return typeof v === 'string' ? v.trim() : ''; };
-	const book = text('book') || null;
-	const series = book ? null : p.has('standalone') ? '__standalone__' : text('series') || null;
+	const bookText = text('book'), seriesText = text('series');
+	// by id, or by a title or name as addresses had them before
+	const titled = bookText && !CATALOG.book(bookText) ? CATALOG.books.find(b=> b.title === bookText) : undefined;
+	const book = titled ? /** @type {string} */ (titled.id) : bookText || null;
+	const series = book ? null : p.has('standalone') ? '__standalone__' : seriesText ? idFromAddress('series', seriesText) ?? seriesText : null;
 	const read = text('read');
 	return {view: book || series || p.has('books') ? 'library' : 'series', series, book, q: text('q'),
 		author: text('author'), genre: text('genre'), read: read === 'undated' ? UNDATED : read, missing: p.get('missing') === true};
@@ -311,13 +323,13 @@ function navigate(change, how = 'push', data = null){
 
 /** @param {'series' | 'library'} v */
 export function setView(v){ navigate({view: v, series: null, book: null}); }
-/** @param {string} name */
-export function openSeries(name){ navigate({view: 'library', series: name, book: null}); }
+/** @param {string} id the series' */
+export function openSeries(id){ navigate({view: 'library', series: id, book: null}); }
 /**
  * A book is shown on its own, without the filters, which might hide it.
- * @param {string} title
+ * @param {string} id
  */
-function openBook(title){ navigate({view: 'library', series: null, book: title, q: '', author: '', genre: '', read: ''}); }
+function openBook(id){ navigate({view: 'library', series: null, book: id, q: '', author: '', genre: '', read: ''}); }
 
 // Back and forward (and an address typed or pasted in): show what the address says. The browser puts
 // the scroll position back itself, as the page is redrawn before this returns.
@@ -358,20 +370,20 @@ export function render(){
 	const author = fieldById('authorFilter').value;
 	const genre = fieldById('genreFilter').value;
 	const read = fieldById('readFilter').value;
-	/** @type {ListedBook[]} */
-	const filtered = CATALOG.books.map((b,i)=>({b, i})).filter(({b})=>matches(b,q,author,genre,read));
+	const series = shownSeriesName();
+	const filtered = CATALOG.books.filter(b=> matches(b, q, author, genre, read, series));
 
 	byId('subtitle').textContent =
 		`${CATALOG.books.length} audiobooks, merged from your Audible library and Goodreads history`;
 	byId('resultCount').textContent = `${filtered.length} shown`;
 
-	/** @type {Record<string, ListedBook[]>} */
+	/** @type {Record<string, Book[]>} */
 	const groups = {};
-	/** @type {ListedBook[]} */
+	/** @type {Book[]} */
 	const standalone = [];
-	filtered.forEach(x=>{
-		if(x.b.series){ (groups[x.b.series] = groups[x.b.series]||[]).push(x); }
-		else standalone.push(x);
+	filtered.forEach(b=>{
+		if(b.series){ (groups[b.series] = groups[b.series]||[]).push(b); }
+		else standalone.push(b);
 	});
 
 	const seriesNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
@@ -384,8 +396,8 @@ export function render(){
 	}
 
 	seriesNames.forEach(name=>{
-		const books = groups[name].sort((x, y)=> seriesOrder(x.b, y.b));
-		const info = CATALOG.series.get(name);
+		const books = groups[name].sort(seriesOrder);
+		const info = CATALOG.seriesInfo(name);
 		/** @type {string[]} */
 		const note = [];
 		if(info){
@@ -395,14 +407,14 @@ export function render(){
 			if(info.note) note.push(info.note);
 		}
 		out.push(buildElement('div', {class: 'series-group'},
-			buildElement('p', {class: 'series-title'}, buildElement('a', {href: bookHref(name, 'series')}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books.map(x=> x.b))),
+			buildElement('p', {class: 'series-title'}, buildElement('a', {href: seriesHref(name)}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books)),
 				' ', seriesEditButton(name), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)]),
 			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
 			books.map(bookCard)));
 	});
 
 	if(standalone.length){
-		standalone.sort((x,y)=>x.b.title.localeCompare(y.b.title));
+		standalone.sort((x,y)=>x.title.localeCompare(y.title));
 		out.push(buildElement('div', {class: 'series-group'},
 			buildElement('p', {class: 'series-title'}, 'Standalone ', buildElement('span', {class: 'n'}, `${standalone.length} book${standalone.length>1?'s':''}`)),
 			standalone.map(bookCard)));
@@ -447,11 +459,11 @@ function renderSeriesOverview(){
 	seriesNames.forEach(name=>{
 		const books = groups[name];
 		const authors = uniqueSorted(books.flatMap(authorsOf));
-		const info = CATALOG.series.get(name);
+		const info = CATALOG.seriesInfo(name);
 		const missing = seriesMissing(name);
 		out.push(buildElement('div', {class: 'srow'},
 			buildElement('div', {class: 'srow-head'},
-				buildElement('a', {class: 'srow-title', href: stateHash({view: 'library', series: name, book: null})}, name), ' ',
+				buildElement('a', {class: 'srow-title', href: seriesHref(name)}, name), ' ',
 				buildElement('span', {class: 'srow-owned'}, `${Series.owned(books)} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
 				seriesEditButton(name)),
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'}, authorLinks(authors)),
@@ -477,15 +489,18 @@ function renderSeriesOverview(){
  * @returns {HTMLButtonElement}
  */
 function seriesEditButton(name){
-	const label = CATALOG.series.has(name) ? 'Edit series info' : 'Add series info';
-	return buildElement('button', {class: 'iconbtn sedit', 'data-series': name, title: label, 'aria-label': label, onclick: ()=> openSeriesForm(name)}, '\u270E');
+	const id = CATALOG.idFor('series', name);
+	const label = CATALOG.series.has(id) ? 'Edit series info' : 'Add series info';
+	return buildElement('button', {class: 'iconbtn sedit', 'data-series': id, title: label, 'aria-label': label, onclick: ()=> openSeriesForm(id)}, '\u270E');
 }
 
-/** @param {string} name */
-export function openSeriesForm(name){
+/** @param {string} id the series' */
+export function openSeriesForm(id){
+	const name = CATALOG.nameOf('series', id);
+	if(name === undefined) return;
 	closeForm();
-	const info = CATALOG.series.get(name);
-	EDIT_SERIES = name; JOIN_SERIES = null;
+	const info = CATALOG.series.get(id);
+	EDIT_SERIES = id; JOIN_SERIES = null;
 	fieldById('sf_name').value = name;
 	byId('seriesFormTitle').textContent = (info ? 'Series info: ' : 'Add series info: ') + name;
 	fieldById('sf_total').value = info ? totalText(info) : '';
@@ -508,13 +523,17 @@ function closeSeriesForm(){
 }
 
 async function saveSeriesForm(){
-	const name = EDIT_SERIES;
-	if(name === null) return;
+	const id = EDIT_SERIES;
+	const name = id === null ? undefined : CATALOG.nameOf('series', id);
+	if(id === null || name === undefined) return;
 	const showError = (/** @type {string} */ text)=> { byId('seriesFormError').textContent = text; };
 	// a Hardcover address is looked up for its number first, unless the form is closed or moved meanwhile
 	const lookup = lookupHardcoverField('sf_ext_', 'series');
 	const hardcover = lookup ? await lookup : {error: '', note: ''};
-	if(EDIT_SERIES !== name) return;
+	// the series may have been renamed in another tab meanwhile, so its name is read again
+	const now = CATALOG.nameOf('series', id);
+	if(EDIT_SERIES !== id || now === undefined) return;
+	if(now !== name) return saveSeriesForm();
 	if(hardcover.error) return showError(hardcover.error);
 	const newName = Text.tidy(fieldById('sf_name').value);
 	if(!newName) return showError('Give the series a name.');
@@ -522,11 +541,11 @@ async function saveSeriesForm(){
 	const totalTyped = fieldById('sf_total').value.trim();
 	const note = Text.tidy(fieldById('sf_note').value);
 	const url = fieldById('sf_url').value.trim();
-	const had = CATALOG.series.get(name);
+	const had = CATALOG.series.get(id);
 	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
 	if(external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
 	// a rename of a series without info doesn't have to add some
-	const keepInfo = !renamed || CATALOG.series.has(name) || totalTyped || note || url || Object.keys(external.ids).length;
+	const keepInfo = !renamed || CATALOG.series.has(id) || totalTyped || note || url || Object.keys(external.ids).length;
 	/** @type {Series | null} */
 	let entry = null;
 	if(keepInfo){
@@ -544,28 +563,31 @@ async function saveSeriesForm(){
 		entry = Series.fromJSON(newName, typed);
 	}
 	// Joining another series is easy to do by mistake (and replaces its info), so the first Save says so.
-	const exists = CATALOG.books.some(b=> b.series === newName) || CATALOG.series.has(newName);
+	const exists = CATALOG.books.some(b=> b.series === newName) || !!CATALOG.seriesInfo(newName);
 	if(renamed && exists && JOIN_SERIES !== newName){
 		JOIN_SERIES = newName;
 		return showError(`There is already a series called ${newName}. Press Save again to move these books into it` +
-			(entry && CATALOG.series.has(newName) ? '; its series info will be replaced by this.' : '.'));
+			(entry && CATALOG.seriesInfo(newName) ? '; its series info will be replaced by this.' : '.'));
 	}
 
-	// renamed on its books and in its info, keeping the id it is stored under
+	// renamed on its books and in its info, keeping the id it is stored under (or taking the id of the one it joins)
 	const count = renamed ? CATALOG.renameSeries(name, newName) : 0;
-	if(entry) CATALOG.series.set(newName, entry);
+	const newId = CATALOG.idFor('series', newName);
+	if(entry) CATALOG.series.set(newId, entry);
 	closeSeriesForm();
-	if(renamed && SERIES_FILTER === name) navigate({series: newName}, 'replace');
-	render(); persist();
+	// the series shown keeps showing, under its new name
+	if(SERIES_FILTER === id && newId !== id) navigate({series: newId}, 'replace');
+	else showView();
+	persist();
 	showIoStatus((renamed
 		? `Renamed ${name} to ${newName} on ${count} book${count === 1 ? '' : 's'}.`
 		: `Saved series info for ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
 function removeSeriesInfo(){
-	const name = EDIT_SERIES;
-	if(name === null || !CATALOG.series.has(name)) return;
-	CATALOG.series.delete(name);
+	const id = EDIT_SERIES, name = id === null ? undefined : CATALOG.nameOf('series', id);
+	if(id === null || name === undefined || !CATALOG.series.has(id)) return;
+	CATALOG.series.delete(id);
 	closeSeriesForm(); render(); persist();
 	showIoStatus(`Removed series info for ${name}.`);
 }
@@ -574,27 +596,27 @@ byId('seriesForm').addEventListener('submit', e=>{ e.preventDefault(); return sa
 byId('seriesRemoveBtn').addEventListener('click', removeSeriesInfo);
 byId('cancelSeries').addEventListener('click', closeSeriesForm);
 
-// Edition object -> indexes of the other books it is also on (a box set), for the books being shown.
-/** @type {Map<Edition, number[]>} */
+// Edition object -> the other books it is also on (a box set), for the books being shown.
+/** @type {Map<Edition, Book[]>} */
 let SHARED = new Map();
 
-/** @returns {Map<Edition, number[]>} */
+/** @returns {Map<Edition, Book[]>} */
 function sharedEditions(){
-	/** @type {Map<string, [number, Edition][]>} */
+	/** @type {Map<string, [Book, Edition][]>} */
 	const byKey = new Map();
 	/** @type {(ed: Edition) => string[]} */
 	const keys = ed=> [...ed.idKeys(), ...ed.isbns().map(x=> 'isbn ' + x)];
-	CATALOG.books.forEach((b,i)=> b.editions.forEach(ed=> keys(ed).forEach(k=>{
+	CATALOG.books.forEach(b=> b.editions.forEach(ed=> keys(ed).forEach(k=>{
 		let list = byKey.get(k);
 		if(!list) byKey.set(k, list = []);
-		list.push([i, ed]);
+		list.push([b, ed]);
 	})));
-	/** @type {Map<Edition, number[]>} */
+	/** @type {Map<Edition, Book[]>} */
 	const shared = new Map();
-	CATALOG.books.forEach((b,i)=> b.editions.forEach(ed=>{
-		/** @type {Set<number>} */
+	CATALOG.books.forEach(b=> b.editions.forEach(ed=>{
+		/** @type {Set<Book>} */
 		const others = new Set();
-		for(const k of keys(ed)) for(const [j, x] of byKey.get(k) || []) if(j !== i && x.sameAs(ed)) others.add(j);
+		for(const k of keys(ed)) for(const [other, x] of byKey.get(k) || []) if(other !== b && x.sameAs(ed)) others.add(other);
 		if(others.size) shared.set(ed, [...others]);
 	}));
 	return shared;
@@ -626,37 +648,45 @@ function editionParts(ed, narrators){
 }
 
 /**
- * The address of a book (or, with kind 'series', a series) shown on its own.
- * @param {string} name
- * @param {'book' | 'series'} [kind]
+ * The address of a book shown on its own.
+ * @param {Book} b
  * @returns {string}
  */
-function bookHref(name, kind = 'book'){
-	return stateHash({view: 'library', series: kind === 'series' ? name : null, book: kind === 'book' ? name : null});
+function bookHref(b){
+	return stateHash({view: 'library', series: null, book: b.id || null});
 }
 
 /**
- * @param {ListedBook} listed
+ * The address of a series' books.
+ * @param {string} name
+ * @returns {string}
+ */
+function seriesHref(name){
+	return stateHash({view: 'library', series: CATALOG.idFor('series', name), book: null});
+}
+
+/**
+ * @param {Book} b
  * @returns {HTMLDivElement}
  */
-function bookCard({b, i}){
-	const books = CATALOG.books;
+function bookCard(b){
+	const id = /** @type {string} */ (b.id);
 	// the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
 	const narrators = [...new Map(b.editions.filter(ed=> ed.narrators.length).map(ed=> [Text.namesText(ed.narrators), ed.narrators])).values()];
 	const differ = narrators.length > 1;
 	const meta = joined([authorLinks(authorsOf(b)), narrators.length > 0 && ['narr. ', joined(narrators.map(narratorLinks), ' / ')]].filter(Boolean), ' \u2014 ');
 	const editions = b.editions.map(ed=>{
-		const also = (SHARED.get(ed) || []).map(k=>
-			buildElement('a', {href: bookHref(books[k].title)}, books[k].title + (books[k].number ? ` #${books[k].number}` : '')));
+		const also = (SHARED.get(ed) || []).map(other=>
+			buildElement('a', {href: bookHref(other)}, other.title + (other.number ? ` #${other.number}` : '')));
 		return buildElement('div', {class: 'edition'}, editionParts(ed, differ),
 			also.length > 0 && [buildElement('br'), buildElement('span', {class: 'also'}, 'Also in this edition: ', joined(also, ', '))]);
 	});
-	const picked = MERGE_FROM === i;
-	const mergeLabel = picked ? 'Cancel merge' : MERGE_FROM === null ? 'Merge with another book' : `Merge with ${books[MERGE_FROM].title}`;
-	return buildElement('div', {class: 'book' + (picked ? ' picked' : ''), 'data-i': i},
+	const picked = MERGE_FROM === id, from = CATALOG.book(MERGE_FROM);
+	const mergeLabel = picked ? 'Cancel merge' : !from ? 'Merge with another book' : `Merge with ${from.title}`;
+	return buildElement('div', {class: 'book' + (picked ? ' picked' : ''), 'data-id': id},
 		buildElement('div', {class: 'num'}, b.number || '\u2022'),
 		buildElement('div', {class: 'info'},
-			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b.title)}, b.title)),
+			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b)}, b.title)),
 			buildElement('div', {class: 'meta'}, meta),
 			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', ')),
 			Object.keys(b.external).length > 0 && buildElement('div', {class: 'ids'},
@@ -664,24 +694,24 @@ function bookCard({b, i}){
 			editions,
 			b.genres.length > 0 && buildElement('div', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))),
 		buildElement('div', {class: 'book-actions'},
-			buildElement('button', {class: 'iconbtn edit', 'data-i': i, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(i)}, '\u270E'), ' ',
-			buildElement('button', {class: 'iconbtn merge', 'data-i': i, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(i)}, '\u21C4'), ' ',
-			buildElement('button', {class: 'iconbtn del', 'data-i': i, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '\u00D7')));
+			buildElement('button', {class: 'iconbtn edit', 'data-id': id, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(id)}, '\u270E'), ' ',
+			buildElement('button', {class: 'iconbtn merge', 'data-id': id, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(id)}, '\u21C4'), ' ',
+			buildElement('button', {class: 'iconbtn del', 'data-id': id, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '\u00D7')));
 }
 
 /**
- * A book's remove button: the first press asks for a second one, which removes the book (its data-i).
+ * A book's remove button: the first press asks for a second one, which removes the book (its data-id).
  * @param {Event} e
  */
 function removeBookClick(e){
 	const el = /** @type {HTMLElement & {_resetTimer?: ReturnType<typeof setTimeout>}} */ (e.currentTarget);
-	const i = parseInt(el.dataset.i || '',10);
+	const id = el.dataset.id;
 	if(el.dataset.confirm === '1'){
+		const i = CATALOG.books.findIndex(b=> b.id === id);
+		if(i < 0) return;
 		const [removed] = CATALOG.books.splice(i,1);
 		addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
-		// the book being edited moves up one when a book before it goes, and Save must still find it
-		if(EDIT_INDEX === i){ closeForm(); }
-		else if(EDIT_INDEX !== null && EDIT_INDEX > i) EDIT_INDEX--;
+		if(EDIT_ID === id) closeForm();
 		populateFilters(); render(); persist();
 		showIoStatus(`Removed ${removed.title}; imports will skip it.`);
 	} else {
@@ -712,11 +742,11 @@ byId('btnLibraryView').addEventListener('click', ()=> setView('library'));
 byId('backToSeries').addEventListener('click', ()=> setView('series'));
 byId('toggleAdd').addEventListener('click', ()=>{
 	const form = byId('addForm');
-	if(form.classList.contains('open') && EDIT_INDEX === null){
+	if(form.classList.contains('open') && EDIT_ID === null){
 		closeForm();
 	} else {
 		closeSeriesForm();
-		EDIT_INDEX = null;
+		EDIT_ID = null;
 		byId('formTitle').textContent = 'Add a book';
 		byId('formSaveBtn').textContent = 'Add book';
 		byId('formError').textContent = '';
@@ -737,7 +767,7 @@ byId('cancelAdd').addEventListener('click', closeForm);
  * @returns {{series: string, authors: string[]}}
  */
 export function newBookDefaults(){
-	const series = SERIES_FILTER && SERIES_FILTER !== '__standalone__' ? SERIES_FILTER : '';
+	const series = shownSeriesName() || '';
 	const author = fieldById('authorFilter').value;
 	if(author) return {series, authors: [author]};
 	const books = series ? CATALOG.books.filter(b=> b.series === series) : [];
@@ -759,7 +789,7 @@ byId('readTodayBtn').addEventListener('click', ()=>{
 });
 
 function closeForm(){
-	EDIT_INDEX = null;
+	EDIT_ID = null;
 	byId('formError').textContent = '';
 	byId('addForm').classList.remove('open');
 	/** @type {HTMLFormElement} */ (byId('addForm')).reset();
@@ -778,17 +808,18 @@ function homeBookForm(){ byId('seriesForm').before(BOOK_FORM); }
  */
 function placeBookForm(){
 	document.querySelectorAll('#results .book.editing').forEach(card=> card.classList.remove('editing'));
-	const card = EDIT_INDEX === null ? null : document.querySelector(`#results .book[data-i="${EDIT_INDEX}"]`);
+	const card = EDIT_ID === null ? null : document.querySelector(`#results .book[data-id="${EDIT_ID}"]`);
 	if(!card){ homeBookForm(); return; }
 	card.classList.add('editing');
 	card.after(BOOK_FORM);
 }
 
-/** @param {number} i */
-export function openEditForm(i){
-	const b = CATALOG.books[i];
+/** @param {string} id the book's */
+export function openEditForm(id){
+	const b = CATALOG.book(id);
+	if(!b) return;
 	closeSeriesForm();
-	EDIT_INDEX = i;
+	EDIT_ID = id;
 	fieldById('f_t').value = b.title;
 	fieldById('f_a').value = authorsOf(b).join(', ');
 	fieldById('f_g').value = b.genres.join(', ');
@@ -797,7 +828,7 @@ export function openEditForm(i){
 	fieldById('f_s').value = b.series || '';
 	fieldById('f_sn').value = b.number || '';
 	fieldById('f_r').value = b.read.join(', ');
-	setFormEditions(b.editions, i);
+	setFormEditions(b.editions, id);
 	byId('formError').textContent = '';
 	byId('formTitle').textContent = 'Edit book';
 	byId('formSaveBtn').textContent = 'Save changes';
@@ -815,14 +846,13 @@ export let FORM_EDITIONS = [];
 
 /**
  * @param {Edition[]} editions
- * @param {number | null} index the book they are of, or null for a new book
+ * @param {string | null} id the book they are of, or null for a new book
  */
-function setFormEditions(editions, index){
-	const books = CATALOG.books;
-	const others = books.map((b, k)=> k).filter(k=> k !== index);
+function setFormEditions(editions, id){
+	const others = CATALOG.books.filter(b=> id === null || b.id !== id);
 	FORM_EDITIONS = editions.map(ed=> ({
 		fields: ed.fields(),
-		also: others.filter(k=> books[k].editions.some(x=> x.sameAs(ed))).map(k=> books[k].title),
+		also: others.filter(b=> b.editions.some(x=> x.sameAs(ed))).map(b=> b.title),
 		id: ed.id,
 	}));
 	if(!FORM_EDITIONS.length) FORM_EDITIONS.push({fields: {}, also: []});
@@ -1019,12 +1049,15 @@ byId('addForm').addEventListener('submit', async e=>{
 	e.preventDefault();
 	if(HardcoverClient.parseUrl(fieldById('f_hcb').value)){
 		// look the address up first, unless the form was closed or moved to another book meanwhile
-		const index = EDIT_INDEX;
+		const editing = EDIT_ID;
 		const id = await resolveHardcoverField();
-		if(id === null || EDIT_INDEX !== index || !byId('addForm').classList.contains('open')) return;
+		if(id === null || EDIT_ID !== editing || !byId('addForm').classList.contains('open')) return;
 	}
+	// the book being edited may have been removed in another tab meanwhile
+	const editing = EDIT_ID === null ? null : CATALOG.book(EDIT_ID) || null;
+	if(EDIT_ID !== null && !editing){ closeForm(); return; }
 	const b = new Book({
-		id: EDIT_INDEX === null ? undefined : CATALOG.books[EDIT_INDEX].id,   // an edited book stays the record it was
+		id: editing ? editing.id : undefined,   // an edited book stays the record it was
 		title: fieldById('f_t').value.trim(),
 		authors: Text.splitNames(fieldById('f_a').value),
 		genres: fieldById('f_g').value.split(',').map(x=>x.trim()).filter(Boolean),
@@ -1046,7 +1079,7 @@ byId('addForm').addEventListener('submit', async e=>{
 		return;
 	}
 	// the book's other external ids (Goodreads' book), from their fields or a book's address in an edition's
-	const had = EDIT_INDEX === null ? {} : CATALOG.books[EDIT_INDEX].external;
+	const had = editing ? editing.external : {};
 	const external = readExternalFields('f_ext_', 'book', had);
 	if(external.bad.length){
 		byId('formError').textContent = `Not a book's id or address there: ${external.bad.join('; ')}.`;
@@ -1067,7 +1100,7 @@ byId('addForm').addEventListener('submit', async e=>{
 	b.editions = editions;
 
 	// editing an edition a box set shares with other books edits it there too
-	const others = CATALOG.saveBook(EDIT_INDEX, b);
+	const others = CATALOG.saveBook(EDIT_ID, b);
 	populateFilters(); render(); persist();
 	closeForm();
 	if(others) showIoStatus(`Also updated the shared edition on ${others} other book${others === 1 ? '' : 's'}.`);
@@ -1075,15 +1108,17 @@ byId('addForm').addEventListener('submit', async e=>{
 
 // The merge button on a book: the first press picks it, a press on another book opens the two on the
 // duplicates page (which checks they are still the same books).
-/** @param {number} i */
-export function pickMergeBook(i){
+/** @param {string} id the book's */
+export function pickMergeBook(id){
+	const b = CATALOG.book(id);
+	if(!b) return;
 	if(MERGE_FROM === null){
-		MERGE_FROM = i;
-		showIoStatus(`Now press \u21c4 on the book to merge ${CATALOG.books[i].title} with.`);
-	} else if(MERGE_FROM === i){
+		MERGE_FROM = id;
+		showIoStatus(`Now press \u21c4 on the book to merge ${b.title} with.`);
+	} else if(MERGE_FROM === id){
 		MERGE_FROM = null;
 	} else {
-		const pair = [MERGE_FROM, i].sort((x, y)=> x - y);
+		const pair = [MERGE_FROM, id].map(encodeURIComponent);
 		MERGE_FROM = null;
 		location.href = 'duplicates.html#merge=' + pair.join(',');
 		return;
@@ -1092,16 +1127,17 @@ export function pickMergeBook(i){
 }
 
 /**
- * After a save took in what another tab changed (store.js): the book being edited is found again by its id,
- * as the other tab may have removed books before it, or the book itself.
+ * After a save took in what another tab changed (store.js): the book being edited stays open unless the
+ * other tab removed it, and so does the series whose info is being edited.
  * @param {Book[]} before the books as they were
  */
 function redraw(before){
-	if(EDIT_INDEX !== null){
-		const b = before[EDIT_INDEX], i = CATALOG.books.findIndex(x=> x.id === b.id);
-		if(i >= 0) EDIT_INDEX = i;
-		else { closeForm(); showIoStatus(spell(`${b.title} was removed in another tab.`), true); }
+	if(EDIT_ID !== null && !CATALOG.book(EDIT_ID)){
+		const b = before.find(x=> x.id === EDIT_ID);
+		closeForm();
+		showIoStatus(spell(`${b ? b.title : 'The book'} was removed in another tab.`), true);
 	}
+	if(EDIT_SERIES !== null && CATALOG.nameOf('series', EDIT_SERIES) === undefined) closeSeriesForm();
 	populateFilters(); render();
 }
 
