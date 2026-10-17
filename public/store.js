@@ -175,7 +175,8 @@ let SAVE_REFUSED = '';                // why nothing can be saved in this browse
 /** @type {Promise<void>} */
 let SAVING = Promise.resolve();       // the saves asked for, one after another
 /** @type {Promise<void>} */
-let COUNTING = Promise.resolve();     // the Duplicates link's count, worked out after a save
+let COUNTING = Promise.resolve();     // what waits for the saves: the Duplicates link's count, and pages drawn again (afterSaving)
+let READING = Promise.resolve();      // the reads pages wait on (see reading())
 let STARTUP_NOTICE = '';
 // A page holds only what it shows (loadRecords() brings in more), unless it asked for the whole catalog
 // (startPage's `whole`, or wholeCatalog()); a page in a browser without IndexedDB holds all of it.
@@ -197,7 +198,18 @@ export async function storedRevision(){
 }
 
 /** @returns {Promise<void>} when the saves asked for so far are done, and the Duplicates link counted after them */
-export function whenSaved(){ return Promise.all([SAVING, COUNTING]).then(() => {}); }
+export function whenSaved(){ return Promise.all([SAVING, COUNTING, READING]).then(() => {}); }
+
+/**
+ * Note a read the page waits on (loadRecords and the like), so whenSaved() waits for it too.
+ * @template T
+ * @param {Promise<T>} read
+ * @returns {Promise<T>}
+ */
+function reading(read){
+	READING = Promise.all([READING, read.catch(() => {})]).then(() => {});
+	return read;
+}
 
 /**
  * How many duplicate groups and books with split editions a catalog has, as the Duplicates link counts them.
@@ -219,6 +231,18 @@ function showDuplicateCount(n){ byId('dupCount').textContent = n ? ` (${n})` : '
 export function updateNav(){
 	if(WHOLE){ showDuplicateCount(duplicateCount(CATALOG)); return; }
 	COUNTING = COUNTING.then(() => SAVING).then(countDuplicates).catch(() => {});
+}
+
+/**
+ * Do `task` once the saves asked for so far are done (a page draws again from what is stored, say);
+ * whenSaved() waits for it too. A task that fails says so on the status line.
+ * @param {() => Promise<void> | void} task
+ * @returns {Promise<void>}
+ */
+export function afterSaving(task){
+	const run = COUNTING.then(() => SAVING).then(task).catch(e => showIoStatus(spell(`Couldn't read the catalog kept in this browser: ${Text.errorText(e)}. Reload the page.`), true));
+	COUNTING = run;
+	return run;
 }
 
 async function countDuplicates(){
@@ -253,11 +277,14 @@ const recordsNow = () => CatalogRecords.fromCatalog(CATALOG, undefined, WHOLE ? 
 const loaded = (store, key) => !!(SAVED.get(store) || new Map()).has(JSON.stringify(key));
 
 /**
- * What a page asks loadRecords() for: books by id, every book of some series, and series and people by id
- * (their records, whether or not any book loaded names them).
+ * What a page asks loadRecords() for: books by id, every book of some series (by id, or by name), the books
+ * with an edition an external id names ("asin B0…", as Edition.idKeys() has it, or "isbn 978…"), and series
+ * and people by id (their records, whether or not any book loaded names them).
  * @typedef {object} Wanted
  * @property {string[]} [books]
  * @property {string[]} [seriesBooks]
+ * @property {string[]} [seriesNamed]
+ * @property {string[]} [editionKeys]
  * @property {string[]} [series]
  * @property {string[]} [contributors]
  */
@@ -273,7 +300,10 @@ const loaded = (store, key) => !!(SAVED.get(store) || new Map()).has(JSON.string
  */
 async function readWanted(r, want, has){
 	const bookIds = new Set(want.books || []);
-	for(const id of want.seriesBooks || []) for(const key of await r.allKeys('books', 'bySeries', r.keyRange.bound([id], [id, []]))) bookIds.add(/** @type {string} */ (key));
+	const seriesBooks = [...want.seriesBooks || []];
+	for(const name of want.seriesNamed || []) for(const rec of await r.all('series', 'name', name)) seriesBooks.push(rec.id);
+	for(const key of want.editionKeys || []) for(const ed of await r.all('editions', 'idKeys', key)) for(const id of ed.bookIds) bookIds.add(id);
+	for(const id of seriesBooks) for(const key of await r.allKeys('books', 'bySeries', r.keyRange.bound([id], [id, []]))) bookIds.add(/** @type {string} */ (key));
 	/** @type {(store: StoreName, ids: Iterable<string>) => string[]} */
 	const lacking = (store, ids) => [...new Set(ids)].filter(id => !has(store, id));
 	/** @type {import('./modules/catalog-records.js').BookRecord[]} */
@@ -284,7 +314,7 @@ async function readWanted(r, want, has){
 	const seen = new Set(editions.map(ed => ed.id));
 	editions.push(...await r.get('editions', lacking('editions', others.flatMap(b => b.editionIds)).filter(id => !seen.has(id))));
 	books.push(...others);
-	const series = lacking('series', [...books.map(b => b.seriesId).filter(x => x !== undefined), ...want.seriesBooks || [], ...want.series || []]);
+	const series = lacking('series', [...books.map(b => b.seriesId).filter(x => x !== undefined), ...seriesBooks, ...want.series || []]);
 	const people = lacking('contributors', [...books.flatMap(b => b.authorIds), ...editions.flatMap(ed => [...ed.narratorIds, ...ed.publisherId ? [ed.publisherId] : []]),
 		...want.contributors || []]);
 	return {books, editions, series: await r.get('series', series), contributors: await r.get('contributors', people), credits: [], marks: [], exclusions: []};
@@ -320,32 +350,40 @@ function takeIn(records){
  * @param {Wanted} want
  * @returns {Promise<void>}
  */
-export async function loadRecords(want){
-	if(WHOLE || !DATABASE) return;
-	await SAVING;
-	const db = DATABASE;
-	const {result} = await db.read(r => readWanted(r, want, loaded));
-	takeIn(result);
+export function loadRecords(want){
+	return reading((async () => {
+		if(WHOLE || !DATABASE) return;
+		await SAVING;
+		const db = DATABASE;
+		const {result} = await db.read(r => readWanted(r, want, loaded));
+		takeIn(result);
+	})());
 }
 
 /**
  * Ask the stored catalog something (`ask` reads it with a CatalogReader), once the saves asked for are
- * done; in a browser without IndexedDB, the catalog the page holds.
+ * done; when the page holds all of it (and in a browser without IndexedDB), the catalog the page holds.
  * @template T
  * @param {(reader: CatalogReader) => Promise<T>} ask
  * @returns {Promise<T>}
  */
-export async function queryCatalog(ask){
-	await SAVING;
-	if(DATABASE) return (await DATABASE.read(ask)).result;
-	return ask(/** @type {CatalogReader} */ (/** @type {unknown} */ (new MemoryReader(recordsNow()))));
+export function queryCatalog(ask){
+	return reading((async () => {
+		await SAVING;
+		if(DATABASE && !WHOLE) return (await DATABASE.read(ask)).result;
+		return ask(/** @type {CatalogReader} */ (/** @type {unknown} */ (new MemoryReader(recordsNow()))));
+	})());
 }
 
 /**
  * Hold the whole catalog from now on (an import, Check or Export needs every book), once the saves asked for are done.
  * @returns {Promise<void>}
  */
-export async function wholeCatalog(){
+export function wholeCatalog(){
+	return reading(loadWhole());
+}
+
+async function loadWhole(){
 	if(WHOLE || !DATABASE) return;
 	await SAVING;
 	const stored = await DATABASE.load();
@@ -535,7 +573,8 @@ async function loadCatalog(whole){
 			// a catalog from before it lived in IndexedDB is saved there at once (and is in the current format then)
 			WHOLE = true;
 			if(readOldCatalog()) await persist();
-			if(!whole) holdNothing();
+			// one that can't be saved (persist() said why) stays shown as it is
+			if(!whole && await DATABASE.revision() !== null) holdNothing();
 			return;
 		}
 		const reshape = await DATABASE.needsReshape();

@@ -1,14 +1,16 @@
 // The catalog page: the series overview, all books, and editing books and series info.
 // Loading and saving live in store.js.
 import {Text} from './modules/text.js';
-import {Isbn} from './modules/isbn.js';
 import {Edition} from './modules/edition.js';
 import {Book} from './modules/book.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
-import { CATALOG, persist, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref,
+import {CatalogRecords} from './modules/catalog-records.js';
+/** @import {SeriesRecord} from './modules/catalog-records.js' */
+/** @import {CatalogReader} from './modules/catalog-database.js' */
+import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref,
 	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress } from './store.js';
 /** @import {Child} from './store.js' */
 
@@ -28,6 +30,23 @@ let EDIT_SERIES = null;        // the id of the series whose info is being edite
 let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
 /** @type {string | null} */
 let MERGE_FROM = null;         // the id of the first book picked with its merge button, or null
+
+// The page holds only what it shows, read from the stored catalog by loadView(): for all books (or a
+// series', or what the search and filters find), the ids of the books listed, in the order they are listed,
+// of which the first SHOWING are drawn (Show more draws more); for the series overview, its rows.
+export const PAGE_SIZE = 50;
+/** @type {string[]} */
+export let LISTED = [];
+export let SHOWING = 0;
+/**
+ * The series overview's rows: the series with books, the names of their authors, and how many books are in no series.
+ * @typedef {{series: SeriesRecord[], authors: Map<string, string>, standalone: number}} Overview
+ */
+/** @type {Overview} */
+let OVERVIEW = {series: [], authors: new Map(), standalone: 0};
+export let TOTAL_BOOKS = 0;
+/** @type {{authors: string[], genres: string[], years: string[]}} the filters' choices */
+let FILTER_CHOICES = {authors: [], genres: [], years: []};
 
 // Filter value for books with no date read, in the "Read any time" select.
 const UNDATED = '__undated__';
@@ -119,13 +138,23 @@ function numberList(nums){
 	return runs.map(([a,b])=> a === b ? `#${a}` : `#${a}\u2013${b}`).join(', ');
 }
 
+/**
+ * The filters' choices, from the stored catalog: its authors, genres and the years books were read in.
+ * @param {CatalogReader} r
+ * @returns {Promise<typeof FILTER_CHOICES>}
+ */
+async function readFilterChoices(r){
+	// the authors' names are the keys of an index, so no record is read for them
+	const authors = (await r.indexKeys('contributors', 'kindName', r.keyRange.bound(['author'], ['author', []]))).map(([key])=> String(/** @type {IDBValidKey[]} */ (key)[1]));
+	const years = /** @type {string[]} */ (await r.keys('books', 'readYears')).filter(y=> y !== CatalogRecords.UNDATED);
+	return {authors: uniqueSorted(authors), genres: uniqueSorted(/** @type {string[]} */ (await r.keys('books', 'genres'))), years: uniqueSorted(years).reverse()};
+}
+
 function populateFilters(){
-	const authors = uniqueSorted(CATALOG.books.flatMap(authorsOf));
-	const genres = uniqueSorted(CATALOG.books.flatMap(b=>b.genres));
+	const {authors, genres, years} = FILTER_CHOICES;
 	const aSel = fieldById('authorFilter');
 	const gSel = fieldById('genreFilter');
 	const rSel = fieldById('readFilter');
-	const years = uniqueSorted(CATALOG.books.flatMap(readYears)).reverse();
 	const aCur = aSel.value, gCur = gSel.value, rCur = rSel.value;
 	/** @type {(value: string, text: string) => HTMLOptionElement} */
 	const option = (value, text)=> buildElement('option', {value}, text);
@@ -160,18 +189,14 @@ function matches(b, q, author, genre, read, series){
 	if(genre && !b.genres.includes(genre)) return false;
 	if(read === UNDATED){ if(b.read.length) return false; }
 	else if(read && !readYears(b).includes(read)) return false;
-	if(q){
-		const hay = [b.title,...authorsOf(b),b.series,...b.genres,...b.editions.flatMap(ed=>[...ed.externalList().map(([, id])=> id),
-			Text.namesText(ed.narrators), ed.publisher, ed.description, ed.isbn]), ...Object.values(b.external)]
-			.filter(x=> typeof x === 'string').join(' ').toLowerCase();
-		// an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
-		const isbn = Isbn.parse(q);
-		if(!hay.includes(q.toLowerCase()) && !(isbn && b.isbns().includes(isbn))) return false;
-	}
+	// an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
+	if(q && !CatalogRecords.searchMatches(CatalogRecords.searchText(b), q)) return false;
 	return true;
 }
 
 // Show VIEW with SERIES_FILTER / BOOK_FILTER and the filters as they are; navigate() is how they change.
+// What it shows is read from the stored catalog first (loadView), once the saves asked for are done.
+/** @returns {Promise<void>} once it is drawn */
 function showView(){
 	const v = VIEW;
 	byId('btnSeriesView').classList.toggle('active', v==='series');
@@ -182,6 +207,12 @@ function showView(){
 	byId('readFilter').style.display = showLibControls ? '' : 'none';
 	byId('toggleAdd').style.display = showLibControls ? '' : 'none';
 	byId('missingFilter').style.display = showLibControls ? 'none' : '';
+	return afterSaving(async ()=>{ await loadView(); drawView(); });
+}
+
+// The crumb, the title and the list, from what loadView() read.
+function drawView(){
+	const v = VIEW;
 	const crumb = byId('crumb');
 	const book = CATALOG.book(BOOK_FILTER);
 	const label = v !== 'library' ? null : BOOK_FILTER !== null ? (book ? book.title : 'No such book')
@@ -190,6 +221,139 @@ function showView(){
 	byId('crumbLabel').textContent = label || '';
 	document.title = (label ? label + ' — ' : v === 'library' ? 'All books — ' : '') + spell('Audiobook Catalog');
 	render();
+}
+
+/**
+ * Read what the view shows from the stored catalog: the overview's rows, or the books listed (their ids)
+ * and the first of them (at least `showing`, so a redraw after an edit shows as many as before), each
+ * with every book of its series, as the series' heading counts them.
+ * @param {number} [showing]
+ * @returns {Promise<void>}
+ */
+async function loadView(showing = 0){
+	await resolveAddress();
+	TOTAL_BOOKS = await queryCatalog(r=> r.count('books'));
+	if(VIEW === 'series'){ OVERVIEW = await queryCatalog(readOverview); return; }
+	LISTED = await queryCatalog(readListed);
+	SHOWING = 0;
+	await loadMore(Math.max(showing, PAGE_SIZE));
+	if(SERIES_FILTER !== null && SERIES_FILTER !== '__standalone__') await loadRecords({series: [SERIES_FILTER]});
+}
+
+/**
+ * Show `count` more of the books listed, or a few more, so a series' books aren't split between two pages.
+ * @param {number} [count]
+ * @returns {Promise<void>}
+ */
+async function loadMore(count = PAGE_SIZE){
+	let end = Math.min(LISTED.length, SHOWING + count);
+	const ids = LISTED.slice(SHOWING, end);
+	await loadRecords({books: ids});
+	/** @type {(id: string) => string | undefined} */
+	const seriesOf = id=> { const b = CATALOG.book(id); return b && b.series; };
+	const series = [...new Set(ids.map(seriesOf))].filter(x=> x !== undefined).map(name=> CATALOG.nameIds.series.get(/** @type {string} */ (name)));
+	if(series.length) await loadRecords({seriesBooks: /** @type {string[]} */ (series.filter(Boolean))});
+	// the rest of the last series shown, which is loaded now
+	const last = ids.length ? seriesOf(ids[ids.length - 1]) : undefined;
+	while(last !== undefined && end < LISTED.length && seriesOf(LISTED[end]) === last) end++;
+	SHOWING = end;
+}
+
+// The Show more button at the end of a list.
+export function showMore(){
+	return afterSaving(async ()=>{ await loadMore(); render(); });
+}
+
+/**
+ * A book or series named in the address the way addresses had them before (by its title or name): the
+ * id it is stored under, put in the address instead.
+ * @returns {Promise<void>}
+ */
+async function resolveAddress(){
+	if(BOOK_FILTER !== null){
+		const text = BOOK_FILTER;
+		const id = await queryCatalog(async r=>{
+			if((await r.count('books', undefined, text))) return text;
+			const sortTitle = CatalogRecords.sortKey(text);
+			const found = await r.under('books', 'byTitle', [sortTitle]);
+			const book = found.find(b=> b.title === text);
+			return book ? book.id : text;
+		});
+		if(id !== text){ BOOK_FILTER = id; setAddress('replace', viewState()); }
+	}
+	if(SERIES_FILTER !== null && SERIES_FILTER !== '__standalone__'){
+		const text = SERIES_FILTER;
+		const id = await queryCatalog(async r=>{
+			if((await r.count('series', undefined, text))) return text;
+			const [rec] = await r.all('series', 'name', text);
+			return rec ? rec.id : text;
+		});
+		if(id !== text){ SERIES_FILTER = id; setAddress('replace', viewState()); }
+	}
+}
+
+/**
+ * The series overview's rows (see Overview), without reading any book.
+ * @param {CatalogReader} r
+ * @returns {Promise<Overview>}
+ */
+async function readOverview(r){
+	/** @type {SeriesRecord[]} */
+	const series = (await r.all('series', 'byName')).filter(s=> s.bookCount > 0);
+	const people = await r.get('contributors', [...new Set(series.flatMap(s=> s.authorIds))]);
+	return {series, authors: new Map(people.map(c=> [c.id, c.name])), standalone: await r.count('books', 'standalone')};
+}
+
+/**
+ * The ids of the books the list shows, in the order it shows them: the series by name, each in reading
+ * order (box sets last), then the books in no series by title. A search and the filters narrow them, by
+ * the indexes for them; only the indexes' keys are read, not the books.
+ * @param {CatalogReader} r
+ * @returns {Promise<string[]>}
+ */
+async function readListed(r){
+	if(BOOK_FILTER !== null) return (await r.allKeys('books', undefined, BOOK_FILTER)).map(String);
+	const q = fieldById('q').value.trim();
+	const author = fieldById('authorFilter').value;
+	const genre = fieldById('genreFilter').value;
+	const read = fieldById('readFilter').value;
+	/** @type {Set<string> | null} */
+	let only = null;
+	/** @type {(ids: IDBValidKey[]) => void} */
+	const narrow = ids=>{ const found = new Set(ids.map(String)); only = only ? new Set([...only].filter(id=> found.has(id))) : found; };
+	if(author){
+		const [rec] = await r.all('contributors', 'kindName', ['author', author]);
+		narrow(rec ? (await r.allKeys('credits', 'byTitle', r.keyRange.bound([rec.id], [rec.id, []]))).map(key=> /** @type {IDBValidKey[]} */ (key)[1]) : []);
+	}
+	if(genre) narrow(await r.allKeys('books', 'genres', genre));
+	if(read) narrow(await r.allKeys('books', 'readYears', read === UNDATED ? CatalogRecords.UNDATED : read));
+	if(q) narrow((await r.indexKeys('books', 'search')).filter(([text])=> CatalogRecords.searchMatches(String(text), q)).map(([, id])=> id));
+	/** @type {Map<string, string>} */
+	const names = new Map((await r.indexKeys('series', 'name')).map(([name, id])=> [String(id), String(name)]));
+	const numbered = (/** @type {unknown} */ n)=> n === CatalogRecords.UNNUMBERED ? 0 : Number(n);
+	const inSeries = (await r.indexKeys('books', 'bySeries')).map(([key, id])=> ({id: String(id), key: /** @type {any[]} */ (key)}))
+		.filter(x=> SERIES_FILTER === null || x.key[0] === SERIES_FILTER);
+	// as seriesOrder() puts a series' books
+	inSeries.sort((x, y)=> (names.get(x.key[0]) || '').localeCompare(names.get(y.key[0]) || '') || (x.key[0] < y.key[0] ? -1 : x.key[0] > y.key[0] ? 1 : 0)
+		|| x.key[1] - y.key[1] || numbered(x.key[2]) - numbered(y.key[2]) || numbered(x.key[3]) - numbered(y.key[3]));
+	const standalone = SERIES_FILTER === null || SERIES_FILTER === '__standalone__' ? (await r.indexKeys('books', 'standalone')).map(([, id])=> String(id)) : [];
+	const ids = [...SERIES_FILTER === '__standalone__' ? [] : inSeries.map(x=> x.id), ...standalone];
+	const found = /** @type {Set<string> | null} */ (only);
+	return found ? ids.filter(id=> found.has(id)) : ids;
+}
+
+/**
+ * Read what the page shows again from the stored catalog, once the saves asked for are done (after an
+ * edit, or another tab's), keeping as many books shown as there were.
+ * @returns {Promise<void>}
+ */
+export function refreshView(){
+	return afterSaving(async ()=>{
+		FILTER_CHOICES = await queryCatalog(readFilterChoices);
+		populateFilters();
+		await loadView(SHOWING);
+		drawView();
+	});
 }
 
 // ------------------------------------------------------------------ the address
@@ -263,9 +427,8 @@ function stateFromHash(hash){
 	});
 	const text = (/** @type {string} */ k)=>{ const v = p.get(k); return typeof v === 'string' ? v.trim() : ''; };
 	const bookText = text('book'), seriesText = text('series');
-	// by id, or by a title or name as addresses had them before
-	const titled = bookText && !CATALOG.book(bookText) ? CATALOG.books.find(b=> b.title === bookText) : undefined;
-	const book = titled ? /** @type {string} */ (titled.id) : bookText || null;
+	// by id, or by a title or name as addresses had them before (loadView finds the id then)
+	const book = bookText || null;
 	const series = book ? null : p.has('standalone') ? '__standalone__' : seriesText ? idFromAddress('series', seriesText) ?? seriesText : null;
 	const read = text('read');
 	return {view: book || series || p.has('books') ? 'library' : 'series', series, book, q: text('q'),
@@ -275,6 +438,7 @@ function stateFromHash(hash){
 /**
  * Show a view state (from navigate() or the address).
  * @param {ViewState} st
+ * @returns {Promise<void>} once it is drawn
  */
 function applyState(st){
 	VIEW = st.view; SERIES_FILTER = st.series; BOOK_FILTER = st.book;
@@ -285,7 +449,7 @@ function applyState(st){
 	fieldById('genreFilter').value = st.genre;
 	fieldById('readFilter').value = st.read;
 	fieldById('missingFilter').value = st.missing ? 'missing' : '';
-	showView();
+	return showView();
 }
 
 /** @type {(st: ViewState) => string} */
@@ -363,7 +527,7 @@ function renderEmpty(){
 
 export function render(){
 	homeBookForm();   // out of the list before it is redrawn, which would drop it
-	if(!CATALOG.books.length){ renderEmpty(); return; }
+	if(!TOTAL_BOOKS && !CATALOG.books.length){ renderEmpty(); return; }
 	if(VIEW === 'series'){ renderSeriesOverview(); return; }
 
 	const q = fieldById('q').value.trim();
@@ -371,11 +535,13 @@ export function render(){
 	const genre = fieldById('genreFilter').value;
 	const read = fieldById('readFilter').value;
 	const series = shownSeriesName();
-	const filtered = CATALOG.books.filter(b=> matches(b, q, author, genre, read, series));
+	// the books listed and loaded so far (one removed is gone, one edited may not match any more)
+	const filtered = /** @type {Book[]} */ (LISTED.slice(0, SHOWING).map(id=> CATALOG.book(id)).filter(b=> b && matches(b, q, author, genre, read, series)));
+	const more = LISTED.length - SHOWING;
 
 	byId('subtitle').textContent =
-		`${CATALOG.books.length} audiobooks, merged from your Audible library and Goodreads history`;
-	byId('resultCount').textContent = `${filtered.length} shown`;
+		`${TOTAL_BOOKS} audiobooks, merged from your Audible library and Goodreads history`;
+	byId('resultCount').textContent = more > 0 ? `${filtered.length} of ${filtered.length + more} shown` : `${filtered.length} shown`;
 
 	/** @type {Record<string, Book[]>} */
 	const groups = {};
@@ -407,8 +573,8 @@ export function render(){
 			if(info.note) note.push(info.note);
 		}
 		out.push(buildElement('div', {class: 'series-group'},
-			buildElement('p', {class: 'series-title'}, buildElement('a', {href: seriesHref(name)}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books)),
-				' ', seriesEditButton(name), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)]),
+			buildElement('p', {class: 'series-title'}, buildElement('a', {href: seriesHref(CATALOG.idFor('series', name))}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books)),
+				' ', seriesEditButton(CATALOG.idFor('series', name), !!info), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)]),
 			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
 			books.map(bookCard)));
 	});
@@ -419,53 +585,48 @@ export function render(){
 			buildElement('p', {class: 'series-title'}, 'Standalone ', buildElement('span', {class: 'n'}, `${standalone.length} book${standalone.length>1?'s':''}`)),
 			standalone.map(bookCard)));
 	}
+	if(more > 0) out.push(buildElement('p', {class: 'more'}, buildElement('button', {type: 'button', id: 'showMore', onclick: ()=> showMore()},
+		`Show ${Math.min(more, PAGE_SIZE)} more`)));
 
 	fillElement(byId('results'), out);
 	placeBookForm();
 }
 
+/**
+ * A series' info, from its record; undefined when it has none.
+ * @param {SeriesRecord} rec
+ * @returns {Series | undefined}
+ */
+const seriesInfoOf = rec=> CatalogRecords.hasInfo('series', rec)
+	? new Series(rec.name, {total: rec.total, status: rec.status, note: rec.note, url: rec.url, external: rec.external}) : undefined;
+
 function renderSeriesOverview(){
 	const q = fieldById('q').value.trim().toLowerCase();
-	/** @type {Record<string, Book[]>} */
-	const groups = {};
-	let standaloneCount = 0;
-	CATALOG.books.forEach(b=>{
-		if(b.series){ (groups[b.series] = groups[b.series]||[]).push(b); }
-		else standaloneCount++;
-	});
-
-	let seriesNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
-	if(q){
-		seriesNames = seriesNames.filter(name=>{
-			const books = groups[name];
-			const hay = [name, ...books.flatMap(authorsOf)].join(' ').toLowerCase();
-			return hay.includes(q);
-		});
-	}
+	let rows = OVERVIEW.series.map(rec=> ({rec, info: seriesInfoOf(rec),
+		authors: uniqueSorted(rec.authorIds.map(id=> OVERVIEW.authors.get(id) || '').filter(Boolean))}))
+		.sort((x, y)=> x.rec.name.localeCompare(y.rec.name));
+	if(q) rows = rows.filter(({rec, authors})=> [rec.name, ...authors].join(' ').toLowerCase().includes(q));
 	const onlyMissing = fieldById('missingFilter').value === 'missing';
-	if(onlyMissing) seriesNames = seriesNames.filter(name=> (seriesMissing(name) || []).length);
+	if(onlyMissing) rows = rows.filter(({rec})=> (rec.missing || []).length);
 
 	byId('subtitle').textContent =
-		`${Object.keys(groups).length} series across ${CATALOG.books.length} audiobooks \u2014 tap a series to see its titles`;
-	byId('resultCount').textContent = `${seriesNames.length} series shown`;
+		`${OVERVIEW.series.length} series across ${TOTAL_BOOKS} audiobooks \u2014 tap a series to see its titles`;
+	byId('resultCount').textContent = `${rows.length} series shown`;
 
 	/** @type {Child[]} */
 	const out = [];
 	const showStandalone = !onlyMissing && (!q || 'standalone'.includes(q));
-	if(seriesNames.length === 0 && !showStandalone){
+	if(rows.length === 0 && !showStandalone){
 		out.push(buildElement('p', {class: 'empty'}, onlyMissing ? 'No series with missing books.' : 'No series match your search.'));
 	}
 
-	seriesNames.forEach(name=>{
-		const books = groups[name];
-		const authors = uniqueSorted(books.flatMap(authorsOf));
-		const info = CATALOG.seriesInfo(name);
-		const missing = seriesMissing(name);
+	rows.forEach(({rec, info, authors})=>{
+		const missing = rec.missing;
 		out.push(buildElement('div', {class: 'srow'},
 			buildElement('div', {class: 'srow-head'},
-				buildElement('a', {class: 'srow-title', href: seriesHref(name)}, name), ' ',
-				buildElement('span', {class: 'srow-owned'}, `${Series.owned(books)} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
-				seriesEditButton(name)),
+				buildElement('a', {class: 'srow-title', href: seriesHref(rec.id)}, rec.name), ' ',
+				buildElement('span', {class: 'srow-owned'}, `${rec.owned} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
+				seriesEditButton(rec.id, !!info)),
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'}, authorLinks(authors)),
 				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
 				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
@@ -475,7 +636,7 @@ function renderSeriesOverview(){
 	if(showStandalone){
 		out.push(buildElement('div', {class: 'srow'}, buildElement('div', {class: 'srow-head'},
 			buildElement('a', {class: 'srow-title', href: '#standalone'}, 'Standalone'), ' ',
-			buildElement('span', {class: 'srow-owned'}, `${standaloneCount} owned`))));
+			buildElement('span', {class: 'srow-owned'}, `${OVERVIEW.standalone} owned`))));
 	}
 
 	fillElement(byId('results'), out);
@@ -485,17 +646,22 @@ function renderSeriesOverview(){
 // Edits the series' entry in CATALOG.series (released total, status, note, author site) and its name,
 // which is renamed on every book in the series. Like book edits, it is kept in this browser (see persist).
 /**
- * @param {string} name
+ * @param {string} id the series'
+ * @param {boolean} hasInfo
  * @returns {HTMLButtonElement}
  */
-function seriesEditButton(name){
-	const id = CATALOG.idFor('series', name);
-	const label = CATALOG.series.has(id) ? 'Edit series info' : 'Add series info';
+function seriesEditButton(id, hasInfo){
+	const label = hasInfo ? 'Edit series info' : 'Add series info';
 	return buildElement('button', {class: 'iconbtn sedit', 'data-series': id, title: label, 'aria-label': label, onclick: ()=> openSeriesForm(id)}, '\u270E');
 }
 
-/** @param {string} id the series' */
-export function openSeriesForm(id){
+/**
+ * Open the series info form, once the series and its books are loaded (a rename renames them all).
+ * @param {string} id the series'
+ * @returns {Promise<void>}
+ */
+export async function openSeriesForm(id){
+	await loadRecords({seriesBooks: [id], series: [id]});
 	const name = CATALOG.nameOf('series', id);
 	if(name === undefined) return;
 	closeForm();
@@ -563,6 +729,9 @@ async function saveSeriesForm(){
 		entry = Series.fromJSON(newName, typed);
 	}
 	// Joining another series is easy to do by mistake (and replaces its info), so the first Save says so.
+	// the series it would join, with its books, which move into it with these
+	if(renamed) await loadRecords({seriesNamed: [newName]});
+	if(EDIT_SERIES !== id) return;
 	const exists = CATALOG.books.some(b=> b.series === newName) || !!CATALOG.seriesInfo(newName);
 	if(renamed && exists && JOIN_SERIES !== newName){
 		JOIN_SERIES = newName;
@@ -588,7 +757,7 @@ function removeSeriesInfo(){
 	const id = EDIT_SERIES, name = id === null ? undefined : CATALOG.nameOf('series', id);
 	if(id === null || name === undefined || !CATALOG.series.has(id)) return;
 	CATALOG.series.delete(id);
-	closeSeriesForm(); render(); persist();
+	closeSeriesForm(); render(); persist(); refreshView();
 	showIoStatus(`Removed series info for ${name}.`);
 }
 
@@ -658,11 +827,11 @@ function bookHref(b){
 
 /**
  * The address of a series' books.
- * @param {string} name
+ * @param {string} id the series'
  * @returns {string}
  */
-function seriesHref(name){
-	return stateHash({view: 'library', series: CATALOG.idFor('series', name), book: null});
+function seriesHref(id){
+	return stateHash({view: 'library', series: id, book: null});
 }
 
 /**
@@ -712,7 +881,7 @@ function removeBookClick(e){
 		const [removed] = CATALOG.books.splice(i,1);
 		addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
 		if(EDIT_ID === id) closeForm();
-		populateFilters(); render(); persist();
+		render(); persist(); refreshView();
 		showIoStatus(`Removed ${removed.title}; imports will skip it.`);
 	} else {
 		el.dataset.confirm = '1';
@@ -1099,9 +1268,12 @@ byId('addForm').addEventListener('submit', async e=>{
 	}
 	b.editions = editions;
 
-	// editing an edition a box set shares with other books edits it there too
+	// editing an edition a box set shares with other books edits it there too, so those books are loaded first
+	const keys = [...new Set(editions.flatMap(ed=> [...ed.idKeys(), ...ed.isbns().map(x=> 'isbn ' + x)]))];
+	if(keys.length) await loadRecords({editionKeys: keys});
+	if(EDIT_ID !== null && !CATALOG.book(EDIT_ID)){ closeForm(); return; }
 	const others = CATALOG.saveBook(EDIT_ID, b);
-	populateFilters(); render(); persist();
+	render(); persist(); refreshView();
 	closeForm();
 	if(others) showIoStatus(`Also updated the shared edition on ${others} other book${others === 1 ? '' : 's'}.`);
 });
@@ -1138,8 +1310,14 @@ function redraw(before){
 		showIoStatus(spell(`${b ? b.title : 'The book'} was removed in another tab.`), true);
 	}
 	if(EDIT_SERIES !== null && CATALOG.nameOf('series', EDIT_SERIES) === undefined) closeSeriesForm();
-	populateFilters(); render();
+	refreshView();
 }
 
 // The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
-export const READY = startPage(()=>{ populateFilters(); applyState(stateFromHash(location.hash)); setAddress('replace', viewState()); }, {whole: true, refresh: redraw});
+export const READY = startPage(async ()=>{
+	FILTER_CHOICES = await queryCatalog(readFilterChoices);
+	populateFilters();
+	const drawn = applyState(stateFromHash(location.hash));
+	setAddress('replace', viewState());
+	await drawn;
+}, {refresh: redraw});
