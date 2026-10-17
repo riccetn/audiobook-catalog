@@ -132,9 +132,9 @@ function renderSplit(){
 
 export function renderDuplicates(){
 	byId('subtitle').textContent = (DUP_FOUND
-		? `${DUP_FOUND} possible duplicate${DUP_FOUND === 1 ? '' : 's'} among ${CATALOG.books.length} audiobooks`
+		? `${Text.plural(DUP_FOUND, 'possible duplicate')} among ${CATALOG.books.length} audiobooks`
 		: `No duplicates among ${CATALOG.books.length} audiobooks`) +
-		(SPLIT.length ? `; ${SPLIT.length} book${SPLIT.length === 1 ? '' : 's'} with editions that look like one` : '');
+		(SPLIT.length ? `; ${Text.plural(SPLIT.length, 'book')} with editions that look like one` : '');
 	fillElement(byId('dupBody'),
 		!DUP_GROUPS.length && buildElement('p', {class: 'empty'}, spell('No books look like duplicates. To merge two books anyway, ' +
 			'press \u21C4 on one of them in the catalog and then on the other.')),
@@ -171,7 +171,7 @@ function duplicateGroup(ids, g){
 		buildElement('div', {class: 'dup-books'}, books.map(bookBox)),
 		buildElement('p', {class: 'dup-result'}, `Becomes: ${merged.title} — ${Text.namesText(merged.authors)}` +
 			(merged.series ? ` — ${dupValue(merged, 'series')}` : '') +
-			(editions ? `, ${editions} edition${editions === 1 ? '' : 's'}` : '') +
+			(editions ? `, ${Text.plural(editions, 'edition')}` : '') +
 			(merged.read.length ? `, read ${merged.read.join(', ')}` : '')),
 		editionLines(merged),
 		picks.joinable && buildElement('label', {class: 'dup-join'},

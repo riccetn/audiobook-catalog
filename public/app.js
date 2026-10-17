@@ -34,10 +34,10 @@ let MERGE_FROM = null;         // the id of the first book picked with its merge
 // The page holds only what it shows, read from the stored catalog by loadView(): for all books (or a
 // series', or what the search and filters find), the ids of the books listed, in the order they are listed,
 // of which the first SHOWING are drawn (Show more draws more); for the series overview, its rows.
-export const PAGE_SIZE = 50;
+const PAGE_SIZE = 50;
 /** @type {string[]} */
-export let LISTED = [];
-export let SHOWING = 0;
+let LISTED = [];
+let SHOWING = 0;
 /**
  * The series overview's rows: the series with books, the names of their authors, and how many books are in no series.
  * @typedef {{series: SeriesRecord[], authors: Map<string, string>, standalone: number}} Overview
@@ -59,12 +59,6 @@ const readYears = b => b.read.map(d => d.slice(0, 4));
 
 /** @param {string[]} arr */
 function uniqueSorted(arr){ return [...new Set(arr)].sort((a,b)=>a.localeCompare(b)); }
-/**
- * A book's authors, one name each: the author filter offers each of them on its own.
- * @param {Book} b
- * @returns {string[]}
- */
-function authorsOf(b){ return b.authors; }
 /**
  * Authors' names, each a link to their page on the authors page.
  * @type {(names: string[]) => Child[]}
@@ -185,7 +179,7 @@ function matches(b, q, author, genre, read, series){
 		if(SERIES_FILTER === '__standalone__'){ if(b.series) return false; }
 		else if(series === null || b.series !== series) return false;
 	}
-	if(author && !authorsOf(b).includes(author)) return false;
+	if(author && !b.authors.includes(author)) return false;
 	if(genre && !b.genres.includes(genre)) return false;
 	if(read === UNDATED){ if(b.read.length) return false; }
 	else if(read && !readYears(b).includes(read)) return false;
@@ -749,7 +743,7 @@ async function saveSeriesForm(){
 	else showView();
 	persist();
 	showIoStatus((renamed
-		? `Renamed ${name} to ${newName} on ${count} book${count === 1 ? '' : 's'}.`
+		? `Renamed ${name} to ${newName} on ${Text.plural(count, 'book')}.`
 		: `Saved series info for ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
@@ -843,7 +837,7 @@ function bookCard(b){
 	// the narrators of all its editions ("Ann Vale, Bo Reed / Cy Hale"); each edition line names its own only when they differ
 	const narrators = [...new Map(b.editions.filter(ed=> ed.narrators.length).map(ed=> [Text.namesText(ed.narrators), ed.narrators])).values()];
 	const differ = narrators.length > 1;
-	const meta = joined([authorLinks(authorsOf(b)), narrators.length > 0 && ['narr. ', joined(narrators.map(narratorLinks), ' / ')]].filter(Boolean), ' \u2014 ');
+	const meta = joined([authorLinks(b.authors), narrators.length > 0 && ['narr. ', joined(narrators.map(narratorLinks), ' / ')]].filter(Boolean), ' \u2014 ');
 	const editions = b.editions.map(ed=>{
 		const also = (SHARED.get(ed) || []).map(other=>
 			buildElement('a', {href: bookHref(other)}, other.title + (other.number ? ` #${other.number}` : '')));
@@ -935,12 +929,12 @@ byId('cancelAdd').addEventListener('click', closeForm);
  * author filter, else the authors every book of the series shown has (its co-authors on some books left out).
  * @returns {{series: string, authors: string[]}}
  */
-export function newBookDefaults(){
+function newBookDefaults(){
 	const series = shownSeriesName() || '';
 	const author = fieldById('authorFilter').value;
 	if(author) return {series, authors: [author]};
 	const books = series ? CATALOG.books.filter(b=> b.series === series) : [];
-	const authors = books.length ? authorsOf(books[0]).filter(a=> books.every(b=> authorsOf(b).includes(a))) : [];
+	const authors = books.length ? books[0].authors.filter(a=> books.every(b=> b.authors.includes(a))) : [];
 	return {series, authors};
 }
 
@@ -990,7 +984,7 @@ export function openEditForm(id){
 	closeSeriesForm();
 	EDIT_ID = id;
 	fieldById('f_t').value = b.title;
-	fieldById('f_a').value = authorsOf(b).join(', ');
+	fieldById('f_a').value = b.authors.join(', ');
 	fieldById('f_g').value = b.genres.join(', ');
 	fieldById('f_hcb').value = b.idOn('hardcover') || '';
 	fillExternalFields('f_ext_', 'book', b.external);
@@ -1275,7 +1269,7 @@ byId('addForm').addEventListener('submit', async e=>{
 	const others = CATALOG.saveBook(EDIT_ID, b);
 	render(); persist(); refreshView();
 	closeForm();
-	if(others) showIoStatus(`Also updated the shared edition on ${others} other book${others === 1 ? '' : 's'}.`);
+	if(others) showIoStatus(`Also updated the shared edition on ${Text.plural(others, 'other book')}.`);
 });
 
 // The merge button on a book: the first press picks it, a press on another book opens the two on the

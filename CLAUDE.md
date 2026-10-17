@@ -48,8 +48,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `nameIds` (the ids series and people are known by, by name: `idFor` (gives a new name one), `nameOf`, `namesOf`, `seriesInfo`,
     `infoByName`/`replaceInfo` for the name-keyed backup shape; `renameSeries` keeps a series' id), `assignIds` (before every save);
     `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `book(id)`, `saveBook(id, book)`, `merge` (an import), `addBoxSets`,
-    `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`/`authorList`,
-    `narratorWorks`/`narratorList` and `publisherWorks`/`publisherList` (all `creditedWorks`/`creditedList` with `authorsOf`/`narratorsOf`/`publishersOf`).
+    `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`,
+    `narratorWorks` and `publisherWorks` (all `creditedWorks` with `authorsOf`/`narratorsOf`/`publishersOf`).
   - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`,
     `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`fixIds`.
   - `Edition` (`id external isbn narrators publisher released minutes description`): `idOn`/`ids`/`idKeys`, `sameAs`/`conflictsWith`/`fillFrom`,
@@ -59,7 +59,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
   - `Series` (series info `total status note url external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
-    `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`),
+    `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word),
     `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,

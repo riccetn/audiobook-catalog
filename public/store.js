@@ -180,7 +180,7 @@ let READING = Promise.resolve();      // the reads pages wait on (see reading())
 let STARTUP_NOTICE = '';
 // A page holds only what it shows (loadRecords() brings in more), unless it asked for the whole catalog
 // (startPage's `whole`, or wholeCatalog()); a page in a browser without IndexedDB holds all of it.
-export let WHOLE = false;
+let WHOLE = false;
 /** @type {Map<string, number>} */
 let POSITIONS = new Map();            // the place among all the books of each book loaded, while not WHOLE
 
@@ -787,7 +787,7 @@ export function externalLinks(ids, kind, cls = 'authorlink'){
 // The page asks Hardcover itself (its API allows browser requests), with a token kept in this browser
 // only (never in a backup), saved on Import & export.
 export const HARDCOVER_TOKEN_KEY = 'audiobook-catalog-hardcover-token';
-export const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
+const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
 
 /** @returns {string} the Hardcover token saved in this browser, or '' */
 export function browserHardcoverToken(){
@@ -800,7 +800,7 @@ export function browserHardcoverToken(){
  * @param {RequestInit} opts
  * @returns {Promise<Response>}
  */
-export async function fetchHardcover(url, opts){
+async function fetchHardcover(url, opts){
 	try{ return await fetch(url, opts); }
 	catch(e){ throw new Error('this browser could not reach Hardcover (offline, or Hardcover refused a request from a web page)'); }
 }

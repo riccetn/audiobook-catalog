@@ -161,12 +161,6 @@ export class Edition {
 	/** @returns {Edition} a copy, sharing nothing with this one */
 	clone(){ return Edition.fromJSON(JSON.parse(JSON.stringify(this))); }
 
-	/** Whether it holds nothing at all but its id (an edition must not be empty). */
-	isEmpty(){ return !Object.keys(this.toJSON()).some(k => k !== Edition.ID_KEY); }
-
-	/** @returns {Edition} a copy with tidy text in every field, and its ISBN in the 13-digit form */
-	tidied(){ return Edition.fromJSON(Edition.tidyJSON(this.toJSON())); }
-
 	// ------------------------------------------------------------------ ids
 	/**
 	 * Its external ids as [catalog, id] pairs in the usual order, e.g. [["audible.com", "B0X"], ["goodreads", "4242"]].

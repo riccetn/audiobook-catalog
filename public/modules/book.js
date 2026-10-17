@@ -155,9 +155,6 @@ export class Book {
 	/** @returns {Book} a copy, sharing nothing with this one */
 	clone(){ return Book.fromJSON(JSON.parse(JSON.stringify(this))); }
 
-	/** @returns {Book} a copy with tidy text in every field (tidyJSON()) */
-	tidied(){ return Book.fromJSON(Book.tidyJSON(this.toJSON())); }
-
 	/**
 	 * The book as text that ignores the order of its dates read, and anything that is not a book's or an
 	 * edition's value, for "did it change?".

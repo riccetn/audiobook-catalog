@@ -537,14 +537,6 @@ export class Catalog {
 	}
 
 	/**
-	 * Every author of the books, as [{name, books (how many), series (how many)}], by name.
-	 * @returns {{name: string, books: number, series: number}[]}
-	 */
-	authorList(){
-		return this.creditedList(Catalog.authorsOf);
-	}
-
-	/**
 	 * The books `name` narrates (any edition of them), as authorWorks() gives an author's.
 	 * @param {string} name
 	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
@@ -554,28 +546,12 @@ export class Catalog {
 	}
 
 	/**
-	 * Every narrator of the books' editions, as authorList() gives the authors.
-	 * @returns {{name: string, books: number, series: number}[]}
-	 */
-	narratorList(){
-		return this.creditedList(Catalog.narratorsOf);
-	}
-
-	/**
 	 * The books `name` publishes (any edition of them), as authorWorks() gives an author's.
 	 * @param {string} name
 	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
 	 */
 	publisherWorks(name){
 		return this.creditedWorks(Catalog.publishersOf, name);
-	}
-
-	/**
-	 * Every publisher of the books' editions, as authorList() gives the authors.
-	 * @returns {{name: string, books: number, series: number}[]}
-	 */
-	publisherList(){
-		return this.creditedList(Catalog.publishersOf);
 	}
 
 	/** @param {Book} b @returns {string[]} its authors */
@@ -604,24 +580,5 @@ export class Catalog {
 		const series = [...bySeries].sort((x, y) => x[0].localeCompare(y[0])).map(([s, list]) => ({name: s, books: list.sort(Book.bySeriesNumber)}));
 		const titles = own.filter(b => !b.series).sort((x, y) => x.title.localeCompare(y.title));
 		return {series, titles};
-	}
-
-	/**
-	 * Everyone `namesOf` credits on the books, as [{name, books (how many), series (how many)}], by name.
-	 * @param {(b: Book) => string[]} namesOf
-	 * @returns {{name: string, books: number, series: number}[]}
-	 */
-	creditedList(namesOf){
-		/** @type {Map<string, {name: string, books: number, series: Set<string>}>} */
-		const seen = new Map();
-		for(const b of this.books){
-			for(const name of new Set(namesOf(b))){
-				let entry = seen.get(name);
-				if(!entry) seen.set(name, entry = {name, books: 0, series: new Set()});
-				entry.books++;
-				if(b.series) entry.series.add(b.series);
-			}
-		}
-		return [...seen.values()].map(x => ({...x, series: x.series.size})).sort((x, y) => x.name.localeCompare(y.name));
 	}
 }
