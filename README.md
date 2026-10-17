@@ -37,7 +37,7 @@ library, restore a backup, or add books by hand with **+ Add a book**.
 ## Documentation
 
 - [Everyday workflows](docs/workflows.md): editing, series info, missing books, removing and merging
-  books, ISBNs, dates read, links
+  books, a book's details, ISBNs, dates read, links
 - [Authors](docs/authors.md): author pages with a bio, links, and their series and titles
 - [Narrators and publishers](docs/narrators-publishers.md): a page for each narrator and publisher with a bio, links, and their series and titles
 - [Data format](docs/data-format.md): books, editions, box sets, series info, author, narrator and publisher info, tidy names

@@ -458,8 +458,8 @@ test('the address names the view, so a series, a book or a search can be linked 
 	for (const hash of [`#book=${saltRoad}`, '#book=The+Salt+Road']) {
 		const book = await boot({ hash, storage });
 		assert.equal(book.get('BOOK_FILTER'), saltRoad);
-		assert.equal((book.els.results.innerHTML.match(/class="book"/g) || []).length, 1);
-		assert.match(book.els.results.innerHTML, /The Salt Road/);
+		assert.equal((book.els.results.innerHTML.match(/class="book book-details"/g) || []).length, 1);
+		assert.match(book.els.results.innerHTML, /<h2 class="title">The Salt Road<\/h2>/);
 		assert.equal(book.els.crumbLabel.textContent, 'The Salt Road');
 	}
 	const gone = await boot({ hash: '#book=no-such-id', storage });
@@ -522,7 +522,7 @@ test('back and forward step through series, books, filters and searches', async 
 	history.back(); history.back();
 	await idle();
 	assert.deepEqual(get('[VIEW, BOOK_FILTER]'), ['library', beacons]);
-	assert.equal((els.results.innerHTML.match(/class="book"/g) || []).length, 1);
+	assert.equal((els.results.innerHTML.match(/class="book book-details"/g) || []).length, 1);
 	history.back();
 	await idle();
 	assert.deepEqual(get('[VIEW, SERIES_FILTER, BOOK_FILTER]'), ['library', lantern, null]);
@@ -575,22 +575,25 @@ test('editing a book keeps its editions', async () => {
 		{ t: 'Renamed In The App', e: [{ ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642 }, { ext: { 'audible.com': 'TESTASIN02' } }] });
 });
 
-test('book cards link an edition\'s ASIN to Audible and its Goodreads id to Goodreads', async () => {
-	const { ctx, els, run, readable } = await boot();
+test('a book\'s details link an edition\'s ASIN to Audible and its Goodreads id to Goodreads; its card leaves editions out', async () => {
+	const { ctx, els, get, run, readable } = await boot();
 	ctx.setView('library');
 	await idle();
-	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e))");
+	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist()");
 	await ctx.refreshView();
+	await idle();
+	assert.doesNotMatch(els.results.innerHTML, /TESTASIN01|Gull Audio|9780000000002/);
+	ctx.openBook(get('CATALOG.books[0].id'));
 	await idle();
 	const html = readable(els.results.innerHTML);
-	assert.match(html, /ASIN audible\.com <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a>; Goodreads <a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a>; Publisher <a href="publishers\.html#p=Gull\+Audio">Gull Audio<\/a>; Length 10h 42m/);
+	assert.match(html, /<h3>Edition 1<\/h3><dl class="details"><dt>ASIN<\/dt><dd>audible\.com <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a><\/dd><dt>Goodreads<\/dt><dd><a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a><\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gull\+Audio">Gull Audio<\/a><\/dd><dt>Length<\/dt><dd>10h 42m<\/dd><\/dl>/);
 	// an edition without either id has no links
-	assert.match(html, /<div class="edition">ISBN 9780000000002<\/div>/);
+	assert.match(html, /<h3>Edition 2<\/h3><dl class="details"><dt>ISBN<\/dt><dd>9780000000002<\/dd><\/dl>/);
 	// each site's ASIN links to the book on that site
-	run("CATALOG.books[0].editions = [{ext: { 'audible.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' }}].map(e => Edition.fromJSON(e))");
+	run("CATALOG.books[0].editions = [{ext: { 'audible.co.uk': 'TESTASIN02', 'amazon.com': 'TESTASIN03' }}].map(e => Edition.fromJSON(e)); persist()");
 	await ctx.refreshView();
 	await idle();
-	assert.match(readable(els.results.innerHTML), /ASIN audible\.co\.uk <a href="https:\/\/www\.audible\.co\.uk\/pd\/TESTASIN02"[^>]*>TESTASIN02<\/a>, amazon\.com <a href="https:\/\/www\.amazon\.com\/dp\/TESTASIN03"[^>]*>TESTASIN03<\/a><\/div>/);
+	assert.match(readable(els.results.innerHTML), /<h3>Edition<\/h3><dl class="details"><dt>ASIN<\/dt><dd>audible\.co\.uk <a href="https:\/\/www\.audible\.co\.uk\/pd\/TESTASIN02"[^>]*>TESTASIN02<\/a>, amazon\.com <a href="https:\/\/www\.amazon\.com\/dp\/TESTASIN03"[^>]*>TESTASIN03<\/a><\/dd>/);
 });
 
 test('a book edited in the form keeps its id, and so do its editions, a box set\'s shared one included', async () => {
@@ -653,15 +656,38 @@ test('the book form has a field for each site an edition has an ASIN on, and add
 	assert.deepEqual(get('CATALOG.books[0].editions[0]'), { ext: { 'audible.com': 'TESTASIN01', 'amazon.com': 'TESTASIN03' } });
 });
 
-test('book cards link the Hardcover book and an edition\'s Hardcover id to Hardcover, and the edit form keeps them', async () => {
+test('a book card shows its title, authors, narrators and read dates; its details show the rest', async () => {
+	const { ctx, els, get, readable } = await boot();
+	ctx.openSeries(seriesIdOf(get, 'The Lantern Coast'));
+	await idle();
+	const card = readable(els.results.innerHTML).match(/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="book-actions">/)[0];
+	assert.match(card, /<div class="title"><a href="#book=The\+Salt\+Road">The Salt Road<\/a><\/div><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
+	assert.match(card, /<div class="read">Read 2023-06-02, 2025-11-20<\/div><\/div><div class="book-actions">$/);
+	assert.doesNotMatch(card, /Fantasy|Goodreads|ISBN|Gullwing/);
+
+	ctx.openBook(bookIdOf(get, 'The Salt Road'));
+	await idle();
+	const details = readable(els.results.innerHTML);
+	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="info"><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
+	assert.match(details, /<dl class="details"><dt>Series<\/dt><dd><a href="#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20<\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/);
+	assert.match(details, /<dt>Goodreads<\/dt><dd><a [^>]*>9001<\/a><\/dd><dt>ISBN<\/dt><dd>9780000000002<\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gullwing\+Audio">Gullwing Audio<\/a><\/dd><dt>Released<\/dt><dd>2019-04-02<\/dd><dt>Length<\/dt><dd>10h 42m<\/dd>/);
+	assert.match(details, /<button class="iconbtn edit"/);
+	// editing it there puts the form in its place
+	ctx.openEditForm(bookIdOf(get, 'The Salt Road'));
+	assert.match(els.results.innerHTML, /class="book book-details editing"/);
+});
+
+test('a book\'s details link the Hardcover book and an edition\'s Hardcover id to Hardcover, and the edit form keeps them', async () => {
 	const { ctx, els, get, run } = await boot();
 	ctx.setView('library');
 	await idle();
 	run("CATALOG.books[0].external = { hardcover: '808' }; CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', hardcover: '31337' }}].map(e => Edition.fromJSON(e)); persist()");
-	await ctx.refreshView();
+	ctx.openBook(get('CATALOG.books[0].id'));
 	await idle();
-	assert.match(els.results.innerHTML, /<div class="ids">Hardcover book <a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a><\/div>/);
-	assert.match(els.results.innerHTML, /ASIN audible\.com <a [^>]*>TESTASIN01<\/a>; Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a><\/div>/);
+	assert.match(els.results.innerHTML, /<dt>Hardcover book<\/dt><dd><a href="https:\/\/hardcover\.app\/id\/book\/808" target="_blank" rel="noopener">808<\/a><\/dd>/);
+	assert.match(els.results.innerHTML, /<dt>ASIN<\/dt><dd>audible\.com <a [^>]*>TESTASIN01<\/a><\/dd><dt>Hardcover<\/dt><dd><a href="https:\/\/hardcover\.app\/id\/edition\/31337" target="_blank" rel="noopener">31337<\/a><\/dd>/);
+	ctx.setView('library');
+	await idle();
 	els.q.value = '808';
 	await ctx.refreshView();
 	await idle();
@@ -831,13 +857,17 @@ test('dates read: shown on the card, edited in the form, and filterable by year'
 	assert.equal(get(`CATALOG.books[${i}].read.length > 0`), false);
 });
 
-test('ISBNs: shown on the card, searchable however typed, edited in the form', async () => {
+test('ISBNs: shown in a book\'s details, searchable however typed, edited in the form', async () => {
 	// written before editions: read as the book's first edition
 	const mine = JSON.stringify([{ t: 'Boxed One', a: ['Ann Vale'], isbn: ['9780306406157'] }, { t: 'Other', a: ['Ann Vale'] }]);
 	const { ctx, els, get, readable } = await boot({ files: { 'books.json': mine } });
 	ctx.setView('library');
 	await idle();
-	assert.match(readable(els.results.innerHTML), /ISBN 9780306406157/);
+	ctx.openBook(get('CATALOG.books[0].id'));
+	await idle();
+	assert.match(readable(els.results.innerHTML), /<dt>ISBN<\/dt><dd>9780306406157<\/dd>/);
+	ctx.setView('library');
+	await idle();
 	for (const q of ['9780306406157', '0-306-40615-2', '406157']) {
 		els.q.value = q;
 		await ctx.refreshView();
@@ -854,13 +884,15 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
 	await idle();
 	assert.deepEqual(get('CATALOG.books[0].editions'), [{ isbn: '9780306406157' }, { isbn: '9780000000002' }]);
 
-	// the same ISBN may go on another book (a boxed set); the cards then say so
+	// the same ISBN may go on another book (a boxed set); its details then say so
 	ctx.openEditForm(bookIdAt(get, 1));
 	typeEdition(els, 0, 'isbn', '0306406152');
 	els.addForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.deepEqual(get('CATALOG.books[1].editions'), [{ isbn: '9780306406157' }]);
-	assert.match(readable(els.results.innerHTML), /Also in this edition: <a href="#book=Boxed\+One">Boxed One<\/a>/);
+	ctx.openBook(bookIdAt(get, 1));
+	await idle();
+	assert.match(readable(els.results.innerHTML), /<dt>Also in this edition<\/dt><dd><a href="#book=Boxed\+One">Boxed One<\/a><\/dd>/);
 
 	// a mistyped ISBN is refused with a message, and nothing changes
 	ctx.openEditForm(bookIdAt(get, 1));
@@ -883,7 +915,7 @@ test('ISBNs: shown on the card, searchable however typed, edited in the form', a
 	assert.equal(get("CATALOG.books[1].editions.length > 0"), false);
 });
 
-test('narrators and descriptions live on editions: shown on the card, searchable, edited in the form', async () => {
+test('narrators and descriptions live on editions: the card names the narrators, the details each edition\'s, searchable, edited in the form', async () => {
 	const { ctx, els, get, readable } = await boot();
 	ctx.setView('library');
 	await idle();
@@ -891,8 +923,13 @@ test('narrators and descriptions live on editions: shown on the card, searchable
 	assert.ok(demoBooks[salt].e.some(ed => ed.desc), 'the demo data has an edition with a description');
 	// both narrators on the book; with different narrators each edition names its own
 	assert.match(readable(els.results.innerHTML), /narr\. <a href="narrators\.html#n=Tobias\+Frane">Tobias Frane<\/a> \/ <a href="narrators\.html#n=Hollis\+Marr">Hollis Marr<\/a>/);
-	assert.match(readable(els.results.innerHTML), /UK edition; Narrated by <a href="narrators\.html#n=Hollis\+Marr">Hollis Marr<\/a>; ASIN/);
-	assert.doesNotMatch(readable(els.results.innerHTML), /Narrated by Ingrid Voss/, 'a single narrator is not repeated on the edition');
+	assert.doesNotMatch(readable(els.results.innerHTML), /UK edition/, 'the card leaves editions out');
+	ctx.openBook(bookIdOf(get, 'The Salt Road'));
+	await idle();
+	assert.match(readable(els.results.innerHTML), /<h3>Edition 1<\/h3><dl class="details"><dt>Narrated by<\/dt><dd><a href="narrators\.html#n=Tobias\+Frane">Tobias Frane<\/a><\/dd><dt>ASIN/);
+	assert.match(readable(els.results.innerHTML), /<h3>Edition 2: UK edition<\/h3><dl class="details"><dt>Narrated by<\/dt><dd><a href="narrators\.html#n=Hollis\+Marr">Hollis Marr<\/a><\/dd><dt>ASIN/);
+	ctx.setView('library');
+	await idle();
 	for (const q of ['hollis marr', 'uk edition']) {
 		els.q.value = q;
 		await ctx.refreshView();
@@ -928,13 +965,17 @@ test('box sets: kept as their own book, last in the series, and not counted as o
 
 test('box sets: the edition shows on each of its books, and editing it on one edits it on all', async () => {
 	const { ctx, els, get, readable } = await boot();
-	ctx.setView('library');
-	await idle();
 	const two = demoBooks.findIndex(b => b.t === 'The Copper Graft'), three = demoBooks.findIndex(b => b.t === 'Harvest of Gears');
 	assert.ok(two >= 0 && three >= 0, 'the demo data has a box set');
-	assert.match(readable(els.results.innerHTML), /ASIN audible.com <a [^>]*>SAMPLE0008<\/a>; ISBN 9780306406157; Publisher <a [^>]*>Kestrel Row Audio<\/a>; Released 2022-11; Length 23h 5m/);
-	assert.match(readable(els.results.innerHTML), /Also in this edition: <a href="#book=Harvest\+of\+Gears">Harvest of Gears #3<\/a>/);
-	assert.match(readable(els.results.innerHTML), /Also in this edition: <a href="#book=The\+Copper\+Graft">The Copper Graft #2<\/a>/);
+	ctx.openBook(bookIdOf(get, 'The Copper Graft'));
+	await idle();
+	assert.match(readable(els.results.innerHTML), /<h3>Edition: The Orchard Cycle: Books 2-3<\/h3><dl class="details"><dt>Narrated by<\/dt><dd><a [^>]*>Ingrid Voss<\/a><\/dd><dt>ASIN<\/dt><dd>audible.com <a [^>]*>SAMPLE0008<\/a><\/dd><dt>ISBN<\/dt><dd>9780306406157<\/dd><dt>Publisher<\/dt><dd><a [^>]*>Kestrel Row Audio<\/a><\/dd><dt>Released<\/dt><dd>2022-11<\/dd><dt>Length<\/dt><dd>23h 5m<\/dd>/);
+	assert.match(readable(els.results.innerHTML), /<dt>Also in this edition<\/dt><dd><a href="#book=Harvest\+of\+Gears">Harvest of Gears #3<\/a>/);
+	ctx.openBook(bookIdOf(get, 'Harvest of Gears'));
+	await idle();
+	assert.match(readable(els.results.innerHTML), /<dt>Also in this edition<\/dt><dd><a href="#book=The\+Copper\+Graft">The Copper Graft #2<\/a>/);
+	ctx.setView('library');
+	await idle();
 	els.q.value = 'kestrel row';
 	await ctx.refreshView();
 	await idle();
@@ -1500,7 +1541,9 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	await idle();
 	assert.equal(get("CATALOG.books[0].idOn('goodreads')"), '990001');
-	assert.match(els.results.innerHTML, /Goodreads book <a href="https:\/\/www\.goodreads\.com\/work\/editions\/990001" target="_blank" rel="noopener">990001<\/a>/);
+	ctx.openBook(get('CATALOG.books[0].id'));
+	await idle();
+	assert.match(els.results.innerHTML, /<dt>Goodreads book<\/dt><dd><a href="https:\/\/www\.goodreads\.com\/work\/editions\/990001" target="_blank" rel="noopener">990001<\/a><\/dd>/);
 
 	// and its work on Open Library, and its item on Wikidata
 	ctx.openEditForm(bookIdAt(get, 0));
@@ -2118,12 +2161,14 @@ test('the publishers page lists the editions\' publishers, and a publisher\'s pa
 	assert.doesNotMatch(readable(els.creditBody.innerHTML), /class="with">with/, 'a publisher\'s page names no other publishers');
 });
 
-test('the narrators and publishers on a book card link to their pages', async () => {
-	const { ctx, els, readable } = await boot();
+test('the narrators on a book card, and the publishers in its details, link to their pages', async () => {
+	const { ctx, els, get, readable } = await boot();
 	ctx.setView('library');
 	await idle();
 	assert.match(readable(els.results.innerHTML), /narr\. <a href="narrators\.html#n=Ingrid\+Voss">Ingrid Voss<\/a>/);
-	assert.match(readable(els.results.innerHTML), /Publisher <a href="publishers\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a>/);
+	ctx.openBook(bookIdOf(get, 'The Copper Graft'));
+	await idle();
+	assert.match(readable(els.results.innerHTML), /<dt>Publisher<\/dt><dd><a href="publishers\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a><\/dd>/);
 });
 
 test('author info can be added, edited and removed on the author\'s page, and links are checked', async () => {
