@@ -63,15 +63,21 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
-    `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save) and `CatalogDatabase` (`open`, `load`, `save` with the
-    revision check that throws `CatalogConflict`, `setAside`; the browser's `indexedDB` is passed in).
+    `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save; `bookRecord`/`seriesRecord`/`contributorRecord`/`creditsOf`, which a save
+    also uses from inside its transaction) and `CatalogDatabase` (`open`, `load`, `read(fn)` with a `CatalogReader` (`get`, `all`, `under`,
+    `page`, `keys`, `count`: by index, a page at a time), `save` with the revision check that throws `CatalogConflict`, which works the
+    derived fields out from the stored records so a page holding a slice can save (`SaveTransaction`), `setAside`, the kept Duplicates count;
+    the browser's `indexedDB` is passed in). `MemoryReader` answers a `CatalogReader`'s questions from records in memory.
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
     `HardcoverSync` (`run`, `read`, `lookups`/`addIds`, `planExport`).
   Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
   others bring them in with `/** @import {MergeReport} from './merger.js' */`.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
-  loading (`startPage(init, page)`: reads every record from IndexedDB (`CatalogDatabase`, `CatalogRecords.toCatalog`); with none
+  loading (`startPage(init, page)`: a page holds **only what it shows**: `CATALOG` starts empty, `loadRecords(want)` brings in books
+  (and what they need) by id, series or edition key, `queryCatalog(ask)` asks the database with a `CatalogReader`, and
+  `wholeCatalog()` (or `startPage`'s `{whole: true}`, the Duplicates page) holds every record from then on (`WHOLE`); `afterSaving(task)`
+  runs a read once the saves are done, and `whenSaved` waits for those reads too. Reading all of it (`CatalogDatabase`, `CatalogRecords.toCatalog`); with none
   it starts **empty**, never with the demo data; one that can't be read is set aside (meta `unreadable`); when nothing was saved
   yet, the catalog localStorage kept (`audiobook-catalog-device`, backup-shaped, plus `audiobook-catalog-not-duplicates`, or the
   old `audiobook-catalog-data` edits) is read through `Catalog.fromJSON`, saved, and its keys renamed `….moved-to-indexeddb`;
@@ -85,7 +91,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `ExternalCatalog` group) and `externalLinks`, the page links
   (`authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id of the name; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
-  Each page script ends with `export const READY = startPage(init, {refresh})` (the import page also passes `onHardcoverJob`;
+  Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onHardcoverJob`;
   the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
   addresses (`#series=<id>`, `#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
@@ -94,15 +100,16 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
   the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
-- `app.js` (`index.html`): series overview, all books (an empty catalog says where books come from), the book and
+- `app.js` (`index.html`): series overview (from the series records alone), all books (50 at a time, `PAGE_SIZE`, `showMore`;
+  `refreshView` reads what is shown again; an empty catalog says where books come from), the book and
   series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=<id>,<id>`.
-- `import.js` (`import.html`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`CATALOG.validate`)
+- `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`CATALOG.validate`)
   and Box sets (`addBoxSets`), the Hardcover panel (`HardcoverSync.run`
   in the page, on a copy of the catalog), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so there is no series lookup from Audible.
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
   `publishers.js` with `startCreditsPage(kind)`; `CREDIT_KINDS` holds what differs): the list of authors, narrators or
-  publishers and one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`): bio and links from `CATALOG.authors` (`.narrators`,
+  publishers (read from the contributors records alone, `LIST`) and one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`; loads their books by their credits): bio and links from `CATALOG.authors` (`.narrators`,
   `.publishers`, by id), their series and titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the info
   form. Names on the catalog's book cards link here.
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
@@ -114,7 +121,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws), a fake localStorage (`boot`'s `files`
     seed the old localStorage catalog, by default from `sample/`, which the page moves to IndexedDB; `files: null` for none) and a fake
     IndexedDB (`tests/fake-indexeddb.mjs`; pages booted with the same `storage` Map share it, like tabs, and their ids are `id-1`, ...;
-    `await kept(storage)` is what is stored, once the saves are done; `get` leaves out `uid`, `withIds` keeps it). Tests reach what the
+    `await kept(storage)` is what is stored, once the saves are done; a page draws what it reads after its saves, so `await idle()`
+    after a step that changes what is shown; `database.reads(store)` counts the records handed out; `get` leaves out `uid`, `withIds` keeps it). Tests reach what the
     modules export (`ctx.render()`, `get('CATALOG.books')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
@@ -146,7 +154,8 @@ IndexedDB (`CatalogRecords.STORES`, documented in `docs/data-format.md`): stores
 plain objects with descriptive fields, ids from `crypto.randomUUID()` that never change, references by id (a box set's edition is
 one record with `bookIds`), derived fields (sort keys, counts, `credits`) rewritten on every save and never read back, and every
 sorting index ending in the key so lists can be paged. There is no `extra`: a value a class keeps aside is not stored.
-The database is version 2 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`); `toCatalog` still reads
+The database is version 3 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`, and from versions 1 and 2
+puts meta `reshape`, so the next page saves every record again with the derived fields this version reads); `toCatalog` still reads
 version 1's records (ids under fields of their own), and `startPage` saves them again at once (`CatalogRecords.outdated`).
 `excluded` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` entries that imports must never re-add; code only
 ever adds to it (Restore and Merge add a backup's to it too). `notDuplicates` (pairs marked "Not duplicates" on the

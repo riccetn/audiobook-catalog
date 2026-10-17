@@ -150,21 +150,25 @@ point at each other by id, so renaming a series changes one record. Fields marke
 from the others on every save, only so an index can sort or filter without reading other records
 (`modules/catalog-records.js`). Every index that sorts ends with the record's key, so a page can ask for
 the next rows after the last one it shows (`IDBKeyRange.lowerBound([sortTitle, id], true)`), which is
-how a list can be paged or scrolled without loading all of it.
+how a list can be paged or scrolled without loading all of it. A page reads only what it shows (see
+[What each page loads](saving.md#what-each-page-loads)), so a save works the derived fields out inside
+its own transaction, from the records stored: a book's credits, a series' or person's counts, an
+edition's `bookIds`, and whether a series or person without books or info is kept.
 
 | store | key | holds | indexes |
 |-------|-----|-------|---------|
-| `books` | `id` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external` (its ids by catalog), `editionIds` (in order), `position` (the catalog's order); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `words`, `externalKeys` (`"hardcover 77"`) | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `genres`, `words` and `externalKeys` (multiEntry) |
+| `books` | `id` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external` (its ids by catalog), `editionIds` (in order), `position` (the catalog's order; a book added by a page that doesn't hold them all gets the next one when saved); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `readYears` (`"2024"`, or `"undated"`), `search` (the text the search looks in), `standalone` (1 when it has no series), `words`, `externalKeys` (`"hardcover 77"`) | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `standalone` [standalone, sortTitle, id], `byPosition` [position, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `search`, `genres`, `readYears`, `words`, `editionIds` and `externalKeys` (multiEntry) |
 | `editions` | `id` | `bookIds` (a box set's edition is one record on all its titles), `external` (its ids by catalog), `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`; derived: `idKeys` (`"asin B0…"` for an ASIN on any site, `"goodreads 4242"`, `"hardcover 501"`, `"isbn 978…"`) | `bookIds`, `idKeys`, `narratorIds` (multiEntry), `publisherId` |
-| `series` | `id` | `name`, `total`, `status`, `note`, `url`, `external`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead`, `externalKeys` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id], `externalKeys` (multiEntry) |
-| `contributors` | `id` | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `external`, `links`; derived: `sortName`, `bookCount`, `externalKeys` | `kindName` [kind, name] (unique), `byName` [kind, sortName, id], `externalKeys` (multiEntry) |
+| `series` | `id` | `name`, `total`, `status`, `note`, `url`, `external`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead`, `authorIds` (its books' authors), `externalKeys` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id], `externalKeys` (multiEntry) |
+| `contributors` | `id` | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `external`, `links`; derived: `sortName`, `bookCount`, `seriesCount`, `topAuthorIds` and `authorCount` (a narrator's or publisher's: the authors of most of their books, for the list), `externalKeys` | `kindName` [kind, name] (unique), `byName` [kind, sortName, id], `externalKeys` (multiEntry) |
 | `credits` | [contributorId, bookId] | derived: who is credited on which book, as what, with the book's `sortTitle`, `seriesId` and `numberKey` | `byTitle` [contributorId, sortTitle, bookId], `bySeries` [contributorId, seriesId, numberKey, bookId], `bookId` |
 | `marks` | `id` | "Not duplicates" (`bookIds`), "Keep separate" (`bookIds`, `editionIds`), or a mark that matched no book (`key`, its text) | `bookIds` (multiEntry) |
-| `exclusions` | `entry` | an entry of the exclusions list, and its `position` in it | |
-| `meta` | `key` | `revision` (bumped by every save; when another tab saved since the page read it, the page takes in the records that tab changed before it saves, and refuses when both changed the same record), and `unreadable` (a catalog set aside) | |
+| `exclusions` | `entry` | an entry of the exclusions list, and its `position` in it | `byPosition` [position, entry] |
+| `meta` | `key` | `revision` (bumped by every save; when another tab saved since the page read it, the page takes in the records that tab changed before it saves, and refuses when both changed the same record), `duplicates` (how many the Duplicates link counts, with the `revision` it was counted at), `reshape` (while the records still need saving again after an upgrade), and `unreadable` (a catalog set aside) | |
 
 Every series a book names and every person a book or edition credits has a record, with info or without.
-The database is version 2: version 1 kept the ids under fields of their own (an edition's `asins`,
+The database is version 3: version 2 had none of the indexes and derived fields a page that reads only
+what it shows needs, so the first page opened after the upgrade saves every record again. Version 1 kept the ids under fields of their own (an edition's `asins`,
 `goodreadsId` and `hardcoverId`, a book's `hardcoverId`, a person's `audible`, `goodreads` and
 `hardcover` addresses) and indexed the books' `hardcoverId`; a page that finds records like that reads
 them, and saves them again the current way at once.

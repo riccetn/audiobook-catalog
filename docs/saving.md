@@ -19,7 +19,25 @@ kept (the tab shows the other's changes from then on). When both tabs changed th
 edition, a series, a person), the tab that saves second saves nothing, names the entry and asks you to
 reload it and make the change again, rather than overwriting the other.
 
-Each browser keeps its own catalog, tied to the address the app is served from: `localhost:8000` and
+## What each page loads
+
+A page reads only what it shows, so a large catalog opens as fast as a small one:
+
+- **Series overview**: the series records (each keeps how many books you own and which are missing),
+  without reading a book.
+- **A series**, **Standalone** or **a book**: those books, their editions, and the series and people they name.
+- **All books**: the first 50 books in the order shown (searched and filtered by the database's indexes),
+  then 50 more with each press of **Show more**.
+- **Authors**, **Narrators**, **Publishers**: the list is read from the people's records alone (each keeps
+  how many books and series they have); someone's page reads their books.
+- **Duplicates**: every book, since finding duplicates means comparing them all.
+- **Import & export**: only how many books there are, until you press Import, Check, Box sets, a Hardcover
+  button, Export, Restore or Merge; then the whole catalog, which the page keeps from then on.
+
+The Duplicates link's count takes every book too: it is kept with the catalog, and a page that changed
+the catalog counts again in the background after it saved.
+
+ tied to the address the app is served from: `localhost:8000` and
 your GitHub Pages site are two catalogs, and so are two browsers on one PC. Move a catalog with a
 backup (below), and combine two that both changed with **Merge** ([Merge a backup from another device](backups.md)).
 
