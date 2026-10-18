@@ -57,22 +57,25 @@
 	<form id="addForm">
 		<h3 id="formTitle">Add a book</h3>
 		<div class="formrow">
-			<div><label>Title</label><input id="f_t" required></div>
-			<div><label>Authors, separated by commas</label><input id="f_a" required></div>
+			<div><label for="f_t">Title</label><input id="f_t" required></div>
+			<div><label for="f_a">Authors, separated by commas</label><input id="f_a" required></div>
 		</div>
 		<div class="formrow">
-			<div><label>Genres (comma separated)</label><input id="f_g"></div>
-			<div><label>Hardcover book</label><input id="f_hcb" placeholder="its id, or paste its hardcover.app address"></div>
-		</div>
-		<div class="formrow extFields" id="f_bookExt"></div>
-		<div class="formrow">
-			<div><label>Series</label><input id="f_s"></div>
-			<div><label>Book # in series</label><input id="f_sn"></div>
+			<div><label for="f_s">Series</label><input id="f_s"></div>
+			<div class="narrow"><label for="f_sn">Book # in series</label><input id="f_sn"></div>
 		</div>
 		<div class="formrow">
-			<div><label>Date(s) read, comma separated</label><input id="f_r" placeholder="e.g. 2024-03-15, 2026-01"></div>
+			<div><label for="f_r">Date(s) read, comma separated</label><input id="f_r" placeholder="e.g. 2024-03-15, 2026-01"></div>
 			<div class="formrow-btn"><button type="button" id="readTodayBtn" title="Add today's date">+ Read today</button></div>
 		</div>
+		<div><label for="f_g">Genres (comma separated)</label><input id="f_g"></div>
+		<details class="moreFields" id="f_ids">
+			<summary>The book in other catalogs <span class="summaryNote" id="f_idsNote"></span></summary>
+			<div class="formrow">
+				<div><label for="f_hcb">Hardcover book</label><input id="f_hcb" placeholder="its id, or paste its hardcover.app address"></div>
+			</div>
+			<div class="formrow extFields" id="f_bookExt"></div>
+		</details>
 		<label>Editions (another ISBN is another edition; a box set is the same edition on each of its books)</label>
 		<div id="f_editions" class="editionsEditor"></div>
 		<button type="button" id="addEditionBtn" class="addEdition">+ Add an edition</button>
@@ -85,13 +88,13 @@
 
 	<form id="seriesForm">
 		<h3 id="seriesFormTitle">Series info</h3>
-		<div><label>Series name (renames it on every book in the series)</label><input id="sf_name"></div>
+		<div><label for="sf_name">Series name (renames it on every book in the series)</label><input id="sf_name"></div>
 		<div class="formrow">
-			<div><label>Books released so far</label><input id="sf_total" placeholder="e.g. 12, or many"></div>
-			<div><label>Status</label><select id="sf_status"><option value="ongoing">ongoing</option><option value="complete">complete</option></select></div>
+			<div><label for="sf_total">Books released so far</label><input id="sf_total" placeholder="e.g. 12, or many"></div>
+			<div><label for="sf_status">Status</label><select id="sf_status"><option value="ongoing">ongoing</option><option value="complete">complete</option></select></div>
 		</div>
-		<div><label>Note</label><input id="sf_note" placeholder="e.g. book 5 is announced"></div>
-		<div><label>Author or publisher site (optional)</label><input id="sf_url" placeholder="https://"></div>
+		<div><label for="sf_note">Note</label><input id="sf_note" placeholder="e.g. book 5 is announced"></div>
+		<div><label for="sf_url">Author or publisher site (optional)</label><input id="sf_url" placeholder="https://"></div>
 		<div class="formrow extFields" id="sf_ext"></div>
 		<p id="seriesFormError" class="formError"></p>
 		<div class="formbtns">
