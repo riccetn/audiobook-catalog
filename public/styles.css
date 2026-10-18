@@ -289,6 +289,15 @@ h1{
 	margin-top:.1rem;
 }
 .book .info{flex:1; min-width:0;}
+/* A cover (app.js coverImage) keeps a square's room while it loads, so the card doesn't jump; a print cover
+   sits in it whole. One that never loads takes no room. */
+.cover{flex:0 0 auto; aspect-ratio:1; object-fit:contain; border-radius:4px; opacity:0; transition:opacity .2s;}
+.cover.loaded{opacity:1;}
+.cover.missing{display:none;}
+.cover.small{width:2.8rem;}
+.cover.large{width:9rem; float:right; margin:0 0 .6rem .9rem;}
+.coversToggle{display:flex; align-items:center; gap:.3rem; font-size:.82rem; color:var(--ink-soft); cursor:pointer;}
+.rowbtns .coversToggle input{flex:none; padding:0; margin:0;}
 .book .title{font-weight:600; font-size:.95rem;}
 .book .meta{color:var(--ink-soft); font-size:.82rem; margin-top:.15rem;}
 .tag{
@@ -326,6 +335,7 @@ h1{
 /* Phones: less space around the page and above the list. The page links stay on one line that scrolls
    sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */
 @media (max-width:600px){
+	.cover.large{width:6.5rem;}
 	.wrap{padding:.75rem .9rem 3rem;}
 	h1{font-size:1.3rem;}
 	.pages{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; gap:1rem; margin-bottom:.4rem;}

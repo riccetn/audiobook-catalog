@@ -8,6 +8,8 @@ import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
+import {Cover} from './modules/cover.js';
+/** @import {CoverSize} from './modules/cover.js' */
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
@@ -873,6 +875,34 @@ function bookActions(id){
 		buildElement('button', {class: 'iconbtn del', 'data-id': id, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '×'));
 }
 
+// Covers come from Amazon and Open Library, which then learn the ids asked for, so they can be turned off;
+// the choice is this browser's.
+const COVERS_KEY = 'audiobook-catalog-covers';
+/** @returns {boolean} whether books show their covers (they do unless turned off) */
+export function coversShown(){ try{ return localStorage.getItem(COVERS_KEY) !== 'off'; }catch(e){ return true; } }
+
+/**
+ * A book's cover, trying each address Cover.addresses gives until one loads; hidden until then, and for good
+ * when none does. Nothing when covers are off or its editions have no id a cover can be found by.
+ * @param {Book} b
+ * @param {CoverSize} size
+ * @returns {HTMLImageElement | null}
+ */
+function coverImage(b, size){
+	const addresses = coversShown() ? Cover.addresses(b, size) : [];
+	if(!addresses.length) return null;
+	let at = 0;
+	const next = ()=>{
+		if(++at < addresses.length) img.setAttribute('src', addresses[at]);
+		else img.classList.add('missing');
+	};
+	const img = /** @type {HTMLImageElement} */ (buildElement('img', {class: `cover ${size}`, src: addresses[0], alt: '', loading: 'lazy', decoding: 'async',
+		referrerpolicy: 'no-referrer',
+		onload: ()=>{ if(Cover.isCover(img.naturalWidth, img.naturalHeight)) img.classList.add('loaded'); else next(); },
+		onerror: next}));
+	return img;
+}
+
 /**
  * A book in the list: only what tells it apart (its title, authors, narrators and when it was read); its
  * title links to its details (bookDetails).
@@ -883,6 +913,7 @@ function bookCard(b){
 	const id = /** @type {string} */ (b.id);
 	return buildElement('div', {class: 'book' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
 		buildElement('div', {class: 'num'}, b.number || '•'),
+		coverImage(b, 'small'),
 		buildElement('div', {class: 'info'},
 			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b)}, b.title)),
 			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
@@ -908,6 +939,7 @@ function bookDetails(b){
 	return buildElement('div', {class: 'book book-details' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
 		buildElement('div', {class: 'num'}, b.number || '•'),
 		buildElement('div', {class: 'info'},
+			coverImage(b, 'large'),
 			buildElement('h2', {class: 'title'}, b.title),
 			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
 			detailList([
@@ -981,6 +1013,12 @@ addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidd
 byId('q').addEventListener('input', ()=>{
 	const typing = !!(history.state && history.state.search);
 	navigate({}, typing ? 'replace' : 'push', {search: true});
+});
+const coversBox = /** @type {HTMLInputElement} */ (byId('showCovers'));
+coversBox.checked = coversShown();
+coversBox.addEventListener('change', ()=>{
+	try{ localStorage.setItem(COVERS_KEY, coversBox.checked ? 'on' : 'off'); }catch(e){}
+	render();
 });
 const FILTERS = ['authorFilter', 'genreFilter', 'readFilter', 'missingFilter'];
 FILTERS.forEach(id=> byId(id).addEventListener('change', ()=>{ showFilterCount(); navigate({}); }));

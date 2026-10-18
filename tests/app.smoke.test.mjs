@@ -610,7 +610,8 @@ test('a book\'s details link an edition\'s ASIN to Audible and its Goodreads id 
 	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist()");
 	await ctx.refreshView();
 	await idle();
-	assert.doesNotMatch(els.results.innerHTML, /TESTASIN01|Gull Audio|9780000000002/);
+	// (only its cover's address has its ids)
+	assert.doesNotMatch(els.results.innerHTML.replace(/<img [^>]*>/g, ''), /TESTASIN01|Gull Audio|9780000000002/);
 	ctx.openBook(get('CATALOG.books[0].id'));
 	await idle();
 	const html = readable(els.results.innerHTML);
@@ -689,6 +690,8 @@ test('a book card shows its title, authors, narrators and read dates; its detail
 	ctx.openSeries(seriesIdOf(get, 'The Lantern Coast'));
 	await idle();
 	const card = readable(els.results.innerHTML).match(/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="book-actions">/)[0];
+	// its cover from its first ASIN, hidden until it loads
+	assert.match(card, /<div class="num">1<\/div><img class="cover small" src="https:\/\/images-na\.ssl-images-amazon\.com\/images\/P\/SAMPLE0001.01.MZZZZZZZ.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><div class="info">/);
 	assert.match(card, /<div class="title"><a href="#book=The\+Salt\+Road">The Salt Road<\/a><\/div><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
 	assert.match(card, /<div class="read">Read 2023-06-02, 2025-11-20<\/div><\/div><div class="book-actions">$/);
 	assert.doesNotMatch(card, /Fantasy|Goodreads|ISBN|Gullwing/);
@@ -696,13 +699,44 @@ test('a book card shows its title, authors, narrators and read dates; its detail
 	ctx.openBook(bookIdOf(get, 'The Salt Road'));
 	await idle();
 	const details = readable(els.results.innerHTML);
-	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="info"><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
+	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="info"><img class="cover large" src="https:\/\/images-na\.ssl-images-amazon\.com\/images\/P\/SAMPLE0001.01.LZZZZZZZ.jpg"[^>]*><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
 	assert.match(details, /<dl class="details"><dt>Series<\/dt><dd><a href="#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20 <button type="button" class="readToday">\+ Read today<\/button><\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/);
 	assert.match(details, /<dt>Goodreads<\/dt><dd><a [^>]*>9001<\/a><\/dd><dt>ISBN<\/dt><dd>9780000000002<\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gullwing\+Audio">Gullwing Audio<\/a><\/dd><dt>Released<\/dt><dd>2019-04-02<\/dd><dt>Length<\/dt><dd>10h 42m<\/dd>/);
 	assert.match(details, /<button class="iconbtn edit"/);
 	// editing it there puts the form in its place
 	ctx.openEditForm(bookIdOf(get, 'The Salt Road'));
 	assert.match(els.results.innerHTML, /class="book book-details editing"/);
+});
+
+test('a cover tries the next address when one fails or is blank, and can be turned off', async () => {
+	const storage = new Map();
+	const { ctx, els, get, run } = await boot({ storage });
+	ctx.setView('library');
+	await idle();
+	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'B0COVER001' }, isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist()");
+	ctx.openBook(get('CATALOG.books[0].id'));
+	await idle();
+	const cover = () => els.results.querySelector('.cover');
+	assert.equal(cover().getAttribute('src'), 'https://images-na.ssl-images-amazon.com/images/P/B0COVER001.01.LZZZZZZZ.jpg');
+	// Amazon answers with a blank picture: Open Library is asked next
+	Object.assign(cover(), { naturalWidth: 1, naturalHeight: 1 }).dispatch('load');
+	assert.equal(cover().getAttribute('src'), 'https://covers.openlibrary.org/b/isbn/9780000000002-M.jpg?default=false');
+	assert.ok(!cover().classList.contains('loaded'));
+	Object.assign(cover(), { naturalWidth: 120, naturalHeight: 180 }).dispatch('load');
+	assert.ok(cover().classList.contains('loaded'));
+	// when the last one fails too, it is hidden
+	cover().dispatch('error');
+	assert.ok(cover().classList.contains('missing'));
+	// turned off, no book asks for one, and it stays off in this browser
+	els.showCovers.checked = false;
+	els.showCovers.dispatch('change');
+	assert.equal(els.results.querySelector('.cover'), null);
+	assert.ok(get('CATALOG.books').length > 0 && els.results.querySelector('.book'));
+	const again = await boot({ storage });
+	assert.equal(again.els.showCovers.checked, false);
+	again.ctx.setView('library');
+	await idle();
+	assert.equal(again.els.results.querySelector('.cover'), null);
 });
 
 test('a book\'s details link the Hardcover book and an edition\'s Hardcover id to Hardcover, and the edit form keeps them', async () => {
