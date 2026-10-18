@@ -32,6 +32,9 @@ node --test tests/catalog.test.mjs            # one suite (the smoke test needs 
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
+On Windows, where make is usually missing, `.\make.ps1 test` (`typecheck`, `serve`, `help`) runs the same commands;
+keep `make.ps1` in step with the `Makefile` when a command changes.
+
 There is no linter or formatter; `.editorconfig` sets tab indentation for code, and otherwise match the surrounding style (see Conventions).
 CI (`.github/workflows/ci.yml`) runs `make test` and `make typecheck` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`.

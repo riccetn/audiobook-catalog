@@ -16,6 +16,8 @@ make serve    # serves public/ at http://localhost:8000/ (any static server, or 
 make help
 ```
 
+On Windows without make, `.\make.ps1 test` (or `typecheck`, `serve`, `help`) runs the same commands in PowerShell.
+
 ## Start your own catalog
 
 The first time the app opens in a browser, the catalog is empty. Fill it from *Import & export*:
