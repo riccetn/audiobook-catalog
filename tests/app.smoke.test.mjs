@@ -993,18 +993,27 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
 	const mine = JSON.stringify([{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }], r: ['2020'] }]);
-	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
+	const { els, get, readable } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
 		+ 'Old Favorite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
 	els.importGoodreadsBtn.listeners.click[0]();
 	await idle();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
-	assert.match(els.importPreviewBody.innerHTML, /ISBNs added to existing books: 1/);
-	assert.equal(els.importConfirm.textContent, 'Save ISBNs');
+	const html = readable(els.importPreviewBody.innerHTML);
+	// the edition picked on Goodreads may not be yours: it is left out unless ticked
+	assert.match(html, /Goodreads has more \(1\)<\/h4>.*<span class="cmpBook">Old Favorite — Ann Vale<\/span><ul><li><label class="cmpPick"><input type="checkbox" data-pick="editions:0"> the Goodreads edition: ISBN<\/label>/);
+	// the book has a date read already, so the other one is a difference to tick, not a gain
+	assert.match(html, /Different in both \(1\)<\/h4>.*data-pick="patch:0:r"> Dates read: <span class="cmpHere">2020<\/span> here, <span class="cmpThere">2023-11-04<\/span> on Goodreads/);
+	assert.equal(els.importConfirm.style.display, 'none', 'nothing ticked');
+	const edition = els.importPreviewBody.querySelector('input[data-pick="editions:0"]');
+	edition.checked = true;
+	edition.dispatch('change');
+	assert.equal(els.importConfirm.textContent, 'Apply 1 change');
 	els.importConfirm.listeners.click[0]();
 	await idle();
 	assert.deepEqual(get('CATALOG.books[0].editions'), [{ ext: { 'audible.com': 'B1' }, isbn: '9780306406157' }]);
+	assert.deepEqual(get('CATALOG.books[0].read'), ['2020'], 'a value this catalog has is only replaced when ticked');
 	assert.match(els.ioStatus.textContent, /added ISBNs to 1 book/);
 });
 
@@ -1173,7 +1182,7 @@ test('a catalog this browser can\'t read is set aside, not overwritten', async (
 
 test('importing an Audible CSV previews first, then adds only new books', async () => {
 	const mine = JSON.stringify([{ t: 'A Spark of Dawn', a: ['Ilse Marlowe'], s: 'A Crown of Embers', sn: '5' }]);
-	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine, 'excluded.txt': 'BGONE\n' } });
+	const { els, get, readable } = await boot({ page: 'import.html', files: { 'books.json': mine, 'excluded.txt': 'BGONE\n' } });
 	const csv = 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
 		+ 'x,A Crown of Embers 5: A Spark of Dawn,A Crown of Embers Series (book 5),Ilse Marlowe,,Finished,B5\n'
 		+ 'x,A Crown of Embers 6: Ashfall,A Crown of Embers Series (book 6),Ilse Marlowe,A.B. Quill,Finished,B6\n'
@@ -1186,14 +1195,16 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 
 	// preview: nothing changed yet
 	assert.ok(els.importPreview.classList.contains('open'));
-	assert.equal(els.importPreviewTitle.textContent, 'Audible import');
+	assert.equal(els.importPreviewTitle.textContent, 'Compare with Audible');
 	assert.equal(els.importPreview.place, 'after audiblePanel');   // under the panel that asked for it
-	assert.match(els.importPreviewBody.innerHTML, /Already in the catalog: 1/);
-	assert.match(els.importPreviewBody.innerHTML, /ASINs filled in on existing books: 1/);
-	assert.match(els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
-	assert.match(els.importPreviewBody.innerHTML, /New: 1/);
-	assert.match(els.importPreviewBody.innerHTML, /Ashfall/);
-	assert.equal(els.importConfirm.textContent, 'Add 1 book');
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(html, /<p>1 new, 1 with more to give, 0 with values that differ, 0 the same as in this catalog\.<\/p>/);
+	assert.match(html, /New from Audible \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:1" checked=""> A Crown of Embers 6: Ashfall — Ilse Marlowe  \[A Crown of Embers #6\]/);
+	// Audible's edition is the one you have: ticked
+	assert.match(html, /Audible has more \(1\)<\/h4>.*A Spark of Dawn — Ilse Marlowe  \[A Crown of Embers #5\]<\/span><ul><li><label class="cmpPick"><input type="checkbox" data-pick="editions:0" checked=""> the Audible edition: an edition \(ASIN audible\.com B5\)/);
+	assert.doesNotMatch(html, /Different in both/, 'the long form of a title is the same title');
+	assert.match(html, /Skipped \(excluded from imports\): 1<\/p><ul><li>Removed — Ilse Marlowe/);
+	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
 	assert.equal(get('CATALOG.books.length'), 1);
 
 	els.importConfirm.listeners.click[0]();
@@ -1208,7 +1219,8 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 	// the same file again: nothing to add, nothing to confirm
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
 	await idle();
-	assert.match(els.importPreviewBody.innerHTML, /Nothing new to add/);
+	assert.match(els.importPreviewBody.innerHTML, /0 new, 0 with more to give, 0 with values that differ, 2 the same/);
+	assert.match(els.importPreviewBody.innerHTML, /Nothing to take or send: both have the same\./);
 	assert.equal(els.importConfirm.style.display, 'none');
 });
 
@@ -1245,8 +1257,8 @@ test('a Goodreads import fills in dates read on books that have none', async () 
 	await idle();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
-	assert.match(els.importPreviewBody.innerHTML, /Dates read filled in on existing books: 1/);
-	assert.equal(els.importConfirm.textContent, 'Save dates read');
+	assert.match(els.importPreviewBody.innerHTML, /Old Favorite — Ann Vale<\/label><ul><li>read 2023-11-04<\/li><\/ul>/);
+	assert.equal(els.importConfirm.textContent, 'Apply 1 change');
 	els.importConfirm.listeners.click[0]();
 	await idle();
 	assert.deepEqual(get('CATALOG.books'), [{ t: 'Old Favorite', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }], r: ['2023-11-04'] }]);
@@ -1262,7 +1274,7 @@ test('importing a Goodreads CSV can be canceled', async () => {
 	await idle();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
-	assert.equal(els.importPreviewTitle.textContent, 'Goodreads import');
+	assert.equal(els.importPreviewTitle.textContent, 'Compare with Goodreads');
 	assert.equal(els.importPreview.place, 'after goodreadsPanel');
 	assert.match(els.importPreviewBody.innerHTML, /Zzz New Book — Nobody Yet  \[Zzz Saga #2\]/);
 	els.importCancel.listeners.click[0]();
@@ -1271,6 +1283,50 @@ test('importing a Goodreads CSV can be canceled', async () => {
 	assert.equal(get('CATALOG.books.length'), before);
 	els.importConfirm.listeners.click[0]();             // a stale click after cancelling does nothing
 	assert.equal(get('CATALOG.books.length'), before);
+});
+
+test('a comparison takes only what is ticked: a value of the other source in place of yours, and not a book unticked', async () => {
+	const mine = JSON.stringify([{ t: 'Salt Road', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Hollis Marr'] }] }]);
+	const { els, get, readable } = await boot({ page: 'import.html', files: { 'books.json': mine } });
+	const csv = 'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n'
+		+ 'x,Salt Road,,Ann Vale,Ida Quell,Finished,B1\n'
+		+ 'x,Brine Songs,,Ann Vale,,Finished,B2\n'
+		+ 'x,Tidewater,,Ann Vale,,Finished,B3\n';
+	const open = async () => {
+		els.importAudibleBtn.listeners.click[0]();
+		await idle();
+		els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
+		await idle();
+	};
+	const box = pick => els.importPreviewBody.querySelector(`input[data-pick="${pick}"]`);
+	const tick = (pick, on) => { box(pick).checked = on; box(pick).dispatch('change'); };
+	await open();
+	assert.match(readable(els.importPreviewBody.innerHTML), /Different in both \(1\)<\/h4>.*Salt Road — Ann Vale<\/span><ul><li><label class="cmpPick"><input type="checkbox" data-pick="patch:0:n:0"> Narrators: <span class="cmpHere">Hollis Marr<\/span> here, <span class="cmpThere">Ida Quell<\/span> on Audible<\/label>/);
+	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
+
+	// tick none, then all, of the new books
+	const [none] = els.importPreviewBody.querySelectorAll('button.cmpTick').filter(b => b.textContent === 'Tick none');
+	none.listeners.click[0]();
+	assert.equal(els.importConfirm.style.display, 'none');
+	assert.equal(box('take:1').hasAttribute('checked'), false);
+	els.importPreviewBody.querySelectorAll('button.cmpTick').find(b => b.textContent === 'Tick all').listeners.click[0]();
+	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
+
+	tick('take:2', false);
+	tick('patch:0:n:0', true);
+	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
+	els.importConfirm.listeners.click[0]();
+	await idle();
+	assert.deepEqual(get('CATALOG.books'), [
+		{ t: 'Salt Road', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Ida Quell'] }] },
+		{ t: 'Brine Songs', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B2' } }] },
+	]);
+	assert.match(els.ioStatus.textContent, /^Added 1 book, changed 1 value\.$/);
+
+	// the book left out is still new the next time
+	await open();
+	assert.match(readable(els.importPreviewBody.innerHTML), /New from Audible \(1\)<\/h4>.*Tidewater — Ann Vale/);
+	assert.doesNotMatch(els.importPreviewBody.innerHTML, /Different in both/);
 });
 
 test('Goodreads CSV downloads every book for Goodreads\' import', async () => {
@@ -1946,11 +2002,11 @@ test('Merge previews a backup from another device and keeps both sides\' changes
 	assert.equal(els.importConfirm.style.display, 'none');
 });
 
-test('the page runs a Hardcover sync itself, with a token kept in this browser', async () => {
+test('the page compares the catalog with Hardcover itself, with a token kept in this browser, and sends only what is ticked', async () => {
 	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] }];
 	const state = hardcoverState();
 	const hc = fakeHardcover(state);
-	let leaving = null;   // what leaving the page during the run would do
+	let leaving = null;   // what leaving the page while it sends would do
 	const hardcover = async (url, init) => {
 		if (JSON.parse(init.body).query.startsWith('mutation') && !leaving) {
 			leaving = { preventDefault() { this.prevented = true; } };
@@ -1960,10 +2016,10 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 	};
 	const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };   // the pause between requests
 	const page = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, hardcover, setTimeout });
-	const { els, get, storage } = page;
+	const { els, get, readable, storage } = page;
 	assert.notEqual(els.hardcoverPanel.style.display, 'none');
 	assert.match(els.hardcoverTokenState.textContent, /Paste an API token .* kept in this browser only/);
-	await els.hardcoverSyncBtn.listeners.click[0]();
+	await els.hardcoverCompareBtn.listeners.click[0]();
 	await idle();
 	assert.match(els.ioStatus.textContent, /Save your Hardcover API token first/);
 	assert.equal(hc.sent.length, 0);
@@ -1975,64 +2031,82 @@ test('the page runs a Hardcover sync itself, with a token kept in this browser',
 	assert.equal(els.hardcoverToken.value, '', 'the token is not left in the page');
 	assert.match(els.hardcoverTokenState.textContent, /saved in this browser only/);
 
-	// the preview: asked from the page, nothing changed anywhere
-	await els.hardcoverSyncBtn.listeners.click[0]();
+	// the comparison: asked from the page, nothing changed anywhere
+	await els.hardcoverCompareBtn.listeners.click[0]();
 	await idle();
 	assert.ok(hc.sent.every(s => s.auth === 'Bearer tok-123' && s.url === 'https://api.hardcover.app/v1/graphql'));
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
 	assert.ok(!els.bgTask.classList.contains('show'));
-	assert.equal(els.importPreviewTitle.textContent, 'Sync with Hardcover: preview');
+	assert.equal(els.importPreviewTitle.textContent, 'Compare with Hardcover');
 	assert.equal(els.importPreview.place, 'after hardcoverPanel');
-	assert.match(els.importPreviewBody.innerHTML, /\+ Tidewater - Ann Vale/);
-	assert.match(els.importPreviewBody.innerHTML, /books to put on your Read shelf: 1\n {4}\+ Lantern Hours - R\. T\. Hale/);
-	assert.doesNotMatch(els.importPreviewBody.innerHTML, /dry run/);
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(html, /^<p>2 books on your Hardcover Read shelf \(took 0:00\)<\/p>/);
+	assert.match(html, /New from Hardcover \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:0" checked=""> Tidewater — Ann Vale  \[Gull Isle #1\]/);
+	// your books go on Hardcover only when ticked
+	assert.match(html, /Not on your Hardcover Read shelf \(1\)<\/h4>.*<input type="checkbox" data-pick="add:0"> Lantern Hours — R\. T\. Hale: read 2024-05-01<\/label>/);
+	assert.match(html, /<input type="checkbox" data-pick="ids" checked=""> Save the Hardcover ids found for 1 book/);
+	assert.match(html, /Not added, as Hardcover has no audiobook edition picked for them: 1<\/p><ul><li>The Paper Fen — Ann Vale/);
+	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
 	assert.equal(get('CATALOG.books.length'), 1);
 	assert.equal(state.shelf.length, 2);
+	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]');
+	add.checked = true;
+	add.dispatch('change');
+	assert.equal(els.importConfirm.textContent, 'Apply 3 changes');
 
-	// the real run keeps the catalog before sending, and the browser asks before leaving the page meanwhile
+	// applying keeps the catalog before sending, and the browser asks before leaving the page meanwhile
 	await els.importConfirm.listeners.click[0]();
 	await idle();
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Lantern Hours', 'Tidewater']);
 	assert.deepEqual((await kept(storage)).books.map(b => b.t), ['Lantern Hours', 'Tidewater']);
 	assert.equal(get("CATALOG.books[0].idOn('hardcover')"), '80', 'the Hardcover ids found are kept');
 	assert.deepEqual(state.shelf.at(-1), { id: 102, book_id: 80, edition_id: 801, status_id: 3, user_book_reads: [{ finished_at: '2024-05-01', edition_id: 801 }] });
-	assert.ok(leaving.prevented, 'leaving during the run is asked about');
+	assert.ok(leaving.prevented, 'leaving while it sends is asked about');
 	const after = { preventDefault() { this.prevented = true; } };
 	page.fire('beforeunload', after);
 	assert.ok(!after.prevented, 'not once it is done');
 	assert.match(els.importPreviewBody.innerHTML, /put 1 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
-	assert.match(els.ioStatus.textContent, /Sync with Hardcover: done\./);
+	assert.match(els.ioStatus.textContent, /^Added 1 book, saved Hardcover ids found for 1 book; Hardcover updated\./);
 	assert.ok(!JSON.stringify(get('CATALOG.books')).includes('tok-123') && ![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-hardcover-token' && v.includes('tok-123')));
 });
 
-test('a Hardcover run in the page writes and sends nothing when the catalog is edited meanwhile, or Hardcover cannot be reached', async () => {
+test('a Hardcover comparison sends nothing unticked, nothing once another tab saved, and says when Hardcover cannot be reached', async () => {
 	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] }];
 	const state = hardcoverState();
 	const hc = fakeHardcover(state);
-	let edit = false;
-	const hardcover = async (url, init) => {
-		if (edit && JSON.parse(init.body).query.startsWith('query Find')) { edit = false; page.run("CATALOG.books[0].genres = ['Fantasy']"); }
-		return hc.fetch(url, init);
-	};
 	const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };
 	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
-	const page = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, hardcover, setTimeout, storage });
+	const page = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, hardcover: hc.fetch, setTimeout, storage });
 	const { els, get } = page;
-	assert.match(els.hardcoverTokenState.textContent, /saved in this browser only/);
-	await els.hardcoverExportBtn.listeners.click[0]();   // the preview, then the run, edited while it goes
-	assert.equal(get('PENDING_HARDCOVER'), 'export');
-	edit = true;
+	await els.hardcoverCompareBtn.listeners.click[0]();
+	await idle();
+	// as it opens, only what an import takes is ticked
 	await els.importConfirm.listeners.click[0]();
 	await idle();
-	assert.match(els.importPreviewBody.innerHTML, /the catalog was edited while this ran .*nothing written, nothing sent to Hardcover/);
-	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
-	assert.equal(get("CATALOG.books[0].idOn('hardcover') || null"), null);
-	assert.match(els.ioStatus.textContent, /Not everything went through/);
+	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')), 'nothing ticked to send, nothing sent');
+	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Lantern Hours', 'Tidewater']);
+	assert.equal(get("CATALOG.books[0].idOn('hardcover')"), '80');
+	assert.match(els.ioStatus.textContent, /^Added 1 book, saved Hardcover ids found for 1 book\.$/);
 
-	const offline = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, setTimeout, storage });
-	await offline.els.hardcoverImportBtn.listeners.click[0]();
+	// compared, then another tab saves an edit: applying changes and sends nothing
+	await els.hardcoverCompareBtn.listeners.click[0]();
 	await idle();
-	assert.match(offline.els.importPreviewBody.innerHTML, /this browser could not reach Hardcover \(offline/);
+	const add = els.importPreviewBody.querySelector('input[data-pick="reads:0"]') || els.importPreviewBody.querySelector('input[data-pick="add:0"]');
+	assert.ok(add, 'Lantern Hours is still to be put on Hardcover');
+	add.checked = true;
+	add.dispatch('change');
+	const other = await boot({ page: 'duplicates.html', storage });   // a page that holds every book
+	await other.run("CATALOG.books[0].genres = ['Fantasy']; persist();");
+	await other.saved();
+	await els.importConfirm.listeners.click[0]();
+	await idle();
+	assert.match(els.ioStatus.textContent, /edited in another tab since you compared; nothing was changed, nothing sent to Hardcover/);
+	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
+
+	const offline = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, setTimeout, storage: new Map([['audiobook-catalog-hardcover-token', 'tok-123']]) });
+	await offline.els.hardcoverCompareBtn.listeners.click[0]();
+	await idle();
+	assert.match(offline.els.importPreviewBody.innerHTML, /Couldn't compare: this browser could not reach Hardcover \(offline/);
 	assert.equal(offline.els.importConfirm.style.display, 'none');
 });
 

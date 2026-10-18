@@ -139,4 +139,4 @@ changes dates you already have. Audible imports do not set dates read.
 
 **Goodreads**: import from and export to Goodreads; see [Goodreads](goodreads.md).
 
-**Hardcover**: import from, export to and sync with your Hardcover shelves; see [Hardcover](hardcover.md).
+**Hardcover**: compare the catalog with your Hardcover shelves, take books from them and put books and reads on them; see [Hardcover](hardcover.md).

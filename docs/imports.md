@@ -1,7 +1,40 @@
 # How imports avoid clobbering your edits
 
-Imports only ever *add* books; an existing book is never overwritten. An incoming book counts as
-already present if any of these match, strongest first:
+## The comparison
+
+An Audible or Goodreads import, and **Compare** in the Hardcover panel, first show the other catalog's books
+beside yours, under the panel you started from, and change nothing until you press **Apply**. Each group
+lists its books with a tickbox, and **Tick all** and **Tick none** for the group:
+
+- **New from …**: books you don't have yet, ticked. Untick a book to leave it out; it is offered again the
+  next time.
+- **… has more**: books you have that the other catalog has more of, each with what it would gain. The
+  book's own gains (dates read, its Goodreads or Hardcover book id) are ticked. What its edition there would
+  bring (ids, an ISBN, a narrator, publisher, release date or length, or another edition) has a tickbox of its
+  own: ticked for Audible, whose edition is the one you have, but unticked for Goodreads and Hardcover, which
+  make you pick an edition to shelve a book, so theirs may be one picked for want of yours. Importing only
+  fills in what your book lacks (see below).
+- **Different in both**: where both have a value and they differ (the title, authors, series, number in
+  the series, dates read, or an edition's narrators, publisher, release date or length), one tickbox per
+  value, *unticked*: tick one to put the other catalog's value in place of yours (an edition's value from
+  Goodreads or Hardcover is that of the edition picked there, which may not be yours). This is the only way an
+  import changes a value you have, and only the values you tick. A series your book lacks is offered
+  here too, as an import doesn't add one. The long form of an Audible title (`A Crown of Embers 5: A Spark
+  of Dawn`) is the same title, a series spelled another way (`Ember Coast Series`) the same series, and a
+  length a minute off the same length, so none of them is listed.
+- **Only in this catalog** (for a file): your books the file doesn't have, to look through. For Hardcover,
+  see [Hardcover](hardcover.md): your books not on your *Read* shelf there, and reads it lacks, can be ticked
+  to be put on Hardcover.
+- Books on the exclusion list are counted and listed, and never added.
+
+**Apply** says how many changes are ticked. It takes them into the catalog as it is then (a value that no
+longer differs is left alone), checks the result first and changes nothing when it has errors, then saves.
+
+## Matching
+
+An import only ever *adds* books, and fills in what a book you have lacks; it changes a value you have only
+where you ticked it in the comparison. An incoming book counts as already present if any of these match,
+strongest first:
 
 1. an ASIN (on any site), the Goodreads id or Hardcover id of any of its editions, then its Hardcover
    book id (another edition of the same book on Hardcover)

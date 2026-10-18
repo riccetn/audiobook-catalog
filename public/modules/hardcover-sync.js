@@ -1,6 +1,7 @@
-// The Hardcover import, export and sync: Hardcover allows browser requests (its API answers with open CORS
-// headers), so the page runs them. They only ever reach Hardcover through a HardcoverClient, and write only
-// through `save`. The reading of answers and the planning are static, so the tests run them offline.
+// Your Hardcover shelves beside the catalog, and putting books and reads on them: Hardcover allows browser
+// requests (its API answers with open CORS headers), so the page asks it. It is only ever reached through a
+// HardcoverClient, and the catalog is never changed here. The reading of answers and the planning are static,
+// so the tests run them offline.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {Edition} from './edition.js';
@@ -8,10 +9,12 @@ import {Book} from './book.js';
 import {Importer} from './importer.js';
 import {HardcoverClient} from './hardcover-client.js';
 import {ExternalCatalog} from './external-catalog.js';
+import {Comparison} from './comparison.js';
 /** @import {Unchecked} from './text.js' */
 /** @import {Step, HardcoverLookups, HardcoverFound} from './hardcover-client.js' */
 /** @import {Catalog} from './catalog.js' */
-/** @import {MergeReport} from './merger.js' */
+/** @import {MergeOptions} from './merger.js' */
+/** @import {ComparisonResult} from './comparison.js' */
 
 /**
  * What an export to Hardcover would do (HardcoverSync.planExport()).
@@ -23,19 +26,22 @@ import {ExternalCatalog} from './external-catalog.js';
  * @property {[Book, string][]} inexact
  */
 /**
- * @typedef {object} HardcoverRunOptions
- * @property {boolean} [dryRun]
- * @property {(changed: boolean) => boolean | Promise<boolean>} save
- * @property {(line: string) => void} [out]
- * @property {(line: string) => void} [err]
- * @property {Step} [step]
- * @property {boolean} [british] say it in British spelling (Text.spelled())
+ * Your Hardcover shelves beside the catalog (HardcoverSync.compare()).
+ * @typedef {object} HardcoverComparison
+ * @property {ComparisonResult} comparison the books on your Read shelf beside the catalog's
+ * @property {Book[]} incoming the books on your Read shelf, as compared
+ * @property {MergeOptions} opts how they are imported (Comparison.apply() takes them)
+ * @property {string[]} warnings
+ * @property {number} otherShelves how many of your Hardcover books are on other shelves
+ * @property {HardcoverFound} found the Hardcover ids of your editions' ids (addIds() gives them)
+ * @property {Book[]} idsFound the books that gain a Hardcover id from them, in the comparison's merged copy
+ * @property {HardcoverPlan} plan what putting your books on Hardcover would do
  */
 /** @typedef {{books: Book[], audio: Set<Book>, otherShelves: number, warnings: string[]}} HardcoverShelf your Read shelf as books (HardcoverSync.read()) */
 
 const READ = HardcoverClient.READ;
 
-/** Runs the Hardcover import, export and sync. */
+/** Compares the catalog with your Hardcover shelves, and puts books and reads on them. */
 export class HardcoverSync {
 	/** @param {HardcoverClient} client */
 	constructor(client){
@@ -43,95 +49,42 @@ export class HardcoverSync {
 	}
 
 	/**
-	 * A Hardcover import, export or sync (`mode` 'import', 'export' or 'sync': import, then export) of
-	 * `catalog` (changed in place, so pass a copy). Import adds the books on your Hardcover Read shelf like
-	 * any import; export puts your books on that shelf with their dates read. Neither ever changes or
-	 * removes anything, here or on Hardcover. Options: `dryRun`, `out(line)` and `err(line)` (what it has to
-	 * say), `step(text, done, total)` (progress), `british` (spelling) and `save()`, which keeps the changed
-	 * catalog before anything is sent to Hardcover and returns false (having said why) when it can't.
-	 * Returns a promise of the exit code.
+	 * Your Hardcover shelves beside `catalog` (not changed): the books on your Read shelf compared with
+	 * the catalog's as an import would take them (an audiobook edition read is a book that may be added; any
+	 * other only fills in a book you have), and what putting your books on Hardcover would do, planned on
+	 * the catalog with all of them imported and the Hardcover ids of your editions found. Only reads
+	 * Hardcover; `step(text, done, total)` hears how far it has got.
 	 * @param {Catalog} catalog
-	 * @param {'import' | 'export' | 'sync'} mode
-	 * @param {HardcoverRunOptions} opts
-	 * @returns {Promise<number>}
+	 * @param {Step} step
+	 * @returns {Promise<HardcoverComparison>}
 	 */
-	async run(catalog, mode, opts){
-		const {dryRun, save} = opts;
-		const out = opts.out || (() => {}), err = opts.err || (() => {}), step = opts.step || (() => {});
+	async compare(catalog, step){
 		const client = this.client;
-		const before = JSON.stringify(catalog.books);
-		const stop = (/** @type {unknown} */ exc) => { err(`error: ${Text.errorText(exc)}; nothing written`); return 1; };
-		let shelf;
-		try{
-			step('Reading your Hardcover shelves');
-			shelf = await client.shelf(step);
-		}catch(exc){ return stop(exc); }
-
-		if(mode !== 'export'){
-			const read = shelf.filter(ub => ub && ub.status_id === READ);
-			let result;
-			try{
-				const found = await client.rows('books', [...new Set(read.map(ub => ub.book_id))], step);
-				const editions = await client.rows('editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
-				result = HardcoverSync.read(shelf, found, editions);
-			}catch(exc){ return stop(exc); }
-			const audio = result.audio;
-			const report = catalog.merge(result.books, {allDates: true, addable: book => audio.has(book)});
-			out(`Hardcover: ${result.books.length} books on your Read shelf`);
-			HardcoverSync.mergeLines(report, result.warnings, opts.british).forEach(line => out(line));
-			if(report.notAdded.length){
-				out(`  not added, as Hardcover has no audiobook edition picked for them: ${report.notAdded.length}`);
-				HardcoverSync.bookLines(report.notAdded, 5).forEach(line => out(line));
-			}
-		}
-
-		let plan = null;
-		if(mode !== 'import'){
-			const books = catalog.books;
-			// which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
-			/** @type {Map<string, string>} */
-			const editionBooks = new Map();
-			let filled;
-			try{
-				filled = HardcoverSync.addIds(books, await client.find(HardcoverSync.lookups(books), step));
-				const rows = await client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
-				for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
-			}catch(exc){ return stop(exc); }
-			plan = HardcoverSync.planExport(books, shelf, editionBooks);
-			const reads = plan.add.reduce((n, a) => n + a.dates.length, 0) + plan.reads.reduce((n, a) => n + a.dates.length, 0);
-			out('to Hardcover:');
-			out(`  Hardcover ids filled in on your books: ${filled.length}`);
-			out(`  books to put on your Read shelf: ${plan.add.length}`);
-			HardcoverSync.bookLines(plan.add.flatMap(a => a.books)).forEach(line => out(line));
-			out(`  dates read to add: ${reads}`);
-			if(plan.otherShelf.length){
-				out(`  on another Hardcover shelf, left alone: ${plan.otherShelf.length}`);
-				for(const [book, status] of plan.otherShelf.slice(0, 15)) out(`    ! ${book.title} - ${Text.namesText(book.authors)}: ${status}`);
-			}
-			if(plan.inexact.length) out(`  dates read without a day, not sent (a Hardcover read needs one): ${plan.inexact.length}`);
-			if(plan.unknown.length){
-				out(`  not found on Hardcover (no ASIN, ISBN or Goodreads id it knows; add "Hardcover <edition id>" by hand): ${plan.unknown.length}`);
-				HardcoverSync.bookLines(plan.unknown, 5).forEach(line => out(line));
-			}
-		}
-
-		const {errors} = catalog.validate();
-		if(errors.length){
-			err('Validation failed, nothing written:\n  ' + errors.slice(0, 10).join('\n  '));
-			return 1;
-		}
-		if(dryRun){
-			out('(dry run: nothing written)');
-			return 0;
-		}
-		// the ids first, so they are kept even if Hardcover stops answering halfway
-		if(!(await save(JSON.stringify(catalog.books) !== before))) return 1;
-		if(!plan) return 0;
-		return this.push(plan, out, err, step);
+		step('Reading your Hardcover shelves');
+		const shelf = await client.shelf(step);
+		const read = shelf.filter(ub => ub && ub.status_id === READ);
+		const found = await client.rows('books', [...new Set(read.map(ub => ub.book_id))], step);
+		const editions = await client.rows('editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
+		const result = HardcoverSync.read(shelf, found, editions);
+		const audio = result.audio;
+		/** @type {MergeOptions} */
+		const opts = {allDates: true, addable: book => audio.has(book)};
+		const comparison = Comparison.compare(catalog, result.books, opts);
+		const books = comparison.merged.books;
+		const ids = await client.find(HardcoverSync.lookups(books), step);
+		const idsFound = HardcoverSync.addIds(books, ids);
+		// which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
+		/** @type {Map<string, string>} */
+		const editionBooks = new Map();
+		const rows = await client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
+		for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
+		const plan = HardcoverSync.planExport(books, shelf, editionBooks);
+		return {comparison, incoming: result.books, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
 	}
 
 	/**
-	 * Carry out planExport()'s plan on Hardcover. Returns a promise of the exit code.
+	 * Carry out planExport()'s plan (or the part of it picked) on Hardcover: put its `add` books on your Read
+	 * shelf and add its `reads`. Returns a promise of the exit code.
 	 * @param {HardcoverPlan} plan
 	 * @param {(line: string) => void} out
 	 * @param {(line: string) => void} err
@@ -377,50 +330,5 @@ export class HardcoverSync {
 			if(missing.length) plan.reads.push({userBook: ub.id, edition, dates: missing, books: w.books});
 		}
 		return plan;
-	}
-
-	// ------------------------------------------------------------------ reports
-	/**
-	 * Books as report lines ("    + Title - Author  [Series #2]"), at most `limit` of them.
-	 * @param {Book[]} books
-	 * @param {number} [limit]
-	 * @returns {string[]}
-	 */
-	static bookLines(books, limit = 15){
-		const lines = books.slice(0, limit).map(b =>
-			`    + ${b.title} - ${Text.namesText(b.authors)}${b.series ? `  [${b.series}${b.number ? ' #' + b.number : ''}]` : ''}`);
-		if(books.length > limit) lines.push(`    ... and ${books.length - limit} more`);
-		return lines;
-	}
-
-	/**
-	 * What a merge did, as report lines.
-	 * @param {MergeReport} report
-	 * @param {string[]} [warnings]
-	 * @param {boolean} [british] in British spelling
-	 * @returns {string[]}
-	 */
-	static mergeLines(report, warnings, british = false){
-		const lines = [Text.spelled(`  already in the catalog: ${report.matched}`, british)];
-		/** @type {[keyof MergeReport, string][]} */
-		const counts = [['backfilled', 'ASINs filled in on existing books'], ['goodreadsFilled', 'Goodreads ids filled in on existing books'],
-			['hardcoverFilled', 'Hardcover ids filled in on existing books'], ['datesFilled', 'dates read filled in on existing books'],
-			['isbnsFilled', 'ISBNs added to existing books'], ['detailsFilled', 'narrator, publisher, release date or length filled in on existing books'],
-			['editionsAdded', 'other editions added to existing books'], ['excluded', 'skipped (excluded from imports)']];
-		for(const [k, label] of counts){
-			const list = report[k];
-			if(Array.isArray(list) && list.length) lines.push(`  ${label}: ${list.length}`);
-		}
-		if(report.boxSets.length){
-			lines.push(`  box sets kept as their own book and as their titles: ${report.boxSets.length}`);
-			for(const b of report.boxSets.slice(0, 15)) lines.push(`    ${b.title} - ${Text.namesText(b.authors)}: ${b.titles} already here, ${b.added} added`);
-			if(report.boxSets.some(b => b.added)) lines.push('    (a title not here yet is named "Series, Book N" until --series or the `series` command names it)');
-		}
-		lines.push(`  new: ${report.added.length}`, ...HardcoverSync.bookLines(report.added));
-		if(warnings && warnings.length){
-			lines.push(`  needs a look (${warnings.length}):`);
-			for(const w of warnings.slice(0, 15)) lines.push('    ! ' + w);
-		}
-		return lines;
 	}
 }
