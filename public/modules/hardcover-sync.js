@@ -37,6 +37,7 @@ import {Comparison} from './comparison.js';
  * @property {Book[]} idsFound the books that gain a Hardcover id from them, in the comparison's merged copy
  * @property {HardcoverPlan} plan what putting your books on Hardcover would do
  */
+/** @typedef {{kind: 'series' | 'author', name: string, hardcover?: string}} HardcoverPart a series or an author, and its Hardcover id when it has one */
 /** @typedef {{books: Book[], audio: Set<Book>, otherShelves: number, warnings: string[]}} HardcoverShelf your Read shelf as books (HardcoverSync.read()) */
 
 const READ = HardcoverClient.READ;
@@ -53,12 +54,13 @@ export class HardcoverSync {
 	 * the catalog's as an import would take them (an audiobook edition read is a book that may be added; any
 	 * other only fills in a book you have), and what putting your books on Hardcover would do, planned on
 	 * the catalog with all of them imported and the Hardcover ids of your editions found. With `part` (a
-	 * series or an author), only its books on either side are compared and planned, and only they are read
-	 * from Hardcover: the shelf entries of books of that series or author there, and of the Hardcover books
-	 * your books of it are. Only reads Hardcover; `step(text, done, total)` hears how far it has got.
+	 * series or an author, with its Hardcover id when you gave it one), only its books on either side are
+	 * compared and planned, and only they are read from Hardcover: the shelf entries of books of that series
+	 * or author there, and of the Hardcover books your books of it are. Only reads Hardcover;
+	 * `step(text, done, total)` hears how far it has got.
 	 * @param {Catalog} catalog
 	 * @param {Step} step
-	 * @param {{kind: 'series' | 'author', name: string}} [part]
+	 * @param {HardcoverPart} [part]
 	 * @returns {Promise<HardcoverComparison>}
 	 */
 	async compare(catalog, step, part){
@@ -89,10 +91,13 @@ export class HardcoverSync {
 
 	/**
 	 * compare() for a series' or an author's books only. Your books of it are found on Hardcover first, so
-	 * their shelf entries are read even where Hardcover files them under another series or author.
+	 * their shelf entries are read even where Hardcover files them under another series or author; the
+	 * series or author is known there by its id (Hardcover lets no name be matched loosely): the one you gave
+	 * it, those named exactly so, and those of your books of it on Hardcover whose name is the same (spelled
+	 * any way Comparison.scope takes as the same).
 	 * @param {Catalog} catalog
 	 * @param {Step} step
-	 * @param {{kind: 'series' | 'author', name: string}} part
+	 * @param {HardcoverPart} part
 	 * @returns {Promise<HardcoverComparison>}
 	 */
 	async comparePart(catalog, step, part){
@@ -102,10 +107,12 @@ export class HardcoverSync {
 		const ids = await client.find(HardcoverSync.lookups(mine), step);
 		HardcoverSync.addIds(mine, ids);
 		const theirs = [...new Set(mine.map(b => b.idOn('hardcover')).filter(id => id && HardcoverClient.ID.test(id)).map(Number))];
+		step(`Finding ${part.kind === 'series' ? 'the series' : 'the author'} ${part.name} on Hardcover`);
+		const partIds = await this.partIds(part, theirs, step);
 		step(`Reading your Hardcover shelves: ${part.kind === 'series' ? 'the series' : 'the books by'} ${part.name}`);
 		const shelf = [];
 		const seen = new Set();
-		for(const ub of [...await client.shelfOf(part.kind, part.name, step), ...await client.shelfOfBooks(theirs, step)]){
+		for(const ub of [...await client.shelfOf(part.kind, partIds, step), ...await client.shelfOfBooks(theirs, step)]){
 			if(Text.isObject(ub) && !seen.has(ub.id)){ seen.add(ub.id); shelf.push(ub); }
 		}
 		const read = shelf.filter(ub => ub.status_id === READ);
@@ -126,6 +133,31 @@ export class HardcoverSync {
 		for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
 		const plan = HardcoverSync.planExport(books, shelf, editionBooks);
 		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
+	}
+
+	/**
+	 * The Hardcover ids of a series or an author (`part`): the one given, those named exactly as it is, and
+	 * those of `books` (Hardcover books) with the same name, as Comparison.scope compares names.
+	 * @param {HardcoverPart} part
+	 * @param {number[]} books
+	 * @param {Step} step
+	 * @returns {Promise<number[]>}
+	 */
+	async partIds(part, books, step){
+		const scope = Comparison.scope(part.kind, part.name);
+		// whether a Hardcover series or author of that name is the one asked for
+		const same = (/** @type {unknown} */ name) => typeof name === 'string' &&
+			scope(new Book(part.kind === 'series' ? {title: '-', authors: ['-'], series: name} : {title: '-', authors: [name]}));
+		/** @type {Set<number>} */
+		const ids = new Set();
+		if(part.hardcover && HardcoverClient.ID.test(part.hardcover)) ids.add(Number(part.hardcover));
+		for(const row of await this.client.named(part.kind, [part.name])) if(Number.isInteger(row.id)) ids.add(row.id);
+		for(const book of await this.client.bookParts(books, step)){
+			const rows = part.kind === 'series' ? (Array.isArray(book.book_series) ? book.book_series : []).map((/** @type {any} */ x) => x && x.series)
+				: (Array.isArray(book.contributions) ? book.contributions : []).map((/** @type {any} */ x) => x && x.author);
+			for(const row of rows) if(Text.isObject(row) && Number.isInteger(row.id) && same(row.name)) ids.add(row.id);
+		}
+		return [...ids];
 	}
 
 	/**
