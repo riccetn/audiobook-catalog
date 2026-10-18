@@ -2528,6 +2528,24 @@ test('the series overview reads no book, and a series page only the books of tha
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Gull 1', 'Gull 2', 'Gull 3']);
 });
 
+test('links to authors, narrators and publishers carry the id they are stored under, from pages that hold no book', async () => {
+	const books = JSON.stringify([
+		...['1', '2'].map(n => ({ t: `Gull ${n}`, a: ['Ann Vale', 'Di Moss'], s: 'Gull Isle', sn: n, e: [{ n: ['Cy Hale'], p: 'Tern Press' }] })),
+		{ t: 'Fern 1', a: ['Bo Reed'], s: 'Fern Saga', sn: '1' },
+	]);
+	// read as they are, not with readable(): it names an id the page made up as well
+	const linked = (html, key) => [...html.matchAll(new RegExp(`#${key}=([^"&]+)">([^<]+)</a>`, 'g'))].map(([, id, name]) => [decodeURIComponent(id), name]);
+	const overview = await movedIn({ 'books.json': books });
+	await idle();
+	const stored = kind => overview.database.records('contributors').filter(c => c.kind === kind).map(c => [c.id, c.name]);
+	assert.deepEqual(linked(overview.els.results.innerHTML, 'a').sort(), stored('author').sort(), 'the series overview');
+	for(const [page, key, kind] of [['authors.html', 'a', 'author'], ['narrators.html', 'n', 'narrator'], ['publishers.html', 'p', 'publisher']]){
+		const { els } = await boot({ page, storage: overview.storage, files: null });
+		await idle();
+		assert.deepEqual(linked(els.creditBody.innerHTML, key).sort(), stored(kind).sort(), page);
+	}
+});
+
 test('all books shows 50 at a time, and Show more reads the next ones', async () => {
 	const books = Array.from({ length: 60 }, (_, i) => ({ t: `Pebble ${String(i + 1).padStart(2, '0')}`, a: ['Ann Vale'] }));
 	const { ctx, els, get, database } = await movedIn({ 'books.json': JSON.stringify(books) });

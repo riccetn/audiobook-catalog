@@ -9,6 +9,7 @@ import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-
 /** @import {RecordSet, Snapshot, StoreName} from './modules/catalog-records.js' */
 /** @import {Book} from './modules/book.js' */
 /** @import {NamedKind} from './modules/catalog.js' */
+/** @import {ContributorKind} from './modules/contributor.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 /** @import {ExternalKind} from './modules/external-catalog.js' */
@@ -127,12 +128,27 @@ export function joined(items, separator){ return items.flatMap((x, i)=> i ? [sep
 // The addresses of an author's, a narrator's and a publisher's page: by the id they are stored under, so a
 // link holds while their name is spelled another way (spaces as +, as the catalog page writes its own addresses).
 const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
+/** @type {Record<ContributorKind, string>} */
+const CREDIT_PAGES = {authors: 'authors.html#a=', narrators: 'narrators.html#n=', publishers: 'publishers.html#p='};
+/**
+ * The address of the page of the author, narrator or publisher stored under `id`.
+ * @param {ContributorKind} kind
+ * @param {string} id
+ * @returns {string}
+ */
+export const creditPageHref = (kind, id)=> CREDIT_PAGES[kind] + hashValue(id);
+/**
+ * The address of someone's page, by name: their id when the page holds it, else their name, which their page
+ * looks up. Never a new id: a page holding only some of the catalog would make up one no record has.
+ * @type {(kind: ContributorKind, name: string) => string}
+ */
+const namedPageHref = (kind, name)=> creditPageHref(kind, CATALOG.nameIds[kind].get(name) ?? name);
 /** @type {(name: string) => string} */
-export const authorPageHref = name=> 'authors.html#a=' + hashValue(CATALOG.idFor('authors', name));
+export const authorPageHref = name=> namedPageHref('authors', name);
 /** @type {(name: string) => string} */
-export const narratorPageHref = name=> 'narrators.html#n=' + hashValue(CATALOG.idFor('narrators', name));
+export const narratorPageHref = name=> namedPageHref('narrators', name);
 /** @type {(name: string) => string} */
-export const publisherPageHref = name=> 'publishers.html#p=' + hashValue(CATALOG.idFor('publishers', name));
+export const publisherPageHref = name=> namedPageHref('publishers', name);
 /**
  * The address that compares a series' or an author's books with Hardcover on the Import & export page.
  * @param {'series' | 'author'} kind
