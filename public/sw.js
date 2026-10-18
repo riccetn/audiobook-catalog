@@ -1,9 +1,9 @@
 // The service worker that makes the catalog installable as an app (on a phone, say) and usable offline.
 // Every request goes to the network first, so a new version of the app shows up at once; the cached copy
 // is only used when the network fails. The catalog itself lives in IndexedDB (store.js), not in files.
-const CACHE = 'audiobook-catalog-v6';
-const APP = ['./', 'index.html', 'import.html', 'duplicates.html', 'authors.html', 'narrators.html', 'publishers.html', 'styles.css', 'store.js', 'app.js',
-	'import.js', 'duplicates.js', 'authors.js', 'credits.js', 'narrators.js', 'publishers.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
+const CACHE = 'audiobook-catalog-v7';
+const APP = ['./', 'index.html', 'books.html', 'book.html', 'import.html', 'duplicates.html', 'authors.html', 'narrators.html', 'publishers.html', 'styles.css', 'store.js', 'book-list.js',
+	'series.js', 'books.js', 'book.js', 'import.js', 'duplicates.js', 'authors.js', 'credits.js', 'narrators.js', 'publishers.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 	'modules/audible-importer.js', 'modules/contributor.js', 'modules/backup.js', 'modules/book.js', 'modules/catalog.js', 'modules/comparison.js',
 	'modules/cover.js', 'modules/csv.js', 'modules/duplicates.js', 'modules/edition.js', 'modules/external-catalog.js', 'modules/exclusions.js', 'modules/goodreads-exporter.js',
 	'modules/goodreads-importer.js', 'modules/hardcover-client.js', 'modules/hardcover-sync.js', 'modules/importer.js', 'modules/isbn.js',

@@ -11,7 +11,7 @@ import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, queryCatalog, byId, fieldById, spell, buildElement, fillElement, joined,
-	authorPageHref, narratorPageHref, publisherPageHref, creditPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref } from './store.js';
+	authorPageHref, narratorPageHref, publisherPageHref, creditPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref, bookPageHref, seriesPageHref } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 /** @import {Child} from './store.js' */
@@ -60,9 +60,8 @@ let TOTAL_BOOKS = 0;                  // how many books the catalog has, for the
 /** @type {string | null} */
 let EDITING = null;                   // the id of whose info the form is editing, or null
 
-const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
-const bookHref = (/** @type {Book} */ b)=> 'index.html#book=' + hashValue(b.id || '');
-const seriesHref = (/** @type {string} */ name)=> 'index.html#series=' + hashValue(CATALOG.idFor('series', name));
+const bookHref = (/** @type {Book} */ b)=> bookPageHref(b.id || '');
+const seriesHref = (/** @type {string} */ name)=> seriesPageHref(CATALOG.idFor('series', name));
 /** @type {(names: string[], href: (name: string) => string) => Child[]} */
 const nameLinks = (names, href)=> joined(names.map(x=> buildElement('a', {href: href(x)}, x)), ', ');
 /** @returns {Map<string, Contributor>} what the catalog keeps about the page's kind, by id */

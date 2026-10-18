@@ -17,7 +17,8 @@
 <div class="wrap">
 	<h1>Audiobook Catalog</h1>
 	<nav class="pages">
-		<a href="index.html" class="current" aria-current="page">Catalog</a>
+		<a href="index.html" class="current" aria-current="page">Series</a>
+		<a href="books.html">Books</a>
 		<a href="authors.html">Authors</a>
 		<a href="narrators.html">Narrators</a>
 		<a href="publishers.html">Publishers</a>
@@ -27,23 +28,14 @@
 	<p class="sub" id="subtitle">Loading&hellip;</p>
 	<p class="backupNudge" id="backupNudge"></p>
 
-	<div class="viewToggle">
-		<button id="btnSeriesView" class="active">By Series</button>
-		<button id="btnLibraryView">All Books</button>
-	</div>
-
 	<div class="crumb" id="crumb">
-		<button id="backToSeries">&larr; All series</button>
+		<a href="index.html">&larr; All series</a>
 		<span id="crumbLabel"></span>
 	</div>
 
 	<div class="controls" id="controls">
-		<input type="text" id="q" placeholder="Search title, author, series, genre&hellip;">
-		<button type="button" id="filtersBtn" class="filtersBtn" aria-expanded="false" aria-controls="authorFilter genreFilter readFilter missingFilter">Filters</button>
-		<select id="authorFilter"><option value="">All authors</option></select>
-		<select id="genreFilter"><option value="">All genres</option></select>
-		<select id="readFilter"><option value="">Read any time</option></select>
-		<select id="sortBy" aria-label="Order"><option value="">In series order</option><option value="read">Recently read</option><option value="added">Recently added</option></select>
+		<input type="text" id="q" placeholder="Search series and authors&hellip;">
+		<button type="button" id="filtersBtn" class="filtersBtn" aria-expanded="false" aria-controls="missingFilter">Filters</button>
 		<select id="missingFilter"><option value="">All series</option><option value="missing">Series with missing books</option></select>
 	</div>
 
@@ -51,44 +43,11 @@
 		<span id="resultCount"></span>
 		<div class="rowbtns">
 			<label class="coversToggle" title="Covers are fetched from Amazon and Open Library by the books' ASINs and ISBNs"><input type="checkbox" id="showCovers" checked> Covers</label>
-			<button class="addbtn" id="toggleAdd">+ Add a book</button>
+			<a class="addbtn" id="toggleAdd" href="book.html#add">+ Add a book</a>
 		</div>
 	</div>
 	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
 	<p id="ioStatus" class="ioStatus"></p>
-
-	<form id="addForm">
-		<h3 id="formTitle">Add a book</h3>
-		<div class="formrow">
-			<div><label for="f_t">Title</label><input id="f_t" required></div>
-			<div><label for="f_a">Authors, separated by commas</label><input id="f_a" required></div>
-		</div>
-		<div class="formrow">
-			<div><label for="f_s">Series</label><input id="f_s"></div>
-			<div class="narrow"><label for="f_sn">Book # in series</label><input id="f_sn"></div>
-		</div>
-		<div class="formrow">
-			<div><label for="f_r">Date(s) read, comma separated</label><input id="f_r" placeholder="e.g. 2024-03-15, 2026-01"></div>
-			<div class="formrow-btn"><button type="button" id="readTodayBtn" title="Add today's date">+ Read today</button></div>
-		</div>
-		<div><label for="f_g">Genres (comma separated)</label><input id="f_g"></div>
-		<details class="moreFields" id="f_ids">
-			<summary>The book in other catalogs <span class="summaryNote" id="f_idsNote"></span></summary>
-			<div class="formrow">
-				<div><label for="f_hcb">Hardcover book</label><input id="f_hcb" placeholder="its id, or paste its hardcover.app address"></div>
-			</div>
-			<div class="formrow extFields" id="f_bookExt"></div>
-		</details>
-		<label>Editions (another ISBN is another edition; a box set is the same edition on each of its books)</label>
-		<div id="f_editions" class="editionsEditor"></div>
-		<button type="button" id="addEditionBtn" class="addEdition">+ Add an edition</button>
-		<p id="formError" class="formError"></p>
-		<div class="formbtns">
-			<button type="submit" class="save" id="formSaveBtn">Add book</button>
-			<button type="button" id="cancelAdd">Cancel</button>
-			<button type="button" id="formRemoveBtn" class="removeBook" title="Take the book out of the catalog; imports will skip it">Remove book</button>
-		</div>
-	</form>
 
 	<form id="seriesForm">
 		<h3 id="seriesFormTitle">Series info</h3>
@@ -111,6 +70,6 @@
 	<div id="results"></div>
 </div>
 
-<script type="module" src="app.js"></script>
+<script type="module" src="series.js"></script>
 </body>
 </html>

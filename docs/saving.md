@@ -21,7 +21,7 @@ reload it and make the change again, rather than overwriting the other.
 
 Since the catalog is only in this browser, keep a backup: **Export** on the *Import & export* page (its
 **Backups** panel comes first there) downloads one. The panel says when this browser last downloaded or
-restored a backup and how many changes were saved since, and the catalog page shows a reminder when changes
+restored a backup and how many changes were saved since, and the *Series* and *Books* pages show a reminder when changes
 were saved and the last backup is two weeks old, or 50 changes old (10 when there is none yet). This browser
 keeps that date in localStorage (`audiobook-catalog-last-backup`).
 
@@ -29,10 +29,11 @@ keeps that date in localStorage (`audiobook-catalog-last-backup`).
 
 A page reads only what it shows, so a large catalog opens as fast as a small one:
 
-- **Series overview**: the series records (each keeps how many books you own and which are missing),
+- **Series**: the series records (each keeps how many books you own and which are missing),
   without reading a book.
-- **A series**, **Standalone** or **a book**: those books, their editions, and the series and people they name.
-- **All books**: the first 50 books in the order shown (searched and filtered by the database's indexes),
+- **A series** or **Standalone**: those books, their editions, and the series and people they name.
+- **A book's page**: that book, and the other books of a box set it shares an edition with.
+- **Books**: the first 50 books in the order shown (searched and filtered by the database's indexes),
   then 50 more with each press of **Show more**.
 - **Authors**, **Narrators**, **Publishers**: the list is read from the people's records alone (each keeps
   how many books and series they have); someone's page reads their books.

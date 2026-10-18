@@ -4,7 +4,10 @@
 
 ```
 public/               the app, and all that a static server serves (make serve, GitHub Pages)
-  index.html, app.js    the catalog: browse by series or all books, edit books and series info
+  index.html, series.js    Series: every series, and a series' own page (its books, and its info form)
+  books.html, books.js    Books: every book, searched, filtered and sorted
+  book.html, book.js    a book's page: everything about it, Read today, Merge, and the book form (also for a new book)
+  book-list.js          what those three share: book cards, covers, the lists grouped by series, the address helpers
   import.html, import.js    Audible, Goodreads and Hardcover imports, Goodreads CSV export, Check / Box sets, backups (Export / Restore / Merge)
   duplicates.html, duplicates.js    find and merge books entered twice
   authors.html, narrators.html, publishers.html, credits.js    the authors, narrators and publishers, and each
