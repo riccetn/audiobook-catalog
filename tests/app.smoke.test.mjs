@@ -413,6 +413,28 @@ test('search narrows the library view', async () => {
 	assert.match(els.results.innerHTML, /No books match/);
 });
 
+test('the Filters button (a phone\'s) opens the filters and counts those on; a book on its own has no search or filters', async () => {
+	const { ctx, els, get } = await boot();
+	ctx.setView('library');
+	await idle();
+	assert.equal(els.filtersBtn.textContent, 'Filters');
+	els.filtersBtn.listeners.click[0]();
+	assert.ok(els.controls.classList.contains('filtersOpen'));
+	assert.equal(els.filtersBtn.getAttribute('aria-expanded'), 'true');
+	els.genreFilter.value = 'Mystery';
+	els.genreFilter.listeners.change[0]();
+	await idle();
+	assert.equal(els.filtersBtn.textContent, 'Filters · 1');
+	assert.equal(els.controls.style.display, '');
+	ctx.openBook(bookIdOf(get, 'The Salt Road'));
+	await idle();
+	assert.equal(els.controls.style.display, 'none');
+	ctx.setView('series');
+	await idle();
+	assert.equal(els.controls.style.display, '');
+	assert.equal(els.filtersBtn.textContent, 'Filters', 'the genre filter is not shown in the overview');
+});
+
 test('text from the catalog is shown as text, never read as HTML', async () => {
 	const odd = '<img src=x onerror=alert(1)> & "Co"';
 	// twice, so the duplicates page shows it too

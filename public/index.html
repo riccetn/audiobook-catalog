@@ -36,8 +36,9 @@
 		<span id="crumbLabel"></span>
 	</div>
 
-	<div class="controls">
+	<div class="controls" id="controls">
 		<input type="text" id="q" placeholder="Search title, author, series, genre&hellip;">
+		<button type="button" id="filtersBtn" class="filtersBtn" aria-expanded="false" aria-controls="authorFilter genreFilter readFilter missingFilter">Filters</button>
 		<select id="authorFilter"><option value="">All authors</option></select>
 		<select id="genreFilter"><option value="">All genres</option></select>
 		<select id="readFilter"><option value="">Read any time</option></select>
