@@ -10,7 +10,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
-import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
+import { CATALOG, STATUS_TIME, backupAge, needsBackup, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
 	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress, hardcoverCompareHref } from './store.js';
 /** @import {Child} from './store.js' */
 
@@ -1415,10 +1415,20 @@ function redraw(before){
 }
 
 // The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
+// The catalog lives only in this browser, so the page says when its last backup is getting old (needsBackup).
+async function showBackupNudge(){
+	const age = await backupAge();
+	fillElement(byId('backupNudge'), needsBackup(age) && [
+		spell(age.days === null ? `No backup of this catalog yet, and ${Text.plural(age.changes, 'change')} saved: `
+			: `Last backup ${age.days} days ago, and ${Text.plural(age.changes, 'change')} saved since: `),
+		buildElement('a', {href: 'import.html'}, 'download one on Import & export'), '.']);
+}
+
 export const READY = startPage(async ()=>{
 	FILTER_CHOICES = await queryCatalog(readFilterChoices);
 	populateFilters();
 	const drawn = applyState(stateFromHash(location.hash));
 	setAddress('replace', viewState());
 	await drawn;
+	await showBackupNudge();
 }, {refresh: redraw});

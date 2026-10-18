@@ -1373,6 +1373,34 @@ test('Goodreads CSV downloads every book for Goodreads\' import', async () => {
 	assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
 });
 
+test('the Backups panel says how old the last backup is, and the catalog page reminds you when it is getting old', async () => {
+	const storage = new Map();
+	const imp = await boot({ page: 'import.html', storage });
+	await idle();
+	assert.equal(imp.els.backupState.textContent, 'No backup downloaded in this browser yet.');
+	imp.ctx.Blob = class { constructor() {} };
+	imp.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+	imp.els.exportBtn.listeners.click[0]();
+	await idle();
+	assert.equal(imp.els.backupState.textContent, 'Last backup today; nothing changed since.');
+	const revision = JSON.parse(storage.get('audiobook-catalog-last-backup')).revision;
+	assert.equal(typeof revision, 'number');
+
+	// a fresh backup: no reminder
+	const fresh = await boot({ storage });
+	await idle();
+	assert.equal(fresh.els.backupNudge.textContent, '');
+
+	// three weeks and a change later
+	storage.set('audiobook-catalog-last-backup', JSON.stringify({ time: new Date(Date.now() - 21 * 86400000).toISOString(), revision: revision - 1 }));
+	const old = await boot({ storage });
+	await idle();
+	assert.equal(old.els.backupNudge.textContent, 'Last backup 21 days ago, and 1 change saved since: download one on Import & export.');
+	const later = await boot({ page: 'import.html', storage });
+	await idle();
+	assert.equal(later.els.backupState.textContent, 'Last backup 21 days ago; 1 change saved since.');
+});
+
 test('Export includes series and author info, and Import brings them back', async () => {
 	const first = await boot({ page: 'import.html' });
 	const blobs = [];

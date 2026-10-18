@@ -15,7 +15,8 @@ import {Comparison} from './modules/comparison.js';
 import {
 	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
-	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, valueFromPageHash, idFromAddress, buildElement, fillElement
+	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, valueFromPageHash, idFromAddress, buildElement, fillElement,
+	noteBackup, backupAge, backupAgeText
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
@@ -33,6 +34,7 @@ function refreshPage(){
 	return afterSaving(async ()=>{
 		const count = await queryCatalog(r=> r.count('books'));
 		byId('subtitle').textContent = spell(`${count} audiobooks in the catalog`);
+		byId('backupState').textContent = backupAgeText(await backupAge());
 	});
 }
 
@@ -74,6 +76,7 @@ function exportBackup(){
 	// {books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates} (Catalog.toJSON)
 	download(JSON.stringify(CATALOG, null, '\t'), 'application/json', 'audiobook-catalog-backup');
 	showIoStatus('Backup downloaded.');
+	noteBackup().then(refreshPage);
 }
 
 function exportGoodreads(){
@@ -141,7 +144,7 @@ async function importBackup(files){
 		}
 		const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
 		CATALOG.addMarkTexts([...keptMarks, ...notDuplicates || []]);   // likewise the pairs marked "Not duplicates"
-		refreshPage(); persist();
+		persist(); noteBackup().then(refreshPage);   // what was restored is in that backup
 		showIoStatus(`Restored ${books.length} books` + (series ? ` and info for ${series.size} series` : '') +
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
 	}catch(err){

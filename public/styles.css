@@ -34,6 +34,11 @@ h1{
 .panel h2{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:1.05rem; font-weight:600;}
 .panel p{margin:0 0 .7rem; color:var(--ink-soft);}
 .hint{color:var(--ink-soft); font-size:.85rem; margin:0 0 1rem;}
+/* the catalog page's reminder that the last backup is getting old */
+.backupNudge{font-size:.82rem; color:var(--ink); background:rgba(176,141,62,.14); border:1px solid rgba(176,141,62,.45); border-radius:8px; padding:.45rem .7rem; margin:-.6rem 0 1rem;}
+.backupNudge:empty{display:none;}
+.backupNudge a{color:var(--moss); font-weight:600;}
+.panel p.backupState{color:var(--ink); font-weight:600;}
 .viewToggle{display:flex; gap:.4rem; margin-bottom:1.1rem;}
 .viewToggle button{
 	padding:.45rem .9rem; border-radius:20px; border:1px solid var(--line); background:var(--card);
