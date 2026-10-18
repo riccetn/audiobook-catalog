@@ -263,9 +263,9 @@ h1{
 	color:var(--ink); display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap;
 }
 .series-title .n{color:var(--ink-soft); font-weight:400; font-size:.8rem;}
-.series-title .status{font-size:.68rem; font-weight:600; padding:.1rem .5rem; border-radius:20px; margin-left:.15rem;}
-.series-title .status.ongoing{background:rgba(176,141,62,.18); color:var(--gold);}
-.series-title .status.complete{background:rgba(63,93,75,.18); color:var(--moss);}
+.status{font-size:.68rem; font-weight:600; padding:.1rem .5rem; border-radius:20px; margin-left:.15rem;}
+.status.ongoing{background:rgba(176,141,62,.18); color:var(--gold);}
+.status.complete{background:rgba(63,93,75,.18); color:var(--moss);}
 .series-note{font-size:.78rem; color:var(--ink-soft); margin:-.35rem 0 .55rem;}
 .authorlink{font-size:.72rem; color:var(--moss); text-decoration:none; border-bottom:1px dotted var(--moss); font-weight:500;}
 .authorlink:hover{color:var(--moss-dark);}
@@ -310,6 +310,8 @@ h1{
 .srow-foot{display:flex; gap:.6rem; align-items:center; margin-top:.4rem; flex-wrap:wrap;}
 .series-title a, .book .title a{text-decoration:none; color:inherit;}
 .series-title a:hover, .book .title a:hover{color:var(--moss);}
+.series-title a.hardcoverCompare{color:var(--moss); font-family:system-ui,sans-serif; font-weight:normal;}
+.series-title a.hardcoverCompare:hover{color:var(--moss-dark);}
 .filtersBtn{display:none; padding:.6rem .8rem; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.9rem; font-weight:600; cursor:pointer;}
 /* Phones: less space around the page and above the list. The page links stay on one line that scrolls
    sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */

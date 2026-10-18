@@ -536,8 +536,7 @@ export function render(){
 	const filtered = /** @type {Book[]} */ (LISTED.slice(0, SHOWING).map(id=> CATALOG.book(id)).filter(b=> b && matches(b, q, author, genre, read, series)));
 	const more = LISTED.length - SHOWING;
 
-	byId('subtitle').textContent =
-		`${TOTAL_BOOKS} audiobooks, merged from your Audible library and Goodreads history`;
+	byId('subtitle').textContent = spell(`${TOTAL_BOOKS} audiobooks in the catalog`);
 	byId('resultCount').textContent = more > 0 ? `${filtered.length} of ${filtered.length + more} shown` : `${filtered.length} shown`;
 
 	/** @type {Record<string, Book[]>} */
