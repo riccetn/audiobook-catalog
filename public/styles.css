@@ -142,7 +142,7 @@ h1{
 	background:var(--paper); color:var(--ink); font-size:.9rem;
 }
 /* an author's, narrator's or publisher's page (authors.html, narrators.html, publishers.html) */
-.crumb a{color:var(--moss); font-weight:600; text-decoration:none;}
+.crumb a, #crumbLabel a{color:var(--moss); font-weight:600; text-decoration:none;}
 .author-head{display:flex; align-items:baseline; gap:.4rem; margin-bottom:.4rem;}
 .author-name{font-family:'Lora',Georgia,serif; font-weight:600; font-size:1.35rem; margin:0;}
 .author-bio{font-size:.92rem; margin-bottom:1.4rem;}
@@ -190,7 +190,10 @@ h1{
 .importPreview .cmpGroup h4{margin:0 0 .25rem; font-size:.88rem; font-weight:600;}
 .importPreview .cmpTick{margin-left:.3rem; padding:.1rem .45rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink-soft); font-size:.72rem; font-weight:normal; cursor:pointer;}
 .importPreview .cmpNote{color:var(--ink-soft); font-size:.78rem;}
-.importPreview .cmpRows{list-style:none; padding-left:0; max-height:24rem;}
+.importPreview .cmpRows{list-style:none; padding-left:0; max-height:none; overflow-y:visible;}   /* the page scrolls, not a box in it */
+/* Apply and Cancel stay in reach however long the preview is */
+.importPreview > .formbtns{position:sticky; bottom:0; z-index:1; background:var(--card); margin:.9rem -1rem -1rem; padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom, 0px));
+	border-top:1px solid var(--line); border-radius:0 0 10px 10px;}
 .importPreview .cmpRows > li{padding:.2rem 0;}
 .importPreview .cmpRows ul{margin:.1rem 0 .2rem 1.6rem; padding-left:0; list-style:none; color:var(--ink-soft); max-height:none;}
 .importPreview .cmpPick{cursor:pointer;}
@@ -206,6 +209,7 @@ h1{
 .mergePrefer select{margin-left:.3rem; padding:.3rem .4rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink); font-size:.85rem; max-width:100%;}
 .dup-group{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.8rem; margin-bottom:1rem; font-size:.85rem;}
 .dup-note{margin:0 0 .5rem; color:var(--moss); font-weight:600; font-size:.8rem;}
+.dup-shared{margin:0 0 .5rem; overflow-wrap:anywhere;}
 .dup-books{display:flex; gap:.5rem; flex-wrap:wrap;}
 .dup-book{flex:1 1 220px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:.5rem .65rem; background:var(--paper); overflow-wrap:anywhere;}
 .dup-field{display:block; margin:.1rem 0;}
@@ -247,6 +251,12 @@ h1{
 }
 .formrow{display:flex; gap:.6rem;}
 .formrow > div{flex:1;}
+.formrow > .narrow{flex:0 1 9rem;}
+/* fields most books leave empty, folded away: the book's ids in other catalogs */
+.moreFields{margin:.7rem 0 .2rem; border:1px solid var(--line); border-radius:8px; padding:.4rem .65rem;}
+.moreFields summary{cursor:pointer; font-size:.82rem; font-weight:600; color:var(--ink-soft);}
+.moreFields[open] summary{margin-bottom:.2rem;}
+.moreFields .summaryNote{font-weight:normal;}
 .formrow > .formrow-btn{flex:0 0 auto; display:flex; align-items:flex-end;}
 /* a field per external catalog: as many in a row as fit */
 .extFields{flex-wrap:wrap;}
@@ -268,9 +278,9 @@ h1{
 	color:var(--ink); display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap;
 }
 .series-title .n{color:var(--ink-soft); font-weight:400; font-size:.8rem;}
-.series-title .status{font-size:.68rem; font-weight:600; padding:.1rem .5rem; border-radius:20px; margin-left:.15rem;}
-.series-title .status.ongoing{background:rgba(176,141,62,.18); color:var(--gold);}
-.series-title .status.complete{background:rgba(63,93,75,.18); color:var(--moss);}
+.status{font-size:.68rem; font-weight:600; padding:.1rem .5rem; border-radius:20px; margin-left:.15rem;}
+.status.ongoing{background:rgba(176,141,62,.18); color:var(--gold);}
+.status.complete{background:rgba(63,93,75,.18); color:var(--moss);}
 .series-note{font-size:.78rem; color:var(--ink-soft); margin:-.35rem 0 .55rem;}
 .authorlink{font-size:.72rem; color:var(--moss); text-decoration:none; border-bottom:1px dotted var(--moss); font-weight:500;}
 .authorlink:hover{color:var(--moss-dark);}
@@ -315,9 +325,36 @@ h1{
 .srow-foot{display:flex; gap:.6rem; align-items:center; margin-top:.4rem; flex-wrap:wrap;}
 .series-title a, .book .title a{text-decoration:none; color:inherit;}
 .series-title a:hover, .book .title a:hover{color:var(--moss);}
-/* Phones: less space around the page, and the filters two to a row. */
+.series-title a.hardcoverCompare{color:var(--moss); font-family:system-ui,sans-serif; font-weight:normal;}
+.series-title a.hardcoverCompare:hover{color:var(--moss-dark);}
+.filtersBtn{display:none; padding:.6rem .8rem; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.9rem; font-weight:600; cursor:pointer;}
+/* Phones: less space around the page and above the list. The page links stay on one line that scrolls
+   sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */
 @media (max-width:600px){
-	.wrap{padding:1rem .9rem 3rem;}
-	h1{font-size:1.6rem;}
+	.wrap{padding:.75rem .9rem 3rem;}
+	h1{font-size:1.3rem;}
+	.pages{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; gap:1rem; margin-bottom:.4rem;}
+	.pages::-webkit-scrollbar{display:none;}
+	.pages a{white-space:nowrap; flex:none;}
+	.sub{margin-bottom:.75rem;}
+	.viewToggle{margin-bottom:.75rem;}
+	.controls{margin-bottom:.9rem; gap:.5rem;}
+	.controls input[type=text]{flex:1 1 0;}
+	.filtersBtn{display:block; flex:none;}
+	.controls:not(.filtersOpen) select{display:none;}
 	.controls select{flex:1 1 40%; max-width:none;}
+	.count-row{margin-bottom:.6rem;}
 }
+/* Touch screens: buttons big enough for a finger, whatever their glyph. */
+@media (pointer:coarse){
+	.iconbtn{min-width:2.25rem; min-height:2.5rem; display:inline-flex; align-items:center; justify-content:center;}
+	.book-actions{gap:0; margin:-.45rem -.5rem -.45rem 0;}
+	.viewToggle button{padding:.6rem 1rem;}
+	.removeEdition, .addEdition, .formrow-btn button{min-height:2.5rem;}
+}
+/* the status line's Undo, and a book's Read today */
+.ioStatus .undo, .book-details .readToday{
+	padding:.15rem .6rem; border-radius:6px; border:1px solid var(--moss); background:var(--card); color:var(--moss);
+	font-size:.78rem; font-weight:600; cursor:pointer;
+}
+.ioStatus .undo:hover, .book-details .readToday:hover{background:var(--moss); color:#fff;}

@@ -19,3 +19,7 @@ changed on the PC meanwhile. The other way, Export on the PC and **Merge** it in
 
 The service worker (`public/sw.js`) fetches everything from the network first and only falls back to its
 cached copy offline, so a new version shows up on the next start while online.
+
+On a phone's narrow screen the page keeps the list near the top: the page links stay on one line that
+scrolls sideways, and the catalog's filters fold away behind a **Filters** button next to the search box,
+which shows how many are on (*Filters · 2*). A book opened on its own shows no search or filters.
