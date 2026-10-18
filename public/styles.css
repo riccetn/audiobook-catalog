@@ -310,9 +310,28 @@ h1{
 .srow-foot{display:flex; gap:.6rem; align-items:center; margin-top:.4rem; flex-wrap:wrap;}
 .series-title a, .book .title a{text-decoration:none; color:inherit;}
 .series-title a:hover, .book .title a:hover{color:var(--moss);}
-/* Phones: less space around the page, and the filters two to a row. */
+.filtersBtn{display:none; padding:.6rem .8rem; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.9rem; font-weight:600; cursor:pointer;}
+/* Phones: less space around the page and above the list. The page links stay on one line that scrolls
+   sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */
 @media (max-width:600px){
-	.wrap{padding:1rem .9rem 3rem;}
-	h1{font-size:1.6rem;}
+	.wrap{padding:.75rem .9rem 3rem;}
+	h1{font-size:1.3rem;}
+	.pages{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; gap:1rem; margin-bottom:.4rem;}
+	.pages::-webkit-scrollbar{display:none;}
+	.pages a{white-space:nowrap; flex:none;}
+	.sub{margin-bottom:.75rem;}
+	.viewToggle{margin-bottom:.75rem;}
+	.controls{margin-bottom:.9rem; gap:.5rem;}
+	.controls input[type=text]{flex:1 1 0;}
+	.filtersBtn{display:block; flex:none;}
+	.controls:not(.filtersOpen) select{display:none;}
 	.controls select{flex:1 1 40%; max-width:none;}
+	.count-row{margin-bottom:.6rem;}
+}
+/* Touch screens: buttons big enough for a finger, whatever their glyph. */
+@media (pointer:coarse){
+	.iconbtn{min-width:2.25rem; min-height:2.5rem; display:inline-flex; align-items:center; justify-content:center;}
+	.book-actions{gap:0; margin:-.45rem -.5rem -.45rem 0;}
+	.viewToggle button{padding:.6rem 1rem;}
+	.removeEdition, .addEdition, .formrow-btn button{min-height:2.5rem;}
 }

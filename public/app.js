@@ -201,6 +201,9 @@ function showView(){
 	byId('readFilter').style.display = showLibControls ? '' : 'none';
 	byId('toggleAdd').style.display = showLibControls ? '' : 'none';
 	byId('missingFilter').style.display = showLibControls ? 'none' : '';
+	// a book shown on its own has nothing to search or filter
+	byId('controls').style.display = BOOK_FILTER !== null ? 'none' : '';
+	showFilterCount();
 	return afterSaving(async ()=>{ await loadView(); drawView(); });
 }
 
@@ -949,8 +952,18 @@ byId('q').addEventListener('input', ()=>{
 	const typing = !!(history.state && history.state.search);
 	navigate({}, typing ? 'replace' : 'push', {search: true});
 });
-['authorFilter', 'genreFilter', 'readFilter', 'missingFilter'].forEach(id=>
-	byId(id).addEventListener('change', ()=> navigate({})));
+const FILTERS = ['authorFilter', 'genreFilter', 'readFilter', 'missingFilter'];
+FILTERS.forEach(id=> byId(id).addEventListener('change', ()=>{ showFilterCount(); navigate({}); }));
+
+// On a phone the filters fold away behind a button (styles.css), which says how many are on.
+function showFilterCount(){
+	const on = FILTERS.filter(id=> fieldById(id).style.display !== 'none' && fieldById(id).value).length;
+	byId('filtersBtn').textContent = on ? `Filters · ${on}` : 'Filters';
+}
+byId('filtersBtn').addEventListener('click', ()=>{
+	const open = byId('controls').classList.toggle('filtersOpen');
+	byId('filtersBtn').setAttribute('aria-expanded', String(open));
+});
 byId('btnSeriesView').addEventListener('click', ()=> setView('series'));
 byId('btnLibraryView').addEventListener('click', ()=> setView('library'));
 byId('backToSeries').addEventListener('click', ()=> setView('series'));
