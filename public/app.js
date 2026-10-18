@@ -30,8 +30,8 @@ export let EDIT_ID = null;            // the id of the book being edited, or nul
 let EDIT_SERIES = null;        // the id of the series whose info is being edited, or null
 /** @type {string | null} */
 let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
-/** @type {string | null} */
-let MERGE_FROM = null;         // the id of the first book picked with its merge button, or null
+/** @type {{id: string, q: string, found: string[], more: number} | null} */
+let MERGE_SEARCH = null;       // the book whose Merge was pressed, what was typed to find the other one, and the books found
 /** @type {{id: string, timer: ReturnType<typeof setTimeout>} | null} */
 let REMOVING = null;           // a book removed but kept until its Undo is gone (removeBook), or null
 
@@ -145,7 +145,6 @@ function populateFilters(){
 	fillElement(gSel, option('', 'All genres'), genres.map(g=> option(g, g)));
 	fillElement(rSel, option('', 'Read any time'), years.map(y=> option(y, `Read in ${y}`)), option(UNDATED, 'No date read'));
 	aSel.value = aCur; gSel.value = gCur; rSel.value = rCur;
-	if(!CATALOG.book(MERGE_FROM)) MERGE_FROM = null;   // the book picked for merging is gone
 }
 
 /** @returns {string | null} the name of the series SERIES_FILTER shows, if it shows one */
@@ -558,7 +557,7 @@ export function render(){
 	SHARED = sharedEditions();
 
 	if(filtered.length === 0){
-		out.push(buildElement('p', {class: 'empty'}, 'No books match. Try clearing a filter.'));
+		out.push(buildElement('p', {class: 'empty'}, REMOVING !== null && REMOVING.id === BOOK_FILTER ? 'Removed.' : 'No books match. Try clearing a filter.'));
 	} else if(BOOK_FILTER !== null){
 		fillElement(byId('results'), filtered.map(bookDetails));
 		placeBookForm();
@@ -862,17 +861,82 @@ function bookNarrators(b){
 }
 
 /**
- * A book's edit, merge and remove buttons.
+ * A book's Edit and Merge buttons, under its details: viewing a book comes first, so they come last. Merge
+ * opens a search for the other book (mergeSearch).
+ * @param {string} id the book's
+ * @returns {Child[]}
+ */
+function bookActions(id){
+	const searching = MERGE_SEARCH?.id === id;
+	return [buildElement('div', {class: 'book-actions'},
+		buildElement('button', {type: 'button', class: 'edit', onclick: ()=> openEditForm(id)}, 'Edit'),
+		buildElement('button', {type: 'button', class: 'merge', 'aria-expanded': String(searching), onclick: ()=> toggleMergeSearch(id)}, 'Merge')),
+	searching && mergeSearch(id)];
+}
+
+/**
+ * Merge's search for the book to merge with: what is typed finds books as the catalog's search does, and
+ * each found links to the duplicates page with the two (which checks they are still the same books).
  * @param {string} id the book's
  * @returns {HTMLDivElement}
  */
-function bookActions(id){
-	const picked = MERGE_FROM === id, from = CATALOG.book(MERGE_FROM);
-	const mergeLabel = picked ? 'Cancel merge' : !from ? 'Merge with another book' : `Merge with ${from.title}`;
-	return buildElement('div', {class: 'book-actions'},
-		buildElement('button', {class: 'iconbtn edit', 'data-id': id, title: 'Edit', 'aria-label': 'Edit', onclick: ()=> openEditForm(id)}, '✎'), ' ',
-		buildElement('button', {class: 'iconbtn merge', 'data-id': id, title: mergeLabel, 'aria-label': mergeLabel, onclick: ()=> pickMergeBook(id)}, '⇄'), ' ',
-		buildElement('button', {class: 'iconbtn del', 'data-id': id, title: 'Remove', 'aria-label': 'Remove', onclick: removeBookClick}, '×'));
+function mergeSearch(id){
+	const q = MERGE_SEARCH ? MERGE_SEARCH.q : '';
+	return buildElement('div', {class: 'mergeSearch'},
+		buildElement('label', {for: 'mergeQuery'}, 'Find the book to merge it with'),
+		buildElement('input', {type: 'search', id: 'mergeQuery', value: q, placeholder: 'Title, author, series or ISBN', autocomplete: 'off',
+			oninput: (/** @type {Event} */ e)=> findMergeBooks(id, /** @type {HTMLInputElement} */ (e.currentTarget).value)}),
+		buildElement('ul', {class: 'mergeFound', id: 'mergeFound'}, mergeFoundItems(id)));
+}
+
+/**
+ * The books Merge's search found, each a link to merging it with book `id`.
+ * @param {string} id the book's
+ * @returns {Child[]}
+ */
+function mergeFoundItems(id){
+	if(!MERGE_SEARCH || !MERGE_SEARCH.q.trim()) return [];
+	const found = /** @type {Book[]} */ (MERGE_SEARCH.found.map(other=> CATALOG.book(other)).filter(Boolean));
+	if(!found.length) return [buildElement('li', {class: 'none'}, 'No other book matches.')];
+	return [...found.map(b=> buildElement('li', {},
+		buildElement('a', {href: 'duplicates.html#merge=' + [id, /** @type {string} */ (b.id)].map(encodeURIComponent).join(',')}, b.title),
+		b.series && ` (${b.series}${b.number ? ' #' + b.number : ''})`, b.authors.length > 0 && ' — ' + Text.namesText(b.authors))),
+	MERGE_SEARCH.more > 0 && buildElement('li', {class: 'none'}, `and ${MERGE_SEARCH.more} more; type more to narrow it down.`)];
+}
+
+/**
+ * Merge on a book's details: opens the search for the book to merge it with, or closes it.
+ * @param {string} id the book's
+ */
+export function toggleMergeSearch(id){
+	MERGE_SEARCH = MERGE_SEARCH?.id === id ? null : {id, q: '', found: [], more: 0};
+	render();
+	if(MERGE_SEARCH) byId('mergeQuery').focus();
+}
+
+// How many books Merge's search lists at most.
+const MERGE_FOUND_MAX = 20;
+
+/**
+ * Find the books matching `q` for Merge's search, from the stored catalog as the list's search does, and
+ * show them; a search typed over meanwhile is dropped.
+ * @param {string} id the book being merged
+ * @param {string} q
+ * @returns {Promise<void>}
+ */
+export async function findMergeBooks(id, q){
+	if(MERGE_SEARCH?.id !== id) return;
+	MERGE_SEARCH.q = q;
+	const text = q.trim();
+	const ids = !text ? [] : (await queryCatalog(r=> r.indexKeys('books', 'search')))
+		.filter(([search, other])=> other !== id && CatalogRecords.searchMatches(String(search), text)).map(([, other])=> String(other));
+	const shown = ids.slice(0, MERGE_FOUND_MAX);
+	if(shown.length) await loadRecords({books: shown});
+	if(MERGE_SEARCH?.id !== id || MERGE_SEARCH.q !== q) return;
+	MERGE_SEARCH.found = shown.sort((x, y)=> (CATALOG.book(x)?.title || '').localeCompare(CATALOG.book(y)?.title || ''));
+	MERGE_SEARCH.more = ids.length - shown.length;
+	const list = document.getElementById('mergeFound');
+	if(list) fillElement(list, mergeFoundItems(id));
 }
 
 // Covers come from Amazon and Open Library, which then learn the ids asked for, so they can be turned off;
@@ -912,7 +976,7 @@ function coverImage(b, size){
  */
 function bookCard(b, withSeries = false){
 	const id = /** @type {string} */ (b.id);
-	return buildElement('div', {class: 'book' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
+	return buildElement('div', {class: 'book', 'data-id': id},
 		buildElement('div', {class: 'num'}, b.number || '•'),
 		coverImage(b, 'small'),
 		buildElement('div', {class: 'info'},
@@ -920,13 +984,12 @@ function bookCard(b, withSeries = false){
 			withSeries && b.series && buildElement('div', {class: 'meta'},
 				buildElement('a', {href: seriesHref(CATALOG.idFor('series', b.series))}, b.series), b.number && ` #${b.number}`),
 			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
-			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', '))),
-		bookActions(id));
+			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', '))));
 }
 
 /**
- * A book shown on its own (#book=<id>): everything about it, with each edition's parts. Its parts are laid out
- * by styles.css: the cover under the buttons, or across the whole card on a phone.
+ * A book shown on its own (#book=<id>): everything about it, with each edition's parts, and then its Edit and
+ * Merge buttons. Its parts are laid out by styles.css: the cover beside the rest, or across the whole card on a phone.
  * @param {Book} b
  * @returns {HTMLDivElement}
  */
@@ -940,12 +1003,11 @@ function bookDetails(b){
 			buildElement('h3', {}, b.editions.length > 1 ? `Edition ${i + 1}` : 'Edition', ed.description && ': ' + ed.description),
 			detailList([...editionRows(ed), ['Also in this edition', also.length > 0 && joined(also, ', ')]]));
 	});
-	return buildElement('div', {class: 'book book-details' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
+	return buildElement('div', {class: 'book book-details', 'data-id': id},
 		buildElement('div', {class: 'num'}, b.number || '•'),
 		buildElement('div', {class: 'head'},
 			buildElement('h2', {class: 'title'}, b.title),
 			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — '))),
-		bookActions(id),
 		coverImage(b, 'large'),
 		buildElement('div', {class: 'info'},
 			detailList([
@@ -955,7 +1017,8 @@ function bookDetails(b){
 				['Genres', b.genres.length > 0 && buildElement('span', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))],
 				...Object.entries(ExternalCatalog.order(b.external) || {}).map(([key, value])=>
 					/** @type {[string, Child]} */ ([`${ExternalCatalog.name(key)} book`, idLink(key, 'book', value)]))]),
-			editions));
+			editions,
+			bookActions(id)));
 }
 
 /**
@@ -977,16 +1040,16 @@ export function readToday(id){
 }
 
 /**
- * A book's remove button: the book leaves the list at once, with an Undo on the status line; it is taken out
- * of the catalog, and added to the exclusions so imports skip it, once the Undo is gone (removeBook).
- * @param {Event} e
+ * The book form's Remove book: the book being edited leaves the list at once, with an Undo on the status
+ * line; it is taken out of the catalog, and added to the exclusions so imports skip it, once the Undo is gone
+ * (finishRemoving).
  */
-function removeBookClick(e){
-	const id = /** @type {HTMLElement} */ (e.currentTarget).dataset.id;
-	const b = id && CATALOG.book(id);
+function removeEditedBook(){
+	const id = EDIT_ID;
+	const b = CATALOG.book(id);
 	if(!id || !b) return;
 	finishRemoving();
-	if(EDIT_ID === id) closeForm();
+	closeForm();
 	REMOVING = {id, timer: setTimeout(finishRemoving, STATUS_TIME)};
 	render();
 	showIoStatus(`Removed ${b.title}; imports will skip it.`, false, ()=>{
@@ -1049,6 +1112,7 @@ byId('toggleAdd').addEventListener('click', ()=>{
 		EDIT_ID = null;
 		byId('formTitle').textContent = 'Add a book';
 		byId('formSaveBtn').textContent = 'Add book';
+		byId('formRemoveBtn').style.display = 'none';
 		byId('formError').textContent = '';
 		/** @type {HTMLFormElement} */ (form).reset();
 		setFormEditions([], null);
@@ -1061,6 +1125,7 @@ byId('toggleAdd').addEventListener('click', ()=>{
 	}
 });
 byId('cancelAdd').addEventListener('click', closeForm);
+byId('formRemoveBtn').addEventListener('click', removeEditedBook);
 
 /**
  * What a new book starts with, from what the list shows: the series shown, and the author picked in the
@@ -1143,6 +1208,7 @@ export function openEditForm(id){
 	byId('formError').textContent = '';
 	byId('formTitle').textContent = 'Edit book';
 	byId('formSaveBtn').textContent = 'Save changes';
+	byId('formRemoveBtn').style.display = '';
 	placeBookForm();
 	byId('addForm').classList.add('open');
 	byId('addForm').scrollIntoView({behavior:'smooth', block:'center'});
@@ -1421,26 +1487,6 @@ byId('addForm').addEventListener('submit', async e=>{
 	closeForm();
 	if(others) showIoStatus(`Also updated the shared edition on ${Text.plural(others, 'other book')}.`);
 });
-
-// The merge button on a book: the first press picks it, a press on another book opens the two on the
-// duplicates page (which checks they are still the same books).
-/** @param {string} id the book's */
-export function pickMergeBook(id){
-	const b = CATALOG.book(id);
-	if(!b) return;
-	if(MERGE_FROM === null){
-		MERGE_FROM = id;
-		showIoStatus(`Now press \u21c4 on the book to merge ${b.title} with.`);
-	} else if(MERGE_FROM === id){
-		MERGE_FROM = null;
-	} else {
-		const pair = [MERGE_FROM, id].map(encodeURIComponent);
-		MERGE_FROM = null;
-		location.href = 'duplicates.html#merge=' + pair.join(',');
-		return;
-	}
-	render();
-}
 
 /**
  * After a save took in what another tab changed (store.js): the book being edited stays open unless the

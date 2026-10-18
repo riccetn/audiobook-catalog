@@ -719,12 +719,12 @@ test('a book card shows its title, authors, narrators and read dates; its detail
 	const { ctx, els, get, readable } = await boot();
 	ctx.openSeries(seriesIdOf(get, 'The Lantern Coast'));
 	await idle();
-	const card = readable(els.results.innerHTML).match(/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="book-actions">/)[0];
+	const card = readable(els.results.innerHTML).match(/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="read">[^<]*<\/div><\/div><\/div>/)[0];
 	// its cover from its first ASIN, hidden until it loads
 	assert.match(card, /<div class="num">1<\/div><img class="cover small" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.MZZZZZZZ\.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><div class="info">/);
 	assert.match(card, /<div class="title"><a href="#book=The\+Salt\+Road">The Salt Road<\/a><\/div><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
-	assert.match(card, /<div class="read">Read 2023-06-02, 2025-11-20<\/div><\/div><div class="book-actions">$/);
-	assert.doesNotMatch(card, /Fantasy|Goodreads|ISBN|Gullwing/);
+	assert.match(card, /<div class="read">Read 2023-06-02, 2025-11-20<\/div><\/div><\/div>$/);
+	assert.doesNotMatch(card, /Fantasy|Goodreads|ISBN|Gullwing|<button/, 'nothing to edit, merge or remove it with');
 
 	ctx.openBook(bookIdOf(get, 'The Salt Road'));
 	await idle();
@@ -732,9 +732,10 @@ test('a book card shows its title, authors, narrators and read dates; its detail
 	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="head"><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
 	assert.match(details, /<dl class="details"><dt>Series<\/dt><dd><a href="#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20 <button type="button" class="readToday">\+ Read today<\/button><\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/);
 	assert.match(details, /<dt>Goodreads<\/dt><dd><a [^>]*>9001<\/a><\/dd><dt>ISBN<\/dt><dd>9780000000002<\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gullwing\+Audio">Gullwing Audio<\/a><\/dd><dt>Released<\/dt><dd>2019-04-02<\/dd><dt>Length<\/dt><dd>10h 42m<\/dd>/);
-	assert.match(details, /<button class="iconbtn edit"/);
-	// the cover comes after the buttons (under them, or across the card on a phone), then the rest
-	assert.match(details, /<\/button><\/div><img class="cover large" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.LZZZZZZZ\.jpg"[^>]*><div class="info"><dl class="details"><dt>Series/);
+	// Edit and Merge, spelled out, come after everything else
+	assert.match(details, /<\/div><div class="book-actions"><button type="button" class="edit">Edit<\/button><button type="button" class="merge" aria-expanded="false">Merge<\/button><\/div><\/div><\/div>$/);
+	// the cover comes after the title (beside the rest, or across the card on a phone), then the rest
+	assert.match(details, /<\/div><\/div><img class="cover large" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.LZZZZZZZ\.jpg"[^>]*><div class="info"><dl class="details"><dt>Series/);
 	// editing it there puts the form in its place
 	ctx.openEditForm(bookIdOf(get, 'The Salt Road'));
 	assert.match(els.results.innerHTML, /class="book book-details editing"/);
@@ -1547,14 +1548,14 @@ test('Restore takes the data files of a catalog from before it lived in the brow
 	assert.equal(get('CATALOG.books.length'), 2);
 });
 
-// Press a book's remove button twice (the second press confirms), as in the library view.
+// Press Remove book in a book's form, as in the library view, and let its Undo go.
 // `i` is the book's place in the catalog's order.
 async function removeBook(ctx, i) {
 	ctx.setView('library');
 	await idle();
 	const id = [...ctx.indexedDB.records('books')].sort((x, y) => x.position - y.position)[i].id;
-	const btn = ctx.document.getElementById('results').querySelector(`.iconbtn.del[data-id="${id}"]`);
-	btn.dispatch('click');
+	ctx.openEditForm(id);
+	ctx.document.getElementById('formRemoveBtn').dispatch('click');
 	assert.ok(!ctx.document.getElementById('results').innerHTML.includes(`data-id="${id}"`), 'the book leaves the list at once');
 	ctx.finishRemoving();   // as when its Undo is gone
 }
@@ -1565,7 +1566,10 @@ test('a removed book stays in the catalog until its Undo is gone, and Undo bring
 	ctx.setView('library');
 	await idle();
 	const id = bookIdAt(get, 1);
-	els.results.querySelector(`.iconbtn.del[data-id="${id}"]`).dispatch('click');
+	ctx.openEditForm(id);
+	assert.equal(els.formRemoveBtn.style.display, '');
+	els.formRemoveBtn.dispatch('click');
+	assert.ok(!els.addForm.classList.contains('open'), 'the form closes');
 	assert.doesNotMatch(els.results.innerHTML, />Gone</);
 	assert.equal(els.ioStatus.textContent, 'Removed Gone; imports will skip it. Undo');
 	assert.equal(get('CATALOG.books.length'), 2);
@@ -1675,29 +1679,24 @@ test('the edit form takes the place of the book card, and adding a book opens it
 	assert.equal(els.formTitle.textContent, 'Edit book');
 });
 
-test('removing a book while another is being edited saves the edit to the right book', async () => {
+test('removing a book closes its form, and an edit after it saves to the right book', async () => {
 	const mine = JSON.stringify([{ t: 'First', a: ['Ann Vale'] }, { t: 'Second', a: ['Ann Vale'] }, { t: 'Third', a: ['Ann Vale'] }]);
 	const { ctx, els, get } = await boot({ files: { 'books.json': mine } });
-	ctx.setView('library');
-	await idle();
-	ctx.openEditForm(bookIdAt(get, 1));
 	await removeBook(ctx, 0);
-	assert.ok(els.addForm.classList.contains('open'), 'the form stays open on its book');
+	assert.ok(!els.addForm.classList.contains('open'), 'the form closes');
+	await idle();
+	ctx.openEditForm(bookIdAt(get, 0));
 	els.f_t.value = 'Second, Edited';
 	els.addForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Second, Edited', 'Third']);
-
-	// removing the book being edited closes the form, and removing a later one leaves it be
-	ctx.openEditForm(bookIdAt(get, 0));
 	await removeBook(ctx, 1);
+	await idle();
+	ctx.openEditForm(bookIdAt(get, 0));
 	els.f_t.value = 'Second, Again';
 	els.addForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Second, Again']);
-	ctx.openEditForm(bookIdAt(get, 0));
-	await removeBook(ctx, 0);
-	assert.ok(!els.addForm.classList.contains('open'));
 });
 
 test('series show which books are missing, and can be filtered to those', async () => {
@@ -1981,20 +1980,22 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
 	assert.equal(again.get('CATALOG.books.length'), 5);            // the merge was kept in this browser
 });
 
-test('the merge button pairs two books by hand and opens them on the duplicates page', async () => {
+test('Merge on a book finds the other book and opens the two on the duplicates page', async () => {
 	const mine = JSON.stringify([{ t: 'Ledger', a: ['Priya Ostrander'] }, { t: 'Other', a: ['Ann Vale'] }, { t: 'The Ledger', a: ['P. Ostrander'], r: ['2024'] }]);
 	const files = { 'books.json': mine };
 	const home = await boot({ files });
-	home.ctx.setView('library');
+	const at = [0, 1, 2].map(i => bookIdAt(home.get, i));
+	home.ctx.openBook(at[2]);
 	await idle();
-	const at = home.get('CATALOG.books.map(b => b.id)');
-	home.ctx.pickMergeBook(at[2]);
-	await idle();
-	assert.match(home.els.results.innerHTML, /class="book picked"/);
-	assert.match(home.els.ioStatus.textContent, /Now press .* The Ledger with/);
-	home.ctx.pickMergeBook(at[0]);
-	await idle();
-	assert.equal(home.ctx.location.href, `duplicates.html#merge=${at[2]},${at[0]}`);
+	home.ctx.toggleMergeSearch(at[2]);
+	assert.match(home.els.results.innerHTML, /class="merge" aria-expanded="true">Merge<\/button><\/div><div class="mergeSearch"><label for="mergeQuery">Find the book to merge it with<\/label><input type="search" id="mergeQuery"/);
+	// the book itself is not offered
+	await home.ctx.findMergeBooks(at[2], 'ledger');
+	assert.equal(home.els.mergeFound.innerHTML, `<li><a href="duplicates.html#merge=${at[2]},${at[0]}">Ledger</a> — Priya Ostrander</li>`);
+	await home.ctx.findMergeBooks(at[2], 'nothing like it');
+	assert.equal(home.els.mergeFound.innerHTML, '<li class="none">No other book matches.</li>');
+	home.ctx.toggleMergeSearch(at[2]);
+	assert.doesNotMatch(home.els.results.innerHTML, /mergeSearch/);
 
 	const { ctx, els, get } = await boot({ page: 'duplicates.html', storage: home.storage, hash: `#merge=${at[2]},${at[0]}` });
 	assert.deepEqual(get('DUP_GROUPS'), [[at[0], at[2]]], 'in the order the catalog has them');
@@ -2755,9 +2756,9 @@ test('an edit on a page that holds some books keeps every other record, and the 
 
 	// removing the last books of a series drops it, and a person left without books
 	for (const title of ['Gull 1', 'Gull 2']) {
-		const btn = els.results.querySelector(`.iconbtn.del[data-id="${bookIdOf(get, title)}"]`);
-		btn.dispatch('click');
-		btn.dispatch('click');
+		ctx.openEditForm(bookIdOf(get, title));
+		els.formRemoveBtn.dispatch('click');
+		ctx.finishRemoving();
 		await idle();
 	}
 	assert.deepEqual(count('series'), { 'Fern Saga': [6, undefined] });
