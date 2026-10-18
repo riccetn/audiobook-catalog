@@ -194,7 +194,8 @@ function matches(b, q, author, genre, read, series){
 function showView(){
 	const v = VIEW;
 	byId('btnSeriesView').classList.toggle('active', v==='series');
-	byId('btnLibraryView').classList.toggle('active', v==='library');
+	// a series or a book shown on its own is neither all the series nor all the books
+	byId('btnLibraryView').classList.toggle('active', v==='library' && SERIES_FILTER === null && BOOK_FILTER === null);
 	const showLibControls = v === 'library';
 	byId('authorFilter').style.display = showLibControls ? '' : 'none';
 	byId('genreFilter').style.display = showLibControls ? '' : 'none';
@@ -212,7 +213,9 @@ function drawView(){
 	const label = v !== 'library' ? null : BOOK_FILTER !== null ? (book ? book.title : 'No such book')
 		: SERIES_FILTER === '__standalone__' ? 'Standalone books' : SERIES_FILTER !== null ? shownSeriesName() || 'No such series' : null;
 	crumb.classList.toggle('show', !!label);
-	byId('crumbLabel').textContent = label || '';
+	// a book in a series links back to it
+	const series = book && book.series && CATALOG.idFor('series', book.series);
+	fillElement(byId('crumbLabel'), series ? [buildElement('a', {href: seriesHref(series)}, /** @type {string} */ (book.series)), ' › ', label] : label || '');
 	document.title = (label ? label + ' — ' : v === 'library' ? 'All books — ' : '') + spell('Audiobook Catalog');
 	render();
 }
@@ -966,6 +969,7 @@ byId('toggleAdd').addEventListener('click', ()=>{
 		byId('formError').textContent = '';
 		/** @type {HTMLFormElement} */ (form).reset();
 		setFormEditions([], null);
+		showBookIds([]);
 		const {series, authors} = newBookDefaults();
 		fieldById('f_s').value = series;
 		fieldById('f_a').value = authors.join(', ');
@@ -1028,6 +1032,15 @@ function placeBookForm(){
 	card.after(BOOK_FORM);
 }
 
+/**
+ * The book's ids in other catalogs are folded away in the form; its summary names the catalogs it has one in.
+ * @param {string[]} keys
+ */
+function showBookIds(keys){
+	/** @type {HTMLDetailsElement} */ (byId('f_ids')).open = false;
+	byId('f_idsNote').textContent = keys.length ? '(' + keys.map(k=> ExternalCatalog.name(k)).join(', ') + ')' : '';
+}
+
 /** @param {string} id the book's */
 export function openEditForm(id){
 	const b = CATALOG.book(id);
@@ -1039,6 +1052,7 @@ export function openEditForm(id){
 	fieldById('f_g').value = b.genres.join(', ');
 	fieldById('f_hcb').value = b.idOn('hardcover') || '';
 	fillExternalFields('f_ext_', 'book', b.external);
+	showBookIds(Object.keys(ExternalCatalog.order(b.external) || {}));
 	fieldById('f_s').value = b.series || '';
 	fieldById('f_sn').value = b.number || '';
 	fieldById('f_r').value = b.read.join(', ');
@@ -1289,6 +1303,7 @@ byId('addForm').addEventListener('submit', async e=>{
 	const {editions, bad: badParts, book: fromEditions} = readFormEditions();
 	const hardcover = fieldById('f_hcb').value.trim() || fromEditions.hardcover;
 	if(hardcover && !ExternalCatalog.isId('hardcover', 'book', hardcover)){
+		/** @type {HTMLDetailsElement} */ (byId('f_ids')).open = true;
 		byId('formError').textContent = `Not a Hardcover book id: ${hardcover}. It is the number in hardcover.app/id/book/12345, or paste the address of the book's page on hardcover.app in the Hardcover book field.`;
 		return;
 	}
@@ -1296,6 +1311,7 @@ byId('addForm').addEventListener('submit', async e=>{
 	const had = editing ? editing.external : {};
 	const external = readExternalFields('f_ext_', 'book', had);
 	if(external.bad.length){
+		/** @type {HTMLDetailsElement} */ (byId('f_ids')).open = true;
 		byId('formError').textContent = `Not a book's id or address there: ${external.bad.join('; ')}.`;
 		return;
 	}

@@ -137,7 +137,7 @@ h1{
 	background:var(--paper); color:var(--ink); font-size:.9rem;
 }
 /* an author's, narrator's or publisher's page (authors.html, narrators.html, publishers.html) */
-.crumb a{color:var(--moss); font-weight:600; text-decoration:none;}
+.crumb a, #crumbLabel a{color:var(--moss); font-weight:600; text-decoration:none;}
 .author-head{display:flex; align-items:baseline; gap:.4rem; margin-bottom:.4rem;}
 .author-name{font-family:'Lora',Georgia,serif; font-weight:600; font-size:1.35rem; margin:0;}
 .author-bio{font-size:.92rem; margin-bottom:1.4rem;}
@@ -242,6 +242,12 @@ h1{
 }
 .formrow{display:flex; gap:.6rem;}
 .formrow > div{flex:1;}
+.formrow > .narrow{flex:0 1 9rem;}
+/* fields most books leave empty, folded away: the book's ids in other catalogs */
+.moreFields{margin:.7rem 0 .2rem; border:1px solid var(--line); border-radius:8px; padding:.4rem .65rem;}
+.moreFields summary{cursor:pointer; font-size:.82rem; font-weight:600; color:var(--ink-soft);}
+.moreFields[open] summary{margin-bottom:.2rem;}
+.moreFields .summaryNote{font-weight:normal;}
 .formrow > .formrow-btn{flex:0 0 auto; display:flex; align-items:flex-end;}
 /* a field per external catalog: as many in a row as fit */
 .extFields{flex-wrap:wrap;}

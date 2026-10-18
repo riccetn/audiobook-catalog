@@ -6,6 +6,8 @@
 narrators and dates read. Its title opens the book's details (`#book=…`): its series and number, dates read,
 genres, its ids in external catalogs, and each of its editions with every part (description, narrators,
 ASINs, other catalogs' ids, ISBN, publisher, release date, length, and the other books of a box set it is on).
+Above it, the crumb links back to the book's series. In the book form (✎) the book's ids in other catalogs are
+folded under *The book in other catalogs*, which names the catalogs it has one in.
 The edit, merge and remove buttons are on both.
 
 **Edit in the app**

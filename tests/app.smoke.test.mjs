@@ -454,13 +454,17 @@ test('the address names the view, so a series, a book or a search can be linked 
 		assert.deepEqual(series.get('[VIEW, SERIES_FILTER]'), ['library', halloway], 'by its id, or by its name (an address from before)');
 		assert.equal((series.els.results.innerHTML.match(/class="book"/g) || []).length, 2);
 		assert.equal(series.els.crumbLabel.textContent, 'Halloway & Finch');
+		assert.ok(!series.els.btnLibraryView.classList.contains('active'));
 	}
 	for (const hash of [`#book=${saltRoad}`, '#book=The+Salt+Road']) {
 		const book = await boot({ hash, storage });
 		assert.equal(book.get('BOOK_FILTER'), saltRoad);
 		assert.equal((book.els.results.innerHTML.match(/class="book book-details"/g) || []).length, 1);
 		assert.match(book.els.results.innerHTML, /<h2 class="title">The Salt Road<\/h2>/);
-		assert.equal(book.els.crumbLabel.textContent, 'The Salt Road');
+		// with a way back to its series, and neither view button lit
+		assert.equal(book.els.crumbLabel.textContent, 'The Lantern Coast › The Salt Road');
+		assert.match(book.els.crumbLabel.innerHTML, /^<a href="#series=[^"]+">The Lantern Coast<\/a>/);
+		assert.ok(!book.els.btnLibraryView.classList.contains('active') && !book.els.btnSeriesView.classList.contains('active'));
 	}
 	const gone = await boot({ hash: '#book=no-such-id', storage });
 	assert.equal(gone.els.crumbLabel.textContent, 'No such book');
@@ -695,6 +699,9 @@ test('a book\'s details link the Hardcover book and an edition\'s Hardcover id t
 	els.q.value = '';
 	ctx.openEditForm(bookIdAt(get, 0));
 	assert.equal(els.f_hcb.value, '808');
+	// folded away, with the catalogs it has an id in named
+	assert.equal(els.f_ids.open, false);
+	assert.equal(els.f_idsNote.textContent, '(Hardcover)');
 	assert.deepEqual(formEditions(get), [{ 'ext:audible.com': 'TESTASIN01', 'ext:hardcover': '31337' }]);
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	await idle();
@@ -706,6 +713,7 @@ test('a book\'s details link the Hardcover book and an edition\'s Hardcover id t
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	await idle();
 	assert.match(els.formError.textContent, /Not a Hardcover book id: abc/);
+	assert.equal(els.f_ids.open, true, 'opened to show the field');
 	els.f_hcb.value = '';
 	addEdition(els);
 	typeEdition(els, 1, 'ext:hardcover', 'https://hardcover.app/id/book/909');
