@@ -721,7 +721,7 @@ test('a book card shows its title, authors, narrators and read dates; its detail
 	await idle();
 	const card = readable(els.results.innerHTML).match(/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="book-actions">/)[0];
 	// its cover from its first ASIN, hidden until it loads
-	assert.match(card, /<div class="num">1<\/div><img class="cover small" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001.01.MZZZZZZZ.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><div class="info">/);
+	assert.match(card, /<div class="num">1<\/div><img class="cover small" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.MZZZZZZZ\.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><div class="info">/);
 	assert.match(card, /<div class="title"><a href="#book=The\+Salt\+Road">The Salt Road<\/a><\/div><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
 	assert.match(card, /<div class="read">Read 2023-06-02, 2025-11-20<\/div><\/div><div class="book-actions">$/);
 	assert.doesNotMatch(card, /Fantasy|Goodreads|ISBN|Gullwing/);
@@ -729,10 +729,12 @@ test('a book card shows its title, authors, narrators and read dates; its detail
 	ctx.openBook(bookIdOf(get, 'The Salt Road'));
 	await idle();
 	const details = readable(els.results.innerHTML);
-	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="info"><img class="cover large" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001.01.LZZZZZZZ.jpg"[^>]*><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
+	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="head"><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
 	assert.match(details, /<dl class="details"><dt>Series<\/dt><dd><a href="#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20 <button type="button" class="readToday">\+ Read today<\/button><\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/);
 	assert.match(details, /<dt>Goodreads<\/dt><dd><a [^>]*>9001<\/a><\/dd><dt>ISBN<\/dt><dd>9780000000002<\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gullwing\+Audio">Gullwing Audio<\/a><\/dd><dt>Released<\/dt><dd>2019-04-02<\/dd><dt>Length<\/dt><dd>10h 42m<\/dd>/);
 	assert.match(details, /<button class="iconbtn edit"/);
+	// the cover comes after the buttons (under them, or across the card on a phone), then the rest
+	assert.match(details, /<\/button><\/div><img class="cover large" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.LZZZZZZZ\.jpg"[^>]*><div class="info"><dl class="details"><dt>Series/);
 	// editing it there puts the form in its place
 	ctx.openEditForm(bookIdOf(get, 'The Salt Road'));
 	assert.match(els.results.innerHTML, /class="book book-details editing"/);

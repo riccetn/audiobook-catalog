@@ -166,6 +166,15 @@ h1{
 .formError:empty{display:none;}
 .book .read{color:var(--ink-soft); font-size:.78rem; margin-top:.15rem;}
 /* A book on its own: its details and each edition's as label and value rows. */
+.book.book-details{
+	display:grid; grid-template-columns:auto minmax(0, 1fr) auto; grid-template-rows:auto 1fr; column-gap:.7rem;
+	grid-template-areas:"num head actions" "num info cover";
+}
+.book-details > .num{grid-area:num;}
+.book-details > .head{grid-area:head; min-width:0;}
+.book-details > .book-actions{grid-area:actions; justify-self:end;}
+.book-details > .cover{grid-area:cover; margin-top:.6rem;}
+.book-details > .info{grid-area:info;}
 .book-details h2.title{font-family:'Lora',Georgia,serif; font-size:1.15rem; margin:0;}
 .book-details .details{display:grid; grid-template-columns:max-content minmax(0, 1fr); gap:.2rem .8rem; margin:.6rem 0 0; font-size:.82rem;}
 .book-details .details dt{color:var(--ink-soft);}
@@ -300,7 +309,7 @@ h1{
 .cover.loaded{opacity:1;}
 .cover.missing{display:none;}
 .cover.small{width:2.8rem;}
-.cover.large{width:15rem; max-width:45%; float:right; margin:0 0 .6rem .9rem;}
+.cover.large{width:min(15rem, 35vw);}
 .coversToggle{display:flex; align-items:center; gap:.3rem; font-size:.82rem; color:var(--ink-soft); cursor:pointer;}
 .rowbtns .coversToggle input{flex:none; padding:0; margin:0;}
 .book .title{font-weight:600; font-size:.95rem;}
@@ -340,7 +349,9 @@ h1{
 /* Phones: less space around the page and above the list. The page links stay on one line that scrolls
    sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */
 @media (max-width:600px){
-	.cover.large{width:10rem;}
+	/* a book's details: its number, title and buttons on top, then the cover across the card, then the rest */
+	.book.book-details{grid-template-columns:auto minmax(0, 1fr) auto; grid-template-areas:"num head actions" "cover cover cover" "info info info"; grid-template-rows:auto;}
+	.book-details > .cover.large{width:100%; margin:.7rem 0 0;}
 	.wrap{padding:.75rem .9rem 3rem;}
 	h1{font-size:1.3rem;}
 	.pages{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; gap:1rem; margin-bottom:.4rem;}

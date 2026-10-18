@@ -925,7 +925,8 @@ function bookCard(b, withSeries = false){
 }
 
 /**
- * A book shown on its own (#book=<id>): everything about it, with each edition's parts.
+ * A book shown on its own (#book=<id>): everything about it, with each edition's parts. Its parts are laid out
+ * by styles.css: the cover under the buttons, or across the whole card on a phone.
  * @param {Book} b
  * @returns {HTMLDivElement}
  */
@@ -941,10 +942,12 @@ function bookDetails(b){
 	});
 	return buildElement('div', {class: 'book book-details' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
 		buildElement('div', {class: 'num'}, b.number || '•'),
-		buildElement('div', {class: 'info'},
-			coverImage(b, 'large'),
+		buildElement('div', {class: 'head'},
 			buildElement('h2', {class: 'title'}, b.title),
-			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
+			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — '))),
+		bookActions(id),
+		coverImage(b, 'large'),
+		buildElement('div', {class: 'info'},
 			detailList([
 				['Series', series && [buildElement('a', {href: seriesHref(series)}, b.series), b.number && ` #${b.number}`]],
 				['Read', [b.read.length > 0 && b.read.join(', ') + ' ',
@@ -952,8 +955,7 @@ function bookDetails(b){
 				['Genres', b.genres.length > 0 && buildElement('span', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))],
 				...Object.entries(ExternalCatalog.order(b.external) || {}).map(([key, value])=>
 					/** @type {[string, Child]} */ ([`${ExternalCatalog.name(key)} book`, idLink(key, 'book', value)]))]),
-			editions),
-		bookActions(id));
+			editions));
 }
 
 /**
