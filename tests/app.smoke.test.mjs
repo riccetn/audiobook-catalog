@@ -399,6 +399,8 @@ test('search narrows the library view', async () => {
 	const { ctx, els } = await boot();
 	ctx.setView('library');
 	await idle();
+	// says what the catalog holds, not where it came from
+	assert.equal(els.subtitle.textContent, `${demoBooks.length} audiobooks in the catalog`);
 	const target = demoBooks[0];
 	els.q.value = target.t;
 	await ctx.refreshView();
