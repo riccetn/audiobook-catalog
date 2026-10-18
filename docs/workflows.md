@@ -10,6 +10,14 @@ Above it, the crumb links back to the book's series. In the book form (✎) the 
 folded under *The book in other catalogs*, which names the catalogs it has one in.
 The edit, merge and remove buttons are on both.
 
+**Covers**: a book's card shows a small cover, and its details a larger one. Nothing is stored for it: the
+page asks for the cover by the ids the book's editions already have, first Amazon's image of each ASIN (an
+audiobook's square cover), then Open Library's of the edition's Open Library id and of its ISBN, and shows the first
+that loads. A book whose editions have none of those, or that neither site has a cover for, shows none.
+Asking tells Amazon and Open Library those ids, so *Covers* (next to *+ Add a book*) turns them off; the choice
+is kept in this browser. Firefox's strict tracking protection blocks Amazon's images; the cover then comes
+from Open Library when it has one.
+
 **Edit in the app**
 
 Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the

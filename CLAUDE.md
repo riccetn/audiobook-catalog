@@ -60,7 +60,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
   - `Series` (series info `total status note url external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word),
-    `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
+    `Cover` (`addresses`: a book's cover addresses from its editions' ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save; `bookRecord`/`seriesRecord`/`contributorRecord`/`creditsOf`, which a save
@@ -105,7 +105,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   page imports, and fails on any file in `public/` the list lacks).
 - `app.js` (`index.html`): series overview (from the series records alone), all books (50 at a time, `PAGE_SIZE`, `showMore`;
   `refreshView` reads what is shown again; an empty catalog says where books come from; a book's card, `bookCard`, holds only its title, number,
-authors, narrators and dates read, and `#book=<id>` shows everything else, `bookDetails`), the book and
+authors, narrators and dates read, and `#book=<id>` shows everything else, `bookDetails`; both show its cover, `coverImage`, an `<img>`
+that tries each of `Cover.addresses` in turn, unless *Covers* is off (localStorage `audiobook-catalog-covers`)), the book and
   series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=<id>,<id>`.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): the comparison an Audible or
   Goodreads CSV import, or the Hardcover panel's Compare (`HardcoverSync.compare`; for a series or an author, which their pages link to
@@ -132,7 +133,7 @@ authors, narrators and dates read, and `#book=<id>` shows everything else, `book
     modules export (`ctx.render()`, `get('CATALOG.books')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
-    in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover).
+    in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover).; covers are `<img>`s, which the fake DOM never loads.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 

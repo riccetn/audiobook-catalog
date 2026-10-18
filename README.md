@@ -56,6 +56,8 @@ library, restore a backup, or add books by hand with **+ Add a book**.
 This repository is meant to be public, and your catalog never enters it: it lives in your browser.
 
 - The demo data in `sample/` (used by the tests) and every example in the tests and docs are invented.
+- Book covers are loaded from Amazon and Open Library by the books' ASINs and ISBNs; untick *Covers* to
+  ask neither.
 - **Nothing backs up your catalog but you.** Clearing the site's data in the browser deletes it, so keep
   the backups you **Export** somewhere safe.
 
