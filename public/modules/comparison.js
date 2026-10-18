@@ -242,6 +242,22 @@ export class Comparison {
 	}
 
 	/**
+	 * Whether a book is in a part of the catalog: the series `name` (spelled any way Series.norm takes as
+	 * the same), or by the author `name` (one of its authors, ignoring case and accents).
+	 * @param {'series' | 'author'} kind
+	 * @param {string} name
+	 * @returns {(book: Book) => boolean}
+	 */
+	static scope(kind, name){
+		if(kind === 'series'){
+			const series = Series.norm(name);
+			return book => Boolean(book.series) && Series.norm(/** @type {string} */ (book.series)) === series;
+		}
+		const author = Text.norm(name);
+		return book => book.authors.some(a => Text.norm(a) === author);
+	}
+
+	/**
 	 * The book as one line: "Title — Author  [Series #2]".
 	 * @param {Book} b
 	 * @returns {string}

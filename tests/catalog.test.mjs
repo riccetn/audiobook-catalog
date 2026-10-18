@@ -2032,3 +2032,21 @@ test('comparing with Hardcover only reads it, and plans what putting your books 
 	assert.deepEqual(result.plan.add.map(a => [a.book, a.edition, a.dates]), [[80, 801, ['2024-05-01']]]);
 	assert.equal(result.otherShelves, 0);
 });
+
+test('comparing with Hardcover can be only a series\' or an author\'s books, on both sides', async () => {
+	assert.ok(Comparison.scope('series', 'gull isle series')(B({ t: 'X', a: ['Ann Vale'], s: 'Gull Isle', sn: '1' })));
+	assert.ok(!Comparison.scope('series', 'Gull Isle')(B({ t: 'X', a: ['Ann Vale'] })));
+	assert.ok(Comparison.scope('author', 'ann vale')(B({ t: 'X', a: ['Bo Reed', 'Ann Vale'] })));
+	const hc = fakeHardcover(hardcoverState());
+	const sync = new HardcoverSync(new HardcoverClient('tok-123', hc.fetch, async () => {}));
+	const catalog = new Catalog({ books: Bs([
+		{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] },
+		{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2' },
+	]) });
+	const result = await sync.compare(catalog, () => {}, Comparison.scope('series', 'Gull Isle'));
+	assert.deepEqual(result.incoming.map(b => b.title), ['Tidewater'], 'The Paper Fen is in no series');
+	assert.deepEqual(result.comparison.books.map(b => [b.theirs.title, b.kind]), [['Tidewater', 'new']]);
+	assert.deepEqual(result.plan.add, [], 'Lantern Hours is not in the series');
+	assert.deepEqual(result.plan.unknown.map(b => b.title), ['Brine Tide']);
+	assert.deepEqual(result.idsFound, []);
+});

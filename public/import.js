@@ -681,15 +681,44 @@ async function withHardcoverJob(mode, task){
 	return result;
 }
 
-// Show your Hardcover shelves beside this catalog. Only reads Hardcover.
+/**
+ * The part of the catalog to compare with Hardcover, as picked beside the button: null for every book.
+ * @returns {{kind: 'series' | 'author', name: string, label: string} | null}
+ */
+function hardcoverScope(){
+	const kind = fieldById('hardcoverScope').value;
+	if(kind !== 'series' && kind !== 'author') return null;
+	const name = Text.tidy(fieldById('hardcoverScopeName').value);
+	return {kind, name, label: kind === 'series' ? `the series \u201C${name}\u201D` : `books by ${name}`};
+}
+
+// The name field shows for a series or an author, and offers the names in the catalog.
+function showHardcoverScope(){
+	const kind = fieldById('hardcoverScope').value;
+	const input = /** @type {HTMLInputElement} */ (byId('hardcoverScopeName'));
+	input.style.display = kind ? '' : 'none';
+	input.placeholder = kind === 'series' ? 'Series' : 'Author';
+	if(!kind) return;
+	withWholeCatalog(()=>{
+		const names = [...CATALOG.namesOf(kind === 'series' ? 'series' : 'authors')].sort((x, y)=> x.localeCompare(y));
+		fillElement(byId('hardcoverScopeNames'), names.map(name=> buildElement('option', {value: name})));
+	});
+}
+
+// Show your Hardcover shelves beside this catalog, or beside a series' or an author's books. Only reads Hardcover.
 async function compareHardcover(){
 	if(PAGE_RUN) return;
 	const token = browserHardcoverToken();
 	if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
+	const scope = hardcoverScope();
+	if(scope && !scope.name){ showIoStatus(`Type the ${scope.kind === 'series' ? 'series' : 'author'} to compare first.`, true); return; }
 	if(!await withWholeCatalog(()=> true)) return;
+	const inScope = scope ? Comparison.scope(scope.kind, scope.name) : null;
+	const here = inScope ? CATALOG.books.filter(inScope).length : CATALOG.books.length;
+	if(scope && !here){ showIoStatus(spell(`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`), true); return; }
 	closeImportPreview();
 	await whenSaved();   // compared with the catalog as saved
-	const run = await withHardcoverJob('compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step));
+	const run = await withHardcoverJob('compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step, inScope || undefined));
 	if(!run) return;
 	const hc = run.value;
 	if(!hc){
@@ -699,8 +728,9 @@ async function compareHardcover(){
 		openPreview('hardcoverPanel');
 		return;
 	}
-	const notes = [`${Text.plural(hc.incoming.length, 'book')} on your Hardcover Read shelf` +
-		(hc.otherShelves ? `, ${hc.otherShelves} on other shelves` : '') + ` (took ${minutes(run.elapsed)})`];
+	const notes = [scope
+		? spell(`Only ${scope.label}: ${Text.plural(here, 'book')} in this catalog, ${hc.incoming.length} on your Hardcover Read shelf (took ${minutes(run.elapsed)})`)
+		: `${Text.plural(hc.incoming.length, 'book')} on your Hardcover Read shelf` + (hc.otherShelves ? `, ${hc.otherShelves} on other shelves` : '') + ` (took ${minutes(run.elapsed)})`];
 	openCompare({source: 'hardcover', name: 'Hardcover', notes, incoming: hc.incoming, opts: hc.opts, comparison: hc.comparison,
 		warnings: hc.warnings, hardcover: hc});
 }
@@ -808,6 +838,7 @@ byId('importCsvFile').addEventListener('change', e=>{
 });
 byId('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : applyCompare());
 byId('hardcoverCompareBtn').addEventListener('click', compareHardcover);
+byId('hardcoverScope').addEventListener('change', showHardcoverScope);
 byId('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
 byId('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
 byId('importCancel').addEventListener('click', closeImportPreview);
@@ -832,4 +863,4 @@ byId('importFile').addEventListener('change', e=>{
 	if(files.length) return importBackup(files);
 });
 
-export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); }, {refresh: refreshPage, onHardcoverJob});
+export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); showHardcoverScope(); }, {refresh: refreshPage, onHardcoverJob});

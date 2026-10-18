@@ -84,9 +84,18 @@
 			<span class="ioLabel">Compare</span>
 			<div class="rowbtns">
 				<button class="iconbtn2" id="hardcoverCompareBtn" title="Compare your Hardcover shelves with this catalog">Compare</button>
+				<label>for
+					<select id="hardcoverScope" title="Compare every book, or only a series' or an author's">
+						<option value="">every book</option>
+						<option value="series">a series</option>
+						<option value="author">an author</option>
+					</select></label>
+				<input type="text" id="hardcoverScopeName" list="hardcoverScopeNames" placeholder="Name" autocomplete="off" style="display:none">
+				<datalist id="hardcoverScopeNames"></datalist>
 			</div>
 			<p class="ioNote">Shows the books on your Hardcover <em>Read</em> shelf beside this catalog's, to pick what to take from Hardcover,
-				and which of your books and dates read to put on your Read shelf there. Nothing on Hardcover is changed or removed.</p>
+				and which of your books and dates read to put on your Read shelf there; for every book, or only a series' or an author's.
+				Nothing on Hardcover is changed or removed.</p>
 		</div>
 		<div class="ioRow">
 			<span class="ioLabel">Token</span>

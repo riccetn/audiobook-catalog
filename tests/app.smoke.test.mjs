@@ -2110,6 +2110,36 @@ test('a Hardcover comparison sends nothing unticked, nothing once another tab sa
 	assert.equal(offline.els.importConfirm.style.display, 'none');
 });
 
+test('the Hardcover comparison can be only a series\' or an author\'s books', async () => {
+	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] },
+		{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2' }];
+	const hc = fakeHardcover(hardcoverState());
+	const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const { els, readable } = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, hardcover: hc.fetch, setTimeout, storage });
+	assert.equal(els.hardcoverScopeName.style.display, 'none');
+	els.hardcoverScope.value = 'series';
+	els.hardcoverScope.listeners.change[0]();
+	await idle();
+	assert.equal(els.hardcoverScopeName.style.display, '');
+	assert.equal(readable(els.hardcoverScopeNames.innerHTML), '<option value="Gull Isle"></option>', 'the series in the catalog are offered');
+	await els.hardcoverCompareBtn.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /Type the series to compare first/);
+	els.hardcoverScopeName.value = 'Ember Coast';
+	await els.hardcoverCompareBtn.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /No book in this catalog is in the series “Ember Coast”/);
+	assert.equal(hc.sent.length, 0);
+
+	els.hardcoverScopeName.value = 'Gull Isle';
+	await els.hardcoverCompareBtn.listeners.click[0]();
+	await idle();
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(html, /^<p>Only the series “Gull Isle”: 1 book in this catalog, 1 on your Hardcover Read shelf/);
+	assert.match(html, /New from Hardcover \(1\)<\/h4>.*Tidewater — Ann Vale/);
+	assert.doesNotMatch(html, /Paper Fen|Lantern Hours/);
+	assert.match(html, /Not found on Hardcover \(1\)<\/h4>.*Brine Tide — Ann Vale/);
+});
+
 // ------------------------------------------------------------------ the authors page
 test('the authors page lists every author, with their books and series, and a search narrows it', async () => {
 	const { els, readable } = await boot({ page: 'authors.html' });

@@ -29,7 +29,7 @@ import {Comparison} from './comparison.js';
  * Your Hardcover shelves beside the catalog (HardcoverSync.compare()).
  * @typedef {object} HardcoverComparison
  * @property {ComparisonResult} comparison the books on your Read shelf beside the catalog's
- * @property {Book[]} incoming the books on your Read shelf, as compared
+ * @property {Book[]} incoming the books on your Read shelf compared (those in the scope asked for)
  * @property {MergeOptions} opts how they are imported (Comparison.apply() takes them)
  * @property {string[]} warnings
  * @property {number} otherShelves how many of your Hardcover books are on other shelves
@@ -52,13 +52,15 @@ export class HardcoverSync {
 	 * Your Hardcover shelves beside `catalog` (not changed): the books on your Read shelf compared with
 	 * the catalog's as an import would take them (an audiobook edition read is a book that may be added; any
 	 * other only fills in a book you have), and what putting your books on Hardcover would do, planned on
-	 * the catalog with all of them imported and the Hardcover ids of your editions found. Only reads
-	 * Hardcover; `step(text, done, total)` hears how far it has got.
+	 * the catalog with all of them imported and the Hardcover ids of your editions found. With `scope`, only
+	 * the books on either side it takes in (a series, an author: Comparison.scope) are compared and planned.
+	 * Only reads Hardcover; `step(text, done, total)` hears how far it has got.
 	 * @param {Catalog} catalog
 	 * @param {Step} step
+	 * @param {(book: Book) => boolean} [scope]
 	 * @returns {Promise<HardcoverComparison>}
 	 */
-	async compare(catalog, step){
+	async compare(catalog, step, scope){
 		const client = this.client;
 		step('Reading your Hardcover shelves');
 		const shelf = await client.shelf(step);
@@ -69,8 +71,9 @@ export class HardcoverSync {
 		const audio = result.audio;
 		/** @type {MergeOptions} */
 		const opts = {allDates: true, addable: book => audio.has(book)};
-		const comparison = Comparison.compare(catalog, result.books, opts);
-		const books = comparison.merged.books;
+		const incoming = scope ? result.books.filter(scope) : result.books;
+		const comparison = Comparison.compare(catalog, incoming, opts);
+		const books = scope ? comparison.merged.books.filter(scope) : comparison.merged.books;
 		const ids = await client.find(HardcoverSync.lookups(books), step);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		// which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
@@ -79,7 +82,7 @@ export class HardcoverSync {
 		const rows = await client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
 		for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
 		const plan = HardcoverSync.planExport(books, shelf, editionBooks);
-		return {comparison, incoming: result.books, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
+		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
 	}
 
 	/**
