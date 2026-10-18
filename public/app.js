@@ -11,7 +11,7 @@ import {CatalogRecords} from './modules/catalog-records.js';
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref,
-	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress } from './store.js';
+	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress, hardcoverCompareHref } from './store.js';
 /** @import {Child} from './store.js' */
 
 /** @type {'series' | 'library'} */
@@ -572,7 +572,9 @@ export function render(){
 		}
 		out.push(buildElement('div', {class: 'series-group'},
 			buildElement('p', {class: 'series-title'}, buildElement('a', {href: seriesHref(CATALOG.idFor('series', name))}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books)),
-				' ', seriesEditButton(CATALOG.idFor('series', name), !!info), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)]),
+				' ', seriesEditButton(CATALOG.idFor('series', name), !!info), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
+				// a series shown on its own can be compared with Hardcover
+				SERIES_FILTER === CATALOG.idFor('series', name) && [' ', buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('series', SERIES_FILTER)}, 'Compare with Hardcover')]),
 			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
 			books.map(bookCard)));
 	});

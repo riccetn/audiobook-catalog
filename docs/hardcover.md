@@ -11,7 +11,12 @@ same site can read it too: on GitHub Pages every project site of an account (`<n
 shares one site, so host the app on its own (sub)domain if you publish other pages there.
 
 **Compare** reads your Hardcover shelves (it changes nothing, here or on Hardcover) and shows them beside the
-catalog, the way an import does ([the comparison](imports.md#the-comparison)), with more groups for Hardcover:
+catalog, the way an import does ([the comparison](imports.md#the-comparison)). To work through the catalog a part
+at a time, pick *a series* or *an author* beside the button and type its name (the field offers the names in the
+catalog): only the books of that series, or by that author, here and on your Hardcover *Read* shelf, are compared
+and offered to put on Hardcover (a series spelled another way on Hardcover, `Gull Isle Series`, is the same series).
+**Compare with Hardcover** on a series (shown on its own on the catalog page) or on an author's page opens the
+*Import & export* page and compares that series or author at once. The comparison has more groups for Hardcover:
 
 - **Not on your Hardcover Read shelf**: your books Hardcover knows (by an id, ASIN, ISBN or Goodreads id) that
   aren't on your shelves there, with their dates read. Unticked: tick a book to put it on your *Read* shelf.
