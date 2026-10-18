@@ -37,6 +37,25 @@ export class HardcoverClient {
 		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
 	}
 }`,
+		// the part of your shelves of a series or an author (any whose name has the name asked in it), or of some books
+		shelfBySeries: `query ShelfBySeries($user: Int!, $offset: Int!, $name: String!) {
+	user_books(where: {user_id: {_eq: $user}, book: {book_series: {series: {name: {_ilike: $name}}}}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
+		id book_id edition_id status_id
+		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
+	}
+}`,
+		shelfByAuthor: `query ShelfByAuthor($user: Int!, $offset: Int!, $name: String!) {
+	user_books(where: {user_id: {_eq: $user}, book: {contributions: {author: {name: {_ilike: $name}}}}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
+		id book_id edition_id status_id
+		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
+	}
+}`,
+		shelfByBooks: `query ShelfByBooks($user: Int!, $offset: Int!, $books: [Int!]) {
+	user_books(where: {user_id: {_eq: $user}, book_id: {_in: $books}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
+		id book_id edition_id status_id
+		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
+	}
+}`,
 		books: `query Books($ids: [Int!]) {
 	books(where: {id: {_in: $ids}}) {
 		id title
@@ -85,6 +104,8 @@ export class HardcoverClient {
 		this.pause = pause;
 		this.headers = headers || {};
 		this.asked = 0;
+		/** @type {number | undefined} whose shelves they are, once Hardcover said */
+		this.user = undefined;
 	}
 
 	/**
@@ -113,12 +134,53 @@ export class HardcoverClient {
 	 * @returns {Promise<Unchecked[]>}
 	 */
 	async shelf(step){
-		const me = await this.ask(HardcoverClient.QUERIES.me);
-		const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
-		if(!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
+		return this.shelfPages(HardcoverClient.QUERIES.shelf, {}, step);
+	}
+
+	/**
+	 * The books on your Hardcover shelves of a series or an author: those with a series (of any of theirs),
+	 * or an author, whose name has `name` in it, ignoring case. Hardcover may spell it another way ("Gull
+	 * Isle Series"), so the caller narrows it down.
+	 * @param {'series' | 'author'} kind
+	 * @param {string} name
+	 * @param {Step} step
+	 * @returns {Promise<Unchecked[]>}
+	 */
+	async shelfOf(kind, name, step){
+		const pattern = '%' + name.replace(/[\\%_]/g, c => '\\' + c) + '%';
+		return this.shelfPages(kind === 'series' ? HardcoverClient.QUERIES.shelfBySeries : HardcoverClient.QUERIES.shelfByAuthor, {name: pattern}, step);
+	}
+
+	/**
+	 * The entries on your Hardcover shelves of these Hardcover books.
+	 * @param {number[]} books
+	 * @param {Step} step
+	 * @returns {Promise<Unchecked[]>}
+	 */
+	async shelfOfBooks(books, step){
+		/** @type {Unchecked[]} */
+		const shelf = [];
+		for(let i = 0; i < books.length; i += BATCH) shelf.push(...await this.shelfPages(HardcoverClient.QUERIES.shelfByBooks, {books: books.slice(i, i + BATCH)}, step));
+		return shelf;
+	}
+
+	/**
+	 * Your shelves' entries a shelf query (with `variables`) answers, a page at a time.
+	 * @param {string} query
+	 * @param {Record<string, unknown>} variables
+	 * @param {Step} step
+	 * @returns {Promise<Unchecked[]>}
+	 */
+	async shelfPages(query, variables, step){
+		if(this.user === undefined){
+			const me = await this.ask(HardcoverClient.QUERIES.me);
+			const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
+			if(!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
+			this.user = user;
+		}
 		const shelf = [];
 		for(let offset = 0; ; offset += PAGE){
-			const page = (await this.ask(HardcoverClient.QUERIES.shelf, {user, offset})).user_books || [];
+			const page = (await this.ask(query, {...variables, user: this.user, offset})).user_books || [];
 			shelf.push(...page);
 			step(`Reading your Hardcover shelves: ${shelf.length} books`);
 			if(page.length < PAGE) return shelf;
