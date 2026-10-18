@@ -20,6 +20,18 @@ export function fakeHardcover(state) {
 			assert.equal(variables.user, 42);
 			return answer({ user_books: state.shelf.slice(variables.offset, variables.offset + 100) });
 		}
+		const part = /^query ShelfBy(Series|Author|Books)/.exec(query);
+		if (part) {
+			assert.equal(variables.user, 42);
+			// _ilike '%name%', as the page asks it
+			const like = text => String(text || '').toLowerCase().includes(variables.name.slice(1, -1).toLowerCase());
+			const has = {
+				Series: ub => like(state.books[ub.book_id]?.featured_book_series?.series?.name),
+				Author: ub => (state.books[ub.book_id]?.contributions || []).some(c => like(c.author.name)),
+				Books: ub => variables.books.includes(ub.book_id),
+			}[part[1]];
+			return answer({ user_books: state.shelf.filter(has).slice(variables.offset, variables.offset + 100) });
+		}
 		if (query.startsWith('query Books')) return answer({ books: variables.ids.map(id => state.books[id]).filter(Boolean) });
 		if (query.startsWith('query Editions')) return answer({ editions: pick(variables.ids) });
 		if (query.startsWith('query BookBySlug')) return answer({ books: Object.values(state.books).filter(b => b.slug === variables.slug).slice(0, 1) });

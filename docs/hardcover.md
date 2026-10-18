@@ -15,6 +15,9 @@ catalog, the way an import does ([the comparison](imports.md#the-comparison)). T
 at a time, pick *a series* or *an author* beside the button and type its name (the field offers the names in the
 catalog): only the books of that series, or by that author, here and on your Hardcover *Read* shelf, are compared
 and offered to put on Hardcover (a series spelled another way on Hardcover, `Gull Isle Series`, is the same series).
+Only that part of your shelves is read from Hardcover, so it is quicker: the books there with a series or author
+whose name has the name you typed in it, and the Hardcover books your books of it are found to be (so a book
+Hardcover files under another spelling still counts).
 **Compare with Hardcover** on a series (shown on its own on the catalog page) or on an author's page opens the
 *Import & export* page and compares that series or author at once. The comparison has more groups for Hardcover:
 

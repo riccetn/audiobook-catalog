@@ -2043,10 +2043,22 @@ test('comparing with Hardcover can be only a series\' or an author\'s books, on 
 		{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] },
 		{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2' },
 	]) });
-	const result = await sync.compare(catalog, () => {}, Comparison.scope('series', 'Gull Isle'));
+	const result = await sync.compare(catalog, () => {}, { kind: 'series', name: 'Gull Isle' });
+	// only that part of your shelves is read from Hardcover
+	assert.ok(!hc.sent.some(s => s.query.startsWith('query Shelf(')));
+	assert.deepEqual(hc.sent.filter(s => s.query.startsWith('query ShelfBy')).map(s => [s.query.match(/^query (\w+)/)[1], s.variables.name || s.variables.books]),
+		[['ShelfBySeries', '%Gull Isle%']]);
 	assert.deepEqual(result.incoming.map(b => b.title), ['Tidewater'], 'The Paper Fen is in no series');
 	assert.deepEqual(result.comparison.books.map(b => [b.theirs.title, b.kind]), [['Tidewater', 'new']]);
 	assert.deepEqual(result.plan.add, [], 'Lantern Hours is not in the series');
 	assert.deepEqual(result.plan.unknown.map(b => b.title), ['Brine Tide']);
 	assert.deepEqual(result.idsFound, []);
+
+	// your books of an author are read by the Hardcover books they are, also where Hardcover has them by another name
+	const sent = hc.sent.length;
+	const byHale = await sync.compare(catalog, () => {}, { kind: 'author', name: 'R. T. Hale' });
+	assert.deepEqual(hc.sent.slice(sent).filter(s => s.query.startsWith('query ShelfBy')).map(s => [s.query.match(/^query (\w+)/)[1], s.variables.name || s.variables.books]),
+		[['ShelfByAuthor', '%R. T. Hale%'], ['ShelfByBooks', [80]]]);
+	assert.deepEqual(byHale.plan.add.map(a => a.book), [80]);
+	assert.deepEqual(byHale.idsFound.map(b => b.title), ['Lantern Hours']);
 });

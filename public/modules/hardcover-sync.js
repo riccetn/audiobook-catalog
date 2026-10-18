@@ -52,15 +52,17 @@ export class HardcoverSync {
 	 * Your Hardcover shelves beside `catalog` (not changed): the books on your Read shelf compared with
 	 * the catalog's as an import would take them (an audiobook edition read is a book that may be added; any
 	 * other only fills in a book you have), and what putting your books on Hardcover would do, planned on
-	 * the catalog with all of them imported and the Hardcover ids of your editions found. With `scope`, only
-	 * the books on either side it takes in (a series, an author: Comparison.scope) are compared and planned.
-	 * Only reads Hardcover; `step(text, done, total)` hears how far it has got.
+	 * the catalog with all of them imported and the Hardcover ids of your editions found. With `part` (a
+	 * series or an author), only its books on either side are compared and planned, and only they are read
+	 * from Hardcover: the shelf entries of books of that series or author there, and of the Hardcover books
+	 * your books of it are. Only reads Hardcover; `step(text, done, total)` hears how far it has got.
 	 * @param {Catalog} catalog
 	 * @param {Step} step
-	 * @param {(book: Book) => boolean} [scope]
+	 * @param {{kind: 'series' | 'author', name: string}} [part]
 	 * @returns {Promise<HardcoverComparison>}
 	 */
-	async compare(catalog, step, scope){
+	async compare(catalog, step, part){
+		if(part) return this.comparePart(catalog, step, part);
 		const client = this.client;
 		step('Reading your Hardcover shelves');
 		const shelf = await client.shelf(step);
@@ -71,12 +73,53 @@ export class HardcoverSync {
 		const audio = result.audio;
 		/** @type {MergeOptions} */
 		const opts = {allDates: true, addable: book => audio.has(book)};
-		const incoming = scope ? result.books.filter(scope) : result.books;
+		const incoming = result.books;
 		const comparison = Comparison.compare(catalog, incoming, opts);
-		const books = scope ? comparison.merged.books.filter(scope) : comparison.merged.books;
+		const books = comparison.merged.books;
 		const ids = await client.find(HardcoverSync.lookups(books), step);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		// which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
+		/** @type {Map<string, string>} */
+		const editionBooks = new Map();
+		const rows = await client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
+		for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
+		const plan = HardcoverSync.planExport(books, shelf, editionBooks);
+		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
+	}
+
+	/**
+	 * compare() for a series' or an author's books only. Your books of it are found on Hardcover first, so
+	 * their shelf entries are read even where Hardcover files them under another series or author.
+	 * @param {Catalog} catalog
+	 * @param {Step} step
+	 * @param {{kind: 'series' | 'author', name: string}} part
+	 * @returns {Promise<HardcoverComparison>}
+	 */
+	async comparePart(catalog, step, part){
+		const client = this.client;
+		const scope = Comparison.scope(part.kind, part.name);
+		const mine = catalog.books.filter(scope).map(b => b.clone());
+		const ids = await client.find(HardcoverSync.lookups(mine), step);
+		HardcoverSync.addIds(mine, ids);
+		const theirs = [...new Set(mine.map(b => b.idOn('hardcover')).filter(id => id && HardcoverClient.ID.test(id)).map(Number))];
+		step(`Reading your Hardcover shelves: ${part.kind === 'series' ? 'the series' : 'the books by'} ${part.name}`);
+		const shelf = [];
+		const seen = new Set();
+		for(const ub of [...await client.shelfOf(part.kind, part.name, step), ...await client.shelfOfBooks(theirs, step)]){
+			if(Text.isObject(ub) && !seen.has(ub.id)){ seen.add(ub.id); shelf.push(ub); }
+		}
+		const read = shelf.filter(ub => ub.status_id === READ);
+		const found = await client.rows('books', [...new Set(read.map(ub => ub.book_id))], step);
+		const editions = await client.rows('editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
+		const result = HardcoverSync.read(shelf, found, editions);
+		const audio = result.audio;
+		/** @type {MergeOptions} */
+		const opts = {allDates: true, addable: book => audio.has(book)};
+		// a book Hardcover has under another name of the series or author is in it when it is one of yours
+		const incoming = result.books.filter(b => scope(b) || theirs.includes(Number(b.idOn('hardcover'))));
+		const comparison = Comparison.compare(catalog, incoming, opts);
+		const books = comparison.merged.books.filter(scope);
+		const idsFound = HardcoverSync.addIds(books, ids);
 		/** @type {Map<string, string>} */
 		const editionBooks = new Map();
 		const rows = await client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');

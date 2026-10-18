@@ -737,7 +737,7 @@ async function compareHardcover(){
 	if(scope && !here){ showIoStatus(spell(`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`), true); return; }
 	closeImportPreview();
 	await whenSaved();   // compared with the catalog as saved
-	const run = await withHardcoverJob('compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step, inScope || undefined));
+	const run = await withHardcoverJob('compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step, scope ? {kind: scope.kind, name: scope.name} : undefined));
 	if(!run) return;
 	const hc = run.value;
 	if(!hc){
