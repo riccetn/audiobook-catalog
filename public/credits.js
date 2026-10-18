@@ -11,7 +11,7 @@ import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, queryCatalog, byId, fieldById, spell, buildElement, fillElement, joined,
-	authorPageHref, narratorPageHref, publisherPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField } from './store.js';
+	authorPageHref, narratorPageHref, publisherPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 /** @import {Child} from './store.js' */
@@ -204,6 +204,8 @@ function renderCreditPage(id){
 		info.bio && buildElement('div', {class: 'author-bio'}, bioParagraphs(info.bio)),
 		links.length > 0 && buildElement('p', {class: 'author-links'}, joined(links, ' ')),
 		!info.bio && !links.length && buildElement('p', {class: 'hint'}, 'No bio or links yet: add them with ✎.'),
+		KIND === CREDIT_KINDS.author && count > 0 && buildElement('p', {class: 'author-actions'},
+			buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('author', id)}, 'Compare their books with Hardcover')),
 	];
 	series.forEach(s=> out.push(buildElement('div', {class: 'series-group'}, seriesHeading(s),
 		buildElement('ul', {class: 'author-books'}, s.books.map(b=> creditBookLine(b, name))))));

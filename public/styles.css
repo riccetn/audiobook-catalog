@@ -146,6 +146,8 @@ h1{
 .author-bio p{margin:0 0 .6rem;}
 .author-links{display:flex; gap:.8rem; flex-wrap:wrap; margin:0 0 1.4rem;}
 .author-links .authorlink{font-size:.82rem;}
+.author-actions{margin:0 0 1.4rem;}
+.hardcoverCompare{font-size:.8rem; color:var(--moss);}
 .author-books{list-style:none; margin:0; padding:0; background:var(--card); border:1px solid var(--line); border-radius:9px;}
 .author-books li{padding:.45rem .9rem; border-top:1px solid var(--line); font-size:.9rem; overflow-wrap:anywhere;}
 .author-books li:first-child{border-top:none;}

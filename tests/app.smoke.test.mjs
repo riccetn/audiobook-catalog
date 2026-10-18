@@ -2140,6 +2140,27 @@ test('the Hardcover comparison can be only a series\' or an author\'s books', as
 	assert.match(html, /Not found on Hardcover \(1\)<\/h4>.*Brine Tide — Ann Vale/);
 });
 
+test('a series\' or an author\'s page links to comparing their books with Hardcover, which starts it', async () => {
+	const home = await boot({ hash: '#series=The+Lantern+Coast' });
+	await idle();
+	assert.match(home.readable(home.els.results.innerHTML), /<a class="hardcoverCompare" href="import\.html#hardcover-series=[^"]+">Compare with Hardcover<\/a>/);
+	const author = await boot({ page: 'authors.html', hash: '#a=Marisol+Quenby' });
+	assert.match(author.readable(author.els.creditBody.innerHTML), /<a class="hardcoverCompare" href="import\.html#hardcover-author=[^"]+">Compare their books with Hardcover<\/a>/);
+
+	const mine = [{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2' }, { t: 'Lantern Hours', a: ['R. T. Hale'] }];
+	const hc = fakeHardcover(hardcoverState());
+	const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const { els, get, readable } = await boot({ page: 'import.html', hash: '#hardcover-author=Ann+Vale', files: { 'books.json': JSON.stringify(mine) },
+		hardcover: hc.fetch, setTimeout, storage });
+	await idle();
+	assert.deepEqual([els.hardcoverScope.value, els.hardcoverScopeName.value], ['author', 'Ann Vale']);
+	assert.equal(els.importPreviewTitle.textContent, 'Compare with Hardcover');
+	assert.match(readable(els.importPreviewBody.innerHTML), /^<p>Only books by Ann Vale: 1 book in this catalog, 2 on your Hardcover Read shelf/);
+	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
+	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
+});
+
 // ------------------------------------------------------------------ the authors page
 test('the authors page lists every author, with their books and series, and a search narrows it', async () => {
 	const { els, readable } = await boot({ page: 'authors.html' });

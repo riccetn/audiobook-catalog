@@ -15,7 +15,7 @@ import {Comparison} from './modules/comparison.js';
 import {
 	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
-	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, buildElement, fillElement
+	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, valueFromPageHash, idFromAddress, buildElement, fillElement
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
@@ -705,6 +705,25 @@ function showHardcoverScope(){
 	});
 }
 
+/**
+ * A series' or an author's page links here to compare their books with Hardcover (#hardcover-series=<id>,
+ * #hardcover-author=<id>): pick them beside the Compare button, and compare.
+ */
+async function compareFromAddress(){
+	if(!/^#hardcover-/.test(location.hash) || !await withWholeCatalog(()=> true)) return;   // the names are the catalog's
+	for(const [kind, key] of /** @type {const} */ ([['series', 'series'], ['author', 'authors']])){
+		const id = idFromAddress(key, valueFromPageHash(location.hash, `hardcover-${kind}`));
+		const name = id === null ? undefined : CATALOG.nameOf(key, id);
+		if(name === undefined) continue;
+		fieldById('hardcoverScope').value = kind;
+		fieldById('hardcoverScopeName').value = name;
+		showHardcoverScope();
+		byId('hardcoverPanel').scrollIntoView({block: 'start'});
+		await compareHardcover();
+		return;
+	}
+}
+
 // Show your Hardcover shelves beside this catalog, or beside a series' or an author's books. Only reads Hardcover.
 async function compareHardcover(){
 	if(PAGE_RUN) return;
@@ -863,4 +882,4 @@ byId('importFile').addEventListener('change', e=>{
 	if(files.length) return importBackup(files);
 });
 
-export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); showHardcoverScope(); }, {refresh: refreshPage, onHardcoverJob});
+export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); showHardcoverScope(); compareFromAddress(); }, {refresh: refreshPage, onHardcoverJob});

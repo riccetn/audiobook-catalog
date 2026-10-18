@@ -133,6 +133,13 @@ export const authorPageHref = name=> 'authors.html#a=' + hashValue(CATALOG.idFor
 export const narratorPageHref = name=> 'narrators.html#n=' + hashValue(CATALOG.idFor('narrators', name));
 /** @type {(name: string) => string} */
 export const publisherPageHref = name=> 'publishers.html#p=' + hashValue(CATALOG.idFor('publishers', name));
+/**
+ * The address that compares a series' or an author's books with Hardcover on the Import & export page.
+ * @param {'series' | 'author'} kind
+ * @param {string} id the series' or the author's
+ * @returns {string}
+ */
+export const hardcoverCompareHref = (kind, id)=> `import.html#hardcover-${kind}=` + hashValue(id);
 
 /**
  * What an address of one of those pages holds after `key`= (#n=id), or null: the id there, as it is.
