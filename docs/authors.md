@@ -9,7 +9,7 @@ same when you correct the name; an address with the name, `authors.html#a=Mariso
 - links to their own website and their author pages on Audible, Goodreads, Hardcover, Open Library, ISFDB,
   BookBrainz and Wikidata, if you added them;
 - their series, each with how many books you own (of the released total, when the series has release
-  info) and its books in order;
+  info), the numbers none of their books has (*missing #5–6*), and its books in order;
 - their books outside a series.
 
 The series and titles come from the books: a book is listed for each of its authors, so a book

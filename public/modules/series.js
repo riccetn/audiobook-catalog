@@ -139,6 +139,21 @@ export class Series {
 	}
 
 	/**
+	 * Numbers as a list, runs joined: [3, 5, 6, 7] -> "#3, #5–7".
+	 * @param {number[]} nums
+	 * @returns {string}
+	 */
+	static numberList(nums){
+		/** @type {[number, number][]} */
+		const runs = [];
+		nums.forEach(n=>{
+			const last = runs[runs.length - 1];
+			if(last && n === last[1] + 1) last[1] = n; else runs.push([n, n]);
+		});
+		return runs.map(([a, b])=> a === b ? `#${a}` : `#${a}–${b}`).join(', ');
+	}
+
+	/**
 	 * The series numbers from 1 to `total` that none of `books` covers, e.g. [3, 5]. A boxed set
 	 * ("4-6") covers each number in it; a novella such as "2.5" covers none, so it does not hide a
 	 * missing book 2. Returns null when `total` is not a count (e.g. "many" or no series info).
