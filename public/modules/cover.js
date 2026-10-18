@@ -6,19 +6,9 @@ import {ExternalCatalog} from './external-catalog.js';
 
 /** @typedef {'small' | 'large'} CoverSize */
 
-// Amazon serves an ASIN's image from the host of the site's region.
-const AMAZON_EU = /\.(co\.uk|de|fr|it|es|se|nl|pl)$/;
-
-/**
- * Amazon's image host for an ASIN site ("audible.co.uk" -> Europe's).
- * @param {string} site
- * @returns {string}
- */
-function amazonHost(site){
-	if(AMAZON_EU.test(site)) return 'images-eu.ssl-images-amazon.com';
-	if(/\.co\.jp$/.test(site)) return 'images-fe.ssl-images-amazon.com';
-	return 'images-na.ssl-images-amazon.com';
-}
+// Amazon's images are asked from media-amazon.com: Firefox's tracking protection lists it as content, blocked only
+// when protection is strict, while the older hosts (images-na.ssl-images-amazon.com) are listed as analytics.
+const AMAZON_IMAGES = 'https://m.media-amazon.com/images/P/';
 
 /** Where a book's cover can be found; every method is static. */
 export class Cover {
@@ -36,7 +26,7 @@ export class Cover {
 		const found = [];
 		for(const ed of book.editions)
 			for(const [site, asin] of ed.externalList())
-				if(ExternalCatalog.family(site) === 'asin' && ExternalCatalog.isId(site, 'edition', asin)) found.push(`https://${amazonHost(site)}/images/P/${encodeURIComponent(asin)}.01.${amazon}.jpg`);
+				if(ExternalCatalog.family(site) === 'asin' && ExternalCatalog.isId(site, 'edition', asin)) found.push(`${AMAZON_IMAGES}${encodeURIComponent(asin)}.01.${amazon}.jpg`);
 		for(const ed of book.editions){
 			const olid = ed.idOn('openlibrary');
 			if(olid && ExternalCatalog.isId('openlibrary', 'edition', olid))

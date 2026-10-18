@@ -2079,13 +2079,13 @@ test('a book\'s cover is looked for by its ASINs first, then its Open Library ed
 		{ext: {'audible.com': 'B0GLASS003', openlibrary: 'OL123M'}, isbn: '9780000000002'},
 		{ext: {'audible.co.jp': 'B0GLASS004', 'audible.com': 'not an asin'}}]});
 	assert.deepEqual(Cover.addresses(book), [
-		'https://images-eu.ssl-images-amazon.com/images/P/B0GLASS001.01.MZZZZZZZ.jpg',
-		'https://images-na.ssl-images-amazon.com/images/P/B0GLASS002.01.MZZZZZZZ.jpg',
-		'https://images-na.ssl-images-amazon.com/images/P/B0GLASS003.01.MZZZZZZZ.jpg',
-		'https://images-fe.ssl-images-amazon.com/images/P/B0GLASS004.01.MZZZZZZZ.jpg',
+		'https://m.media-amazon.com/images/P/B0GLASS001.01.MZZZZZZZ.jpg',
+		'https://m.media-amazon.com/images/P/B0GLASS002.01.MZZZZZZZ.jpg',
+		'https://m.media-amazon.com/images/P/B0GLASS003.01.MZZZZZZZ.jpg',
+		'https://m.media-amazon.com/images/P/B0GLASS004.01.MZZZZZZZ.jpg',
 		'https://covers.openlibrary.org/b/isbn/9780000000002-S.jpg?default=false',
 		'https://covers.openlibrary.org/b/olid/OL123M-S.jpg?default=false']);
-	assert.equal(Cover.addresses(book, 'large')[0], 'https://images-eu.ssl-images-amazon.com/images/P/B0GLASS001.01.LZZZZZZZ.jpg');
+	assert.equal(Cover.addresses(book, 'large')[0], 'https://m.media-amazon.com/images/P/B0GLASS001.01.LZZZZZZZ.jpg');
 	assert.equal(Cover.addresses(book, 'large').at(-1), 'https://covers.openlibrary.org/b/olid/OL123M-M.jpg?default=false');
 	// nothing to find it by
 	assert.deepEqual(Cover.addresses(Book.fromJSON({t: 'Untold', a: ['Ann Vale'], e: [{ext: {goodreads: '9'}}]})), []);

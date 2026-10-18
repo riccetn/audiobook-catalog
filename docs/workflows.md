@@ -15,7 +15,8 @@ page asks for the cover by the ids the book's editions already have, first Amazo
 audiobook's square cover), then Open Library's of the edition's Open Library id and of its ISBN, and shows the first
 that loads. A book whose editions have none of those, or that neither site has a cover for, shows none.
 Asking tells Amazon and Open Library those ids, so *Covers* (next to *+ Add a book*) turns them off; the choice
-is kept in this browser.
+is kept in this browser. Firefox's strict tracking protection blocks Amazon's images; the cover then comes
+from Open Library when it has one.
 
 **Edit in the app**
 
