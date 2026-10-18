@@ -1861,6 +1861,9 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
 	assert.match(els.subtitle.textContent, /^2 possible duplicates among 6 audiobooks/);
 	assert.match(els.dupBody.innerHTML, /name="dup-0-title"[^>]*checked=""> <span class="dup-label">Title<\/span> The Salt Road/);
 	assert.match(els.dupBody.innerHTML, /Becomes: The Salt Road/);
+	// what both entries have alike is said once, above them
+	assert.match(els.dupBody.innerHTML, /<p class="dup-shared"><span class="dup-label">Author<\/span> Marisol Quenby · <span class="dup-label">Series<\/span> Lantern Coast #1<\/p>/);
+	assert.equal((els.dupBody.innerHTML.match(/dup-label">Author</g) || []).length, 2, 'once per group');
 
 	// pick the second entry's title, then merge: one book with both editions, the narrator and the date read
 	run('DUP_PICKS[0].title = 1; renderDuplicates()');

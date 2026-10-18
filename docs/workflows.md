@@ -95,7 +95,7 @@ restore it.
 **Merge duplicates**: the *Duplicates* page (its link shows how many it found) lists books that look like
 one title entered twice, found the way an import matches books (same author, series and number,
 or same author and title, forgiving Audible's long titles); books that only share a box set's edition
-are not duplicates. For each pair, pick the title, author and series to keep where they
+are not duplicates. What the entries have alike is said once above them; for each pair, pick the title, author and series to keep where they
 differ; genres, dates read and editions are combined (an edition with the same ASIN, Goodreads id or ISBN
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
 adding them to the exclusion list, since the kept book carries their ids and imports find it. **Not
