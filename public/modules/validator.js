@@ -98,7 +98,7 @@ export class Validator {
 					else if(family === 'asin' || !ed.ids('asin').length || !other.ed.ids('asin').length){
 						// a box set's edition on each of its titles: fine, as long as the copies agree (on more than their id)
 						/** @type {(x: Unchecked) => string} */
-						const values = x => { const {[Edition.ID_KEY]: id, ...rest} = Edition.order(Edition.tidyJSON(x)); return JSON.stringify(rest); };
+						const values = x => { const rest = Edition.order(Edition.tidyJSON(x)); delete rest[Edition.ID_KEY]; return JSON.stringify(rest); };
 						if(values(stored) !== values(other.stored)){
 							warnings.push(`${label}: the edition with ${nameOf(family)} ${v} differs from its copy on ${other.label}`);
 						}

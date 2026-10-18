@@ -55,14 +55,14 @@ function manualPair(){
 	const m = /^#merge=([^,]+),([^,]+)$/.exec(location.hash || '');
 	if(!m) return null;
 	/** @type {(v: string) => string} */
-	const dec = v=>{ try{ return decodeURIComponent(v); }catch(e){ return v; } };
+	const dec = v=>{ try{ return decodeURIComponent(v); }catch{ return v; } };
 	const pair = [dec(m[1]), dec(m[2])];
 	return pair[0] !== pair[1] && pair.every(id=> CATALOG.book(id)) ? inCatalogOrder(pair) : null;
 }
 
 function forgetManualPair(){
 	DUP_MANUAL = null;
-	try{ history.replaceState(null, '', location.pathname); }catch(e){}
+	try{ history.replaceState(null, '', location.pathname); }catch{ /* the address just stays as it was */ }
 }
 
 // Find the groups again (the books changed), keeping the choices made for a group that is still there.

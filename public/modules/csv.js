@@ -16,7 +16,7 @@ export class Csv {
 	 * @returns {CsvRow[]}
 	 */
 	static parse(input){
-		const text = String(input || '').replace(/^﻿/, '');
+		const text = String(input || '').replace(/^\uFEFF/, '');
 		/** @type {string[][]} */
 		const rows = [];
 		/** @type {string[]} */

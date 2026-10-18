@@ -147,7 +147,7 @@ async function importBackup(files){
 		persist(); noteBackup().then(refreshPage);   // what was restored is in that backup
 		showIoStatus(`Restored ${books.length} books` + (series ? ` and info for ${series.size} series` : '') +
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
-	}catch(err){
+	}catch{
 		showIoStatus(spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
 	}
 }
@@ -535,7 +535,7 @@ function mergeBackupFile(file){
 			PENDING_MERGE = {backup, fileName: file.name};
 			PENDING_TIDY = null;
 			previewMerge();
-		}catch(err){
+		}catch{
 			closeImportPreview();
 			showIoStatus(spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
 		}
@@ -646,7 +646,7 @@ function saveHardcoverToken(remove){
 		else localStorage.setItem(HARDCOVER_TOKEN_KEY, HardcoverClient.cleanToken(input.value));
 		input.value = '';
 		showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
-	}catch(e){
+	}catch{
 		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: this browser refused to store it.`, true);
 	}
 	showHardcoverToken();
@@ -856,7 +856,7 @@ function importCsv(kind, file){
 		if(!await withWholeCatalog(()=> true)) return;
 		try{
 			compareExport(kind, readText(e), file.name);
-		}catch(err){
+		}catch{
 			closeImportPreview();
 			showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind]().label} export.`, true);
 		}

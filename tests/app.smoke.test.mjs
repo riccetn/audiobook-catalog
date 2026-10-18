@@ -64,8 +64,8 @@ const decode = text => text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
 	if (!(e in ENTITIES)) throw new Error(`the fake DOM doesn't know ${m}`);
 	return ENTITIES[e];
 });
-const escText = text => text.replace(/&/g, '&amp;').replace(/ /g, '&nbsp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const escAttr = text => text.replace(/&/g, '&amp;').replace(/ /g, '&nbsp;').replace(/"/g, '&quot;');
+const escText = text => text.replace(/&/g, '&amp;').replace(/\u00A0/g, '&nbsp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escAttr = text => text.replace(/&/g, '&amp;').replace(/\u00A0/g, '&nbsp;').replace(/"/g, '&quot;');
 const dataName = key => 'data-' + key.replace(/[A-Z]/g, c => '-' + c.toLowerCase());
 
 class FakeText {
@@ -356,7 +356,6 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 const bookIdOf = (get, title) => (get.database.records('books').find(b => b.title === title) || {}).id;
 const bookIdAt = (get, i) => [...get.database.records('books')].sort((x, y) => x.position - y.position)[i].id;
 const seriesIdOf = (get, name) => (get.database.records('series').find(x => x.name === name) || {}).id;
-const personIdOf = (get, kind, name) => (get.database.records('contributors').find(x => x.kind === kind.replace(/s$/, '') && x.name === name) || {}).id;
 
 for (const page of PAGES) {
 	const html = read(page);
@@ -1262,7 +1261,7 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 
 test('edits from before, which waited for make serve to save them, become the catalog', async () => {
 	const old = { base: 'x', data: [{ t: 'Waiting', a: ['Me'] }], infoBase: 'y', info: { S: { total: 2, status: 'ongoing' } }, excluded: ['BGONE'] };
-	const { get, storage } = await boot({ files: null, storage: new Map([['audiobook-catalog-data', JSON.stringify(old)]]) });
+	const { storage } = await boot({ files: null, storage: new Map([['audiobook-catalog-data', JSON.stringify(old)]]) });
 	assert.deepEqual((await kept(storage)).books, old.data);
 	assert.deepEqual((await kept(storage)).seriesInfo, old.info);
 	assert.deepEqual((await kept(storage)).excluded, ['BGONE']);
@@ -1298,9 +1297,9 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 	assert.equal(els.importPreview.place, 'after audiblePanel');   // under the panel that asked for it
 	const html = readable(els.importPreviewBody.innerHTML);
 	assert.match(html, /<p>1 new, 1 with more to give, 0 with values that differ, 0 the same as in this catalog\.<\/p>/);
-	assert.match(html, /New from Audible \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:1" checked=""> A Crown of Embers 6: Ashfall — Ilse Marlowe  \[A Crown of Embers #6\]/);
+	assert.match(html, /New from Audible \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:1" checked=""> A Crown of Embers 6: Ashfall — Ilse Marlowe {2}\[A Crown of Embers #6\]/);
 	// Audible's edition is the one you have: ticked
-	assert.match(html, /Audible has more \(1\)<\/h4>.*A Spark of Dawn — Ilse Marlowe  \[A Crown of Embers #5\]<\/span><ul><li><label class="cmpPick"><input type="checkbox" data-pick="editions:0" checked=""> the Audible edition: an edition \(ASIN audible\.com B5\)/);
+	assert.match(html, /Audible has more \(1\)<\/h4>.*A Spark of Dawn — Ilse Marlowe {2}\[A Crown of Embers #5\]<\/span><ul><li><label class="cmpPick"><input type="checkbox" data-pick="editions:0" checked=""> the Audible edition: an edition \(ASIN audible\.com B5\)/);
 	assert.doesNotMatch(html, /Different in both/, 'the long form of a title is the same title');
 	assert.match(html, /Skipped \(excluded from imports\): 1<\/p><ul><li>Removed — Ilse Marlowe/);
 	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
@@ -1375,7 +1374,7 @@ test('importing a Goodreads CSV can be canceled', async () => {
 	await idle();
 	assert.equal(els.importPreviewTitle.textContent, 'Compare with Goodreads');
 	assert.equal(els.importPreview.place, 'after goodreadsPanel');
-	assert.match(els.importPreviewBody.innerHTML, /Zzz New Book — Nobody Yet  \[Zzz Saga #2\]/);
+	assert.match(els.importPreviewBody.innerHTML, /Zzz New Book — Nobody Yet {2}\[Zzz Saga #2\]/);
 	els.importCancel.listeners.click[0]();
 	await idle();
 	assert.ok(!els.importPreview.classList.contains('open'));
@@ -2217,7 +2216,7 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 	assert.equal(els.importPreview.place, 'after hardcoverPanel');
 	const html = readable(els.importPreviewBody.innerHTML);
 	assert.match(html, /^<p>2 books on your Hardcover Read shelf \(took 0:00\)<\/p>/);
-	assert.match(html, /New from Hardcover \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:0" checked=""> Tidewater — Ann Vale  \[Gull Isle #1\]/);
+	assert.match(html, /New from Hardcover \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:0" checked=""> Tidewater — Ann Vale {2}\[Gull Isle #1\]/);
 	// your books go on Hardcover only when ticked
 	assert.match(html, /Not on your Hardcover Read shelf \(1\)<\/h4>.*<input type="checkbox" data-pick="add:0"> Lantern Hours — R\. T\. Hale: read 2024-05-01<\/label>/);
 	assert.match(html, /<input type="checkbox" data-pick="ids" checked=""> Save the Hardcover ids found for 1 book/);
@@ -2654,7 +2653,7 @@ test('Box sets on the import page adds a set beside the titles sharing its editi
 test('Series info without note should not be rendered as "undefined"', async() => {
 	const mine = JSON.stringify([{ t: 'Lol', a: ['Jonathan Smith'], s: 'Pop', sn: '1', e: [{'n':'Michel Reed'}] }]);
 	const info = JSON.stringify({ 'Pop': { total: 5, status: 'ongoing' }});
-	const { els, storage } = await boot({ files: { 'books.json': mine, 'series-info.json': info } });
+	const { els } = await boot({ files: { 'books.json': mine, 'series-info.json': info } });
 	assert.doesNotMatch(els.results.innerHTML, /undefined/);
 });
 

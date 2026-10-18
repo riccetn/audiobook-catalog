@@ -15,8 +15,8 @@ and nothing else goes there: `docs/` and `tests/` stay outside it, so they are n
 The module names below are files in `public/`.
 
 - Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests**. `package.json` says
-  `"type": "module"` and has one devDependency, TypeScript, used only as a checker (`make typecheck`); don't add
-  others, use Node built-ins in tests.
+  `"type": "module"` and its devDependencies are checkers only, never served or imported by the app or tests:
+  TypeScript (`make typecheck`) and ESLint with `@eslint/js` and `globals` (`make lint`); don't add others, use Node built-ins in tests.
 - Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` and the classes in `modules/`.
@@ -27,16 +27,20 @@ The module names below are files in `public/`.
 ```sh
 make test       # node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
 make typecheck  # tsc -p jsconfig.json and -p jsconfig.sw.json (sw.js, with the worker's globals); needs `npm install` once
+make lint       # eslint . with the recommended rules (eslint.config.js); needs `npm install` once
+make check      # test, typecheck and lint, what CI runs; run it before a PR
 make serve      # python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/catalog.test.mjs            # one suite (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`typecheck`, `serve`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `typecheck`, `lint`, `serve`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
-There is no linter or formatter; `.editorconfig` sets tab indentation for code, and otherwise match the surrounding style (see Conventions).
-CI (`.github/workflows/ci.yml`) runs `make test` and `make typecheck` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
+ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
+`catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. There is no formatter; `.editorconfig` sets tab
+indentation for code, and otherwise match the surrounding style (see Conventions).
+CI (`.github/workflows/ci.yml`) runs `npm ci` and `make check` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`.
 
 ## Architecture
