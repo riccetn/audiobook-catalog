@@ -202,7 +202,6 @@ function renderCreditPage(id){
 	byId('subtitle').textContent = count
 		? `${Text.plural(count, 'audiobook')}${series.length ? ' in ' + Text.plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
 		: spell(KIND.none);
-	const label = kept().has(id) ? `Edit ${KIND.one} info` : `Add ${KIND.one} info`;
 	/** @type {(href: string, text: string) => HTMLAnchorElement} */
 	const link = (href, text)=> buildElement('a', {class: 'authorlink', href, target: '_blank', rel: 'noopener'}, `${text} ↗`);
 	// their own site, their pages in external catalogs, then any other link (by its site's name)
@@ -210,11 +209,10 @@ function renderCreditPage(id){
 		...info.links.map(href=> link(href, (Text.webHost(href) || href).replace(/^www\./, '')))].filter(x=> !!x);
 	/** @type {Child[]} */
 	const out = [
-		buildElement('div', {class: 'author-head'}, buildElement('h2', {class: 'author-name'}, name),
-			buildElement('button', {class: 'iconbtn aedit', title: label, 'aria-label': label, onclick: ()=> openCreditForm(id)}, '✎')),
+		buildElement('div', {class: 'author-head'}, buildElement('h2', {class: 'author-name'}, name)),
 		info.bio && buildElement('div', {class: 'author-bio'}, bioParagraphs(info.bio)),
 		links.length > 0 && buildElement('p', {class: 'author-links'}, joined(links, ' ')),
-		!info.bio && !links.length && buildElement('p', {class: 'hint'}, 'No bio or links yet: add them with ✎.'),
+		!info.bio && !links.length && buildElement('p', {class: 'hint'}, 'No bio or links yet: add them with Edit, at the end of the page.'),
 		KIND === CREDIT_KINDS.author && count > 0 && buildElement('p', {class: 'author-actions'},
 			buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('author', id)}, 'Compare their books with Hardcover')),
 	];
@@ -225,6 +223,9 @@ function renderCreditPage(id){
 			buildElement('p', {class: 'series-title'}, series.length ? 'Outside a series' : 'Titles', ' ', buildElement('span', {class: 'n'}, Text.plural(titles.length, 'book'))),
 			buildElement('ul', {class: 'author-books'}, titles.map(b=> creditBookLine(b, name)))));
 	}
+	// viewing them comes first, so editing their info comes after their books
+	out.push(buildElement('div', {class: 'page-actions'},
+		buildElement('button', {type: 'button', class: 'aedit', onclick: ()=> openCreditForm(id)}, 'Edit')));
 	fillElement(byId('creditBody'), out);
 }
 

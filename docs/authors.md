@@ -16,7 +16,7 @@ The series and titles come from the books: a book is listed for each of its auth
 written by two authors is on both pages, with a link to the other one. Each title and series links back
 to it in the catalog.
 
-**Add or edit the bio and links**: press the pencil next to the author's name. The bio keeps its
+**Add or edit the bio and links**: press **Edit** at the end of the author's page, after their books. The bio keeps its
 paragraphs (leave a blank line between them). The website must start with `https://` (or `http://`).
 The Audible, Amazon, Goodreads, Hardcover, Open Library, ISFDB, BookBrainz and Wikidata fields keep the author's id there: type it, or paste the
 address of their page from the browser's address bar (`https://www.audible.co.uk/author/Name/B0...` on any

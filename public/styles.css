@@ -184,13 +184,15 @@ h1{
 .book-details .edition{border-top:1px solid var(--line); margin-top:.75rem; padding-top:.6rem;}
 .book-details .edition h3{font-size:.85rem; font-weight:600; margin:0;}
 .book-details .edition .details{margin-top:.35rem;}
-/* Edit and Merge come last, as viewing a book comes before changing it; Merge opens a search for the other book. */
+/* Edit (and a book's Merge) come last on a book's, a series' or a person's page, as viewing comes before
+   changing; Merge opens a search for the other book. */
 .book-details .book-actions{border-top:1px solid var(--line); margin-top:.9rem; padding-top:.7rem; gap:.5rem;}
-.book-details .book-actions button{
+.page-actions{display:flex; gap:.5rem; margin:.9rem 0 0;}
+.book-details .book-actions button, .page-actions button{
 	padding:.35rem .9rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink-soft);
 	font-size:.82rem; cursor:pointer;
 }
-.book-details .book-actions button:hover, .book-details .book-actions button[aria-expanded="true"]{color:var(--moss); border-color:var(--moss);}
+.book-details .book-actions button:hover, .page-actions button:hover, .book-details .book-actions button[aria-expanded="true"]{color:var(--moss); border-color:var(--moss);}
 .mergeSearch{margin-top:.6rem; font-size:.82rem;}
 .mergeSearch label{display:block; color:var(--ink-soft); margin-bottom:.25rem;}
 .mergeSearch input{width:100%; max-width:28rem; padding:.45rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink); font-size:.9rem;}
@@ -385,7 +387,7 @@ h1{
 /* Touch screens: buttons big enough for a finger, whatever their glyph. */
 @media (pointer:coarse){
 	.iconbtn{min-width:2.25rem; min-height:2.5rem; display:inline-flex; align-items:center; justify-content:center;}
-	.book-details .book-actions button, .formbtns .removeBook{min-height:2.5rem;}
+	.book-details .book-actions button, .page-actions button, .formbtns .removeBook{min-height:2.5rem;}
 	.viewToggle button{padding:.6rem 1rem;}
 	.removeEdition, .addEdition, .formrow-btn button{min-height:2.5rem;}
 }

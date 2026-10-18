@@ -20,8 +20,8 @@ from Open Library when it has one.
 
 **Edit in the app**
 
-Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
-list; `+ Add a book` opens it at the top, with the series and author filled in from what the list shows: the
+Edit books in the page (**Edit** at the end of a book's details, `+ Add a book`). **Edit** opens the form in place of the book's
+details; `+ Add a book` opens it at the top, with the series and author filled in from what the list shows: the
 series you are looking at, and the author picked in the author filter (else the author of every book in the
 series). *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
@@ -81,6 +81,9 @@ The same form renames the series: change its name and every book in the series g
 (a series without info is renamed without adding any). Renaming it to a series you already have
 moves its books into that one; the first **Save** says so and the second does it, and if the form has
 info it replaces the other series' info.
+
+**Series info** (the released total, whether the series is complete, a note, the author's site and its ids in other
+catalogs): press **Edit** at the end of the series' own page, after its books. The form can rename the series too.
 
 **Find books missing from a series**: when a series has a released total in its series info,
 the series overview and the series itself list the numbers you don't own (for example

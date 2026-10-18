@@ -578,13 +578,16 @@ export function render(){
 			if(missing && missing.length) note.push(`missing ${Series.numberList(missing)}`);
 			if(info.note) note.push(info.note);
 		}
+		const id = CATALOG.idFor('series', name), alone = SERIES_FILTER === id;
 		out.push(buildElement('div', {class: 'series-group'},
-			buildElement('p', {class: 'series-title'}, buildElement('a', {href: seriesHref(CATALOG.idFor('series', name))}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books)),
-				' ', seriesEditButton(CATALOG.idFor('series', name), !!info), info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
+			buildElement('p', {class: 'series-title'}, buildElement('a', {href: seriesHref(id)}, name), ' ', buildElement('span', {class: 'n'}, ownedText(books)),
+				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
 				// a series shown on its own can be compared with Hardcover
-				SERIES_FILTER === CATALOG.idFor('series', name) && [' ', buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('series', SERIES_FILTER)}, 'Compare with Hardcover')]),
+				alone && [' ', buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('series', id)}, 'Compare with Hardcover')]),
 			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
-			books.map(b=> bookCard(b))));
+			books.map(b=> bookCard(b)),
+			// editing its info is on the series' own page, after its books
+			alone && seriesEditButton(id)));
 	});
 
 	if(!sorted && standalone.length){
@@ -634,8 +637,7 @@ function renderSeriesOverview(){
 		out.push(buildElement('div', {class: 'srow'},
 			buildElement('div', {class: 'srow-head'},
 				buildElement('a', {class: 'srow-title', href: seriesHref(rec.id)}, rec.name), ' ',
-				buildElement('span', {class: 'srow-owned'}, `${rec.owned} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
-				seriesEditButton(rec.id, !!info)),
+				buildElement('span', {class: 'srow-owned'}, `${rec.owned} owned${info ? ' of ' + totalText(info) : ''}`)),
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'},
 				joined(authors.map(a=> buildElement('a', {href: creditPageHref('authors', a.id)}, a.name)), ', ')),
 				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
@@ -656,13 +658,13 @@ function renderSeriesOverview(){
 // Edits the series' entry in CATALOG.series (released total, status, note, author site) and its name,
 // which is renamed on every book in the series. Like book edits, it is kept in this browser (see persist).
 /**
+ * The Edit button at the end of a series' own page, which opens its info form.
  * @param {string} id the series'
- * @param {boolean} hasInfo
- * @returns {HTMLButtonElement}
+ * @returns {HTMLDivElement}
  */
-function seriesEditButton(id, hasInfo){
-	const label = hasInfo ? 'Edit series info' : 'Add series info';
-	return buildElement('button', {class: 'iconbtn sedit', 'data-series': id, title: label, 'aria-label': label, onclick: ()=> openSeriesForm(id)}, '\u270E');
+function seriesEditButton(id){
+	return buildElement('div', {class: 'page-actions'},
+		buildElement('button', {type: 'button', class: 'sedit', 'data-series': id, onclick: ()=> openSeriesForm(id)}, 'Edit'));
 }
 
 /**

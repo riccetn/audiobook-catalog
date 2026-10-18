@@ -1799,7 +1799,15 @@ test('series info can be edited, added and removed in the page', async () => {
 	const { ctx, els, get, storage } = await boot();
 	const info = JSON.parse(DEMO_INFO);
 	const [name] = Object.keys(info);
-	assert.match(els.results.innerHTML, /class="iconbtn sedit"/);
+	assert.doesNotMatch(els.results.innerHTML, /sedit/, 'not in the overview');
+	ctx.openSeries(seriesIdOf(get, name));
+	await idle();
+	assert.match(els.results.innerHTML, /<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button><\/div><\/div>$/, 'at the end of the page of the series');
+	ctx.setView('library');
+	await idle();
+	assert.doesNotMatch(els.results.innerHTML, /sedit/, 'nor in the list of all books');
+	ctx.setView('series');
+	await idle();
 
 	// edit: the form starts from the current entry
 	ctx.openSeriesForm(seriesIdOf(get, name));
@@ -2471,6 +2479,9 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	const { els, get, storage } = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe' });
 	const editClick = () => els.creditBody.querySelector('.aedit').listeners.click[0]();
 	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
+	// Edit comes after their books, not by their name
+	assert.match(els.creditBody.innerHTML, /^<div class="author-head"><h2 class="author-name">Wendell Ashcombe<\/h2><\/div>/);
+	assert.match(els.creditBody.innerHTML, /<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button><\/div>$/);
 	editClick();
 	assert.ok(els.creditForm.classList.contains('open'));
 	assert.equal(els.creditFormTitle.textContent, 'Add author info: Wendell Ashcombe');
