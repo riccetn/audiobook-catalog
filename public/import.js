@@ -23,7 +23,7 @@ import {
 /** @import {HardcoverJob} from './store.js' */
 /** @import {MergeOptions, MergeReport} from './modules/merger.js' */
 /** @import {ComparisonResult, ComparedBook, Difference} from './modules/comparison.js' */
-/** @import {HardcoverComparison, HardcoverPlan} from './modules/hardcover-sync.js' */
+/** @import {HardcoverComparison, HardcoverPlan, HardcoverPart} from './modules/hardcover-sync.js' */
 /** @import {Step} from './modules/hardcover-client.js' */
 
 /** @typedef {HardcoverJob['mode']} HardcoverMode */
@@ -724,6 +724,20 @@ async function compareFromAddress(){
 	}
 }
 
+/**
+ * A series or an author to compare with Hardcover, with the Hardcover id its info has (a number; a name kept
+ * from a page's address is not one).
+ * @param {'series' | 'author'} kind
+ * @param {string} name
+ * @returns {HardcoverPart}
+ */
+function hardcoverPart(kind, name){
+	const id = CATALOG.nameIds[kind === 'series' ? 'series' : 'authors'].get(name);
+	const info = id === undefined ? undefined : (kind === 'series' ? CATALOG.series : CATALOG.authors).get(id);
+	const hardcover = info && info.external.hardcover;
+	return {kind, name, ...hardcover && HardcoverClient.ID.test(hardcover) ? {hardcover} : {}};
+}
+
 // Show your Hardcover shelves beside this catalog, or beside a series' or an author's books. Only reads Hardcover.
 async function compareHardcover(){
 	if(PAGE_RUN) return;
@@ -737,7 +751,7 @@ async function compareHardcover(){
 	if(scope && !here){ showIoStatus(spell(`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`), true); return; }
 	closeImportPreview();
 	await whenSaved();   // compared with the catalog as saved
-	const run = await withHardcoverJob('compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step, scope ? {kind: scope.kind, name: scope.name} : undefined));
+	const run = await withHardcoverJob('compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step, scope ? hardcoverPart(scope.kind, scope.name) : undefined));
 	if(!run) return;
 	const hc = run.value;
 	if(!hc){

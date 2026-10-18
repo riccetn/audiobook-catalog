@@ -37,15 +37,16 @@ export class HardcoverClient {
 		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
 	}
 }`,
-		// the part of your shelves of a series or an author (any whose name has the name asked in it), or of some books
-		shelfBySeries: `query ShelfBySeries($user: Int!, $offset: Int!, $name: String!) {
-	user_books(where: {user_id: {_eq: $user}, book: {book_series: {series: {name: {_ilike: $name}}}}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
+		// the part of your shelves of some series or authors (by their ids), or of some books; Hardcover refuses
+		// _ilike and its kin, so a name can only be matched as it is (seriesByName, authorsByName)
+		shelfBySeries: `query ShelfBySeries($user: Int!, $offset: Int!, $ids: [Int!]) {
+	user_books(where: {user_id: {_eq: $user}, book: {book_series: {series_id: {_in: $ids}}}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
 		id book_id edition_id status_id
 		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
 	}
 }`,
-		shelfByAuthor: `query ShelfByAuthor($user: Int!, $offset: Int!, $name: String!) {
-	user_books(where: {user_id: {_eq: $user}, book: {contributions: {author: {name: {_ilike: $name}}}}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
+		shelfByAuthor: `query ShelfByAuthor($user: Int!, $offset: Int!, $ids: [Int!]) {
+	user_books(where: {user_id: {_eq: $user}, book: {contributions: {author_id: {_in: $ids}}}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
 		id book_id edition_id status_id
 		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
 	}
@@ -54,6 +55,16 @@ export class HardcoverClient {
 	user_books(where: {user_id: {_eq: $user}, book_id: {_in: $books}}, order_by: {id: asc}, limit: ${PAGE}, offset: $offset) {
 		id book_id edition_id status_id
 		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
+	}
+}`,
+		seriesByName: `query SeriesByName($names: [String!]) { series(where: {name: {_in: $names}}) { id name } }`,
+		authorsByName: `query AuthorsByName($names: [String!]) { authors(where: {name: {_in: $names}}) { id name } }`,
+		// the series and authors of some books, to find a series' or author's id from your books of it
+		bookParts: `query BookParts($ids: [Int!]) {
+	books(where: {id: {_in: $ids}}) {
+		id
+		book_series { series { id name } }
+		contributions { author { id name } }
 	}
 }`,
 		books: `query Books($ids: [Int!]) {
@@ -138,17 +149,48 @@ export class HardcoverClient {
 	}
 
 	/**
-	 * The books on your Hardcover shelves of a series or an author: those with a series (of any of theirs),
-	 * or an author, whose name has `name` in it, ignoring case. Hardcover may spell it another way ("Gull
-	 * Isle Series"), so the caller narrows it down.
+	 * The entries on your Hardcover shelves of books in these Hardcover series, or by these authors.
 	 * @param {'series' | 'author'} kind
-	 * @param {string} name
+	 * @param {number[]} ids
 	 * @param {Step} step
 	 * @returns {Promise<Unchecked[]>}
 	 */
-	async shelfOf(kind, name, step){
-		const pattern = '%' + name.replace(/[\\%_]/g, c => '\\' + c) + '%';
-		return this.shelfPages(kind === 'series' ? HardcoverClient.QUERIES.shelfBySeries : HardcoverClient.QUERIES.shelfByAuthor, {name: pattern}, step);
+	async shelfOf(kind, ids, step){
+		/** @type {Unchecked[]} */
+		const shelf = [];
+		const query = kind === 'series' ? HardcoverClient.QUERIES.shelfBySeries : HardcoverClient.QUERIES.shelfByAuthor;
+		for(let i = 0; i < ids.length; i += BATCH) shelf.push(...await this.shelfPages(query, {ids: ids.slice(i, i + BATCH)}, step));
+		return shelf;
+	}
+
+	/**
+	 * The Hardcover series or authors named exactly one of `names`, as {id, name} rows.
+	 * @param {'series' | 'author'} kind
+	 * @param {string[]} names
+	 * @returns {Promise<Unchecked[]>}
+	 */
+	async named(kind, names){
+		if(!names.length) return [];
+		const data = await this.ask(kind === 'series' ? HardcoverClient.QUERIES.seriesByName : HardcoverClient.QUERIES.authorsByName, {names});
+		const rows = kind === 'series' ? data.series : data.authors;
+		return Array.isArray(rows) ? rows.filter(Text.isObject) : [];
+	}
+
+	/**
+	 * The series and authors of these Hardcover books, as {id, book_series, contributions} rows.
+	 * @param {number[]} ids
+	 * @param {Step} step
+	 * @returns {Promise<Unchecked[]>}
+	 */
+	async bookParts(ids, step){
+		/** @type {Unchecked[]} */
+		const rows = [];
+		for(let i = 0; i < ids.length; i += BATCH){
+			step('Finding the series or author on Hardcover', i, ids.length);
+			const books = (await this.ask(HardcoverClient.QUERIES.bookParts, {ids: ids.slice(i, i + BATCH)})).books;
+			if(Array.isArray(books)) rows.push(...books.filter(Text.isObject));
+		}
+		return rows;
 	}
 
 	/**
