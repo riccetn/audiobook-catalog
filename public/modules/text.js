@@ -12,7 +12,8 @@
 // JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
 const WORD_START = '(?<![\\p{L}\\p{N}_])';
 const RUN_TOGETHER_INITIALS = new RegExp(WORD_START + '([A-Z])\\.(?=[A-Z]\\.)', 'gu');
-const INVISIBLE = /[​﻿]/g;
+const INVISIBLE = /[\u200B\uFEFF]/g;
+// eslint-disable-next-line no-control-regex -- the separator controls are what it matches
 const WHITESPACE = /[\s\x1c-\x1f]+/g;   // \s plus the ASCII separator controls
 // What follows a comma without being a name of its own: "Ann Vale, Jr.".
 const NAME_SUFFIX = /^(jr|sr|i{2,3}|iv|phd|md)\.?$/i;
@@ -253,7 +254,7 @@ export class Text {
 	 * @returns {string | null}
 	 */
 	static webHost(text){
-		const m = /^https?:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)*)(?::\d+)?(?:[\/?#]\S*)?$/i.exec(text);
+		const m = /^https?:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)*)(?::\d+)?(?:[/?#]\S*)?$/i.exec(text);
 		return m ? m[1].toLowerCase() : null;
 	}
 

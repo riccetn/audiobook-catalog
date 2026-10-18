@@ -881,7 +881,7 @@ export function browserHardcoverToken(){
  */
 async function fetchHardcover(url, opts){
 	try{ return await fetch(url, opts); }
-	catch(e){ throw new Error('this browser could not reach Hardcover (offline, or Hardcover refused a request from a web page)'); }
+	catch(e){ throw new Error('this browser could not reach Hardcover (offline, or Hardcover refused a request from a web page)', {cause: e}); }
 }
 
 /**

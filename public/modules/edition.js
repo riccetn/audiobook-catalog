@@ -360,7 +360,7 @@ export class Edition {
 		const found = [];   // [site or null, ASIN]
 		/** @type {string[]} */
 		const bad = [];
-		const tokens = String(text || '').split(/[\s,;]+/).map(x => x.replace(/^[(\[]+|[)\]:]+$/g, '')).filter(Boolean);
+		const tokens = String(text || '').split(/[\s,;]+/).map(x => x.replace(/^[([]+|[)\]:]+$/g, '')).filter(Boolean);
 		const siteOf = (/** @type {string} */ t) => { const s = t.toLowerCase().replace(/^www\./, ''); return ExternalCatalog.ASIN_SITE.test(s) ? s : null; };
 		// an ASIN is ten letters and digits; a shorter one, from a hand-made catalog, is taken as it is
 		const isAsin = (/** @type {string} */ t) => /^[A-Za-z0-9]+$/.test(t);

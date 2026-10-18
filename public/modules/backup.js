@@ -62,7 +62,7 @@ import {Duplicates} from './duplicates.js';
 function readBooks(list){
 	return list.map((b, i) => {
 		try{ return Book.fromJSON(b); }
-		catch(exc){ throw new Error(`book #${i}: ${Text.errorText(exc)}`); }
+		catch(exc){ throw new Error(`book #${i}: ${Text.errorText(exc)}`, {cause: exc}); }
 	});
 }
 

@@ -14,5 +14,6 @@ jobs:
         with:
           node-version: 24
       - run: make test          # importers, data checks, browser smoke test
-      - run: npm ci             # TypeScript, the type checker
+      - run: npm ci             # TypeScript, the type checker, and ESLint
       - run: make typecheck     # the code against its JSDoc types
+      - run: make lint          # likely mistakes (ESLint's recommended rules)

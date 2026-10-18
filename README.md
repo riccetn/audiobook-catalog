@@ -12,11 +12,12 @@ and the catalog is kept in the browser's IndexedDB. There is no build step and n
 git clone <this repo> && cd audiobook-catalog
 make test     # all tests, including a browser smoke test
 npm install && make typecheck   # check the code against its types (TypeScript)
+make lint     # look for likely mistakes (ESLint, after npm install)
 make serve    # serves public/ at http://localhost:8000/ (any static server, or GitHub Pages, works too)
 make help
 ```
 
-On Windows without make, `.\make.ps1 test` (or `typecheck`, `serve`, `help`) runs the same commands in PowerShell.
+On Windows without make, `.\make.ps1 test` (or `typecheck`, `lint`, `serve`, `help`) runs the same commands in PowerShell.
 
 ## Start your own catalog
 

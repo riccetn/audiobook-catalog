@@ -36,10 +36,10 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 
 The code is plain JavaScript with its types written in JSDoc comments, and TypeScript checks that the
 code agrees with them. Nothing is compiled: the browser loads the files exactly as they are, and
-TypeScript (the only npm package, a development dependency) is never served.
+TypeScript (a development dependency, like ESLint below) is never served.
 
 ```sh
-npm install       # once: installs TypeScript into node_modules/
+npm install       # once: installs TypeScript and ESLint into node_modules/
 make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig.json, and jsconfig.sw.json for sw.js)
 ```
 
@@ -55,6 +55,15 @@ make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig
 - `byId(id)` and `fieldById(id)` in `store.js` get the page's elements; they throw when the page lacks
   one, so a typo in an id fails at once with its name.
 - CI runs `make typecheck` beside `make test`.
+
+## Lint
+
+`make lint` runs ESLint with its recommended rules (`eslint.config.js`) over `public/` and `tests/`. It looks
+for likely mistakes, such as unused variables, needless escapes and invisible characters typed into the
+source; it doesn't format, which is left to `.editorconfig`. A catch that ignores its error and a parameter
+only an override uses are allowed. Where a rule is wrong for one line, say why beside it:
+`// eslint-disable-next-line no-control-regex -- the separator controls are what it matches`. CI runs
+`make lint` too.
 
 ## Spelling
 

@@ -775,6 +775,7 @@ test('merge: an edition fills in its match, a lone edition, or is added as anoth
 	assert.deepEqual(existing[0].e, [{ ext: { 'audible.com': 'B1', goodreads: '7' }, p: 'Mine', d: '2021' }, { ext: { 'audible.com': 'B1UK' }, isbn: ISBN_B }]);
 	assert.equal(report.editionsAdded.length, 1);
 	report = merge(existing, [book('One', 'Author', ed({ ext: { goodreads: '8' }, isbn: ISBN_B }))]);
+	assert.equal(report.editionsAdded.length, 0, 'the edition with that ISBN is filled in, not added again');
 	assert.deepEqual(existing[0].e[1], { ext: { 'audible.com': 'B1UK', goodreads: '8' }, isbn: ISBN_B });
 	assert.equal(merge(existing, [book('Renamed', 'Author', ed({ ext: { goodreads: '8' } }))]).added.length, 0, 'any edition finds the book');
 	assert.equal(merge(existing, structuredClone([book('One', 'Author', ed({ ext: { goodreads: '8' }, isbn: ISBN_B }))])).editionsAdded.length, 0);

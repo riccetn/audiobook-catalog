@@ -1,7 +1,7 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 test, typecheck, serve or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 test, typecheck, lint, serve or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'test', 'typecheck', 'serve')]
+	[ValidateSet('help', 'test', 'typecheck', 'lint', 'serve')]
 	[string]$Command = 'help',
 	[int]$Port = 8000
 )
@@ -20,6 +20,7 @@ switch ($Command) {
 		'help      - list the available commands'
 		'test      - run the tests: the catalog classes and the browser smoke test'
 		'typecheck - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
+		'lint      - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
 		'serve     - open the app at http://localhost:8000/ (serves public/; -Port for another port)'
 	}
 	'test' {
@@ -35,6 +36,14 @@ switch ($Command) {
 		}
 		Invoke-Native 'node' @($tsc, '-p', 'jsconfig.json')
 		Invoke-Native 'node' @($tsc, '-p', 'jsconfig.sw.json')
+	}
+	'lint' {
+		$eslint = 'node_modules/eslint/bin/eslint.js'
+		if (-not (Test-Path $eslint)) {
+			Write-Host 'ESLint is not installed: run npm install first'
+			exit 1
+		}
+		Invoke-Native 'node' @($eslint, '.')
 	}
 	'serve' {
 		# Windows usually has the py launcher or python rather than python3.
