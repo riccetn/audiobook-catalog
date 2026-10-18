@@ -185,7 +185,10 @@ h1{
 .importPreview .cmpGroup h4{margin:0 0 .25rem; font-size:.88rem; font-weight:600;}
 .importPreview .cmpTick{margin-left:.3rem; padding:.1rem .45rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink-soft); font-size:.72rem; font-weight:normal; cursor:pointer;}
 .importPreview .cmpNote{color:var(--ink-soft); font-size:.78rem;}
-.importPreview .cmpRows{list-style:none; padding-left:0; max-height:24rem;}
+.importPreview .cmpRows{list-style:none; padding-left:0; max-height:none; overflow-y:visible;}   /* the page scrolls, not a box in it */
+/* Apply and Cancel stay in reach however long the preview is */
+.importPreview > .formbtns{position:sticky; bottom:0; z-index:1; background:var(--card); margin:.9rem -1rem -1rem; padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom, 0px));
+	border-top:1px solid var(--line); border-radius:0 0 10px 10px;}
 .importPreview .cmpRows > li{padding:.2rem 0;}
 .importPreview .cmpRows ul{margin:.1rem 0 .2rem 1.6rem; padding-left:0; list-style:none; color:var(--ink-soft); max-height:none;}
 .importPreview .cmpPick{cursor:pointer;}
@@ -201,6 +204,7 @@ h1{
 .mergePrefer select{margin-left:.3rem; padding:.3rem .4rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink); font-size:.85rem; max-width:100%;}
 .dup-group{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.8rem; margin-bottom:1rem; font-size:.85rem;}
 .dup-note{margin:0 0 .5rem; color:var(--moss); font-weight:600; font-size:.8rem;}
+.dup-shared{margin:0 0 .5rem; overflow-wrap:anywhere;}
 .dup-books{display:flex; gap:.5rem; flex-wrap:wrap;}
 .dup-book{flex:1 1 220px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:.5rem .65rem; background:var(--paper); overflow-wrap:anywhere;}
 .dup-field{display:block; margin:.1rem 0;}
