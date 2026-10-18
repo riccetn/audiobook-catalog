@@ -54,7 +54,7 @@ make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig
   current format, and `Validator.validate()` is what makes sure it describes `Book`s before `Book.fromJSON()` makes them.
 - `byId(id)` and `fieldById(id)` in `store.js` get the page's elements; they throw when the page lacks
   one, so a typo in an id fails at once with its name.
-- CI runs `make typecheck` beside `make test`.
+- CI runs `make typecheck` as part of `make check` (below).
 
 ## Lint
 
@@ -62,8 +62,9 @@ make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig
 for likely mistakes, such as unused variables, needless escapes and invisible characters typed into the
 source; it doesn't format, which is left to `.editorconfig`. A catch that ignores its error and a parameter
 only an override uses are allowed. Where a rule is wrong for one line, say why beside it:
-`// eslint-disable-next-line no-control-regex -- the separator controls are what it matches`. CI runs
-`make lint` too, and `make check` runs all three of test, typecheck and lint.
+`// eslint-disable-next-line no-control-regex -- the separator controls are what it matches`. 
+`make check` runs all three of test, typecheck and lint, and stops at the first that fails; CI runs it on
+every pull request, so running it first catches what CI would.
 
 ## Spelling
 
