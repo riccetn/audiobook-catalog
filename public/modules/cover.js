@@ -21,7 +21,9 @@ export class Cover {
 	 * @returns {string[]}
 	 */
 	static addresses(book, size = 'small'){
-		const amazon = size === 'small' ? 'MZZZZZZZ' : 'LZZZZZZZ', openLibrary = size === 'small' ? 'S' : 'M';
+		// Amazon's M and L are 160 and 500 pixels tall, Open Library's M and L 180 and 500: a card's cover sharp on a phone's
+		// screen, and the details' at its larger size.
+		const amazon = size === 'small' ? 'MZZZZZZZ' : 'LZZZZZZZ', openLibrary = size === 'small' ? 'M' : 'L';
 		/** @type {string[]} */
 		const found = [];
 		for(const ed of book.editions)

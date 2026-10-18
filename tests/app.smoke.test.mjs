@@ -750,7 +750,7 @@ test('a cover tries the next address when one fails or is blank, and can be turn
 	assert.equal(cover().getAttribute('src'), 'https://m.media-amazon.com/images/P/B0COVER001.01.LZZZZZZZ.jpg');
 	// Amazon answers with a blank picture: Open Library is asked next
 	Object.assign(cover(), { naturalWidth: 1, naturalHeight: 1 }).dispatch('load');
-	assert.equal(cover().getAttribute('src'), 'https://covers.openlibrary.org/b/isbn/9780000000002-M.jpg?default=false');
+	assert.equal(cover().getAttribute('src'), 'https://covers.openlibrary.org/b/isbn/9780000000002-L.jpg?default=false');
 	assert.ok(!cover().classList.contains('loaded'));
 	Object.assign(cover(), { naturalWidth: 120, naturalHeight: 180 }).dispatch('load');
 	assert.ok(cover().classList.contains('loaded'));

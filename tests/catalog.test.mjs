@@ -2083,10 +2083,10 @@ test('a book\'s cover is looked for by its ASINs first, then its Open Library ed
 		'https://m.media-amazon.com/images/P/B0GLASS002.01.MZZZZZZZ.jpg',
 		'https://m.media-amazon.com/images/P/B0GLASS003.01.MZZZZZZZ.jpg',
 		'https://m.media-amazon.com/images/P/B0GLASS004.01.MZZZZZZZ.jpg',
-		'https://covers.openlibrary.org/b/isbn/9780000000002-S.jpg?default=false',
-		'https://covers.openlibrary.org/b/olid/OL123M-S.jpg?default=false']);
+		'https://covers.openlibrary.org/b/isbn/9780000000002-M.jpg?default=false',
+		'https://covers.openlibrary.org/b/olid/OL123M-M.jpg?default=false']);
 	assert.equal(Cover.addresses(book, 'large')[0], 'https://m.media-amazon.com/images/P/B0GLASS001.01.LZZZZZZZ.jpg');
-	assert.equal(Cover.addresses(book, 'large').at(-1), 'https://covers.openlibrary.org/b/olid/OL123M-M.jpg?default=false');
+	assert.equal(Cover.addresses(book, 'large').at(-1), 'https://covers.openlibrary.org/b/olid/OL123M-L.jpg?default=false');
 	// nothing to find it by
 	assert.deepEqual(Cover.addresses(Book.fromJSON({t: 'Untold', a: ['Ann Vale'], e: [{ext: {goodreads: '9'}}]})), []);
 	// Amazon's answer for an ASIN without an image is a 1×1 picture
