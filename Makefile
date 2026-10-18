@@ -3,10 +3,12 @@ PORT ?= 8000
 TSC ?= node_modules/.bin/tsc
 ESLINT ?= node_modules/.bin/eslint
 
-.PHONY: help test typecheck lint serve
+.PHONY: help check test typecheck lint serve
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
+
+check: test typecheck lint   ## run everything CI runs: the tests, the type check and lint
 
 test:            ## run the tests: the catalog classes and the browser smoke test
 	$(NODE) --experimental-vm-modules --test tests/*.test.mjs

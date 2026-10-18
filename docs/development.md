@@ -63,7 +63,7 @@ for likely mistakes, such as unused variables, needless escapes and invisible ch
 source; it doesn't format, which is left to `.editorconfig`. A catch that ignores its error and a parameter
 only an override uses are allowed. Where a rule is wrong for one line, say why beside it:
 `// eslint-disable-next-line no-control-regex -- the separator controls are what it matches`. CI runs
-`make lint` too.
+`make lint` too, and `make check` runs all three of test, typecheck and lint.
 
 ## Spelling
 

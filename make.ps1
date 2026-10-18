@@ -1,7 +1,7 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 test, typecheck, lint, serve or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, test, typecheck, lint, serve or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'test', 'typecheck', 'lint', 'serve')]
+	[ValidateSet('help', 'check', 'test', 'typecheck', 'lint', 'serve')]
 	[string]$Command = 'help',
 	[int]$Port = 8000
 )
@@ -18,10 +18,18 @@ function Invoke-Native([string]$exe, [string[]]$arguments){
 switch ($Command) {
 	'help' {
 		'help      - list the available commands'
+		'check     - run everything CI runs: the tests, the type check and lint'
 		'test      - run the tests: the catalog classes and the browser smoke test'
 		'typecheck - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
 		'lint      - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
 		'serve     - open the app at http://localhost:8000/ (serves public/; -Port for another port)'
+	}
+	'check' {
+		# Each step runs this script again, and the first that fails stops the rest, as make does.
+		foreach ($step in @('test', 'typecheck', 'lint')) {
+			& $PSCommandPath $step
+			if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+		}
 	}
 	'test' {
 		# PowerShell doesn't expand the glob, and Node before 21 doesn't either, so list the suites here.

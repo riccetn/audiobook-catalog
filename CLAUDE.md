@@ -28,12 +28,13 @@ The module names below are files in `public/`.
 make test       # node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
 make typecheck  # tsc -p jsconfig.json and -p jsconfig.sw.json (sw.js, with the worker's globals); needs `npm install` once
 make lint       # eslint . with the recommended rules (eslint.config.js); needs `npm install` once
+make check      # test, typecheck and lint, what CI runs; run it before a PR
 make serve      # python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/catalog.test.mjs            # one suite (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`typecheck`, `lint`, `serve`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `typecheck`, `lint`, `serve`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting (it allows a catch that ignores its error, and a parameter only an override uses);
