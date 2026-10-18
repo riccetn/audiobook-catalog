@@ -10,7 +10,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
-import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
+import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
 	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress, hardcoverCompareHref } from './store.js';
 /** @import {Child} from './store.js' */
 
@@ -30,6 +30,8 @@ let EDIT_SERIES = null;        // the id of the series whose info is being edite
 let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
 /** @type {string | null} */
 let MERGE_FROM = null;         // the id of the first book picked with its merge button, or null
+/** @type {{id: string, timer: ReturnType<typeof setTimeout>} | null} */
+let REMOVING = null;           // a book removed but kept until its Undo is gone (removeBook), or null
 
 // The page holds only what it shows, read from the stored catalog by loadView(): for all books (or a
 // series', or what the search and filters find), the ids of the books listed, in the order they are listed,
@@ -179,13 +181,17 @@ function matches(b, q, author, genre, read, series){
 function showView(){
 	const v = VIEW;
 	byId('btnSeriesView').classList.toggle('active', v==='series');
-	byId('btnLibraryView').classList.toggle('active', v==='library');
+	// a series or a book shown on its own is neither all the series nor all the books
+	byId('btnLibraryView').classList.toggle('active', v==='library' && SERIES_FILTER === null && BOOK_FILTER === null);
 	const showLibControls = v === 'library';
 	byId('authorFilter').style.display = showLibControls ? '' : 'none';
 	byId('genreFilter').style.display = showLibControls ? '' : 'none';
 	byId('readFilter').style.display = showLibControls ? '' : 'none';
 	byId('toggleAdd').style.display = showLibControls ? '' : 'none';
 	byId('missingFilter').style.display = showLibControls ? 'none' : '';
+	// a book shown on its own has nothing to search or filter
+	byId('controls').style.display = BOOK_FILTER !== null ? 'none' : '';
+	showFilterCount();
 	return afterSaving(async ()=>{ await loadView(); drawView(); });
 }
 
@@ -197,7 +203,9 @@ function drawView(){
 	const label = v !== 'library' ? null : BOOK_FILTER !== null ? (book ? book.title : 'No such book')
 		: SERIES_FILTER === '__standalone__' ? 'Standalone books' : SERIES_FILTER !== null ? shownSeriesName() || 'No such series' : null;
 	crumb.classList.toggle('show', !!label);
-	byId('crumbLabel').textContent = label || '';
+	// a book in a series links back to it
+	const series = book && book.series && CATALOG.idFor('series', book.series);
+	fillElement(byId('crumbLabel'), series ? [buildElement('a', {href: seriesHref(series)}, /** @type {string} */ (book.series)), ' › ', label] : label || '');
 	document.title = (label ? label + ' — ' : v === 'library' ? 'All books — ' : '') + spell('Audiobook Catalog');
 	render();
 }
@@ -515,11 +523,10 @@ export function render(){
 	const read = fieldById('readFilter').value;
 	const series = shownSeriesName();
 	// the books listed and loaded so far (one removed is gone, one edited may not match any more)
-	const filtered = /** @type {Book[]} */ (LISTED.slice(0, SHOWING).map(id=> CATALOG.book(id)).filter(b=> b && matches(b, q, author, genre, read, series)));
+	const filtered = /** @type {Book[]} */ (LISTED.slice(0, SHOWING).filter(id=> id !== REMOVING?.id).map(id=> CATALOG.book(id)).filter(b=> b && matches(b, q, author, genre, read, series)));
 	const more = LISTED.length - SHOWING;
 
-	byId('subtitle').textContent =
-		`${TOTAL_BOOKS} audiobooks, merged from your Audible library and Goodreads history`;
+	byId('subtitle').textContent = spell(`${TOTAL_BOOKS} audiobooks in the catalog`);
 	byId('resultCount').textContent = more > 0 ? `${filtered.length} of ${filtered.length + more} shown` : `${filtered.length} shown`;
 
 	/** @type {Record<string, Book[]>} */
@@ -890,7 +897,8 @@ function bookDetails(b){
 			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
 			detailList([
 				['Series', series && [buildElement('a', {href: seriesHref(series)}, b.series), b.number && ` #${b.number}`]],
-				['Read', b.read.length > 0 && b.read.join(', ')],
+				['Read', [b.read.length > 0 && b.read.join(', ') + ' ',
+					!b.read.includes(today()) && buildElement('button', {type: 'button', class: 'readToday', onclick: ()=> readToday(id)}, '+ Read today')]],
 				['Genres', b.genres.length > 0 && buildElement('span', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))],
 				...Object.entries(ExternalCatalog.order(b.external) || {}).map(([key, value])=>
 					/** @type {[string, Child]} */ ([`${ExternalCatalog.name(key)} book`, idLink(key, 'book', value)]))]),
@@ -899,34 +907,59 @@ function bookDetails(b){
 }
 
 /**
- * A book's remove button: the first press asks for a second one, which removes the book (its data-id).
+ * Add today to a book's dates read, from its details, with an Undo.
+ * @param {string} id the book's
+ */
+export function readToday(id){
+	const b = CATALOG.book(id);
+	if(!b || b.read.includes(today())) return;
+	const before = b.read;
+	b.read = [...b.read, today()].sort();
+	render(); persist(); refreshView();
+	showIoStatus(`Read ${b.title} today.`, false, ()=>{
+		const now = CATALOG.book(id);
+		if(!now) return;
+		now.read = before;
+		render(); persist(); refreshView();
+	});
+}
+
+/**
+ * A book's remove button: the book leaves the list at once, with an Undo on the status line; it is taken out
+ * of the catalog, and added to the exclusions so imports skip it, once the Undo is gone (removeBook).
  * @param {Event} e
  */
 function removeBookClick(e){
-	const el = /** @type {HTMLElement & {_resetTimer?: ReturnType<typeof setTimeout>}} */ (e.currentTarget);
-	const id = el.dataset.id;
-	if(el.dataset.confirm === '1'){
-		const i = CATALOG.books.findIndex(b=> b.id === id);
-		if(i < 0) return;
-		const [removed] = CATALOG.books.splice(i,1);
-		addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
-		if(EDIT_ID === id) closeForm();
-		render(); persist(); refreshView();
-		showIoStatus(`Removed ${removed.title}; imports will skip it.`);
-	} else {
-		el.dataset.confirm = '1';
-		el.textContent = '\u2713';
-		el.title = 'Click again to confirm removal';
-		el.style.color = '#b0453f';
-		clearTimeout(el._resetTimer);
-		el._resetTimer = setTimeout(()=>{
-			el.dataset.confirm = '';
-			el.textContent = '\u00D7';
-			el.title = 'Remove';
-			el.style.color = '';
-		}, 3000);
-	}
+	const id = /** @type {HTMLElement} */ (e.currentTarget).dataset.id;
+	const b = id && CATALOG.book(id);
+	if(!id || !b) return;
+	finishRemoving();
+	if(EDIT_ID === id) closeForm();
+	REMOVING = {id, timer: setTimeout(finishRemoving, STATUS_TIME)};
+	render();
+	showIoStatus(`Removed ${b.title}; imports will skip it.`, false, ()=>{
+		if(REMOVING?.id !== id) return;
+		clearTimeout(REMOVING.timer);
+		REMOVING = null;
+		render();
+	});
 }
+
+// Takes the book being removed out of the catalog for good. Leaving the page does it too, so a removal is
+// saved unless it was undone.
+export function finishRemoving(){
+	if(!REMOVING) return;
+	const {id, timer} = REMOVING;
+	clearTimeout(timer);
+	REMOVING = null;
+	const i = CATALOG.books.findIndex(b=> b.id === id);
+	if(i < 0) return;
+	const [removed] = CATALOG.books.splice(i, 1);
+	addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
+	render(); persist(); refreshView();
+}
+addEventListener('pagehide', finishRemoving);
+addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') finishRemoving(); });
 
 // Typing a search is one step back, however many letters it took: the first change of the search
 // adds a history entry, the rest of the typing updates it.
@@ -934,8 +967,18 @@ byId('q').addEventListener('input', ()=>{
 	const typing = !!(history.state && history.state.search);
 	navigate({}, typing ? 'replace' : 'push', {search: true});
 });
-['authorFilter', 'genreFilter', 'readFilter', 'missingFilter'].forEach(id=>
-	byId(id).addEventListener('change', ()=> navigate({})));
+const FILTERS = ['authorFilter', 'genreFilter', 'readFilter', 'missingFilter'];
+FILTERS.forEach(id=> byId(id).addEventListener('change', ()=>{ showFilterCount(); navigate({}); }));
+
+// On a phone the filters fold away behind a button (styles.css), which says how many are on.
+function showFilterCount(){
+	const on = FILTERS.filter(id=> fieldById(id).style.display !== 'none' && fieldById(id).value).length;
+	byId('filtersBtn').textContent = on ? `Filters · ${on}` : 'Filters';
+}
+byId('filtersBtn').addEventListener('click', ()=>{
+	const open = byId('controls').classList.toggle('filtersOpen');
+	byId('filtersBtn').setAttribute('aria-expanded', String(open));
+});
 byId('btnSeriesView').addEventListener('click', ()=> setView('series'));
 byId('btnLibraryView').addEventListener('click', ()=> setView('library'));
 byId('backToSeries').addEventListener('click', ()=> setView('series'));
@@ -951,6 +994,7 @@ byId('toggleAdd').addEventListener('click', ()=>{
 		byId('formError').textContent = '';
 		/** @type {HTMLFormElement} */ (form).reset();
 		setFormEditions([], null);
+		showBookIds([]);
 		const {series, authors} = newBookDefaults();
 		fieldById('f_s').value = series;
 		fieldById('f_a').value = authors.join(', ');
@@ -1013,6 +1057,15 @@ function placeBookForm(){
 	card.after(BOOK_FORM);
 }
 
+/**
+ * The book's ids in other catalogs are folded away in the form; its summary names the catalogs it has one in.
+ * @param {string[]} keys
+ */
+function showBookIds(keys){
+	/** @type {HTMLDetailsElement} */ (byId('f_ids')).open = false;
+	byId('f_idsNote').textContent = keys.length ? '(' + keys.map(k=> ExternalCatalog.name(k)).join(', ') + ')' : '';
+}
+
 /** @param {string} id the book's */
 export function openEditForm(id){
 	const b = CATALOG.book(id);
@@ -1024,6 +1077,7 @@ export function openEditForm(id){
 	fieldById('f_g').value = b.genres.join(', ');
 	fieldById('f_hcb').value = b.idOn('hardcover') || '';
 	fillExternalFields('f_ext_', 'book', b.external);
+	showBookIds(Object.keys(ExternalCatalog.order(b.external) || {}));
 	fieldById('f_s').value = b.series || '';
 	fieldById('f_sn').value = b.number || '';
 	fieldById('f_r').value = b.read.join(', ');
@@ -1274,6 +1328,7 @@ byId('addForm').addEventListener('submit', async e=>{
 	const {editions, bad: badParts, book: fromEditions} = readFormEditions();
 	const hardcover = fieldById('f_hcb').value.trim() || fromEditions.hardcover;
 	if(hardcover && !ExternalCatalog.isId('hardcover', 'book', hardcover)){
+		/** @type {HTMLDetailsElement} */ (byId('f_ids')).open = true;
 		byId('formError').textContent = `Not a Hardcover book id: ${hardcover}. It is the number in hardcover.app/id/book/12345, or paste the address of the book's page on hardcover.app in the Hardcover book field.`;
 		return;
 	}
@@ -1281,6 +1336,7 @@ byId('addForm').addEventListener('submit', async e=>{
 	const had = editing ? editing.external : {};
 	const external = readExternalFields('f_ext_', 'book', had);
 	if(external.bad.length){
+		/** @type {HTMLDetailsElement} */ (byId('f_ids')).open = true;
 		byId('formError').textContent = `Not a book's id or address there: ${external.bad.join('; ')}.`;
 		return;
 	}

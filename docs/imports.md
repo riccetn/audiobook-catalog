@@ -27,7 +27,7 @@ lists its books with a tickbox, and **Tick all** and **Tick none** for the group
   to be put on Hardcover.
 - Books on the exclusion list are counted and listed, and never added.
 
-**Apply** says how many changes are ticked. It takes them into the catalog as it is then (a value that no
+**Apply** (with **Cancel**, kept at the bottom of the screen while you scroll the comparison) says how many changes are ticked. It takes them into the catalog as it is then (a value that no
 longer differs is left alone), checks the result first and changes nothing when it has errors, then saves.
 
 ## Matching

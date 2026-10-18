@@ -152,12 +152,16 @@ function duplicateGroup(ids, g){
 	const books = booksOf(ids);
 	const picks = groupPicks(g);
 	const merged = Book.merge(books, picks);
+	// what every book has alike is said once; each book shows only what tells it apart
+	/** @type {(f: DupField) => Set<string>} */
+	const choicesOf = f=> new Set(books.map(x=> dupValue(x, f)).filter(Boolean));
+	const shared = DUP_FIELDS.filter(([f])=> choicesOf(f).size === 1 && books.every(x=> dupValue(x, f)));
 	const bookBox = (/** @type {Book} */ b, /** @type {number} */ k)=> buildElement('div', {class: 'dup-book'},
+		buildElement('div', {class: 'dup-label'}, `Entry ${k + 1}`),
 		DUP_FIELDS.map(([f, label])=>{
 			const value = dupValue(b, f);
-			if(!value) return null;
-			const choices = new Set(books.map(x=> dupValue(x, f)).filter(Boolean));
-			if(choices.size < 2) return buildElement('div', {class: 'dup-field'}, fieldLine(label, value));
+			if(!value || shared.some(([x])=> x === f)) return null;
+			if(choicesOf(f).size < 2) return buildElement('div', {class: 'dup-field'}, fieldLine(label, value));
 			const checked = dupValue(merged, f) === value && books.findIndex(x=> dupValue(x, f) === value) === k;
 			const pick = ()=>{ DUP_PICKS[g][f] = k; renderDuplicates(); };
 			return buildElement('label', {class: 'dup-field dup-choice'},
@@ -168,12 +172,14 @@ function duplicateGroup(ids, g){
 	const editions = merged.editions.length;
 	return buildElement('div', {class: 'dup-group'},
 		DUP_MANUAL && g === 0 && DUP_MANUAL.join() === ids.join() && buildElement('p', {class: 'dup-note'}, 'Picked by hand'),
+		shared.length > 0 && buildElement('p', {class: 'dup-shared'}, shared.map(([f, label], i)=> [i ? ' · ' : '', fieldLine(label, dupValue(books[0], f))])),
 		buildElement('div', {class: 'dup-books'}, books.map(bookBox)),
 		buildElement('p', {class: 'dup-result'}, `Becomes: ${merged.title} — ${Text.namesText(merged.authors)}` +
 			(merged.series ? ` — ${dupValue(merged, 'series')}` : '') +
 			(editions ? `, ${Text.plural(editions, 'edition')}` : '') +
 			(merged.read.length ? `, read ${merged.read.join(', ')}` : '')),
-		editionLines(merged),
+		// the editions are those above, unless they are made one
+		picks.joinEditions && editionLines(merged),
 		picks.joinable && buildElement('label', {class: 'dup-join'},
 			buildElement('input', {type: 'checkbox', class: 'dup-joinbox', 'data-g': g, checked: picks.joinEditions, onchange: (/** @type {Event} */ e)=>{
 				DUP_PICKS[g].joinEditions = /** @type {HTMLInputElement} */ (e.currentTarget).checked;
