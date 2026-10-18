@@ -3,7 +3,8 @@
 ## Import from Goodreads
 
 **Import CSV** in the **Goodreads** panel of the *Import & export* page takes Goodreads' library
-export; it works like [the Audible import](audible.md#add-new-audible-purchases). Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
+export; it works like [the Audible import](audible.md#add-new-audible-purchases), showing the export's books beside
+yours to pick what to take ([the comparison](imports.md#the-comparison)). Goodreads has no "audiobook" flag, so books are picked by edition (Audible Audio, Audiobook, Audio CD,
 MP3...) and the *read* shelf. The edition's narrator comes from the "Additional Authors" column, which is a guess
 (it never replaces a narrator you already have).
 Each book keeps Goodreads' *Book Id* as its edition's Goodreads id (`ext.goodreads`), with the edition's *Publisher* and *Year Published*,

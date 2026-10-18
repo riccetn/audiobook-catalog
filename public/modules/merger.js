@@ -22,6 +22,19 @@ import {ExternalCatalog} from './external-catalog.js';
  * @property {Book[]} notAdded
  * @property {{title: string, authors: string[], titles: number, added: number}[]} boxSets
  * @property {number} matched
+ * @property {MergeMatch[]} matches what became of each incoming book, in order
+ */
+
+/**
+ * What became of one incoming book (as given) in merge(): the books it found (the book it matched first,
+ * then any it gave dates read to, as a box set's titles), the books it added, and whether it was refused.
+ * @typedef {object} MergeMatch
+ * @property {Book} incoming
+ * @property {Book[]} books
+ * @property {Book[]} added
+ * @property {boolean} excluded on the exclusion list
+ * @property {boolean} notAdded not addable (MergeOptions.addable)
+ * @property {boolean} boxSet kept as its own book and as its titles
  */
 
 /**
@@ -83,7 +96,7 @@ export class Merger {
 		const existing = this.books, exclusions = this.exclusions, opts = this.opts;
 		/** @type {MergeReport} */
 		const report = {added: [], backfilled: [], goodreadsFilled: [], hardcoverFilled: [], isbnsFilled: [], detailsFilled: [], editionsAdded: [],
-			datesFilled: [], excluded: [], notAdded: [], boxSets: [], matched: 0};
+			datesFilled: [], excluded: [], notAdded: [], boxSets: [], matched: 0, matches: []};
 
 		/** @type {Map<string, number>} */
 		const index = new Map();
@@ -145,12 +158,13 @@ export class Merger {
 		 * too, found by author, series and number (or by already holding the set's edition), or else added. The
 		 * set and every title get the set's edition, and the set's dates read when they have none. The set is
 		 * found by holding its edition without being one title of the series, by its title, or by author, series
-		 * and range. Returns false when nothing ties the titles together, and the set then merges as any other book.
-		 * @type {(rec: Book, original: Book, range: [number, number]) => boolean}
+		 * and range. Returns the places of the books found, or null when nothing ties the titles together, and
+		 * the set then merges as any other book.
+		 * @type {(rec: Book, original: Book, range: [number, number]) => number[] | null}
 		 */
 		const mergeBoxSet = (rec, original, [lo, hi]) => {
 			// without an id or ISBN there is nothing to tie the titles together, so the set stays one book
-			if(!rec.editions.some(ed => ed.idKeys().length || ed.isbns().length)) return false;
+			if(!rec.editions.some(ed => ed.idKeys().length || ed.isbns().length)) return null;
 			const editions = rec.editions.map(ed => setEdition(ed, rec.title));
 			const author = rec.authorKey(), series = Series.norm(rec.series);
 			const ownsSet = (/** @type {Book} */ b) => b.editions.some(x => editions.some(ed => x.sharesId(ed) && x.sameAs(ed)));
@@ -206,10 +220,14 @@ export class Merger {
 			}
 			const changed = found.filter((i, j) => JSON.stringify(existing[i]) !== before[j]).length;
 			if(added || changed || (!setFound && setIndex >= 0)) report.boxSets.push({title: rec.title, authors: rec.authors, titles: titles.length, added});
-			return true;
+			return found;
 		};
 
 		for(const original of incoming){
+			const counts = [report.added.length, report.excluded.length, report.notAdded.length];
+			/** @type {(found: number[], boxSet: boolean) => void} */
+			const record = (found, boxSet) => report.matches.push({incoming: original, books: found.map(i => existing[i]), added: report.added.slice(counts[0]),
+				excluded: report.excluded.length > counts[1], notAdded: report.notAdded.length > counts[2], boxSet});
 			const rec = original.clone();
 			if(rec.series){
 				const k = Series.norm(rec.series);
@@ -217,7 +235,8 @@ export class Merger {
 				rec.series = canonical.get(k);
 			}
 			const range = rec.boxRange();
-			if(range && mergeBoxSet(rec, original, range)) continue;
+			const inSet = range && mergeBoxSet(rec, original, range);
+			if(inSet){ record(inSet, true); continue; }
 
 			const hit = rec.lookupKeys().find(k => index.has(k));
 			if(hit !== undefined){
@@ -284,19 +303,17 @@ export class Merger {
 						report.boxSets.push({title: set.title, authors: set.authors, titles: titles.length, added: 0});
 					}
 				}
+				record([match, ...[...readers].filter(i => i !== match)], false);
 				continue;
 			}
-			if(exclusions.covers(rec)){
-				report.excluded.push(rec);
-				continue;
+			if(exclusions.covers(rec)) report.excluded.push(rec);
+			else if(opts.addable && !opts.addable(original)) report.notAdded.push(rec);
+			else {
+				existing.push(rec);
+				report.added.push(rec);
+				indexBook(existing.length - 1);
 			}
-			if(opts.addable && !opts.addable(original)){
-				report.notAdded.push(rec);
-				continue;
-			}
-			existing.push(rec);
-			report.added.push(rec);
-			indexBook(existing.length - 1);
+			record([], false);
 		}
 		return report;
 	}

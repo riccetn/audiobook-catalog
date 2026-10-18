@@ -44,9 +44,9 @@ library, restore a backup, or add books by hand with **+ Add a book**.
   and known data quirks
 - [Audible](docs/audible.md): importing your Audible library
 - [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads
-- [Hardcover](docs/hardcover.md): importing, exporting and syncing with Hardcover
+- [Hardcover](docs/hardcover.md): comparing with your Hardcover shelves, and putting books and reads on them
 - [Merge a backup from another device](docs/backups.md): combining two catalogs that both changed
-- [How imports avoid clobbering your edits](docs/imports.md): how imported books are matched and merged
+- [How imports avoid clobbering your edits](docs/imports.md): the comparison an import shows, and how imported books are matched and merged
 - [Running the app and keeping your catalog](docs/saving.md): serving the pages, browser storage, backups
 - [On your phone](docs/phone.md): installing the app
 - [Development](docs/development.md): file layout, tests and type checking

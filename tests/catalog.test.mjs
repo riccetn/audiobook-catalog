@@ -1,5 +1,5 @@
 // Tests for the catalog's classes (public/modules): tidying, validation, the Audible and Goodreads readers,
-// the merge, duplicates, backups and Hardcover.
+// the merge, comparisons, duplicates, backups and Hardcover.
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,6 +19,7 @@ import { Merger } from '../public/modules/merger.js';
 import { Duplicates } from '../public/modules/duplicates.js';
 import { Backup } from '../public/modules/backup.js';
 import { Catalog } from '../public/modules/catalog.js';
+import { Comparison } from '../public/modules/comparison.js';
 import { Csv } from '../public/modules/csv.js';
 import { AudibleImporter } from '../public/modules/audible-importer.js';
 import { GoodreadsImporter } from '../public/modules/goodreads-importer.js';
@@ -1933,4 +1934,93 @@ test('backups carry the ids: Restore keeps them, and Merge finds a book by its i
 	assert.equal(m.added.length, 0);
 	assert.deepEqual(m.books.map(b => [b.id, b.title]).at(3), ['id-4', 'Harbor Lights']);
 	assert.throws(() => Backup.read({ books: [], ids: { series: { X: 5 } } }), /ids.series must map names to ids/);
+});
+
+// ------------------------------------------------------------------ comparing with another source
+const COMPARED = () => new Catalog({ books: Bs([
+	{ t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', r: ['2020'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Hollis Marr'], len: 600 }] },
+	{ t: 'Paper Fen', a: ['Ann Vale'] },
+	{ t: 'Only Mine', a: ['Bo Reed'] },
+]) });
+const INCOMING = () => Bs([
+	{ t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isle Series', sn: '1', r: ['2023-01-05'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Hollis Marr', 'Ida Quell'], p: 'Kestrel Row Audio', len: 601 }] },
+	{ t: 'Paper Fen', a: ['Ann Vale'] },
+	{ t: 'Lantern Hours', a: ['R. T. Hale'] },
+]);
+
+test('a comparison shows what is new, what an import fills in, and what differs, changing nothing', () => {
+	const catalog = COMPARED();
+	const before = JSON.stringify(catalog);
+	const { books, onlyHere, merged } = Comparison.compare(catalog, INCOMING());
+	assert.equal(JSON.stringify(catalog), before);
+	assert.deepEqual(books.map(b => [b.at, b.kind]), [[0, 'gains'], [1, 'same'], [2, 'new']]);
+	assert.deepEqual(books[0].gains, ['publisher'], 'a value this catalog lacks is filled in');
+	// the series is spelled another way, the length one minute off (rounding): neither differs
+	assert.deepEqual(books[0].differences.map(d => [d.key, d.label, d.here, d.there]), [
+		['0:r', 'Dates read', '2020', '2023-01-05'],
+		['0:n:0', 'Narrators', 'Hollis Marr', 'Hollis Marr, Ida Quell'],
+	]);
+	assert.deepEqual(json(books[2].added), [{ t: 'Lantern Hours', a: ['R. T. Hale'] }]);
+	assert.deepEqual(onlyHere.map(b => b.title), ['Only Mine']);
+	assert.equal(merged.books.length, 4, 'the copy has everything imported');
+	// a series this catalog lacks is a difference, in the spelling in use, as an import does not add it
+	const plain = new Catalog({ books: Bs([{ t: 'Tidewater', a: ['Ann Vale'] }, { t: 'Beacons', a: ['Ann Vale'], s: 'Gull Isle', sn: '2' }]) });
+	const [tide] = Comparison.compare(plain, Bs([{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle Series', sn: '1' }])).books;
+	assert.deepEqual(tide.differences.map(d => [d.field, d.here, d.value]), [['s', '', 'Gull Isle'], ['sn', '', '1']]);
+	// a source that keeps every read (Hardcover) adds the dates on importing, so they are no difference
+	assert.deepEqual(Comparison.compare(catalog, INCOMING(), { allDates: true }).books[0].differences.map(d => d.key), ['0:n:0']);
+});
+
+test('applying a comparison imports only the books picked, and replaces only the values picked', () => {
+	const catalog = COMPARED();
+	const incoming = INCOMING();
+	const { report, patched } = Comparison.apply(catalog, incoming, { take: new Set([2]), patch: new Set(['0:n:0', '9:t']) });
+	assert.equal(patched, 1);
+	assert.deepEqual(report.added.map(b => b.title), ['Lantern Hours']);
+	assert.deepEqual(json(catalog.books[0]), { t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', r: ['2020'],
+		e: [{ ext: { 'audible.com': 'B1' }, n: ['Hollis Marr', 'Ida Quell'], len: 600 }] }, 'not imported: no publisher, its date read kept');
+	assert.deepEqual(catalog.books.map(b => b.title), ['Salt Road', 'Paper Fen', 'Only Mine', 'Lantern Hours']);
+
+	// a difference that is gone by the time it is applied is left alone
+	const again = Comparison.apply(catalog, incoming, { take: new Set(), patch: new Set(['0:n:0']) });
+	assert.equal(again.patched, 0);
+
+	// a box set's edition is one edition: each copy of it gets the value picked
+	const sets = new Catalog({ books: Bs([
+		{ t: 'Gull Isle, Book 1', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ ext: { 'audible.com': 'BSET' }, p: 'Old Press' }] },
+		{ t: 'Gull Isle, Book 2', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ ext: { 'audible.com': 'BSET' }, p: 'Old Press' }] },
+	]) });
+	const from = Bs([{ t: 'Gull Isle, Book 1', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'BSET' }, p: 'Kestrel Row Audio' }] }]);
+	assert.deepEqual(Comparison.compare(sets, from).books[0].differences.map(d => d.key), ['0:p:0']);
+	Comparison.apply(sets, from, { take: new Set(), patch: new Set(['0:p:0']) });
+	assert.deepEqual(sets.books.map(b => b.editions[0].publisher), ['Kestrel Row Audio', 'Kestrel Row Audio']);
+});
+
+test('a merge reports what became of each incoming book', () => {
+	const books = Bs([{ t: 'Salt Road', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]);
+	const report = new Merger(books, Exclusions.parse('Gone | Ann Vale')).merge(Bs([
+		{ t: 'Salt Road', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }, { t: 'New One', a: ['Ann Vale'] }, { t: 'Gone', a: ['Ann Vale'] },
+		{ t: 'Gull Isle (books 1-2)', a: ['Ann Vale'], s: 'Gull Isle', sn: '1-2', e: [{ ext: { 'audible.com': 'BSET' } }] }]));
+	assert.deepEqual(report.matches.map(m => [m.incoming.title, m.books.map(b => b.title), m.added.map(b => b.title), m.excluded, m.boxSet]), [
+		['Salt Road', ['Salt Road'], [], false, false],
+		['New One', [], ['New One'], false, false],
+		['Gone', [], [], true, false],
+		['Gull Isle (books 1-2)', [], ['Gull Isle, Book 1', 'Gull Isle, Book 2', 'Gull Isle (books 1-2)'], false, true],
+	]);
+});
+
+test('comparing with Hardcover only reads it, and plans what putting your books there would do', async () => {
+	const hc = fakeHardcover(hardcoverState());
+	const sync = new HardcoverSync(new HardcoverClient('tok-123', hc.fetch, async () => {}));
+	const catalog = new Catalog({ books: Bs([{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] }]) });
+	const before = JSON.stringify(catalog);
+	const steps = [];
+	const result = await sync.compare(catalog, text => steps.push(text));
+	assert.equal(JSON.stringify(catalog), before);
+	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
+	assert.ok(steps.includes('Reading your Hardcover shelves'));
+	assert.deepEqual(result.comparison.books.map(b => [b.theirs.title, b.kind]), [['Tidewater', 'new'], ['The Paper Fen', 'notAdded']]);
+	assert.deepEqual(result.idsFound.map(b => [b.title, b.idOn('hardcover')]), [['Lantern Hours', '80']]);
+	assert.deepEqual(result.plan.add.map(a => [a.book, a.edition, a.dates]), [[80, 801, ['2024-05-01']]]);
+	assert.equal(result.otherShelves, 0);
 });

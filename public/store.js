@@ -15,10 +15,10 @@ import {ExternalCatalog} from './modules/external-catalog.js';
 /** @import {Unchecked} from './modules/text.js' */
 
 /**
- * A Hardcover import, export or sync going on (or just ended) in a page, as showHardcoverJob() shows it.
+ * Comparing with Hardcover, or sending to it, going on (or just ended) in a page, as showHardcoverJob() shows it.
  * @typedef {object} HardcoverJob
- * @property {'import' | 'export' | 'sync'} mode
- * @property {boolean} dryRun a preview: nothing is written
+ * @property {'compare' | 'send'} mode
+ * @property {boolean} dryRun only reading: nothing is written
  * @property {boolean} running
  * @property {number} elapsed milliseconds
  * @property {string} [step] what it is doing
@@ -875,13 +875,10 @@ export function lookupHardcoverField(prefix, kind){
 }
 
 // ------------------------------------------------------------ Hardcover runs
-// A Hardcover import, export or sync can take minutes, one request a second. The page running it shows
-// it on top while it goes (#bgTask), and hands each update to the page's onHardcoverJob.
+// Comparing with Hardcover, or sending to it, can take minutes, one request a second. The page running it
+// shows it on top while it goes (#bgTask), and hands each update to the page's onHardcoverJob.
 /** @type {Record<string, string>} */
-const HARDCOVER_VERBS = {import: 'Importing from Hardcover', export: 'Exporting to Hardcover', sync: 'Syncing with Hardcover'};
-/** @type {Record<string, string>} */
-const HARDCOVER_PREVIEWS = {import: 'Checking what a Hardcover import would do', export: 'Checking what a Hardcover export would do',
-	sync: 'Checking what a Hardcover sync would do'};
+const HARDCOVER_VERBS = {compare: 'Comparing with Hardcover', send: 'Updating your Hardcover shelves'};
 
 /** @type {(ms: number) => string} */
 export const minutes = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -898,7 +895,7 @@ export function showHardcoverJob(job){
 		else {
 			const counted = typeof job.total === 'number' && Number.isInteger(job.total) && job.total > 0;
 			fillElement(el, buildElement('span', {class: 'spinner', 'aria-hidden': 'true'}), buildElement('div', {class: 'bgTaskText'},
-				buildElement('strong', {}, (job.dryRun ? HARDCOVER_PREVIEWS : HARDCOVER_VERBS)[job.mode] || 'Working with Hardcover'),
+				buildElement('strong', {}, HARDCOVER_VERBS[job.mode] || 'Working with Hardcover'),
 				' ', buildElement('span', {class: 'bgTaskTime'}, minutes(job.elapsed)), buildElement('br'), job.step || '',
 				counted && [`: ${job.done} of ${job.total} `, buildElement('progress', {max: job.total, value: job.done})],
 				!job.dryRun && [buildElement('br'), buildElement('small', {}, spell('Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.'))]));

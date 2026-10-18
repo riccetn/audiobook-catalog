@@ -1,4 +1,5 @@
-// The import and export page: adding books from Audible and Goodreads exports, Hardcover, and backups.
+// The import and export page: comparing the catalog with Audible and Goodreads exports and with Hardcover,
+// to take books and values from them (and send books and reads to Hardcover), and backups.
 // It shows only how many books there are until an action needs every book (an import, Check, Box sets,
 // Hardcover, Export, Restore or Merge), and then holds the whole catalog. Loading and saving live in store.js.
 import {Text} from './modules/text.js';
@@ -10,15 +11,20 @@ import {GoodreadsImporter} from './modules/goodreads-importer.js';
 import {GoodreadsExporter} from './modules/goodreads-exporter.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {HardcoverSync} from './modules/hardcover-sync.js';
+import {Comparison} from './modules/comparison.js';
 import {
 	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
-	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, BRITISH, spell, buildElement, fillElement
+	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, buildElement, fillElement
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
 /** @import {Importer} from './modules/importer.js' */
 /** @import {HardcoverJob} from './store.js' */
+/** @import {MergeOptions, MergeReport} from './modules/merger.js' */
+/** @import {ComparisonResult, ComparedBook, Difference} from './modules/comparison.js' */
+/** @import {HardcoverComparison, HardcoverPlan} from './modules/hardcover-sync.js' */
+/** @import {Step} from './modules/hardcover-client.js' */
 
 /** @typedef {HardcoverJob['mode']} HardcoverMode */
 /** @typedef {'audible' | 'goodreads'} ImportKind */
@@ -143,9 +149,11 @@ async function importBackup(files){
 	}
 }
 
-// ------------------------------------------------------------ Audible / Goodreads CSV import
-// Read the export, merge it into a copy of the catalog, show what would change, and only apply it
-// when confirmed. Like every edit in the page, the result is then saved (see persist).
+// ------------------------------------------------------------ Comparing with Audible, Goodreads and Hardcover
+// An import shows the books of the other source beside this catalog's (Comparison), and takes only what is
+// ticked: the books to import (new ones, and those it has more of), and the values of the other source to put
+// in place of this catalog's. For Hardcover the same view also picks books and reads to put on Hardcover.
+// Like every edit in the page, the result is then saved (see persist).
 /** @type {Record<ImportKind, () => Importer>} */
 const IMPORTERS = {
 	// an Audible export's ASINs are those of the site picked beside the buttons (audible.com unless changed)
@@ -154,19 +162,37 @@ const IMPORTERS = {
 };
 /** @type {ImportKind} */
 let IMPORT_KIND = 'audible';
-/** @type {Book[] | null} */
-let PENDING_IMPORT = null;   // the books of the import previewed, until it is applied or canceled
 
 /**
- * Merge into a copy of the catalog, so nothing changes until the result is known to be valid.
- * @param {Book[]} books
+ * What is ticked in a comparison: the incoming books to import (by place), the differences to take (by
+ * key), the Hardcover plan's books to put on the Read shelf and reads to add (by place), and whether to keep
+ * the Hardcover ids found.
+ * @typedef {{take: Set<number>, patch: Set<string>, add: Set<number>, reads: Set<number>, ids: boolean}} ComparePicks
  */
-function mergeIntoCopy(books){
-	const copy = CATALOG.clone();
-	const report = copy.merge(books);
-	// series-info problems are not the import's doing (a series renamed in the page); only block on the books
-	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
-	return {copy, report, errors};
+/**
+ * A comparison open in the preview.
+ * @typedef {object} PendingCompare
+ * @property {ImportKind | 'hardcover'} source
+ * @property {string} name the other source's name, as the page says it
+ * @property {string[]} notes lines on top: what was read
+ * @property {Book[]} incoming
+ * @property {MergeOptions} [opts]
+ * @property {ComparisonResult} comparison
+ * @property {string[]} warnings
+ * @property {HardcoverComparison | null} hardcover
+ * @property {ComparePicks} picks
+ */
+/** @type {PendingCompare | null} */
+export let PENDING_COMPARE = null;   // until it is applied or closed
+
+/**
+ * A comparison to open, everything an import would take ticked.
+ * @param {Omit<PendingCompare, 'picks'>} compare
+ * @returns {PendingCompare}
+ */
+function pendingCompare(compare){
+	const take = new Set(compare.comparison.books.filter(b=> b.kind === 'new' || b.kind === 'gains').map(b=> b.at));
+	return {...compare, picks: {take, patch: new Set(), add: new Set(), reads: new Set(), ids: true}};
 }
 
 /**
@@ -174,10 +200,7 @@ function mergeIntoCopy(books){
  * @param {Book} b
  * @returns {string}
  */
-function bookLine(b){
-	const series = b.series ? `  [${b.series}${b.number ? ' #' + b.number : ''}]` : '';
-	return `${b.title} \u2014 ${Text.namesText(b.authors)}${series}`;
-}
+const bookLine = b=> Comparison.bookLine(b);
 
 /**
  * A paragraph of the preview.
@@ -196,84 +219,205 @@ const para = (text, className)=> buildElement('p', {class: className}, text);
 function messageList(items, limit = Infinity){
 	if(!items.length) return null;
 	return buildElement('ul', {}, items.slice(0, limit).map(m=> buildElement('li', {}, m)),
-		items.length > limit && buildElement('li', {}, `\u2026and ${items.length - limit} more`));
+		items.length > limit && buildElement('li', {}, `…and ${items.length - limit} more`));
+}
+
+/** @typedef {'take' | 'patch' | 'add' | 'reads'} PickGroup */
+
+/**
+ * How many changes the ticks of a comparison make.
+ * @param {PendingCompare} compare
+ * @returns {number}
+ */
+function pickedCount(compare){
+	const {picks, hardcover} = compare;
+	return picks.take.size + picks.patch.size + picks.add.size + picks.reads.size + (picks.ids && hardcover && hardcover.idsFound.length ? 1 : 0);
+}
+
+function updateApplyButton(){
+	const n = PENDING_COMPARE ? pickedCount(PENDING_COMPARE) : 0;
+	const confirmBtn = byId('importConfirm');
+	confirmBtn.style.display = n ? '' : 'none';
+	confirmBtn.textContent = `Apply ${Text.plural(n, 'change')}`;
+	byId('importCancel').textContent = n ? 'Cancel' : 'Close';
 }
 
 /**
- * Show what importing an export would do, in the preview.
+ * A tickbox of the comparison, for the pick `key` of `group`.
+ * @param {PickGroup} group
+ * @param {number | string} key
+ * @param {Child[]} label
+ * @returns {HTMLLabelElement}
+ */
+function pickBox(group, key, label){
+	const compare = /** @type {PendingCompare} */ (PENDING_COMPARE);
+	const picked = /** @type {Set<number | string>} */ (compare.picks[group]);
+	return buildElement('label', {class: 'cmpPick'}, buildElement('input', {type: 'checkbox', 'data-pick': `${group}:${key}`, checked: picked.has(key),
+		onchange: (/** @type {Event} */ e)=>{
+			if(/** @type {HTMLInputElement} */ (e.currentTarget).checked) picked.add(key); else picked.delete(key);
+			updateApplyButton();
+		}}), ' ', ...label);
+}
+
+/**
+ * A group of the comparison: its heading with how many, tick all and none for its `keys`, and its rows.
+ * @param {string} heading
+ * @param {Child[]} rows
+ * @param {PickGroup | null} group
+ * @param {(number | string)[]} keys
+ * @param {string} [note]
+ * @returns {HTMLElement | null}
+ */
+function compareGroup(heading, rows, group, keys, note){
+	if(!rows.length) return null;
+	const tick = (/** @type {boolean} */ on)=> ()=>{
+		const compare = /** @type {PendingCompare} */ (PENDING_COMPARE);
+		const picked = /** @type {Set<number | string>} */ (compare.picks[/** @type {PickGroup} */ (group)]);
+		for(const k of keys) if(on) picked.add(k); else picked.delete(k);
+		drawCompare();
+	};
+	return buildElement('section', {class: 'cmpGroup'},
+		buildElement('h4', {}, `${heading} (${rows.length})`, group && keys.length > 1 && [' ',
+			buildElement('button', {type: 'button', class: 'cmpTick', onclick: tick(true)}, 'Tick all'), ' ',
+			buildElement('button', {type: 'button', class: 'cmpTick', onclick: tick(false)}, 'Tick none')]),
+		note && para(note, 'cmpNote'),
+		buildElement('ul', {class: 'cmpRows'}, rows.map(r=> buildElement('li', {}, r))));
+}
+
+/**
+ * One difference, to tick: "Narrators: Ann Vale here, Bo Reed on Goodreads".
+ * @param {Difference} d
+ * @param {string} name
+ * @returns {HTMLLIElement}
+ */
+function differenceRow(d, name){
+	return buildElement('li', {}, pickBox('patch', d.key, [`${d.label}: `, buildElement('span', {class: 'cmpHere'}, d.here || 'none'),
+		spell(' here, '), buildElement('span', {class: 'cmpThere'}, d.there), ` on ${name}`]));
+}
+
+/** Draw the comparison open (PENDING_COMPARE) in the preview. */
+function drawCompare(){
+	const compare = /** @type {PendingCompare} */ (PENDING_COMPARE);
+	const {name, comparison, hardcover} = compare;
+	const books = comparison.books;
+	const of = (/** @type {ComparedBook['kind']} */ kind)=> books.filter(b=> b.kind === kind);
+	const fresh = of('new'), gains = of('gains');
+	const differing = books.filter(b=> b.differences.length), same = of('same').filter(b=> !b.differences.length);
+	/** @type {Child[]} */
+	const out = compare.notes.map(n=> para(n));
+	out.push(para(spell(`${fresh.length} new, ${gains.length} with more to give, ${differing.length} with values that differ, ${same.length} the same as in this catalog.`)));
+
+	// a new book as it would be added, in the series spelling in use
+	out.push(compareGroup(`New from ${name}`, fresh.map(b=> [pickBox('take', b.at, [bookLine(b.added[0] || b.theirs)]),
+		b.added.length > 1 && messageList(b.added.map(bookLine))]), 'take', fresh.map(b=> b.at)));
+	out.push(compareGroup(`${name} has more`, gains.map(b=> [pickBox('take', b.at, [bookLine(b.books[0] || b.theirs)]),
+		messageList([...b.gains, ...b.added.map(a=> `adds ${bookLine(a)}`)])]), 'take', gains.map(b=> b.at),
+		spell('Ticked, importing fills in what this catalog lacks, and changes nothing it has.')));
+	out.push(compareGroup('Different in both', differing.map(b=> [buildElement('span', {class: 'cmpBook'}, bookLine(b.books[0])),
+		buildElement('ul', {}, b.differences.map(d=> differenceRow(d, name)))]),
+		'patch', differing.flatMap(b=> b.differences.map(d=> d.key)), spell(`Tick a value to use ${name}'s in place of this catalog's.`)));
+
+	if(hardcover){
+		const {plan} = hardcover;
+		const dates = (/** @type {string[]} */ d)=> d.length ? `: read ${d.join(', ')}` : '';
+		out.push(compareGroup('Not on your Hardcover Read shelf', plan.add.map((a, i)=> pickBox('add', i, [a.books.map(bookLine).join('; '), dates(a.dates)])),
+			'add', plan.add.map((a, i)=> i), 'Tick a book to put it on your Read shelf on Hardcover, with its dates read.'));
+		out.push(compareGroup('Reads Hardcover lacks', plan.reads.map((a, i)=> pickBox('reads', i, [a.books.map(bookLine).join('; '), dates(a.dates)])),
+			'reads', plan.reads.map((a, i)=> i), 'Tick a book to add these reads to it on Hardcover.'));
+		if(hardcover.idsFound.length){
+			out.push(buildElement('label', {class: 'cmpPick cmpIds'}, buildElement('input', {type: 'checkbox', 'data-pick': 'ids', checked: compare.picks.ids,
+				onchange: (/** @type {Event} */ e)=>{ compare.picks.ids = /** @type {HTMLInputElement} */ (e.currentTarget).checked; updateApplyButton(); }}),
+				` Save the Hardcover ids found for ${Text.plural(hardcover.idsFound.length, 'book')}`));
+		}
+		out.push(compareGroup('On another Hardcover shelf, left alone', plan.otherShelf.map(([b, status])=> `${bookLine(b)}: ${status}`), null, []));
+		out.push(compareGroup('Not found on Hardcover', plan.unknown.map(bookLine), null, [],
+			'No ASIN, ISBN or Goodreads id Hardcover knows: give the book a "Hardcover <edition id>" in its edit form.'));
+		if(plan.inexact.length) out.push(para(`Dates read without a day, which Hardcover can't take: ${plan.inexact.length}`));
+	} else if(comparison.onlyHere.length){
+		out.push(buildElement('details', {class: 'cmpOnlyHere'}, buildElement('summary', {}, spell(`Only in this catalog: ${comparison.onlyHere.length}`)),
+			messageList(comparison.onlyHere.map(bookLine), 100)));
+	}
+	const excluded = of('excluded'), notAdded = of('notAdded');
+	if(excluded.length) out.push(para(`Skipped (excluded from imports): ${excluded.length}`), messageList(excluded.map(b=> bookLine(b.theirs)), 10));
+	if(notAdded.length){
+		out.push(para(spell(`Not added, as Hardcover has no audiobook edition picked for them: ${notAdded.length}`)), messageList(notAdded.map(b=> bookLine(b.theirs)), 10));
+	}
+	if(compare.warnings.length) out.push(para(`Needs a look (${compare.warnings.length}):`, 'warn'), messageList(compare.warnings));
+	if(!pickedCount(compare) && !fresh.length && !gains.length && !differing.length && !(hardcover && (hardcover.plan.add.length || hardcover.plan.reads.length))){
+		out.push(para(spell('Nothing to take or send: both have the same.')));
+	}
+	byId('importPreviewTitle').textContent = spell(`Compare with ${name}`);
+	fillElement(byId('importPreviewBody'), out);
+	updateApplyButton();
+}
+
+/**
+ * Open a comparison in the preview, under the panel of its source.
+ * @param {Omit<PendingCompare, 'picks'>} compare
+ */
+function openCompare(compare){
+	closeImportPreview();
+	PENDING_COMPARE = pendingCompare(compare);
+	drawCompare();
+	openPreview(`${compare.source}Panel`);
+}
+
+/**
+ * Show the books of an Audible or Goodreads export beside this catalog's.
  * @param {ImportKind} kind
  * @param {string} text the export's text
  * @param {string} fileName
  */
-function previewImport(kind, text, fileName){
+function compareExport(kind, text, fileName){
 	const importer = IMPORTERS[kind]();
 	const result = importer.read(text);
-	const {report, errors} = mergeIntoCopy(result.books);
-	const changes = report.added.length + report.backfilled.length + report.goodreadsFilled.length + report.datesFilled.length +
-		report.isbnsFilled.length + report.detailsFilled.length + report.editionsAdded.length;
-	PENDING_IMPORT = errors.length || !changes ? null : result.books;
-	PENDING_HARDCOVER = null;
-	PENDING_MERGE = null;
-	PENDING_TIDY = null;
-	byId('mergePrefer').classList.remove('show');
-
-	/** @type {Child[]} */
-	const out = [para(`${Text.plural(result.books.length, 'finished book')} read from ${fileName}`)];
-	out.push(para(spell(`Already in the catalog: ${report.matched}`)));
-	if(result.skippedUnfinished) out.push(para(`Not finished yet, skipped: ${result.skippedUnfinished}`));
-	if(report.backfilled.length) out.push(para(`ASINs filled in on existing books: ${report.backfilled.length}`));
-	if(report.goodreadsFilled.length) out.push(para(`Goodreads ids filled in on existing books: ${report.goodreadsFilled.length}`));
-	if(report.datesFilled.length) out.push(para(`Dates read filled in on existing books: ${report.datesFilled.length}`));
-	if(report.isbnsFilled.length) out.push(para(`ISBNs added to existing books: ${report.isbnsFilled.length}`));
-	if(report.detailsFilled.length) out.push(para(`Narrator, publisher, release date or length filled in on existing books: ${report.detailsFilled.length}`));
-	if(report.editionsAdded.length) out.push(para(`Other editions added to existing books: ${report.editionsAdded.length}`));
-	if(report.excluded.length) out.push(para(`Skipped (excluded from imports): ${report.excluded.length}`));
-	if(report.boxSets.length){
-		out.push(para(`Box sets split into their titles, each with the set's edition: ${report.boxSets.length}`),
-			messageList(report.boxSets.map(b=> `${b.title} \u2014 ${Text.namesText(b.authors)}: ${b.titles} already here, ${b.added} added`)));
-		if(report.boxSets.some(b=> b.added)) out.push(para(spell('A title not in the catalog yet is named \u201CSeries, Book N\u201D until you rename it on its card.')));
-	}
-	out.push(para(`New: ${report.added.length}`), messageList(report.added.map(bookLine)));
-	if(result.warnings.length){
-		out.push(para(`Needs a look (${result.warnings.length}):`, 'warn'), messageList(result.warnings));
-	}
-	if(errors.length){
-		out.push(para('Validation failed, nothing will be changed:', 'warn'), messageList(errors.slice(0, 10)));
-	} else if(!changes){
-		out.push(para('Nothing new to add.'));
-	}
-
-	byId('importPreviewTitle').textContent = `${importer.label} import`;
-	fillElement(byId('importPreviewBody'), out);
-	const confirmBtn = byId('importConfirm');
-	confirmBtn.style.display = PENDING_IMPORT ? '' : 'none';
-	confirmBtn.textContent = report.added.length
-		? `Add ${Text.plural(report.added.length, 'book')}`
-		: report.backfilled.length ? 'Save ASINs' : report.goodreadsFilled.length ? 'Save Goodreads ids' : report.datesFilled.length ? 'Save dates read'
-		: report.editionsAdded.length ? 'Save editions' : report.isbnsFilled.length ? 'Save ISBNs' : 'Save edition details';
-	byId('importCancel').textContent = PENDING_IMPORT ? 'Cancel' : 'Close';
-	openPreview(`${kind}Panel`);
+	const notes = [`${Text.plural(result.books.length, 'finished book')} read from ${fileName}`];
+	if(result.skippedUnfinished) notes.push(`Not finished yet, skipped: ${result.skippedUnfinished}`);
+	openCompare({source: kind, name: importer.label, notes, incoming: result.books, comparison: Comparison.compare(CATALOG, result.books),
+		warnings: result.warnings, hardcover: null});
 }
 
-function applyImport(){
-	if(!PENDING_IMPORT) return;
-	// merged again, in case books were edited while the preview was open
-	const {copy, report, errors} = mergeIntoCopy(PENDING_IMPORT);
+/**
+ * The catalog with what is ticked in `compare` taken in, in a copy, with what blocks it.
+ * @param {PendingCompare} compare
+ */
+function applyIntoCopy(compare){
+	const copy = CATALOG.clone();
+	const {report, patched} = Comparison.apply(copy, compare.incoming, compare.picks, compare.opts);
+	const idsFound = compare.hardcover && compare.picks.ids ? HardcoverSync.addIds(copy.books, compare.hardcover.found).length : 0;
+	// series-info problems are not the import's doing (a series renamed in the page); only block on the books
+	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
+	return {copy, report, patched, idsFound, errors};
+}
+
+/**
+ * What applying a comparison did here, as the status line says it: "Added 2 books, filled in 1 ASIN, changed 1 value".
+ * @param {MergeReport} report
+ * @param {number} patched
+ * @param {number} [idsFound] books that got a Hardcover id found for one of their editions
+ * @returns {string}
+ */
+function appliedText(report, patched, idsFound = 0){
+	/** @type {[Book[], (n: number) => string][]} */
+	const filled = [[report.backfilled, n=> `filled in ${Text.plural(n, 'ASIN')}`], [report.goodreadsFilled, n=> `filled in ${Text.plural(n, 'Goodreads id')}`],
+		[report.hardcoverFilled, n=> `filled in Hardcover ids on ${Text.plural(n, 'book')}`], [report.datesFilled, n=> `filled in dates read on ${Text.plural(n, 'book')}`],
+		[report.isbnsFilled, n=> `added ISBNs to ${Text.plural(n, 'book')}`], [report.editionsAdded, n=> `added editions to ${Text.plural(n, 'book')}`],
+		[report.detailsFilled, n=> `filled in edition details on ${Text.plural(n, 'book')}`]];
+	return [`Added ${Text.plural(report.added.length, 'book')}`, ...filled.filter(([list])=> list.length).map(([list, say])=> say(list.length)),
+		idsFound && `saved Hardcover ids found for ${Text.plural(idsFound, 'book')}`, patched && `changed ${Text.plural(patched, 'value')}`].filter(Boolean).join(', ');
+}
+
+function applyCompare(){
+	const compare = PENDING_COMPARE;
+	if(!compare) return;
+	if(compare.hardcover) return applyHardcover(compare);
 	closeImportPreview();
-	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was added.'), true); return; }
-	const added = report.added.length, backfilled = report.backfilled.length, dated = report.datesFilled.length;
-	const withIsbns = report.isbnsFilled.length, withGr = report.goodreadsFilled.length;
-	const withEditions = report.editionsAdded.length, withDetails = report.detailsFilled.length;
+	// applied to the catalog as it is now, in case books were edited while the comparison was open
+	const {copy, report, patched, errors} = applyIntoCopy(compare);
+	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was changed.'), true); return; }
 	CATALOG.books = copy.books;
 	refreshPage(); persist();
-	const done = `Added ${Text.plural(added, 'book')}` +
-		(backfilled ? `, filled in ${Text.plural(backfilled, 'ASIN')}` : '') +
-		(withGr ? `, filled in ${Text.plural(withGr, 'Goodreads id')}` : '') +
-		(dated ? `, filled in dates read on ${Text.plural(dated, 'book')}` : '') +
-		(withIsbns ? `, added ISBNs to ${Text.plural(withIsbns, 'book')}` : '') +
-		(withEditions ? `, added editions to ${Text.plural(withEditions, 'book')}` : '') +
-		(withDetails ? `, filled in edition details on ${Text.plural(withDetails, 'book')}` : '') + '.';
-	showIoStatus(done);
+	showIoStatus(appliedText(report, patched) + '.');
 }
 
 // ------------------------------------------------------------ Merge a backup from another device
@@ -375,8 +519,7 @@ function mergeBackupFile(file){
 		try{
 			const backup = Backup.read(JSON.parse(readText(e)));
 			if(backup.books.some(b=> !b.title || !b.authors.length)) throw new Error('missing title/author');
-			PENDING_IMPORT = null;
-			PENDING_HARDCOVER = null;
+			PENDING_COMPARE = null;
 			PENDING_MERGE = {backup, fileName: file.name};
 			PENDING_TIDY = null;
 			previewMerge();
@@ -400,8 +543,7 @@ let PENDING_TIDY = null;   // 'box-sets', while its preview is open
  * @param {string} confirm
  */
 function showTidyPreview(title, body, confirm){
-	PENDING_IMPORT = null;
-	PENDING_HARDCOVER = null;
+	PENDING_COMPARE = null;
 	PENDING_MERGE = null;
 	byId('mergePrefer').classList.remove('show');
 	byId('importPreviewTitle').textContent = title;
@@ -466,17 +608,9 @@ function applyTidy(){
 }
 
 // ------------------------------------------------------------ Hardcover
-// The page runs it itself, as Hardcover's API allows browser requests, with a token kept in this browser
-// only (never in a backup); it stops if you leave the page, so the browser asks first. A dry run shows
-// what would happen, and confirming runs it for real.
-/** @type {Record<HardcoverMode, {title: string, confirm: string}>} */
-const HARDCOVER_MODES = {
-	import: {title: 'Import from Hardcover', confirm: 'Import'},
-	export: {title: 'Export to Hardcover', confirm: 'Export to Hardcover'},
-	sync: {title: 'Sync with Hardcover', confirm: 'Import and export'},
-};
-/** @type {HardcoverMode | null} */
-export let PENDING_HARDCOVER = null;   // the mode, while its preview is open
+// The page asks Hardcover itself, as Hardcover's API allows browser requests, with a token kept in this
+// browser only (never in a backup). Comparing only reads Hardcover; applying saves the catalog first, then
+// sends what was ticked, and that stops if you leave the page, so the browser asks first.
 /** @type {HardcoverJob | null} */
 let PAGE_RUN = null;           // a run going on in this page (showHardcoverJob)
 
@@ -507,65 +641,104 @@ function saveHardcoverToken(remove){
 }
 
 /**
- * Run `mode` (HardcoverSync.run) on a copy of the catalog, shown in the banner on top. A real
- * run keeps its changes (persist) before sending anything to Hardcover, unless the catalog was edited meanwhile. Returns a promise of the ended run.
+ * Run `task` with Hardcover, shown in the banner on top while it goes (as a `mode` job), handing it the
+ * step it reports its progress through. Resolves to what it gave or threw and how long it took; to
+ * undefined when another run is going on.
+ * @template T
  * @param {HardcoverMode} mode
- * @param {boolean} dryRun
- * @returns {Promise<HardcoverJob | undefined>} undefined when it didn't start
+ * @param {(step: Step) => Promise<T>} task
+ * @returns {Promise<{value?: T, error?: unknown, elapsed: number} | undefined>}
  */
-async function runHardcover(mode, dryRun){
+async function withHardcoverJob(mode, task){
+	if(PAGE_RUN) return undefined;
+	const started = Date.now();
+	/** @type {HardcoverJob} */
+	const job = PAGE_RUN = {mode, dryRun: mode === 'compare', running: true, elapsed: 0, step: 'Starting'};
+	const show = ()=>{ job.elapsed = Date.now() - started; showHardcoverJob(job); };
+	const ticker = setInterval(show, 1000);
+	show();
+	/** @type {{value?: T, error?: unknown, elapsed: number}} */
+	const result = {elapsed: 0};
+	try{
+		result.value = await task((text, done, total)=>{ Object.assign(job, {step: text, done, total}); show(); });
+	}catch(e){
+		result.error = e;
+	}
+	clearInterval(ticker);
+	Object.assign(job, {running: false, elapsed: Date.now() - started});
+	result.elapsed = job.elapsed;
+	PAGE_RUN = null;
+	showHardcoverJob(job);
+	return result;
+}
+
+// Show your Hardcover shelves beside this catalog. Only reads Hardcover.
+async function compareHardcover(){
 	if(PAGE_RUN) return;
 	const token = browserHardcoverToken();
 	if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
 	if(!await withWholeCatalog(()=> true)) return;
-	if(PAGE_RUN) return;
-	const started = Date.now();
-	/** @type {{out: string[], err: string[]}} */
-	const lines = {out: [], err: []};
-	/** @type {HardcoverJob} */
-	const job = PAGE_RUN = {mode, dryRun, running: true, elapsed: 0, step: 'Starting'};
-	const show = () => { job.elapsed = Date.now() - started; showHardcoverJob(job); };
-	const ticker = setInterval(show, 1000);
-	show();
-	await whenSaved();   // this page's own saves don't count as an edit made while it ran
-	const before = JSON.stringify(CATALOG.books), seen = SEEN_REVISION;
-	const copy = CATALOG.clone();
-	const save = async (/** @type {boolean} */ changed) => {
-		if(JSON.stringify(CATALOG.books) !== before || await storedRevision() !== seen){
-			lines.err.push(spell('error: the catalog was edited while this ran (here or in another tab); nothing written, nothing sent to Hardcover. Run it again.'));
-			return false;
-		}
-		if(changed){
-			CATALOG.books = copy.books;
-			await persist();
-			refreshPage();
-			lines.out.push(spell('saved the catalog'));
-		}
-		return true;
-	};
-	/** @type {number} */
-	let code;
-	try{
-		code = await new HardcoverSync(hardcoverClient(token)).run(copy, mode, {
-			dryRun, save, british: BRITISH,
-			out: line => lines.out.push(line), err: line => lines.err.push(line),
-			step: (text, done, total) => { Object.assign(job, {step: text, done, total}); show(); },
-		});
-	}catch(e){
-		lines.err.push(`error: ${Text.errorText(e)}`);
-		code = 1;
+	closeImportPreview();
+	await whenSaved();   // compared with the catalog as saved
+	const run = await withHardcoverJob('compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step));
+	if(!run) return;
+	const hc = run.value;
+	if(!hc){
+		byId('importPreviewTitle').textContent = spell('Compare with Hardcover');
+		fillElement(byId('importPreviewBody'), para(`Couldn't compare: ${Text.errorText(run.error)}`, 'warn'));
+		updateApplyButton();
+		openPreview('hardcoverPanel');
+		return;
 	}
-	clearInterval(ticker);
-	Object.assign(job, {running: false, code, out: lines.out.join('\n'), err: lines.err.join('\n'), elapsed: Date.now() - started});
-	PAGE_RUN = null;
-	showHardcoverJob(job);
-	showHardcoverResult(mode, job, dryRun);
-	if(!dryRun) showIoStatus(code === 0 ? `${HARDCOVER_MODES[mode].title}: done.` : 'Not everything went through; see the details.', code !== 0);
-	return job;
+	const notes = [`${Text.plural(hc.incoming.length, 'book')} on your Hardcover Read shelf` +
+		(hc.otherShelves ? `, ${hc.otherShelves} on other shelves` : '') + ` (took ${minutes(run.elapsed)})`];
+	openCompare({source: 'hardcover', name: 'Hardcover', notes, incoming: hc.incoming, opts: hc.opts, comparison: hc.comparison,
+		warnings: hc.warnings, hardcover: hc});
 }
 
-// Leaving the page stops a run going on in it: the browser asks first. (Nothing is lost by stopping
-// early: a run again carries on, as nothing already on Hardcover is added twice.)
+/**
+ * Take in what is ticked of a Hardcover comparison, save it, and then send what is ticked to Hardcover.
+ * @param {PendingCompare} compare
+ */
+async function applyHardcover(compare){
+	const hc = /** @type {HardcoverComparison} */ (compare.hardcover);
+	const token = browserHardcoverToken();
+	const {picks} = compare;
+	/** @type {HardcoverPlan} */
+	const plan = {add: hc.plan.add.filter((a, i)=> picks.add.has(i)), reads: hc.plan.reads.filter((a, i)=> picks.reads.has(i)), otherShelf: [], unknown: [], inexact: []};
+	if(PAGE_RUN) return;
+	if((plan.add.length || plan.reads.length) && !token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
+	closeImportPreview();
+	await whenSaved();
+	if(await storedRevision() !== SEEN_REVISION){
+		showIoStatus(spell('The catalog was edited in another tab since you compared; nothing was changed, nothing sent to Hardcover. Compare again.'), true);
+		return;
+	}
+	const {copy, report, patched, idsFound, errors} = applyIntoCopy(compare);
+	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was changed, nothing sent to Hardcover.'), true); return; }
+	const here = appliedText(report, patched, idsFound);
+	if(JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books)){
+		CATALOG.books = copy.books;
+		await persist();   // kept before anything is sent, so the ids found stay even if Hardcover stops answering
+		refreshPage();
+	}
+	if(!plan.add.length && !plan.reads.length){ showIoStatus(here + '.'); return; }
+	/** @type {string[]} */
+	const lines = [];
+	const say = (/** @type {string} */ line)=>{ lines.push(line); };
+	const run = await withHardcoverJob('send', step=> new HardcoverSync(hardcoverClient(/** @type {string} */ (token))).push(plan, say, say, step));
+	if(!run) return;
+	if(run.error) lines.push(`error: ${Text.errorText(run.error)}`);
+	const ok = !run.error && run.value === 0;
+	byId('importPreviewTitle').textContent = `Hardcover updated (took ${minutes(run.elapsed)})`;
+	fillElement(byId('importPreviewBody'), para(here + ' here.'), buildElement('pre', {}, lines.join('\n')));
+	updateApplyButton();
+	openPreview('hardcoverPanel');
+	showIoStatus(ok ? `${here}; Hardcover updated.` : 'Not everything went through on Hardcover; see the details.', !ok);
+}
+
+// Leaving the page stops sending to Hardcover: the browser asks first. (Nothing is lost by stopping early:
+// compare and apply again to carry on, as nothing already on Hardcover is added twice.)
 addEventListener('beforeunload', e => {
 	if(PAGE_RUN && !PAGE_RUN.dryRun){ e.preventDefault(); e.returnValue = ''; }
 });
@@ -575,45 +748,7 @@ addEventListener('beforeunload', e => {
  * @param {HardcoverJob | null} job
  */
 function onHardcoverJob(job){
-	const busy = Boolean(job && job.running);
-	for(const id of ['hardcoverImportBtn', 'hardcoverExportBtn', 'hardcoverSyncBtn']) /** @type {HTMLButtonElement} */ (byId(id)).disabled = busy;
-}
-
-/**
- * Show how a run went in the preview; a `pending` (dry) run that went through can be confirmed.
- * @param {HardcoverMode} mode
- * @param {HardcoverJob} result
- * @param {boolean} pending
- */
-function showHardcoverResult(mode, result, pending){
-	PENDING_IMPORT = null;
-	PENDING_HARDCOVER = pending && result.code === 0 ? mode : null;
-	PENDING_MERGE = null;
-	PENDING_TIDY = null;
-	byId('mergePrefer').classList.remove('show');
-	const text = [result.out, result.err].filter(Boolean).join('\n').replace(/\(dry run: nothing written\)\s*$/, '');
-	const took = Number.isFinite(result.elapsed) ? ` (took ${minutes(result.elapsed)})` : '';
-	byId('importPreviewTitle').textContent = HARDCOVER_MODES[mode].title + (pending ? ': preview' : took);
-	fillElement(byId('importPreviewBody'), buildElement('pre', {}, text),
-		pending && result.code === 0 && para('Nothing has changed yet, here or on Hardcover.'));
-	const confirmBtn = byId('importConfirm');
-	confirmBtn.style.display = PENDING_HARDCOVER ? '' : 'none';
-	confirmBtn.textContent = HARDCOVER_MODES[mode].confirm;
-	byId('importCancel').textContent = PENDING_HARDCOVER ? 'Cancel' : 'Close';
-	openPreview('hardcoverPanel');
-}
-
-/** @param {HardcoverMode} mode */
-function previewHardcover(mode){
-	closeImportPreview();
-	return runHardcover(mode, true);
-}
-
-function applyHardcover(){
-	const mode = PENDING_HARDCOVER;
-	if(!mode) return;
-	closeImportPreview();
-	return runHardcover(mode, false);
+	/** @type {HTMLButtonElement} */ (byId('hardcoverCompareBtn')).disabled = Boolean(job && job.running);
 }
 
 /**
@@ -628,11 +763,10 @@ function openPreview(panelId){
 }
 
 function closeImportPreview(){
-	PENDING_IMPORT = null;
+	PENDING_COMPARE = null;
 	PENDING_MERGE = null;
 	PENDING_TIDY = null;
 	byId('mergePrefer').classList.remove('show');
-	PENDING_HARDCOVER = null;
 	byId('importPreview').classList.remove('open');
 }
 
@@ -646,7 +780,7 @@ function importCsv(kind, file){
 	reader.onload = async e=>{
 		if(!await withWholeCatalog(()=> true)) return;
 		try{
-			previewImport(kind, readText(e), file.name);
+			compareExport(kind, readText(e), file.name);
 		}catch(err){
 			closeImportPreview();
 			showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind]().label} export.`, true);
@@ -663,10 +797,8 @@ byId('importCsvFile').addEventListener('change', e=>{
 	if(file) importCsv(IMPORT_KIND, file);
 	input.value = '';
 });
-byId('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_HARDCOVER ? applyHardcover() : applyImport());
-for(const mode of /** @type {HardcoverMode[]} */ (Object.keys(HARDCOVER_MODES))){
-	byId(`hardcover${mode[0].toUpperCase()}${mode.slice(1)}Btn`).addEventListener('click', ()=> previewHardcover(mode));
-}
+byId('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : applyCompare());
+byId('hardcoverCompareBtn').addEventListener('click', compareHardcover);
 byId('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
 byId('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
 byId('importCancel').addEventListener('click', closeImportPreview);

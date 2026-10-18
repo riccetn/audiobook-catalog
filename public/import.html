@@ -29,14 +29,15 @@
 	<p id="ioStatus" class="ioStatus"></p>
 
 	<h2 class="pageSection">External catalogs</h2>
-	<p class="hint">Each import shows what would change before anything does, and only adds: it never changes or removes a book.</p>
+	<p class="hint">Each import shows the other catalog's books beside yours first, and takes only what you tick: new books, what it has that
+		yours lack, and, where both have a value that differs, the values you pick. Nothing is ever removed.</p>
 
 	<section class="panel" id="audiblePanel">
 		<h2>Audible <span class="via">CSV file</span></h2>
 		<div class="ioRow">
 			<span class="ioLabel">Import</span>
 			<div class="rowbtns">
-				<button class="iconbtn2" id="importAudibleBtn" title="Add finished books from an Audible Library Extractor CSV">Import CSV</button>
+				<button class="iconbtn2" id="importAudibleBtn" title="Compare the finished books in an Audible Library Extractor CSV with this catalog">Import CSV</button>
 				<label>ASINs from
 					<select id="audibleImportSite" title="The Audible site your library export is from">
 						<option value="audible.com">audible.com</option>
@@ -51,7 +52,7 @@
 						<option value="audible.co.jp">audible.co.jp</option>
 					</select></label>
 			</div>
-			<p class="ioNote">Adds the finished books in an Audible Library Extractor CSV.</p>
+			<p class="ioNote">Shows the finished books in an Audible Library Extractor CSV beside this catalog's, to pick what to take.</p>
 		</div>
 		<div class="ioRow">
 			<span class="ioLabel">Export</span>
@@ -64,9 +65,9 @@
 		<div class="ioRow">
 			<span class="ioLabel">Import</span>
 			<div class="rowbtns">
-				<button class="iconbtn2" id="importGoodreadsBtn" title="Add read audiobooks from a Goodreads library export CSV">Import CSV</button>
+				<button class="iconbtn2" id="importGoodreadsBtn" title="Compare the read audiobooks in a Goodreads library export CSV with this catalog">Import CSV</button>
 			</div>
-			<p class="ioNote">Adds the read audiobooks in a Goodreads library export.</p>
+			<p class="ioNote">Shows the read audiobooks in a Goodreads library export beside this catalog's, to pick what to take.</p>
 		</div>
 		<div class="ioRow">
 			<span class="ioLabel">Export</span>
@@ -80,19 +81,12 @@
 	<section class="panel" id="hardcoverPanel">
 		<h2>Hardcover <span class="via">Online</span></h2>
 		<div class="ioRow">
-			<span class="ioLabel">Import</span>
+			<span class="ioLabel">Compare</span>
 			<div class="rowbtns">
-				<button class="iconbtn2" id="hardcoverImportBtn" title="Add the books on your Hardcover Read shelf">Import</button>
+				<button class="iconbtn2" id="hardcoverCompareBtn" title="Compare your Hardcover shelves with this catalog">Compare</button>
 			</div>
-			<p class="ioNote">Adds the books on your Hardcover <em>Read</em> shelf.</p>
-		</div>
-		<div class="ioRow">
-			<span class="ioLabel">Export</span>
-			<div class="rowbtns">
-				<button class="iconbtn2" id="hardcoverExportBtn" title="Put your books on your Hardcover Read shelf">Export</button>
-				<button class="iconbtn2" id="hardcoverSyncBtn" title="Import, then export">Import and export</button>
-			</div>
-			<p class="ioNote">Puts your books on your Read shelf with their dates read. Nothing on Hardcover is changed or removed.</p>
+			<p class="ioNote">Shows the books on your Hardcover <em>Read</em> shelf beside this catalog's, to pick what to take from Hardcover,
+				and which of your books and dates read to put on your Read shelf there. Nothing on Hardcover is changed or removed.</p>
 		</div>
 		<div class="ioRow">
 			<span class="ioLabel">Token</span>

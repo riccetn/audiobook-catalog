@@ -70,7 +70,9 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     the browser's `indexedDB` is passed in). `MemoryReader` answers a `CatalogReader`'s questions from records in memory.
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
-    `HardcoverSync` (`run`, `read`, `lookups`/`addIds`, `planExport`).
+    `HardcoverSync` (`compare`: only reads Hardcover, `push`, `read`, `lookups`/`addIds`, `planExport`).
+  - `Comparison` (`compare`: each incoming book's `kind`, `gains` and `differences` beside the catalog, from `Merger`'s
+    report `matches`; `apply`: imports the books picked by place and puts in the values picked by `Difference.key`).
   Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
   others bring them in with `/** @import {MergeReport} from './merger.js' */`.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
@@ -103,9 +105,10 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `app.js` (`index.html`): series overview (from the series records alone), all books (50 at a time, `PAGE_SIZE`, `showMore`;
   `refreshView` reads what is shown again; an empty catalog says where books come from), the book and
   series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=<id>,<id>`.
-- `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): Audible/Goodreads CSV preview and import, Goodreads CSV export, Check (`CATALOG.validate`)
-  and Box sets (`addBoxSets`), the Hardcover panel (`HardcoverSync.run`
-  in the page, on a copy of the catalog), Export / Restore (`Backup.readFiles`) / Merge of backups.
+- `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): the comparison an Audible or
+  Goodreads CSV import, or the Hardcover panel's Compare (`HardcoverSync.compare`), opens (`PENDING_COMPARE`, its ticks in
+  `picks`; `drawCompare`; Apply runs `Comparison.apply` on a copy, then for Hardcover saves and `push`es the ticked part of the plan),
+  Goodreads CSV export, Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so there is no series lookup from Audible.
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
   `publishers.js` with `startCreditsPage(kind)`; `CREDIT_KINDS` holds what differs): the list of authors, narrators or
@@ -163,7 +166,7 @@ Duplicates page) is add-only too. Restore also reads the old `data/` files (`boo
 `excluded.txt`, `not-duplicates.txt`) picked together (`Backup.readFiles`).
 
 Invariants the code relies on:
-- Imports only add books, never overwrite. Matching order: any edition's external id (an ASIN on any site), then the book's Hardcover id, then first author + series + number
+- Imports only add books, and never overwrite a value except one the user ticked in the comparison (`Comparison.apply`). Matching order: any edition's external id (an ASIN on any site), then the book's Hardcover id, then first author + series + number
   (spelling-insensitive), then author + title (forgiving Audible's long titles, never mistaking a
   boxed set for book 1). A box set with a range and an id is kept as its own book and gives its edition to each title (`Merger`). A match may gain dates read and editions: an incoming edition fills in the
   edition it shares an identifier with (and that edition's box-set copies), or the match's only
@@ -171,8 +174,8 @@ Invariants the code relies on:
 - Every text field goes through `Book.tidyJSON`; `Validator.validate` warns on untidy values.
 - Imports, Merge and Box sets validate a copy first and change nothing when it has errors; previews never change anything
   until confirmed.
-- The Hardcover export only adds to Hardcover (books on the Read shelf, reads); it never changes a
-  status, rating or review or removes anything there.
+- Sending to Hardcover only adds to it (books on the Read shelf, reads), only what the user ticked; it never changes a
+  status, rating or review or removes anything there. Comparing only reads it.
 
 ## Privacy (hard rule)
 
