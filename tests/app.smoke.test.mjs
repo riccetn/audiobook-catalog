@@ -2196,6 +2196,8 @@ test('an author\'s page shows their bio, their links, and their series and title
 	assert.match(html, /<a href="index\.html#series=The\+Lantern\+Coast">The Lantern Coast<\/a> <span class="n">4 owned of 5<\/span> <span class="status ongoing">ongoing<\/span>/);
 	assert.match(html, /#1<\/span> <a href="index\.html#book=The\+Salt\+Road">The Salt Road<\/a><\/li><li>.*#2<\/span> <a href="index\.html#book=Beacons\+at\+Low\+Tide">/);
 	assert.equal(els.subtitle.textContent, '4 audiobooks in 1 series');
+	// and the numbers none of her books has
+	assert.match(html, /<\/p><p class="series-note">missing #\d+<\/p><ul class="author-books">/);
 
 	// another author's page, by its address: her series, and a book outside it she wrote with someone else
 	ctx.location.hash = '#a=Priya+Ostrander';
@@ -2204,6 +2206,7 @@ test('an author\'s page shows their bio, their links, and their series and title
 	const priya = readable(els.creditBody.innerHTML);
 	assert.match(priya, /Halloway &amp; Finch<\/a> <span class="n">2 owned of 2<\/span> <span class="status complete">/);
 	assert.match(priya, /Outside a series <span class="n">1 book<\/span>/);
+	assert.doesNotMatch(priya, /series-note/, 'none missing');
 	assert.match(priya, /Nine Ways to Lose a Kingdom<\/a> <span class="with">with <a href="authors\.html#a=Ferran\+Doyle">Ferran Doyle<\/a><\/span>/);
 	assert.equal(els.subtitle.textContent, '3 audiobooks in 1 series and 1 outside a series');
 

@@ -118,21 +118,6 @@ function ownedText(books){
 }
 
 /**
- * [3, 5, 6, 7] -> "#3, #5-7"
- * @param {number[]} nums
- * @returns {string}
- */
-function numberList(nums){
-	/** @type {[number, number][]} */
-	const runs = [];
-	nums.forEach(n=>{
-		const last = runs[runs.length - 1];
-		if(last && n === last[1] + 1) last[1] = n; else runs.push([n, n]);
-	});
-	return runs.map(([a,b])=> a === b ? `#${a}` : `#${a}\u2013${b}`).join(', ');
-}
-
-/**
  * The filters' choices, from the stored catalog: its authors, genres and the years books were read in.
  * @param {CatalogReader} r
  * @returns {Promise<typeof FILTER_CHOICES>}
@@ -567,7 +552,7 @@ export function render(){
 		if(info){
 			const missing = seriesMissing(name);
 			note.push(`${totalText(info)} released total`);
-			if(missing && missing.length) note.push(`missing ${numberList(missing)}`);
+			if(missing && missing.length) note.push(`missing ${Series.numberList(missing)}`);
 			if(info.note) note.push(info.note);
 		}
 		out.push(buildElement('div', {class: 'series-group'},
@@ -631,7 +616,7 @@ function renderSeriesOverview(){
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'},
 				joined(authors.map(a=> buildElement('a', {href: creditPageHref('authors', a.id)}, a.name)), ', ')),
 				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
-				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
+				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${Series.numberList(missing)}`)]),
 			info && info.note && buildElement('p', {class: 'srow-note'}, info.note)));
 	});
 

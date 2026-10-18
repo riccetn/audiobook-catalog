@@ -313,6 +313,9 @@ h1{
 /* Phones: less space around the page, and the filters two to a row. */
 @media (max-width:600px){
 	.wrap{padding:1rem .9rem 3rem;}
+	/* the Import & export rows' labels go above their buttons, leaving the buttons the width */
+	.ioRow{grid-template-columns:minmax(0,1fr); row-gap:.35rem;}
+	.ioRow .ioNote, .ioRow .ioLabel + .ioNote{grid-column:1;}
 	h1{font-size:1.6rem;}
 	.controls select{flex:1 1 40%; max-width:none;}
 }

@@ -182,6 +182,17 @@ function seriesHeading(s){
 		si && [' ', buildElement('span', {class: `status ${si.status}`}, si.status === 'complete' ? 'complete' : 'ongoing')]);
 }
 
+/**
+ * On an author's page, the numbers of a series that none of their books has, up to its released total.
+ * @param {{name: string, books: Book[]}} s
+ * @returns {HTMLParagraphElement | false}
+ */
+function missingNote(s){
+	const si = KIND === CREDIT_KINDS.author && CATALOG.seriesInfo(s.name);
+	const missing = si && si.missing(s.books);
+	return !!missing && missing.length > 0 && buildElement('p', {class: 'series-note'}, `missing ${Series.numberList(missing)}`);
+}
+
 /** @param {string} id */
 function renderCreditPage(id){
 	const name = nameOf(id);
@@ -207,7 +218,7 @@ function renderCreditPage(id){
 		KIND === CREDIT_KINDS.author && count > 0 && buildElement('p', {class: 'author-actions'},
 			buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('author', id)}, 'Compare their books with Hardcover')),
 	];
-	series.forEach(s=> out.push(buildElement('div', {class: 'series-group'}, seriesHeading(s),
+	series.forEach(s=> out.push(buildElement('div', {class: 'series-group'}, seriesHeading(s), missingNote(s),
 		buildElement('ul', {class: 'author-books'}, s.books.map(b=> creditBookLine(b, name))))));
 	if(titles.length){
 		out.push(buildElement('div', {class: 'series-group'},
