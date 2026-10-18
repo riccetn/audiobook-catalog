@@ -926,7 +926,7 @@ function bookCard(b, withSeries = false){
 
 /**
  * A book shown on its own (#book=<id>): everything about it, with each edition's parts. Its parts are laid out
- * by styles.css: the cover under the buttons, or on a phone across the whole card, with the buttons last.
+ * by styles.css: the cover under the buttons, or across the whole card on a phone.
  * @param {Book} b
  * @returns {HTMLDivElement}
  */

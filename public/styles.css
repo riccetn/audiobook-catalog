@@ -349,9 +349,8 @@ h1{
 /* Phones: less space around the page and above the list. The page links stay on one line that scrolls
    sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */
 @media (max-width:600px){
-	/* a book's details: its number and title on top, with the whole width, then the cover across the card, the rest, and the buttons last */
-	.book.book-details{grid-template-columns:auto minmax(0, 1fr); grid-template-areas:"num head" "cover cover" "info info" "actions actions"; grid-template-rows:auto;}
-	.book-details > .book-actions{margin:.6rem -.5rem -.45rem 0;}
+	/* a book's details: its number, title and buttons on top, then the cover across the card, then the rest */
+	.book.book-details{grid-template-columns:auto minmax(0, 1fr) auto; grid-template-areas:"num head actions" "cover cover cover" "info info info"; grid-template-rows:auto;}
 	.book-details > .cover.large{width:100%; margin:.7rem 0 0;}
 	.wrap{padding:.75rem .9rem 3rem;}
 	h1{font-size:1.3rem;}
