@@ -41,6 +41,8 @@ import {ExternalCatalog} from './external-catalog.js';
  * @typedef {object} MergeOptions
  * @property {boolean} [allDates] add every incoming date read the book lacks, not only to a book with none
  * @property {(book: Book) => boolean} [addable] whether an unmatched book may be added
+ * @property {(book: Book) => boolean} [withEditions] whether a book that finds one here may fill in its editions or add
+ *   one (by default it may); its editions still find the book, and a box set's still find its titles
  */
 
 // Which report list a book goes on when one of its editions (or the book) gains a value: an edition's key,
@@ -257,6 +259,8 @@ export class Merger {
 				/** @type {Edition[]} */
 				const setEditions = [];
 				const readers = new Set([match]);
+				// an edition picked on Goodreads or Hardcover may be one picked at random, so it can be left out
+				const withEditions = !opts.withEditions || opts.withEditions(original);
 				for(const ed of rec.editions){
 					const own = book.editions;
 					let target = own.find(x => x.sameAs(ed));
@@ -265,8 +269,11 @@ export class Merger {
 						const copies = copiesOf(target);
 						if(boxSet || isSet) copies.forEach(([i]) => readers.add(i));
 						if(boxSet && copies.length) setEditions.push(target);
+						if(!withEditions) continue;
 						for(const field of target.fillFrom(ed)) note(report[filledReport(field)], book);
 						for(const [i, copy] of copies){ copy.fillFrom(target); indexBook(i); }
+					} else if(!withEditions){
+						continue;
 					} else if(own.length){
 						book.editions = [...own, ed.clone()];
 						note(report.editionsAdded, book);

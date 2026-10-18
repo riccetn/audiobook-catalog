@@ -960,9 +960,14 @@ test('a Goodreads import adds the ISBN to the edition of books already there', a
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
 	const html = readable(els.importPreviewBody.innerHTML);
-	assert.match(html, /Goodreads has more \(1\)<\/h4>.*data-pick="take:0" checked=""> Old Favorite — Ann Vale<\/label><ul><li>ISBN<\/li><\/ul>/);
+	// the edition picked on Goodreads may not be yours: it is left out unless ticked
+	assert.match(html, /Goodreads has more \(1\)<\/h4>.*<span class="cmpBook">Old Favorite — Ann Vale<\/span><ul><li><label class="cmpPick"><input type="checkbox" data-pick="editions:0"> the Goodreads edition: ISBN<\/label>/);
 	// the book has a date read already, so the other one is a difference to tick, not a gain
 	assert.match(html, /Different in both \(1\)<\/h4>.*data-pick="patch:0:r"> Dates read: <span class="cmpHere">2020<\/span> here, <span class="cmpThere">2023-11-04<\/span> on Goodreads/);
+	assert.equal(els.importConfirm.style.display, 'none', 'nothing ticked');
+	const edition = els.importPreviewBody.querySelector('input[data-pick="editions:0"]');
+	edition.checked = true;
+	edition.dispatch('change');
 	assert.equal(els.importConfirm.textContent, 'Apply 1 change');
 	els.importConfirm.listeners.click[0]();
 	await idle();
@@ -1154,7 +1159,8 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 	const html = readable(els.importPreviewBody.innerHTML);
 	assert.match(html, /<p>1 new, 1 with more to give, 0 with values that differ, 0 the same as in this catalog\.<\/p>/);
 	assert.match(html, /New from Audible \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:1" checked=""> A Crown of Embers 6: Ashfall — Ilse Marlowe  \[A Crown of Embers #6\]/);
-	assert.match(html, /Audible has more \(1\)<\/h4>.*A Spark of Dawn — Ilse Marlowe  \[A Crown of Embers #5\]<\/label><ul><li>an edition \(ASIN audible\.com B5\)<\/li>/);
+	// Audible's edition is the one you have: ticked
+	assert.match(html, /Audible has more \(1\)<\/h4>.*A Spark of Dawn — Ilse Marlowe  \[A Crown of Embers #5\]<\/span><ul><li><label class="cmpPick"><input type="checkbox" data-pick="editions:0" checked=""> the Audible edition: an edition \(ASIN audible\.com B5\)/);
 	assert.doesNotMatch(html, /Different in both/, 'the long form of a title is the same title');
 	assert.match(html, /Skipped \(excluded from imports\): 1<\/p><ul><li>Removed — Ilse Marlowe/);
 	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');

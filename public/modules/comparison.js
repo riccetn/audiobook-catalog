@@ -34,7 +34,8 @@ import {ExternalCatalog} from './external-catalog.js';
  * @property {'new' | 'gains' | 'same' | 'excluded' | 'notAdded'} kind new here, has more to give, the same, or can't be added
  * @property {Book[]} books this catalog's books it is (as they are now)
  * @property {Book[]} added what importing it adds (a box set's titles, a new book)
- * @property {string[]} gains what importing it fills in on the books it is
+ * @property {string[]} gains what importing it fills in on the books it is, besides their editions
+ * @property {string[]} editionGains what its edition fills in on theirs, or the edition it adds
  * @property {Difference[]} differences
  * @property {boolean} boxSet
  */
@@ -75,42 +76,48 @@ export class Comparison {
 		const books = report.matches.map((m, at) => {
 			const found = m.books.map(b => /** @type {number} */ (places.get(b))).filter(i => i < count);
 			found.forEach(i => seen.add(i));
-			const gains = found.flatMap(i => Comparison.gains(mine[i], merged.books[i], found.length > 1 ? merged.books[i].title : ''));
+			const gained = found.map(i => Comparison.gains(mine[i], merged.books[i], found.length > 1 ? merged.books[i].title : ''));
+			const gains = gained.flatMap(g => g.book), editionGains = gained.flatMap(g => g.editions);
 			const differences = m.boxSet || !found.length ? [] : Comparison.differences(at, found[0], mine[found[0]], m.incoming, spellings, !!(opts && opts.allDates));
 			/** @type {ComparedBook['kind']} */
 			const kind = m.excluded && !found.length ? 'excluded' : m.notAdded && !found.length ? 'notAdded'
-				: !found.length ? 'new' : gains.length || m.added.length ? 'gains' : 'same';
-			return {at, theirs: m.incoming, kind, books: found.map(i => mine[i]), added: m.added, gains, differences, boxSet: m.boxSet};
+				: !found.length ? 'new' : gains.length || editionGains.length || m.added.length ? 'gains' : 'same';
+			return {at, theirs: m.incoming, kind, books: found.map(i => mine[i]), added: m.added, gains, editionGains, differences, boxSet: m.boxSet};
 		});
 		return {books, onlyHere: mine.filter((b, i) => !seen.has(i)), merged, report};
 	}
 
 	/**
-	 * What book `after` (book `before` once imported into) gained, as short lines: "read 2024-03-01",
-	 * "Hardcover id", "narrators", "another edition". `title` names the book, when the lines are about several.
+	 * What book `after` (book `before` once imported into) gained, as short lines: the book's ("read
+	 * 2024-03-01", "Hardcover id") and its editions' ("narrators", "another edition (...)"). `title` names
+	 * the book, when the lines are about several.
 	 * @param {Book} before
 	 * @param {Book} after
 	 * @param {string} title
-	 * @returns {string[]}
+	 * @returns {{book: string[], editions: string[]}}
 	 */
 	static gains(before, after, title){
 		/** @type {string[]} */
 		const lines = [];
+		/** @type {string[]} */
+		const editions = [];
 		const dates = after.read.filter(d => !before.read.includes(d));
 		if(dates.length) lines.push(`read ${dates.join(', ')}`);
 		for(const [key] of Object.entries(after.external)) if(!before.idOn(key)) lines.push(`${ExternalCatalog.name(key)} id`);
 		after.editions.forEach((ed, i) => {
 			const was = before.editions[i];
-			if(!was){ lines.push(`${before.editions.length ? 'another edition' : 'an edition'} (${ed.format() || 'no details'})`); return; }
+			if(!was){ editions.push(`${before.editions.length ? 'another edition' : 'an edition'} (${ed.format() || 'no details'})`); return; }
 			/** @type {string[]} */
 			const filled = [];
 			for(const [key] of ed.externalList()) if(!was.idOn(key)) filled.push(`${ExternalCatalog.name(key)} id`);
 			for(const k of /** @type {(keyof typeof EDITION_LABELS)[]} */ (Object.keys(EDITION_LABELS))){
 				if(was.value(k) === undefined && ed.value(k) !== undefined) filled.push(EDITION_LABELS[k]);
 			}
-			if(filled.length) lines.push((before.editions.length > 1 ? `edition ${i + 1}: ` : '') + filled.join(', '));
+			if(filled.length) editions.push((before.editions.length > 1 ? `edition ${i + 1}: ` : '') + filled.join(', '));
 		});
-		return title ? lines.map(l => `${title}: ${l}`) : lines;
+		/** @type {(list: string[]) => string[]} */
+		const named = list => title ? list.map(l => `${title}: ${l}`) : list;
+		return {book: named(lines), editions: named(editions)};
 	}
 
 	/**
@@ -191,19 +198,22 @@ export class Comparison {
 
 	/**
 	 * Take into `catalog` (changed in place) what was picked of comparing it with `incoming` (compare(),
-	 * with the same `opts`): the incoming books whose places are in `take` are imported, and the
+	 * with the same `opts`): the incoming books whose places are in `take` are imported (the editions of
+	 * those that find a book here only when their places are in `editions`, when it is given), and the
 	 * differences whose keys are in `patch` get the other source's value. A difference is looked for again
 	 * in the catalog as it is now, so one that no longer differs is left alone. Returns the import's report
 	 * and how many values were changed.
 	 * @param {Catalog} catalog
 	 * @param {Book[]} incoming
-	 * @param {{take: Set<number>, patch: Set<string>}} picks
+	 * @param {{take: Set<number>, patch: Set<string>, editions?: Set<number>}} picks
 	 * @param {MergeOptions} [opts]
 	 * @returns {{report: MergeReport, patched: number}}
 	 */
 	static apply(catalog, incoming, picks, opts){
 		const differences = Comparison.compare(catalog, incoming, opts).books.flatMap(b => b.differences).filter(d => picks.patch.has(d.key));
-		const report = catalog.merge(incoming.filter((b, i) => picks.take.has(i)), opts);
+		const editions = picks.editions;
+		const withEditions = editions ? (/** @type {Book} */ b) => editions.has(incoming.indexOf(b)) : undefined;
+		const report = catalog.merge(incoming.filter((b, i) => picks.take.has(i)), {...opts, withEditions});
 		// the catalog's own books keep their places, as an import only adds books after them
 		for(const d of differences) Comparison.patch(catalog.books, d);
 		return {report, patched: differences.length};

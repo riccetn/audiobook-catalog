@@ -71,8 +71,9 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
     `HardcoverSync` (`compare`: only reads Hardcover, `push`, `read`, `lookups`/`addIds`, `planExport`).
-  - `Comparison` (`compare`: each incoming book's `kind`, `gains` and `differences` beside the catalog, from `Merger`'s
-    report `matches`; `apply`: imports the books picked by place and puts in the values picked by `Difference.key`).
+  - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
+    `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
+    Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`).
   Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
   others bring them in with `/** @import {MergeReport} from './merger.js' */`.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),

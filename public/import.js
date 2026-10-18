@@ -164,10 +164,10 @@ const IMPORTERS = {
 let IMPORT_KIND = 'audible';
 
 /**
- * What is ticked in a comparison: the incoming books to import (by place), the differences to take (by
- * key), the Hardcover plan's books to put on the Read shelf and reads to add (by place), and whether to keep
- * the Hardcover ids found.
- * @typedef {{take: Set<number>, patch: Set<string>, add: Set<number>, reads: Set<number>, ids: boolean}} ComparePicks
+ * What is ticked in a comparison: the incoming books to import (by place), those whose edition goes into the
+ * book they find (an edition ticked imports its book), the differences to take (by key), the Hardcover plan's
+ * books to put on the Read shelf and reads to add (by place), and whether to keep the Hardcover ids found.
+ * @typedef {{take: Set<number>, editions: Set<number>, patch: Set<string>, add: Set<number>, reads: Set<number>, ids: boolean}} ComparePicks
  */
 /**
  * A comparison open in the preview.
@@ -186,13 +186,16 @@ let IMPORT_KIND = 'audible';
 export let PENDING_COMPARE = null;   // until it is applied or closed
 
 /**
- * A comparison to open, everything an import would take ticked.
+ * A comparison to open, with what an import would take ticked; but the edition Goodreads or Hardcover has
+ * for a book you have is unticked, as it may be one picked there for want of the one you have.
  * @param {Omit<PendingCompare, 'picks'>} compare
  * @returns {PendingCompare}
  */
 function pendingCompare(compare){
-	const take = new Set(compare.comparison.books.filter(b=> b.kind === 'new' || b.kind === 'gains').map(b=> b.at));
-	return {...compare, picks: {take, patch: new Set(), add: new Set(), reads: new Set(), ids: true}};
+	const books = compare.comparison.books;
+	const take = new Set(books.filter(b=> b.kind === 'new' || (b.kind === 'gains' && (b.gains.length || b.added.length))).map(b=> b.at));
+	const editions = new Set(compare.source === 'audible' ? books.filter(b=> b.editionGains.length).map(b=> b.at) : []);
+	return {...compare, picks: {take, editions, patch: new Set(), add: new Set(), reads: new Set(), ids: true}};
 }
 
 /**
@@ -222,7 +225,7 @@ function messageList(items, limit = Infinity){
 		items.length > limit && buildElement('li', {}, `…and ${items.length - limit} more`));
 }
 
-/** @typedef {'take' | 'patch' | 'add' | 'reads'} PickGroup */
+/** @typedef {'take' | 'editions' | 'patch' | 'add' | 'reads'} PickGroup */
 
 /**
  * How many changes the ticks of a comparison make.
@@ -231,7 +234,7 @@ function messageList(items, limit = Infinity){
  */
 function pickedCount(compare){
 	const {picks, hardcover} = compare;
-	return picks.take.size + picks.patch.size + picks.add.size + picks.reads.size + (picks.ids && hardcover && hardcover.idsFound.length ? 1 : 0);
+	return picks.take.size + [...picks.editions].filter(at=> !picks.take.has(at)).length + picks.patch.size + picks.add.size + picks.reads.size + (picks.ids && hardcover && hardcover.idsFound.length ? 1 : 0);
 }
 
 function updateApplyButton(){
@@ -310,12 +313,17 @@ function drawCompare(){
 	// a new book as it would be added, in the series spelling in use
 	out.push(compareGroup(`New from ${name}`, fresh.map(b=> [pickBox('take', b.at, [bookLine(b.added[0] || b.theirs)]),
 		b.added.length > 1 && messageList(b.added.map(bookLine))]), 'take', fresh.map(b=> b.at)));
-	out.push(compareGroup(`${name} has more`, gains.map(b=> [pickBox('take', b.at, [bookLine(b.books[0] || b.theirs)]),
-		messageList([...b.gains, ...b.added.map(a=> `adds ${bookLine(a)}`)])]), 'take', gains.map(b=> b.at),
-		spell('Ticked, importing fills in what this catalog lacks, and changes nothing it has.')));
+	const fromEdition = (/** @type {ComparedBook} */ b)=> b.editionGains.length ?
+		buildElement('ul', {}, buildElement('li', {}, pickBox('editions', b.at, [`the ${name} edition: ${b.editionGains.join('; ')}`]))) : null;
+	out.push(compareGroup(`${name} has more`, gains.map(b=> b.gains.length || b.added.length
+		? [pickBox('take', b.at, [bookLine(b.books[0] || b.theirs)]), messageList([...b.gains, ...b.added.map(a=> `adds ${bookLine(a)}`)]), fromEdition(b)]
+		: [buildElement('span', {class: 'cmpBook'}, bookLine(b.books[0])), fromEdition(b)]), 'take', gains.filter(b=> b.gains.length || b.added.length).map(b=> b.at),
+		spell(compare.source === 'audible' ? 'Ticked, importing fills in what this catalog lacks, and changes nothing it has.'
+			: `Ticked, importing fills in what this catalog lacks, and changes nothing it has. The ${name} edition is left out unless you tick it, as it may have been picked there for want of yours.`)));
 	out.push(compareGroup('Different in both', differing.map(b=> [buildElement('span', {class: 'cmpBook'}, bookLine(b.books[0])),
 		buildElement('ul', {}, b.differences.map(d=> differenceRow(d, name)))]),
-		'patch', differing.flatMap(b=> b.differences.map(d=> d.key)), spell(`Tick a value to use ${name}'s in place of this catalog's.`)));
+		'patch', differing.flatMap(b=> b.differences.map(d=> d.key)), spell(`Tick a value to use the one on ${name} in place of this catalog's.` +
+			(compare.source === 'audible' ? '' : ` An edition's values are those of the edition picked on ${name}, which may not be yours.`))));
 
 	if(hardcover){
 		const {plan} = hardcover;
@@ -383,7 +391,8 @@ function compareExport(kind, text, fileName){
  */
 function applyIntoCopy(compare){
 	const copy = CATALOG.clone();
-	const {report, patched} = Comparison.apply(copy, compare.incoming, compare.picks, compare.opts);
+	const {take, editions} = compare.picks;
+	const {report, patched} = Comparison.apply(copy, compare.incoming, {...compare.picks, take: new Set([...take, ...editions])}, compare.opts);
 	const idsFound = compare.hardcover && compare.picks.ids ? HardcoverSync.addIds(copy.books, compare.hardcover.found).length : 0;
 	// series-info problems are not the import's doing (a series renamed in the page); only block on the books
 	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));

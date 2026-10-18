@@ -1954,7 +1954,7 @@ test('a comparison shows what is new, what an import fills in, and what differs,
 	const { books, onlyHere, merged } = Comparison.compare(catalog, INCOMING());
 	assert.equal(JSON.stringify(catalog), before);
 	assert.deepEqual(books.map(b => [b.at, b.kind]), [[0, 'gains'], [1, 'same'], [2, 'new']]);
-	assert.deepEqual(books[0].gains, ['publisher'], 'a value this catalog lacks is filled in');
+	assert.deepEqual([books[0].gains, books[0].editionGains], [[], ['publisher']], 'a value this catalog lacks is filled in');
 	// the series is spelled another way, the length one minute off (rounding): neither differs
 	assert.deepEqual(books[0].differences.map(d => [d.key, d.label, d.here, d.there]), [
 		['0:r', 'Dates read', '2020', '2023-01-05'],
@@ -1980,6 +1980,14 @@ test('applying a comparison imports only the books picked, and replaces only the
 	assert.deepEqual(json(catalog.books[0]), { t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', r: ['2020'],
 		e: [{ ext: { 'audible.com': 'B1' }, n: ['Hollis Marr', 'Ida Quell'], len: 600 }] }, 'not imported: no publisher, its date read kept');
 	assert.deepEqual(catalog.books.map(b => b.title), ['Salt Road', 'Paper Fen', 'Only Mine', 'Lantern Hours']);
+
+	// a book whose edition is not picked gains its dates read and ids, but not what its edition has
+	const dated = new Catalog({ books: Bs([{ t: 'Salt Road', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]) });
+	const goodreads = Bs([{ t: 'Salt Road', a: ['Ann Vale'], r: ['2023-01-05'], ext: { goodreads: '77' }, e: [{ ext: { goodreads: '4242' }, isbn: '9780306406157', p: 'Gull Audio' }] }]);
+	const [gr] = Comparison.compare(dated, goodreads).books;
+	assert.deepEqual([gr.gains, gr.editionGains], [['read 2023-01-05', 'Goodreads id'], ['Goodreads id, ISBN, publisher']]);
+	Comparison.apply(dated, goodreads, { take: new Set([0]), editions: new Set(), patch: new Set() });
+	assert.deepEqual(json(dated.books), [{ t: 'Salt Road', a: ['Ann Vale'], r: ['2023-01-05'], ext: { goodreads: '77' }, e: [{ ext: { 'audible.com': 'B1' } }] }]);
 
 	// a difference that is gone by the time it is applied is left alone
 	const again = Comparison.apply(catalog, incoming, { take: new Set(), patch: new Set(['0:n:0']) });
