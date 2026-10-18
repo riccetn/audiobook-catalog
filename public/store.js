@@ -693,17 +693,23 @@ function setAsideOldCatalog(){
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let ioStatusTimer;
 
+/** How long the status line shows a message, and so how long its Undo can be pressed. */
+export const STATUS_TIME = 5000;
+
 /**
- * Say something on the status line for a few seconds; `isErr` shows it as an error.
+ * Say something on the status line for a few seconds; `isErr` shows it as an error. With `undo`, the line
+ * has an Undo button that runs it and clears the line.
  * @param {string} msg
  * @param {boolean} [isErr]
+ * @param {() => void} [undo]
  */
-export function showIoStatus(msg, isErr){
+export function showIoStatus(msg, isErr, undo){
 	const el = byId('ioStatus');
-	el.textContent = msg;
+	const clear = ()=>{ clearTimeout(ioStatusTimer); fillElement(el); };
+	fillElement(el, msg, undo && [' ', buildElement('button', {type: 'button', class: 'undo', onclick: ()=>{ clear(); undo(); }}, 'Undo')]);
 	el.classList.toggle('err', !!isErr);
 	clearTimeout(ioStatusTimer);
-	ioStatusTimer = setTimeout(()=>{ el.textContent = ''; }, 5000);
+	ioStatusTimer = setTimeout(clear, STATUS_TIME);
 }
 
 /**

@@ -10,7 +10,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
-import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
+import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
 	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress, hardcoverCompareHref } from './store.js';
 /** @import {Child} from './store.js' */
 
@@ -30,6 +30,8 @@ let EDIT_SERIES = null;        // the id of the series whose info is being edite
 let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
 /** @type {string | null} */
 let MERGE_FROM = null;         // the id of the first book picked with its merge button, or null
+/** @type {{id: string, timer: ReturnType<typeof setTimeout>} | null} */
+let REMOVING = null;           // a book removed but kept until its Undo is gone (removeBook), or null
 
 // The page holds only what it shows, read from the stored catalog by loadView(): for all books (or a
 // series', or what the search and filters find), the ids of the books listed, in the order they are listed,
@@ -530,7 +532,7 @@ export function render(){
 	const read = fieldById('readFilter').value;
 	const series = shownSeriesName();
 	// the books listed and loaded so far (one removed is gone, one edited may not match any more)
-	const filtered = /** @type {Book[]} */ (LISTED.slice(0, SHOWING).map(id=> CATALOG.book(id)).filter(b=> b && matches(b, q, author, genre, read, series)));
+	const filtered = /** @type {Book[]} */ (LISTED.slice(0, SHOWING).filter(id=> id !== REMOVING?.id).map(id=> CATALOG.book(id)).filter(b=> b && matches(b, q, author, genre, read, series)));
 	const more = LISTED.length - SHOWING;
 
 	byId('subtitle').textContent =
@@ -905,7 +907,8 @@ function bookDetails(b){
 			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
 			detailList([
 				['Series', series && [buildElement('a', {href: seriesHref(series)}, b.series), b.number && ` #${b.number}`]],
-				['Read', b.read.length > 0 && b.read.join(', ')],
+				['Read', [b.read.length > 0 && b.read.join(', ') + ' ',
+					!b.read.includes(today()) && buildElement('button', {type: 'button', class: 'readToday', onclick: ()=> readToday(id)}, '+ Read today')]],
 				['Genres', b.genres.length > 0 && buildElement('span', {class: 'genres'}, b.genres.map(g=> buildElement('span', {class: 'tag'}, g)))],
 				...Object.entries(ExternalCatalog.order(b.external) || {}).map(([key, value])=>
 					/** @type {[string, Child]} */ ([`${ExternalCatalog.name(key)} book`, idLink(key, 'book', value)]))]),
@@ -914,34 +917,59 @@ function bookDetails(b){
 }
 
 /**
- * A book's remove button: the first press asks for a second one, which removes the book (its data-id).
+ * Add today to a book's dates read, from its details, with an Undo.
+ * @param {string} id the book's
+ */
+export function readToday(id){
+	const b = CATALOG.book(id);
+	if(!b || b.read.includes(today())) return;
+	const before = b.read;
+	b.read = [...b.read, today()].sort();
+	render(); persist(); refreshView();
+	showIoStatus(`Read ${b.title} today.`, false, ()=>{
+		const now = CATALOG.book(id);
+		if(!now) return;
+		now.read = before;
+		render(); persist(); refreshView();
+	});
+}
+
+/**
+ * A book's remove button: the book leaves the list at once, with an Undo on the status line; it is taken out
+ * of the catalog, and added to the exclusions so imports skip it, once the Undo is gone (removeBook).
  * @param {Event} e
  */
 function removeBookClick(e){
-	const el = /** @type {HTMLElement & {_resetTimer?: ReturnType<typeof setTimeout>}} */ (e.currentTarget);
-	const id = el.dataset.id;
-	if(el.dataset.confirm === '1'){
-		const i = CATALOG.books.findIndex(b=> b.id === id);
-		if(i < 0) return;
-		const [removed] = CATALOG.books.splice(i,1);
-		addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
-		if(EDIT_ID === id) closeForm();
-		render(); persist(); refreshView();
-		showIoStatus(`Removed ${removed.title}; imports will skip it.`);
-	} else {
-		el.dataset.confirm = '1';
-		el.textContent = '\u2713';
-		el.title = 'Click again to confirm removal';
-		el.style.color = '#b0453f';
-		clearTimeout(el._resetTimer);
-		el._resetTimer = setTimeout(()=>{
-			el.dataset.confirm = '';
-			el.textContent = '\u00D7';
-			el.title = 'Remove';
-			el.style.color = '';
-		}, 3000);
-	}
+	const id = /** @type {HTMLElement} */ (e.currentTarget).dataset.id;
+	const b = id && CATALOG.book(id);
+	if(!id || !b) return;
+	finishRemoving();
+	if(EDIT_ID === id) closeForm();
+	REMOVING = {id, timer: setTimeout(finishRemoving, STATUS_TIME)};
+	render();
+	showIoStatus(`Removed ${b.title}; imports will skip it.`, false, ()=>{
+		if(REMOVING?.id !== id) return;
+		clearTimeout(REMOVING.timer);
+		REMOVING = null;
+		render();
+	});
 }
+
+// Takes the book being removed out of the catalog for good. Leaving the page does it too, so a removal is
+// saved unless it was undone.
+export function finishRemoving(){
+	if(!REMOVING) return;
+	const {id, timer} = REMOVING;
+	clearTimeout(timer);
+	REMOVING = null;
+	const i = CATALOG.books.findIndex(b=> b.id === id);
+	if(i < 0) return;
+	const [removed] = CATALOG.books.splice(i, 1);
+	addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
+	render(); persist(); refreshView();
+}
+addEventListener('pagehide', finishRemoving);
+addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') finishRemoving(); });
 
 // Typing a search is one step back, however many letters it took: the first change of the search
 // adds a history entry, the rest of the typing updates it.

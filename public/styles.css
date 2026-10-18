@@ -316,3 +316,9 @@ h1{
 	h1{font-size:1.6rem;}
 	.controls select{flex:1 1 40%; max-width:none;}
 }
+/* the status line's Undo, and a book's Read today */
+.ioStatus .undo, .book-details .readToday{
+	padding:.15rem .6rem; border-radius:6px; border:1px solid var(--moss); background:var(--card); color:var(--moss);
+	font-size:.78rem; font-weight:600; cursor:pointer;
+}
+.ioStatus .undo:hover, .book-details .readToday:hover{background:var(--moss); color:#fff;}
