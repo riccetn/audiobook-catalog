@@ -6,9 +6,9 @@
 narrators and dates read. Its title opens the book's details (`#book=…`): its series and number, dates read,
 genres, its ids in external catalogs, and each of its editions with every part (description, narrators,
 ASINs, other catalogs' ids, ISBN, publisher, release date, length, and the other books of a box set it is on).
-Above it, the crumb links back to the book's series. In the book form (✎) the book's ids in other catalogs are
+Above it, the crumb links back to the book's series. The card has no buttons; the details end with **Edit**
+and **Merge**. In the book form (**Edit**) the book's ids in other catalogs are
 folded under *The book in other catalogs*, which names the catalogs it has one in.
-The edit, merge and remove buttons are on both.
 
 **Covers**: a book's card shows a small cover, and its details a larger one. Nothing is stored for it: the
 page asks for the cover by the ids the book's editions already have, first Amazon's image of each ASIN (an
@@ -20,8 +20,8 @@ from Open Library when it has one.
 
 **Edit in the app**
 
-Edit books in the page (pencil icon, `+ Add a book`). The pencil opens the form in place of the book's card in the
-list; `+ Add a book` opens it at the top, with the series and author filled in from what the list shows: the
+Edit books in the page (**Edit** at the end of a book's details, `+ Add a book`). **Edit** opens the form in place of the book's
+details; `+ Add a book` opens it at the top, with the series and author filled in from what the list shows: the
 series you are looking at, and the author picked in the author filter (else the author of every book in the
 series). *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
@@ -82,13 +82,16 @@ The same form renames the series: change its name and every book in the series g
 moves its books into that one; the first **Save** says so and the second does it, and if the form has
 info it replaces the other series' info.
 
+**Series info** (the released total, whether the series is complete, a note, the author's site and its ids in other
+catalogs): press **Edit** at the end of the series' own page, after its books. The form can rename the series too.
+
 **Find books missing from a series**: when a series has a released total in its series info,
 the series overview and the series itself list the numbers you don't own (for example
 "missing #3, #5–7"). A boxed set (`"4-6"`) counts for every number in it, but not as one more book owned; a
 novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
-**Remove a book for good**: press the &times; on the book. It leaves the list at once, and the status line
+**Remove a book for good**: press **Edit** on the book's details, then **Remove book** in the form. It leaves the list at once, and the status line
 offers **Undo** for a few seconds; once that is gone (or you leave the page), the page takes it out and adds it to
 the import exclusion list, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
 ids (`Hardcover 501`) of its editions, and as `Title | Author`, so no later Audible, Goodreads or Hardcover
@@ -108,8 +111,8 @@ differ; genres, dates read and editions are combined (an edition with the same A
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
 adding them to the exclusion list, since the kept book carries their ids and imports find it. **Not
 duplicates** stops offering that pair. To merge two books the list misses (say, an
-author spelled two ways), press &#8644; on one book in the catalog and then on the other; the
-duplicates page opens with the two.
+author spelled two ways), press **Merge** on one book's details and search for the other (by title, author,
+series or ISBN, as the catalog's search does); picking it opens the duplicates page with the two.
 
 When the merged entries' editions don't disagree on an ASIN or Goodreads id (typically one book
 imported from Audible with its ASIN and from Goodreads with its Goodreads id), they become one edition

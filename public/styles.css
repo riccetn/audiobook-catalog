@@ -168,12 +168,11 @@ h1{
 /* A book on its own: its details and each edition's as label and value rows. */
 .book.book-details{
 	display:grid; grid-template-columns:auto minmax(0, 1fr) auto; grid-template-rows:auto 1fr; column-gap:.7rem;
-	grid-template-areas:"num head actions" "num info cover";
+	grid-template-areas:"num head cover" "num info cover";
 }
 .book-details > .num{grid-area:num;}
 .book-details > .head{grid-area:head; min-width:0;}
-.book-details > .book-actions{grid-area:actions; justify-self:end;}
-.book-details > .cover{grid-area:cover; margin-top:.6rem;}
+.book-details > .cover{grid-area:cover;}
 .book-details > .info{grid-area:info;}
 .book-details h2.title{font-family:'Lora',Georgia,serif; font-size:1.15rem; margin:0;}
 .book-details .details{display:grid; grid-template-columns:max-content minmax(0, 1fr); gap:.2rem .8rem; margin:.6rem 0 0; font-size:.82rem;}
@@ -185,6 +184,25 @@ h1{
 .book-details .edition{border-top:1px solid var(--line); margin-top:.75rem; padding-top:.6rem;}
 .book-details .edition h3{font-size:.85rem; font-weight:600; margin:0;}
 .book-details .edition .details{margin-top:.35rem;}
+/* Edit (and a book's Merge) come last on a book's, a series' or a person's page, as viewing comes before
+   changing; Merge opens a search for the other book. */
+.book-details .book-actions{border-top:1px solid var(--line); margin-top:.9rem; padding-top:.7rem; gap:.5rem;}
+.page-actions{display:flex; gap:.5rem; margin:.9rem 0 0;}
+.book-details .book-actions button, .page-actions button{
+	padding:.35rem .9rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink-soft);
+	font-size:.82rem; cursor:pointer;
+}
+.book-details .book-actions button:hover, .page-actions button:hover, .book-details .book-actions button[aria-expanded="true"]{color:var(--moss); border-color:var(--moss);}
+.mergeSearch{margin-top:.6rem; font-size:.82rem;}
+.mergeSearch label{display:block; color:var(--ink-soft); margin-bottom:.25rem;}
+.mergeSearch input{width:100%; max-width:28rem; padding:.45rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink); font-size:.9rem;}
+.mergeFound{list-style:none; margin:.4rem 0 0; padding:0;}
+.mergeFound li{padding:.3rem 0; border-bottom:1px solid var(--line); color:var(--ink-soft); overflow-wrap:anywhere;}
+.mergeFound li:last-child{border-bottom:none;}
+.mergeFound a{color:var(--ink); font-weight:600; text-decoration:none;}
+.mergeFound a:hover{color:var(--moss);}
+.mergeFound .none{font-style:italic;}
+.formbtns .removeBook{margin-left:auto; color:#b0453f;}
 .importPreview{
 	display:none; background:var(--card); border:1px solid var(--line); border-radius:10px;
 	padding:1rem; margin-bottom:1.5rem; font-size:.85rem;
@@ -230,8 +248,6 @@ h1{
 .dup-join{display:block; margin:.4rem 0 0; cursor:pointer;}
 .dup-join input{margin:0 .3rem 0 0; accent-color:var(--moss);}
 .dup-heading{font-family:'Lora',Georgia,serif; font-size:1.05rem; font-weight:600; margin:1.5rem 0 .3rem;}
-.book.picked{border-color:var(--moss); box-shadow:0 0 0 1px var(--moss);}
-.book.picked .iconbtn.merge{color:var(--moss);}
 .editionsEditor{display:flex; flex-direction:column; gap:.5rem;}
 .editionCard{border:1px solid var(--line); border-radius:8px; padding:.5rem .65rem .65rem; background:var(--paper);}
 .editionCardHead{display:flex; justify-content:space-between; align-items:center; font-size:.82rem; font-weight:600;}
@@ -324,7 +340,6 @@ h1{
 	padding:.15rem .35rem; line-height:1;
 }
 .iconbtn:hover{color:var(--moss);}
-.iconbtn.del:hover{color:#b0453f;}
 .empty{color:var(--ink-soft); font-size:.9rem; padding:2rem 0; text-align:center;}
 .srow{
 	background:var(--card); border:1px solid var(--line); border-radius:9px;
@@ -349,8 +364,8 @@ h1{
 /* Phones: less space around the page and above the list. The page links stay on one line that scrolls
    sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */
 @media (max-width:600px){
-	/* a book's details: its number, title and buttons on top, then the cover across the card, then the rest */
-	.book.book-details{grid-template-columns:auto minmax(0, 1fr) auto; grid-template-areas:"num head actions" "cover cover cover" "info info info"; grid-template-rows:auto;}
+	/* a book's details: its number and title on top, then the cover across the card, then the rest */
+	.book.book-details{grid-template-columns:auto minmax(0, 1fr); grid-template-areas:"num head" "cover cover" "info info"; grid-template-rows:auto;}
 	.book-details > .cover.large{width:100%; margin:.7rem 0 0;}
 	.wrap{padding:.75rem .9rem 3rem;}
 	h1{font-size:1.3rem;}
@@ -372,7 +387,7 @@ h1{
 /* Touch screens: buttons big enough for a finger, whatever their glyph. */
 @media (pointer:coarse){
 	.iconbtn{min-width:2.25rem; min-height:2.5rem; display:inline-flex; align-items:center; justify-content:center;}
-	.book-actions{gap:0; margin:-.45rem -.5rem -.45rem 0;}
+	.book-details .book-actions button, .page-actions button, .formbtns .removeBook{min-height:2.5rem;}
 	.viewToggle button{padding:.6rem 1rem;}
 	.removeEdition, .addEdition, .formrow-btn button{min-height:2.5rem;}
 }

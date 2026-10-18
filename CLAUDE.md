@@ -107,7 +107,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `refreshView` reads what is shown again; an empty catalog says where books come from; a book's card, `bookCard`, holds only its title, number,
 authors, narrators and dates read, and `#book=<id>` shows everything else, `bookDetails`; both show its cover, `coverImage`, an `<img>`
 that tries each of `Cover.addresses` in turn, unless *Covers* is off (localStorage `audiobook-catalog-covers`)), the book and
-  series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). Its merge button links to `duplicates.html#merge=<id>,<id>`.
+  series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). A book's details end with Edit and Merge; Merge searches for the other book (`findMergeBooks`) and links to `duplicates.html#merge=<id>,<id>`. Remove book is in the book form.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): the comparison an Audible or
   Goodreads CSV import, or the Hardcover panel's Compare (`HardcoverSync.compare`; for a series or an author, which their pages link to
   with `hardcoverCompareHref`, `#hardcover-series=<id>`/`#hardcover-author=<id>`), opens (`PENDING_COMPARE`, its ticks in
