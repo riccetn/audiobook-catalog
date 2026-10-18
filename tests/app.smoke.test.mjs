@@ -413,6 +413,36 @@ test('search narrows the library view', async () => {
 	assert.match(els.results.innerHTML, /No books match/);
 });
 
+test('All Books can be sorted by when they were read or added, newest first, as one list', async () => {
+	const { ctx, els, storage } = await boot();
+	ctx.setView('library');
+	await idle();
+	const titles = () => [...els.results.innerHTML.matchAll(/<div class="title"><a href="[^"]+">([^<]+)<\/a>/g)].map(m => m[1]);
+	const latest = b => (b.r || []).slice().sort().pop() || '';
+	const byRead = [...demoBooks].filter(b => latest(b)).sort((x, y) => latest(y).localeCompare(latest(x)));
+
+	els.sortBy.value = 'read';
+	els.sortBy.listeners.change[0]();
+	await idle();
+	assert.match(ctx.location.hash, /&sort=read$/);
+	assert.doesNotMatch(els.results.innerHTML, /class="series-group"/, 'not grouped by series');
+	assert.equal(titles()[0], byRead[0].t);
+	assert.deepEqual(titles().slice(0, byRead.length).map(t => demoBooks.find(b => b.t === t)).every(b => latest(b)), true, 'books read come first');
+	// each book says its series
+	const inSeries = demoBooks.find(b => b.t === titles()[0]);
+	if (inSeries.s) assert.match(els.results.innerHTML, new RegExp(`<div class="meta"><a href="#series=[^"]+">${inSeries.s}</a>`));
+
+	els.sortBy.value = 'added';
+	els.sortBy.listeners.change[0]();
+	await idle();
+	assert.equal(titles()[0], demoBooks[demoBooks.length - 1].t);
+
+	// the address keeps it
+	const again = await boot({ hash: '#books&sort=added', storage });
+	assert.equal(again.els.sortBy.value, 'added');
+	assert.equal([...again.els.results.innerHTML.matchAll(/<div class="title"><a href="[^"]+">([^<]+)<\/a>/g)][0][1], demoBooks[demoBooks.length - 1].t);
+});
+
 test('text from the catalog is shown as text, never read as HTML', async () => {
 	const odd = '<img src=x onerror=alert(1)> & "Co"';
 	// twice, so the duplicates page shows it too
