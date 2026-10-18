@@ -137,7 +137,9 @@ the link still works after you retitle the book or rename the series; an address
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
 for a re-read), or press **+ Read today** in the form. Quicker: open the book (its title) and press **+ Read today**
 beside its dates read, which saves at once and offers **Undo** for a few seconds. The date shows on the book, and in **All Books** the
-*Read in* filter picks the books read in a given year, or those with no date yet. A Goodreads import
+*Read in* filter picks the books read in a given year, or those with no date yet. The order list beside the filters sorts
+**All Books** by *Recently read* (the latest date read first; books without one follow in series order) or *Recently added*
+(the books an import or the form added last first) instead of by series; the address keeps it (`#books&sort=read`). A Goodreads import
 fills in its *Date Read* on books that have no dates yet (Goodreads keeps only the latest one); it never
 changes dates you already have. Audible imports do not set dates read.
 
