@@ -413,6 +413,36 @@ test('search narrows the library view', async () => {
 	assert.match(els.results.innerHTML, /No books match/);
 });
 
+test('All Books can be sorted by when they were read or added, newest first, as one list', async () => {
+	const { ctx, els, storage } = await boot();
+	ctx.setView('library');
+	await idle();
+	const titles = () => [...els.results.innerHTML.matchAll(/<div class="title"><a href="[^"]+">([^<]+)<\/a>/g)].map(m => m[1]);
+	const latest = b => (b.r || []).slice().sort().pop() || '';
+	const byRead = [...demoBooks].filter(b => latest(b)).sort((x, y) => latest(y).localeCompare(latest(x)));
+
+	els.sortBy.value = 'read';
+	els.sortBy.listeners.change[0]();
+	await idle();
+	assert.match(ctx.location.hash, /&sort=read$/);
+	assert.doesNotMatch(els.results.innerHTML, /class="series-group"/, 'not grouped by series');
+	assert.equal(titles()[0], byRead[0].t);
+	assert.deepEqual(titles().slice(0, byRead.length).map(t => demoBooks.find(b => b.t === t)).every(b => latest(b)), true, 'books read come first');
+	// each book says its series
+	const inSeries = demoBooks.find(b => b.t === titles()[0]);
+	if (inSeries.s) assert.match(els.results.innerHTML, new RegExp(`<div class="meta"><a href="#series=[^"]+">${inSeries.s}</a>`));
+
+	els.sortBy.value = 'added';
+	els.sortBy.listeners.change[0]();
+	await idle();
+	assert.equal(titles()[0], demoBooks[demoBooks.length - 1].t);
+
+	// the address keeps it
+	const again = await boot({ hash: '#books&sort=added', storage });
+	assert.equal(again.els.sortBy.value, 'added');
+	assert.equal([...again.els.results.innerHTML.matchAll(/<div class="title"><a href="[^"]+">([^<]+)<\/a>/g)][0][1], demoBooks[demoBooks.length - 1].t);
+});
+
 test('the Filters button (a phone\'s) opens the filters and counts those on; a book on its own has no search or filters', async () => {
 	const { ctx, els, get } = await boot();
 	ctx.setView('library');
@@ -1407,6 +1437,34 @@ test('Goodreads CSV downloads every book for Goodreads\' import', async () => {
 	assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
 });
 
+test('the Backups panel says how old the last backup is, and the catalog page reminds you when it is getting old', async () => {
+	const storage = new Map();
+	const imp = await boot({ page: 'import.html', storage });
+	await idle();
+	assert.equal(imp.els.backupState.textContent, 'No backup downloaded in this browser yet.');
+	imp.ctx.Blob = class { constructor() {} };
+	imp.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+	imp.els.exportBtn.listeners.click[0]();
+	await idle();
+	assert.equal(imp.els.backupState.textContent, 'Last backup today; nothing changed since.');
+	const revision = JSON.parse(storage.get('audiobook-catalog-last-backup')).revision;
+	assert.equal(typeof revision, 'number');
+
+	// a fresh backup: no reminder
+	const fresh = await boot({ storage });
+	await idle();
+	assert.equal(fresh.els.backupNudge.textContent, '');
+
+	// three weeks and a change later
+	storage.set('audiobook-catalog-last-backup', JSON.stringify({ time: new Date(Date.now() - 21 * 86400000).toISOString(), revision: revision - 1 }));
+	const old = await boot({ storage });
+	await idle();
+	assert.equal(old.els.backupNudge.textContent, 'Last backup 21 days ago, and 1 change saved since: download one on Import & export.');
+	const later = await boot({ page: 'import.html', storage });
+	await idle();
+	assert.equal(later.els.backupState.textContent, 'Last backup 21 days ago; 1 change saved since.');
+});
+
 test('Export includes series and author info, and Import brings them back', async () => {
 	const first = await boot({ page: 'import.html' });
 	const blobs = [];
@@ -2303,6 +2361,8 @@ test('an author\'s page shows their bio, their links, and their series and title
 	assert.match(html, /<a href="index\.html#series=The\+Lantern\+Coast">The Lantern Coast<\/a> <span class="n">4 owned of 5<\/span> <span class="status ongoing">ongoing<\/span>/);
 	assert.match(html, /#1<\/span> <a href="index\.html#book=The\+Salt\+Road">The Salt Road<\/a><\/li><li>.*#2<\/span> <a href="index\.html#book=Beacons\+at\+Low\+Tide">/);
 	assert.equal(els.subtitle.textContent, '4 audiobooks in 1 series');
+	// and the numbers none of her books has
+	assert.match(html, /<\/p><p class="series-note">missing #\d+<\/p><ul class="author-books">/);
 
 	// another author's page, by its address: her series, and a book outside it she wrote with someone else
 	ctx.location.hash = '#a=Priya+Ostrander';
@@ -2311,6 +2371,7 @@ test('an author\'s page shows their bio, their links, and their series and title
 	const priya = readable(els.creditBody.innerHTML);
 	assert.match(priya, /Halloway &amp; Finch<\/a> <span class="n">2 owned of 2<\/span> <span class="status complete">/);
 	assert.match(priya, /Outside a series <span class="n">1 book<\/span>/);
+	assert.doesNotMatch(priya, /series-note/, 'none missing');
 	assert.match(priya, /Nine Ways to Lose a Kingdom<\/a> <span class="with">with <a href="authors\.html#a=Ferran\+Doyle">Ferran Doyle<\/a><\/span>/);
 	assert.equal(els.subtitle.textContent, '3 audiobooks in 1 series and 1 outside a series');
 

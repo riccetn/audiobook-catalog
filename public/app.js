@@ -12,7 +12,7 @@ import {Cover} from './modules/cover.js';
 /** @import {CoverSize} from './modules/cover.js' */
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
-import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
+import { CATALOG, STATUS_TIME, backupAge, needsBackup, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
 	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress, hardcoverCompareHref } from './store.js';
 /** @import {Child} from './store.js' */
 
@@ -122,21 +122,6 @@ function ownedText(books){
 }
 
 /**
- * [3, 5, 6, 7] -> "#3, #5-7"
- * @param {number[]} nums
- * @returns {string}
- */
-function numberList(nums){
-	/** @type {[number, number][]} */
-	const runs = [];
-	nums.forEach(n=>{
-		const last = runs[runs.length - 1];
-		if(last && n === last[1] + 1) last[1] = n; else runs.push([n, n]);
-	});
-	return runs.map(([a,b])=> a === b ? `#${a}` : `#${a}\u2013${b}`).join(', ');
-}
-
-/**
  * The filters' choices, from the stored catalog: its authors, genres and the years books were read in.
  * @param {CatalogReader} r
  * @returns {Promise<typeof FILTER_CHOICES>}
@@ -204,6 +189,7 @@ function showView(){
 	byId('authorFilter').style.display = showLibControls ? '' : 'none';
 	byId('genreFilter').style.display = showLibControls ? '' : 'none';
 	byId('readFilter').style.display = showLibControls ? '' : 'none';
+	byId('sortBy').style.display = showLibControls ? '' : 'none';
 	byId('toggleAdd').style.display = showLibControls ? '' : 'none';
 	byId('missingFilter').style.display = showLibControls ? 'none' : '';
 	// a book shown on its own has nothing to search or filter
@@ -259,7 +245,7 @@ async function loadMore(count = PAGE_SIZE){
 	if(series.length) await loadRecords({seriesBooks: /** @type {string[]} */ (series.filter(Boolean))});
 	// the rest of the last series shown, which is loaded now
 	const last = ids.length ? seriesOf(ids[ids.length - 1]) : undefined;
-	while(last !== undefined && end < LISTED.length && seriesOf(LISTED[end]) === last) end++;
+	while(!fieldById('sortBy').value && last !== undefined && end < LISTED.length && seriesOf(LISTED[end]) === last) end++;
 	SHOWING = end;
 }
 
@@ -343,7 +329,14 @@ async function readListed(r){
 	const standalone = SERIES_FILTER === null || SERIES_FILTER === '__standalone__' ? (await r.indexKeys('books', 'standalone')).map(([, id])=> String(id)) : [];
 	const ids = [...SERIES_FILTER === '__standalone__' ? [] : inSeries.map(x=> x.id), ...standalone];
 	const found = /** @type {Set<string> | null} */ (only);
-	return found ? ids.filter(id=> found.has(id)) : ids;
+	const listed = found ? ids.filter(id=> found.has(id)) : ids;
+	const sort = fieldById('sortBy').value;
+	if(!sort) return listed;
+	// newest first: by the latest date read (books without one keep series order, after those with one), or
+	// by place in the catalog, where an import or a new book goes last
+	const order = (await r.indexKeys('books', sort === 'read' ? 'byLastRead' : 'byPosition')).map(([, id])=> String(id)).reverse();
+	const rank = new Map(order.map((id, i)=> [id, i]));
+	return [...listed].sort((x, y)=> (rank.get(x) ?? order.length) - (rank.get(y) ?? order.length));
 }
 
 /**
@@ -380,6 +373,7 @@ export function refreshView(){
  * @property {string} genre
  * @property {string} read a year, UNDATED, or ''
  * @property {boolean} missing only series with gaps
+ * @property {string} sort the books' order: '' (by series), 'read' or 'added' (newest first)
  */
 
 /**
@@ -389,7 +383,7 @@ export function refreshView(){
 function viewState(){
 	const val = (/** @type {string} */ id)=> fieldById(id).value;
 	return {view: VIEW, series: SERIES_FILTER, book: BOOK_FILTER, q: val('q').trim(),
-		author: val('authorFilter'), genre: val('genreFilter'), read: val('readFilter'), missing: val('missingFilter') === 'missing'};
+		author: val('authorFilter'), genre: val('genreFilter'), read: val('readFilter'), missing: val('missingFilter') === 'missing', sort: val('sortBy')};
 }
 
 /**
@@ -412,6 +406,7 @@ function stateHash(st){
 		if(st.author) parts.push('author=' + enc(st.author));
 		if(st.genre) parts.push('genre=' + enc(st.genre));
 		if(st.read) parts.push('read=' + enc(st.read === UNDATED ? 'undated' : st.read));
+		if(st.sort && st.book === null) parts.push('sort=' + st.sort);
 	} else if(st.missing) parts.push('missing');
 	return parts.length ? '#' + parts.join('&') : '';
 }
@@ -434,9 +429,10 @@ function stateFromHash(hash){
 	// by id, or by a title or name as addresses had them before (loadView finds the id then)
 	const book = bookText || null;
 	const series = book ? null : p.has('standalone') ? '__standalone__' : seriesText ? idFromAddress('series', seriesText) ?? seriesText : null;
-	const read = text('read');
+	const read = text('read'), sort = text('sort');
 	return {view: book || series || p.has('books') ? 'library' : 'series', series, book, q: text('q'),
-		author: text('author'), genre: text('genre'), read: read === 'undated' ? UNDATED : read, missing: p.get('missing') === true};
+		author: text('author'), genre: text('genre'), read: read === 'undated' ? UNDATED : read, missing: p.get('missing') === true,
+		sort: ['read', 'added'].includes(sort) ? sort : ''};
 }
 
 /**
@@ -452,6 +448,7 @@ function applyState(st){
 	fieldById('authorFilter').value = st.author;
 	fieldById('genreFilter').value = st.genre;
 	fieldById('readFilter').value = st.read;
+	fieldById('sortBy').value = st.sort;
 	fieldById('missingFilter').value = st.missing ? 'missing' : '';
 	return showView();
 }
@@ -568,7 +565,10 @@ export function render(){
 		return;
 	}
 
-	seriesNames.forEach(name=>{
+	// sorted by date: one list, each book saying its series
+	const sorted = !!fieldById('sortBy').value;
+	if(sorted) out.push(...filtered.map(b=> bookCard(b, true)));
+	if(!sorted) seriesNames.forEach(name=>{
 		const books = groups[name].sort(seriesOrder);
 		const info = CATALOG.seriesInfo(name);
 		/** @type {string[]} */
@@ -576,7 +576,7 @@ export function render(){
 		if(info){
 			const missing = seriesMissing(name);
 			note.push(`${totalText(info)} released total`);
-			if(missing && missing.length) note.push(`missing ${numberList(missing)}`);
+			if(missing && missing.length) note.push(`missing ${Series.numberList(missing)}`);
 			if(info.note) note.push(info.note);
 		}
 		out.push(buildElement('div', {class: 'series-group'},
@@ -585,14 +585,14 @@ export function render(){
 				// a series shown on its own can be compared with Hardcover
 				SERIES_FILTER === CATALOG.idFor('series', name) && [' ', buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('series', SERIES_FILTER)}, 'Compare with Hardcover')]),
 			note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' \u2014 ')),
-			books.map(bookCard)));
+			books.map(b=> bookCard(b))));
 	});
 
-	if(standalone.length){
+	if(!sorted && standalone.length){
 		standalone.sort((x,y)=>x.title.localeCompare(y.title));
 		out.push(buildElement('div', {class: 'series-group'},
 			buildElement('p', {class: 'series-title'}, 'Standalone ', buildElement('span', {class: 'n'}, `${standalone.length} book${standalone.length>1?'s':''}`)),
-			standalone.map(bookCard)));
+			standalone.map(b=> bookCard(b))));
 	}
 	if(more > 0) out.push(buildElement('p', {class: 'more'}, buildElement('button', {type: 'button', id: 'showMore', onclick: ()=> showMore()},
 		`Show ${Math.min(more, PAGE_SIZE)} more`)));
@@ -640,7 +640,7 @@ function renderSeriesOverview(){
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'},
 				joined(authors.map(a=> buildElement('a', {href: creditPageHref('authors', a.id)}, a.name)), ', ')),
 				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
-				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
+				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${Series.numberList(missing)}`)]),
 			info && info.note && buildElement('p', {class: 'srow-note'}, info.note)));
 	});
 
@@ -905,17 +905,20 @@ function coverImage(b, size){
 
 /**
  * A book in the list: only what tells it apart (its title, authors, narrators and when it was read); its
- * title links to its details (bookDetails).
+ * title links to its details (bookDetails). `withSeries` names its series too, in a list not grouped by series.
  * @param {Book} b
+ * @param {boolean} [withSeries]
  * @returns {HTMLDivElement}
  */
-function bookCard(b){
+function bookCard(b, withSeries = false){
 	const id = /** @type {string} */ (b.id);
 	return buildElement('div', {class: 'book' + (MERGE_FROM === id ? ' picked' : ''), 'data-id': id},
 		buildElement('div', {class: 'num'}, b.number || '•'),
 		coverImage(b, 'small'),
 		buildElement('div', {class: 'info'},
 			buildElement('div', {class: 'title'}, buildElement('a', {href: bookHref(b)}, b.title)),
+			withSeries && b.series && buildElement('div', {class: 'meta'},
+				buildElement('a', {href: seriesHref(CATALOG.idFor('series', b.series))}, b.series), b.number && ` #${b.number}`),
 			buildElement('div', {class: 'meta'}, joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — ')),
 			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', '))),
 		bookActions(id));
@@ -1020,7 +1023,7 @@ coversBox.addEventListener('change', ()=>{
 	try{ localStorage.setItem(COVERS_KEY, coversBox.checked ? 'on' : 'off'); }catch(e){}
 	render();
 });
-const FILTERS = ['authorFilter', 'genreFilter', 'readFilter', 'missingFilter'];
+const FILTERS = ['authorFilter', 'genreFilter', 'readFilter', 'missingFilter', 'sortBy'];   // the order folds away with them
 FILTERS.forEach(id=> byId(id).addEventListener('change', ()=>{ showFilterCount(); navigate({}); }));
 
 // On a phone the filters fold away behind a button (styles.css), which says how many are on.
@@ -1453,10 +1456,20 @@ function redraw(before){
 }
 
 // The view in the address (a link, a bookmark, or Back from another page), once the filters have their options.
+// The catalog lives only in this browser, so the page says when its last backup is getting old (needsBackup).
+async function showBackupNudge(){
+	const age = await backupAge();
+	fillElement(byId('backupNudge'), needsBackup(age) && [
+		spell(age.days === null ? `No backup of this catalog yet, and ${Text.plural(age.changes, 'change')} saved: `
+			: `Last backup ${age.days} days ago, and ${Text.plural(age.changes, 'change')} saved since: `),
+		buildElement('a', {href: 'import.html'}, 'download one on Import & export'), '.']);
+}
+
 export const READY = startPage(async ()=>{
 	FILTER_CHOICES = await queryCatalog(readFilterChoices);
 	populateFilters();
 	const drawn = applyState(stateFromHash(location.hash));
 	setAddress('replace', viewState());
 	await drawn;
+	await showBackupNudge();
 }, {refresh: redraw});

@@ -34,6 +34,11 @@ h1{
 .panel h2{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:1.05rem; font-weight:600;}
 .panel p{margin:0 0 .7rem; color:var(--ink-soft);}
 .hint{color:var(--ink-soft); font-size:.85rem; margin:0 0 1rem;}
+/* the catalog page's reminder that the last backup is getting old */
+.backupNudge{font-size:.82rem; color:var(--ink); background:rgba(176,141,62,.14); border:1px solid rgba(176,141,62,.45); border-radius:8px; padding:.45rem .7rem; margin:-.6rem 0 1rem;}
+.backupNudge:empty{display:none;}
+.backupNudge a{color:var(--moss); font-weight:600;}
+.panel p.backupState{color:var(--ink); font-weight:600;}
 .viewToggle{display:flex; gap:.4rem; margin-bottom:1.1rem;}
 .viewToggle button{
 	padding:.45rem .9rem; border-radius:20px; border:1px solid var(--line); background:var(--card);
@@ -347,6 +352,9 @@ h1{
 	.controls input[type=text]{flex:1 1 0;}
 	.filtersBtn{display:block; flex:none;}
 	.controls:not(.filtersOpen) select{display:none;}
+	/* the Import & export rows' labels go above their buttons, leaving the buttons the width */
+	.ioRow{grid-template-columns:minmax(0,1fr); row-gap:.35rem;}
+	.ioRow .ioNote, .ioRow .ioLabel + .ioNote{grid-column:1;}
 	.controls select{flex:1 1 40%; max-width:none;}
 	.count-row{margin-bottom:.6rem;}
 }
