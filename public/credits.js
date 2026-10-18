@@ -11,7 +11,7 @@ import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, queryCatalog, byId, fieldById, spell, buildElement, fillElement, joined,
-	authorPageHref, narratorPageHref, publisherPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref } from './store.js';
+	authorPageHref, narratorPageHref, publisherPageHref, creditPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref } from './store.js';
 /** @import {Book} from './modules/book.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 /** @import {Child} from './store.js' */
@@ -94,7 +94,7 @@ function renderCreditList(){
 	byId('subtitle').textContent = `${Text.plural(all.length, KIND.one)} across ${Text.plural(TOTAL_BOOKS, 'audiobook')}`;
 	fillElement(byId('creditBody'), shown.length ? shown.map(x=> buildElement('div', {class: 'srow'},
 		buildElement('div', {class: 'srow-head'},
-			buildElement('a', {class: 'srow-title', href: KIND.href(x.name)}, x.name), ' ',
+			buildElement('a', {class: 'srow-title', href: creditPageHref(KIND.infoKey, x.id)}, x.name), ' ',
 			buildElement('span', {class: 'srow-owned'}, `${Text.plural(x.books, 'book')}${x.series ? ', ' + Text.plural(x.series, 'series', 'series') : ''}`)),
 		bioLine(x) || (KIND !== CREDIT_KINDS.author && topAuthorsLine(x))))
 		: buildElement('p', {class: 'empty'}, all.length ? `No ${KIND.many} match your search.`

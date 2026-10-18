@@ -10,7 +10,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
-import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref,
+import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref, publisherPageHref, creditPageHref,
 	externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, idFromAddress, hardcoverCompareHref } from './store.js';
 /** @import {Child} from './store.js' */
 
@@ -603,9 +603,10 @@ const seriesInfoOf = rec=> CatalogRecords.hasInfo('series', rec)
 function renderSeriesOverview(){
 	const q = fieldById('q').value.trim().toLowerCase();
 	let rows = OVERVIEW.series.map(rec=> ({rec, info: seriesInfoOf(rec),
-		authors: uniqueSorted(rec.authorIds.map(id=> OVERVIEW.authors.get(id) || '').filter(Boolean))}))
+		authors: [...new Set(rec.authorIds)].filter(id=> OVERVIEW.authors.has(id))
+			.map(id=> ({id, name: /** @type {string} */ (OVERVIEW.authors.get(id))})).sort((x, y)=> x.name.localeCompare(y.name))}))
 		.sort((x, y)=> x.rec.name.localeCompare(y.rec.name));
-	if(q) rows = rows.filter(({rec, authors})=> [rec.name, ...authors].join(' ').toLowerCase().includes(q));
+	if(q) rows = rows.filter(({rec, authors})=> [rec.name, ...authors.map(a=> a.name)].join(' ').toLowerCase().includes(q));
 	const onlyMissing = fieldById('missingFilter').value === 'missing';
 	if(onlyMissing) rows = rows.filter(({rec})=> (rec.missing || []).length);
 
@@ -627,7 +628,8 @@ function renderSeriesOverview(){
 				buildElement('a', {class: 'srow-title', href: seriesHref(rec.id)}, rec.name), ' ',
 				buildElement('span', {class: 'srow-owned'}, `${rec.owned} owned${info ? ' of ' + totalText(info) : ''}`), ' ',
 				seriesEditButton(rec.id, !!info)),
-			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'}, authorLinks(authors)),
+			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'},
+				joined(authors.map(a=> buildElement('a', {href: creditPageHref('authors', a.id)}, a.name)), ', ')),
 				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
 				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${numberList(missing)}`)]),
 			info && info.note && buildElement('p', {class: 'srow-note'}, info.note)));
