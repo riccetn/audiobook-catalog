@@ -41,7 +41,7 @@ Hardcover, and comparing again shows what is still missing, since nothing alread
 browser can't reach Hardcover at all (offline, or Hardcover refusing a request from a web page), it says so.
 
 **A book's Hardcover id from its address.** The Hardcover app doesn't show ids. In a book's edit form,
-paste the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages into the *Hardcover book* field, and the page asks Hardcover for the
+paste the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages into the *Hardcover book* field (under *The book in other catalogs* in the book form), and the page asks Hardcover for the
 book's id with the same token. An edition's
 address in an edition's *Hardcover edition* field needs no lookup: it holds the edition's id.
 

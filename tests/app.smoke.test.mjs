@@ -443,6 +443,28 @@ test('All Books can be sorted by when they were read or added, newest first, as 
 	assert.equal([...again.els.results.innerHTML.matchAll(/<div class="title"><a href="[^"]+">([^<]+)<\/a>/g)][0][1], demoBooks[demoBooks.length - 1].t);
 });
 
+test('the Filters button (a phone\'s) opens the filters and counts those on; a book on its own has no search or filters', async () => {
+	const { ctx, els, get } = await boot();
+	ctx.setView('library');
+	await idle();
+	assert.equal(els.filtersBtn.textContent, 'Filters');
+	els.filtersBtn.listeners.click[0]();
+	assert.ok(els.controls.classList.contains('filtersOpen'));
+	assert.equal(els.filtersBtn.getAttribute('aria-expanded'), 'true');
+	els.genreFilter.value = 'Mystery';
+	els.genreFilter.listeners.change[0]();
+	await idle();
+	assert.equal(els.filtersBtn.textContent, 'Filters · 1');
+	assert.equal(els.controls.style.display, '');
+	ctx.openBook(bookIdOf(get, 'The Salt Road'));
+	await idle();
+	assert.equal(els.controls.style.display, 'none');
+	ctx.setView('series');
+	await idle();
+	assert.equal(els.controls.style.display, '');
+	assert.equal(els.filtersBtn.textContent, 'Filters', 'the genre filter is not shown in the overview');
+});
+
 test('text from the catalog is shown as text, never read as HTML', async () => {
 	const odd = '<img src=x onerror=alert(1)> & "Co"';
 	// twice, so the duplicates page shows it too
@@ -486,13 +508,17 @@ test('the address names the view, so a series, a book or a search can be linked 
 		assert.deepEqual(series.get('[VIEW, SERIES_FILTER]'), ['library', halloway], 'by its id, or by its name (an address from before)');
 		assert.equal((series.els.results.innerHTML.match(/class="book"/g) || []).length, 2);
 		assert.equal(series.els.crumbLabel.textContent, 'Halloway & Finch');
+		assert.ok(!series.els.btnLibraryView.classList.contains('active'));
 	}
 	for (const hash of [`#book=${saltRoad}`, '#book=The+Salt+Road']) {
 		const book = await boot({ hash, storage });
 		assert.equal(book.get('BOOK_FILTER'), saltRoad);
 		assert.equal((book.els.results.innerHTML.match(/class="book book-details"/g) || []).length, 1);
 		assert.match(book.els.results.innerHTML, /<h2 class="title">The Salt Road<\/h2>/);
-		assert.equal(book.els.crumbLabel.textContent, 'The Salt Road');
+		// with a way back to its series, and neither view button lit
+		assert.equal(book.els.crumbLabel.textContent, 'The Lantern Coast › The Salt Road');
+		assert.match(book.els.crumbLabel.innerHTML, /^<a href="#series=[^"]+">The Lantern Coast<\/a>/);
+		assert.ok(!book.els.btnLibraryView.classList.contains('active') && !book.els.btnSeriesView.classList.contains('active'));
 	}
 	const gone = await boot({ hash: '#book=no-such-id', storage });
 	assert.equal(gone.els.crumbLabel.textContent, 'No such book');
@@ -701,7 +727,7 @@ test('a book card shows its title, authors, narrators and read dates; its detail
 	await idle();
 	const details = readable(els.results.innerHTML);
 	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="info"><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
-	assert.match(details, /<dl class="details"><dt>Series<\/dt><dd><a href="#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20<\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/);
+	assert.match(details, /<dl class="details"><dt>Series<\/dt><dd><a href="#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20 <button type="button" class="readToday">\+ Read today<\/button><\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/);
 	assert.match(details, /<dt>Goodreads<\/dt><dd><a [^>]*>9001<\/a><\/dd><dt>ISBN<\/dt><dd>9780000000002<\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gullwing\+Audio">Gullwing Audio<\/a><\/dd><dt>Released<\/dt><dd>2019-04-02<\/dd><dt>Length<\/dt><dd>10h 42m<\/dd>/);
 	assert.match(details, /<button class="iconbtn edit"/);
 	// editing it there puts the form in its place
@@ -727,6 +753,9 @@ test('a book\'s details link the Hardcover book and an edition\'s Hardcover id t
 	els.q.value = '';
 	ctx.openEditForm(bookIdAt(get, 0));
 	assert.equal(els.f_hcb.value, '808');
+	// folded away, with the catalogs it has an id in named
+	assert.equal(els.f_ids.open, false);
+	assert.equal(els.f_idsNote.textContent, '(Hardcover)');
 	assert.deepEqual(formEditions(get), [{ 'ext:audible.com': 'TESTASIN01', 'ext:hardcover': '31337' }]);
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	await idle();
@@ -738,6 +767,7 @@ test('a book\'s details link the Hardcover book and an edition\'s Hardcover id t
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	await idle();
 	assert.match(els.formError.textContent, /Not a Hardcover book id: abc/);
+	assert.equal(els.f_ids.open, true, 'opened to show the field');
 	els.f_hcb.value = '';
 	addEdition(els);
 	typeEdition(els, 1, 'ext:hardcover', 'https://hardcover.app/id/book/909');
@@ -1461,9 +1491,47 @@ async function removeBook(ctx, i) {
 	const id = [...ctx.indexedDB.records('books')].sort((x, y) => x.position - y.position)[i].id;
 	const btn = ctx.document.getElementById('results').querySelector(`.iconbtn.del[data-id="${id}"]`);
 	btn.dispatch('click');
-	assert.equal(btn.textContent, '\u2713', 'the first press asks to confirm');
-	btn.dispatch('click');
+	assert.ok(!ctx.document.getElementById('results').innerHTML.includes(`data-id="${id}"`), 'the book leaves the list at once');
+	ctx.finishRemoving();   // as when its Undo is gone
 }
+
+test('a removed book stays in the catalog until its Undo is gone, and Undo brings it back', async () => {
+	const mine = JSON.stringify([{ t: 'Keep', a: ['Ann Vale'] }, { t: 'Gone', a: ['Ann Vale'], id: 'BGONE2' }]);
+	const { ctx, els, get, storage } = await boot({ files: { 'books.json': mine } });
+	ctx.setView('library');
+	await idle();
+	const id = bookIdAt(get, 1);
+	els.results.querySelector(`.iconbtn.del[data-id="${id}"]`).dispatch('click');
+	assert.doesNotMatch(els.results.innerHTML, />Gone</);
+	assert.equal(els.ioStatus.textContent, 'Removed Gone; imports will skip it. Undo');
+	assert.equal(get('CATALOG.books.length'), 2);
+	els.ioStatus.querySelector('.undo').dispatch('click');
+	await idle();
+	assert.match(els.results.innerHTML, />Gone</);
+	assert.equal(els.ioStatus.textContent, '');
+	ctx.finishRemoving();
+	await idle();
+	assert.equal(get('CATALOG.books.length'), 2);
+	assert.deepEqual((await kept(storage)).excluded, []);
+});
+
+test('Read today on a book\'s details adds today to its dates read, and Undo takes it off', async () => {
+	const { ctx, els, get, storage } = await boot();
+	const id = bookIdOf(get, 'The Salt Road');
+	ctx.openBook(id);
+	await idle();
+	els.results.querySelector('.readToday').dispatch('click');
+	await idle();
+	const today = ctx.today();
+	assert.deepEqual(get(`CATALOG.book(${JSON.stringify(id)}).read`), ['2023-06-02', '2025-11-20', today].sort());
+	assert.ok((await kept(storage)).books.find(b => b.t === 'The Salt Road').r.includes(today));
+	assert.doesNotMatch(els.results.innerHTML, /readToday/, 'read today already');
+	assert.equal(els.ioStatus.textContent, 'Read The Salt Road today. Undo');
+	els.ioStatus.querySelector('.undo').dispatch('click');
+	await idle();
+	assert.deepEqual((await kept(storage)).books.find(b => b.t === 'The Salt Road').r, ['2023-06-02', '2025-11-20']);
+	assert.match(els.results.innerHTML, /class="readToday">\+ Read today</);
+});
 
 test('removing a book excludes it from imports, and Export / Import carry the exclusions', async () => {
 	const mine = JSON.stringify([{ t: 'Keep', a: ['Ann Vale'] }, { t: 'Gone', a: ['Ann Vale'], id: 'BGONE2' }]);
@@ -1473,7 +1541,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 	await idle();
 	await removeBook(ctx, 1);
 	assert.deepEqual(get('CATALOG.books'), [{ t: 'Keep', a: ['Ann Vale'] }]);
-	assert.equal(els.ioStatus.textContent, 'Removed Gone; imports will skip it.');
+	assert.equal(els.ioStatus.textContent, 'Removed Gone; imports will skip it. Undo');
 	assert.deepEqual((await kept(storage)).excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
 
 	// on the import page, an import (Audible by id, or Goodreads by title) does not bring it back
@@ -1823,6 +1891,9 @@ test('duplicates page: found, merged with the picked title, or kept apart', asyn
 	assert.match(els.subtitle.textContent, /^2 possible duplicates among 6 audiobooks/);
 	assert.match(els.dupBody.innerHTML, /name="dup-0-title"[^>]*checked=""> <span class="dup-label">Title<\/span> The Salt Road/);
 	assert.match(els.dupBody.innerHTML, /Becomes: The Salt Road/);
+	// what both entries have alike is said once, above them
+	assert.match(els.dupBody.innerHTML, /<p class="dup-shared"><span class="dup-label">Author<\/span> Marisol Quenby · <span class="dup-label">Series<\/span> Lantern Coast #1<\/p>/);
+	assert.equal((els.dupBody.innerHTML.match(/dup-label">Author</g) || []).length, 2, 'once per group');
 
 	// pick the second entry's title, then merge: one book with both editions, the narrator and the date read
 	run('DUP_PICKS[0].title = 1; renderDuplicates()');

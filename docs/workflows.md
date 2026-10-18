@@ -6,6 +6,8 @@
 narrators and dates read. Its title opens the book's details (`#book=…`): its series and number, dates read,
 genres, its ids in external catalogs, and each of its editions with every part (description, narrators,
 ASINs, other catalogs' ids, ISBN, publisher, release date, length, and the other books of a box set it is on).
+Above it, the crumb links back to the book's series. In the book form (✎) the book's ids in other catalogs are
+folded under *The book in other catalogs*, which names the catalogs it has one in.
 The edit, merge and remove buttons are on both.
 
 **Edit in the app**
@@ -78,7 +80,8 @@ the series overview and the series itself list the numbers you don't own (for ex
 novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
-**Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
+**Remove a book for good**: press the &times; on the book. It leaves the list at once, and the status line
+offers **Undo** for a few seconds; once that is gone (or you leave the page), the page takes it out and adds it to
 the import exclusion list, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
 ids (`Hardcover 501`) of its editions, and as `Title | Author`, so no later Audible, Goodreads or Hardcover
 import brings it back. Backups carry the list (`excluded`), one entry per line: an ASIN,
@@ -92,7 +95,7 @@ restore it.
 **Merge duplicates**: the *Duplicates* page (its link shows how many it found) lists books that look like
 one title entered twice, found the way an import matches books (same author, series and number,
 or same author and title, forgiving Audible's long titles); books that only share a box set's edition
-are not duplicates. For each pair, pick the title, author and series to keep where they
+are not duplicates. What the entries have alike is said once above them; for each pair, pick the title, author and series to keep where they
 differ; genres, dates read and editions are combined (an edition with the same ASIN, Goodreads id or ISBN
 as one already kept fills it in). **Merge into one** keeps a single book and removes the others, without
 adding them to the exclusion list, since the kept book carries their ids and imports find it. **Not
@@ -132,7 +135,8 @@ the link still works after you retitle the book or rename the series; an address
 
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
-for a re-read), or press **+ Read today**. The date shows on the book, and in **All Books** the
+for a re-read), or press **+ Read today** in the form. Quicker: open the book (its title) and press **+ Read today**
+beside its dates read, which saves at once and offers **Undo** for a few seconds. The date shows on the book, and in **All Books** the
 *Read in* filter picks the books read in a given year, or those with no date yet. The order list beside the filters sorts
 **All Books** by *Recently read* (the latest date read first; books without one follow in series order) or *Recently added*
 (the books an import or the form added last first) instead of by series; the address keeps it (`#books&sort=read`). A Goodreads import
