@@ -19,6 +19,12 @@ kept (the tab shows the other's changes from then on). When both tabs changed th
 edition, a series, a person), the tab that saves second saves nothing, names the entry and asks you to
 reload it and make the change again, rather than overwriting the other.
 
+Since the catalog is only in this browser, keep a backup: **Export** on the *Import & export* page (its
+**Backups** panel comes first there) downloads one. The panel says when this browser last downloaded or
+restored a backup and how many changes were saved since, and the catalog page shows a reminder when changes
+were saved and the last backup is two weeks old, or 50 changes old (10 when there is none yet). This browser
+keeps that date in localStorage (`audiobook-catalog-last-backup`).
+
 ## What each page loads
 
 A page reads only what it shows, so a large catalog opens as fast as a small one:

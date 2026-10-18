@@ -220,6 +220,56 @@ export async function storedRevision(){
 	try{ return DATABASE ? await DATABASE.revision() : null; }catch(e){ return null; }
 }
 
+// When this browser last downloaded (or restored) a backup, and the catalog's revision then, so the pages can say
+// how old the newest backup is and how many saves came since. It is about this browser's copy, so localStorage keeps it.
+export const BACKUP_KEY = 'audiobook-catalog-last-backup';
+
+/** @returns {{time: string, revision: number | null} | null} the last backup this browser noted, if any */
+function lastBackup(){
+	try{
+		const v = JSON.parse(localStorage.getItem(BACKUP_KEY) || 'null');
+		return v && typeof v.time === 'string' && !isNaN(Date.parse(v.time)) ? v : null;
+	}catch(e){ return null; }
+}
+
+/** Note that the catalog as stored now is in a backup (one just downloaded or restored). */
+export async function noteBackup(){
+	await whenSaved();
+	const revision = await storedRevision();
+	try{ localStorage.setItem(BACKUP_KEY, JSON.stringify({time: new Date().toISOString(), revision})); }catch(e){}
+}
+
+/**
+ * How old the last backup is, in whole days (null when there is none), and how many saves came since.
+ * @param {number} [now]
+ * @returns {Promise<{days: number | null, changes: number}>}
+ */
+export async function backupAge(now = Date.now()){
+	const last = lastBackup();
+	const revision = await storedRevision() || 0;
+	return {days: last ? Math.max(0, Math.floor((now - Date.parse(last.time)) / 86400000)) : null,
+		changes: Math.max(0, revision - (last && last.revision || 0))};
+}
+
+/**
+ * The backup's age as the Backups panel says it.
+ * @param {{days: number | null, changes: number}} age
+ * @returns {string}
+ */
+export function backupAgeText({days, changes}){
+	if(days === null) return 'No backup downloaded in this browser yet.';
+	const when = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+	return `Last backup ${when}; ` + (changes ? `${Text.plural(changes, 'change')} saved since.` : 'nothing changed since.');
+}
+
+/**
+ * Whether the catalog page should remind you to download a backup: something changed since the last one, and
+ * that was two weeks ago or more, or many changes ago (or there is none, and some changes were made).
+ * @param {{days: number | null, changes: number}} age
+ * @returns {boolean}
+ */
+export const needsBackup = ({days, changes})=> changes > 0 && (days === null ? changes >= 10 : days >= 14 || changes >= 50);
+
 /** @returns {Promise<void>} when the saves asked for so far are done, and the Duplicates link counted after them */
 export function whenSaved(){ return Promise.all([SAVING, COUNTING, READING]).then(() => {}); }
 
