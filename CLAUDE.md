@@ -89,7 +89,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   since this page last read or wrote (`SEEN_REVISION`), first takes in what it changed (`catchUp`: `CatalogRecords.merge`, then
   the page's `refresh(before)` from `startPage`), and refuses when both changed the same record, or when `CatalogRecords.unstorable` names values a record can't hold;
   `whenSaved`, `storedRevision`),
-  the status line, `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below),
+  the status line (`showIoStatus`, with an optional Undo for `STATUS_TIME`), `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below),
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group) and `externalLinks`, the page links
   (`creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to

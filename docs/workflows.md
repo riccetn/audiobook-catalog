@@ -78,7 +78,8 @@ the series overview and the series itself list the numbers you don't own (for ex
 novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
-**Remove a book for good**: press the &times; on the book (twice, to confirm). The page adds it to
+**Remove a book for good**: press the &times; on the book. It leaves the list at once, and the status line
+offers **Undo** for a few seconds; once that is gone (or you leave the page), the page takes it out and adds it to
 the import exclusion list, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
 ids (`Hardcover 501`) of its editions, and as `Title | Author`, so no later Audible, Goodreads or Hardcover
 import brings it back. Backups carry the list (`excluded`), one entry per line: an ASIN,
@@ -132,7 +133,8 @@ the link still works after you retitle the book or rename the series; an address
 
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
-for a re-read), or press **+ Read today**. The date shows on the book, and in **All Books** the
+for a re-read), or press **+ Read today** in the form. Quicker: open the book (its title) and press **+ Read today**
+beside its dates read, which saves at once and offers **Undo** for a few seconds. The date shows on the book, and in **All Books** the
 *Read in* filter picks the books read in a given year, or those with no date yet. A Goodreads import
 fills in its *Date Read* on books that have no dates yet (Goodreads keeps only the latest one); it never
 changes dates you already have. Audible imports do not set dates read.
