@@ -6,10 +6,8 @@ export default [
 	js.configs.recommended,
 	{
 		rules: {
-			// A catch that ignores its error, a parameter a subclass's override uses, and a key taken out of
-			// `...rest` to leave it behind are on purpose.
-			'no-unused-vars': ['error', {args: 'none', caughtErrors: 'none', ignoreRestSiblings: true}],
-			'no-empty': ['error', {allowEmptyCatch: true}],
+			// A parameter only named to document what an override gets starts with _ (Importer.readRow).
+			'no-unused-vars': ['error', {argsIgnorePattern: '^_'}],
 		},
 	},
 	{files: ['public/**/*.js'], languageOptions: {globals: globals.browser}},

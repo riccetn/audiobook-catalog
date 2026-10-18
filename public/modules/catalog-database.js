@@ -493,7 +493,7 @@ class SaveTransaction {
 				for(const n of ed.narratorIds) await name(n, 'narrator');
 				if(ed.publisherId) await name(ed.publisherId, 'publisher');
 			}
-			const book = CatalogRecords.bookOf(rec, editions, (x, what) => /** @type {string} */ (this.names.get(x)));
+			const book = CatalogRecords.bookOf(rec, editions, x => /** @type {string} */ (this.names.get(x)));
 			/** @type {Record<string, string>} */
 			const kindOf = {series: 'series', authors: 'author', narrators: 'narrator', publishers: 'publisher'};
 			const derived = CatalogRecords.bookRecord(book, (kind, n) => /** @type {string} */ (ids.get(kindOf[kind] + '\n' + n)), rec.position);
@@ -700,7 +700,7 @@ export class CatalogDatabase {
 		try{
 			await new SaveTransaction(tx, this.keyRange).write(changes, positions);
 		}catch(e){
-			try{ tx.abort(); }catch(err){}
+			try{ tx.abort(); }catch{ /* the transaction had already ended */ }
 			await done.catch(() => {});
 			throw e;
 		}

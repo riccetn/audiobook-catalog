@@ -416,7 +416,7 @@ function stateHash(st){
  * @returns {ViewState}
  */
 function stateFromHash(hash){
-	const dec = (/** @type {string} */ v)=>{ try{ return decodeURIComponent(v.replace(/\+/g, ' ')); }catch(e){ return v; } };
+	const dec = (/** @type {string} */ v)=>{ try{ return decodeURIComponent(v.replace(/\+/g, ' ')); }catch{ return v; } };
 	/** @type {Map<string, string | true>} */
 	const p = new Map();
 	String(hash || '').replace(/^#/, '').split('&').filter(Boolean).forEach(part=>{
@@ -462,7 +462,7 @@ const placeOf = st=> [st.view, st.series, st.book].join('\n');
  */
 function setAddress(how, st, data){
 	const hash = stateHash(st);
-	try{ history[how === 'replace' ? 'replaceState' : 'pushState'](data || null, '', hash || location.pathname + (location.search || '')); }catch(e){}
+	try{ history[how === 'replace' ? 'replaceState' : 'pushState'](data || null, '', hash || location.pathname + (location.search || '')); }catch{ /* the address just stays as it was */ }
 }
 
 /**
@@ -945,7 +945,7 @@ export async function findMergeBooks(id, q){
 // the choice is this browser's.
 const COVERS_KEY = 'audiobook-catalog-covers';
 /** @returns {boolean} whether books show their covers (they do unless turned off) */
-export function coversShown(){ try{ return localStorage.getItem(COVERS_KEY) !== 'off'; }catch(e){ return true; } }
+export function coversShown(){ try{ return localStorage.getItem(COVERS_KEY) !== 'off'; }catch{ return true; } }
 
 /**
  * A book's cover, trying each address Cover.addresses gives until one loads; hidden until then, and for good
@@ -1087,7 +1087,7 @@ byId('q').addEventListener('input', ()=>{
 const coversBox = /** @type {HTMLInputElement} */ (byId('showCovers'));
 coversBox.checked = coversShown();
 coversBox.addEventListener('change', ()=>{
-	try{ localStorage.setItem(COVERS_KEY, coversBox.checked ? 'on' : 'off'); }catch(e){}
+	try{ localStorage.setItem(COVERS_KEY, coversBox.checked ? 'on' : 'off'); }catch{ /* the choice holds on this page, just not the next time */ }
 	render();
 });
 const FILTERS = ['authorFilter', 'genreFilter', 'readFilter', 'missingFilter', 'sortBy'];   // the order folds away with them

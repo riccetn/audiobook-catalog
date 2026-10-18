@@ -176,7 +176,7 @@ export class Duplicates {
 		// each half is a JSON list of texts, so the pair splits where "] [" ends one list and starts the other
 		for(let at = mark.indexOf('] ['); at >= 0; at = mark.indexOf('] [', at + 1)){
 			const x = mark.slice(0, at + 1), y = mark.slice(at + 2);
-			try{ if(Array.isArray(JSON.parse(x)) && Array.isArray(JSON.parse(y))) return [x, y]; }catch(e){}
+			try{ if(Array.isArray(JSON.parse(x)) && Array.isArray(JSON.parse(y))) return [x, y]; }catch{ /* not two lists split here: the next "] [" is tried */ }
 		}
 		return null;
 	}

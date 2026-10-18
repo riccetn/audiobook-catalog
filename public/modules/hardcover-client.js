@@ -131,7 +131,7 @@ export class HardcoverClient {
 		const res = await this.get(HardcoverClient.API, {method: 'POST', body: JSON.stringify({query, variables: variables || {}}), headers: {
 			'content-type': 'application/json', authorization: `Bearer ${this.token}`, ...this.headers}});
 		let json = null;
-		try{ json = await res.json(); }catch(exc){ /* reported below */ }
+		try{ json = await res.json(); }catch{ /* reported below */ }
 		if(res.status === 401) throw new Error('Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)');
 		if(res.status === 429) throw new Error('Hardcover\'s rate limit was reached; try again later');
 		if(!res.ok || !json) throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);

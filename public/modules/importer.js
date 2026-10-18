@@ -26,10 +26,10 @@ export class Importer {
 
 	/**
 	 * Read one row into `result`: a book read, a warning, or one more book skipped as unfinished.
-	 * @param {CsvRow} row
-	 * @param {ReadResult} result
+	 * @param {CsvRow} _row
+	 * @param {ReadResult} _result
 	 */
-	readRow(row, result){
+	readRow(_row, _result){
 		throw new Error(`${this.label}: readRow is not written`);
 	}
 

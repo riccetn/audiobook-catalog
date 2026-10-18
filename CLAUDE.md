@@ -37,8 +37,8 @@ node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `typecheck`, `lint`, `serve`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
-ESLint looks for mistakes, not formatting (it allows a catch that ignores its error, and a parameter only an override uses);
-where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. There is no formatter; `.editorconfig` sets tab
+ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
+`catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. There is no formatter; `.editorconfig` sets tab
 indentation for code, and otherwise match the surrounding style (see Conventions).
 CI (`.github/workflows/ci.yml`) runs `npm ci` and `make check` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`.

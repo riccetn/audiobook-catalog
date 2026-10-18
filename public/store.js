@@ -31,7 +31,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
  */
 
 // British spelling ("catalogue") when the browser's first English language is a British one, else American.
-export const BRITISH = (() => { try{ return Text.prefersBritish(navigator.languages || [navigator.language]); }catch(e){ return false; } })();
+export const BRITISH = (() => { try{ return Text.prefersBritish(navigator.languages || [navigator.language]); }catch{ return false; } })();
 
 /**
  * The page's own text in the spelling this browser prefers (see BRITISH); never a book's title or other data.
@@ -167,7 +167,7 @@ export function valueFromPageHash(hash, key){
 	const m = new RegExp(`^#${key}=(.*)$`).exec(String(hash || ''));
 	if(!m) return null;
 	let value = m[1].replace(/\+/g, ' ');
-	try{ value = decodeURIComponent(value); }catch(e){}
+	try{ value = decodeURIComponent(value); }catch{ /* not encoded: kept as written */ }
 	return value.trim() || null;
 }
 
@@ -217,7 +217,7 @@ let redrawPage = null;
 
 /** @returns {Promise<number | null>} the revision of the catalog as it is stored now (another tab may have saved since) */
 export async function storedRevision(){
-	try{ return DATABASE ? await DATABASE.revision() : null; }catch(e){ return null; }
+	try{ return DATABASE ? await DATABASE.revision() : null; }catch{ return null; }
 }
 
 // When this browser last downloaded (or restored) a backup, and the catalog's revision then, so the pages can say
@@ -229,14 +229,14 @@ function lastBackup(){
 	try{
 		const v = JSON.parse(localStorage.getItem(BACKUP_KEY) || 'null');
 		return v && typeof v.time === 'string' && !isNaN(Date.parse(v.time)) ? v : null;
-	}catch(e){ return null; }
+	}catch{ return null; }
 }
 
 /** Note that the catalog as stored now is in a backup (one just downloaded or restored). */
 export async function noteBackup(){
 	await whenSaved();
 	const revision = await storedRevision();
-	try{ localStorage.setItem(BACKUP_KEY, JSON.stringify({time: new Date().toISOString(), revision})); }catch(e){}
+	try{ localStorage.setItem(BACKUP_KEY, JSON.stringify({time: new Date().toISOString(), revision})); }catch{ /* the backup just goes unnoted */ }
 }
 
 /**
@@ -532,7 +532,7 @@ async function saveNow(){
 	for(let tries = 1; ; tries++){
 		try{
 			await takeInNamesTyped();
-		}catch(e){
+		}catch{
 			showIoStatus(spell('Not saved: the catalog kept in this browser could not be read. Reload the page.'), true);
 			return;
 		}
@@ -600,7 +600,7 @@ async function catchUp(){
 		SAVED = CatalogRecords.snapshot(stored.records);
 		SEEN_REVISION = stored.revision;
 		if(!WHOLE) for(const b of stored.records.books) POSITIONS.set(b.id, b.position);
-	}catch(e){
+	}catch{
 		return [];
 	}
 	if(redrawPage) redrawPage(before);
@@ -619,7 +619,7 @@ export function addExclusions(entries){
 
 // Ask the browser not to clear this site's storage when space runs low; on a phone it may otherwise.
 function askToKeepStorage(){
-	try{ navigator.storage.persist().catch(()=>{}); }catch(e){}
+	try{ navigator.storage.persist().catch(()=>{}); }catch{ /* asking is all a page can do */ }
 }
 
 // Load the catalog kept in this browser (all of it with `whole`; otherwise the page loads what it shows
@@ -631,7 +631,7 @@ function askToKeepStorage(){
 async function loadCatalog(whole){
 	try{
 		DATABASE = await CatalogDatabase.open(indexedDB);
-	}catch(e){
+	}catch{
 		SAVE_REFUSED = spell("Not saved: this browser won't keep the catalog for this page (it has no IndexedDB here). Export a backup before you leave.");
 		STARTUP_NOTICE = SAVE_REFUSED;
 		WHOLE = true;
@@ -664,7 +664,7 @@ async function loadCatalog(whole){
 		try{
 			SEEN_REVISION = await DATABASE.setAside(stored ? stored.records : Text.errorText(e));
 			SAVED = new Map();
-		}catch(err){
+		}catch{
 			DATABASE = null;
 			SAVE_REFUSED = spell("Not saved: the catalog kept in this browser can't be read or set aside. Export a backup.");
 		}
@@ -709,7 +709,7 @@ const MOVED_SUFFIX = '.moved-to-indexeddb';
  */
 function readOldCatalog(){
 	/** @type {(key: string) => string | null} */
-	const item = key => { try{ return localStorage.getItem(key); }catch(e){ return null; } };
+	const item = key => { try{ return localStorage.getItem(key); }catch{ return null; } };
 	try{
 		const raw = item(CATALOG_KEY), old = JSON.parse(item(OLD_EDITS_KEY) || 'null');
 		/** @type {Unchecked} */
@@ -721,8 +721,8 @@ function readOldCatalog(){
 		if(Array.isArray(marks)) catalog.addMarkTexts(marks.filter(x=> typeof x === 'string'));
 		CATALOG.replaceWith(catalog);
 		return true;
-	}catch(e){
-		try{ localStorage.setItem(CATALOG_KEY + '.unreadable', item(CATALOG_KEY) || ''); localStorage.removeItem(CATALOG_KEY); }catch(err){}
+	}catch{
+		try{ localStorage.setItem(CATALOG_KEY + '.unreadable', item(CATALOG_KEY) || ''); localStorage.removeItem(CATALOG_KEY); }catch{ /* the notice below still tells what happened */ }
 		STARTUP_NOTICE = spell("Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.");
 		return false;
 	}
@@ -736,7 +736,7 @@ function setAsideOldCatalog(){
 			if(value === null) continue;
 			localStorage.setItem(key + MOVED_SUFFIX, value);
 			localStorage.removeItem(key);
-		}catch(e){}
+		}catch{ /* left as it was, and moved on the next load */ }
 	}
 }
 
@@ -870,7 +870,7 @@ const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
 
 /** @returns {string} the Hardcover token saved in this browser, or '' */
 export function browserHardcoverToken(){
-	try{ return HardcoverClient.cleanToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch(e){ return ''; }
+	try{ return HardcoverClient.cleanToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch{ return ''; }
 }
 
 /**
@@ -1003,4 +1003,4 @@ export async function startPage(init, page = {}){
 }
 
 // Installable as an app (on a phone, say), and usable offline once it is: see sw.js.
-try{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch(e){}
+try{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch{ /* no offline use in this browser */ }
