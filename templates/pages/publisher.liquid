@@ -1,0 +1,24 @@
+{% layout 'layout' title: 'Publisher' nav: 'publishers.html' script: 'publisher.js' %}
+	<p class="sub" id="subtitle">Loading&hellip;</p>
+
+	<div class="crumb show" id="crumb">
+		<a href="publishers.html">&larr; All publishers</a>
+	</div>
+
+	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
+	<p id="ioStatus" class="ioStatus"></p>
+
+	<form id="creditForm" class="infoForm">
+		<h3 id="creditFormTitle">Publisher info</h3>
+		<div><label for="cf_bio">Short bio</label><textarea id="cf_bio" rows="4"></textarea></div>
+		<div><label for="cf_url" id="cf_url_label">Website</label><input id="cf_url" placeholder="https://"></div>
+		<div class="formrow extFields" id="cf_ext"></div>
+		<p id="creditFormError" class="formError"></p>
+		<div class="formbtns">
+			<button type="submit" class="save" id="creditSaveBtn">Save publisher info</button>
+			<button type="button" id="creditRemoveBtn">Remove info</button>
+			<button type="button" id="cancelCredit">Cancel</button>
+		</div>
+	</form>
+
+	<div id="creditBody"></div>

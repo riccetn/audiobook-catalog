@@ -3,22 +3,25 @@
 A personal audiobook library, merged from Audible, Goodreads and Hardcover exports, grouped by series
 and searchable by title, author, series and genre. The app is four plain pages (the catalog, *Authors*,
 *Import & export* and *Duplicates*) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
-and the catalog is kept in the browser's IndexedDB. There is no build step and no server code.
+and the catalog is kept in the browser's IndexedDB. There is no server code, and the only build step writes the
+pages' HTML from [Liquid](https://liquidjs.com/) templates (`make pages`), so they share their head and nav bar.
 
-- Vanilla JavaScript: no framework, no bundler, nothing the app loads from npm
+- Vanilla JavaScript: no framework, no bundler, nothing the app loads from npm (Liquid only writes the pages)
 - Node 18+ for the tests; TypeScript (`npm install`) checks the code against its JSDoc types, without a build step
 
 ```sh
 git clone <this repo> && cd audiobook-catalog
+npm install   # once: Liquid, TypeScript and ESLint
+make pages    # write the pages into public/ from templates/ (test and serve do it first)
 make test     # all tests, including a browser smoke test
-npm install && make typecheck   # check the code against its types (TypeScript)
-make lint     # look for likely mistakes (ESLint, after npm install)
+make typecheck   # check the code against its types (TypeScript)
+make lint     # look for likely mistakes (ESLint)
 make check    # everything CI runs: test, typecheck and lint
 make serve    # serves public/ at http://localhost:8000/ (any static server, or GitHub Pages, works too)
 make help
 ```
 
-On Windows without make, `.\make.ps1 test` (or `check`, `typecheck`, `lint`, `serve`, `help`) runs the same commands in PowerShell.
+On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `lint`, `serve`, `help`) runs the same commands in PowerShell.
 
 ## Start your own catalog
 

@@ -8,15 +8,23 @@ read them for workflows and the data format. This file covers what you need to c
 A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `import.html`, `duplicates.html`, `authors.html`,
 `narrators.html`, `publishers.html`, `author.html`, `narrator.html`, `publisher.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
-Node is only used to run the tests.
+Node is only used to write the pages and run the tests.
 
 Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`),
-and nothing else goes there: `docs/` and `tests/` stay outside it, so they are never served.
+and nothing else goes there: `docs/`, `templates/` and `tests/` stay outside it, so they are never served.
 The module names below are files in `public/`.
 
+The pages' HTML is the one thing built: `make pages` (`build.mjs`) renders `templates/pages/<name>.liquid` with
+[Liquid](https://liquidjs.com/) into `public/<name>.html`, each filling in `templates/layout.liquid` (the `<head>`, the title and the
+nav bar, whose links are `nav-link.liquid` includes). The written pages are in `.gitignore`: **edit the templates, never `public/*.html`**.
+A page's template starts with `{% layout 'layout' title: 'Books' nav: 'books.html' script: 'books.js' %}` (`title` left out
+on the Series page; `nav` is the link marked current, `aria-current` only on that page itself). The build is strict (an
+unknown variable or filter fails it). `make test` and `make serve` build first, and so do both workflows.
+
 - Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests**. `package.json` says
-  `"type": "module"` and its devDependencies are checkers only, never served or imported by the app or tests:
-  TypeScript (`make typecheck`) and ESLint with `@eslint/js` and `globals` (`make lint`); don't add others, use Node built-ins in tests.
+  `"type": "module"` and its devDependencies are tools only, never served or imported by the app or tests:
+  Liquid (`liquidjs`, `make pages`), TypeScript (`make typecheck`) and ESLint with `@eslint/js` and `globals` (`make lint`);
+  don't add others, use Node built-ins in tests.
 - Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` and the classes in `modules/`.
@@ -25,16 +33,17 @@ The module names below are files in `public/`.
 ## Commands
 
 ```sh
-make test       # node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
+make pages      # node build.mjs: write public/*.html from templates/ (needs `npm install` once)
+make test       # make pages, then node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
 make typecheck  # tsc -p jsconfig.json and -p jsconfig.sw.json (sw.js, with the worker's globals); needs `npm install` once
 make lint       # eslint . with the recommended rules (eslint.config.js); needs `npm install` once
 make check      # test, typecheck and lint, what CI runs; run it before a PR
-make serve      # python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
-node --test tests/catalog.test.mjs            # one suite (the smoke test needs --experimental-vm-modules too)
+make serve      # make pages, then python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
+node --test tests/catalog.test.mjs            # one suite (the smoke test reads the pages, so make pages after editing a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `typecheck`, `lint`, `serve`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `serve`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
@@ -143,7 +152,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).
-- `tests/`: `node:test` suites (`*.test.mjs`, ESM).
+- `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read

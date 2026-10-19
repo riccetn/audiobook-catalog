@@ -1,0 +1,2 @@
+{%- comment -%} A link in the nav bar. The page's nav link is marked current, and aria-current only when it is that page itself (not a book's or an author's page under it). {%- endcomment -%}
+<a href="{{ href }}"{% if href == nav %} class="current"{% if href == page %} aria-current="page"{% endif %}{% endif %}>{{ label }}</a>

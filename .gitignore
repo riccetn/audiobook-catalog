@@ -6,3 +6,6 @@ node_modules/
 
 # Mac OS
 .DS_Store
+
+# written by make pages from templates/
+public/*.html

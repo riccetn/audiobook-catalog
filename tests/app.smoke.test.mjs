@@ -2077,6 +2077,20 @@ test('the app can be installed: the manifest\'s icons and everything the service
 	for (const file of served) assert.ok(file === 'sw.js' || cached.includes(file), `public/${file} is part of the app (add it to sw.js's APP list)`);
 });
 
+test('every page is written from its template, with the shared nav bar marking where it is', () => {
+	// The pages in public/ are written by make pages (build.mjs), so a missing one means it wasn't run.
+	const templates = fs.readdirSync(path.join(root, 'templates', 'pages')).map(f => f.replace(/\.liquid$/, '.html'));
+	assert.deepEqual(templates.sort(), [...ALL_PAGES].sort());
+	for (const page of ALL_PAGES) {
+		assert.ok(fs.existsSync(path.join(site, page)), `public/${page} is missing: run make pages`);
+		const html = read(page);
+		for (const link of PAGES) assert.ok(html.includes(`<a href="${link}"`), `${page} links to ${link}`);
+		assert.equal(html.match(/class="current"/g)?.length, 1, `${page} marks one link current`);
+		// Only the page the link opens is that page; a book's or an author's page sits under its list.
+		assert.equal(html.includes(`<a href="${page}" class="current" aria-current="page">`), PAGES.includes(page), page);
+	}
+});
+
 test('"Not duplicates" marks are kept in this browser and travel in backups', async () => {
 	const books = [{ t: 'The Ledger', a: ['Priya Ostrander'] }, { t: 'The Ledger, Book 1', a: ['Priya Ostrander'] },
 		{ t: 'Salt Road', a: ['Marisol Quenby'] }, { t: 'Salt Road, Book 1', a: ['Marisol Quenby'] }];

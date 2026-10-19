@@ -12,5 +12,5 @@ export default [
 	},
 	{files: ['public/**/*.js'], languageOptions: {globals: globals.browser}},
 	{files: ['public/sw.js'], languageOptions: {globals: globals.serviceworker}},
-	{files: ['tests/**/*.mjs', 'eslint.config.js'], languageOptions: {globals: globals.node}},
+	{files: ['tests/**/*.mjs', 'build.mjs', 'eslint.config.js'], languageOptions: {globals: globals.node}},
 ];
