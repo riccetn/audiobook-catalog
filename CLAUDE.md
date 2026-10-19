@@ -5,7 +5,7 @@ read them for workflows and the data format. This file covers what you need to c
 
 ## What this is
 
-A personal audiobook catalog: static pages (`index.html`, `import.html`, `duplicates.html`, `authors.html`,
+A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `import.html`, `duplicates.html`, `authors.html`,
 `narrators.html`, `publishers.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to run the tests.
@@ -99,22 +99,31 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   the status line (`showIoStatus`, with an optional Undo for `STATUS_TIME`), `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below),
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group) and `externalLinks`, the page links
-  (`creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
+  (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onHardcoverJob`;
   the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
-  addresses (`#series=<id>`, `#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
+  addresses (`index.html#series=<id>`, `book.html#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are `CATALOG.marks` by book (and edition) ids, so they
   survive a retitle; backups carry them as text (`markTexts`/`addMarkTexts`), and a text that matches no book stays a text mark.
 - `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
   the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
-- `app.js` (`index.html`): series overview (from the series records alone), all books (50 at a time, `PAGE_SIZE`, `showMore`;
-  `refreshView` reads what is shown again; an empty catalog says where books come from; a book's card, `bookCard`, holds only its title, number,
-authors, narrators and dates read, and `#book=<id>` shows everything else, `bookDetails`; both show its cover, `coverImage`, an `<img>`
-that tries each of `Cover.addresses` in turn, unless *Covers* is off (localStorage `audiobook-catalog-covers`)), the book and
-  series-info forms, module-level state (`VIEW`, `SERIES_FILTER`, ...). A book's details end with Edit and Merge; Merge searches for the other book (`findMergeBooks`) and links to `duplicates.html#merge=<id>,<id>`. Remove book is in the book form.
+- `book-list.js`: what the series, books and book pages share: a book's card (`bookCard`, only its title, number, authors,
+  narrators and dates read) and cover (`coverImage`, an `<img>` that tries each of `Cover.addresses` in turn, unless *Covers* is off,
+  `coversShown`/`watchCoversBox`, localStorage `audiobook-catalog-covers`), `BookList` (the ids listed, `PAGE_SIZE` = 50 loaded at a
+  time, `more`), `readOrdered` (series order from the indexes alone), `bookGroups` (books grouped by series with their headings, or
+  `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, and the address helpers `hashParts`/`hashOf`/`setAddress`.
+- `series.js` (`index.html`, *Series*): every series (from the series records alone, `#q=...&missing`), and a series' page
+  (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and its info form, `openSeriesForm`); `SERIES_FILTER`, `openSeries`.
+  Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`
+  (`movedAddress`, with `location.replace`).
+- `books.js` (`books.html`, *Books*): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
+- `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`, `openBook`; `bookDetails`, with the other books of its box set
+  loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
+  and the book form (`openEditForm`; Remove book is in it), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
+  `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): the comparison an Audible or
   Goodreads CSV import, or the Hardcover panel's Compare (`HardcoverSync.compare`; for a series or an author, which their pages link to
   with `hardcoverCompareHref`, `#hardcover-series=<id>`/`#hardcover-author=<id>`), opens (`PENDING_COMPARE`, its ticks in
@@ -136,7 +145,8 @@ that tries each of `Cover.addresses` in turn, unless *Covers* is off (localStora
     seed the old localStorage catalog, by default from `sample/`, which the page moves to IndexedDB; `files: null` for none) and a fake
     IndexedDB (`tests/fake-indexeddb.mjs`; pages booted with the same `storage` Map share it, like tabs, and their ids are `id-1`, ...;
     `await kept(storage)` is what is stored, once the saves are done; a page draws what it reads after its saves, so `await idle()`
-    after a step that changes what is shown; `database.reads(store)` counts the records handed out; `get` leaves out `uid`, `withIds` keeps it). Tests reach what the
+    after a step that changes what is shown; `database.reads(store)` counts the records handed out; `get` leaves out `uid`, `withIds` keeps it; `bootBook(title)` boots a book's page,
+    `follow(hash)` follows a link to another place on the page, and `location.replaced` is where `location.replace` sent it). Tests reach what the
     modules export (`ctx.render()`, `get('CATALOG.books')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`

@@ -2,11 +2,15 @@
 
 **Add new Audible purchases or Goodreads books**: see [Audible](audible.md) and [Goodreads](goodreads.md).
 
-**A book's card and its details**: a book's card in the list shows only its title, series number, authors,
-narrators and dates read. Its title opens the book's details (`#book=…`): its series and number, dates read,
+**The pages**: *Series* (`index.html`) lists every series; a series' name opens its page, with its books in order
+and its info (**Edit** at the end). *Books* (`books.html`) lists every book, 50 at a time, with the search,
+filters and order. A book's title, anywhere, opens its own page (`book.html`).
+
+**A book's card and its page**: a book's card in a list shows only its title, series number, authors,
+narrators and dates read. Its title opens the book's page (`book.html#book=…`): its series and number, dates read,
 genres, its ids in external catalogs, and each of its editions with every part (description, narrators,
 ASINs, other catalogs' ids, ISBN, publisher, release date, length, and the other books of a box set it is on).
-Above it, the crumb links back to the book's series. The card has no buttons; the details end with **Edit**
+Above it, the crumb links back to the book's series. The card has no buttons; the page ends with **Edit**
 and **Merge**. In the book form (**Edit**) the book's ids in other catalogs are
 folded under *The book in other catalogs*, which names the catalogs it has one in.
 
@@ -14,16 +18,17 @@ folded under *The book in other catalogs*, which names the catalogs it has one i
 page asks for the cover by the ids the book's editions already have, first Amazon's image of each ASIN (an
 audiobook's square cover), then Open Library's of the edition's Open Library id and of its ISBN, and shows the first
 that loads. A book whose editions have none of those, or that neither site has a cover for, shows none.
-Asking tells Amazon and Open Library those ids, so *Covers* (next to *+ Add a book*) turns them off; the choice
+Asking tells Amazon and Open Library those ids, so *Covers* (next to *+ Add a book* on *Series* and *Books*) turns them off; the choice
 is kept in this browser. Firefox's strict tracking protection blocks Amazon's images; the cover then comes
 from Open Library when it has one.
 
 **Edit in the app**
 
-Edit books in the page (**Edit** at the end of a book's details, `+ Add a book`). **Edit** opens the form in place of the book's
-details; `+ Add a book` opens it at the top, with the series and author filled in from what the list shows: the
-series you are looking at, and the author picked in the author filter (else the author of every book in the
-series). *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
+Edit books in the page (**Edit** at the end of a book's page, `+ Add a book`). **Edit** opens the form in place of the book's
+details. `+ Add a book`, on *Books* and on a series' page, opens the form for a new book on a page of its own
+(`book.html#add`), with the series and author filled in from where you were: the series you were looking at,
+and the author picked in the author filter (else the author of every book in the series). Saving shows the new
+book's page; *Cancel* goes back to the series or the books. *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
 another Amazon or Audible site), Goodreads id, Hardcover edition (*+ Another catalog* adds a field for its id on Open
 Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publisher,
@@ -71,8 +76,7 @@ Author names on the books link there. See [Authors](authors.md).
 each with a page of their bio, links, series and titles; their names on the books link there. See
 [Narrators and publishers](narrators-publishers.md).
 
-**Update release info for a series**: press the pencil next to a series (in the series overview or
-above its books) to edit how many books are released, whether it is ongoing or complete, the note and
+**Update release info for a series**: press **Edit** at the end of a series' page (open it from *Series*) to edit how many books are released, whether it is ongoing or complete, the note and
 the author site, the series' ids on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
 `https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each), or to add or remove that info.
@@ -86,9 +90,9 @@ info it replaces the other series' info.
 catalogs): press **Edit** at the end of the series' own page, after its books. The form can rename the series too.
 
 **Find books missing from a series**: when a series has a released total in its series info,
-the series overview and the series itself list the numbers you don't own (for example
+the *Series* page and the series' own page list the numbers you don't own (for example
 "missing #3, #5–7"). A boxed set (`"4-6"`) counts for every number in it, but not as one more book owned; a
-novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** in the series overview to see only
+novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** on *Series* to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
 **Remove a book for good**: press **Edit** on the book's details, then **Remove book** in the form. It leaves the list at once, and the status line
@@ -133,24 +137,25 @@ editions, so a second one becomes an edition of its own. Edit them in the page u
 book of a boxed set. Searching the library for an ISBN, typed any way, finds the books that carry it;
 searching for an ASIN, a Goodreads id or a publisher works too.
 
-**Link to a series, a book or a search**: the address after the `#` says what the catalog shows, so
-you can bookmark it, share it with yourself or reload it: `#series=…` (a series, from its name in the
-overview), `#standalone`, `#book=…` (the book's details: its title on its card links here, as do the other titles of a
-box set in their details), `#books` (all books), and the search and filters on top:
-`#books&q=quenby&genre=Fantasy&read=2023` (`read=undated` for books with no date read), or
-`#q=coast&missing` in the series overview. The browser's back and forward buttons step through what
-you looked at: each series, book, view and filter you pick is one step, and so is a search, however
+**Link to a series, a book or a search**: the address after the `#` says what a page shows, so
+you can bookmark it, share it with yourself or reload it: `index.html#series=…` (a series, from its name in the
+list), `index.html#standalone`, `index.html#q=coast&missing` (the series searched, only those with gaps),
+`book.html#book=…` (a book's page: its title on its card links here, as do the other titles of a
+box set on theirs), and on *Books* the search, filters and order: `books.html#q=quenby&genre=Fantasy&read=2023`
+(`read=undated` for books with no date read). The browser's back and forward buttons step through what
+you looked at: each series, book and filter you pick is one step, and so is a search, however
 many letters you type. A series or book is named in the address by the id the catalog keeps for it, so
 the link still works after you retitle the book or rename the series; an address with the name or title
-(`index.html#series=The+Lantern+Coast`, `#book=The+Salt+Road`) opens it too. Ctrl- or middle-click a series or book to open it in a new tab.
+(`index.html#series=The+Lantern+Coast`, `book.html#book=The+Salt+Road`) opens it too, and so do the addresses from
+when one page showed it all (`index.html#books…` opens *Books*, `index.html#book=…` the book's page).
 
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
 for a re-read), or press **+ Read today** in the form. Quicker: open the book (its title) and press **+ Read today**
-beside its dates read, which saves at once and offers **Undo** for a few seconds. The date shows on the book, and in **All Books** the
+beside its dates read, which saves at once and offers **Undo** for a few seconds. The date shows on the book, and on **Books** the
 *Read in* filter picks the books read in a given year, or those with no date yet. The order list beside the filters sorts
-**All Books** by *Recently read* (the latest date read first; books without one follow in series order) or *Recently added*
-(the books an import or the form added last first) instead of by series; the address keeps it (`#books&sort=read`). A Goodreads import
+**Books** by *Recently read* (the latest date read first; books without one follow in series order) or *Recently added*
+(the books an import or the form added last first) instead of by series; the address keeps it (`books.html#sort=read`). A Goodreads import
 fills in its *Date Read* on books that have no dates yet (Goodreads keeps only the latest one); it never
 changes dates you already have. Audible imports do not set dates read.
 

@@ -39,19 +39,10 @@ h1{
 .backupNudge:empty{display:none;}
 .backupNudge a{color:var(--moss); font-weight:600;}
 .panel p.backupState{color:var(--ink); font-weight:600;}
-.viewToggle{display:flex; gap:.4rem; margin-bottom:1.1rem;}
-.viewToggle button{
-	padding:.45rem .9rem; border-radius:20px; border:1px solid var(--line); background:var(--card);
-	color:var(--ink-soft); font-size:.85rem; font-weight:600; cursor:pointer;
-}
-.viewToggle button.active{background:var(--moss); border-color:var(--moss); color:#fff;}
 .crumb{
 	display:none; align-items:center; gap:.5rem; margin-bottom:1rem; font-size:.85rem;
 }
 .crumb.show{display:flex;}
-.crumb button{
-	background:none; border:none; color:var(--moss); cursor:pointer; font-weight:600; font-size:.85rem; padding:0;
-}
 .controls{
 	display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1.5rem;
 }
@@ -103,7 +94,7 @@ h1{
 #resultCount{color:var(--ink-soft); font-size:.85rem;}
 .addbtn{
 	background:var(--moss); color:#fff; border:none; padding:.55rem 1rem; border-radius:8px;
-	font-size:.88rem; cursor:pointer; font-weight:600;
+	font-size:.88rem; cursor:pointer; font-weight:600; text-decoration:none; display:inline-block;
 }
 .addbtn:hover{background:var(--moss-dark);}
 #addForm{
@@ -319,7 +310,7 @@ h1{
 	margin-top:.1rem;
 }
 .book .info{flex:1; min-width:0;}
-/* A cover (app.js coverImage) keeps a square's room while it loads, so the card doesn't jump; a print cover
+/* A cover (book-list.js coverImage) keeps a square's room while it loads, so the card doesn't jump; a print cover
    sits in it whole. One that never loads takes no room. */
 .cover{flex:0 0 auto; aspect-ratio:1; object-fit:contain; border-radius:4px; opacity:0; transition:opacity .2s;}
 .cover.loaded{opacity:1;}
@@ -362,7 +353,7 @@ h1{
 .series-title a.hardcoverCompare:hover{color:var(--moss-dark);}
 .filtersBtn{display:none; padding:.6rem .8rem; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.9rem; font-weight:600; cursor:pointer;}
 /* Phones: less space around the page and above the list. The page links stay on one line that scrolls
-   sideways, and the filters fold away behind the Filters button (app.js), two to a row when open. */
+   sideways, and the filters fold away behind the Filters button (series.js, books.js), two to a row when open. */
 @media (max-width:600px){
 	/* a book's details: its number and title on top, then the cover across the card, then the rest */
 	.book.book-details{grid-template-columns:auto minmax(0, 1fr); grid-template-areas:"num head" "cover cover" "info info"; grid-template-rows:auto;}
@@ -373,7 +364,6 @@ h1{
 	.pages::-webkit-scrollbar{display:none;}
 	.pages a{white-space:nowrap; flex:none;}
 	.sub{margin-bottom:.75rem;}
-	.viewToggle{margin-bottom:.75rem;}
 	.controls{margin-bottom:.9rem; gap:.5rem;}
 	.controls input[type=text]{flex:1 1 0;}
 	.filtersBtn{display:block; flex:none;}
@@ -388,7 +378,6 @@ h1{
 @media (pointer:coarse){
 	.iconbtn{min-width:2.25rem; min-height:2.5rem; display:inline-flex; align-items:center; justify-content:center;}
 	.book-details .book-actions button, .page-actions button, .formbtns .removeBook{min-height:2.5rem;}
-	.viewToggle button{padding:.6rem 1rem;}
 	.removeEdition, .addEdition, .formrow-btn button{min-height:2.5rem;}
 }
 /* the status line's Undo, and a book's Read today */

@@ -150,6 +150,28 @@ export const narratorPageHref = name=> namedPageHref('narrators', name);
 /** @type {(name: string) => string} */
 export const publisherPageHref = name=> namedPageHref('publishers', name);
 /**
+ * The address of `file` showing `hash`: only the hash on that page itself, so the page shows it without loading again.
+ * @param {string} file
+ * @param {string} hash
+ * @returns {string}
+ */
+export function pageHref(file, hash){
+	const here = typeof location === 'object' ? location.pathname || '' : '';
+	return (here.endsWith('/' + file) || (file === 'index.html' && here.endsWith('/')) ? '' : file) + hash;
+}
+/**
+ * The address of a book's page, by the id it is stored under.
+ * @type {(id: string) => string}
+ */
+export const bookPageHref = id=> pageHref('book.html', '#book=' + hashValue(id));
+/**
+ * The address of a series' page (its books), by the id it is stored under.
+ * @type {(id: string) => string}
+ */
+export const seriesPageHref = id=> pageHref('index.html', '#series=' + hashValue(id));
+/** The address of the page of the books in no series. */
+export const standalonePageHref = ()=> pageHref('index.html', '#standalone');
+/**
  * The address that compares a series' or an author's books with Hardcover on the Import & export page.
  * @param {'series' | 'author'} kind
  * @param {string} id the series' or the author's

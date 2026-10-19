@@ -28,8 +28,10 @@ library, restore a backup, or add books by hand with **+ Add a book**.
 
 ## Using it
 
-- The catalog page browses by series or all books and edits books and series info; *Import & export*
-  imports CSVs, runs Hardcover, checks the catalog, makes backups and merges them; *Duplicates* merges books entered twice.
+- *Series* lists every series and opens each one's books (and edits its info); *Books* lists every book, searched,
+  filtered and sorted; a book's title opens its own page, with everything about it and its **Edit** and **Merge**.
+  *Import & export* imports CSVs, runs Hardcover, checks the catalog, makes backups and merges them; *Duplicates*
+  merges books entered twice.
 - *Authors* gives each author a page with a short bio, links to their website and their Audible, Goodreads
   and Hardcover pages, and their series and titles ([Authors](docs/authors.md)). *Narrators* and *Publishers*
   do the same for everyone named on the editions ([Narrators and publishers](docs/narrators-publishers.md)).
