@@ -10,9 +10,11 @@ public/               the app, and all that a static server serves (make serve, 
   book-list.js          what those three share: book cards, covers, the lists grouped by series, the address helpers
   import.html, import.js    Audible, Goodreads and Hardcover imports, Goodreads CSV export, Check / Box sets, backups (Export / Restore / Merge)
   duplicates.html, duplicates.js    find and merge books entered twice
-  authors.html, narrators.html, publishers.html, credits.js    the authors, narrators and publishers, and each
-                        one's page: bio, links, series and titles (authors.js, narrators.js and publishers.js
-                        start credits.js with their kind)
+  authors.html, narrators.html, publishers.html, credits.js    the lists of authors, narrators and publishers
+                        (authors.js, narrators.js and publishers.js start credits.js with their kind)
+  author.html, narrator.html, publisher.html, credit.js    one author's, narrator's or publisher's page: bio,
+                        links, series and titles, and the info form (author.js, narrator.js and publisher.js
+                        start credit.js with their kind; credit-kinds.js holds what differs between the kinds)
   store.js              shared by the pages: loads from IndexedDB what the page shows, and saves every edit there
   styles.css
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline

@@ -68,7 +68,7 @@ catalogs have changed, merge the backup instead: see [Merge a backup from anothe
 **Check the catalog**: **Check** on the *Import & export* page lists errors and warnings (a series
 info entry no book has, an untidy name, a link to the wrong site...).
 
-**Authors' bios and links**: the *Authors* page lists every author; each author's page shows a bio,
+**Authors' bios and links**: the *Authors* page lists every author; each author's page (`author.html`) shows a bio,
 links to their website and their pages on Audible, Goodreads, Hardcover and the other catalogs, and their series and titles.
 Author names on the books link there. See [Authors](authors.md).
 
@@ -147,7 +147,9 @@ you looked at: each series, book and filter you pick is one step, and so is a se
 many letters you type. A series or book is named in the address by the id the catalog keeps for it, so
 the link still works after you retitle the book or rename the series; an address with the name or title
 (`index.html#series=The+Lantern+Coast`, `book.html#book=The+Salt+Road`) opens it too, and so do the addresses from
-when one page showed it all (`index.html#books…` opens *Books*, `index.html#book=…` the book's page).
+when one page showed it all (`index.html#books…` opens *Books*, `index.html#book=…` the book's page). An author's,
+a narrator's or a publisher's page is `author.html#a=…`, `narrator.html#n=…` or `publisher.html#p=…`; the addresses
+from when their lists showed them too (`authors.html#a=…` and the like) open it as well.
 
 **Keep track of when you read a book**: edit the book in the page and fill in *Date(s) read*
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,

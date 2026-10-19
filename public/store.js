@@ -128,15 +128,15 @@ export function joined(items, separator){ return items.flatMap((x, i)=> i ? [sep
 // The addresses of an author's, a narrator's and a publisher's page: by the id they are stored under, so a
 // link holds while their name is spelled another way (spaces as +, as the catalog page writes its own addresses).
 const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
-/** @type {Record<ContributorKind, string>} */
-const CREDIT_PAGES = {authors: 'authors.html#a=', narrators: 'narrators.html#n=', publishers: 'publishers.html#p='};
+/** @type {Record<ContributorKind, [string, string]>} */
+const CREDIT_PAGES = {authors: ['author.html', '#a='], narrators: ['narrator.html', '#n='], publishers: ['publisher.html', '#p=']};
 /**
  * The address of the page of the author, narrator or publisher stored under `id`.
  * @param {ContributorKind} kind
  * @param {string} id
  * @returns {string}
  */
-export const creditPageHref = (kind, id)=> CREDIT_PAGES[kind] + hashValue(id);
+export const creditPageHref = (kind, id)=> pageHref(CREDIT_PAGES[kind][0], CREDIT_PAGES[kind][1] + hashValue(id));
 /**
  * The address of someone's page, by name: their id when the page holds it, else their name, which their page
  * looks up. Never a new id: a page holding only some of the catalog would make up one no record has.

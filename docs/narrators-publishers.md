@@ -6,9 +6,10 @@ and series you have, and the first line of their bio, or when there is none the 
 narrate or publish (the three with the most books, "Mostly ..." when there are more); the search box
 narrows the list by name.
 
-Click a name (or a narrator's or publisher's name on a book in the catalog) to open their page,
-named by their id in the catalog (an address with the name, `narrators.html#n=Ingrid+Voss` or
-`publishers.html#p=Kestrel+Row+Audio`, works too):
+Click a name (or a narrator's or publisher's name on a book in the catalog) to open their page
+(`narrator.html`, `publisher.html`), named by their id in the catalog (an address with the name,
+`narrator.html#n=Ingrid+Voss` or `publisher.html#p=Kestrel+Row+Audio`, works too, and so do the addresses
+from before, `narrators.html#n=…` and `publishers.html#p=…`):
 
 - a short bio, if you wrote one;
 - links to their own website and their pages on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (whichever
