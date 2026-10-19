@@ -1,7 +1,7 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, test, typecheck, lint, serve or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, serve or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'check', 'test', 'typecheck', 'lint', 'serve')]
+	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'serve')]
 	[string]$Command = 'help',
 	[int]$Port = 8000
 )
@@ -19,6 +19,7 @@ switch ($Command) {
 	'help' {
 		'help      - list the available commands'
 		'check     - run everything CI runs: the tests, the type check and lint'
+		'pages     - write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)'
 		'test      - run the tests: the catalog classes and the browser smoke test'
 		'typecheck - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
 		'lint      - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
@@ -31,7 +32,17 @@ switch ($Command) {
 			if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 		}
 	}
+	'pages' {
+		if (-not (Test-Path 'node_modules/liquidjs')) {
+			Write-Host 'Liquid is not installed: run npm install first'
+			exit 1
+		}
+		Invoke-Native 'node' @('build.mjs')
+	}
 	'test' {
+		# The tests read the pages, so write them first, as make does.
+		& $PSCommandPath pages
+		if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 		# PowerShell doesn't expand the glob, and Node before 21 doesn't either, so list the suites here.
 		$suites = Get-ChildItem tests -Filter '*.test.mjs' | ForEach-Object { 'tests/' + $_.Name }
 		Invoke-Native 'node' (@('--experimental-vm-modules', '--test') + $suites)
@@ -54,6 +65,8 @@ switch ($Command) {
 		Invoke-Native 'node' @($eslint, '.')
 	}
 	'serve' {
+		& $PSCommandPath pages
+		if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 		# Windows usually has the py launcher or python rather than python3.
 		$python = @('py', 'python3', 'python') | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
 		if (-not $python) {

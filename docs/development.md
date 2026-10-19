@@ -3,7 +3,10 @@
 ## Layout
 
 ```
-public/               the app, and all that a static server serves (make serve, GitHub Pages)
+templates/            the pages' HTML as Liquid templates, which make pages (build.mjs) writes into public/
+  layout.liquid, nav-link.liquid    what every page shares: the <head>, the title and the nav bar
+  pages/              one template per page (books.liquid becomes public/books.html)
+public/               the app, and all that a static server serves (make serve, GitHub Pages); its .html files are written, not committed
   index.html, series.js    Series: every series, and a series' own page (its books, and its info form)
   books.html, books.js    Books: every book, searched, filtered and sorted
   book.html, book.js    a book's page: everything about it, Read today, Merge, and the book form (also for a new book)
@@ -20,11 +23,32 @@ public/               the app, and all that a static server serves (make serve, 
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline
   modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Contributor, the importers and
                         exporter, merge, validation, Hardcover (no browser APIs, so the tests run them in Node)
-package.json          "type": "module" (every .js file is an ES module) and TypeScript, the type checker
+package.json          "type": "module" (every .js file is an ES module), Liquid (the pages), TypeScript (the type checker) and ESLint
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
 sample/               fictional demo data, used by the tests: the only data committed to git
 tests/                node:test suites (*.test.mjs), including the browser smoke test
 ```
+
+## Pages
+
+The pages' HTML is written from Liquid templates (`liquidjs`, a development dependency with one dependency of its
+own), so the `<head>` and the nav bar are written once. `make pages` (`node build.mjs`) renders each
+`templates/pages/<name>.liquid` into `public/<name>.html`; `make test` and `make serve` run it first, and so do
+both workflows. The written pages are in `.gitignore`: edit the template, never `public/*.html`.
+
+A page's template starts by naming the layout and what it fills in, then holds the page's own HTML:
+
+```liquid
+{% layout 'layout' title: 'Books' nav: 'books.html' script: 'books.js' %}
+	<p class="sub" id="subtitle">Loading&hellip;</p>
+	...
+```
+
+`title` goes before "· Audiobook Catalog" in the tab (left out on the Series page), `nav` is the nav bar link
+marked current (a book's page marks Books), and `script` is the page's module. The nav bar's links are in
+`layout.liquid`; a new page in it is a line there, a template in `pages/`, and its file in `sw.js`'s `APP` list.
+The build is strict, so a misspelled variable fails it. Nothing is rendered in the browser: Liquid never reaches
+`public/`.
 
 ## Tests
 

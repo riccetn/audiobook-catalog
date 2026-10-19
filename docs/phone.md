@@ -3,7 +3,7 @@
 The app installs as a phone app (a PWA: Add to home screen, full screen, works offline). Android only
 installs it from an HTTPS address, so host the `public/` folder as a plain static site, for example with
 GitHub Pages: set repository **Settings → Pages → Source** to **GitHub Actions**, and the *Pages* workflow
-(`.github/workflows/pages.yml`) publishes `public/` on every push to `main`. That site only serves the app:
+(`.github/workflows/pages.yml`) writes the pages from `templates/` and publishes `public/` on every push to `main`. That site only serves the app:
 your catalog is never in git, and nothing outside `public/` is published.
 
 Then, on the phone:

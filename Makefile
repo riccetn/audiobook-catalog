@@ -3,14 +3,18 @@ PORT ?= 8000
 TSC ?= node_modules/.bin/tsc
 ESLINT ?= node_modules/.bin/eslint
 
-.PHONY: help check test typecheck lint serve
+.PHONY: help check pages test typecheck lint serve
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
 
 check: test typecheck lint   ## run everything CI runs: the tests, the type check and lint
 
-test:            ## run the tests: the catalog classes and the browser smoke test
+pages:           ## write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)
+	@test -d node_modules/liquidjs || { echo 'Liquid is not installed: run npm install first'; exit 1; }
+	$(NODE) build.mjs
+
+test: pages      ## run the tests: the catalog classes and the browser smoke test
 	$(NODE) --experimental-vm-modules --test tests/*.test.mjs
 
 typecheck:       ## check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)
@@ -22,5 +26,5 @@ lint:            ## check the JavaScript for likely mistakes with ESLint (run `n
 	@test -x $(ESLINT) || { echo 'ESLint is not installed: run npm install first'; exit 1; }
 	$(ESLINT) .
 
-serve:           ## open the app at http://localhost:8000/ (serves public/; any static server works, but the pages are ES modules, so not from a file)
+serve: pages     ## open the app at http://localhost:8000/ (serves public/; any static server works, but the pages are ES modules, so not from a file)
 	python3 -m http.server $(PORT) --bind 127.0.0.1 --directory public
