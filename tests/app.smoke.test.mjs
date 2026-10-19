@@ -19,9 +19,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The app is the public/ folder, what a static server serves; the demo data stays outside it.
 const site = path.join(root, 'public');
 const read = file => fs.readFileSync(path.join(site, file), 'utf8');
-// the pages in the nav bar, and book.html (a book's page), which the books link to
+// the pages in the nav bar, and the pages they link to: a book's (book.html), an author's, a narrator's and a publisher's
 const PAGES = ['index.html', 'books.html', 'import.html', 'duplicates.html', 'authors.html', 'narrators.html', 'publishers.html'];
-const ALL_PAGES = [...PAGES, 'book.html'];
+const ALL_PAGES = [...PAGES, 'book.html', 'author.html', 'narrator.html', 'publisher.html'];
+// someone's page shows the one its address names; without one it goes to the list
+const PAGE_HASH = { 'author.html': '#a=Ann+Vale', 'narrator.html': '#n=Cy+Hale', 'publisher.html': '#p=Tern+Press' };
 const readData = file => fs.readFileSync(path.join(root, 'sample', file), 'utf8');
 const DEMO_BOOKS = readData('books.json');
 const DEMO_INFO = readData('series-info.json');
@@ -484,7 +486,7 @@ test('text from the catalog is shown as text, never read as HTML', async () => {
 	const authors = JSON.stringify({ [odd]: { bio: odd } });
 	const files = { 'books.json': mine, 'series-info.json': info, 'authors.json': authors };
 	const pages = [['index.html', 'results', ''], ['index.html', 'results', '#series=' + encodeURIComponent(odd)], ['books.html', 'results', ''],
-		['book.html', 'results', '#book=' + encodeURIComponent(odd)], ['authors.html', 'creditBody', '#a=' + encodeURIComponent(odd)], ['duplicates.html', 'dupBody', '']];
+		['book.html', 'results', '#book=' + encodeURIComponent(odd)], ['author.html', 'creditBody', '#a=' + encodeURIComponent(odd)], ['duplicates.html', 'dupBody', '']];
 	for (const [page, id, hash] of pages) {
 		const { els } = await boot({ page, files, hash });
 		await idle();
@@ -670,7 +672,7 @@ test('a book\'s details link an edition\'s ASIN to Audible and its Goodreads id 
 	assert.doesNotMatch(list.els.results.innerHTML.replace(/<img [^>]*>/g, ''), /TESTASIN01|Gull Audio|9780000000002/);
 	const { els, readable } = await bootBook(SALT_ROAD, { storage });
 	const html = readable(els.results.innerHTML);
-	assert.match(html, /<h3>Edition 1<\/h3><dl class="details"><dt>ASIN<\/dt><dd>audible\.com <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a><\/dd><dt>Goodreads<\/dt><dd><a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a><\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gull\+Audio">Gull Audio<\/a><\/dd><dt>Length<\/dt><dd>10h 42m<\/dd><\/dl>/);
+	assert.match(html, /<h3>Edition 1<\/h3><dl class="details"><dt>ASIN<\/dt><dd>audible\.com <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a><\/dd><dt>Goodreads<\/dt><dd><a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a><\/dd><dt>Publisher<\/dt><dd><a href="publisher\.html#p=Gull\+Audio">Gull Audio<\/a><\/dd><dt>Length<\/dt><dd>10h 42m<\/dd><\/dl>/);
 	// an edition without either id has no links
 	assert.match(html, /<h3>Edition 2<\/h3><dl class="details"><dt>ISBN<\/dt><dd>9780000000002<\/dd><\/dl>/);
 	// each site's ASIN links to the book on that site
@@ -746,15 +748,15 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	const card = readable(els.results.innerHTML).match(/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="read">[^<]*<\/div><\/div><\/div>/)[0];
 	// its cover from its first ASIN, hidden until it loads
 	assert.match(card, /<div class="num">1<\/div><img class="cover small" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.MZZZZZZZ\.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><div class="info">/);
-	assert.match(card, /<div class="title"><a href="book\.html#book=The\+Salt\+Road">The Salt Road<\/a><\/div><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
+	assert.match(card, /<div class="title"><a href="book\.html#book=The\+Salt\+Road">The Salt Road<\/a><\/div><div class="meta"><a href="author\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
 	assert.match(card, /<div class="read">Read 2023-06-02, 2025-11-20<\/div><\/div><\/div>$/);
 	assert.doesNotMatch(card, /Fantasy|Goodreads|ISBN|Gullwing|<button/, 'nothing to edit, merge or remove it with');
 
 	const book = await bootBook('The Salt Road', { storage });
 	const details = book.readable(book.els.results.innerHTML);
-	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="head"><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="authors\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
+	assert.match(details, /^<div class="book book-details" data-id="[^"]+"><div class="num">1<\/div><div class="head"><h2 class="title">The Salt Road<\/h2><div class="meta"><a href="author\.html#a=Marisol\+Quenby">Marisol Quenby<\/a> — narr\. /);
 	assert.match(details, /<dl class="details"><dt>Series<\/dt><dd><a href="index\.html#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20 <button type="button" class="readToday">\+ Read today<\/button><\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/);
-	assert.match(details, /<dt>Goodreads<\/dt><dd><a [^>]*>9001<\/a><\/dd><dt>ISBN<\/dt><dd>9780000000002<\/dd><dt>Publisher<\/dt><dd><a href="publishers\.html#p=Gullwing\+Audio">Gullwing Audio<\/a><\/dd><dt>Released<\/dt><dd>2019-04-02<\/dd><dt>Length<\/dt><dd>10h 42m<\/dd>/);
+	assert.match(details, /<dt>Goodreads<\/dt><dd><a [^>]*>9001<\/a><\/dd><dt>ISBN<\/dt><dd>9780000000002<\/dd><dt>Publisher<\/dt><dd><a href="publisher\.html#p=Gullwing\+Audio">Gullwing Audio<\/a><\/dd><dt>Released<\/dt><dd>2019-04-02<\/dd><dt>Length<\/dt><dd>10h 42m<\/dd>/);
 	// Edit and Merge, spelled out, come after everything else
 	assert.match(details, /<\/div><div class="book-actions"><button type="button" class="edit">Edit<\/button><button type="button" class="merge" aria-expanded="false">Merge<\/button><\/div><\/div><\/div>$/);
 	// the cover comes after the title (beside the rest, or across the card on a phone), then the rest
@@ -1044,7 +1046,7 @@ test('narrators and descriptions live on editions: the card names the narrators,
 	const salt = demoBooks.find(b => b.t === 'The Salt Road');
 	assert.ok(salt.e.some(ed => ed.desc), 'the demo data has an edition with a description');
 	// both narrators on the book; with different narrators each edition names its own
-	assert.match(readable(els.results.innerHTML), /narr\. <a href="narrators\.html#n=Tobias\+Frane">Tobias Frane<\/a> \/ <a href="narrators\.html#n=Hollis\+Marr">Hollis Marr<\/a>/);
+	assert.match(readable(els.results.innerHTML), /narr\. <a href="narrator\.html#n=Tobias\+Frane">Tobias Frane<\/a> \/ <a href="narrator\.html#n=Hollis\+Marr">Hollis Marr<\/a>/);
 	assert.doesNotMatch(readable(els.results.innerHTML), /UK edition/, 'the card leaves editions out');
 	for (const q of ['hollis marr', 'uk edition']) {
 		const found = await boot({ page: 'books.html', storage, hash: '#q=' + hashValue(q) });
@@ -1052,8 +1054,8 @@ test('narrators and descriptions live on editions: the card names the narrators,
 	}
 	const book = await bootBook('The Salt Road', { storage });
 	const b = book.els;
-	assert.match(book.readable(b.results.innerHTML), /<h3>Edition 1<\/h3><dl class="details"><dt>Narrated by<\/dt><dd><a href="narrators\.html#n=Tobias\+Frane">Tobias Frane<\/a><\/dd><dt>ASIN/);
-	assert.match(book.readable(b.results.innerHTML), /<h3>Edition 2: UK edition<\/h3><dl class="details"><dt>Narrated by<\/dt><dd><a href="narrators\.html#n=Hollis\+Marr">Hollis Marr<\/a><\/dd><dt>ASIN/);
+	assert.match(book.readable(b.results.innerHTML), /<h3>Edition 1<\/h3><dl class="details"><dt>Narrated by<\/dt><dd><a href="narrator\.html#n=Tobias\+Frane">Tobias Frane<\/a><\/dd><dt>ASIN/);
+	assert.match(book.readable(b.results.innerHTML), /<h3>Edition 2: UK edition<\/h3><dl class="details"><dt>Narrated by<\/dt><dd><a href="narrator\.html#n=Hollis\+Marr">Hollis Marr<\/a><\/dd><dt>ASIN/);
 
 	book.ctx.openEditForm(book.get('BOOK_FILTER'));
 	assert.equal(formEditions(book.get)[0].n, 'Tobias Frane');
@@ -1136,7 +1138,7 @@ test('authors are lists: the author filter offers each author on its own, and th
 	assert.doesNotMatch(readable(els.authorFilter.innerHTML), /Ferran Doyle, Priya Ostrander/);
 	assert.equal((readable(els.authorFilter.innerHTML).match(/<option value="Priya Ostrander">/g) || []).length, 1);
 	// each author's name links to their page
-	assert.match(readable(els.results.innerHTML), /<div class="meta"><a href="authors\.html#a=Ferran\+Doyle">Ferran Doyle<\/a>, <a href="authors\.html#a=Priya\+Ostrander">Priya Ostrander<\/a><\/div>/);
+	assert.match(readable(els.results.innerHTML), /<div class="meta"><a href="author\.html#a=Ferran\+Doyle">Ferran Doyle<\/a>, <a href="author\.html#a=Priya\+Ostrander">Priya Ostrander<\/a><\/div>/);
 	els.authorFilter.value = 'Priya Ostrander';
 	await ctx.refreshView();
 	await idle();
@@ -1157,7 +1159,7 @@ test('authors and narrators written as comma separated text load as lists', asyn
 	assert.deepEqual((await kept(storage)).books, [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }]);
 	await idle();
 	assert.match(readable(els.authorFilter.innerHTML), /<option value="Bo Reed">/);
-	assert.match(readable(els.results.innerHTML), /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. <a href="narrators\.html#n=Cy\+Hale">Cy Hale<\/a>, <a href="narrators\.html#n=Di\+Moss">Di Moss<\/a><\/div>/);
+	assert.match(readable(els.results.innerHTML), /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. <a href="narrator\.html#n=Cy\+Hale">Cy Hale<\/a>, <a href="narrator\.html#n=Di\+Moss">Di Moss<\/a><\/div>/);
 });
 
 test('with no catalog in this browser it starts empty, not with the demo, and says where books come from', async () => {
@@ -2293,7 +2295,7 @@ test('a series\' or an author\'s page links to comparing their books with Hardco
 	const home = await boot({ hash: '#series=The+Lantern+Coast' });
 	await idle();
 	assert.match(home.readable(home.els.results.innerHTML), /<a class="hardcoverCompare" href="import\.html#hardcover-series=[^"]+">Compare with Hardcover<\/a>/);
-	const author = await boot({ page: 'authors.html', hash: '#a=Marisol+Quenby' });
+	const author = await boot({ page: 'author.html', hash: '#a=Marisol+Quenby' });
 	assert.match(author.readable(author.els.creditBody.innerHTML), /<a class="hardcoverCompare" href="import\.html#hardcover-author=[^"]+">Compare their books with Hardcover<\/a>/);
 
 	const mine = [{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2' }, { t: 'Lantern Hours', a: ['R. T. Hale'] }];
@@ -2316,10 +2318,9 @@ test('the authors page lists every author, with their books and series, and a se
 	const authors = new Set(demoBooks.flatMap(b => b.a));
 	assert.equal((readable(els.creditBody.innerHTML).match(/class="srow-title"/g) || []).length, authors.size);
 	assert.match(els.subtitle.textContent, new RegExp(`^${authors.size} authors across ${demoBooks.length} audiobooks`));
-	assert.match(readable(els.creditBody.innerHTML), /<a class="srow-title" href="authors\.html#a=Priya\+Ostrander">Priya Ostrander<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
+	assert.match(readable(els.creditBody.innerHTML), /<a class="srow-title" href="author\.html#a=Priya\+Ostrander">Priya Ostrander<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
 	// the first line of a bio, when there is one
 	assert.match(readable(els.creditBody.innerHTML), /Priya Ostrander writes cozy mysteries/);
-	assert.ok(!els.crumb.classList.contains('show'));
 	els.q.value = 'ferran';
 	els.q.listeners.input[0]();
 	await idle();
@@ -2330,12 +2331,27 @@ test('the authors page lists every author, with their books and series, and a se
 	assert.match(readable(els.creditBody.innerHTML), /No authors match/);
 });
 
+test('someone\'s page from before it had its own goes there, and their page without an address goes to the list', async () => {
+	for (const [list, hash, page] of [['authors.html', '#a=Marisol+Quenby', 'author.html'], ['narrators.html', '#n=id-7', 'narrator.html'], ['publishers.html', '#p=Kestrel+Row+Audio', 'publisher.html']]) {
+		const moved = await boot({ page: list, hash });
+		assert.equal(moved.ctx.location.replaced, page + hash, list + hash);
+		const stays = await boot({ page: list });
+		assert.equal(stays.ctx.location.replaced, null, list);
+		const bare = await boot({ page });
+		assert.equal(bare.ctx.location.replaced, list, page);
+	}
+	// typed into the list's address
+	const { ctx, fire } = await boot({ page: 'authors.html' });
+	ctx.location.hash = '#a=Priya+Ostrander';
+	fire('hashchange');
+	assert.equal(ctx.location.replaced, 'author.html#a=Priya+Ostrander');
+});
+
 test('an author\'s page shows their bio, their links, and their series and titles from the catalog', async () => {
-	const { ctx, els, fire, readable } = await boot({ page: 'authors.html', hash: '#a=Marisol+Quenby' });
+	const { ctx, els, fire, readable } = await boot({ page: 'author.html', hash: '#a=Marisol+Quenby' });
 	const html = readable(els.creditBody.innerHTML);
 	assert.equal(ctx.document.title, 'Marisol Quenby · Audiobook Catalog');
-	assert.ok(els.crumb.classList.contains('show'));
-	assert.equal(els.creditControls.style.display, 'none');
+	assert.match(els.crumb.innerHTML, /<a href="authors\.html">← All authors<\/a>/);
 	assert.match(html, /<h2 class="author-name">Marisol Quenby<\/h2>/);
 	assert.match(html, /<div class="author-bio"><p>Marisol Quenby writes seafaring fantasy[^<]*<\/p><p>The Lantern Coast began/);
 	for (const [label, url] of [['Website', 'https://example.com/'], ['Audible', 'https://www.audible.com/author/'], ['Goodreads', 'https://www.goodreads.com/author/show/'], ['Hardcover', 'https://hardcover.app/authors/']]) {
@@ -2356,7 +2372,7 @@ test('an author\'s page shows their bio, their links, and their series and title
 	assert.match(priya, /Halloway &amp; Finch<\/a> <span class="n">2 owned of 2<\/span> <span class="status complete">/);
 	assert.match(priya, /Outside a series <span class="n">1 book<\/span>/);
 	assert.doesNotMatch(priya, /series-note/, 'none missing');
-	assert.match(priya, /Nine Ways to Lose a Kingdom<\/a> <span class="with">with <a href="authors\.html#a=Ferran\+Doyle">Ferran Doyle<\/a><\/span>/);
+	assert.match(priya, /Nine Ways to Lose a Kingdom<\/a> <span class="with">with <a href="#a=Ferran\+Doyle">Ferran Doyle<\/a><\/span>/);
 	assert.equal(els.subtitle.textContent, '3 audiobooks in 1 series and 1 outside a series');
 
 	// an author without info or series
@@ -2369,11 +2385,13 @@ test('an author\'s page shows their bio, their links, and their series and title
 	fire('hashchange');
 	await idle();
 	assert.equal(els.subtitle.textContent, 'No books by this author in the catalog.');
+	assert.equal(ctx.document.title, 'Nobody Here · Audiobook Catalog', 'named, though no book has them');
+	assert.match(els.creditBody.innerHTML, /<h2 class="author-name">Nobody Here<\/h2>/);
+	// an address naming no one goes to the list
 	ctx.location.hash = '';
 	fire('hashchange');
 	await idle();
-	assert.equal(ctx.SHOWN, null);
-	assert.match(readable(els.creditBody.innerHTML), /class="srow-title"/);
+	assert.equal(ctx.location.replaced, 'authors.html');
 });
 
 // ------------------------------------------------------------------ the narrators and publishers pages
@@ -2383,7 +2401,7 @@ test('the narrators page lists every narrator of the editions, with their bio or
 	assert.equal(ctx.document.title, 'Narrators · Audiobook Catalog');
 	assert.equal((readable(els.creditBody.innerHTML).match(/class="srow-title"/g) || []).length, narrators.size);
 	assert.match(els.subtitle.textContent, new RegExp(`^${narrators.size} narrators across ${demoBooks.length} audiobooks`));
-	assert.match(readable(els.creditBody.innerHTML), /<a class="srow-title" href="narrators\.html#n=Ingrid\+Voss">Ingrid Voss<\/a>\s*<span class="srow-owned">5 books, 1 series<\/span><\/div><p class="srow-note">Ingrid Voss narrates fantasy/, 'the first line of a bio, when there is one');
+	assert.match(readable(els.creditBody.innerHTML), /<a class="srow-title" href="narrator\.html#n=Ingrid\+Voss">Ingrid Voss<\/a>\s*<span class="srow-owned">5 books, 1 series<\/span><\/div><p class="srow-note">Ingrid Voss narrates fantasy/, 'the first line of a bio, when there is one');
 	// else the authors they read most, the most first
 	assert.match(readable(els.creditBody.innerHTML), /Dana Whitlock<\/a>\s*<span class="srow-owned">2 books, 1 series<\/span><\/div><p class="srow-note">Books by Priya Ostrander<\/p>/);
 	els.q.value = 'tobias';
@@ -2402,51 +2420,50 @@ test('a narrator\'s page shows the series and titles they read, with their autho
 		{ t: 'Tide Two', a: ['Ann Vale'], s: 'Tide Saga', sn: '2', e: [{ n: ['Cy Hale'] }, { n: ['Ed Lund'] }] },
 		{ t: 'Apple Hill', a: ['Bo Reed', 'Ann Vale'], e: [{ n: ['Cy Hale'], p: 'Gull Audio' }] },
 	]);
-	const { ctx, els, fire, readable } = await boot({ page: 'narrators.html', hash: '#n=Cy+Hale', files: { 'books.json': books } });
+	const { ctx, els, fire, readable } = await boot({ page: 'narrator.html', hash: '#n=Cy+Hale', files: { 'books.json': books } });
 	const html = readable(els.creditBody.innerHTML);
 	assert.equal(ctx.document.title, 'Cy Hale · Audiobook Catalog');
-	assert.ok(els.crumb.classList.contains('show'));
-	assert.equal(els.creditControls.style.display, 'none');
+	assert.match(els.crumb.innerHTML, /<a href="narrators\.html">← All narrators<\/a>/);
 	assert.equal(els.subtitle.textContent, '3 audiobooks in 1 series and 1 outside a series');
 	assert.match(html, /<h2 class="author-name">Cy Hale<\/h2>/);
 	assert.match(html, /<a href="index\.html#series=Tide\+Saga">Tide Saga<\/a> <span class="n">2 books<\/span>/);
 	// who else reads the editions Cy Hale reads, not the other editions
-	assert.match(html, /Tide One<\/a> <span class="with">by <a href="authors\.html#a=Ann\+Vale">Ann Vale<\/a><\/span> <span class="with">with <a href="narrators\.html#n=Di\+Moss">Di Moss<\/a><\/span><\/li>/);
+	assert.match(html, /Tide One<\/a> <span class="with">by <a href="author\.html#a=Ann\+Vale">Ann Vale<\/a><\/span> <span class="with">with <a href="#n=Di\+Moss">Di Moss<\/a><\/span><\/li>/);
 	assert.match(html, /Tide Two<\/a> <span class="with">by <a [^>]*>Ann Vale<\/a><\/span><\/li>/);
 	assert.match(html, /Outside a series <span class="n">1 book<\/span>.*Apple Hill<\/a> <span class="with">by <a [^>]*>Bo Reed<\/a>, <a [^>]*>Ann Vale<\/a>/);
 	ctx.location.hash = '#n=Nobody+Here';
 	fire('hashchange');
 	await idle();
 	assert.equal(els.subtitle.textContent, 'No books narrated by them in the catalog.');
+	// an address naming no one goes to the list
 	ctx.location.hash = '';
 	fire('hashchange');
 	await idle();
-	assert.equal(ctx.SHOWN, null);
-	assert.match(readable(els.creditBody.innerHTML), /class="srow-title"/);
+	assert.equal(ctx.location.replaced, 'narrators.html');
 });
 
 test('the publishers page lists the editions\' publishers, and a publisher\'s page their books', async () => {
-	const { ctx, els, fire, readable } = await boot({ page: 'publishers.html' });
+	const { ctx, els, readable, storage } = await boot({ page: 'publishers.html' });
 	assert.equal(ctx.document.title, 'Publishers · Audiobook Catalog');
 	assert.match(els.subtitle.textContent, new RegExp(`^3 publishers across ${demoBooks.length} audiobooks`));
-	assert.match(readable(els.creditBody.innerHTML), /<a class="srow-title" href="publishers\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
-	ctx.location.hash = '#p=Kestrel+Row+Audio';
-	fire('hashchange');
+	assert.match(readable(els.creditBody.innerHTML), /<a class="srow-title" href="publisher\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
+	const pub = await boot({ page: 'publisher.html', hash: '#p=Kestrel+Row+Audio', storage, files: null });
 	await idle();
-	assert.equal(els.subtitle.textContent, '3 audiobooks in 1 series');
-	assert.match(readable(els.creditBody.innerHTML), /The Orchard Cycle<\/a> <span class="n">3 books<\/span>/);
-	assert.doesNotMatch(readable(els.creditBody.innerHTML), /class="with">with/, 'a publisher\'s page names no other publishers');
+	assert.equal(pub.ctx.document.title, 'Kestrel Row Audio · Audiobook Catalog');
+	assert.equal(pub.els.subtitle.textContent, '3 audiobooks in 1 series');
+	assert.match(pub.readable(pub.els.creditBody.innerHTML), /The Orchard Cycle<\/a> <span class="n">3 books<\/span>/);
+	assert.doesNotMatch(pub.readable(pub.els.creditBody.innerHTML), /class="with">with/, 'a publisher\'s page names no other publishers');
 });
 
 test('the narrators on a book card, and the publishers in its details, link to their pages', async () => {
 	const { els, readable, storage } = await boot({ page: 'books.html' });
-	assert.match(readable(els.results.innerHTML), /narr\. <a href="narrators\.html#n=Ingrid\+Voss">Ingrid Voss<\/a>/);
+	assert.match(readable(els.results.innerHTML), /narr\. <a href="narrator\.html#n=Ingrid\+Voss">Ingrid Voss<\/a>/);
 	const book = await bootBook('The Copper Graft', { storage });
-	assert.match(book.readable(book.els.results.innerHTML), /<dt>Publisher<\/dt><dd><a href="publishers\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a><\/dd>/);
+	assert.match(book.readable(book.els.results.innerHTML), /<dt>Publisher<\/dt><dd><a href="publisher\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a><\/dd>/);
 });
 
 test('author info can be added, edited and removed on the author\'s page, and links are checked', async () => {
-	const { els, get, storage } = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe' });
+	const { els, get, storage } = await boot({ page: 'author.html', hash: '#a=Wendell+Ashcombe' });
 	const editClick = () => els.creditBody.querySelector('.aedit').listeners.click[0]();
 	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
 	// Edit comes after their books, not by their name
@@ -2478,7 +2495,7 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	assert.match(els.ioStatus.textContent, /^Saved author info for Wendell Ashcombe\. Kept Hardcover's author by the name in its address/);
 	// kept in this browser, and loaded again with the page
 	assert.deepEqual((await kept(storage)).authors['Wendell Ashcombe'], entry);
-	const again = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', storage });
+	const again = await boot({ page: 'author.html', hash: '#a=Wendell+Ashcombe', storage });
 	assert.deepEqual(again.get("CATALOG.infoByName('authors').get('Wendell Ashcombe')"), entry);
 
 	// editing shows what is there; emptying every field, or Remove, removes the entry
@@ -2498,7 +2515,7 @@ test('a Hardcover address in the series or info form is looked up for its number
 	const hc = fakeHardcover(hardcoverState());
 	const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };   // the pause between requests
 	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
-	const { els, get } = await boot({ page: 'authors.html', hash: '#a=Wendell+Ashcombe', hardcover: hc.fetch, setTimeout, storage });
+	const { els, get } = await boot({ page: 'author.html', hash: '#a=Wendell+Ashcombe', hardcover: hc.fetch, setTimeout, storage });
 	const edit = () => els.creditBody.querySelector('.aedit').listeners.click[0]();
 	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
 	edit();
@@ -2544,7 +2561,7 @@ test('a Hardcover address in the series or info form is looked up for its number
 	await index.els.seriesForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.equal(index.get("CATALOG.infoByName('series').get('The Lantern Coast').external.hardcover"), '3101');
-	const pub = await boot({ page: 'publishers.html', hash: '#p=Kestrel+Row+Audio', hardcover: hc.fetch, setTimeout, storage });
+	const pub = await boot({ page: 'publisher.html', hash: '#p=Kestrel+Row+Audio', hardcover: hc.fetch, setTimeout, storage });
 	pub.els.creditBody.querySelector('.aedit').listeners.click[0]();
 	await idle();
 	assert.equal(pub.els.cf_ext_hardcover.value, 'kestrel-row-audio-sample', 'a name kept before stays until the form is saved');
@@ -2555,7 +2572,7 @@ test('a Hardcover address in the series or info form is looked up for its number
 });
 
 test('narrator and publisher info can be added on their pages, with links checked', async () => {
-	const { els, get, storage } = await boot({ page: 'narrators.html', hash: '#n=Tobias+Frane' });
+	const { els, get, storage } = await boot({ page: 'narrator.html', hash: '#n=Tobias+Frane' });
 	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
 	assert.match(els.creditBody.innerHTML, /No bio or links yet/);
 	els.creditBody.querySelector('.aedit').listeners.click[0]();
@@ -2574,7 +2591,7 @@ test('narrator and publisher info can be added on their pages, with links checke
 	assert.equal(els.ioStatus.textContent, 'Saved narrator info for Tobias Frane.');
 
 	// a publisher's page shows what the demo data keeps about it
-	const pub = await boot({ page: 'publishers.html', hash: '#p=Kestrel+Row+Audio' });
+	const pub = await boot({ page: 'publisher.html', hash: '#p=Kestrel+Row+Audio' });
 	assert.match(pub.els.creditBody.innerHTML, /Kestrel Row Audio is a small audiobook studio/);
 	assert.match(pub.els.creditBody.innerHTML, /<a class="authorlink" href="https:\/\/hardcover\.app\/publishers\/[^"]*" target="_blank" rel="noopener">Hardcover ↗<\/a>/);
 	assert.equal(pub.els.cf_ext_hardcover.getAttribute('placeholder'), 'id, or its address on hardcover.app');
@@ -2631,7 +2648,7 @@ test('Series info without note should not be rendered as "undefined"', async() =
 test('a browser that prefers British English sees "catalogue"; any other sees "catalog", and the data is never respelled', async () => {
 	const titled = JSON.stringify([{ t: 'The Catalog of Stars', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]);
 	for (const page of ALL_PAGES) {
-		const { ctx } = await boot({ page, languages: ['sv-SE', 'en-GB'], files: { 'books.json': titled } });
+		const { ctx } = await boot({ page, hash: PAGE_HASH[page] || '', languages: ['sv-SE', 'en-GB'], files: { 'books.json': titled } });
 		await idle();
 		assert.match(ctx.document.title, /Audiobook Catalogue$/, page);
 		// (the body holds what the page drew too; the Hardcover scope read:catalog is a name, and stays, and so does the book's title)
@@ -2773,14 +2790,13 @@ test('the Duplicates count is kept with the revision it was counted at, and coun
 });
 
 test('the authors list reads no book, and an author\'s page only their books', async () => {
-	const { els, fire, ctx, database, readable } = await movedIn({ 'books.json': SAGAS }, { page: 'authors.html' });
+	const { els, database, readable, storage } = await movedIn({ 'books.json': SAGAS }, { page: 'authors.html' });
 	await idle();
 	assert.match(readable(els.creditBody.innerHTML), /Ann Vale<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/);
 	assert.equal(els.subtitle.textContent, '2 authors across 8 audiobooks');
 	assert.equal(database.reads('books'), 0);
-	ctx.location.hash = '#a=Bo+Reed';
-	fire('hashchange');
+	const bo = await boot({ page: 'author.html', hash: '#a=Bo+Reed', storage, files: null });
 	await idle();
-	assert.equal(els.subtitle.textContent, '5 audiobooks in 1 series');
+	assert.equal(bo.els.subtitle.textContent, '5 audiobooks in 1 series');
 	assert.equal(database.reads('books'), 5);
 });

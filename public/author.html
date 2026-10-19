@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Author · Audiobook Catalog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#3F5D4B">
+</head>
+<body>
+<div class="wrap">
+	<h1>Audiobook Catalog</h1>
+	<nav class="pages">
+		<a href="index.html">Series</a>
+		<a href="books.html">Books</a>
+		<a href="authors.html" class="current">Authors</a>
+		<a href="narrators.html">Narrators</a>
+		<a href="publishers.html">Publishers</a>
+		<a href="import.html">Import &amp; export</a>
+		<a href="duplicates.html">Duplicates<span id="dupCount"></span></a>
+	</nav>
+	<p class="sub" id="subtitle">Loading&hellip;</p>
+
+	<div class="crumb show" id="crumb">
+		<a href="authors.html">&larr; All authors</a>
+	</div>
+
+	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
+	<p id="ioStatus" class="ioStatus"></p>
+
+	<form id="creditForm" class="infoForm">
+		<h3 id="creditFormTitle">Author info</h3>
+		<div><label for="cf_bio">Short bio</label><textarea id="cf_bio" rows="4"></textarea></div>
+		<div><label for="cf_url" id="cf_url_label">Website</label><input id="cf_url" placeholder="https://"></div>
+		<div class="formrow extFields" id="cf_ext"></div>
+		<p id="creditFormError" class="formError"></p>
+		<div class="formbtns">
+			<button type="submit" class="save" id="creditSaveBtn">Save author info</button>
+			<button type="button" id="creditRemoveBtn">Remove info</button>
+			<button type="button" id="cancelCredit">Cancel</button>
+		</div>
+	</form>
+
+	<div id="creditBody"></div>
+</div>
+
+<script type="module" src="author.js"></script>
+</body>
+</html>

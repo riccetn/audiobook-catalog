@@ -6,7 +6,7 @@ read them for workflows and the data format. This file covers what you need to c
 ## What this is
 
 A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `import.html`, `duplicates.html`, `authors.html`,
-`narrators.html`, `publishers.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
+`narrators.html`, `publishers.html`, `author.html`, `narrator.html`, `publisher.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to run the tests.
 
@@ -102,7 +102,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onHardcoverJob`;
-  the narrators and publishers pages end with `startCreditsPage(kind)`, which calls it).
+  the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
   addresses (`index.html#series=<id>`, `book.html#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are `CATALOG.marks` by book (and edition) ids, so they
@@ -130,11 +130,17 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `picks`; `drawCompare`; Apply runs `Comparison.apply` on a copy, then for Hardcover saves and `push`es the ticked part of the plan),
   Goodreads CSV export, Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so there is no series lookup from Audible.
+- `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
+  (`infoKey`, `hashKey`, `list`, `page`, labels, `href`, `works`).
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
-  `publishers.js` with `startCreditsPage(kind)`; `CREDIT_KINDS` holds what differs): the list of authors, narrators or
-  publishers (read from the contributors records alone, `LIST`) and one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`; loads their books by their credits): bio and links from `CATALOG.authors` (`.narrators`,
-  `.publishers`, by id), their series and titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the info
-  form. Names on the catalog's book cards link here.
+  `publishers.js` with `startCreditsPage(kind)`): the list of authors, narrators or publishers (read from the contributors
+  records alone, `LIST`). An address from when the list also showed one's page (`authors.html#a=<id>`) goes to their page
+  (`location.replace`).
+- `credit.js` (`author.html`, `narrator.html`, `publisher.html`, started by `author.js`/`narrator.js`/`publisher.js` with
+  `startCreditPage(kind)`): one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`; loads their books by their credits; without an
+  address it goes to the list): bio and links from `CATALOG.authors` (`.narrators`, `.publishers`, by id), their series and
+  titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the info form. Names on the catalog's book
+  cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM).
