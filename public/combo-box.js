@@ -1,8 +1,9 @@
 // A search combo box: a text field that, as a name is typed, lists the names the catalog already has that
 // match it, to pick with the mouse or the arrow keys and Enter. The field stays a text field, so a new name is
 // typed as before. A field of several names (authors, narrators: separated by commas) looks up the name the
-// cursor is in, and picking one puts it in place of what was typed there. The book form's author, narrator and
-// publisher fields are ones (book.js).
+// cursor is in, and picking one puts it in place of what was typed there. A name the catalog doesn't have yet
+// is said to be new under the field, as saving adds it as a series or person of its own. The book form's
+// author, series, narrator and publisher fields are ones (book.js).
 import { buildElement, fillElement } from './store.js';
 import {Text} from './modules/text.js';
 
@@ -49,13 +50,39 @@ export function namePart(text, at){
 }
 
 /**
+ * What a field says is new: which kind (its noun, and its plural) and whether the names are read yet.
+ * @typedef {{nouns: [string, string], ready: () => boolean}} NewNote
+ */
+
+/**
+ * The names in a field (one, or several separated by commas) that are not among `names`, as they will be saved.
+ * @param {string[]} names
+ * @param {string} value
+ * @param {boolean} multiple
+ * @returns {string[]}
+ */
+export function newNames(names, value, multiple){
+	const known = new Set(names);
+	const typed = multiple ? Text.splitNames(value) : [Text.tidy(value)].filter(Boolean);
+	return typed.filter(name=> !known.has(name));
+}
+
+// The notes of the fields on the page, by the field's id, so refreshNewNotes() can redraw them.
+/** @type {Map<string, () => void>} */
+const NOTES = new Map();
+
+// Redraw every field's note: once the names are read, or after the form filled its fields in.
+export function refreshNewNotes(){ for(const draw of NOTES.values()) draw(); }
+
+/**
  * Make `input` a combo box over `names()`, its list in `list` (a <ul> with an id, below the field). Picking a name
- * puts it in the field and calls `onPick` with the field's new text (as typing would have changed it).
+ * puts it in the field and calls `onPick` with the field's new text (as typing would have changed it). With
+ * `note` (an element below the field) and `newNote`, it says which names typed the catalog doesn't have.
  * @param {HTMLInputElement} input
  * @param {HTMLElement} list
- * @param {{names: () => string[], multiple?: boolean, onPick?: (value: string) => void}} options
+ * @param {{names: () => string[], multiple?: boolean, onPick?: (value: string) => void, note?: HTMLElement, newNote?: NewNote}} options
  */
-export function comboBox(input, list, {names, multiple = false, onPick}){
+export function comboBox(input, list, {names, multiple = false, onPick, note, newNote}){
 	const listId = list.id;
 	input.setAttribute('role', 'combobox');
 	input.setAttribute('aria-autocomplete', 'list');
@@ -111,7 +138,21 @@ export function comboBox(input, list, {names, multiple = false, onPick}){
 		if(typeof input.setSelectionRange === 'function') input.setSelectionRange(at, at);
 		close();
 		if(onPick) onPick(input.value);
+		drawNote();
 		input.focus();
+	}
+
+	function drawNote(){
+		if(!note || !newNote) return;
+		const added = newNote.ready() ? newNames(names(), input.value, multiple) : [];
+		note.hidden = !added.length;
+		note.textContent = added.length ? `New ${newNote.nouns[added.length > 1 ? 1 : 0]}: ${added.join(', ')}, added to the catalog when this is saved.` : '';
+	}
+	if(note && newNote){
+		note.classList.add('comboNew');
+		NOTES.set(input.id, drawNote);
+		input.addEventListener('input', drawNote);
+		drawNote();
 	}
 
 	input.addEventListener('input', search);
@@ -135,14 +176,16 @@ export function comboBox(input, list, {names, multiple = false, onPick}){
 }
 
 /**
- * A field that is a combo box, built: the field and its list (its id and "List") in a <div class="combo">.
+ * A field that is a combo box, built: the field and its list (its id and "List") in a <div class="combo">,
+ * and with `newNote` the note below it (its id and "New").
  * @param {HTMLInputElement} input with an id
- * @param {{names: () => string[], multiple?: boolean, onPick?: (value: string) => void}} options
+ * @param {{names: () => string[], multiple?: boolean, onPick?: (value: string) => void, newNote?: NewNote}} options
  * @returns {HTMLDivElement}
  */
 export function comboField(input, options){
 	const list = buildElement('ul', {id: input.id + 'List'});
-	const wrap = buildElement('div', {class: 'combo'}, input, list);
-	comboBox(input, list, options);
+	const note = options.newNote ? buildElement('p', {id: input.id + 'New'}) : undefined;
+	const wrap = buildElement('div', {class: 'combo'}, input, list, note);
+	comboBox(input, list, {...options, note});
 	return wrap;
 }

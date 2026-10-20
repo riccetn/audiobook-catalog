@@ -16,8 +16,8 @@
 				<input type="file" id="importFile" accept="application/json,.json,.txt,text/plain" multiple style="display:none">
 				<input type="file" id="mergeFile" accept="application/json" style="display:none">
 			</div>
-			<p class="ioNote">The catalog lives in this browser only, so export a backup now and then: it has the books, the series and author info
-				and the list of books imports skip. Restore replaces the catalog with a backup, or with the data files of a catalog
+			<p class="ioNote">The catalog lives in this browser only, so export a backup now and then: it has the books, the series, authors, narrators and
+				publishers, and the list of books imports skip. Restore replaces the catalog with a backup, or with the data files of a catalog
 				from before it lived in the browser (pick <code>books.json</code>, <code>series-info.json</code>, <code>authors.json</code>,
 				<code>excluded.txt</code> and <code>not-duplicates.txt</code> together). Merge combines a backup from another device (your phone, say) with this catalog when both have changed.</p>
 			<p class="ioNote backupState" id="backupState"></p>
@@ -29,7 +29,7 @@
 		<div class="ioRow">
 			<span class="ioLabel">Check</span>
 			<div class="rowbtns">
-				<button class="iconbtn2" id="checkBtn" title="Check the books, series info and author info for problems">Check</button>
+				<button class="iconbtn2" id="checkBtn" title="Check the books, series and people for problems">Check</button>
 				<button class="iconbtn2" id="boxSetsBtn" title="Keep each box set as its own book and as its titles">Box sets</button>
 			</div>
 			<p class="ioNote">Check lists errors and anything that needs a look. Box sets keeps each box set both as its own book and
@@ -116,7 +116,7 @@
 
 	<div id="importPreview" class="importPreview">
 		<h3 id="importPreviewTitle"></h3>
-		<p id="mergePrefer" class="mergePrefer"><label>Where both changed a book's title, author or series, or a series' info, keep
+		<p id="mergePrefer" class="mergePrefer"><label>Where both changed a book's title, author or series, or what a series or person has, keep
 			<select id="mergePreferSelect"><option value="mine">this catalog's version</option><option value="backup">the backup's version</option></select></label></p>
 		<div id="importPreviewBody"></div>
 		<div class="formbtns">

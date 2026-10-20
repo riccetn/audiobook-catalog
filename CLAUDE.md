@@ -61,7 +61,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   that is malformed is kept as it was (`extra`), so Check still reports it. Migrations and Check work on the stored JSON.
   - `Catalog`: books, `series` (`Map` of id -> `Series`), `authors`, `narrators`, `publishers` (`Map`s of id -> `Contributor`), `exclusions`,
     `marks` ("Not duplicates" and "Keep separate", by id: `markNotDuplicates`, `markKeepSeparate`, `markTexts`/`addMarkTexts`, `resolveMarks`),
-    `nameIds` (the ids series and people are known by, by name: `idFor` (gives a new name one), `nameOf`, `namesOf`, `seriesInfo`,
+    `nameIds` (the ids series and people are known by, by name, each an entry of its own: `idFor` (gives a new name one), `nameOf`, `namesOf`, `booksOf`, `removeEntry`/`removeProblem`, `seriesInfo`,
     `infoByName`/`replaceInfo` for the name-keyed backup shape; `renameSeries` keeps a series' id), `assignIds` (before every save);
     `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `book(id)`, `saveBook(id, book)`, `merge` (an import), `addBoxSets`,
     `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`,
@@ -126,10 +126,11 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, and the address helpers `hashParts`/`hashOf`/`setAddress`.
 - `combo-box.js`: a search combo box (`comboBox(input, list, {names, multiple, onPick})`, `comboField` builds one): an
   `<input>` listing the names matching what is typed (`matchingNames`; in a field of several names, the one the cursor is in, `namePart`),
-  picked with a click or the arrow keys and Enter. The book form's authors (`#f_aList` in the template) and each edition's narrators and
-  publisher use it, over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` index, when the form opens).
+  picked with a click or the arrow keys and Enter, and a note below it naming what is new (`newNames`, `refreshNewNotes`). The book form's
+  authors and series (`#f_aList`/`#f_aNew`, `#f_sList`/`#f_sNew` in the template) and each edition's narrators and
+  publisher use it, over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` and the series' `name` index, when the form opens).
 - `series.js` (`index.html`, *Series*): every series (from the series records alone, `#q=...&missing`), and a series' page
-  (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and its info form, `openSeriesForm`); `SERIES_FILTER`, `openSeries`.
+  (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and its form with Remove series, `openSeriesForm`); `SERIES_FILTER`, `openSeries`.
   Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`
   (`movedAddress`, with `location.replace`).
 - `books.js` (`books.html`, *Books*): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
@@ -152,7 +153,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `credit.js` (`author.html`, `narrator.html`, `publisher.html`, started by `author.js`/`narrator.js`/`publisher.js` with
   `startCreditPage(kind)`): one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`; loads their books by their credits; without an
   address it goes to the list): bio and links from `CATALOG.authors` (`.narrators`, `.publishers`, by id), their series and
-  titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the info form. Names on the catalog's book
+  titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the form (with Remove author/narrator/publisher). Names on the catalog's book
   cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).
@@ -190,8 +191,10 @@ keys use the first author (`Book.firstAuthor`/`firstName`). A missing `r` means 
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url, ext}`. `authors` (optional;
 missing means `{}`) maps an author's name (as in `a`) to `{bio, url, ext, links}` (ids by catalog, and other addresses; the old `audible`/`goodreads`/`hardcover`
 addresses are read into `ext` by `Contributor.fixLinks`), and `narrators` and `publishers` (likewise optional) map a narrator's name (as in an edition's `n`) or
-a publisher's (as in `p`) to the same; they travel like series info, and an
-entry whose name no book has is a warning, not an error.
+a publisher's (as in `p`) to the same; they travel like series info.
+A series or person is an entry of its own once it has an id: it stays when no book names it any more (`assignIds` keeps its id,
+the save keeps its record; a backup's `ids` carries it), and goes only by `Catalog.removeEntry` (Remove series/author/... in their
+forms; it takes the name off every book, and refuses to leave a book without an author, `removeProblem`). The UI never says "info".
 `ids` maps series, author, narrator and publisher names to their ids (`Catalog.nameIds`); a backup without ids gets new ones.
 IndexedDB (`CatalogRecords.STORES`, documented in `docs/data-format.md`): stores `books editions series contributors credits marks exclusions meta`,
 plain objects with descriptive fields, ids from `crypto.randomUUID()` that never change, references by id (a box set's edition is

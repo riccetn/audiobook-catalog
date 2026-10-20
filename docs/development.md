@@ -7,7 +7,7 @@ templates/            the pages' HTML as Liquid templates, which make pages (bui
   layout.liquid, nav-link.liquid    what every page shares: the <head>, the title and the nav bar
   pages/              one template per page (books.liquid becomes public/books.html)
 public/               the app, and all that a static server serves (make serve, GitHub Pages); its .html files are written, not committed
-  index.html, series.js    Series: every series, and a series' own page (its books, and its info form)
+  index.html, series.js    Series: every series, and a series' own page (its books, and its form)
   books.html, books.js    Books: every book, searched, filtered and sorted
   book.html, book.js    a book's page: everything about it, Read today, Merge, and the book form (also for a new book)
   combo-box.js          the book form's search combo boxes: the author, narrator and publisher names the catalog has, as they are typed
@@ -17,7 +17,7 @@ public/               the app, and all that a static server serves (make serve, 
   authors.html, narrators.html, publishers.html, credits.js    the lists of authors, narrators and publishers
                         (authors.js, narrators.js and publishers.js start credits.js with their kind)
   author.html, narrator.html, publisher.html, credit.js    one author's, narrator's or publisher's page: bio,
-                        links, series and titles, and the info form (author.js, narrator.js and publisher.js
+                        links, series and titles, and the form (author.js, narrator.js and publisher.js
                         start credit.js with their kind; credit-kinds.js holds what differs between the kinds)
   store.js              shared by the pages: loads from IndexedDB what the page shows, and saves every edit there
   styles.css

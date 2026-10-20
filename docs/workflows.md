@@ -49,7 +49,9 @@ Wikidata book fields likewise take the id of the book's work (title, item) there
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
 match the name you are typing (those starting with it first): click one, or pick it with the arrow keys and Enter,
-and it takes the place of what you typed (Escape closes the list). A new name is simply typed out. The narrator is on the edition too: the card
+and it takes the place of what you typed (Escape closes the list); the series field does the same. A new name is simply
+typed out, and the field says so below it ("New author: ..., added to the catalog when this is saved"): saving
+adds it as an author (series, narrator, publisher) of its own, and the status line names what was new. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and the book's details name each edition's;
 searching finds narrators and descriptions. To tie a box set to
 its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on each title: the details you typed on one
@@ -68,7 +70,7 @@ backup's exclusions and **Not duplicates** marks are added to the ones it alread
 catalogs have changed, merge the backup instead: see [Merge a backup from another device](backups.md).
 
 **Check the catalog**: **Check** on the *Import & export* page lists errors and warnings (a series
-info entry no book has, an untidy name, a link to the wrong site...).
+untidy name, a link to the wrong site...).
 
 **Authors' bios and links**: the *Authors* page lists every author; each author's page (`author.html`) shows a bio,
 links to their website and their pages on Audible, Goodreads, Hardcover and the other catalogs, and their series and titles.
@@ -81,17 +83,17 @@ each with a page of their bio, links, series and titles; their names on the book
 **Update release info for a series**: press **Edit** at the end of a series' page (open it from *Series*) to edit how many books are released, whether it is ongoing or complete, the note and
 the author site, the series' ids on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
-`https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each), or to add or remove that info.
-The form checks the same rules as **Check**.
-The same form renames the series: change its name and every book in the series gets the new name
-(a series without info is renamed without adding any). Renaming it to a series you already have
-moves its books into that one; the first **Save** says so and the second does it, and if the form has
-info it replaces the other series' info.
+`https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each).
+Every field is optional, and clearing them all keeps nothing about the series. The form checks the same rules as **Check**.
+The same form renames the series: change its name and every book in the series gets the new name.
+Renaming it to a series you already have moves its books into that one; the first **Save** says so and
+the second does it, and what the form has replaces what the other series has.
 
-**Series info** (the released total, whether the series is complete, a note, the author's site and its ids in other
-catalogs): press **Edit** at the end of the series' own page, after its books. The form can rename the series too.
+A series is an entry of its own: it stays when no book is in it any more ("no books yet" on *Series*), until you
+remove it. **Remove series** in its form takes it off its books, which stay in the catalog without a series
+or a number in it, and removes it; the first press says how many books it changes, the second does it.
 
-**Find books missing from a series**: when a series has a released total in its series info,
+**Find books missing from a series**: when a series has a released total,
 the *Series* page and the series' own page list the numbers you don't own (for example
 "missing #3, #5–7"). A boxed set (`"4-6"`) counts for every number in it, but not as one more book owned; a
 novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** on *Series* to see only

@@ -65,7 +65,7 @@ import {Isbn} from './isbn.js';
  * @property {string[]} idKeys "asin B0…" (whichever site), "goodreads 12345", "hardcover 678", "isbn 978…", for matching imports
  */
 /**
- * A series any book names, or that has info. The rest after `external` is derived from its books.
+ * A series: an entry of its own, whether or not a book names it. The rest after `external` is derived from its books.
  * @typedef {object} SeriesRecord
  * @property {string} id
  * @property {string} name
@@ -84,7 +84,7 @@ import {Isbn} from './isbn.js';
  */
 /** @typedef {'author' | 'narrator' | 'publisher'} CreditKind */
 /**
- * An author, narrator or publisher any book names, or that has info. `sortName`, `bookCount` and `externalKeys` are derived.
+ * An author, narrator or publisher: an entry of their own, whether or not a book names them. `sortName`, `bookCount` and `externalKeys` are derived.
  * (Before ids were kept by external catalog, a record kept the addresses of their pages as `audible`,
  * `goodreads` and `hardcover`; toCatalog() still reads them.)
  * @typedef {object} ContributorRecord
@@ -222,7 +222,7 @@ export class CatalogRecords {
 	static NEW_POSITION = -1;
 	// What the read filter's "No date read" finds in readYears.
 	static UNDATED = 'undated';
-	// The info a series' or person's record holds, beside its name; without any, a record no book names goes.
+	// The info a series' or person's record holds, beside its name.
 	/** @type {Record<'series' | 'contributors', string[]>} */
 	static INFO = {series: ['total', 'status', 'note', 'url', 'external'], contributors: ['bio', 'url', 'external', 'links']};
 

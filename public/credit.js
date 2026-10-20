@@ -2,7 +2,7 @@
 // by the id they are stored under; a name there, from a link of before, works too) with what you keep about
 // them (CATALOG.authors, .narrators, .publishers: a short bio, their own site, their ids on Audible, Amazon,
 // Goodreads and Hardcover, which link to their pages there, and other links), the series and titles of theirs
-// you have, worked out from the books, and the info form. Each page's own script (author.js, narrator.js,
+// you have, worked out from the books, and the form that edits or removes them. Each page's own script (author.js, narrator.js,
 // publisher.js) starts this one with its kind; the lists of them are credits.js's. The page loads their
 // record and their books. Loading and saving live in store.js.
 import {Text} from './modules/text.js';
@@ -22,7 +22,9 @@ let KIND = CREDIT_KINDS.author;
 /** @type {string | null} */
 export let SHOWN = null;              // the id of the author, narrator or publisher shown (#a=...); null until the address is read
 /** @type {string | null} */
-let EDITING = null;                   // the id of whose info the form is editing, or null
+let EDITING = null;                   // the id of whom the form is editing, or null
+/** @type {string | null} */
+let REMOVING = null;                  // whom Remove was pressed for once, which a second press removes
 
 const bookHref = (/** @type {Book} */ b)=> bookPageHref(b.id || '');
 const seriesHref = (/** @type {string} */ name)=> seriesPageHref(CATALOG.idFor('series', name));
@@ -134,37 +136,36 @@ function renderCreditPage(id){
 			buildElement('p', {class: 'series-title'}, series.length ? 'Outside a series' : 'Titles', ' ', buildElement('span', {class: 'n'}, Text.plural(titles.length, 'book'))),
 			buildElement('ul', {class: 'author-books'}, titles.map(b=> creditBookLine(b, name)))));
 	}
-	// viewing them comes first, so editing their info comes after their books
+	// viewing them comes first, so editing them comes after their books
 	out.push(buildElement('div', {class: 'page-actions'},
 		buildElement('button', {type: 'button', class: 'aedit', onclick: ()=> openCreditForm(id)}, 'Edit')));
 	fillElement(byId('creditBody'), out);
 }
 
-// ------------------------------------------------------------------ the info form
+// ------------------------------------------------------------------ the form
 /**
- * Edits someone's entry in CATALOG.authors (or .narrators, .publishers); like every edit, it is kept in
- * this browser (see persist in store.js).
+ * Edits what CATALOG.authors (or .narrators, .publishers) keeps about someone; like every edit, it is kept
+ * in this browser (see persist in store.js). Remove takes them off their books and removes them.
  * @param {string} id the id they are stored under
  */
 function openCreditForm(id){
 	const name = nameOf(id);
 	const info = kept().get(id) || new Contributor(name);
-	EDITING = id;
-	const one = KIND.one[0].toUpperCase() + KIND.one.slice(1);
-	byId('creditFormTitle').textContent = (kept().has(id) ? `${one} info: ` : `Add ${KIND.one} info: `) + name;
+	EDITING = id; REMOVING = null;
+	byId('creditFormTitle').textContent = `Edit ${KIND.one}: ${name}`;
 	fieldById('cf_bio').value = info.bio || '';
 	fieldById('cf_url').value = info.url || '';
 	fillExternalFields('cf_ext_', KIND.one, info.external);
 	byId('creditFormError').textContent = '';
-	byId('creditSaveBtn').textContent = `Save ${KIND.one} info`;
-	byId('creditRemoveBtn').style.display = kept().has(id) ? '' : 'none';
+	byId('creditSaveBtn').textContent = `Save ${KIND.one}`;
+	byId('creditRemoveBtn').textContent = `Remove ${KIND.one}`;
 	const form = byId('creditForm');
 	form.classList.add('open');
 	form.scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 
 function closeCreditForm(){
-	EDITING = null;
+	EDITING = null; REMOVING = null;
 	const form = /** @type {HTMLFormElement} */ (byId('creditForm'));
 	form.classList.remove('open');
 	form.reset();
@@ -194,21 +195,38 @@ async function saveCreditForm(){
 	// a warning there, but here it is most likely a mistake
 	if(entry){
 		const {errors, warnings} = Validator.validateContributors(JSON.parse(JSON.stringify(CATALOG.books)), KIND.infoKey, {[name]: entry.toJSON()});
-		const problems = [...errors, ...warnings.filter(w=> !/matches no|is a page on/.test(w))].map(e=> e.replace(/^\w+\[[^\]]*\]: /, ''));
+		const problems = [...errors, ...warnings.filter(w=> !/is a page on/.test(w))].map(e=> e.replace(/^\w+\[[^\]]*\]: /, ''));
 		if(problems.length){ byId('creditFormError').textContent = problems.join('; '); return; }
 	}
 	if(entry) kept().set(id, entry); else kept().delete(id);
 	closeCreditForm(); render(); persist();
-	showIoStatus((entry ? `Saved ${KIND.one} info for ${name}.` : `Removed ${KIND.one} info for ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
+	showIoStatus(`Saved ${name}.` + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
-function removeCreditInfo(){
+/**
+ * Remove: the first press says what it does, the second takes them off their books (the editions they
+ * read or publish) and removes them. The page loaded every book that credits them.
+ */
+function removeCredit(){
 	const id = EDITING;
-	if(id === null || !kept().has(id)) return;
+	if(id === null) return;
 	const name = nameOf(id);
-	kept().delete(id);
-	closeCreditForm(); render(); persist();
-	showIoStatus(`Removed ${KIND.one} info for ${name}.`);
+	const problem = CATALOG.removeProblem(KIND.infoKey, id);
+	if(problem){ byId('creditFormError').textContent = problem; return; }
+	const count = CATALOG.booksOf(KIND.infoKey, id).length;
+	if(REMOVING !== id){
+		REMOVING = id;
+		byId('creditFormError').textContent = (count ? `This takes ${name} off ${Text.plural(count, 'book')}${KIND === CREDIT_KINDS.author ? '' : `' editions`}, which stay in the catalog, and removes them.`
+			: `This removes ${name}, whom no book credits.`) + ` Press Remove ${KIND.one} again to do it.`;
+		return;
+	}
+	CATALOG.removeEntry(KIND.infoKey, id);
+	closeCreditForm();
+	persist();
+	// their page is gone: it says so, with the way back to the list
+	byId('subtitle').textContent = '';
+	fillElement(byId('creditBody'), buildElement('p', {class: 'empty'}, `${name} was removed. `, buildElement('a', {href: KIND.list}, `All ${KIND.many}`)));
+	showIoStatus(count ? `Removed ${name} from ${Text.plural(count, 'book')}.` : `Removed ${name}.`);
 }
 
 // ------------------------------------------------------------------ the address
@@ -216,7 +234,7 @@ function removeCreditInfo(){
 // so Back and Forward step through them. Without one the page goes to the list.
 /**
  * The id of the one the address names (by their id, or their name, as stored), or null when it names no
- * one. A name no book has gets an id too, so their page says so and info can be added for them.
+ * one. A name the catalog doesn't have gets an id too, so their page says so (and saving the form adds them).
  * @returns {Promise<string | null>}
  */
 async function shownInAddress(){
@@ -271,7 +289,7 @@ export function startCreditPage(kind){
 	byId('cf_url').setAttribute('placeholder', KIND.site[1]);
 	fillElement(byId('cf_ext'), externalFields('cf_ext_', KIND.one));
 	byId('creditForm').addEventListener('submit', e=>{ e.preventDefault(); return saveCreditForm(); });
-	byId('creditRemoveBtn').addEventListener('click', removeCreditInfo);
+	byId('creditRemoveBtn').addEventListener('click', removeCredit);
 	byId('cancelCredit').addEventListener('click', closeCreditForm);
 	addEventListener('hashchange', showAddress);
 	addEventListener('popstate', showAddress);

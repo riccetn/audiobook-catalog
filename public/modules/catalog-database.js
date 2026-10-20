@@ -413,16 +413,10 @@ class SaveTransaction {
 			}
 		}
 
-		// the writes. A series, person or edition the page dropped stays while anything stored needs it
-		// (below), without the info the page removed.
+		// the writes. A series or person the page removed goes once no stored book names them (below).
 		for(const store of /** @type {StoreName[]} */ (['marks', 'books'])) for(const key of dels(store)) this.os(store).delete(key);
 		for(const key of dels('exclusions')) this.os('exclusions').delete(key);
-		for(const store of /** @type {('series' | 'contributors')[]} */ (['series', 'contributors'])){
-			for(const key of dels(store)){
-				const old = await this.get(store, key);
-				if(old) this.os(store).put(Object.fromEntries(Object.entries(old).filter(([k]) => !CatalogRecords.INFO[store].includes(k))));
-			}
-		}
+		const dropped = new Set([...dels('series'), ...dels('contributors')].map(key => /** @type {string} */ (key)));
 		let nextBook = -1;
 		for(const r of puts('books')){
 			let position = r.position;
@@ -512,13 +506,14 @@ class SaveTransaction {
 			}
 		}
 
-		// the series and people those books are in or credit: their counts, and whether they are still needed
+		// the series and people those books are in or credit: their counts. They stay when no book names them
+		// any more (an entry of their own), unless the page removed them.
 		for(const id of affectedSeries){
 			/** @type {SeriesRecord | undefined} */
 			const rec = await this.get('series', id);
 			if(!rec) continue;
 			const books = await this.under('books', 'bySeries', [id]);
-			if(!books.length && !CatalogRecords.hasInfo('series', rec)){ this.os('series').delete(id); continue; }
+			if(!books.length && dropped.has(id)){ this.os('series').delete(id); continue; }
 			const fresh = CatalogRecords.rederiveSeries(/** @type {SeriesRecord} */ (CatalogRecords.ownFields('series', rec)), books);
 			this.os('series').put({...fresh, ...CatalogRecords.ownFields('series', rec)});
 		}
@@ -528,7 +523,7 @@ class SaveTransaction {
 			if(!rec) continue;
 			/** @type {CreditRecord[]} */
 			const credits = await this.under('credits', 'byTitle', [id]);
-			if(!credits.length && !CatalogRecords.hasInfo('contributors', rec)){ this.os('contributors').delete(id); continue; }
+			if(!credits.length && dropped.has(id)){ this.os('contributors').delete(id); continue; }
 			/** @type {BookRecord[]} */
 			const books = [];
 			for(const c of credits){ const b = await this.get('books', c.bookId); if(b) books.push(b); }
@@ -676,8 +671,8 @@ export class CatalogDatabase {
 	 * books changed, the books an edition is on, a book's derived fields (its search text names its series,
 	 * people and editions), a series' counts from its books and a person's from their credits. A page may
 	 * hold only some of the catalog, so what it removes is removed only when nothing stored still needs it:
-	 * an edition goes with its last book, a series or person with their last book once they have no info
-	 * (removing it removes their info). A book added with position NEW_POSITION goes after all the others,
+	 * an edition goes with its last book, and a series or person the page removed once no book names them.
+	 * A series or person no book names any more stays, as an entry of its own. A book added with position NEW_POSITION goes after all the others,
 	 * and an exclusion already stored keeps its place. Returns the new revision and the positions given.
 	 * Throws a CatalogConflict when another tab saved meanwhile, and then writes nothing.
 	 * @param {Changes} changes

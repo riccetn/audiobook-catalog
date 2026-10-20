@@ -12,7 +12,7 @@ import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, 
 	buildElement, fillElement, joined, publisherPageHref, externalFields, fillExternalFields, readExternalFields, bookPageHref, seriesPageHref } from './store.js';
 /** @import {Child} from './store.js' */
 import { authorLinks, narratorLinks, bookNarrators, coverImage, hashParts, hashOf, setAddress } from './book-list.js';
-import { comboBox, comboField } from './combo-box.js';
+import { comboBox, comboField, newNames, refreshNewNotes } from './combo-box.js';
 
 // Books and series are known by the ids they are stored under, so a book retitled (here or in another tab)
 // is still the one shown or edited.
@@ -367,18 +367,42 @@ addEventListener('pagehide', finishRemoving);
 addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') finishRemoving(); });
 
 // ------------------------------------------------------------------ the book form
-// The names the catalog has for authors, narrators and publishers, which the form's fields offer as they are
-// typed in (combo-box.js); read when the form opens, from the contributors' index alone.
-/** @type {Record<'author' | 'narrator' | 'publisher', string[]>} */
-export const FORM_NAMES = {author: [], narrator: [], publisher: []};
+// The names the catalog has for series, authors, narrators and publishers, which the form's fields offer as
+// they are typed in, and say a name is new when it isn't one of them (combo-box.js); read when the form
+// opens, from the series' and contributors' indexes alone.
+/** @type {Record<'series' | 'author' | 'narrator' | 'publisher', string[]>} */
+export const FORM_NAMES = {series: [], author: [], narrator: [], publisher: []};
+let FORM_NAMES_READ = false;          // whether FORM_NAMES holds the names, so a name not among them is new
+/** @type {Record<'series' | 'author' | 'narrator' | 'publisher', [string, string]>} */
+const NOUNS = {series: ['series', 'series'], author: ['author', 'authors'], narrator: ['narrator', 'narrators'], publisher: ['publisher', 'publishers']};
+/** @type {(kind: 'series' | 'author' | 'narrator' | 'publisher') => import('./combo-box.js').NewNote} */
+const newNote = kind=> ({nouns: NOUNS[kind], ready: ()=> FORM_NAMES_READ});
 
 /** @returns {Promise<void>} once FORM_NAMES holds the stored names, and the ones this page holds */
 export async function loadFormNames(){
-	const keys = await queryCatalog(r=> r.keys('contributors', 'kindName'));
+	FORM_NAMES_READ = false;
+	refreshNewNotes();
+	const [keys, series] = await queryCatalog(r=> Promise.all([r.keys('contributors', 'kindName'), r.keys('series', 'name')]));
 	for(const kind of /** @type {const} */ (['author', 'narrator', 'publisher'])){
 		const stored = keys.filter(k=> Array.isArray(k) && k[0] === kind).map(k=> String(/** @type {IDBValidKey[]} */ (k)[1]));
 		FORM_NAMES[kind] = [...new Set([...stored, ...CATALOG.namesOf(`${kind}s`)])];
 	}
+	FORM_NAMES.series = [...new Set([...series.map(k=> String(k)), ...CATALOG.namesOf('series')])];
+	FORM_NAMES_READ = true;
+	refreshNewNotes();
+}
+
+/**
+ * What saving `b` adds to the catalog: the names on it the catalog doesn't have yet, as "the author X".
+ * @param {Book} b
+ * @returns {string[]}
+ */
+function newEntries(b){
+	if(!FORM_NAMES_READ) return [];
+	/** @type {['series' | 'author' | 'narrator' | 'publisher', string[]][]} */
+	const named = [['series', b.series ? [b.series] : []], ['author', b.authors], ['narrator', [...new Set(b.editions.flatMap(ed=> ed.narrators))]],
+		['publisher', [...new Set(b.editions.map(ed=> ed.publisher || '').filter(Boolean))]]];
+	return named.flatMap(([kind, names])=> newNames(FORM_NAMES[kind], names.join(', '), true).map(name=> `the ${NOUNS[kind][0]} ${name}`));
 }
 
 /**
@@ -590,11 +614,13 @@ function renderFormEditions(){
 function editionField(fields, i, k){
 	const input = /** @type {HTMLInputElement} */ (buildElement('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k], id: `f_e${i}_${k}`}));
 	if(k !== 'n' && k !== 'p') return input;
-	return comboField(input, {names: ()=> FORM_NAMES[k === 'n' ? 'narrator' : 'publisher'], multiple: k === 'n',
+	const kind = k === 'n' ? 'narrator' : 'publisher';
+	return comboField(input, {names: ()=> FORM_NAMES[kind], multiple: k === 'n', newNote: newNote(kind),
 		onPick: value=>{ if(FORM_EDITIONS[i]) FORM_EDITIONS[i].fields[k] = value; }});
 }
 
-comboBox(/** @type {HTMLInputElement} */ (byId('f_a')), byId('f_aList'), {names: ()=> FORM_NAMES.author, multiple: true});
+comboBox(/** @type {HTMLInputElement} */ (byId('f_a')), byId('f_aList'), {names: ()=> FORM_NAMES.author, multiple: true, note: byId('f_aNew'), newNote: newNote('author')});
+comboBox(/** @type {HTMLInputElement} */ (byId('f_s')), byId('f_sList'), {names: ()=> FORM_NAMES.series, note: byId('f_sNew'), newNote: newNote('series')});
 
 const editionsEditor = byId('f_editions');
 editionsEditor.addEventListener('input', e=>{
@@ -776,13 +802,16 @@ byId('addForm').addEventListener('submit', async e=>{
 	const keys = [...new Set(editions.flatMap(ed=> [...ed.idKeys(), ...ed.isbns().map(x=> 'isbn ' + x)]))];
 	if(keys.length) await loadRecords({editionKeys: keys});
 	if(EDIT_ID !== null && !CATALOG.book(EDIT_ID)){ closeForm(); return; }
+	const added = newEntries(b);
 	const others = CATALOG.saveBook(EDIT_ID, b);
 	closeForm();
 	// a book added: its page shows it, in place of the empty form (so Back doesn't open that again)
 	if(ADDING){ ADDING = null; BOOK_FILTER = /** @type {string} */ (b.id); setAddress('replace', addressNow()); }
 	render(); persist(); refreshView();
-	if(others) showIoStatus(`Also updated the shared edition on ${Text.plural(others, 'other book')}.`);
-	else if(!editing) showIoStatus(`Added ${b.title}.`);
+	const news = added.length ? ` New in the catalog: ${added.join(', ')}.` : '';
+	if(others) showIoStatus(`Also updated the shared edition on ${Text.plural(others, 'other book')}.${news}`);
+	else if(!editing) showIoStatus(`Added ${b.title}.${news}`);
+	else if(news) showIoStatus(`Saved ${b.title}.${news}`);
 });
 
 /**

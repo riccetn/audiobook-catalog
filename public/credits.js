@@ -1,4 +1,5 @@
-// The authors, narrators and publishers pages: everyone the books credit as one of them, searched by name,
+// The authors, narrators and publishers pages: everyone of the kind in the catalog (whether or not a book
+// credits them still), searched by name,
 // each linking to their own page (author.html, narrator.html, publisher.html: credit.js). Each list's own
 // script (authors.js, narrators.js, publishers.js) starts this one with its kind. The list reads only the
 // kind's records (each keeps how many books and series they have). Loading lives in store.js.
@@ -29,7 +30,7 @@ export function render(){
 	fillElement(byId('creditBody'), shown.length ? shown.map(x=> buildElement('div', {class: 'srow'},
 		buildElement('div', {class: 'srow-head'},
 			buildElement('a', {class: 'srow-title', href: creditPageHref(KIND.infoKey, x.id)}, x.name), ' ',
-			buildElement('span', {class: 'srow-owned'}, `${Text.plural(x.books, 'book')}${x.series ? ', ' + Text.plural(x.series, 'series', 'series') : ''}`)),
+			buildElement('span', {class: 'srow-owned'}, x.books ? `${Text.plural(x.books, 'book')}${x.series ? ', ' + Text.plural(x.series, 'series', 'series') : ''}` : 'no books yet')),
 		bioLine(x) || (KIND !== CREDIT_KINDS.author && topAuthorsLine(x))))
 		: buildElement('p', {class: 'empty'}, all.length ? `No ${KIND.many} match your search.`
 			: KIND === CREDIT_KINDS.author ? 'No books yet.' : `No ${KIND.many} yet: they come from the books' editions.`));
@@ -60,7 +61,7 @@ function topAuthorsLine(x){
  */
 async function readList(r){
 	/** @type {ContributorRecord[]} */
-	const records = (await r.under('contributors', 'byName', [KIND.one])).filter(c=> c.bookCount > 0);
+	const records = await r.under('contributors', 'byName', [KIND.one]);
 	/** @type {ContributorRecord[]} */
 	const authors = await r.get('contributors', records.flatMap(c=> c.topAuthorIds || []));
 	const authorName = new Map(authors.map(a=> [a.id, a.name]));

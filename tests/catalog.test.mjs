@@ -331,13 +331,14 @@ test('Goodreads ids: validated, excluded, and kept apart from ASINs', () => {
 	assert.ok(!Exclusions.parse('4242\n').covers(B({ t: 'x', a: ['y'], ...ed({ ext: { goodreads: '4242' } }) })), 'a bare number is an ASIN, not a Goodreads id');
 });
 
-test('validation: series-info must match a series and be well formed', () => {
+test('validation: series-info must be well formed, and may be for a series no book is in', () => {
 	const books = [{ t: 't', a: ['a'], s: 'Real' }];
 	const errors = Validator.validate(books, {
 		Ghost: { total: 2, status: 'ongoing', note: 'n' },
 		Real: { total: 0, status: 'paused', note: '', url: 'ftp://x', extra: 1 },
 	}).errors.join('\n');
-	for (const needle of ["'Ghost' matches no series", 'status must be', 'total must be', 'url must start', 'unknown keys']) {
+	assert.ok(!errors.includes('Ghost'), 'a series of its own, with no books');
+	for (const needle of ['status must be', 'total must be', 'url must start', 'unknown keys']) {
 		assert.ok(errors.includes(needle), needle);
 	}
 	assert.deepEqual(Validator.validate([{ t: 't', a: ['a'], s: 'S' }], { S: { total: 'many', status: 'ongoing', note: 'n' } }).errors, []);
@@ -1288,7 +1289,6 @@ test('author info: validated against the books, ids checked against their catalo
 	assert.deepEqual(warnings, [
 		"authors['Ann Vale']: 'kobo.com' is not an external catalog this app knows",
 		"authors['Ann Vale']: link 'https://www.goodreads.com/author/show/7.Ann_Vale' is a page on Goodreads; keep its id '7' instead",
-		"authors: 'Cy Hale' matches no author in books.json",
 	]);
 	assert.deepEqual(Validator.validateContributors(books, 'authors', []).errors, ['authors: must map author names to their info']);
 	// a publisher has no page on Goodreads
@@ -1313,7 +1313,7 @@ test('author info from before ids: the address of each page becomes its id, and 
 test('narrator and publisher info: names come from the editions, and backups carry and merge it', () => {
 	const books = [book('Lantern Road', 'Ann Vale', { e: [{ n: ['Cy Hale'], p: 'Gull Audio' }] })];
 	assert.deepEqual(Validator.validateContributors(books, 'narrators', { 'Cy Hale': { bio: 'Reads.' }, 'Ann Vale': { bio: 'Writes.' } }),
-		{ errors: [], warnings: ["narrators: 'Ann Vale' matches no narrator in books.json"] });
+		{ errors: [], warnings: [] }, 'a narrator no edition has is an entry of their own');
 	assert.deepEqual(Validator.validateContributors(books, 'publishers', { 'Gull Audio': { ext: { hardcover: 'gull' } } }),
 		{ errors: [], warnings: [] });
 	assert.deepEqual(Validator.validateContributors(books, 'publishers', { 'Gull Audio': { url: 'gull' } }).errors,
@@ -1321,7 +1321,7 @@ test('narrator and publisher info: names come from the editions, and backups car
 	// the Check looks at all three
 	const catalog = Catalog.fromJSON({ books, narrators: { Nobody: { bio: 'Hi.' } }, publishers: { 'Gull Audio': { note: 'x' } } });
 	const found = catalog.validate({ contributors: true });
-	assert.deepEqual([found.errors, found.warnings], [["publishers['Gull Audio']: unknown keys ['note']"], ["narrators: 'Nobody' matches no narrator in books.json"]]);
+	assert.deepEqual([found.errors, found.warnings], [["publishers['Gull Audio']: unknown keys ['note']"], []]);
 	// backups: read, older ones have none, and merging adds the backup's
 	assert.equal(Backup.read({ books: [] }).narrators, null);
 	assert.throws(() => Backup.read({ books: [], publishers: [] }), /publishers is not an object/);
@@ -1732,11 +1732,41 @@ test('records: ids stay, a copy that differs or an id used twice gets its own, a
 	assert.equal(catalog.books[1].editions[0].id, 'new');
 	assert.deepEqual(records.editions.find(ed => ed.id === catalog.books[0].editions[0].id).bookIds, [ids[0], ids[2]]);
 	assert.deepEqual(records.series.map(x => [x.id, x.name]), [[seriesId, 'The Orchard Cycle']]);
-	// a name no book has any more, and no info, loses its id
+	// a name no book has any more keeps its id: it is an entry of its own, until it is removed
 	catalog.books.splice(3, 2);
-	recordsOf(catalog);
-	assert.equal(catalog.nameIds.authors.has('Odo Wren'), true, 'still on Orchard Frost');
-	assert.equal(catalog.nameIds.narrators.has('Mira Tallis'), false);
+	const narrator = catalog.nameIds.narrators.get('Mira Tallis');
+	assert.ok(recordsOf(catalog).contributors.some(c => c.id === narrator && c.bookCount === 0));
+	assert.equal(catalog.nameIds.narrators.get('Mira Tallis'), narrator);
+	assert.deepEqual(catalog.removeEntry('narrators', narrator), []);
+	assert.equal(recordsOf(catalog).contributors.some(c => c.id === narrator), false);
+});
+
+test('removeEntry takes a series or person off every book, and refuses to leave a book without an author', () => {
+	const catalog = Catalog.fromJSON({ books: [
+		book('Fern 1', 'Bo Reed', { a: ['Bo Reed', 'Ann Vale'], s: 'Fern Saga', sn: '1', e: [{ n: ['Cy Hale', 'Di Moss'], p: 'Gull Audio' }] }),
+		book('Fern 2', 'Bo Reed', { s: 'Fern Saga', sn: '2', e: [{ n: ['Cy Hale'] }] }),
+	], seriesInfo: { 'Fern Saga': { total: 3, status: 'ongoing' } } });
+	catalog.assignIds();
+	const id = (kind, name) => catalog.nameIds[kind].get(name);
+	assert.deepEqual(catalog.removeEntry('series', id('series', 'Fern Saga')).map(b => b.title), ['Fern 1', 'Fern 2']);
+	assert.ok(catalog.books.every(b => b.series === undefined && b.number === undefined));
+	assert.equal(catalog.series.size, 0);
+	assert.equal(catalog.nameIds.series.size, 0);
+	assert.deepEqual(catalog.removeEntry('narrators', id('narrators', 'Cy Hale')).length, 2);
+	assert.deepEqual(catalog.books.map(b => b.editions[0].narrators), [['Di Moss'], []]);
+	catalog.removeEntry('publishers', id('publishers', 'Gull Audio'));
+	assert.equal(catalog.books[0].editions[0].publisher, undefined);
+	// Ann Vale shares her book; Bo Reed is the only author of Fern 2
+	assert.equal(catalog.removeProblem('authors', id('authors', 'Ann Vale')), '');
+	catalog.removeEntry('authors', id('authors', 'Ann Vale'));
+	assert.deepEqual(catalog.books[0].authors, ['Bo Reed']);
+	assert.equal(catalog.removeProblem('authors', id('authors', 'Bo Reed')),
+		'Bo Reed is the only author of 2 books (Fern 1, Fern 2): give them another author first, or remove them.');
+	assert.throws(() => catalog.removeEntry('authors', id('authors', 'Bo Reed')), /only author/);
+	// the ids of what is left are kept, and nothing removed comes back
+	catalog.assignIds();
+	assert.deepEqual([...catalog.nameIds.narrators.keys()], ['Di Moss']);
+	assert.deepEqual([...catalog.nameIds.authors.keys()], ['Bo Reed']);
 });
 
 test('records: marks point at books, so they hold when a book is retitled', () => {

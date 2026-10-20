@@ -66,15 +66,15 @@ by site in `asin`, its Goodreads id in `gr` and its Hardcover id in `hc`, and th
 in `hcb`; they are read into `ext`. A backup or Restore in an older shape is read this way, and the
 browser keeps the catalog in the current one.
 
-The series info (`seriesInfo`, `series-info.json` before) maps a series name (it must match `s` exactly) to
+The series info (`seriesInfo`, `series-info.json` before) maps a series name (as `s` has it; a series no book is in has one too) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://...", "ext": {...}}`.
 `total` is the number of books released so far; `url` (an author or publisher site) and `ext` (the
 series' ids in [external catalogs](#external-catalogs), `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "3101"}`) are optional.
 
 ## Authors
 
-The author info (`authors`, `authors.json` before) maps an author's name (it must match a name in some
-book's `a` exactly) to what you keep about them; every field is optional:
+The author info (`authors`, `authors.json` before) maps an author's name (as the books' `a` write it; an author
+no book names any more is one too) to what you keep about them; every field is optional:
 
 ```json
 {"Marisol Quenby": {"bio": "Writes seafaring fantasy.\n\nLives by the sea.", "url": "https://example.com/",
@@ -89,8 +89,7 @@ book's `a` exactly) to what you keep about them; every field is optional:
 | `links` | other pages about them, as a list of addresses: where an author page's address from before could not be read as an id, it is kept here |
 
 Links must start with `http://` or `https://`; **Check** warns when an id is not one its catalog
-gives, when one of `links` is an external catalog's page (keep its id in `ext` instead), and when an
-entry matches no author of any book (an author renamed on their books). Until 2026-10 the entry kept
+gives, and when one of `links` is an external catalog's page (keep its id in `ext` instead). Until 2026-10 the entry kept
 the addresses of their pages as `audible`, `goodreads` and `hardcover`; each is read into `ext`. The
 series and titles on an author's page are not stored here: they come from the books.
 
@@ -103,7 +102,7 @@ narrator search takes it, and Goodreads' and Hardcover's ids are their author pa
 narrators as authors), and so is BookBrainz's; for a publisher, Audible's id is its name as Audible's publisher search takes it
 and Hardcover's its number there (Goodreads has no publisher pages). Both can also have a
 Wikidata item, and a publisher an ISFDB and a BookBrainz id. Both are
-optional (missing means `{}`), and **Check** warns, as for authors, about an entry that matches no edition.
+optional (missing means `{}`).
 
 ```json
 {"narrators": {"Ingrid Voss": {"bio": "Narrates fantasy.", "ext": {"audible.com": "Ingrid Voss", "hardcover": "4102"}}},
@@ -139,7 +138,8 @@ from one site matches an edition another site gave. **Check** reports an id its 
 `ids` maps each series, author, narrator and publisher name to the id it is stored under:
 `{"series": {"The Lantern Coast": "3f2b…"}, "authors": {…}, "narrators": {…}, "publishers": {…}}`. With the books' and
 editions' `uid`, it lets a Restore put back the same records, and a **Merge** find a book by its id first
-(before its ASIN, title or place in a series), even when it was retitled on the other device. Backups
+(before its ASIN, title or place in a series), even when it was retitled on the other device. It also
+lists the series and people no book names (and with no info), which are entries of their own. Backups
 without ids still work: whatever has none gets a new one.
 
 ## How the browser keeps it
@@ -153,7 +153,7 @@ the next rows after the last one it shows (`IDBKeyRange.lowerBound([sortTitle, i
 how a list can be paged or scrolled without loading all of it. A page reads only what it shows (see
 [What each page loads](saving.md#what-each-page-loads)), so a save works the derived fields out inside
 its own transaction, from the records stored: a book's credits, a series' or person's counts, an
-edition's `bookIds`, and whether a series or person without books or info is kept.
+and an edition's `bookIds`.
 
 | store | key | holds | indexes |
 |-------|-----|-------|---------|
@@ -166,7 +166,8 @@ edition's `bookIds`, and whether a series or person without books or info is kep
 | `exclusions` | `entry` | an entry of the exclusions list, and its `position` in it | `byPosition` [position, entry] |
 | `meta` | `key` | `revision` (bumped by every save; when another tab saved since the page read it, the page takes in the records that tab changed before it saves, and refuses when both changed the same record), `duplicates` (how many the Duplicates link counts, with the `revision` it was counted at), `reshape` (while the records still need saving again after an upgrade), and `unreadable` (a catalog set aside) | |
 
-Every series a book names and every person a book or edition credits has a record, with info or without.
+Every series and every person has a record, with info or without, and keeps it when no book names them any
+more: it goes only when they are removed (**Remove series**, **Remove author**, ...).
 The database is version 3: version 2 had none of the indexes and derived fields a page that reads only
 what it shows needs, so the first page opened after the upgrade saves every record again. Version 1 kept the ids under fields of their own (an edition's `asins`,
 `goodreadsId` and `hardcoverId`, a book's `hardcoverId`, a person's `audible`, `goodreads` and

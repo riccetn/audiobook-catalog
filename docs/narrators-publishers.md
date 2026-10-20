@@ -28,8 +28,10 @@ of an Audible search (search for the name and pick *Narrator* or *Publisher* in 
 narrators as authors (`https://hardcover.app/authors/...`) and has publisher pages
 (`https://hardcover.app/publishers/...`), and is asked for the number of either (see [Hardcover](hardcover.md)); Goodreads lists narrators as authors too, and has no publisher
 pages, so a publisher has no Goodreads field. Each field takes the id or the address of the page, as on an
-author's page. Clearing every field, or **Remove info**, removes the entry.
+author's page. Clearing every field keeps nothing about them; they stay.
 
-The info is kept by the name exactly as the editions write it; renaming a narrator or publisher on the
-editions leaves their entry under the old name, and **Check** warns that it matches no narrator (or
-publisher). See [Data format](data-format.md#narrators-and-publishers) for how it is kept.
+Each narrator and publisher is an entry of their own, under the name exactly as the editions write it: they stay,
+with no books, when no edition names them any more, until you remove them. Renaming one on the editions
+leaves the old name as a narrator (or publisher) with no books. **Remove narrator** (or **Remove
+publisher**) in the form takes them off every edition and removes them; the first press says how many
+books it changes, the second does it. The books stay. See [Data format](data-format.md#narrators-and-publishers) for how it is kept.
