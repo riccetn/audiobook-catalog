@@ -587,7 +587,7 @@ test('back and forward step through series, searches and filters, and books', as
 	await idle();
 	assert.equal(get('SERIES_FILTER'), lantern);
 	assert.equal(cards(els.results.innerHTML), 4);
-	// leaving a series closes its info form
+	// leaving a series closes its form
 	await ctx.openSeriesForm(lantern);
 	assert.ok(els.seriesForm.classList.contains('open'));
 	history.back();
@@ -664,7 +664,7 @@ test('editing a book keeps its editions', async () => {
 	assert.match(els.results.innerHTML, /<h2 class="title">Renamed In The App<\/h2>/);
 });
 
-test('the book form\'s author, narrator and publisher fields offer the names the catalog has as they are typed', async () => {
+test('the book form\'s author, series, narrator and publisher fields offer the names the catalog has as they are typed, and say which are new', async () => {
 	const { ctx, els, get, run } = await bootBook(SALT_ROAD);
 	ctx.openEditForm(get('BOOK_FILTER'));
 	await ctx.loadFormNames();
@@ -698,6 +698,7 @@ test('the book form\'s author, narrator and publisher fields offer the names the
 	els.f_a.dispatch('keydown', { key: 'Escape' });
 	assert.equal(els.f_aList.innerHTML, '');
 	assert.equal(els.f_a.value, 'Wen');
+	assert.equal(els.f_aNew.textContent, 'New author: Wen, added to the catalog when this is saved.');
 	els.f_a.value = 'Marisol Quenby, Priya Ostrander, ';
 	// an edition's narrators and publisher: a click picks one, and the edition has it
 	const narrators = els.f_e0_n, publisher = els.f_e0_p;
@@ -714,13 +715,25 @@ test('the book form\'s author, narrator and publisher fields offer the names the
 	els.f_e0_pList.children[0].dispatch('click');
 	assert.equal(publisher.value, 'Kestrel Row Audio', 'one publisher, so no comma after it');
 	assert.equal(formEditions(get)[0].p, 'Kestrel Row Audio');
-	// a name the catalog doesn't have is typed as before
+	assert.equal(els.f_e0_pNew.hidden, true, 'a name the catalog has is not new');
+	els.f_a.dispatch('input');
+	assert.equal(els.f_aNew.hidden, true);
+	// a name the catalog doesn't have is typed as before, and the field says it is new
 	publisher.value = 'New Sound';
 	typeEdition(els, 0, 'p', 'New Sound');
 	publisher.dispatch('input');
 	assert.equal(els.f_e0_pList.innerHTML, '');
+	assert.equal(els.f_e0_pNew.hidden, false);
+	assert.equal(els.f_e0_pNew.textContent, 'New publisher: New Sound, added to the catalog when this is saved.');
+	els.f_s.value = 'Brand New Saga';
+	els.f_s.dispatch('input');
+	assert.equal(els.f_sNew.textContent, 'New series: Brand New Saga, added to the catalog when this is saved.');
+	els.f_s.value = get('CATALOG.books[0].series');
+	els.f_s.dispatch('input');
+	assert.equal(els.f_sNew.hidden, true);
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	await idle();
+	assert.equal(els.ioStatus.textContent, `Saved ${get('CATALOG.books[0].title')}. New in the catalog: the publisher New Sound.`);
 	assert.deepEqual(get('CATALOG.books[0].authors'), ['Marisol Quenby', 'Priya Ostrander']);
 	assert.deepEqual(get('[CATALOG.books[0].editions[0].narrators, CATALOG.books[0].editions[0].publisher]'), [['Tobias Frane', 'Ingrid Voss'], 'New Sound']);
 	assert.ok(run('FORM_NAMES.author.length') > 0);
@@ -1594,7 +1607,7 @@ test('Restore takes the data files of a catalog from before it lived in the brow
 		{ name: 'excluded.txt', text: '# books imports skip\nBGONE\n' },
 		{ name: 'not-duplicates.txt', text: pair + '\n' },
 	] } });
-	assert.match(els.ioStatus.textContent, /^Restored 2 books and info for 1 series; 1 more excluded from imports\.$/);
+	assert.match(els.ioStatus.textContent, /^Restored 2 books and the release details of 1 series; 1 more excluded from imports\.$/);
 	assert.deepEqual((await kept(storage)), { books, seriesInfo: { 'Gull Isle': { total: 3, status: 'ongoing' } },
 		authors: { 'Ann Vale': { bio: 'Writes about the sea.' } }, narrators: { 'Cy Hale': { bio: 'Reads sea stories.' } }, publishers: {}, excluded: ['BGONE'],
 		notDuplicates: [pair] });
@@ -1786,7 +1799,7 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 	await idle();
 	// Hardcover's series by the name in its address, as no token is saved to look up its number
 	assert.deepEqual(get("CATALOG.infoByName('series').get('The Lantern Coast').external"), { 'audible.com': 'B0LANTERN1', hardcover: 'the-lantern-coast-sample' });
-	assert.match(els.ioStatus.textContent, /^Saved series info for The Lantern Coast\. Kept Hardcover's series by the name in its address, as no Hardcover API token is saved/);
+	assert.match(els.ioStatus.textContent, /^Saved The Lantern Coast\. Kept Hardcover's series by the name in its address, as no Hardcover API token is saved/);
 	assert.deepEqual((await kept(storage)).seriesInfo['The Lantern Coast'].ext, { 'audible.com': 'B0LANTERN1', hardcover: 'the-lantern-coast-sample' });
 	assert.match(els.results.innerHTML, /<a class="authorlink" href="https:\/\/www\.audible\.com\/series\/B0LANTERN1" target="_blank" rel="noopener">Audible ↗<\/a>/);
 	// something that is neither is refused
@@ -1839,7 +1852,7 @@ test('an edition has fields for Goodreads and Hardcover, and one for another cat
 	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another catalog<\/option><option value="openlibrary">Open Library<\/option><option value="bookbrainz">BookBrainz<\/option><\/select>/);
 });
 
-test('series info can be edited, added and removed in the page', async () => {
+test('a series can be edited in the page, and removed from its books', async () => {
 	const { ctx, els, get, storage } = await boot();
 	const info = JSON.parse(DEMO_INFO);
 	const [name] = Object.keys(info);
@@ -1857,7 +1870,7 @@ test('series info can be edited, added and removed in the page', async () => {
 	assert.equal(els.sf_total.value, String(info[name].total));
 	assert.equal(els.sf_status.value, info[name].status);
 	assert.equal(els.sf_note.value, info[name].note);
-	assert.equal(els.seriesRemoveBtn.style.display, '');
+	assert.equal(els.seriesFormTitle.textContent, `Edit series: ${name}`);
 	Object.assign(els.sf_total, { value: '7' });
 	Object.assign(els.sf_status, { value: 'ongoing' });
 	Object.assign(els.sf_note, { value: '  book 8   is announced ' });
@@ -1886,13 +1899,13 @@ test('series info can be edited, added and removed in the page', async () => {
 	await idle();
 	assert.ok(!els.seriesForm.classList.contains('open'));
 
-	// add: a series without info gets a fresh entry ("many" is allowed)
+	// a series with nothing kept about it gets it ("many" is allowed)
 	const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
 	assert.ok(bare, 'the demo data has a series without info');
 	ctx.openSeriesForm(seriesIdOf(get, bare));
 	await idle();
 	assert.equal(els.sf_total.value, '');
-	assert.equal(els.seriesRemoveBtn.style.display, 'none');
+	assert.equal(els.seriesFormTitle.textContent, `Edit series: ${bare}`);
 	Object.assign(els.sf_total, { value: 'Many' });
 	Object.assign(els.sf_status, { value: 'complete' });
 	Object.assign(els.sf_note, { value: 'finished' });
@@ -1900,16 +1913,60 @@ test('series info can be edited, added and removed in the page', async () => {
 	await idle();
 	assert.deepEqual(get(`CATALOG.infoByName('series').get(${JSON.stringify(bare)})`), { total: 'many', status: 'complete', note: 'finished' });
 
-	// remove
-	ctx.openSeriesForm(seriesIdOf(get, name));
+	// emptying every field keeps nothing about it, and the series stays
+	ctx.openSeriesForm(seriesIdOf(get, bare));
+	await idle();
+	for (const field of [els.sf_total, els.sf_note, els.sf_url]) field.value = '';
+	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
+	await idle();
+	assert.equal(els.seriesFormError.textContent, '');
+	assert.equal(get(`CATALOG.infoByName('series').has(${JSON.stringify(bare)})`), false);
+	assert.equal(els.ioStatus.textContent, `Saved ${bare}.`);
+	assert.ok(databaseOf(storage).records('series').some(x => x.name === bare));
+
+	// Remove series warns first, then takes it off its books, which stay
+	const id = seriesIdOf(get, name), count = demoBooks.filter(b => b.s === name).length;
+	ctx.openSeries(id);
+	await idle();
+	ctx.openSeriesForm(id);
 	await idle();
 	els.seriesRemoveBtn.listeners.click[0]();
 	await idle();
-	assert.equal(get(`CATALOG.infoByName('series').has(${JSON.stringify(name)})`), false);
-	assert.equal(get(`CATALOG.infoByName('series').has(${JSON.stringify(bare)})`), true);
+	assert.equal(els.seriesFormError.textContent, `This takes ${name} off its ${count} books, which stay in the catalog without a series or a number in it, and removes the series. Press Remove series again to do it.`);
+	assert.equal(get(`CATALOG.books.filter(b => b.series === ${JSON.stringify(name)}).length`), count, 'nothing changed yet');
+	els.seriesRemoveBtn.listeners.click[0]();
+	await idle();
+	assert.ok(!els.seriesForm.classList.contains('open'));
+	assert.equal(els.ioStatus.textContent, `Removed the series ${name} from ${count} books.`);
+	assert.equal(get('SERIES_FILTER'), null, 'every series shows');
+	const saved = await kept(storage);
+	assert.equal(saved.books.length, demoBooks.length);
+	assert.equal(saved.books.filter(b => b.s === name || (!b.s && b.sn)).length, 0, 'no series, and no number in it');
+	assert.equal(name in saved.seriesInfo, false);
+	assert.equal(databaseOf(storage).records('series').some(x => x.id === id), false);
 });
 
-test('a series can be renamed from its series info form, on every book in it', async () => {
+test('a series no book is in any more stays, and can be removed', async () => {
+	const books = JSON.stringify([{ t: 'Fern 1', a: ['Bo Reed'], s: 'Fern Saga', sn: '1' }, { t: 'Lone', a: ['Bo Reed'] }]);
+	const { get, storage } = await boot({ files: { 'books.json': books } });
+	const id = seriesIdOf(get, 'Fern Saga');
+	await removeBook('Fern 1', { storage, files: null });
+	const home = await boot({ storage, files: null });
+	assert.match(home.els.results.innerHTML, /Fern Saga<\/a> <span class="srow-owned">no books yet<\/span>/);
+	home.ctx.openSeries(id);
+	await idle();
+	assert.match(home.els.results.innerHTML, /No books in Fern Saga yet\.<\/p><div class="page-actions"><button type="button" class="sedit"/);
+	home.ctx.openSeriesForm(id);
+	await idle();
+	home.els.seriesRemoveBtn.listeners.click[0]();
+	assert.equal(home.els.seriesFormError.textContent, 'This removes Fern Saga, which no book is in. Press Remove series again to do it.');
+	home.els.seriesRemoveBtn.listeners.click[0]();
+	await idle();
+	await kept(storage);
+	assert.deepEqual(databaseOf(storage).records('series'), []);
+});
+
+test('a series can be renamed from its form, on every book in it', async () => {
 	const { ctx, els, get, storage } = await boot();
 	const info = JSON.parse(DEMO_INFO);
 	const [name] = Object.keys(info);
@@ -2547,8 +2604,8 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	assert.match(els.creditBody.innerHTML, /<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button><\/div>$/);
 	editClick();
 	assert.ok(els.creditForm.classList.contains('open'));
-	assert.equal(els.creditFormTitle.textContent, 'Add author info: Wendell Ashcombe');
-	assert.equal(els.creditRemoveBtn.style.display, 'none');
+	assert.equal(els.creditFormTitle.textContent, 'Edit author: Wendell Ashcombe');
+	assert.equal(els.creditRemoveBtn.textContent, 'Remove author');
 	els.cf_bio.value = '  Builds   clockwork worlds.\n\nLives by a canal. ';
 	els.cf_url.value = 'wendell.example';
 	submit();
@@ -2568,23 +2625,30 @@ test('author info can be added, edited and removed on the author\'s page, and li
 	assert.deepEqual(get("CATALOG.infoByName('authors').get('Wendell Ashcombe')"), entry);
 	assert.match(els.creditBody.innerHTML, /<p>Builds clockwork worlds\.<\/p><p>Lives by a canal\.<\/p>/);
 	assert.match(els.creditBody.innerHTML, /<a class="authorlink" href="https:\/\/www\.audible\.co\.uk\/author\/B0WENDELL1" target="_blank" rel="noopener">Audible \(audible\.co\.uk\) ↗<\/a> <a class="authorlink" href="https:\/\/hardcover\.app\/authors\/wendell" target="_blank" rel="noopener">Hardcover ↗<\/a>/);
-	assert.match(els.ioStatus.textContent, /^Saved author info for Wendell Ashcombe\. Kept Hardcover's author by the name in its address/);
+	assert.match(els.ioStatus.textContent, /^Saved Wendell Ashcombe\. Kept Hardcover's author by the name in its address/);
 	// kept in this browser, and loaded again with the page
 	assert.deepEqual((await kept(storage)).authors['Wendell Ashcombe'], entry);
 	const again = await boot({ page: 'author.html', hash: '#a=Wendell+Ashcombe', storage });
 	assert.deepEqual(again.get("CATALOG.infoByName('authors').get('Wendell Ashcombe')"), entry);
 
-	// editing shows what is there; emptying every field, or Remove, removes the entry
+	// editing shows what is there; emptying every field keeps nothing about them, and they stay
 	editClick();
-	assert.equal(els.creditFormTitle.textContent, 'Author info: Wendell Ashcombe');
+	assert.equal(els.creditFormTitle.textContent, 'Edit author: Wendell Ashcombe');
 	assert.equal(els.cf_ext_hardcover.value, 'wendell');
 	assert.equal(els.cf_ext_audible.value, 'https://www.audible.co.uk/author/B0WENDELL1', 'the address, so the site is kept');
-	assert.equal(els.creditRemoveBtn.style.display, '');
-	els.creditRemoveBtn.listeners.click[0]();
+	for (const field of [els.cf_bio, els.cf_url, els.cf_ext_hardcover, els.cf_ext_audible]) field.value = '';
+	await submit();
 	await idle();
 	assert.equal(get("CATALOG.infoByName('authors').get('Wendell Ashcombe') || null"), null);
-	assert.match(els.ioStatus.textContent, /Removed author info for Wendell Ashcombe/);
+	assert.equal(els.ioStatus.textContent, 'Saved Wendell Ashcombe.');
 	assert.ok((await kept(storage)).authors['Marisol Quenby'], 'the other authors keep theirs');
+	assert.ok(databaseOf(storage).records('contributors').some(c => c.name === 'Wendell Ashcombe'));
+
+	// an author can't be removed while a book has no other
+	editClick();
+	els.creditRemoveBtn.listeners.click[0]();
+	assert.match(els.creditFormError.textContent, /^Wendell Ashcombe is the only author of \d+ books? \(.*\): give (them|it) another author first, or remove (them|it)\.$/);
+	assert.ok(get("CATALOG.books.some(b => b.authors.includes('Wendell Ashcombe'))"));
 });
 
 test('a Hardcover address in the series or info form is looked up for its number, and kept as it is when Hardcover can\'t be asked', async () => {
@@ -2598,7 +2662,7 @@ test('a Hardcover address in the series or info form is looked up for its number
 	els.cf_ext_hardcover.value = 'https://hardcover.app/authors/wendell-ashcombe/books';
 	await submit();
 	assert.deepEqual(get("CATALOG.infoByName('authors').get('Wendell Ashcombe').external"), { hardcover: '4101' });
-	assert.equal(els.ioStatus.textContent, 'Saved author info for Wendell Ashcombe. Found on Hardcover: Wendell Ashcombe (author 4101).');
+	assert.equal(els.ioStatus.textContent, 'Saved Wendell Ashcombe. Found on Hardcover: Wendell Ashcombe (author 4101).');
 	assert.match(els.creditBody.innerHTML, /<a class="authorlink" href="https:\/\/hardcover\.app\/id\/author\/4101" target="_blank" rel="noopener">Hardcover ↗<\/a>/);
 	assert.deepEqual(hc.sent.at(-1).variables, { slug: 'wendell-ashcombe' });
 
@@ -2647,14 +2711,14 @@ test('a Hardcover address in the series or info form is looked up for its number
 	assert.equal(pub.get("CATALOG.infoByName('publishers').get('Kestrel Row Audio').external.hardcover"), '5101');
 });
 
-test('narrator and publisher info can be added on their pages, with links checked', async () => {
+test('a narrator or publisher can be edited on their page, with links checked, and removed from their books', async () => {
 	const { els, get, storage } = await boot({ page: 'narrator.html', hash: '#n=Tobias+Frane' });
 	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
 	assert.match(els.creditBody.innerHTML, /No bio or links yet/);
 	els.creditBody.querySelector('.aedit').listeners.click[0]();
 	await idle();
-	assert.equal(els.creditFormTitle.textContent, 'Add narrator info: Tobias Frane');
-	assert.equal(els.creditSaveBtn.textContent, 'Save narrator info');
+	assert.equal(els.creditFormTitle.textContent, 'Edit narrator: Tobias Frane');
+	assert.equal(els.creditSaveBtn.textContent, 'Save narrator');
 	els.cf_bio.value = 'Reads sea stories.';
 	els.cf_ext_audible.value = 'https://www.goodreads.com/author/show/1.Tobias';
 	submit();
@@ -2664,7 +2728,24 @@ test('narrator and publisher info can be added on their pages, with links checke
 	assert.deepEqual(get("CATALOG.infoByName('narrators').get('Tobias Frane')"), { bio: 'Reads sea stories.', ext: { 'audible.com': 'Tobias Frane' } });
 	assert.deepEqual((await kept(storage)).narrators['Tobias Frane'], { bio: 'Reads sea stories.', ext: { 'audible.com': 'Tobias Frane' } });
 	assert.match(els.creditBody.innerHTML, /<div class="author-bio"><p>Reads sea stories\.<\/p><\/div><p class="author-links"><a class="authorlink" href="https:\/\/www\.audible\.com\/search\?searchNarrator=Tobias%20Frane" target="_blank" rel="noopener">Audible ↗<\/a><\/p>/);
-	assert.equal(els.ioStatus.textContent, 'Saved narrator info for Tobias Frane.');
+	assert.equal(els.ioStatus.textContent, 'Saved Tobias Frane.');
+
+	// Remove narrator warns first, then takes them off the editions they read
+	const read = demoBooks.filter(b => (b.e || []).some(ed => (ed.n || []).includes('Tobias Frane'))).length;
+	assert.ok(read > 0);
+	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	await idle();
+	els.creditRemoveBtn.listeners.click[0]();
+	assert.equal(els.creditFormError.textContent, `This takes Tobias Frane off ${read} book${read > 1 ? 's' : ''}' editions, which stay in the catalog, and removes them. Press Remove narrator again to do it.`);
+	els.creditRemoveBtn.listeners.click[0]();
+	await idle();
+	assert.equal(els.ioStatus.textContent, `Removed Tobias Frane from ${read} book${read > 1 ? 's' : ''}.`);
+	assert.match(els.creditBody.innerHTML, /Tobias Frane was removed\. <a href="narrators\.html">All narrators<\/a>/);
+	const saved = await kept(storage);
+	assert.equal(saved.books.length, demoBooks.length);
+	assert.ok(!saved.books.some(b => (b.e || []).some(ed => (ed.n || []).includes('Tobias Frane'))));
+	assert.equal('Tobias Frane' in saved.narrators, false);
+	assert.ok(!databaseOf(storage).records('contributors').some(c => c.name === 'Tobias Frane'));
 
 	// a publisher's page shows what the demo data keeps about it
 	const pub = await boot({ page: 'publisher.html', hash: '#p=Kestrel+Row+Audio' });
@@ -2684,8 +2765,8 @@ test('Check on the import page lists problems; a catalog in an older format is k
 	await idle();
 	const report = els.importPreviewBody.innerHTML;
 	assert.equal(els.importPreview.place, 'after checkPanel');
-	assert.match(report, /1 books, 0 series, 1 with release info, 0 authors, 0 narrators, 0 publishers with info/);
-	assert.match(report, /Errors \(1\):.*'Nowhere' matches no series/s);
+	assert.match(report, /1 books; 1 series, 1 with a released total; 1 author, 0 narrators, 0 publishers, 0 with a bio or links\./);
+	assert.match(report, /No problems found/);
 	assert.equal(els.importConfirm.style.display, 'none');
 	assert.equal(els.importCancel.textContent, 'Close');
 });
@@ -2827,9 +2908,9 @@ test('an edit on a page that holds some books keeps every other record, and the 
 	assert.deepEqual(count('contributors'), { 'Ann Vale': [3, 2], 'Bo Reed': [5, 1], 'Cy Hale': [3, 2] });
 	assert.equal(database.records('credits').length, 8 + 3);
 
-	// removing the last books of a series drops it, and a person left without books
+	// a series whose last books are removed stays, as an entry of its own
 	for (const title of ['Gull 1', 'Gull 2']) await removeBook(title, { storage, files: null });
-	assert.deepEqual(count('series'), { 'Fern Saga': [6, undefined] });
+	assert.deepEqual(count('series'), { 'Fern Saga': [6, undefined], 'Gull Isle': [0, undefined] });
 	assert.deepEqual(count('contributors'), { 'Ann Vale': [1, 1], 'Bo Reed': [5, 1], 'Cy Hale': [1, 1] });
 	assert.equal((await kept(storage)).books.length, 6);
 });

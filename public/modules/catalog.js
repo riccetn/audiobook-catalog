@@ -22,8 +22,8 @@ import {Text} from './text.js';
 /** @typedef {'series' | ContributorKind} NamedKind what is known by its name on the books: a series, or an author, narrator or publisher */
 /**
  * The ids that series, authors, narrators and publishers are stored under, by name (as the books write it),
- * whether or not there is info about them. A name keeps its id while any book has it, and a series keeps
- * its id when it is renamed (Catalog.renameSeries).
+ * whether or not there is info about them. Each is an entry of its own: it stays when no book names it any
+ * more, until it is removed (Catalog.removeEntry), and a series keeps its id when it is renamed (Catalog.renameSeries).
  * @typedef {Record<NamedKind, Map<string, string>>} NameIds
  */
 // An edition's values without its id, for "is this copy the same edition?".
@@ -155,8 +155,8 @@ export class Catalog {
 	 * Give an id to every book, edition, series and person in the catalog that has none, and a new one to
 	 * any that shares its id with another (a book restored twice, say). A box set's edition is one record:
 	 * its copies on its titles keep (or get) one id while they are the same edition, and a copy that differs
-	 * gets one of its own. Ids of names no book has, and with no info, are dropped. The marks then point at
-	 * the books they are about (resolveMarks).
+	 * gets one of its own. A series or person keeps its id when no book names them any more (they are
+	 * entries of their own, until removeEntry). The marks then point at the books they are about (resolveMarks).
 	 * @param {() => string} [newId]
 	 */
 	assignIds(newId = Catalog.newId){
@@ -193,7 +193,6 @@ export class Catalog {
 				else if(named !== id && !info.has(named)){ info.delete(id); info.set(named, entry); }
 			}
 			const seen = new Set();
-			for(const name of [...ids.keys()]) if(!names.has(name)) ids.delete(name);
 			for(const name of names){
 				let id = ids.get(name);
 				if(!id || seen.has(id)){
@@ -214,9 +213,7 @@ export class Catalog {
 	 * @returns {Set<string>}
 	 */
 	namesOf(kind){
-		/** @type {(b: Book) => string[]} */
-		const onBook = kind === 'series' ? b => b.series ? [b.series] : [] : kind === 'authors' ? Catalog.authorsOf
-			: kind === 'narrators' ? Catalog.narratorsOf : Catalog.publishersOf;
+		const onBook = Catalog.namesOn(kind);
 		return new Set([...this.books.flatMap(onBook), ...[...this.infoMap(kind).values()].map(x => x.name)]);
 	}
 
@@ -527,6 +524,66 @@ export class Catalog {
 	}
 
 	/**
+	 * Remove a series, author, narrator or publisher: their name comes off every book (a series' books lose
+	 * their number in it too, and a person comes off the editions they read or publish), and their entry and
+	 * info go. Returns the books changed. Throws when an author is the only author of a book, as a book needs
+	 * one (removeProblem says so first).
+	 * @param {NamedKind} kind
+	 * @param {string} id
+	 * @returns {Book[]}
+	 */
+	removeEntry(kind, id){
+		const problem = this.removeProblem(kind, id);
+		if(problem) throw new Error(problem);
+		const name = this.nameOf(kind, id);
+		/** @type {Book[]} */
+		const changed = [];
+		if(name !== undefined){
+			for(const b of this.books){
+				let hit = false;
+				if(kind === 'series' && b.series === name){ b.series = undefined; b.number = undefined; hit = true; }
+				if(kind === 'authors' && b.authors.includes(name)){ b.authors = b.authors.filter(a => a !== name); hit = true; }
+				for(const ed of b.editions){
+					if(kind === 'narrators' && ed.narrators.includes(name)){ ed.narrators = ed.narrators.filter(n => n !== name); hit = true; }
+					if(kind === 'publishers' && ed.publisher === name){ ed.publisher = undefined; hit = true; }
+				}
+				if(hit) changed.push(b);
+			}
+			this.nameIds[kind].delete(name);
+		}
+		this.infoMap(kind).delete(id);
+		return changed;
+	}
+
+	/**
+	 * Why removeEntry() can't remove an entry (an author who is the only author of some books), or ''.
+	 * @param {NamedKind} kind
+	 * @param {string} id
+	 * @returns {string}
+	 */
+	removeProblem(kind, id){
+		const name = this.nameOf(kind, id);
+		if(kind !== 'authors' || name === undefined) return '';
+		const alone = this.books.filter(b => b.authors.length === 1 && b.authors[0] === name);
+		if(!alone.length) return '';
+		const titles = alone.slice(0, 3).map(b => b.title).join(', ') + (alone.length > 3 ? ` and ${alone.length - 3} more` : '');
+		return `${name} is the only author of ${Text.plural(alone.length, 'book')} (${titles}): give ${alone.length > 1 ? 'them' : 'it'} another author first, or remove ${alone.length > 1 ? 'them' : 'it'}.`;
+	}
+
+	/**
+	 * The books naming the series, author, narrator or publisher stored under `id`, of those the catalog holds.
+	 * @param {NamedKind} kind
+	 * @param {string} id
+	 * @returns {Book[]}
+	 */
+	booksOf(kind, id){
+		const name = this.nameOf(kind, id);
+		if(name === undefined) return [];
+		const onBook = Catalog.namesOn(kind);
+		return this.books.filter(b => onBook(b).includes(name));
+	}
+
+	/**
 	 * What `name` wrote (alone or with others), from the books: {series: [{name, books}], titles} with each
 	 * series' books in series order and the books outside a series by title.
 	 * @param {string} name
@@ -554,6 +611,15 @@ export class Catalog {
 		return this.creditedWorks(Catalog.publishersOf, name);
 	}
 
+	/**
+	 * How a book gives the names of a kind: its series, authors, or its editions' narrators or publishers.
+	 * @param {NamedKind} kind
+	 * @returns {(b: Book) => string[]}
+	 */
+	static namesOn(kind){
+		return kind === 'series' ? b => b.series ? [b.series] : [] : kind === 'authors' ? Catalog.authorsOf
+			: kind === 'narrators' ? Catalog.narratorsOf : Catalog.publishersOf;
+	}
 	/** @param {Book} b @returns {string[]} its authors */
 	static authorsOf(b){ return b.authors; }
 	/** @param {Book} b @returns {string[]} the narrators of all its editions, each once */

@@ -26,8 +26,15 @@ Audible store, `https://www.amazon.com/stores/author/B0...`, `https://www.goodre
 `https://www.wikidata.org/wiki/Q1001`, ...) and the id is read from it. A bare id in the Audible or Amazon field is
 audible.com's or amazon.com's; for another store, paste the address, and the field shows it that way. The
 form refuses what is neither an id nor an address there (a Hardcover address in the Goodreads field, say).
-Clearing every field, or **Remove info**, removes the entry. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
+Clearing every field keeps nothing about them; the author stays. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
 
-The info is kept by the author's name exactly as the books write it. If you rename an author on their
-books, their entry stays under the old name: **Check** warns that it matches no author; copy the bio and
-links to the new name and remove the old entry. See [Data format](data-format.md#authors) for how it is kept.
+An author is an entry of their own, under the name exactly as the books write it: they stay in the catalog,
+and on *Authors* ("no books yet"), when no book names them any more, until you remove them. If you rename an
+author on their books, the old name stays as an author with no books; copy the bio and links to the new
+name and remove the old one. The book form says when a name you type is new (see
+[Everyday workflows](workflows.md#editing)).
+
+**Remove an author**: **Remove author** in the form takes them off every book and removes them. The first
+press says how many books it changes, the second does it. An author who is the only author of a book can't
+be removed, as a book needs an author: the form names those books, so you can give them another author
+first (or remove them). See [Data format](data-format.md#authors) for how it is kept.

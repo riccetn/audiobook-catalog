@@ -145,7 +145,7 @@ async function importBackup(files){
 		const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
 		CATALOG.addMarkTexts([...keptMarks, ...notDuplicates || []]);   // likewise the pairs marked "Not duplicates"
 		persist(); noteBackup().then(refreshPage);   // what was restored is in that backup
-		showIoStatus(`Restored ${books.length} books` + (series ? ` and info for ${series.size} series` : '') +
+		showIoStatus(`Restored ${books.length} books` + (series ? ` and the release details of ${series.size} series` : '') +
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
 	}catch{
 		showIoStatus(spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
@@ -447,9 +447,8 @@ function mergeIntoCatalog(backup){
 	// the select's options are 'mine' and 'backup'
 	const prefer = /** @type {'mine' | 'backup'} */ (fieldById('mergePreferSelect').value);
 	const m = backup.mergeInto(CATALOG, prefer);
-	// series info left without books is expected after a series was renamed; anything else blocks
 	const merged = new Catalog({books: m.books, series: m.series, authors: m.authors, narrators: m.narrators, publishers: m.publishers});
-	const errors = merged.validate({contributors: true}).errors.filter(e=> !/^series-info: .* matches no series/.test(e));
+	const errors = merged.validate({contributors: true}).errors;
 	const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length +
 		m.authorsAdded.length + m.authorsChanged.length + m.narratorsAdded.length + m.narratorsChanged.length +
 		m.publishersAdded.length + m.publishersChanged.length + m.excluded.length + m.notDuplicates.length;
@@ -474,12 +473,12 @@ function previewMerge(){
 	}
 	const infoDiffer = m.infoChanged.length + m.infoKept.length;
 	if(m.infoAdded.length || infoDiffer){
-		out.push(para(`Series info: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : spell("this catalog's")})` : '')));
+		out.push(para(`Series' totals, status, notes and links: ${m.infoAdded.length} added` + (infoDiffer ? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : spell("this catalog's")})` : '')));
 	}
 	for(const [label, added, changed, kept] of /** @type {[string, string[], string[], string[]][]} */ ([
-		['Author info', m.authorsAdded, m.authorsChanged, m.authorsKept],
-		['Narrator info', m.narratorsAdded, m.narratorsChanged, m.narratorsKept],
-		['Publisher info', m.publishersAdded, m.publishersChanged, m.publishersKept]])){
+		["Authors' bios and links", m.authorsAdded, m.authorsChanged, m.authorsKept],
+		["Narrators' bios and links", m.narratorsAdded, m.narratorsChanged, m.narratorsKept],
+		["Publishers' bios and links", m.publishersAdded, m.publishersChanged, m.publishersKept]])){
 		const differ = changed.length + kept.length;
 		if(added.length || differ){
 			out.push(para(`${label}: ${added.length} added` + (differ ? `, ${differ} differing (keeping ${changed.length ? "the backup's" : spell("this catalog's")})` : '')));
@@ -569,11 +568,11 @@ function showTidyPreview(title, body, confirm){
 
 function checkCatalog(){
 	const {errors, warnings} = CATALOG.validate({contributors: true});
-	const series = new Set(CATALOG.books.filter(b=> b.series).map(b=> b.series)).size;
-	const withInfo = [Text.plural(CATALOG.authors.size, 'author'), Text.plural(CATALOG.narrators.size, 'narrator'), Text.plural(CATALOG.publishers.size, 'publisher')];
+	const people = [Text.plural(CATALOG.nameIds.authors.size, 'author'), Text.plural(CATALOG.nameIds.narrators.size, 'narrator'), Text.plural(CATALOG.nameIds.publishers.size, 'publisher')];
+	const described = CATALOG.authors.size + CATALOG.narrators.size + CATALOG.publishers.size;
 	/** @type {Child[]} */
-	const out = [para(`${CATALOG.books.length} books, ${series} series, ${CATALOG.series.size} with release info, ` +
-		`${withInfo.join(', ')} with info.`)];
+	const out = [para(`${CATALOG.books.length} books; ${CATALOG.nameIds.series.size} series, ${CATALOG.series.size} with a released total; ` +
+		`${people.join(', ')}, ${described} with a bio or links.`)];
 	if(errors.length) out.push(para(`Errors (${errors.length}):`, 'warn'), messageList(errors, 100));
 	if(warnings.length) out.push(para(`Needs a look (${warnings.length}):`, 'warn'), messageList(warnings, 100));
 	if(!errors.length && !warnings.length) out.push(para('No problems found.'));

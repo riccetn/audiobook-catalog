@@ -152,7 +152,6 @@ export class Validator {
 		}
 
 		for(const [name, entry] of Object.entries(info || {})){
-			if(!seriesNames.has(name)) errors.push(`series-info: ${repr(name)} matches no series in books.json`);
 			if(!isObj(entry)){ errors.push(`series-info[${repr(name)}]: not an object`); continue; }
 			if(!Series.STATUSES.includes(entry.status)) errors.push(`series-info[${repr(name)}]: status must be one of ${repr(Series.STATUSES.slice().sort())}`);
 			const total = entry.total;
@@ -211,15 +210,15 @@ export class Validator {
 	}
 
 	/**
-	 * Check stored author, narrator or publisher info (`kind`) against the stored books. Returns {errors,
-	 * warnings}: a malformed entry, or an id that isn't one, is an error; an entry for a name no book has (an
-	 * author renamed on their books) and an id in a catalog this app doesn't know are warnings.
-	 * @param {Unchecked} books
+	 * Check stored author, narrator or publisher info (`kind`). Returns {errors,
+	 * warnings}: a malformed entry, or an id that isn't one, is an error, and an id in a catalog this app
+	 * doesn't know is a warning. An entry for a name no book has is fine: they are entries of their own.
+	 * @param {Unchecked} _books the stored books, which entries no longer have to match
 	 * @param {ContributorKind} kind
 	 * @param {Unchecked} entries
 	 * @returns {Problems}
 	 */
-	static validateContributors(books, kind, entries){
+	static validateContributors(_books, kind, entries){
 		/** @type {string[]} */
 		const errors = [];
 		/** @type {string[]} */
@@ -227,10 +226,8 @@ export class Validator {
 		const one = {authors: 'author', narrators: 'narrator', publishers: 'publisher'}[kind];
 		if(entries === undefined || entries === null) return {errors, warnings};
 		if(!Text.isObject(entries)) return {errors: [`${kind}: must map ${one} names to their info`], warnings};
-		const names = new Set((Array.isArray(books) ? books : []).flatMap(b => Validator.contributorNames(b, kind)));
 		for(const [name, entry] of Object.entries(entries)){
 			const label = `${kind}[${repr(name)}]`;
-			if(!names.has(name)) warnings.push(`${kind}: ${repr(name)} matches no ${one} in books.json`);
 			if(!Text.isObject(entry)){ errors.push(`${label}: not an object`); continue; }
 			const unknown = Object.keys(entry).filter(k => !/** @type {string[]} */ (Contributor.KEYS).includes(k)).sort();
 			if(unknown.length) errors.push(`${label}: unknown keys ${repr(unknown)}`);
@@ -259,18 +256,5 @@ export class Validator {
 			}
 		}
 		return {errors, warnings};
-	}
-
-	/**
-	 * The names a stored book gives for `kind`: its authors, or its editions' narrators or publishers.
-	 * @param {Unchecked} b
-	 * @param {ContributorKind} kind
-	 * @returns {unknown[]}
-	 */
-	static contributorNames(b, kind){
-		if(!Text.isObject(b)) return [];
-		if(kind === 'authors') return Array.isArray(b.a) ? b.a : [];
-		const editions = Array.isArray(b.e) ? b.e.filter(Text.isObject) : [];
-		return kind === 'narrators' ? editions.flatMap(ed => Array.isArray(ed.n) ? ed.n : []) : editions.map(ed => ed.p);
 	}
 }

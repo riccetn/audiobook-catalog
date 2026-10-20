@@ -1,4 +1,4 @@
-// The series page (index.html): every series, and a series' own page (its books, and editing its info).
+// The series page (index.html): every series, and a series' own page (its books, and editing or removing it).
 // The book cards and lists are book-list.js's; loading and saving live in store.js.
 import {Text} from './modules/text.js';
 import {Series} from './modules/series.js';
@@ -17,14 +17,16 @@ import { BookList, STANDALONE, bookGroups, readOrdered, statusTag, authorSiteLin
 /** @type {string | null} */
 export let SERIES_FILTER = null;      // the id of the series shown, STANDALONE, or null for every series
 /** @type {string | null} */
-let EDIT_SERIES = null;        // the id of the series whose info is being edited, or null
+let EDIT_SERIES = null;        // the id of the series being edited, or null
+/** @type {string | null} */
+let REMOVING_SERIES = null;    // the series Remove series was pressed for once, which a second press removes
 /** @type {string | null} */
 let JOIN_SERIES = null;        // the existing series a rename was asked to join, once Save was pressed for it
 
 // The page holds only what it shows, read from the stored catalog by loadView(): every series' row, or the
 // books of the series shown.
 /**
- * The series' rows: the series with books, the names of their authors, and how many books are in no series.
+ * The series' rows: every series (with books or not), the names of their authors, and how many books are in no series.
  * @typedef {{series: SeriesRecord[], authors: Map<string, string>, standalone: number}} Overview
  */
 /** @type {Overview} */
@@ -86,7 +88,7 @@ async function resolveAddress(){
  */
 async function readOverview(r){
 	/** @type {SeriesRecord[]} */
-	const series = (await r.all('series', 'byName')).filter(s=> s.bookCount > 0);
+	const series = await r.all('series', 'byName');
 	const people = await r.get('contributors', [...new Set(series.flatMap(s=> s.authorIds))]);
 	return {series, authors: new Map(people.map(c=> [c.id, c.name])), standalone: await r.count('books', 'standalone')};
 }
@@ -121,9 +123,11 @@ export function render(){
 	byId('subtitle').textContent = spell(`${TOTAL_BOOKS} audiobooks in the catalog`);
 	byId('resultCount').textContent = '';
 	fillElement(byId('results'), books.length ? bookGroups(books, {more: LIST.rest, onMore: ()=> showMore(),
-		// it can be compared with Hardcover, and its info edited, after its books
+		// it can be compared with Hardcover, and edited, after its books
 		heading: id=> [' ', buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('series', id)}, 'Compare with Hardcover')],
-		after: id=> seriesEditButton(id)}) : buildElement('p', {class: 'empty'}, 'No books in this series.'));
+		after: id=> seriesEditButton(id)})
+		: [buildElement('p', {class: 'empty'}, name === null ? 'No books in this series.' : `No books in ${name} yet.`),
+			SERIES_FILTER !== STANDALONE && name !== null && seriesEditButton(SERIES_FILTER)]);
 }
 
 /**
@@ -160,7 +164,8 @@ function renderOverview(){
 		out.push(buildElement('div', {class: 'srow'},
 			buildElement('div', {class: 'srow-head'},
 				buildElement('a', {class: 'srow-title', href: seriesPageHref(rec.id)}, rec.name), ' ',
-				buildElement('span', {class: 'srow-owned'}, `${rec.owned} owned${info ? ' of ' + totalText(info) : ''}`)),
+				buildElement('span', {class: 'srow-owned'}, rec.bookCount ? `${rec.owned} owned${info ? ' of ' + totalText(info) : ''}`
+					: `no books yet${info ? ', ' + totalText(info) + ' released' : ''}`)),
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'},
 				joined(authors.map(a=> buildElement('a', {href: creditPageHref('authors', a.id)}, a.name)), ', ')),
 				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
@@ -272,11 +277,12 @@ byId('filtersBtn').addEventListener('click', ()=>{
 });
 watchCoversBox(()=> render());
 
-// ------------------------------------------------------------------ series info
-// Edits the series' entry in CATALOG.series (released total, status, note, author site) and its name,
-// which is renamed on every book in the series. Like book edits, it is kept in this browser (see persist).
+// ------------------------------------------------------------------ the series form
+// Edits the series: its name, which is renamed on every book in the series, and what CATALOG.series keeps
+// about it (released total, status, note, author site). Like book edits, it is kept in this browser (see
+// persist). Remove series takes it off its books and removes it.
 /**
- * The Edit button at the end of a series' own page, which opens its info form.
+ * The Edit button at the end of a series' own page, which opens its form.
  * @param {string} id the series'
  * @returns {HTMLDivElement}
  */
@@ -286,7 +292,7 @@ function seriesEditButton(id){
 }
 
 /**
- * Open the series info form, once the series and its books are loaded (a rename renames them all).
+ * Open the series form, once the series and its books are loaded (a rename or a removal changes them all).
  * @param {string} id the series'
  * @returns {Promise<void>}
  */
@@ -295,23 +301,22 @@ export async function openSeriesForm(id){
 	const name = CATALOG.nameOf('series', id);
 	if(name === undefined) return;
 	const info = CATALOG.series.get(id);
-	EDIT_SERIES = id; JOIN_SERIES = null;
+	EDIT_SERIES = id; JOIN_SERIES = null; REMOVING_SERIES = null;
 	fieldById('sf_name').value = name;
-	byId('seriesFormTitle').textContent = (info ? 'Series info: ' : 'Add series info: ') + name;
+	byId('seriesFormTitle').textContent = 'Edit series: ' + name;
 	fieldById('sf_total').value = info ? totalText(info) : '';
 	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') : 'ongoing';
 	fieldById('sf_note').value = info ? info.note || '' : '';
 	fieldById('sf_url').value = info ? info.url || '' : '';
 	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
 	byId('seriesFormError').textContent = '';
-	byId('seriesRemoveBtn').style.display = info ? '' : 'none';
 	const form = byId('seriesForm');
 	form.classList.add('open');
 	form.scrollIntoView({behavior:'smooth', block:'center'});
 }
 
 function closeSeriesForm(){
-	EDIT_SERIES = null; JOIN_SERIES = null;
+	EDIT_SERIES = null; JOIN_SERIES = null; REMOVING_SERIES = null;
 	byId('seriesForm').classList.remove('open');
 	/** @type {HTMLFormElement} */ (byId('seriesForm')).reset();
 	byId('seriesFormError').textContent = '';
@@ -339,11 +344,11 @@ async function saveSeriesForm(){
 	const had = CATALOG.series.get(id);
 	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
 	if(external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
-	// a rename of a series without info doesn't have to add some
-	const keepInfo = !renamed || CATALOG.series.has(id) || totalTyped || note || url || Object.keys(external.ids).length;
+	// a series needs none of these; with all of them empty, it keeps none
+	const typedAny = totalTyped || note || url || Object.keys(external.ids).length;
 	/** @type {Series | null} */
 	let entry = null;
-	if(keepInfo){
+	if(typedAny){
 		// unchecked as typed: the Check below says what is wrong with the total or status
 		/** @type {Record<string, unknown>} */
 		const typed = {total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase(),
@@ -357,21 +362,22 @@ async function saveSeriesForm(){
 		if(problems.length) return showError(problems.join('; '));
 		entry = Series.fromJSON(newName, typed);
 	}
-	// Joining another series is easy to do by mistake (and replaces its info), so the first Save says so.
+	// Joining another series is easy to do by mistake (and replaces what it has), so the first Save says so.
 	// the series it would join, with its books, which move into it with these
 	if(renamed) await loadRecords({seriesNamed: [newName]});
 	if(EDIT_SERIES !== id) return;
-	const exists = CATALOG.books.some(b=> b.series === newName) || !!CATALOG.seriesInfo(newName);
+	const exists = CATALOG.nameIds.series.has(newName);
 	if(renamed && exists && JOIN_SERIES !== newName){
 		JOIN_SERIES = newName;
 		return showError(`There is already a series called ${newName}. Press Save again to move these books into it` +
-			(entry && CATALOG.seriesInfo(newName) ? '; its series info will be replaced by this.' : '.'));
+			(entry && CATALOG.seriesInfo(newName) ? '; its total, status, note and links will be replaced by these.' : '.'));
 	}
 
-	// renamed on its books and in its info, keeping the id it is stored under (or taking the id of the one it joins)
+	// renamed on its books, keeping the id it is stored under (or taking the id of the one it joins)
 	const count = renamed ? CATALOG.renameSeries(name, newName) : 0;
 	const newId = CATALOG.idFor('series', newName);
-	if(entry) CATALOG.series.set(newId, entry);
+	// with every field emptied it keeps none, but a series it joins keeps its own
+	if(entry) CATALOG.series.set(newId, entry); else if(!(renamed && exists)) CATALOG.series.delete(newId);
 	closeSeriesForm();
 	// the series shown keeps showing, under its new name
 	if(SERIES_FILTER === id && newId !== id){ SERIES_FILTER = newId; setAddress('replace', addressNow()); }
@@ -379,23 +385,39 @@ async function saveSeriesForm(){
 	persist();
 	showIoStatus((renamed
 		? `Renamed ${name} to ${newName} on ${Text.plural(count, 'book')}.`
-		: `Saved series info for ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
+		: `Saved ${name}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
-function removeSeriesInfo(){
+/**
+ * Remove series: the first press says what it does, the second takes the series off its books (they keep
+ * everything else, but their number in it) and removes it. The form loaded all its books.
+ */
+function removeSeries(){
 	const id = EDIT_SERIES, name = id === null ? undefined : CATALOG.nameOf('series', id);
-	if(id === null || name === undefined || !CATALOG.series.has(id)) return;
-	CATALOG.series.delete(id);
-	closeSeriesForm(); render(); persist(); refreshView();
-	showIoStatus(`Removed series info for ${name}.`);
+	if(id === null || name === undefined) return;
+	const count = CATALOG.booksOf('series', id).length;
+	if(REMOVING_SERIES !== id){
+		REMOVING_SERIES = id;
+		byId('seriesFormError').textContent = (count
+			? `This takes ${name} off its ${Text.plural(count, 'book')}, which stay in the catalog without a series or a number in it, and removes the series.`
+			: `This removes ${name}, which no book is in.`) + ' Press Remove series again to do it.';
+		return;
+	}
+	CATALOG.removeEntry('series', id);
+	closeSeriesForm();
+	// its page is gone, so every series shows
+	if(SERIES_FILTER === id){ SERIES_FILTER = null; setAddress('replace', addressNow()); }
+	showView();
+	persist();
+	showIoStatus(count ? `Removed the series ${name} from ${Text.plural(count, 'book')}.` : `Removed the series ${name}.`);
 }
 
 byId('seriesForm').addEventListener('submit', e=>{ e.preventDefault(); return saveSeriesForm(); });
-byId('seriesRemoveBtn').addEventListener('click', removeSeriesInfo);
+byId('seriesRemoveBtn').addEventListener('click', removeSeries);
 byId('cancelSeries').addEventListener('click', closeSeriesForm);
 fillElement(byId('sf_ext'), externalFields('sf_ext_', 'series'));
 
-// After a save took in what another tab changed (store.js): the series whose info is being edited stays open
+// After a save took in what another tab changed (store.js): the series being edited stays open
 // unless the other tab removed it.
 function redraw(){
 	if(EDIT_SERIES !== null && CATALOG.nameOf('series', EDIT_SERIES) === undefined) closeSeriesForm();

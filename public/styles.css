@@ -107,6 +107,8 @@ h1{
 .comboList{position:absolute; z-index:5; left:0; right:0; top:100%; margin:.15rem 0 0; padding:.2rem 0; list-style:none;
 	background:var(--card); border:1px solid var(--line); border-radius:6px; box-shadow:0 4px 14px rgba(0,0,0,.15); max-height:16rem; overflow-y:auto;}
 .comboList[hidden]{display:none;}
+.comboNew{margin:.25rem 0 0; font-size:.8rem; color:var(--moss-dark);}
+.comboNew[hidden]{display:none;}
 .comboList li{padding:.4rem .6rem; font-size:.9rem; cursor:pointer; overflow-wrap:anywhere;}
 .comboList li:hover, .comboList li.active{background:var(--paper); color:var(--moss-dark);}
 #results #addForm{margin:0 0 .45rem;}
