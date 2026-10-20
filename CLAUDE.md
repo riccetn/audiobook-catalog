@@ -124,6 +124,10 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `coversShown`/`watchCoversBox`, localStorage `audiobook-catalog-covers`), `BookList` (the ids listed, `PAGE_SIZE` = 50 loaded at a
   time, `more`), `readOrdered` (series order from the indexes alone), `bookGroups` (books grouped by series with their headings, or
   `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, and the address helpers `hashParts`/`hashOf`/`setAddress`.
+- `combo-box.js`: a search combo box (`comboBox(input, list, {names, multiple, onPick})`, `comboField` builds one): an
+  `<input>` listing the names matching what is typed (`matchingNames`; in a field of several names, the one the cursor is in, `namePart`),
+  picked with a click or the arrow keys and Enter. The book form's authors (`#f_aList` in the template) and each edition's narrators and
+  publisher use it, over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` index, when the form opens).
 - `series.js` (`index.html`, *Series*): every series (from the series records alone, `#q=...&missing`), and a series' page
   (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and its info form, `openSeriesForm`); `SERIES_FILTER`, `openSeries`.
   Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`

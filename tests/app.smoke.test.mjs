@@ -664,6 +664,68 @@ test('editing a book keeps its editions', async () => {
 	assert.match(els.results.innerHTML, /<h2 class="title">Renamed In The App<\/h2>/);
 });
 
+test('the book form\'s author, narrator and publisher fields offer the names the catalog has as they are typed', async () => {
+	const { ctx, els, get, run } = await bootBook(SALT_ROAD);
+	ctx.openEditForm(get('BOOK_FILTER'));
+	await ctx.loadFormNames();
+	assert.deepEqual(get('FORM_NAMES.publisher').sort(), ['Gullwing Audio', 'Harbourlight Sound', 'Kestrel Row Audio']);
+	const options = list => [...list.innerHTML.matchAll(/<li [^>]*>([^<]*)<\/li>/g)].map(m => m[1]);
+	// the authors: the name the cursor is in is looked up, leaving out the ones the field has
+	assert.equal(els.f_a.getAttribute('role'), 'combobox');
+	assert.equal(els.f_a.value, 'Marisol Quenby');
+	els.f_a.value = 'Marisol Quenby, ren';
+	els.f_a.dispatch('input');
+	assert.deepEqual(options(els.f_aList), ['Odalys Rennick']);
+	assert.equal(els.f_a.getAttribute('aria-expanded'), 'true');
+	els.f_a.value = 'Marisol Quenby, o';
+	els.f_a.dispatch('input');
+	assert.deepEqual(options(els.f_aList), ['Odalys Rennick', 'Priya Ostrander', 'Ferran Doyle', 'Wendell Ashcombe'], 'names starting with it first, then a word, then anywhere');
+	// picked with the arrow keys and Enter, which doesn't save the form
+	let prevented = false;
+	els.f_a.dispatch('keydown', { key: 'ArrowDown' });
+	els.f_a.dispatch('keydown', { key: 'ArrowDown' });
+	assert.equal(els.f_a.getAttribute('aria-activedescendant'), 'f_aList-1');
+	assert.match(els.f_aList.innerHTML, /<li id="f_aList-1" role="option" aria-selected="true" class="active">Priya Ostrander<\/li>/);
+	els.f_a.dispatch('keydown', { key: 'Enter', preventDefault() { prevented = true; } });
+	assert.ok(prevented);
+	assert.equal(els.f_a.value, 'Marisol Quenby, Priya Ostrander, ');
+	assert.equal(els.f_aList.innerHTML, '');
+	assert.equal(els.f_a.getAttribute('aria-expanded'), 'false');
+	// Escape closes the list, leaving what was typed
+	els.f_a.value = 'Wen';
+	els.f_a.dispatch('input');
+	assert.deepEqual(options(els.f_aList), ['Wendell Ashcombe']);
+	els.f_a.dispatch('keydown', { key: 'Escape' });
+	assert.equal(els.f_aList.innerHTML, '');
+	assert.equal(els.f_a.value, 'Wen');
+	els.f_a.value = 'Marisol Quenby, Priya Ostrander, ';
+	// an edition's narrators and publisher: a click picks one, and the edition has it
+	const narrators = els.f_e0_n, publisher = els.f_e0_p;
+	assert.equal(narrators.getAttribute('value'), 'Tobias Frane');
+	narrators.value = 'Tobias Frane, ing';
+	narrators.dispatch('input');
+	assert.deepEqual(options(els.f_e0_nList), ['Ingrid Voss']);
+	els.f_e0_nList.children[0].dispatch('click');
+	assert.equal(narrators.value, 'Tobias Frane, Ingrid Voss, ');
+	assert.equal(formEditions(get)[0].n, 'Tobias Frane, Ingrid Voss, ');
+	publisher.value = 'kes';
+	publisher.dispatch('input');
+	assert.deepEqual(options(els.f_e0_pList), ['Kestrel Row Audio']);
+	els.f_e0_pList.children[0].dispatch('click');
+	assert.equal(publisher.value, 'Kestrel Row Audio', 'one publisher, so no comma after it');
+	assert.equal(formEditions(get)[0].p, 'Kestrel Row Audio');
+	// a name the catalog doesn't have is typed as before
+	publisher.value = 'New Sound';
+	typeEdition(els, 0, 'p', 'New Sound');
+	publisher.dispatch('input');
+	assert.equal(els.f_e0_pList.innerHTML, '');
+	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+	await idle();
+	assert.deepEqual(get('CATALOG.books[0].authors'), ['Marisol Quenby', 'Priya Ostrander']);
+	assert.deepEqual(get('[CATALOG.books[0].editions[0].narrators, CATALOG.books[0].editions[0].publisher]'), [['Tobias Frane', 'Ingrid Voss'], 'New Sound']);
+	assert.ok(run('FORM_NAMES.author.length') > 0);
+});
+
 test('a book\'s details link an edition\'s ASIN to Audible and its Goodreads id to Goodreads; its card leaves editions out', async () => {
 	const { run, storage } = await bootBook(SALT_ROAD);
 	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist()");
