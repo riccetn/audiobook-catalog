@@ -12,6 +12,7 @@ import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, 
 	buildElement, fillElement, joined, publisherPageHref, externalFields, fillExternalFields, readExternalFields, bookPageHref, seriesPageHref } from './store.js';
 /** @import {Child} from './store.js' */
 import { authorLinks, narratorLinks, bookNarrators, coverImage, hashParts, hashOf, setAddress } from './book-list.js';
+import { comboBox, comboField } from './combo-box.js';
 
 // Books and series are known by the ids they are stored under, so a book retitled (here or in another tab)
 // is still the one shown or edited.
@@ -366,6 +367,20 @@ addEventListener('pagehide', finishRemoving);
 addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') finishRemoving(); });
 
 // ------------------------------------------------------------------ the book form
+// The names the catalog has for authors, narrators and publishers, which the form's fields offer as they are
+// typed in (combo-box.js); read when the form opens, from the contributors' index alone.
+/** @type {Record<'author' | 'narrator' | 'publisher', string[]>} */
+export const FORM_NAMES = {author: [], narrator: [], publisher: []};
+
+/** @returns {Promise<void>} once FORM_NAMES holds the stored names, and the ones this page holds */
+export async function loadFormNames(){
+	const keys = await queryCatalog(r=> r.keys('contributors', 'kindName'));
+	for(const kind of /** @type {const} */ (['author', 'narrator', 'publisher'])){
+		const stored = keys.filter(k=> Array.isArray(k) && k[0] === kind).map(k=> String(/** @type {IDBValidKey[]} */ (k)[1]));
+		FORM_NAMES[kind] = [...new Set([...stored, ...CATALOG.namesOf(`${kind}s`)])];
+	}
+}
+
 /**
  * What a new book starts with, from the address: the series named, and the author named, else the authors
  * every book of the series has (its co-authors on some books left out).
@@ -393,6 +408,7 @@ function openAddForm(){
 	const {series, authors} = newBookDefaults();
 	fieldById('f_s').value = series;
 	fieldById('f_a').value = authors.join(', ');
+	loadFormNames();
 	placeBookForm();
 	form.classList.add('open');
 }
@@ -468,6 +484,7 @@ export function openEditForm(id){
 	fieldById('f_sn').value = b.number || '';
 	fieldById('f_r').value = b.read.join(', ');
 	setFormEditions(b.editions, id);
+	loadFormNames();
 	byId('formError').textContent = '';
 	byId('formTitle').textContent = 'Edit book';
 	byId('formSaveBtn').textContent = 'Save changes';
@@ -560,9 +577,24 @@ function renderFormEditions(){
 			buildElement('div', {class: 'editionFields'}, Edition.FIELDS.map(([k, , label])=> k === 'ext'
 				? [buildElement('div', {class: 'ef-asin', role: 'group', 'aria-label': label}, buildElement('label', {}, label), buildElement('div', {class: 'asinSites'}, asinFields(fields, i))),
 					otherCatalogFields(fields, i)]
-				: buildElement('div', {class: `ef-${k}`}, buildElement('label', {}, label),
-					buildElement('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k]})))))));
+				: buildElement('div', {class: `ef-${k}`}, buildElement('label', {for: `f_e${i}_${k}`}, label), editionField(fields, i, k)))))));
 }
+
+/**
+ * An edition's field for one of its parts; the narrators' and the publisher's offer the names the catalog has.
+ * @param {Record<string, string>} fields
+ * @param {number} i the edition's card
+ * @param {string} k the part
+ * @returns {HTMLElement}
+ */
+function editionField(fields, i, k){
+	const input = /** @type {HTMLInputElement} */ (buildElement('input', {'data-i': i, 'data-k': k, value: fields[k] || '', placeholder: EDITION_HINTS[k], id: `f_e${i}_${k}`}));
+	if(k !== 'n' && k !== 'p') return input;
+	return comboField(input, {names: ()=> FORM_NAMES[k === 'n' ? 'narrator' : 'publisher'], multiple: k === 'n',
+		onPick: value=>{ if(FORM_EDITIONS[i]) FORM_EDITIONS[i].fields[k] = value; }});
+}
+
+comboBox(/** @type {HTMLInputElement} */ (byId('f_a')), byId('f_aList'), {names: ()=> FORM_NAMES.author, multiple: true});
 
 const editionsEditor = byId('f_editions');
 editionsEditor.addEventListener('input', e=>{

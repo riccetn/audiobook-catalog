@@ -47,7 +47,9 @@ when you save). That needs your Hardcover API token, saved on the *Import & expo
 editions), or the address of its page (`https://www.goodreads.com/work/editions/99`); the Open Library, ISFDB, BookBrainz and
 Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address. Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
-filter. The narrator is on the edition too: the card
+filter. As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
+match the name you are typing (those starting with it first): click one, or pick it with the arrow keys and Enter,
+and it takes the place of what you typed (Escape closes the list). A new name is simply typed out. The narrator is on the edition too: the card
 lists the narrators of all a book's editions, and the book's details name each edition's;
 searching finds narrators and descriptions. To tie a box set to
 its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on each title: the details you typed on one

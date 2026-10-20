@@ -102,6 +102,13 @@ h1{
 	padding:1rem; margin-bottom:1.5rem;
 }
 #addForm.open{display:block;}
+/* a search combo box (combo-box.js): the names matching what is typed, in a list over what follows the field */
+.combo{position:relative;}
+.comboList{position:absolute; z-index:5; left:0; right:0; top:100%; margin:.15rem 0 0; padding:.2rem 0; list-style:none;
+	background:var(--card); border:1px solid var(--line); border-radius:6px; box-shadow:0 4px 14px rgba(0,0,0,.15); max-height:16rem; overflow-y:auto;}
+.comboList[hidden]{display:none;}
+.comboList li{padding:.4rem .6rem; font-size:.9rem; cursor:pointer; overflow-wrap:anywhere;}
+.comboList li:hover, .comboList li.active{background:var(--paper); color:var(--moss-dark);}
 #results #addForm{margin:0 0 .45rem;}
 .book.editing{display:none;}
 #addForm h3{margin:0 0 .3rem; font-family:'Lora',Georgia,serif; font-size:.98rem; font-weight:600;}
