@@ -544,7 +544,9 @@ export class CatalogDatabase {
 	// 3: indexes for pages that load only what they show (books by position, edition, read year, search
 	// text and standalone; exclusions by position), and derived fields for them; records from before are
 	// saved again in the new shape (`reshape` in meta says they wait for that).
-	static VERSION = 3;
+	// 4: a series no longer keeps a site; records from before are saved again with it moved to the series'
+	// author or publisher (Catalog.moveSeriesSites), the stores as they were.
+	static VERSION = 4;
 	/** @type {(StoreName | 'meta')[]} every store, the records' and meta */
 	static ALL_STORES = [...CatalogRecords.STORE_NAMES, 'meta'];
 
@@ -596,8 +598,9 @@ export class CatalogDatabase {
 			for(const [index, keyPath, options] of spec.indexes) if(!os.indexNames.contains(index)) os.createIndex(index, keyPath, options);
 		}
 		if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath: 'key'});
-		// records from before version 3 lack the derived fields its indexes read
-		if(oldVersion > 0 && oldVersion < 3) tx.objectStore('meta').put({key: 'reshape', value: oldVersion});
+		// records from before version 3 lack the derived fields its indexes read, and from before version 4
+		// a series may keep a site
+		if(oldVersion > 0 && oldVersion < 4) tx.objectStore('meta').put({key: 'reshape', value: oldVersion});
 	}
 
 	/** @returns {Promise<boolean>} whether the records wait to be saved again in the current shape (see VERSION) */

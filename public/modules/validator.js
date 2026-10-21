@@ -158,9 +158,6 @@ export class Validator {
 			if(!(Number.isInteger(total) && total > 0) && total !== 'many'){
 				errors.push(`series-info[${repr(name)}]: total must be a positive integer (or "many")`);
 			}
-			if('url' in entry && !(typeof entry.url === 'string' && /^https?:\/\//.test(entry.url))){
-				errors.push(`series-info[${repr(name)}]: url must start with http:// or https://`);
-			}
 			if('ext' in entry){
 				const found = ExternalCatalog.problems(entry.ext, 'series');
 				errors.push(...found.errors.map(e => `series-info[${repr(name)}]: ${e}`));

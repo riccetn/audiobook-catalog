@@ -10,7 +10,7 @@ import {CatalogRecords} from './modules/catalog-records.js';
 import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined, creditPageHref,
 	fillExternalFields, readExternalFields, externalFields, lookupHardcoverField, idFromAddress, hardcoverCompareHref, seriesPageHref, standalonePageHref } from './store.js';
 /** @import {Child} from './store.js' */
-import { BookList, STANDALONE, bookGroups, readOrdered, statusTag, authorSiteLink, seriesLinks, totalText, watchCoversBox, showEmptyCatalog, showBackupNudge,
+import { BookList, STANDALONE, bookGroups, readOrdered, statusTag, seriesLinks, totalText, watchCoversBox, showEmptyCatalog, showBackupNudge,
 	hashParts, hashOf, setAddress } from './book-list.js';
 
 // Series are known by the ids they are stored under, so a series renamed (here or in another tab) is still the one shown.
@@ -136,7 +136,7 @@ export function render(){
  * @returns {Series | undefined}
  */
 const seriesInfoOf = rec=> CatalogRecords.hasInfo('series', rec)
-	? new Series(rec.name, {total: rec.total, status: rec.status, note: rec.note, url: rec.url, external: rec.external}) : undefined;
+	? new Series(rec.name, {total: rec.total, status: rec.status, note: rec.note, external: rec.external}) : undefined;
 
 function renderOverview(){
 	const q = fieldById('q').value.trim().toLowerCase();
@@ -168,7 +168,7 @@ function renderOverview(){
 					: `no books yet${info ? ', ' + totalText(info) + ' released' : ''}`)),
 			buildElement('div', {class: 'srow-foot'}, buildElement('span', {class: 'tag'},
 				joined(authors.map(a=> buildElement('a', {href: creditPageHref('authors', a.id)}, a.name)), ', ')),
-				info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)],
+				info && [' ', statusTag(info.status), seriesLinks(info)],
 				missing && missing.length > 0 && [' ', buildElement('span', {class: 'missing'}, `missing ${Series.numberList(missing)}`)]),
 			info && info.note && buildElement('p', {class: 'srow-note'}, info.note)));
 	});
@@ -307,7 +307,6 @@ export async function openSeriesForm(id){
 	fieldById('sf_total').value = info ? totalText(info) : '';
 	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') : 'ongoing';
 	fieldById('sf_note').value = info ? info.note || '' : '';
-	fieldById('sf_url').value = info ? info.url || '' : '';
 	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
 	byId('seriesFormError').textContent = '';
 	const form = byId('seriesForm');
@@ -340,12 +339,11 @@ async function saveSeriesForm(){
 	const renamed = newName !== name;
 	const totalTyped = fieldById('sf_total').value.trim();
 	const note = Text.tidy(fieldById('sf_note').value);
-	const url = fieldById('sf_url').value.trim();
 	const had = CATALOG.series.get(id);
 	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
 	if(external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
 	// a series needs none of these; with all of them empty, it keeps none
-	const typedAny = totalTyped || note || url || Object.keys(external.ids).length;
+	const typedAny = totalTyped || note || Object.keys(external.ids).length;
 	/** @type {Series | null} */
 	let entry = null;
 	if(typedAny){
@@ -353,7 +351,6 @@ async function saveSeriesForm(){
 		/** @type {Record<string, unknown>} */
 		const typed = {total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase(),
 			status: fieldById('sf_status').value, note};
-		if(url) typed.url = url;
 		if(Object.keys(external.ids).length) typed.ext = ExternalCatalog.order(external.ids);
 		// the same rules as Check, applied to just this series (checked before the rename,
 		// under the name its books have now)

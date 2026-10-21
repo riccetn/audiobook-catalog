@@ -104,7 +104,7 @@ export class Backup {
 					throw new Error(`${name} is not a list of strings`);
 				}
 			}
-			return new Backup({
+			const backup = new Backup({
 				nameIds: Backup.readIds(data.ids),
 				books: readBooks(Book.fixBooks(data.books)),
 				series: info === undefined ? null : new Map(Object.entries(info).map(([name, entry]) => [name, Series.fromJSON(name, entry)])),
@@ -112,6 +112,9 @@ export class Backup {
 				excluded: excluded === undefined ? null : excluded,
 				notDuplicates: notDuplicates === undefined ? null : notDuplicates,
 			});
+			// a series' site, from before authors and publishers kept their own, goes to them
+			if(backup.series) Series.moveSites(backup.series, backup.books, backup, (_kind, name) => name);
+			return backup;
 		}
 		throw new Error('expected a list of books or {books, seriesInfo, excluded}');
 	}

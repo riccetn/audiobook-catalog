@@ -648,7 +648,7 @@ function askToKeepStorage(){
 // itself, with loadRecords()); with none, it starts empty. One that can't be read is set aside (under
 // meta's `unreadable`), not overwritten by the next edit. When nothing was saved yet, the catalog
 // localStorage kept before is moved over; records from an older version of the app are saved again in
-// the current shape.
+// the current shape (a series' site moved to its author or publisher).
 /** @param {boolean} whole */
 async function loadCatalog(whole){
 	try{
@@ -680,6 +680,7 @@ async function loadCatalog(whole){
 		SEEN_REVISION = stored.revision;
 		SAVED = CatalogRecords.snapshot(stored.records);
 		WHOLE = true;
+		CATALOG.moveSeriesSites();
 		if(reshape || CatalogRecords.outdated(stored.records)) await saveAll();
 		if(!whole) holdNothing();
 	}catch(e){

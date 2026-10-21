@@ -67,9 +67,14 @@ in `hcb`; they are read into `ext`. A backup or Restore in an older shape is rea
 browser keeps the catalog in the current one.
 
 The series info (`seriesInfo`, `series-info.json` before) maps a series name (as `s` has it; a series no book is in has one too) to
-`{"total": 12, "status": "ongoing" | "complete", "note": "...", "url": "https://...", "ext": {...}}`.
-`total` is the number of books released so far; `url` (an author or publisher site) and `ext` (the
-series' ids in [external catalogs](#external-catalogs), `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "3101"}`) are optional.
+`{"total": 12, "status": "ongoing" | "complete", "note": "...", "ext": {...}}`.
+`total` is the number of books released so far; `ext` (the
+series' ids in [external catalogs](#external-catalogs), `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "3101"}`) is optional.
+Until 2026-10 a series could keep an author's or publisher's site, `url`; the authors and publishers keep
+their own now, so it is read into theirs: when every book of the series has the same one author, it becomes
+that author's `url` (or one of their `links` when they have a site already); otherwise, when every edition
+of its books has the same publisher, that publisher's; otherwise it goes at the end of the series' `note`
+(`"site: https://..."`).
 
 ## Authors
 
@@ -159,7 +164,7 @@ and an edition's `bookIds`.
 |-------|-----|-------|---------|
 | `books` | `id` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external` (its ids by catalog), `editionIds` (in order), `position` (the catalog's order; a book added by a page that doesn't hold them all gets the next one when saved); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `readYears` (`"2024"`, or `"undated"`), `search` (the text the search looks in), `standalone` (1 when it has no series), `words`, `externalKeys` (`"hardcover 77"`) | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `standalone` [standalone, sortTitle, id], `byPosition` [position, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `search`, `genres`, `readYears`, `words`, `editionIds` and `externalKeys` (multiEntry) |
 | `editions` | `id` | `bookIds` (a box set's edition is one record on all its titles), `external` (its ids by catalog), `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`; derived: `idKeys` (`"asin B0…"` for an ASIN on any site, `"goodreads 4242"`, `"hardcover 501"`, `"isbn 978…"`) | `bookIds`, `idKeys`, `narratorIds` (multiEntry), `publisherId` |
-| `series` | `id` | `name`, `total`, `status`, `note`, `url`, `external`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead`, `authorIds` (its books' authors), `externalKeys` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id], `externalKeys` (multiEntry) |
+| `series` | `id` | `name`, `total`, `status`, `note`, `external`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead`, `authorIds` (its books' authors), `externalKeys` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id], `externalKeys` (multiEntry) |
 | `contributors` | `id` | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `external`, `links`; derived: `sortName`, `bookCount`, `seriesCount`, `topAuthorIds` and `authorCount` (a narrator's or publisher's: the authors of most of their books, for the list), `externalKeys` | `kindName` [kind, name] (unique), `byName` [kind, sortName, id], `externalKeys` (multiEntry) |
 | `credits` | [contributorId, bookId] | derived: who is credited on which book, as what, with the book's `sortTitle`, `seriesId` and `numberKey` | `byTitle` [contributorId, sortTitle, bookId], `bySeries` [contributorId, seriesId, numberKey, bookId], `bookId` |
 | `marks` | `id` | "Not duplicates" (`bookIds`), "Keep separate" (`bookIds`, `editionIds`), or a mark that matched no book (`key`, its text) | `bookIds` (multiEntry) |
@@ -168,8 +173,10 @@ and an edition's `bookIds`.
 
 Every series and every person has a record, with info or without, and keeps it when no book names them any
 more: it goes only when they are removed (**Remove series**, **Remove author**, ...).
-The database is version 3: version 2 had none of the indexes and derived fields a page that reads only
-what it shows needs, so the first page opened after the upgrade saves every record again. Version 1 kept the ids under fields of their own (an edition's `asins`,
+The database is version 4: version 3's series could keep a site (`url`), which the first page opened
+after the upgrade moves to the series' author or publisher (as a backup's, above) and saves every record
+again; so does version 2, which had none of the indexes and derived fields a page that reads only
+what it shows needs. Version 1 kept the ids under fields of their own (an edition's `asins`,
 `goodreadsId` and `hardcoverId`, a book's `hardcoverId`, a person's `audible`, `goodreads` and
 `hardcover` addresses) and indexed the books' `hardcoverId`; a page that finds records like that reads
 them, and saves them again the current way at once.

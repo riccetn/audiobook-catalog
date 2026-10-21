@@ -72,7 +72,6 @@ import {Isbn} from './isbn.js';
  * @property {number | 'many'} [total]
  * @property {SeriesStatus} [status]
  * @property {string} [note]
- * @property {string} [url]
  * @property {Record<string, string>} [external] its ids by external catalog
  * @property {string} sortName
  * @property {number} bookCount
@@ -224,7 +223,7 @@ export class CatalogRecords {
 	static UNDATED = 'undated';
 	// The info a series' or person's record holds, beside its name.
 	/** @type {Record<'series' | 'contributors', string[]>} */
-	static INFO = {series: ['total', 'status', 'note', 'url', 'external'], contributors: ['bio', 'url', 'external', 'links']};
+	static INFO = {series: ['total', 'status', 'note', 'external'], contributors: ['bio', 'url', 'external', 'links']};
 
 	/** @returns {string} a new id */
 	static newId(){ return crypto.randomUUID(); }
@@ -410,7 +409,6 @@ export class CatalogRecords {
 			if(info.total !== undefined) rec.total = info.total;
 			if(info.status !== undefined) rec.status = info.status;
 			if(info.note !== undefined) rec.note = info.note;
-			if(info.url !== undefined) rec.url = info.url;
 			if(Object.keys(info.external).length) rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(info.external));
 		}
 		const missing = Series.missingNumbers(own, rec.total);
@@ -427,7 +425,7 @@ export class CatalogRecords {
 	 * @returns {SeriesRecord}
 	 */
 	static rederiveSeries(rec, books){
-		const info = new Series(rec.name, {total: rec.total, status: rec.status, note: rec.note, url: rec.url, external: rec.external});
+		const info = new Series(rec.name, {total: rec.total, status: rec.status, note: rec.note, external: rec.external});
 		return CatalogRecords.seriesRecord(rec.id, rec.name, CatalogRecords.hasInfo('series', rec) ? info : undefined, books);
 	}
 
@@ -540,8 +538,12 @@ export class CatalogRecords {
 		for(const s of byName(records.series)){
 			names.set(s.id, s.name);
 			catalog.nameIds.series.set(s.name, s.id);
-			if(s.total !== undefined || s.status !== undefined || s.note !== undefined || s.url !== undefined || s.external !== undefined){
-				catalog.series.set(s.id, new Series(s.name, {total: s.total, status: s.status, note: s.note, url: s.url, external: s.external}));
+			// a record from before authors and publishers kept their own site has the series' (Catalog.moveSeriesSites)
+			const {url} = /** @type {SeriesRecord & {url?: string}} */ (s);
+			if(CatalogRecords.hasInfo('series', s) || url !== undefined){
+				const info = new Series(s.name, {total: s.total, status: s.status, note: s.note, external: s.external});
+				if(url !== undefined) info.extra.url = url;
+				catalog.series.set(s.id, info);
 			}
 		}
 		for(const c of byName(records.contributors)){
@@ -571,13 +573,13 @@ export class CatalogRecords {
 
 	/**
 	 * Whether records are in an older shape than fromCatalog() writes (from before ids were kept by external
-	 * catalog), so the page saves them again at once and their indexes find them.
+	 * catalog, or a series kept a site), so the page saves them again at once and their indexes find them.
 	 * @param {RecordSet} records
 	 * @returns {boolean}
 	 */
 	static outdated(records){
 		return [...records.books, ...records.series, ...records.contributors].some(rec => !Array.isArray(rec.externalKeys)) ||
-			records.editions.some(ed => !ed.external);
+			records.editions.some(ed => !ed.external) || records.series.some(rec => 'url' in rec);
 	}
 
 	/**

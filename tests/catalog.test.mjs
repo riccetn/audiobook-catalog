@@ -308,7 +308,7 @@ test('exclusions list their entries, and a removed book gets entries that keep i
 
 test('validation: a clean catalog passes; required fields, unknown keys, ids', () => {
 	const clean = [{ t: 'A', a: ['B'], s: 'S', sn: '1', g: ['x'], ext: { hardcover: '77' }, ...ed({ ext: { 'audible.com': 'B0', goodreads: '1', hardcover: '5' }, isbn: '9780000000002', p: 'P', d: '2021-05', len: 600 }) }];
-	assert.deepEqual(Validator.validate(clean, { S: { total: 3, status: 'ongoing', note: 'n', url: 'https://example.com' } }), { errors: [], warnings: [] });
+	assert.deepEqual(Validator.validate(clean, { S: { total: 3, status: 'ongoing', note: 'n' } }), { errors: [], warnings: [] });
 	assert.equal(Validator.validate([{ t: '', a: ['x'] }, { t: 't', a: ['a'], bogus: 1 }, 'nope'], {}).errors.length, 3);
 	assert.ok(Validator.validate([{ t: 't', a: ['a'], sn: '1' }], {}).errors.some(e => e.includes('no series')));
 	// an old-style book-level id is an unknown key: fixBooks() turns it into an edition first
@@ -335,10 +335,10 @@ test('validation: series-info must be well formed, and may be for a series no bo
 	const books = [{ t: 't', a: ['a'], s: 'Real' }];
 	const errors = Validator.validate(books, {
 		Ghost: { total: 2, status: 'ongoing', note: 'n' },
-		Real: { total: 0, status: 'paused', note: '', url: 'ftp://x', extra: 1 },
+		Real: { total: 0, status: 'paused', note: '', url: 'https://example.com/', extra: 1 },
 	}).errors.join('\n');
 	assert.ok(!errors.includes('Ghost'), 'a series of its own, with no books');
-	for (const needle of ['status must be', 'total must be', 'url must start', 'unknown keys']) {
+	for (const needle of ['status must be', 'total must be', 'unknown keys']) {
 		assert.ok(errors.includes(needle), needle);
 	}
 	assert.deepEqual(Validator.validate([{ t: 't', a: ['a'], s: 'S' }], { S: { total: 'many', status: 'ongoing', note: 'n' } }).errors, []);
@@ -2123,4 +2123,51 @@ test('a book\'s cover is looked for by its ASINs first, then its Open Library ed
 	// Amazon's answer for an ASIN without an image is a 1×1 picture
 	assert.equal(Cover.isCover(1, 1), false);
 	assert.equal(Cover.isCover(160, 160), true);
+});
+
+test('a series\' site, from before authors and publishers kept their own, goes to its one author or publisher, else its note', () => {
+	const books = [
+		{ t: 'One', a: ['Ann Vale'], s: 'Solo', sn: '1', e: [{ ext: { 'audible.com': 'B1' }, p: 'Gull Audio' }] },
+		{ t: 'Two', a: ['Ann Vale'], s: 'Solo', sn: '2' },
+		{ t: 'Three', a: ['Bo Reed'], s: 'Has Site', sn: '1' },
+		{ t: 'Four', a: ['Cy Hale'], s: 'Pair', sn: '1', e: [{ ext: { 'audible.com': 'B4' }, p: 'Gull Audio' }] },
+		{ t: 'Five', a: ['Di Moss'], s: 'Pair', sn: '2', e: [{ ext: { 'audible.com': 'B5' }, p: 'Gull Audio' }] },
+		{ t: 'Six', a: ['Cy Hale'], s: 'Mixed', sn: '1', e: [{ ext: { 'audible.com': 'B6' }, p: 'Gull Audio' }] },
+		{ t: 'Seven', a: ['Di Moss'], s: 'Mixed', sn: '2', e: [{ ext: { 'audible.com': 'B7' }, p: 'Owl Audio' }] },
+	];
+	const backup = Backup.read({ books, seriesInfo: {
+		Solo: { url: ' https://example.com/ann ' },
+		'Has Site': { total: 2, status: 'ongoing', url: 'https://example.com/bo-series' },
+		Pair: { total: 2, status: 'complete', url: 'https://example.com/gull' },
+		Mixed: { total: 3, status: 'ongoing', note: 'book 3 is announced', url: 'https://example.com/mixed' },
+		Bad: { note: 1, url: 'https://example.com/bad' },
+	}, authors: { 'Bo Reed': { url: 'https://example.com/bo' } }, publishers: {} });
+	assert.deepEqual(json(Object.fromEntries(backup.series)), {
+		'Has Site': { total: 2, status: 'ongoing' },
+		Pair: { total: 2, status: 'complete' },
+		Mixed: { total: 3, status: 'ongoing', note: 'book 3 is announced; site: https://example.com/mixed' },
+		Bad: { note: 1, url: 'https://example.com/bad' },
+	}, 'a series with nothing else goes; a note that isn\'t text keeps the site for the Check');
+	assert.deepEqual(json(Object.fromEntries(/** @type {Map} */ (backup.authors))), {
+		'Bo Reed': { url: 'https://example.com/bo', links: ['https://example.com/bo-series'] },
+		'Ann Vale': { url: 'https://example.com/ann' },
+	}, 'their own site, or another link when they have one');
+	assert.deepEqual(json(Object.fromEntries(/** @type {Map} */ (backup.publishers))), { 'Gull Audio': { url: 'https://example.com/gull' } });
+
+	// a backup from before author info was kept has nowhere to put it but the note
+	const old = Backup.read({ books: books.slice(0, 2), seriesInfo: { Solo: { total: 2, status: 'ongoing', url: 'https://example.com/ann' } } });
+	assert.deepEqual(json(old.series.get('Solo')), { total: 2, status: 'ongoing', note: 'site: https://example.com/ann' });
+	assert.deepEqual(Validator.validate(books, { Solo: { total: 2, status: 'ongoing', url: 'https://example.com/' } }).errors, ["series-info['Solo']: unknown keys ['url']"]);
+
+	// records from before keep it on the series record; the whole catalog moves it, and is saved again
+	const catalog = Catalog.fromJSON({ books: books.slice(0, 2), seriesInfo: { Solo: { total: 2, status: 'ongoing' } }, authors: {} });
+	const records = recordsOf(catalog);
+	records.series[0].url = 'https://example.com/ann';
+	assert.equal(CatalogRecords.outdated(records), true);
+	const back = CatalogRecords.toCatalog(records);
+	assert.equal(back.moveSeriesSites(), true);
+	assert.deepEqual(json(back.infoByName('series').get('Solo')), { total: 2, status: 'ongoing' });
+	assert.deepEqual(json(back.infoByName('authors').get('Ann Vale')), { url: 'https://example.com/ann' });
+	assert.equal(back.moveSeriesSites(), false);
+	assert.equal(CatalogRecords.outdated(recordsOf(back)), false);
 });
