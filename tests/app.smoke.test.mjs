@@ -387,6 +387,22 @@ const typeEdition = (els, i, k, value) => els.f_editions.listeners.input[0]({ ta
 const addEdition = els => els.addEditionBtn.listeners.click[0]({});
 const removeEdition = (els, i) => els.f_editions.listeners.click[0]({ target: { closest: () => ({ dataset: { remove: String(i) } }) } });
 
+test('a form\'s Cancel sits next to its Save, and a Remove button comes after both, apart from them', () => {
+	let forms = 0;
+	for (const page of ALL_PAGES) {
+		for (const [, row] of read(page).matchAll(/<div class="formbtns">([\s\S]*?)<\/div>/g)) {
+			const buttons = [...row.matchAll(/<button\b([^>]*)>([^<]*)<\/button>/g)].map(([, attrs, label]) => ({ save: /class="save"/.test(attrs), label }));
+			const remove = buttons.findIndex(b => b.label.startsWith('Remove'));
+			if (remove < 0) continue;
+			forms++;
+			const save = buttons.findIndex(b => b.save), cancel = buttons.findIndex(b => b.label === 'Cancel');
+			assert.equal(cancel, save + 1, `${page}: Cancel follows Save`);
+			assert.equal(remove, buttons.length - 1, `${page}: Remove comes last`);
+		}
+	}
+	assert.equal(forms, 5, 'the book, series, author, narrator and publisher forms');
+});
+
 test('opens on the series overview, with a row per series', async () => {
 	const { els, get } = await boot();
 	assert.equal(get('SERIES_FILTER'), null);
