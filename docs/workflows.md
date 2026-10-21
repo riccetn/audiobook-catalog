@@ -81,7 +81,7 @@ each with a page of their bio, links, series and titles; their names on the book
 [Narrators and publishers](narrators-publishers.md).
 
 **Update release info for a series**: press **Edit** at the end of a series' page (open it from *Series*) to edit how many books are released, whether it is ongoing or complete, the note and
-the author site, the series' ids on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
+the series' ids on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
 `https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each).
 Every field is optional, and clearing them all keeps nothing about the series. The form checks the same rules as **Check**.

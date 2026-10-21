@@ -1335,7 +1335,7 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	const first = await boot({ storage });
 	await first.saved();
 	// a book that lists an edition there is no record of
-	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 3); req.onsuccess = () => resolve({ db: req.result }); });
+	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 4); req.onsuccess = () => resolve({ db: req.result }); });
 	await new Promise(resolve => { const tx = db.transaction('editions', 'readwrite'); tx.objectStore('editions').clear(); tx.oncomplete = resolve; });
 	// (a page that reads all of it finds out)
 	const { get, els, database } = await boot({ storage, page: 'duplicates.html' });
@@ -1344,6 +1344,24 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	const aside = database.records('meta').find(m => m.key === 'unreadable');
 	assert.equal(aside.value.books.length, demoBooks.length, 'what was stored is kept');
 	assert.equal(database.records('books').length, 0);
+});
+
+test('a series\' site, from before authors kept their own, goes to its author when the page opens', async () => {
+	const storage = new Map();
+	const first = await boot({ storage });
+	await first.saved();
+	// a database of version 3, whose series kept a site
+	const { db } = await new Promise(resolve => { const req = first.database.open('audiobook-catalog', 4); req.onsuccess = () => resolve({ db: req.result }); });
+	const series = first.database.records('series').find(x => x.name === 'The Lantern Coast');
+	await new Promise(resolve => { const tx = db.transaction('series', 'readwrite'); tx.objectStore('series').put({ ...series, url: 'https://example.com/lantern' }); tx.oncomplete = resolve; });
+	first.database.data.get('audiobook-catalog').version = 3;
+	// a page that shows only a slice still finds it moved
+	const { database } = await boot({ storage, page: 'books.html' });
+	const stored = await kept(storage);
+	assert.deepEqual(stored.seriesInfo['The Lantern Coast'], { total: 5, status: 'ongoing', note: 'book 5 is announced (fictional demo data)', ext: { goodreads: '90001', hardcover: 'the-lantern-coast-sample' } });
+	assert.deepEqual([stored.authors['Marisol Quenby'].url, stored.authors['Marisol Quenby'].links], ['https://example.com/', ['https://example.com/lantern']]);
+	assert.ok(!('url' in database.records('series').find(x => x.name === 'The Lantern Coast')));
+	assert.equal(database.records('meta').some(m => m.key === 'reshape'), false);
 });
 
 test('edits from before, which waited for make serve to save them, become the catalog', async () => {
@@ -1871,15 +1889,15 @@ test('a series can be edited in the page, and removed from its books', async () 
 	assert.equal(els.sf_status.value, info[name].status);
 	assert.equal(els.sf_note.value, info[name].note);
 	assert.equal(els.seriesFormTitle.textContent, `Edit series: ${name}`);
+	assert.equal(els.sf_url, undefined, 'a series keeps no site: its author or publisher does');
 	Object.assign(els.sf_total, { value: '7' });
 	Object.assign(els.sf_status, { value: 'ongoing' });
 	Object.assign(els.sf_note, { value: '  book 8   is announced ' });
-	Object.assign(els.sf_url, { value: 'https://example.com/author' });
 	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.ok(!els.seriesForm.classList.contains('open'));
 	assert.deepEqual(get(`CATALOG.infoByName('series').get(${JSON.stringify(name)})`),
-		{ total: 7, status: 'ongoing', note: 'book 8 is announced', url: 'https://example.com/author' });
+		{ total: 7, status: 'ongoing', note: 'book 8 is announced' });
 	assert.match(els.results.innerHTML, /7 released total/);
 	assert.deepEqual((await kept(storage)).seriesInfo[name].total, 7);
 
@@ -1888,12 +1906,10 @@ test('a series can be edited in the page, and removed from its books', async () 
 	await idle();
 	Object.assign(els.sf_total, { value: 'lots' });
 	Object.assign(els.sf_note, { value: '' });
-	Object.assign(els.sf_url, { value: 'example.com' });
 	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.ok(els.seriesForm.classList.contains('open'));
 	assert.match(els.seriesFormError.textContent, /total must be a positive integer/);
-	assert.match(els.seriesFormError.textContent, /url must start with/);
 	assert.equal(get(`CATALOG.infoByName('series').get(${JSON.stringify(name)}).total`), 7);
 	els.cancelSeries.listeners.click[0]();
 	await idle();
@@ -1916,7 +1932,7 @@ test('a series can be edited in the page, and removed from its books', async () 
 	// emptying every field keeps nothing about it, and the series stays
 	ctx.openSeriesForm(seriesIdOf(get, bare));
 	await idle();
-	for (const field of [els.sf_total, els.sf_note, els.sf_url]) field.value = '';
+	for (const field of [els.sf_total, els.sf_note]) field.value = '';
 	els.seriesForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.equal(els.seriesFormError.textContent, '');

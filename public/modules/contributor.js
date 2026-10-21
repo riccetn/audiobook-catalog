@@ -81,6 +81,20 @@ export class Contributor {
 		return this[key];
 	}
 
+	/**
+	 * Take a site that was kept elsewhere (a series' site, Series.moveSite): it becomes their own site when
+	 * they have none, else one of their other links. Returns false, changing nothing, when their site or
+	 * links are not what those hold (the Check reports them).
+	 * @param {string} site
+	 * @returns {boolean}
+	 */
+	addSite(site){
+		if('url' in this.extra || 'links' in this.extra) return false;
+		if(!this.url) this.url = site;
+		else if(this.url !== site && !this.links.includes(site)) this.links.push(site);
+		return true;
+	}
+
 	/** @returns {Record<string, unknown>} the entry as the stored info keeps it */
 	toJSON(){
 		/** @type {Record<string, unknown>} */

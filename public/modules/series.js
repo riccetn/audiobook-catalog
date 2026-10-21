@@ -1,8 +1,9 @@
 // A series: what you keep about it (its series info: how many books are out, whether it is complete, a
-// note, a link and its ids in external catalogs), and what goes for every series: names that are spelled differently but are one
+// note and its ids in external catalogs), and what goes for every series: names that are spelled differently but are one
 // series, numbers and box sets' ranges ("4-6"), and a series written into a title ("Title (Series, #3)").
 import {Text} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
+import {Contributor} from './contributor.js';
 /** @import {Book} from './book.js' */
 /** @import {Unchecked} from './text.js' */
 
@@ -27,7 +28,7 @@ export class Series {
 	/** @type {SeriesStatus[]} */
 	static STATUSES = ['ongoing', 'complete'];
 	// The keys of a series' entry in the stored series info, in order.
-	static KEYS = ['total', 'status', 'note', 'url', 'ext'];
+	static KEYS = ['total', 'status', 'note', 'ext'];
 	// A series number: "3", "2.5", or a box set's range "4-6".
 	static NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
 	// A box set's range of whole numbers, "1-3"; more than BOX_MAX titles is taken for a typo.
@@ -36,9 +37,9 @@ export class Series {
 
 	/**
 	 * @param {string} name
-	 * @param {{total?: number | 'many', status?: SeriesStatus, note?: string, url?: string, external?: Record<string, string>}} [info]
+	 * @param {{total?: number | 'many', status?: SeriesStatus, note?: string, external?: Record<string, string>}} [info]
 	 */
-	constructor(name, {total, status, note, url, external = {}} = {}){
+	constructor(name, {total, status, note, external = {}} = {}){
 		this.name = name;
 		/** @type {number | 'many' | undefined} the number of books released so far */
 		this.total = total;
@@ -46,8 +47,6 @@ export class Series {
 		this.status = status;
 		/** @type {string | undefined} */
 		this.note = note;
-		/** @type {string | undefined} */
-		this.url = url;
 		/** @type {Record<string, string>} its ids by external catalog: {"goodreads": "123", "hardcover": "the-lantern-coast"} */
 		this.external = {...external};
 		/** @type {Record<string, unknown>} what the stored entry holds that is not a series' info (the Check reports it) */
@@ -68,7 +67,7 @@ export class Series {
 		for(const [k, v] of Object.entries(json)){
 			if(k === 'total' && (typeof v === 'number' || v === 'many')) series.total = v;
 			else if(k === 'status' && Series.STATUSES.includes(v)) series.status = v;
-			else if((k === 'note' || k === 'url') && typeof v === 'string') series[k] = v;
+			else if(k === 'note' && typeof v === 'string') series.note = v;
 			else if(k === 'ext' && ExternalCatalog.isIds(v)) series.external = {...v};
 			else series.extra[k] = v;
 		}
@@ -80,7 +79,7 @@ export class Series {
 		/** @type {Record<string, unknown>} */
 		const out = {};
 		/** @type {Record<string, unknown>} */
-		const fields = {total: this.total, status: this.status, note: this.note, url: this.url, ext: ExternalCatalog.order(this.external) || undefined};
+		const fields = {total: this.total, status: this.status, note: this.note, ext: ExternalCatalog.order(this.external) || undefined};
 		for(const k of Series.KEYS){
 			if(fields[k] !== undefined) out[k] = fields[k];
 			else if(k in this.extra) out[k] = this.extra[k];
@@ -95,6 +94,61 @@ export class Series {
 	 * @returns {number[] | null}
 	 */
 	missing(books){ return Series.missingNumbers(books, this.total); }
+
+	/**
+	 * Until 2026-10 a series kept an author's or publisher's site (`url`, which fromJSON() keeps aside); the
+	 * authors and publishers keep their own now. The site leaves the series for the one the series' books
+	 * all agree on, through `give(kind, name, site)` (false when it can't take it): their one author, else
+	 * their editions' one publisher. When there is no such one, it goes at the end of the series' note, so
+	 * nothing is lost. Returns whether the series had a site.
+	 * @param {Book[]} books the series' books
+	 * @param {(kind: 'authors' | 'publishers', name: string, site: string) => boolean} give
+	 * @returns {boolean}
+	 */
+	moveSite(books, give){
+		const url = this.extra.url;
+		// a note that isn't text stays as it is for the Check, and so does the site then
+		if(typeof url !== 'string' || 'note' in this.extra) return false;
+		delete this.extra.url;
+		const site = url.trim();
+		if(!site) return true;
+		const authors = [...new Set(books.flatMap(b => b.authors))];
+		const publishers = [...new Set(books.flatMap(b => b.editions.map(ed => ed.publisher || '')))];
+		if(authors.length === 1 && give('authors', authors[0], site)) return true;
+		if(publishers.length === 1 && publishers[0] && give('publishers', publishers[0], site)) return true;
+		this.note = [this.note, `site: ${site}`].filter(Boolean).join('; ');
+		return true;
+	}
+
+	/**
+	 * Move every series' site (moveSite) to its author or publisher, in a whole catalog or backup: `series`
+	 * and the people are kept under `keyOf(kind, name)` (an id, or in a backup the name); people missing
+	 * (null, a backup from before they were kept) can't take one. A series left with no info is taken out
+	 * of `series`. Returns whether any series had a site.
+	 * @param {Map<string, Series>} series
+	 * @param {Book[]} books
+	 * @param {{authors: Map<string, Contributor> | null, publishers: Map<string, Contributor> | null}} people
+	 * @param {(kind: 'authors' | 'publishers', name: string) => string} keyOf
+	 * @returns {boolean}
+	 */
+	static moveSites(series, books, people, keyOf){
+		let moved = false;
+		for(const [key, s] of [...series]){
+			const own = books.filter(b => b.series === s.name);
+			const had = s.moveSite(own, (kind, name, site) => {
+				const map = people[kind];
+				if(!map) return false;
+				const k = keyOf(kind, name), info = map.get(k) || new Contributor(name);
+				if(!info.addSite(site)) return false;
+				map.set(k, info);
+				return true;
+			});
+			if(!had) continue;
+			moved = true;
+			if(!Object.keys(s.toJSON()).length) series.delete(key);
+		}
+		return moved;
+	}
 
 	// ------------------------------------------------------------------ names and numbers
 	/**

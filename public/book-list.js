@@ -32,8 +32,6 @@ export const narratorLinks = names => joined(names.map(x=> buildElement('a', {hr
  * @type {(status: string | undefined) => HTMLSpanElement}
  */
 export const statusTag = status=> buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing');
-/** @type {(url: string) => HTMLAnchorElement} */
-export const authorSiteLink = url=> buildElement('a', {class: 'authorlink', href: url, target: '_blank', rel: 'noopener'}, 'author site ↗');
 /** @type {(info: Series) => Child[]} the series' pages in external catalogs */
 export const seriesLinks = info=> externalLinks(info.external, 'series').map(a=> [' ', a]);
 /**
@@ -250,7 +248,7 @@ export function bookGroups(books, {sorted = false, more = 0, onMore = ()=>{}, he
 			const id = CATALOG.idFor('series', name);
 			out.push(buildElement('div', {class: 'series-group'},
 				buildElement('p', {class: 'series-title'}, buildElement('a', {href: seriesPageHref(id)}, name), ' ', buildElement('span', {class: 'n'}, ownedText(group)),
-					info && [' ', statusTag(info.status), info.url && [' ', authorSiteLink(info.url)], seriesLinks(info)], heading(id)),
+					info && [' ', statusTag(info.status), seriesLinks(info)], heading(id)),
 				note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' — ')),
 				group.map(b=> bookCard(b)),
 				after(id)));

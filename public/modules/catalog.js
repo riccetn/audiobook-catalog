@@ -208,6 +208,15 @@ export class Catalog {
 	}
 
 	/**
+	 * Move the series' sites, kept from before authors and publishers kept their own, to them (Series.moveSites).
+	 * Only for a whole catalog, as it goes by every book of a series. Returns whether any series had one.
+	 * @returns {boolean}
+	 */
+	moveSeriesSites(){
+		return Series.moveSites(this.series, this.books, this, (kind, name) => this.idFor(kind, name));
+	}
+
+	/**
 	 * The names of a kind the catalog has: on its books, or with info.
 	 * @param {NamedKind} kind
 	 * @returns {Set<string>}

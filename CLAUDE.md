@@ -74,7 +74,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     description and, per kind (`book edition series author narrator publisher`), the id's pattern and its page's address; `GROUPS` (one form
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
-  - `Series` (series info `total status note url external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
+  - `Series` (series info `total status note external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`; `moveSites` gives an old series' site (`url`) to its one author or publisher, else its note), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word),
     `Cover` (`addresses`: a book's cover addresses from its editions' ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
@@ -188,7 +188,7 @@ identifier (`sameAs`), and also a book of its own numbered with its range (`"1-3
 migrated on load by `Book.fixBooks`, and so are authors and narrators written as one comma separated
 string (`Text.fixPeople`/`splitNames`; `namesText` joins a list back for display). Matching and "Not duplicates"
 keys use the first author (`Book.firstAuthor`/`firstName`). A missing `r` means the read date is unknown, not unread. `seriesInfo` maps a series
-name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, url, ext}`. `authors` (optional;
+name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, ext}` (an old `url` is moved, `Catalog.moveSeriesSites`). `authors` (optional;
 missing means `{}`) maps an author's name (as in `a`) to `{bio, url, ext, links}` (ids by catalog, and other addresses; the old `audible`/`goodreads`/`hardcover`
 addresses are read into `ext` by `Contributor.fixLinks`), and `narrators` and `publishers` (likewise optional) map a narrator's name (as in an edition's `n`) or
 a publisher's (as in `p`) to the same; they travel like series info.
@@ -200,8 +200,8 @@ IndexedDB (`CatalogRecords.STORES`, documented in `docs/data-format.md`): stores
 plain objects with descriptive fields, ids from `crypto.randomUUID()` that never change, references by id (a box set's edition is
 one record with `bookIds`), derived fields (sort keys, counts, `credits`) rewritten on every save and never read back, and every
 sorting index ending in the key so lists can be paged. There is no `extra`: a value a class keeps aside is not stored.
-The database is version 3 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`, and from versions 1 and 2
-puts meta `reshape`, so the next page saves every record again with the derived fields this version reads); `toCatalog` still reads
+The database is version 4 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`, and from versions 1 to 3
+puts meta `reshape`, so the next page loads all of it, moves the series' sites and saves every record again with the derived fields this version reads); `toCatalog` still reads
 version 1's records (ids under fields of their own), and `startPage` saves them again at once (`CatalogRecords.outdated`).
 `excluded` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` entries that imports must never re-add; code only
 ever adds to it (Restore and Merge add a backup's to it too). `notDuplicates` (pairs marked "Not duplicates" on the
