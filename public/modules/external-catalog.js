@@ -1,5 +1,5 @@
 // The catalogs outside this one that books, editions, series and people have ids in: each Audible and
-// Amazon site, Goodreads, Hardcover, Open Library, ISFDB, BookBrainz and Wikidata. The catalog keeps only the ids, under the catalog's key
+// Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata. The catalog keeps only the ids, under the catalog's key
 // (`{"audible.com": "B0…", "goodreads": "4242"}`); each catalog's definition says how to make the address
 // of an id and how to read the id back out of an address, for each kind of thing it has pages for.
 import {Text} from './text.js';
@@ -39,6 +39,8 @@ const ASIN = '[A-Za-z0-9]{10}', ANY_ASIN = '[A-Za-z0-9]+';
 const NUMBER = '\\d+';
 const SLUG = '[A-Za-z0-9][A-Za-z0-9-]*';
 const NAME = '.+';
+// AudiobookDB's ids are twelve letters and digits, and their case matters ("37kLciJjQmfe")
+const AUDIOBOOKDB_ID = '[A-Za-z0-9]{12}';
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 /** @type {(letter: string) => string} an Open Library id: OL, a number and the letter of its kind (W, M or A) */
 const OPEN_LIBRARY = letter => `OL\\d+${letter}`;
@@ -118,6 +120,17 @@ const DEFINITIONS = [
 			narrator: hardcoverById('author', 'authors'),
 			publisher: hardcoverById('publisher', 'publishers'),
 		}},
+	// AudiobookDB's API sends no CORS headers, so a page can only link to it.
+	{key: 'audiobookdb', name: 'AudiobookDB', group: 'audiobookdb', family: 'audiobookdb',
+		description: 'AudiobookDB, a community catalog of audiobooks: a book, an edition (what AudiobookDB calls a release), a series, an author or narrator (both are people there), a publisher, each by its id',
+		kinds: {
+			book: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/books/{id}'},
+			edition: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/releases/{id}'},
+			series: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/series/{id}'},
+			author: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/people/{id}'},
+			narrator: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/people/{id}'},
+			publisher: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/publishers/{id}'},
+		}},
 	// The open catalogs: their data is free to use, and they have APIs a later lookup could use.
 	{key: 'openlibrary', name: 'Open Library', group: 'openlibrary', family: 'openlibrary',
 		description: "Open Library, the Internet Archive's open catalog: a book's work (OL…W), an edition (OL…M), an author (OL…A)",
@@ -158,6 +171,7 @@ const GROUPS = [
 	{key: 'amazon', name: 'Amazon', default: 'amazon.com'},
 	{key: 'goodreads', name: 'Goodreads', default: 'goodreads'},
 	{key: 'hardcover', name: 'Hardcover', default: 'hardcover'},
+	{key: 'audiobookdb', name: 'AudiobookDB', default: 'audiobookdb'},
 	{key: 'openlibrary', name: 'Open Library', default: 'openlibrary'},
 	{key: 'isfdb', name: 'ISFDB', default: 'isfdb'},
 	{key: 'bookbrainz', name: 'BookBrainz', default: 'bookbrainz'},

@@ -88,6 +88,12 @@ test('external catalogs: an id gives the address of its page, and the address gi
 		['hardcover', 'series', 'gull-isle', 'https://hardcover.app/series/gull-isle'],
 		['hardcover', 'author', 'ann-vale', 'https://hardcover.app/authors/ann-vale'],
 		['hardcover', 'publisher', 'gull-audio', 'https://hardcover.app/publishers/gull-audio'],
+		['audiobookdb', 'book', '37kLciJjQmfe', 'https://audiobookdb.org/books/37kLciJjQmfe'],
+		['audiobookdb', 'edition', 'Kx7UDyK3gMqj', 'https://audiobookdb.org/releases/Kx7UDyK3gMqj'],
+		['audiobookdb', 'series', 'TBkgA6tChmbN', 'https://audiobookdb.org/series/TBkgA6tChmbN'],
+		['audiobookdb', 'author', 'GRNdEqe6PKeT', 'https://audiobookdb.org/people/GRNdEqe6PKeT'],
+		['audiobookdb', 'narrator', 'PbnjmUVRGawK', 'https://audiobookdb.org/people/PbnjmUVRGawK'],
+		['audiobookdb', 'publisher', 'LWDgFn3knbiB', 'https://audiobookdb.org/publishers/LWDgFn3knbiB'],
 		['openlibrary', 'book', 'OL123W', 'https://openlibrary.org/works/OL123W'],
 		['openlibrary', 'edition', 'OL456M', 'https://openlibrary.org/books/OL456M'],
 		['openlibrary', 'author', 'OL789A', 'https://openlibrary.org/authors/OL789A'],
@@ -122,6 +128,7 @@ test('external catalogs: an id gives the address of its page, and the address gi
 		['https://hardcover.app/id/authors/4101/collections', 'author', 'hardcover', '4101'],
 		['hardcover.app/authors/ann-vale/books?page=2', 'author', 'hardcover', 'ann-vale'],
 		['https://openlibrary.org/works/OL123W/The_Salt_Road?edition=x', 'book', 'openlibrary', 'OL123W'],
+		['audiobookdb.org/releases/Kx7UDyK3gMqj/', 'edition', 'audiobookdb', 'Kx7UDyK3gMqj'],
 		['openlibrary.org/books/ol456m', 'edition', 'openlibrary', 'OL456M'],
 		['http://www.isfdb.org/cgi-bin/publisher.cgi?54977=', 'publisher', 'isfdb', '54977'],
 		['isfdb.org/cgi-bin/title.cgi?194342', 'book', 'isfdb', '194342'],
@@ -131,7 +138,8 @@ test('external catalogs: an id gives the address of its page, and the address gi
 	// a page of another kind, another site, or no address at all names nothing
 	for (const [text, kind] of [['https://www.goodreads.com/book/show/4242', 'series'], ['https://hardcover.app/books/the-salt-road', 'edition'],
 		['https://www.kobo.com/dp/B0SALTROAD', 'edition'], ['B0SALTROAD', 'edition'], ['', 'author'], ['https://www.goodreads.com/author/show/ann', 'author'],
-		['https://www.isfdb.org/cgi-bin/title.cgi?194342', 'edition'], ['https://openlibrary.org/works/OL123M', 'book'], ['https://www.wikidata.org/wiki/Q1001', 'edition']])
+		['https://www.isfdb.org/cgi-bin/title.cgi?194342', 'edition'], ['https://openlibrary.org/works/OL123M', 'book'], ['https://www.wikidata.org/wiki/Q1001', 'edition'],
+		['https://audiobookdb.org/books/37kLciJjQmfe', 'edition'], ['https://audiobookdb.org/releases/37kLciJjQmf', 'edition']])
 		assert.equal(ExternalCatalog.fromAddress(text, kind), null, text);
 	// Goodreads has no publisher pages, so no publisher ids
 	assert.equal(ExternalCatalog.url('goodreads', 'publisher', '1'), null);
@@ -1010,6 +1018,7 @@ test('idFromAddress: the id a pasted address names, and the field it goes in', (
 	assert.deepEqual(Edition.idFromAddress(' https://www.goodreads.com/book/show/4242.The_Salt_Road '), { field: 'ext:goodreads', id: '4242' });
 	assert.deepEqual(Edition.idFromAddress('goodreads.com/book/show/4242'), { field: 'ext:goodreads', id: '4242' });
 	assert.deepEqual(Edition.idFromAddress('https://hardcover.app/books/the-salt-road/editions/501'), { field: 'ext:hardcover', id: '501' });
+	assert.deepEqual(Edition.idFromAddress('https://audiobookdb.org/releases/Kx7UDyK3gMqj'), { field: 'ext:audiobookdb', id: 'Kx7UDyK3gMqj' });
 	// ids, a Hardcover book's address, a Goodreads work or another site's page name no edition
 	for (const text of ['B0SALTROAD', '4242', '', 'https://hardcover.app/books/the-salt-road', 'https://www.goodreads.com/work/editions/99',
 		'https://www.kobo.com/dp/B0SALTROAD']) assert.equal(Edition.idFromAddress(text), null, text);

@@ -1090,7 +1090,10 @@ test('an address pasted in an edition id field becomes the id when the field is 
 	// another site's page: its ASIN goes to that site's field, which is added
 	assert.equal(leave('ext:audible.com', 'https://www.amazon.co.uk/dp/B0SALTUK01').value, '');
 	assert.equal(field('ext:amazon.co.uk').getAttribute('value'), 'B0SALTUK01');
-	assert.deepEqual(get('FORM_EDITIONS[0].fields'), { 'ext:goodreads': '4242', 'ext:hardcover': '501', 'ext:audible.com': '', 'ext:amazon.co.uk': 'B0SALTUK01' });
+	// and so does another catalog's release, AudiobookDB's
+	assert.equal(leave('ext:goodreads', 'https://audiobookdb.org/releases/Kx7UDyK3gMqj').value, '');
+	assert.equal(field('ext:audiobookdb').getAttribute('value'), 'Kx7UDyK3gMqj');
+	assert.deepEqual(get('FORM_EDITIONS[0].fields'), { 'ext:goodreads': '', 'ext:hardcover': '501', 'ext:audible.com': '', 'ext:amazon.co.uk': 'B0SALTUK01', 'ext:audiobookdb': 'Kx7UDyK3gMqj' });
 	// a site whose field holds another ASIN keeps the address, for Save to report
 	assert.equal(leave('ext:audible.com', 'https://www.amazon.co.uk/dp/B0OTHER001').value, 'https://www.amazon.co.uk/dp/B0OTHER001');
 	// anything else is left as typed
@@ -1942,7 +1945,7 @@ test('an edition has fields for Goodreads and Hardcover, and one for another cat
 	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="ext:goodreads"/);
 	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="ext:hardcover"/);
 	assert.doesNotMatch(els.f_editions.innerHTML, /data-k="ext:openlibrary"/);
-	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another catalog<\/option><option value="openlibrary">Open Library<\/option><option value="isfdb">ISFDB<\/option><option value="bookbrainz">BookBrainz<\/option><\/select>/);
+	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another catalog<\/option><option value="audiobookdb">AudiobookDB<\/option><option value="openlibrary">Open Library<\/option><option value="isfdb">ISFDB<\/option><option value="bookbrainz">BookBrainz<\/option><\/select>/);
 	els.f_editions.listeners.change[0]({ target: { dataset: { addSite: '0' }, value: 'isfdb' } });
 	await idle();
 	assert.match(els.f_editions.innerHTML, /<label>ISFDB edition<\/label><input data-i="0" data-k="ext:isfdb" value="" placeholder="id or isfdb\.org address"/);
@@ -1953,7 +1956,7 @@ test('an edition has fields for Goodreads and Hardcover, and one for another cat
 	// an edition with an id there shows its field
 	ctx.openEditForm(id);
 	assert.match(els.f_editions.innerHTML, /data-i="0" data-k="ext:isfdb" value="1039718"/);
-	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another catalog<\/option><option value="openlibrary">Open Library<\/option><option value="bookbrainz">BookBrainz<\/option><\/select>/);
+	assert.match(els.f_editions.innerHTML, /<select data-add-site="0"[^>]*><option value="">\+ Another catalog<\/option><option value="audiobookdb">AudiobookDB<\/option><option value="openlibrary">Open Library<\/option><option value="bookbrainz">BookBrainz<\/option><\/select>/);
 });
 
 test('a series can be edited in the page, and removed from its books', async () => {

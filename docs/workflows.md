@@ -47,13 +47,14 @@ the form while editing a book too, where it fills in only what the book lacks.
 
 *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
-another Amazon or Audible site), Goodreads id, Hardcover edition (*+ Another catalog* adds a field for its id on Open
+another Amazon or Audible site), Goodreads id, Hardcover edition (*+ Another catalog* adds a field for its id on AudiobookDB, Open
 Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publisher,
 release date (`2021-05`) and length (`10h 42m`). The ASIN and other catalogs' edition fields also take the address of the book's
 page on that site (`https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0…`, `https://www.amazon.com/dp/B0…`,
-`https://www.goodreads.com/book/show/4242-the-salt-road`, `https://hardcover.app/books/the-salt-road/editions/501`):
+`https://www.goodreads.com/book/show/4242-the-salt-road`, `https://hardcover.app/books/the-salt-road/editions/501`,
+`https://audiobookdb.org/releases/Kx7UDyK3gMqj`):
 when you leave the field it shows just the id, and an Audible or Amazon page's ASIN moves to the field for
-its site (added when the card has none). Leave a field empty when you don't know it; `+ Add an edition`
+its site, and another catalog's id to its field (added when the card has none). Leave a field empty when you don't know it; `+ Add an edition`
 adds a card and *Remove* drops one. A card that is an edition of a box set says which other books it is on,
 since a change to it changes it there too. A field the page can't read is named when you save, and nothing changes.
 The Hardcover book has its own field, which takes the book's id or, since the Hardcover app doesn't show
@@ -61,7 +62,7 @@ it, the address of the book's page (`https://hardcover.app/books/the-salt-road`)
 pages: the page looks the book up on Hardcover and puts its id in the field (when you leave the field, or
 when you save). That needs your Hardcover API token, saved on the *Import & export* page (see
 [Hardcover](hardcover.md)). The Goodreads book field takes the id of the book's work on Goodreads (all its
-editions), or the address of its page (`https://www.goodreads.com/work/editions/99`); the Open Library, ISFDB, BookBrainz and
+editions), or the address of its page (`https://www.goodreads.com/work/editions/99`); the AudiobookDB, Open Library, ISFDB, BookBrainz and
 Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address. Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
@@ -98,7 +99,7 @@ each with a page of their bio, links, series and titles; their names on the book
 [Narrators and publishers](narrators-publishers.md).
 
 **Update release info for a series**: press **Edit** at the end of a series' page (open it from *Series*) to edit how many books are released, whether it is ongoing or complete, the note and
-the series' ids on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
+the series' ids on Audible, Goodreads, Hardcover, AudiobookDB, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
 `https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each).
 Every field is optional, and clearing them all keeps nothing about the series. The form checks the same rules as **Check**.

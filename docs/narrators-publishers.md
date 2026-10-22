@@ -12,7 +12,7 @@ Click a name (or a narrator's or publisher's name on a book in the catalog) to o
 from before, `narrators.html#n=…` and `publishers.html#p=…`):
 
 - a short bio, if you wrote one;
-- links to their own website and their pages on Audible, Goodreads, Hardcover, ISFDB, BookBrainz and Wikidata (whichever
+- links to their own website and their pages on Audible, Goodreads, Hardcover, AudiobookDB, ISFDB, BookBrainz and Wikidata (whichever
   have pages for them), if you added them;
 - the series they narrate or publish, each with its books in order;
 - their books outside a series.
