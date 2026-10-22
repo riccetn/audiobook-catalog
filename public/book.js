@@ -815,20 +815,26 @@ function fillForm(b){
 		byId('f_idsNote').textContent = '(' + keys.map(g=> g.name).join(', ') + ')';
 	}
 	const [ed] = b.editions;
-	if(ed && fillFormEdition(ed.fields())) filled.push('an edition');
+	if(ed && fillFormEdition(ed)) filled.push('an edition');
 	return filled;
 }
 
 /**
- * Put an edition's fields in the form: in the gaps of the first card that has nothing else in its fields, else
- * on a card of its own. Returns whether anything was filled in.
- * @param {Record<string, string>} fields
+ * Put an edition in the form: in the gaps of the card that is the same edition (it shares an id with it, an ASIN
+ * on any site, or its ISBN), else of the first card that has nothing else in its fields, else on a card of its own.
+ * Returns whether anything was filled in.
+ * @param {Edition} ed
  * @returns {boolean}
  */
-function fillFormEdition(fields){
+function fillFormEdition(ed){
+	const fields = ed.fields();
 	/** @type {(card: Record<string, string>, k: string) => string} */
 	const has = (card, k)=> Text.tidy(card[k] || '');
-	let card = FORM_EDITIONS.find(c=> Object.entries(fields).every(([k, v])=> !has(c.fields, k) || has(c.fields, k) === Text.tidy(v)));
+	/** @type {(c: {fields: Record<string, string>}) => Edition | undefined} */
+	const editionOf = c=> Edition.fromFields(c.fields).editions[0];
+	let card = FORM_EDITIONS.find(c=> editionOf(c)?.sharesId(ed))
+		|| FORM_EDITIONS.find(c=> editionOf(c)?.sameAs(ed))
+		|| FORM_EDITIONS.find(c=> Object.entries(fields).every(([k, v])=> !has(c.fields, k) || has(c.fields, k) === Text.tidy(v)));
 	if(!card){ card = {fields: {}, also: []}; FORM_EDITIONS.push(card); }
 	let gained = false;
 	for(const [k, v] of Object.entries(fields)){
