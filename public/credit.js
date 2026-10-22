@@ -12,6 +12,7 @@ import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, queryCatalog, byId, fieldById, spell, buildElement, fillElement, joined,
 	authorPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref, bookPageHref, seriesPageHref } from './store.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
+import {setAddress} from './book-list.js';
 /** @import {CreditKind} from './credit-kinds.js' */
 /** @import {Book} from './modules/book.js' */
 /** @import {Child} from './store.js' */
@@ -25,6 +26,8 @@ export let SHOWN = null;              // the id of the author, narrator or publi
 let EDITING = null;                   // the id of whom the form is editing, or null
 /** @type {string | null} */
 let REMOVING = null;                  // whom Remove was pressed for once, which a second press removes
+/** @type {string | null} */
+let JOINING = null;                   // the name of another one Save was pressed once to rename them to, which a second press joins
 
 const bookHref = (/** @type {Book} */ b)=> bookPageHref(b.id || '');
 const seriesHref = (/** @type {string} */ name)=> seriesPageHref(CATALOG.idFor('series', name));
@@ -51,12 +54,20 @@ export function render(){
 	renderCreditPage(SHOWN);
 }
 
+/**
+ * The record of the one stored under `id`, and their books.
+ * @param {string} id
+ */
+async function loadCredited(id){
+	const credited = await queryCatalog(r=> r.allKeys('credits', 'byTitle', r.keyRange.bound([id], [id, []])));
+	await loadRecords({books: credited.map(key=> /** @type {string} */ (/** @type {IDBValidKey[]} */ (key)[1])), contributors: [id]});
+}
+
 // Their record and their books.
 async function loadShown(){
 	if(SHOWN === null) return;
 	const id = SHOWN;
-	const credited = await queryCatalog(r=> r.allKeys('credits', 'byTitle', r.keyRange.bound([id], [id, []])));
-	await loadRecords({books: credited.map(key=> /** @type {string} */ (/** @type {IDBValidKey[]} */ (key)[1])), contributors: [id]});
+	await loadCredited(id);
 	// someone no book has got an id from the address alone, which loading the records dropped: they get one again
 	const named = valueFromPageHash(location.hash, KIND.hashKey);
 	if(CATALOG.nameOf(KIND.infoKey, id) === undefined && named !== null && idFromAddress(KIND.infoKey, named) === null) SHOWN = CATALOG.idFor(KIND.infoKey, named);
@@ -151,8 +162,9 @@ function renderCreditPage(id){
 function openCreditForm(id){
 	const name = nameOf(id);
 	const info = kept().get(id) || new Contributor(name);
-	EDITING = id; REMOVING = null;
+	EDITING = id; REMOVING = null; JOINING = null;
 	byId('creditFormTitle').textContent = `Edit ${KIND.one}: ${name}`;
+	fieldById('cf_name').value = name;
 	fieldById('cf_bio').value = info.bio || '';
 	fieldById('cf_url').value = info.url || '';
 	fillExternalFields('cf_ext_', KIND.one, info.external);
@@ -165,7 +177,7 @@ function openCreditForm(id){
 }
 
 function closeCreditForm(){
-	EDITING = null; REMOVING = null;
+	EDITING = null; REMOVING = null; JOINING = null;
 	const form = /** @type {HTMLFormElement} */ (byId('creditForm'));
 	form.classList.remove('open');
 	form.reset();
@@ -177,30 +189,72 @@ function homeCreditForm(){
 	if(EDITING !== null && EDITING !== SHOWN) closeCreditForm();
 }
 
+/** @param {string} text */
+const showFormError = text=> { byId('creditFormError').textContent = text; };
+
+/**
+ * Save the form: what is kept about them, and their name, which a rename changes on every book that credits
+ * them. Renaming them to someone the catalog has already takes a second Save, and joins the two: every
+ * book credits the one name, and what this form has wins over what the other has, which fills in the rest.
+ */
 async function saveCreditForm(){
 	const id = EDITING;
 	if(id === null) return;
-	const name = nameOf(id);
 	// a Hardcover address is looked up for its number first, unless the form is closed or moved meanwhile
 	const lookup = lookupHardcoverField('cf_ext_', KIND.one);
 	const hardcover = lookup ? await lookup : {error: '', note: ''};
 	if(EDITING !== id) return;
-	if(hardcover.error){ byId('creditFormError').textContent = hardcover.error; return; }
+	// they may have been renamed in another tab meanwhile, so their name is read now
+	const name = nameOf(id);
+	if(hardcover.error) return showFormError(hardcover.error);
+	const newName = Text.tidy(fieldById('cf_name').value);
+	if(!newName) return showFormError(`Give the ${KIND.one} a name.`);
+	// a publisher is one name, but authors and narrators are a list the book form splits
+	if(KIND !== CREDIT_KINDS.publisher && Text.splitNames(newName).join('\n') !== newName){
+		return showFormError(`${newName} would be read as several ${KIND.many}: a comma, a semicolon, "&" or "and" separates names.`);
+	}
+	const renamed = newName !== name;
 	const had = kept().get(id);
 	const external = readExternalFields('cf_ext_', KIND.one, had ? had.external : {});
-	if(external.bad.length){ byId('creditFormError').textContent = `Not an id or address there: ${external.bad.join('; ')}.`; return; }
+	if(external.bad.length) return showFormError(`Not an id or address there: ${external.bad.join('; ')}.`);
 	// the links the form has no field for are kept
-	const entry = Contributor.tidy(name, {bio: fieldById('cf_bio').value, url: fieldById('cf_url').value, ext: external.ids, links: had ? had.links : []});
-	// the same rules as Check, applied to this entry alone; an id in a catalog this app doesn't know is only
-	// a warning there, but here it is most likely a mistake
+	const entry = Contributor.tidy(newName, {bio: fieldById('cf_bio').value, url: fieldById('cf_url').value, ext: external.ids, links: had ? had.links : []});
+	// the same rules as Check, applied to this entry alone (under the name their books have now); an id in
+	// a catalog this app doesn't know is only a warning there, but here it is most likely a mistake
 	if(entry){
 		const {errors, warnings} = Validator.validateContributors(JSON.parse(JSON.stringify(CATALOG.books)), KIND.infoKey, {[name]: entry.toJSON()});
 		const problems = [...errors, ...warnings.filter(w=> !/is a page on/.test(w))].map(e=> e.replace(/^\w+\[[^\]]*\]: /, ''));
-		if(problems.length){ byId('creditFormError').textContent = problems.join('; '); return; }
+		if(problems.length) return showFormError(problems.join('; '));
 	}
-	if(entry) kept().set(id, entry); else kept().delete(id);
-	closeCreditForm(); render(); persist();
-	showIoStatus(`Saved ${name}.` + (hardcover.note ? ' ' + hardcover.note : ''));
+	// the one the new name is, with their books, which join these
+	if(renamed){
+		/** @type {ContributorRecord[]} */
+		const named = await queryCatalog(r=> r.all('contributors', 'kindName', [KIND.one, newName]));
+		for(const rec of named) await loadCredited(rec.id);
+		if(EDITING !== id) return;
+	}
+	const joins = renamed ? CATALOG.nameIds[KIND.infoKey].get(newName) : undefined;
+	// joining another is easy to do by mistake, so the first Save says so
+	if(joins !== undefined && JOINING !== newName){
+		JOINING = newName;
+		return showFormError(`There is already ${/^[aeiou]/.test(KIND.one) ? 'an' : 'a'} ${KIND.one} called ${newName}. Press Save again to join them: ` +
+			`every book of either will credit ${newName}, with what this form has, and what ${newName} has where this form is empty.`);
+	}
+	const other = joins === undefined ? undefined : kept().get(joins);
+	// renamed on their books, keeping the id they are stored under (or taking the id of the one they join)
+	const count = renamed ? CATALOG.renameEntry(KIND.infoKey, name, newName) : 0;
+	const newId = CATALOG.idFor(KIND.infoKey, newName);
+	const info = other ? Contributor.tidy(newName, {bio: entry?.bio || other.bio, url: entry?.url || other.url,
+		ext: {...other.external, ...entry?.external}, links: [...new Set([...other.links, ...entry?.links || []])]}) : entry;
+	if(info) kept().set(newId, info); else kept().delete(newId);
+	closeCreditForm();
+	// the page shows them under their new name, and its address names them by id (an old link may have named them)
+	if(renamed){
+		SHOWN = newId;
+		setAddress('replace', KIND.href(newName));
+	}
+	render(); persist();
+	showIoStatus((renamed ? `Renamed ${name} to ${newName} on ${Text.plural(count, 'book')}.` : `Saved ${newName}.`) + (hardcover.note ? ' ' + hardcover.note : ''));
 }
 
 /**

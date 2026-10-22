@@ -2743,6 +2743,60 @@ test('a Hardcover address in the series or info form is looked up for its number
 	assert.equal(pub.get("CATALOG.infoByName('publishers').get('Kestrel Row Audio').external.hardcover"), '5101');
 });
 
+test('an author can be renamed from their form, on every book, keeping their id; a narrator renamed to another joins them', async () => {
+	const { ctx, els, get, storage } = await boot({ page: 'author.html', hash: '#a=Wendell+Ashcombe' });
+	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
+	const count = demoBooks.filter(b => b.a.includes('Wendell Ashcombe')).length;
+	await kept(storage);
+	const authorId = databaseOf(storage).records('contributors').find(c => c.name === 'Wendell Ashcombe').id;
+	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	assert.equal(els.cf_name.value, 'Wendell Ashcombe');
+	// an author's name can't be read as several
+	els.cf_name.value = 'Ashcombe, Wendell';
+	await submit();
+	assert.match(els.creditFormError.textContent, /would be read as several authors/);
+	els.cf_name.value = '   ';
+	await submit();
+	assert.equal(els.creditFormError.textContent, 'Give the author a name.');
+	els.cf_name.value = '  Wendell  P. Ashcombe ';
+	await submit();
+	await idle();
+	assert.ok(!els.creditForm.classList.contains('open'));
+	assert.equal(els.ioStatus.textContent, `Renamed Wendell Ashcombe to Wendell P. Ashcombe on ${count} books.`);
+	assert.equal(ctx.location.hash, `#a=${authorId}`, 'the address names them by id, not by the old name');
+	assert.match(els.creditBody.innerHTML, /<h2 class="author-name">Wendell P\. Ashcombe<\/h2>/);
+	const saved = await kept(storage);
+	assert.equal(saved.books.filter(b => b.a.includes('Wendell P. Ashcombe')).length, count);
+	assert.ok(!saved.books.some(b => b.a.includes('Wendell Ashcombe')));
+	assert.deepEqual(databaseOf(storage).records('contributors').filter(c => c.name === 'Wendell P. Ashcombe').map(c => c.id), [authorId]);
+
+	// renaming a narrator to one the catalog has takes a second Save, and joins them
+	const both = demoBooks.filter(b => (b.e || []).some(ed => (ed.n || []).some(n => n === 'Dana Whitlock' || n === 'Ingrid Voss'))).length;
+	const narrator = await boot({ page: 'narrator.html', hash: '#n=Dana+Whitlock', storage });
+	const ingrid = databaseOf(storage).records('contributors').find(c => c.name === 'Ingrid Voss').id;
+	narrator.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	narrator.els.cf_name.value = 'Ingrid Voss';
+	narrator.els.cf_bio.value = 'Reads everything.';
+	await narrator.els.creditForm.listeners.submit[0]({ preventDefault() {} });
+	await idle();
+	assert.ok(narrator.els.creditForm.classList.contains('open'));
+	assert.match(narrator.els.creditFormError.textContent, /^There is already a narrator called Ingrid Voss\. Press Save again to join them/);
+	assert.ok(narrator.get("CATALOG.books.some(b => b.editions.some(ed => ed.narrators.includes('Dana Whitlock')))"));
+	await narrator.els.creditForm.listeners.submit[0]({ preventDefault() {} });
+	await idle();
+	assert.ok(!narrator.els.creditForm.classList.contains('open'));
+	assert.equal(narrator.ctx.location.hash, `#n=${ingrid}`);
+	// what the form has wins; what Ingrid Voss had fills in the rest
+	assert.deepEqual(narrator.get("CATALOG.infoByName('narrators').get('Ingrid Voss')"),
+		{ bio: 'Reads everything.', url: 'https://example.com/', ext: { hardcover: 'ingrid-voss-sample' } });
+	assert.match(narrator.els.subtitle.textContent, new RegExp(`^${both} audiobooks`));
+	const joined = await kept(storage);
+	assert.ok(!joined.books.some(b => (b.e || []).some(ed => (ed.n || []).includes('Dana Whitlock'))));
+	assert.deepEqual(databaseOf(storage).records('contributors').filter(c => c.name === 'Ingrid Voss').map(c => c.id), [ingrid]);
+	assert.ok(!databaseOf(storage).records('contributors').some(c => c.name === 'Dana Whitlock'));
+	assert.equal(get('SHOWN'), authorId);
+});
+
 test('a narrator or publisher can be edited on their page, with links checked, and removed from their books', async () => {
 	const { els, get, storage } = await boot({ page: 'narrator.html', hash: '#n=Tobias+Frane' });
 	const submit = () => els.creditForm.listeners.submit[0]({ preventDefault() {} });
