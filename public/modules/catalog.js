@@ -23,7 +23,7 @@ import {Text} from './text.js';
 /**
  * The ids that series, authors, narrators and publishers are stored under, by name (as the books write it),
  * whether or not there is info about them. Each is an entry of its own: it stays when no book names it any
- * more, until it is removed (Catalog.removeEntry), and a series keeps its id when it is renamed (Catalog.renameSeries).
+ * more, until it is removed (Catalog.removeEntry), and a series keeps its id when it is renamed (Catalog.renameEntry).
  * @typedef {Record<NamedKind, Map<string, string>>} NameIds
  */
 // An edition's values without its id, for "is this copy the same edition?".
@@ -510,24 +510,37 @@ export class Catalog {
 	}
 
 	/**
-	 * Rename a series on every book in it, and its info (which replaces any the new name had); returns how
-	 * many books changed. The series keeps its id, unless it joins one that has its own.
+	 * Rename a series, author, narrator or publisher on every book naming them (a book that names both the
+	 * old and the new name names the new one once), and move their info, which replaces any the new name
+	 * had; returns how many books changed. The entry keeps its id, unless it joins one that has its own.
+	 * @param {NamedKind} kind
 	 * @param {string} name
 	 * @param {string} newName
 	 * @returns {number}
 	 */
-	renameSeries(name, newName){
+	renameEntry(kind, name, newName){
+		/** @type {(names: string[]) => string[]} */
+		const swap = names => [...new Set(names.map(x => x === name ? newName : x))];
 		let count = 0;
-		for(const b of this.books) if(b.series === name){ b.series = newName; count++; }
-		const ids = this.nameIds.series, id = ids.get(name), joined = ids.get(newName);
+		for(const b of this.books){
+			let hit = false;
+			if(kind === 'series' && b.series === name){ b.series = newName; hit = true; }
+			if(kind === 'authors' && b.authors.includes(name)){ b.authors = swap(b.authors); hit = true; }
+			for(const ed of b.editions){
+				if(kind === 'narrators' && ed.narrators.includes(name)){ ed.narrators = swap(ed.narrators); hit = true; }
+				if(kind === 'publishers' && ed.publisher === name){ ed.publisher = newName; hit = true; }
+			}
+			if(hit) count++;
+		}
+		const ids = this.nameIds[kind], infos = this.infoMap(kind), id = ids.get(name), joined = ids.get(newName);
 		ids.delete(name);
-		const info = id === undefined ? undefined : this.series.get(id);
-		if(id !== undefined) this.series.delete(id);
+		const info = id === undefined ? undefined : infos.get(id);
+		if(id !== undefined) infos.delete(id);
 		const target = joined ?? id;
 		if(joined === undefined && id !== undefined) ids.set(newName, id);
 		if(info && target !== undefined){
 			info.name = newName;
-			this.series.set(target, info);
+			infos.set(target, info);
 		}
 		return count;
 	}

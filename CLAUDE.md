@@ -62,9 +62,9 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   - `Catalog`: books, `series` (`Map` of id -> `Series`), `authors`, `narrators`, `publishers` (`Map`s of id -> `Contributor`), `exclusions`,
     `marks` ("Not duplicates" and "Keep separate", by id: `markNotDuplicates`, `markKeepSeparate`, `markTexts`/`addMarkTexts`, `resolveMarks`),
     `nameIds` (the ids series and people are known by, by name, each an entry of its own: `idFor` (gives a new name one), `nameOf`, `namesOf`, `booksOf`, `removeEntry`/`removeProblem`, `seriesInfo`,
-    `infoByName`/`replaceInfo` for the name-keyed backup shape; `renameSeries` keeps a series' id), `assignIds` (before every save);
+    `infoByName`/`replaceInfo` for the name-keyed backup shape; `renameEntry` renames a series or person on every book and keeps their id), `assignIds` (before every save);
     `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `book(id)`, `saveBook(id, book)`, `merge` (an import), `addBoxSets`,
-    `duplicates()`, `addExclusions`, `renameSeries`, `seriesBooks`, `authorWorks`,
+    `duplicates()`, `addExclusions`, `renameEntry`, `seriesBooks`, `authorWorks`,
     `narratorWorks` and `publisherWorks` (all `creditedWorks` with `authorsOf`/`narratorsOf`/`publishersOf`).
   - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`,
     `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`fixIds`.
@@ -153,7 +153,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `credit.js` (`author.html`, `narrator.html`, `publisher.html`, started by `author.js`/`narrator.js`/`publisher.js` with
   `startCreditPage(kind)`): one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`; loads their books by their credits; without an
   address it goes to the list): bio and links from `CATALOG.authors` (`.narrators`, `.publishers`, by id), their series and
-  titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the form (with Remove author/narrator/publisher). Names on the catalog's book
+  titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the form (its Name renames them on every book, `renameEntry`, and a name the catalog has joins them on a second Save; Remove author/narrator/publisher). Names on the catalog's book
   cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).

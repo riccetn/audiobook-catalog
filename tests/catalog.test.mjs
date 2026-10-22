@@ -1726,7 +1726,7 @@ test('records: ids stay, a copy that differs or an id used twice gets its own, a
 	catalog.books[1].editions[0].description = 'with an extra story';
 	// a book restored twice has the same id twice
 	catalog.books.push(catalog.books[3].clone());
-	catalog.renameSeries('Orchard Cycle', 'The Orchard Cycle');
+	catalog.renameEntry('series', 'Orchard Cycle', 'The Orchard Cycle');
 	const records = recordsOf(catalog, () => 'new');
 	assert.deepEqual(catalog.books.map(b => b.id), [...ids, 'new']);
 	assert.equal(catalog.books[1].editions[0].id, 'new');
@@ -1739,6 +1739,33 @@ test('records: ids stay, a copy that differs or an id used twice gets its own, a
 	assert.equal(catalog.nameIds.narrators.get('Mira Tallis'), narrator);
 	assert.deepEqual(catalog.removeEntry('narrators', narrator), []);
 	assert.equal(recordsOf(catalog).contributors.some(c => c.id === narrator), false);
+});
+
+test('renameEntry renames a person on every book, keeping their id, or joins one the catalog has', () => {
+	const catalog = Catalog.fromJSON({ books: [
+		book('Fern 1', 'Bo Reed', { a: ['Bo Reed', 'B. Reed'], e: [{ n: ['Cy Hale', 'C. Hale'], p: 'Gull Audio' }] }),
+		book('Fern 2', 'B. Reed', { e: [{ n: ['C. Hale'], p: 'Gull Press' }] }),
+		book('Other', 'Ann Vale'),
+	], authors: { 'B. Reed': { bio: 'Short.' } } });
+	catalog.assignIds();
+	const id = (kind, name) => catalog.nameIds[kind].get(name);
+	const publisher = id('publishers', 'Gull Press');
+	assert.equal(catalog.renameEntry('publishers', 'Gull Press', 'Gull Audio Press'), 1);
+	assert.deepEqual(catalog.books.map(b => b.editions[0]?.publisher), ['Gull Audio', 'Gull Audio Press', undefined]);
+	assert.equal(id('publishers', 'Gull Audio Press'), publisher);
+	assert.equal(id('publishers', 'Gull Press'), undefined);
+	// joining: a book naming both names the one left once, which keeps its id, and gets the info moved
+	const bo = id('authors', 'Bo Reed'), short = id('authors', 'B. Reed');
+	assert.equal(catalog.renameEntry('authors', 'B. Reed', 'Bo Reed'), 2);
+	assert.deepEqual(catalog.books.map(b => b.authors), [['Bo Reed'], ['Bo Reed'], ['Ann Vale']]);
+	assert.equal(id('authors', 'Bo Reed'), bo);
+	assert.equal(catalog.authors.has(short), false);
+	assert.deepEqual(catalog.authors.get(bo).toJSON(), { bio: 'Short.' });
+	assert.equal(catalog.authors.get(bo).name, 'Bo Reed');
+	assert.equal(catalog.renameEntry('narrators', 'C. Hale', 'Cy Hale'), 2);
+	assert.deepEqual(catalog.books.map(b => b.editions[0]?.narrators), [['Cy Hale'], ['Cy Hale'], undefined]);
+	catalog.assignIds();
+	assert.deepEqual([...catalog.nameIds.authors.keys()].sort(), ['Ann Vale', 'Bo Reed']);
 });
 
 test('removeEntry takes a series or person off every book, and refuses to leave a book without an author', () => {

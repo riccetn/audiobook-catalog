@@ -371,7 +371,7 @@ async function saveSeriesForm(){
 	}
 
 	// renamed on its books, keeping the id it is stored under (or taking the id of the one it joins)
-	const count = renamed ? CATALOG.renameSeries(name, newName) : 0;
+	const count = renamed ? CATALOG.renameEntry('series', name, newName) : 0;
 	const newId = CATALOG.idFor('series', newName);
 	// with every field emptied it keeps none, but a series it joins keeps its own
 	if(entry) CATALOG.series.set(newId, entry); else if(!(renamed && exists)) CATALOG.series.delete(newId);

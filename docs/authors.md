@@ -29,10 +29,16 @@ form refuses what is neither an id nor an address there (a Hardcover address in 
 Clearing every field keeps nothing about them; the author stays. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
 
 An author is an entry of their own, under the name exactly as the books write it: they stay in the catalog,
-and on *Authors* ("no books yet"), when no book names them any more, until you remove them. If you rename an
-author on their books, the old name stays as an author with no books; copy the bio and links to the new
-name and remove the old one. The book form says when a name you type is new (see
-[Everyday workflows](workflows.md#editing)).
+and on *Authors* ("no books yet"), when no book names them any more, until you remove them. The book form
+says when a name you type is new (see [Everyday workflows](workflows.md#editing)).
+
+**Rename an author**: change the **Name** in the form and save; every book that credits them gets the new
+name, and they keep their bio, links and page (its address follows). Narrators and publishers are renamed the
+same way, on the editions they read or publish. An author's or narrator's name can't hold a comma, a semicolon,
+`&` or `and`, which the book form reads as between names. Renaming them to someone the catalog already has
+joins the two, which is how to tidy up one person kept under two spellings: the first Save says so, the second
+does it. Every book of either then credits the one name, which keeps what the form has and, where the form is
+empty, what the other had (their ids in other catalogs and their other links are put together).
 
 **Remove an author**: **Remove author** in the form takes them off every book and removes them. The first
 press says how many books it changes, the second does it. An author who is the only author of a book can't
