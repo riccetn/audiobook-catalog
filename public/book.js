@@ -8,7 +8,8 @@ import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
-import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, startPage, byId, fieldById, spell,
+import {CatalogLookup} from './modules/catalog-lookup.js';
+import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, browserHardcoverToken, hardcoverClient, startPage, byId, fieldById, spell,
 	buildElement, fillElement, joined, publisherPageHref, externalFields, fillExternalFields, readExternalFields, bookPageHref, seriesPageHref } from './store.js';
 /** @import {Child} from './store.js' */
 import { authorLinks, narratorLinks, bookNarrators, coverImage, hashParts, hashOf, setAddress } from './book-list.js';
@@ -741,6 +742,100 @@ function resolveHardcoverField(){
 byId('f_hcb').addEventListener('change', ()=>{ resolveHardcoverField(); });
 // the book's ids in external catalogs other than Hardcover (whose field looks the book up)
 fillElement(byId('f_bookExt'), externalFields('f_ext_', 'book', ['hardcover']));
+
+// Fill in from another catalog: the book a pasted address, id or ISBN names, looked up in the catalogs a page
+// may read (catalog-lookup.js), fills in the form's empty fields only, so nothing typed is lost.
+/** @type {string | null} */
+let FILLING = null;   // what is being looked up, so pressing again doesn't ask twice
+export async function fillFromCatalog(){
+	const field = fieldById('f_from'), text = field.value.trim();
+	if(!text || FILLING === text) return;
+	FILLING = text;
+	const editing = EDIT_ID;
+	showIoStatus('Looking it up…');
+	try{
+		const token = browserHardcoverToken();
+		const found = await new CatalogLookup(url=> fetch(url), token ? hardcoverClient(token) : null).find(text);
+		// the form was closed, or moved to another book, meanwhile
+		if(EDIT_ID !== editing || !byId('addForm').classList.contains('open')) return;
+		const filled = fillForm(found.book);
+		byId('formError').textContent = '';
+		const from = found.sources.join(' and ');
+		const notes = found.notes.length ? ` (${found.notes.join('; ')}.)` : '';
+		showIoStatus(spell(filled.length ? `Filled in from ${from}: ${filled.join(', ')}.${notes}` : `Found on ${from}, but the form already has all it gives.${notes}`));
+		if(field.value.trim() === text) field.value = '';
+	}catch(err){
+		showIoStatus('');
+		byId('formError').textContent = `Couldn't fill in the book: ${Text.errorText(err)}.`;
+	}finally{
+		if(FILLING === text) FILLING = null;
+	}
+}
+byId('fillFromBtn').addEventListener('click', ()=>{ fillFromCatalog(); });
+// Enter looks it up, rather than saving the book
+byId('f_from').addEventListener('keydown', e=>{
+	const event = /** @type {KeyboardEvent} */ (e);
+	if(event.key !== 'Enter') return;
+	event.preventDefault();
+	fillFromCatalog();
+});
+
+/**
+ * Put what the catalog has for a book in the form's empty fields; returns what was filled in ("title", "an edition").
+ * @param {Book} b
+ * @returns {string[]}
+ */
+function fillForm(b){
+	/** @type {string[]} */
+	const filled = [];
+	/** @type {(id: string, value: string, label: string) => void} */
+	const put = (id, value, label)=>{
+		const f = fieldById(id);
+		if(value && !f.value.trim()){ f.value = value; filled.push(label); }
+	};
+	put('f_t', b.title, 'title');
+	put('f_a', b.authors.join(', '), 'authors');
+	// the number only goes with its own series
+	const series = fieldById('f_s').value.trim();
+	put('f_s', b.series || '', 'series');
+	if(!series || series === b.series) put('f_sn', b.number || '', 'number in the series');
+	put('f_g', b.genres.join(', '), 'genres');
+	let ids = 0;
+	for(const [key, id] of Object.entries(b.external)){
+		const g = ExternalCatalog.groupOf(key);
+		const field = key === 'hardcover' ? fieldById('f_hcb') : g && document.getElementById('f_ext_' + g.key) ? fieldById('f_ext_' + g.key) : null;
+		if(!field || field.value.trim()) continue;
+		field.value = key === 'hardcover' || !g ? id : ExternalCatalog.fieldText({[key]: id}, 'book', g.key);
+		ids++;
+	}
+	if(ids){
+		filled.push(ids === 1 ? 'the book\'s id in another catalog' : 'the book\'s ids in other catalogs');
+		const keys = ExternalCatalog.GROUPS.filter(g=> { const f = document.getElementById(g.key === 'hardcover' ? 'f_hcb' : 'f_ext_' + g.key); return f && /** @type {HTMLInputElement} */ (f).value.trim(); });
+		byId('f_idsNote').textContent = '(' + keys.map(g=> g.name).join(', ') + ')';
+	}
+	const [ed] = b.editions;
+	if(ed && fillFormEdition(ed.fields())) filled.push('an edition');
+	return filled;
+}
+
+/**
+ * Put an edition's fields in the form: in the gaps of the first card that has nothing else in its fields, else
+ * on a card of its own. Returns whether anything was filled in.
+ * @param {Record<string, string>} fields
+ * @returns {boolean}
+ */
+function fillFormEdition(fields){
+	/** @type {(card: Record<string, string>, k: string) => string} */
+	const has = (card, k)=> Text.tidy(card[k] || '');
+	let card = FORM_EDITIONS.find(c=> Object.entries(fields).every(([k, v])=> !has(c.fields, k) || has(c.fields, k) === Text.tidy(v)));
+	if(!card){ card = {fields: {}, also: []}; FORM_EDITIONS.push(card); }
+	let gained = false;
+	for(const [k, v] of Object.entries(fields)){
+		if(v && !has(card.fields, k)){ card.fields[k] = v; gained = true; }
+	}
+	renderFormEditions();
+	return gained;
+}
 
 byId('addForm').addEventListener('submit', async e=>{
 	e.preventDefault();

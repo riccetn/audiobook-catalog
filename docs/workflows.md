@@ -28,7 +28,24 @@ Edit books in the page (**Edit** at the end of a book's page, `+ Add a book`). *
 details. `+ Add a book`, on *Books* and on a series' page, opens the form for a new book on a page of its own
 (`book.html#add`), with the series and author filled in from where you were: the series you were looking at,
 and the author picked in the author filter (else the author of every book in the series). Saving shows the new
-book's page; *Cancel* goes back to the series or the books. *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
+book's page; *Cancel* goes back to the series or the books.
+
+*Fill in from another catalog*, at the top of the form, looks a book up and fills in the form's empty fields
+(nothing you typed is replaced): paste the address of its page and press *Fill in* (or Enter). These work
+without an account, as their catalogs let a web page read them: an Open Library work or edition
+(`https://openlibrary.org/books/OL…M`, or the bare `OL…M`/`OL…W`), a Wikidata item (`Q…`), or an ISBN, which is
+looked up on Open Library. With your Hardcover API token saved (see [Hardcover](hardcover.md)), Hardcover is
+asked too: a book's or edition's page on hardcover.app, and the pages Hardcover knows the ids of, an Audible or
+Amazon page (by its ASIN) and a Goodreads edition (`goodreads.com/book/show/…`); an ISBN is looked up there
+first, and an Open Library edition's ISBN or ASIN is looked up there for the narrators and length Open Library
+doesn't have. Audible, Amazon and Goodreads can't be read from a web page themselves, so without the token their
+addresses can't be looked up. It fills in the title, authors, series and number, genres (from Wikidata), the
+book's ids in those catalogs, and an edition (narrators, ASIN, Goodreads, Hardcover and Open Library ids, ISBN,
+publisher, release date, length): in the gaps of the first card that has nothing else in its fields, else on a
+card of its own. The status line says what was filled in and from where; look it over before saving. It is in
+the form while editing a book too, where it fills in only what the book lacks.
+
+*Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; *+ Another site* adds a field for
 another Amazon or Audible site), Goodreads id, Hardcover edition (*+ Another catalog* adds a field for its id on Open
 Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publisher,

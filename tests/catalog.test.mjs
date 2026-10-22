@@ -28,7 +28,9 @@ import { GoodreadsExporter } from '../public/modules/goodreads-exporter.js';
 import { HardcoverClient } from '../public/modules/hardcover-client.js';
 import { HardcoverSync } from '../public/modules/hardcover-sync.js';
 import { CatalogRecords } from '../public/modules/catalog-records.js';
+import { CatalogLookup } from '../public/modules/catalog-lookup.js';
 import { CatalogDatabase, CatalogConflict } from '../public/modules/catalog-database.js';
+import { fakeCatalogs } from './fake-catalogs.mjs';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 import { FakeIndexedDB, FakeKeyRange } from './fake-indexeddb.mjs';
 
@@ -2197,4 +2199,89 @@ test('a series\' site, from before authors and publishers kept their own, goes t
 	assert.deepEqual(json(back.infoByName('authors').get('Ann Vale')), { url: 'https://example.com/ann' });
 	assert.equal(back.moveSeriesSites(), false);
 	assert.equal(CatalogRecords.outdated(recordsOf(back)), false);
+});
+
+test('CatalogLookup.read names what was pasted: an ISBN, an address in a catalog, a bare id', () => {
+	assert.deepEqual(CatalogLookup.read('ISBN 978-0-00-000001-9'), { catalog: 'isbn', kind: 'isbn', id: '9780000000019' });
+	assert.deepEqual(CatalogLookup.read('https://openlibrary.org/books/OL901M/The_lantern_keeper'), { catalog: 'openlibrary', kind: 'edition', id: 'OL901M' });
+	assert.deepEqual(CatalogLookup.read('openlibrary.org/works/OL900W'), { catalog: 'openlibrary', kind: 'book', id: 'OL900W' });
+	assert.deepEqual(CatalogLookup.read('ol900w'), { catalog: 'openlibrary', kind: 'book', id: 'OL900W' });
+	assert.deepEqual(CatalogLookup.read('https://www.wikidata.org/wiki/Q9001'), { catalog: 'wikidata', kind: 'book', id: 'Q9001' });
+	assert.deepEqual(CatalogLookup.read('Q9001'), { catalog: 'wikidata', kind: 'book', id: 'Q9001' });
+	assert.deepEqual(CatalogLookup.read('https://hardcover.app/books/tidewater/editions/501'), { catalog: 'hardcover', kind: 'edition', id: '501' });
+	assert.deepEqual(CatalogLookup.read('hardcover.app/books/tidewater'), { catalog: 'hardcover', kind: 'book', id: '', slug: 'tidewater' });
+	assert.deepEqual(CatalogLookup.read('https://www.audible.co.uk/pd/Tidewater-Audiobook/B0TIDEWAT1'), { catalog: 'audible.co.uk', kind: 'edition', id: 'B0TIDEWAT1' });
+	assert.deepEqual(CatalogLookup.read('b0tidewat1'), { catalog: 'audible.com', kind: 'edition', id: 'B0TIDEWAT1' });
+	assert.deepEqual(CatalogLookup.read('https://www.goodreads.com/book/show/4242-brine-songs'), { catalog: 'goodreads', kind: 'edition', id: '4242' });
+	assert.equal(CatalogLookup.read('The Lantern Keeper'), null);
+	assert.equal(CatalogLookup.read(''), null);
+});
+
+test('CatalogLookup reads the dates and series catalogs write', () => {
+	assert.equal(CatalogLookup.date('March 4, 2021'), '2021-03-04');
+	assert.equal(CatalogLookup.date('4 Mar 2021'), '2021-03-04');
+	assert.equal(CatalogLookup.date('Mar. 2021'), '2021-03');
+	assert.equal(CatalogLookup.date('2021'), '2021');
+	assert.equal(CatalogLookup.date('2021-03-04T00:00:00Z'), '2021-03-04');
+	assert.equal(CatalogLookup.date('Spring 2021'), '2021');
+	assert.equal(CatalogLookup.date('February 30, 2021'), null);
+	assert.equal(CatalogLookup.date('soon'), null);
+	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle (2)'), { name: 'Gull Isle', number: '2' });
+	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle ; 2'), { name: 'Gull Isle', number: '2' });
+	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle -- book 2.5'), { name: 'Gull Isle', number: '2.5' });
+	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle'), { name: 'Gull Isle', number: null });
+	assert.equal(CatalogLookup.seriesOf(''), null);
+});
+
+test('CatalogLookup finds a book on Open Library and Wikidata, without an account', async () => {
+	const catalogs = fakeCatalogs();
+	const lookup = new CatalogLookup(catalogs.fetch, null);
+	const edition = await lookup.find('https://openlibrary.org/books/OL901M');
+	assert.deepEqual(JSON.parse(JSON.stringify(edition.book)), { t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', ext: { openlibrary: 'OL900W' },
+		e: [{ ext: { 'amazon.com': 'B0LANTERN2', goodreads: '5151', openlibrary: 'OL901M' }, isbn: '9780000000019', n: ['Hollis Marr'], p: 'Gullwing Audio', d: '2021-03-04' }] });
+	assert.deepEqual(edition.sources, ['Open Library']);
+	assert.match(edition.notes[0], /narrators and length from Hardcover too, save your Hardcover API token/);
+	// by its ISBN, the same
+	assert.deepEqual(JSON.parse(JSON.stringify((await lookup.find('9780000000019')).book)), JSON.parse(JSON.stringify(edition.book)));
+	// a work has no edition
+	assert.deepEqual(JSON.parse(JSON.stringify((await lookup.find('OL900W')).book)), { t: 'The Lantern Keeper', a: ['Ann Vale'], ext: { openlibrary: 'OL900W' } });
+	const item = await lookup.find('https://www.wikidata.org/wiki/Q9001');
+	assert.deepEqual(JSON.parse(JSON.stringify(item.book)), { t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', g: ['fantasy'],
+		ext: { goodreads: '7171', openlibrary: 'OL900W', wikidata: 'Q9001' } });
+	assert.deepEqual(item.notes, []);
+	await assert.rejects(lookup.find('OL1M'), /Open Library has no edition OL1M/);
+	await assert.rejects(lookup.find('Q9002'), /names no author, so it is not a book/);
+	await assert.rejects(lookup.find('9780000000002'), /no catalog has a book with ISBN 9780000000002 \(to ask Hardcover too/);
+	await assert.rejects(lookup.find('B0TIDEWAT1'), /Audible can't be read from a web page; to look its ASIN up on Hardcover, save your Hardcover API token/);
+	await assert.rejects(lookup.find('hardcover.app/id/book/77'), /to look it up on Hardcover, save your Hardcover API token/);
+	await assert.rejects(lookup.find('just a title'), /paste the address of a book or edition/);
+	await assert.rejects(new CatalogLookup(async () => { throw new TypeError('Failed to fetch'); }, null).find('OL900W'), /could not reach Open Library/);
+	assert.ok(catalogs.sent.every(url => /^https:\/\/(openlibrary\.org|www\.wikidata\.org)\//.test(url)));
+});
+
+test('CatalogLookup asks Hardcover, with a token, for its books and for the ASINs, ISBNs and Goodreads ids it knows', async () => {
+	const hc = fakeHardcover(hardcoverState());
+	const lookup = new CatalogLookup(fakeCatalogs().fetch, new HardcoverClient('tok-123', hc.fetch, async () => {}));
+	const tidewater = { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: { hardcover: '77' },
+		e: [{ ext: { 'amazon.com': 'B0TIDEWAT1', hardcover: '501' }, n: ['Hollis Marr'], len: 600 }] };
+	// a book's page by its name: its audiobook edition comes with it
+	assert.deepEqual(JSON.parse(JSON.stringify((await lookup.find('https://hardcover.app/books/tidewater')).book)), tidewater);
+	assert.deepEqual(JSON.parse(JSON.stringify((await lookup.find('hardcover.app/books/tidewater/editions/501')).book)), tidewater);
+	// an Audible page's ASIN, which stays the site's
+	const audible = await lookup.find('https://www.audible.com/pd/B0TIDEWAT1');
+	assert.deepEqual(audible.book.editions[0].external, { 'audible.com': 'B0TIDEWAT1', 'amazon.com': 'B0TIDEWAT1', hardcover: '501' });
+	assert.deepEqual(audible.sources, ['Hardcover']);
+	// a Goodreads edition, by Hardcover's mapping of it to its book (whose print edition isn't taken)
+	const goodreads = await lookup.find('https://www.goodreads.com/book/show/4242');
+	assert.deepEqual(JSON.parse(JSON.stringify(goodreads.book)), { t: 'Brine Songs', a: ['Ann Vale'], ext: { hardcover: '81' }, e: [{ ext: { goodreads: '4242' } }] });
+	await assert.rejects(lookup.find('https://www.goodreads.com/work/editions/99'), /Hardcover knows Goodreads editions/);
+	await assert.rejects(lookup.find('B0NOTHERE1'), /Hardcover has no edition with ASIN B0NOTHERE1/);
+	// Open Library's edition, and Hardcover's for what it lacks (by its ISBN, which Hardcover doesn't have here)
+	const keeper = await lookup.find('OL901M');
+	assert.deepEqual(keeper.sources, ['Open Library']);
+	assert.deepEqual(keeper.notes, []);
+	// a refused token is said, and Open Library still answers
+	const refused = await new CatalogLookup(fakeCatalogs().fetch, new HardcoverClient('bad', hc.fetch, async () => {})).find('9780000000019');
+	assert.deepEqual(refused.sources, ['Open Library']);
+	assert.match(refused.notes[0], /Hardcover couldn't be asked: Hardcover refused your token/);
 });

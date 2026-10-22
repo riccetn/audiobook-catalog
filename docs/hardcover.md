@@ -45,6 +45,12 @@ paste the address of the book's page (`https://hardcover.app/books/the-salt-road
 book's id with the same token. An edition's
 address in an edition's *Hardcover edition* field needs no lookup: it holds the edition's id.
 
+**Filling in a new book.** The book form's *Fill in from another catalog* takes a book's or edition's page on
+hardcover.app, an Audible or Amazon page, a Goodreads edition's page or an ISBN, and fills in the form from
+Hardcover with the same token: the title, authors, series and number, and an edition (the one named, or the
+book's audiobook edition) with its narrators, ASIN, ISBN, publisher, release date and length. See
+[Edit in the app](workflows.md).
+
 **A series', author's, narrator's or publisher's Hardcover id.** These are kept by their number on Hardcover too
 (linked as `https://hardcover.app/id/author/4101`, which keeps working when Hardcover renames the page). Their pages'
 addresses have a name in them instead (`https://hardcover.app/authors/marisol-quenby`), so when you paste one, or

@@ -9,6 +9,10 @@
 
 	<form id="addForm">
 		<h3 id="formTitle">Add a book</h3>
+		<div class="formrow fillFrom">
+			<div><label for="f_from">Fill in from another catalog</label><input id="f_from" placeholder="its address, id or ISBN" title="A book's address on Open Library, Wikidata, Hardcover, Audible, Amazon or Goodreads, or its ISBN"></div>
+			<div class="formrow-btn"><button type="button" id="fillFromBtn" title="Fill in the empty fields from the catalog">Fill in</button></div>
+		</div>
 		<div class="formrow">
 			<div><label for="f_t">Title</label><input id="f_t" required></div>
 			<div><label for="f_a">Authors, separated by commas</label><div class="combo"><input id="f_a" required><ul id="f_aList"></ul><p id="f_aNew"></p></div></div>
