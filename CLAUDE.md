@@ -70,7 +70,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`fixIds`.
   - `Edition` (`id external isbn narrators publisher released minutes description`): `idOn`/`ids`/`idKeys`, `sameAs`/`conflictsWith`/`fillFrom`,
     `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`/`fixIds`.
-  - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads, Hardcover, Open Library, ISFDB, BookBrainz and Wikidata, with a
+  - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata, with a
     description and, per kind (`book edition series author narrator publisher`), the id's pattern and its page's address; `GROUPS` (one form
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.

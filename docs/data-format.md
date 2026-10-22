@@ -104,9 +104,9 @@ The narrator info (`narrators`) and publisher info (`publishers`) work the same 
 `narrators` maps a narrator's name (as an edition's `n` writes it) and `publishers` a publisher's name (as an
 edition's `p` writes it) to a bio and links. For a narrator, the Audible id is their name as Audible's
 narrator search takes it, and Goodreads' and Hardcover's ids are their author pages' (both sites list
-narrators as authors), and so is BookBrainz's; for a publisher, Audible's id is its name as Audible's publisher search takes it
+narrators as authors), and so are AudiobookDB's and BookBrainz's (people pages there); for a publisher, Audible's id is its name as Audible's publisher search takes it
 and Hardcover's its number there (Goodreads has no publisher pages). Both can also have a
-Wikidata item, and a publisher an ISFDB and a BookBrainz id. Both are
+Wikidata item and an AudiobookDB id, and a publisher an ISFDB and a BookBrainz id. Both are
 optional (missing means `{}`).
 
 ```json
@@ -127,6 +127,7 @@ pasted into a form. The key in `ext` is the catalog's:
 | `amazon.com`, `amazon.co.uk`, … (each Audible store's Amazon twin, and `amazon.se`, `amazon.nl`, `amazon.pl`, `amazon.com.br`, `amazon.com.mx`) | an Amazon store | an edition's ASIN (`/dp/B0…`) and an author's (`/stores/author/B0…`) |
 | `goodreads` | Goodreads | a book's work (`/work/editions/99`), an edition (`/book/show/4242`), a series (`/series/90001`), an author or narrator (`/author/show/1234`) |
 | `hardcover` | Hardcover | a book (`/id/book/77`), an edition (`/id/edition/501`), a series (`/id/series/3101`), an author or narrator (`/id/author/4101`), a publisher (`/id/publisher/5101`), each by its number; a series' or person's page by the name in its address (`/authors/marisol-quenby`) when Hardcover couldn't be asked for the number |
+| `audiobookdb` | AudiobookDB (`audiobookdb.org`), a community catalog of audiobooks | a book (`/books/37kLciJjQmfe`), an edition, which AudiobookDB calls a release (`/releases/…`), a series (`/series/…`), an author or narrator, both people there (`/people/…`), a publisher (`/publishers/…`), each by its twelve-character id, in which case matters. Its API sends no CORS headers, so the page only links to it |
 | `openlibrary` | Open Library (`openlibrary.org`) | a book's work (`/works/OL123W`), an edition (`/books/OL456M`), an author (`/authors/OL789A`) |
 | `isfdb` | ISFDB, the Internet Speculative Fiction Database (`isfdb.org`) | a book's title (`/cgi-bin/title.cgi?194342`), an edition, which ISFDB calls a publication (`pl.cgi?…`), a series (`pe.cgi?…`), an author (`ea.cgi?…`), a publisher (`publisher.cgi?…`) |
 | `bookbrainz` | BookBrainz (`bookbrainz.org`) | a book's work (`/work/…`), an edition (`/edition/…`), a series, an author or narrator (`/author/…`), a publisher, each by its UUID |
