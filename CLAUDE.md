@@ -87,6 +87,9 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
     `HardcoverSync` (`compare`: only reads Hardcover, for every book or a series' or an author's (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`), `push`, `read`, `lookups`/`addIds`, `planExport`).
+  - `CatalogLookup` (the book form's *Fill in from another catalog*: `read` names what was pasted (an ISBN, an address or bare id), `find` looks the book up with
+    the fetch and `HardcoverClient` passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and
+    Goodreads editions it knows, as Audible, Amazon and Goodreads can't be read from a page), `fill` (gaps only), `date`/`seriesOf`).
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
     Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`).
@@ -136,7 +139,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `books.js` (`books.html`, *Books*): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
 - `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`, `openBook`; `bookDetails`, with the other books of its box set
   loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
-  and the book form (`openEditForm`; Remove book is in it), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
+  and the book form (`openEditForm`; Remove book is in it; *Fill in from another catalog*, `fillFromCatalog`, fills its empty fields), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): the comparison an Audible or
   Goodreads CSV import, or the Hardcover panel's Compare (`HardcoverSync.compare`; for a series or an author, which their pages link to
@@ -170,7 +173,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     modules export (`ctx.render()`, `get('CATALOG.books')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
-    in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover).; covers are `<img>`s, which the fake DOM never loads.
+    in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover), Open Library and Wikidata
+    (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`).; covers are `<img>`s, which the fake DOM never loads.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 

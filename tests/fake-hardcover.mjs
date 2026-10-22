@@ -52,6 +52,9 @@ export function fakeHardcover(state) {
 			const table = { Series: 'series', Author: 'authors', Publisher: 'publishers' }[bySlug[1]];
 			return answer({ [table]: (state[table] || []).filter(row => row.slug === variables.slug).slice(0, 1) });
 		}
+		if (query.startsWith('query AudioEditions')) {
+			return answer({ editions: Object.values(state.editions).filter(e => e.book_id === variables.book && e.reading_format_id === 2).slice(0, 1) });
+		}
 		if (query.startsWith('query EditionBook')) {
 			const e = state.editions[variables.id];
 			return answer({ editions: e ? [{ book_id: e.book_id, book: { title: state.books[e.book_id].title } }] : [] });

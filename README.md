@@ -27,7 +27,8 @@ On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `l
 
 The first time the app opens in a browser, the catalog is empty. Fill it from *Import & export*:
 import an [Audible](docs/audible.md), [Goodreads](docs/goodreads.md) or [Hardcover](docs/hardcover.md)
-library, restore a backup, or add books by hand with **+ Add a book**.
+library, restore a backup, or add books by hand with **+ Add a book**, whose form can fill itself in from a book's
+page on Open Library, Wikidata or Hardcover, or its ISBN.
 
 ## Using it
 

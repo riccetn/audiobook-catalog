@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
+import { fakeCatalogs } from './fake-catalogs.mjs';
 import { Book } from '../public/modules/book.js';
 import { Exclusions } from '../public/modules/exclusions.js';
 import { Duplicates } from '../public/modules/duplicates.js';
@@ -249,7 +250,7 @@ async function kept(storage) {
  * holds a catalog already, the catalog is made of `files` (see stored(); default: the demo data), or
  * there is none when `files` is null.
  */
-async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null, languages = ['en-US', 'en'] } = {}) {
+async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null, catalogs = null, languages = ['en-US', 'en'] } = {}) {
 	await settled(storage);   // a page loaded after another saved reads what it saved
 	if (files && !storage.has(CATALOG_KEY)) storage.set(CATALOG_KEY, stored(files));
 	if (files && files['not-duplicates.txt'] && !storage.has(NOT_DUP_KEY)) {
@@ -273,11 +274,16 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 		setItem: (k, v) => storage.set(k, String(v)),
 		removeItem: k => storage.delete(k),
 	};
-	// The page asks nothing of the server it came from; only Hardcover, when a test gives a fake of it.
+	// The page asks nothing of the server it came from; only Hardcover, Open Library and Wikidata, when a
+	// test gives a fake of them.
 	const fetch = async (url, init = {}) => {
 		if (url.startsWith('https://api.hardcover.app/')) {
 			if (!hardcover) throw new TypeError('Failed to fetch');
 			return hardcover(url, init);
+		}
+		if (/^https:\/\/(openlibrary\.org|www\.wikidata\.org)\//.test(url)) {
+			if (!catalogs) throw new TypeError('Failed to fetch');
+			return catalogs(url, init);
 		}
 		throw new Error(`the page fetched ${url}`);
 	};
@@ -305,7 +311,7 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 	const Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 	const database = databaseOf(storage);
 	const crypto = { randomUUID: () => database.newId() };
-	const context = vm.createContext({ document, Node, navigator, localStorage, indexedDB: database, IDBKeyRange: FakeKeyRange, structuredClone, crypto, fetch, FileReader, location, history,
+	const context = vm.createContext({ document, Node, navigator, localStorage, indexedDB: database, IDBKeyRange: FakeKeyRange, structuredClone, crypto, fetch, FileReader, URL, URLSearchParams, location, history,
 		addEventListener, console, setTimeout, clearTimeout() {}, setInterval: () => 0, clearInterval() {} });
 	const [entry] = entryOf(page);
 	const namespaces = await runModules(entry, context);
@@ -985,6 +991,70 @@ test('adding a book: the form on a book\'s page, which then shows the book', asy
 	const plain = await boot({ page: 'book.html', hash: '#add' });
 	plain.els.cancelAdd.listeners.click[0]();
 	assert.equal(plain.ctx.location.replaced, 'books.html');
+});
+
+test('a new book is filled in from another catalog: only its empty fields, and the edition', async () => {
+	const catalogs = fakeCatalogs();
+	const storage = new Map();
+	const { ctx, els, get } = await boot({ page: 'book.html', hash: '#add', catalogs: catalogs.fetch, storage });
+	// what was typed stays
+	els.f_t.value = 'My Own Title';
+	typeEdition(els, 0, 'desc', 'UK edition');
+	els.f_from.value = 'https://openlibrary.org/books/OL901M/The_lantern_keeper';
+	let prevented = false;
+	els.f_from.dispatch('keydown', { key: 'Enter', preventDefault() { prevented = true; } });
+	assert.ok(prevented, 'Enter looks it up, and does not save the book');
+	await idle(); await settle(); await settle();
+	assert.equal(els.f_t.value, 'My Own Title');
+	assert.equal(els.f_a.value, 'Ann Vale');
+	assert.equal(els.f_s.value, 'Gull Isle');
+	assert.equal(els.f_sn.value, '2');
+	assert.equal(els.f_ext_openlibrary.value, 'OL900W');
+	assert.equal(els.f_idsNote.textContent, '(Open Library)');
+	assert.deepEqual(formEditions(get), [{ desc: 'UK edition', n: 'Hollis Marr', 'ext:amazon.com': 'B0LANTERN2', 'ext:goodreads': '5151', 'ext:openlibrary': 'OL901M',
+		isbn: '9780000000019', p: 'Gullwing Audio', d: '2021-03-04' }]);
+	assert.match(els.ioStatus.textContent, /^Filled in from Open Library: authors, series, number in the series, the book's id in another catalog, an edition\. \(to fill in narrators and length from Hardcover too/);
+	assert.equal(els.f_from.value, '');
+	assert.equal(els.formError.textContent, '');
+	// Wikidata adds what is still missing, and its ids where the form has none
+	els.f_from.value = 'Q9001';
+	await ctx.fillFromCatalog();
+	assert.equal(els.formError.textContent, '');
+	assert.equal(els.f_g.value, 'fantasy');
+	assert.equal(els.f_ext_wikidata.value, 'Q9001');
+	assert.equal(els.f_ext_goodreads.value, '7171');
+	assert.equal(els.f_ext_openlibrary.value, 'OL900W');
+	assert.match(els.ioStatus.textContent, /^Filled in from Wikidata: genres, the book's ids in other catalogs\.$/);
+	// again, nothing is left to fill in
+	els.f_from.value = 'Q9001';
+	await ctx.fillFromCatalog();
+	assert.match(els.ioStatus.textContent, /^Found on Wikidata, but the form already has all it gives\./);
+	// what can't be looked up says why, and keeps what was pasted
+	els.f_from.value = 'https://www.audible.com/pd/B0TIDEWAT1';
+	await ctx.fillFromCatalog();
+	assert.match(els.formError.textContent, /^Couldn't fill in the book: Audible can't be read from a web page; to look its ASIN up on Hardcover, save your Hardcover API token/);
+	assert.equal(els.f_from.value, 'https://www.audible.com/pd/B0TIDEWAT1');
+	// saved, the book has it all
+	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
+	await idle();
+	const [added] = get('CATALOG.books');
+	assert.deepEqual(JSON.parse(JSON.stringify(added)).ext, { goodreads: '7171', openlibrary: 'OL900W', wikidata: 'Q9001' });
+	assert.equal(added.e[0].isbn, '9780000000019');
+	assert.ok(catalogs.sent.length > 0);
+});
+
+test('the book form fills in from Hardcover with the token saved, by an Audible page\'s ASIN', async () => {
+	const hc = fakeHardcover(hardcoverState());
+	const setTimeout = (fn, ms) => { if (ms === 1000) Promise.resolve().then(fn); return 0; };
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const { ctx, els, get } = await boot({ page: 'book.html', hash: '#add', hardcover: hc.fetch, catalogs: fakeCatalogs().fetch, setTimeout, storage });
+	els.f_from.value = 'https://www.audible.com/pd/Tidewater-Audiobook/B0TIDEWAT1';
+	await ctx.fillFromCatalog();
+	assert.equal(els.f_t.value, 'Tidewater');
+	assert.equal(els.f_a.value, 'Ann Vale');
+	assert.equal(els.f_hcb.value, '77');
+	assert.deepEqual(formEditions(get), [{ n: 'Hollis Marr', 'ext:audible.com': 'B0TIDEWAT1', 'ext:amazon.com': 'B0TIDEWAT1', 'ext:hardcover': '501', len: '10h' }]);
+	assert.match(els.ioStatus.textContent, /^Filled in from Hardcover: title, authors, series, number in the series, the book's id in another catalog, an edition\.$/);
 });
 
 test('a new book starts with the series it is added to and the author picked', async () => {

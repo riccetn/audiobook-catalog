@@ -95,6 +95,14 @@ export class HardcoverClient {
 		publisherBySlug: `query PublisherBySlug($slug: String!) {
 	publishers(where: {slug: {_eq: $slug}}, limit: 1) { id canonical_id name }
 }`,
+		// a book's audiobook editions, for a book named without one
+		audioEditions: `query AudioEditions($book: Int!) {
+	editions(where: {book_id: {_eq: $book}, reading_format_id: {_eq: 2}}, order_by: {id: asc}, limit: 1) {
+		id book_id asin isbn_13 isbn_10 release_date audio_seconds reading_format_id
+		publisher { name }
+		contributions { contribution author { name } }
+	}
+}`,
 		editionBook: `query EditionBook($id: Int!) {
 	editions(where: {id: {_eq: $id}}) { book_id book { title } }
 }`,
