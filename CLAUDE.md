@@ -11,7 +11,9 @@ no server code and no command line: any static server (`make serve`, GitHub Page
 Node is only used to write the pages and run the tests.
 
 Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`),
-and nothing else goes there: `docs/`, `templates/` and `tests/` stay outside it, so they are never served.
+and nothing else goes there: `docs/`, `templates/`, `tests/` and `proxy/` stay outside it, so they are never served.
+The one piece that runs elsewhere is the optional catalog proxy (`proxy/`, below), a Cloudflare Worker the user deploys
+themselves; the app never needs it.
 The module names below are files in `public/`.
 
 The pages' HTML is the one thing built: `make pages` (`build.mjs`) renders `templates/pages/<name>.liquid` with
@@ -112,7 +114,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group) and `externalLinks`, the page links
   (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
-  Hardcover; `hardcoverClient(token)`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
+  Hardcover; `hardcoverClient(token)`), the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
+  `proxyAddress` (https, or http on this computer), `fetchViaProxy(route)` with the `X-Proxy-Key` header; set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onHardcoverJob`;
   the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
@@ -160,8 +163,14 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).
+- `proxy/`: the catalog proxy, a Cloudflare Worker (`worker.js`, `wrangler.toml`; `docs/catalog-proxy.md`) for the catalogs whose APIs send
+  no CORS headers. Routes name a catalog (`CATALOGS`: `audiobookdb`, `audible/<site>` (only `catalog/...`), `bookbrainz`, `isfdb`), never an
+  address (`upstreamUrl`); GET only, only `ALLOWED_ORIGINS`, only with the `PROXY_KEY` secret (`X-Proxy-Key`); no cookies or other headers either
+  way; answers found cached a day; `/ping`. `handle(request, env, deps)` takes the fetch and cache so the tests run it in Node. Hardcover never goes
+  through it. Type checked with the pages (`jsconfig.json`), linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
+  - `proxy.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses).
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
     what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws), a fake localStorage (`boot`'s `files`
@@ -174,7 +183,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
     in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover), Open Library and Wikidata
-    (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`).; covers are `<img>`s, which the fake DOM never loads.
+    (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`), and the catalog proxy at a `*.workers.dev` address (`boot`'s `proxy`;
+    the proxy test puts the real `handle` there).; covers are `<img>`s, which the fake DOM never loads.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 

@@ -114,6 +114,24 @@
 		</div>
 	</section>
 
+	<section class="panel" id="proxyPanel">
+		<h2>Catalog proxy <span class="via">Optional</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Proxy</span>
+			<div class="rowbtns">
+				<input type="url" id="proxyUrl" placeholder="https://your-proxy.workers.dev" autocomplete="off" spellcheck="false">
+				<input type="password" id="proxyKey" placeholder="Proxy key" autocomplete="off" spellcheck="false">
+				<button class="iconbtn2" id="proxySave" title="Keep this proxy in this browser, and see that it answers">Save proxy</button>
+				<button class="iconbtn2" id="proxyCheck" title="See that the saved proxy answers">Check</button>
+				<button class="iconbtn2" id="proxyRemove" title="Forget the proxy in this browser">Remove proxy</button>
+			</div>
+			<p class="ioNote">Some catalogs (AudiobookDB, Audible, BookBrainz, ISFDB) don't answer web pages, so this app can only ask
+				them through a proxy of your own: a small Cloudflare Worker, free, which the app's docs (<em>Catalog proxy</em>)
+				show how to set up. Everything else works without it.</p>
+			<p class="ioNote" id="proxyState"></p>
+		</div>
+	</section>
+
 	<div id="importPreview" class="importPreview">
 		<h3 id="importPreviewTitle"></h3>
 		<p id="mergePrefer" class="mergePrefer"><label>Where both changed a book's title, author or series, or what a series or person has, keep

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 import { fakeCatalogs } from './fake-catalogs.mjs';
+import { handle as handleProxy } from '../proxy/worker.js';
 import { Book } from '../public/modules/book.js';
 import { Exclusions } from '../public/modules/exclusions.js';
 import { Duplicates } from '../public/modules/duplicates.js';
@@ -250,7 +251,7 @@ async function kept(storage) {
  * holds a catalog already, the catalog is made of `files` (see stored(); default: the demo data), or
  * there is none when `files` is null.
  */
-async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null, catalogs = null, languages = ['en-US', 'en'] } = {}) {
+async function boot({ page = 'index.html', files = DEMO, storage = new Map(), hash = '', setTimeout = () => 0, hardcover = null, catalogs = null, proxy = null, languages = ['en-US', 'en'] } = {}) {
 	await settled(storage);   // a page loaded after another saved reads what it saved
 	if (files && !storage.has(CATALOG_KEY)) storage.set(CATALOG_KEY, stored(files));
 	if (files && files['not-duplicates.txt'] && !storage.has(NOT_DUP_KEY)) {
@@ -274,8 +275,8 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 		setItem: (k, v) => storage.set(k, String(v)),
 		removeItem: k => storage.delete(k),
 	};
-	// The page asks nothing of the server it came from; only Hardcover, Open Library and Wikidata, when a
-	// test gives a fake of them.
+	// The page asks nothing of the server it came from; only Hardcover, Open Library, Wikidata and the
+	// catalog proxy (a workers.dev address), when a test gives a fake of them.
 	const fetch = async (url, init = {}) => {
 		if (url.startsWith('https://api.hardcover.app/')) {
 			if (!hardcover) throw new TypeError('Failed to fetch');
@@ -284,6 +285,10 @@ async function boot({ page = 'index.html', files = DEMO, storage = new Map(), ha
 		if (/^https:\/\/(openlibrary\.org|www\.wikidata\.org)\//.test(url)) {
 			if (!catalogs) throw new TypeError('Failed to fetch');
 			return catalogs(url, init);
+		}
+		if (/^https:\/\/[^/]+\.workers\.dev\//.test(url)) {
+			if (!proxy) throw new TypeError('Failed to fetch');
+			return proxy(url, init);
 		}
 		throw new Error(`the page fetched ${url}`);
 	};
@@ -2457,6 +2462,53 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 	assert.match(els.importPreviewBody.innerHTML, /put 1 book\(s\) on your Hardcover Read shelf and added 1 read\(s\)/);
 	assert.match(els.ioStatus.textContent, /^Added 1 book, saved Hardcover ids found for 1 book; Hardcover updated\./);
 	assert.ok(!JSON.stringify(get('CATALOG.books')).includes('tok-123') && ![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-hardcover-token' && v.includes('tok-123')));
+});
+
+test('the catalog proxy is kept in this browser, checked when saved, and only ever sent its own key', async () => {
+	// the real Worker (proxy/worker.js) behind the page, with no catalog behind it
+	const env = { PROXY_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io' };
+	const sent = [];
+	const proxy = async (url, init = {}) => {
+		sent.push({ url, headers: init.headers });
+		const request = new Request(url, { headers: { ...init.headers, Origin: 'https://example.github.io' } });
+		return handleProxy(request, env, { fetch: async () => { throw new Error('no catalog in this test'); } });
+	};
+	const storage = new Map();
+	const { els } = await boot({ page: 'import.html', proxy, storage });
+	assert.match(els.proxyState.textContent, /Paste your proxy's address and key/);
+	assert.equal(els.proxyCheck.style.display, 'none');
+
+	els.proxyUrl.value = 'http://catalog-proxy.example.workers.dev';
+	els.proxyKey.value = 'right-key';
+	await els.proxySave.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /Paste the proxy's address first/, 'not https');
+	assert.equal(storage.get('audiobook-catalog-proxy'), undefined);
+
+	els.proxyUrl.value = 'https://catalog-proxy.example.workers.dev/';
+	els.proxyKey.value = 'wrong-key';
+	await els.proxySave.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /^Catalog proxy saved; the proxy refused the key\.$/);
+
+	els.proxyUrl.value = 'https://catalog-proxy.example.workers.dev/';
+	els.proxyKey.value = ' right-key ';
+	await els.proxySave.listeners.click[0]();
+	assert.equal(els.ioStatus.textContent, 'Catalog proxy saved; it answers, for audiobookdb, audible, bookbrainz, isfdb.');
+	assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-proxy')), { url: 'https://catalog-proxy.example.workers.dev', key: 'right-key' });
+	assert.equal(els.proxyKey.value, '', 'the key is not left in the page');
+	assert.match(els.proxyState.textContent, /Saved in this browser only .*catalog-proxy\.example\.workers\.dev/);
+	assert.ok(sent.every(s => s.url === 'https://catalog-proxy.example.workers.dev/ping'));
+	assert.equal(JSON.stringify(sent.at(-1).headers), '{"X-Proxy-Key":"right-key"}');
+
+	await els.proxyCheck.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /^The catalog proxy answers/);
+	await els.proxyRemove.listeners.click[0]();
+	assert.equal(storage.get('audiobook-catalog-proxy'), undefined);
+	assert.match(els.proxyState.textContent, /Paste your proxy's address/);
+
+	// a proxy the browser can't reach (or that refuses this page, which a browser can't tell apart)
+	const away = await boot({ page: 'import.html', storage: new Map([['audiobook-catalog-proxy', JSON.stringify({ url: 'https://gone.example.workers.dev', key: 'k' })]]) });
+	await away.els.proxyCheck.listeners.click[0]();
+	assert.match(away.els.ioStatus.textContent, /could not reach the catalog proxy/);
 });
 
 test('a Hardcover comparison sends nothing unticked, nothing once another tab saved, and says when Hardcover cannot be reached', async () => {
