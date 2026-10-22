@@ -1,6 +1,7 @@
 // A book looked up in the external catalogs a web page may read, to fill in the book form: Open Library and
 // Wikidata answer any page without an account (open CORS, no key), and Hardcover does with the token saved in
-// this browser. Audible's, Amazon's and Goodreads' pages can't be read from a page, so their ASINs and ids are
+// this browser. Audible and AudiobookDB don't answer web pages, so they are asked through the user's own catalog
+// proxy (proxy/worker.js) when one is saved; without it, Audible's and Amazon's ASINs (and Goodreads' ids) are
 // looked up on Hardcover, which knows them. Nothing here changes the catalog; the requests are passed in, so
 // the tests run it offline.
 import {Text} from './text.js';
@@ -32,16 +33,22 @@ const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
 const P = {title: 'P1476', author: 'P50', series: 'P179', number: 'P1545', genre: 'P136', openLibrary: 'P648', goodreadsWork: 'P8383', isfdbTitle: 'P1274'};
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const NO_HARDCOVER = 'save your Hardcover API token on the Import & export page';
+const NO_PROXY = 'save a catalog proxy on the Import & export page';
+// What Audible's catalog API is asked for: the people, series, edition details and genres
+const AUDIBLE_GROUPS = 'contributors,media,product_attrs,product_desc,product_details,product_extended_attrs,series,category_ladders';
 
 /** Looks books up in the external catalogs a page may read. */
 export class CatalogLookup {
 	/**
 	 * @param {Get} get asks Open Library and Wikidata
 	 * @param {HardcoverClient | null} hardcover asks Hardcover, or null when there is no token
+	 * @param {Get | null} [proxy] asks through the catalog proxy, given a route (`audible/audible.com/catalog/products/B0…`,
+	 *   `audiobookdb/releases/…`), or null when none is saved
 	 */
-	constructor(get, hardcover){
+	constructor(get, hardcover, proxy = null){
 		this.get = get;
 		this.hardcover = hardcover;
+		this.proxy = proxy;
 	}
 
 	/**
@@ -83,7 +90,7 @@ export class CatalogLookup {
 	 */
 	async find(text){
 		const pasted = CatalogLookup.read(text);
-		if(!pasted) throw new Error('paste the address of a book or edition on Open Library, Wikidata, Hardcover, Audible, Amazon or Goodreads, or an ISBN');
+		if(!pasted) throw new Error('paste the address of a book or edition on Open Library, Wikidata, Hardcover, Audible, Amazon, Goodreads or AudiobookDB, or an ISBN');
 		/** @type {Found} */
 		const found = {book: new Book(), sources: [], notes: []};
 		/** @type {(source: string, book: Book | null) => void} */
@@ -93,6 +100,7 @@ export class CatalogLookup {
 			if(!found.sources.includes(source)) found.sources.push(source);
 		};
 		const family = ExternalCatalog.family(pasted.catalog);
+		let audibleAsked = false;
 		if(pasted.catalog === 'openlibrary') take('Open Library', pasted.kind === 'edition' ? await this.openLibraryEdition(pasted.id) : await this.openLibraryWork(pasted.id));
 		else if(pasted.catalog === 'wikidata') take('Wikidata', await this.wikidata(pasted.id));
 		else if(pasted.kind === 'isbn'){
@@ -104,15 +112,28 @@ export class CatalogLookup {
 			if(!this.hardcover) throw new Error(`to look it up on Hardcover, ${NO_HARDCOVER} first`);
 			take('Hardcover', await this.hardcoverPasted(pasted));
 		}
+		else if(pasted.catalog === 'audiobookdb'){
+			if(!this.proxy) throw new Error(`AudiobookDB can't be read from a web page; to ask it through your own proxy, ${NO_PROXY} first`);
+			take('AudiobookDB', pasted.kind === 'edition' ? await this.audiobookdbRelease(pasted.id) : await this.audiobookdbWork(pasted.id, found));
+		}
+		else if(family === 'asin' && this.proxy){
+			// Audible first, as it is the store's own catalog; AudiobookDB for what it lacks; Hardcover when neither has it
+			const site = CatalogLookup.audibleSite(pasted.catalog);
+			audibleAsked = true;
+			take('Audible', await this.noting(found, 'Audible', () => this.audible(site, pasted.id)));
+			take('AudiobookDB', await this.noting(found, 'AudiobookDB', () => this.audiobookdbByAsin(pasted.id)));
+			if(!found.sources.length) take('Hardcover', await this.hardcoverBy('asin', pasted.id, found));
+			if(!found.sources.length) throw new Error(`neither Audible (${site}) nor AudiobookDB${this.hardcover ? ' nor Hardcover' : ''} has ASIN ${pasted.id}${found.notes.length ? ` (${found.notes.join('; ')})` : ''}`);
+		}
 		else if(family === 'asin' || pasted.catalog === 'goodreads'){
 			const name = family === 'asin' ? ExternalCatalog.groupOf(pasted.catalog)?.name || 'Audible' : 'Goodreads';
-			if(!this.hardcover) throw new Error(`${name} can't be read from a web page; to look its ${family === 'asin' ? 'ASIN' : 'id'} up on Hardcover, ${NO_HARDCOVER} first`);
+			if(!this.hardcover) throw new Error(`${name} can't be read from a web page; to look its ${family === 'asin' ? 'ASIN' : 'id'} up on Hardcover, ${NO_HARDCOVER} first${family === 'asin' ? `, or ${NO_PROXY.replace(' on the Import & export page', '')} there to ask Audible and AudiobookDB` : ''}`);
 			if(family === 'goodreads' && pasted.kind === 'book') throw new Error('Hardcover knows Goodreads editions (goodreads.com/book/show/…), not their works; paste the edition\'s address');
 			const book = await this.hardcoverBy(family === 'asin' ? 'asin' : 'gr', pasted.id, found);
 			if(!book) throw new Error(`Hardcover has no edition with ${family === 'asin' ? 'ASIN' : 'Goodreads id'} ${pasted.id}`);
 			take('Hardcover', book);
 		}
-		else throw new Error(`${ExternalCatalog.name(pasted.catalog)} can't be read from a web page; paste an address on Open Library, Wikidata or Hardcover, or an ISBN`);
+		else throw new Error(`${ExternalCatalog.name(pasted.catalog)} can't be read from a web page; paste an address on Open Library, Wikidata, Hardcover, Audible or AudiobookDB, or an ISBN`);
 		// the id pasted stays, on the book or its edition
 		if(pasted.kind === 'book' && pasted.id && !found.book.external[pasted.catalog]) found.book.external[pasted.catalog] = pasted.id;
 		if(!found.sources.length){
@@ -124,12 +145,17 @@ export class CatalogLookup {
 			const [ed] = found.book.editions;
 			if(!ed.external[pasted.catalog]) ed.external = ExternalCatalog.order({[pasted.catalog]: pasted.id, ...ed.external}) || {};
 		}
-		// Hardcover for what the others lack (narrators, length), by the edition's ISBN or ASIN
+		// Audible (through the proxy) and Hardcover for what the others lack (narrators, length), by the edition's ASIN or ISBN
 		const ed = found.book.editions[0];
+		const audibleKey = ed && Object.keys(ed.external).find(key => ExternalCatalog.groupOf(key)?.key === 'audible');
+		if(ed && this.proxy && !audibleAsked && ed.ids('asin')[0]){
+			const site = CatalogLookup.audibleSite(audibleKey || ExternalCatalog.AUDIBLE_SITE), asin = audibleKey ? ed.external[audibleKey] : ed.ids('asin')[0];
+			take('Audible', await this.noting(found, 'Audible', () => this.audible(site, asin)));
+		}
 		if(!found.sources.includes('Hardcover') && ed){
 			const asin = ed.ids('asin')[0], isbn = ed.isbns()[0];
 			if(this.hardcover && (asin || isbn)) take('Hardcover', await this.hardcoverBy(asin ? 'asin' : 'isbn', asin || isbn, found));
-			else if(!this.hardcover) found.notes.push(`to fill in narrators and length from Hardcover too, ${NO_HARDCOVER}`);
+			else if(!this.hardcover && (!ed.narrators.length || !ed.minutes)) found.notes.push(`to fill in narrators and length from Hardcover too, ${NO_HARDCOVER}`);
 		}
 		return found;
 	}
@@ -176,6 +202,15 @@ export class CatalogLookup {
 		let res;
 		try{ res = await this.get(url); }
 		catch(e){ throw new Error(`this browser could not reach ${source} (offline?)`, {cause: e}); }
+		return CatalogLookup.answer(source, res);
+	}
+
+	/**
+	 * @param {string} source
+	 * @param {Awaited<ReturnType<Get>>} res
+	 * @returns {Promise<Unchecked | null>} what `res` holds, null for a 404; throws with a short reason otherwise
+	 */
+	static async answer(source, res){
 		if(res.status === 404) return null;
 		if(!res.ok) throw new Error(`${source} answered ${res.status}`);
 		const json = await res.json().catch(() => null);
@@ -328,6 +363,196 @@ export class CatalogLookup {
 		// a season, or words around the year
 		m = /^(?:[a-z]+ )*(\d{4})$/i.exec(value);
 		return m ? m[1] : null;
+	}
+
+	/**
+	 * What `ask` gives, or null when it throws, with the reason in `found`'s notes; for a catalog asked beside
+	 * others, which shouldn't stop the lookup.
+	 * @param {Found} found
+	 * @param {string} source
+	 * @param {() => Promise<Book | null>} ask
+	 * @returns {Promise<Book | null>}
+	 */
+	async noting(found, source, ask){
+		try{ return await ask(); }
+		catch(err){ found.notes.push(`${source} couldn't be asked: ${Text.errorText(err)}`); return null; }
+	}
+
+	/**
+	 * An answer through the catalog proxy (`route` is the catalog and the path in its API); null for a 404.
+	 * @param {string} source
+	 * @param {string} route
+	 * @returns {Promise<Unchecked | null>}
+	 */
+	async proxied(source, route){
+		if(!this.proxy) throw new Error(`${source} can't be read from a web page; ${NO_PROXY}`);
+		let res;
+		try{ res = await this.proxy(route); }
+		catch(e){ throw new Error('this browser could not reach the catalog proxy (offline, or check it on the Import & export page)', {cause: e}); }
+		if(res.status === 401) throw new Error('the catalog proxy refused its key (check it on the Import & export page)');
+		return CatalogLookup.answer(source, res);
+	}
+
+	// ------------------------------------------------------------------ Audible
+	/**
+	 * The Audible site whose catalog API answers for an ASIN of `key`: the site itself, an Amazon site's Audible
+	 * (amazon.de: audible.de), else audible.com.
+	 * @param {string} key
+	 * @returns {string}
+	 */
+	static audibleSite(key){
+		const site = key.replace(/^amazon\./, 'audible.');
+		return ExternalCatalog.get(site)?.group === 'audible' ? site : ExternalCatalog.AUDIBLE_SITE;
+	}
+
+	/**
+	 * A book with its edition from Audible's catalog API on `site`; null when the site doesn't sell it (Audible
+	 * answers that with a product of only its ASIN).
+	 * @param {string} site
+	 * @param {string} asin
+	 * @returns {Promise<Book | null>}
+	 */
+	async audible(site, asin){
+		const answer = await this.proxied('Audible', `audible/${site}/catalog/products/${encodeURIComponent(asin)}?response_groups=${AUDIBLE_GROUPS}`);
+		const product = answer && Text.isObject(answer.product) ? answer.product : null;
+		return product && typeof product.title === 'string' && Text.tidy(product.title) ? CatalogLookup.audibleBook(product, site) : null;
+	}
+
+	/**
+	 * A book made of an Audible product: title, authors, its numbered series (not an umbrella one without a
+	 * number), genres (the second step of each of its genre ladders: "Fantasy" under "Science Fiction & Fantasy"),
+	 * and the edition: its ASIN on `site`, ISBN, narrators, publisher, release date and length.
+	 * @param {Unchecked} product
+	 * @param {string} site
+	 * @returns {Book}
+	 */
+	static audibleBook(product, site){
+		/** @type {(x: unknown) => string} */
+		const text = x => typeof x === 'string' ? Text.tidy(x.replace(/&amp;/g, '&')) : '';
+		/** @type {(x: unknown) => string[]} */
+		const names = x => Array.isArray(x) ? [...new Set(x.map(p => Text.isObject(p) ? text(p.name) : '').filter(Boolean))] : [];
+		/** @type {Record<string, any>} */
+		const rec = {t: text(product.title), a: names(product.authors)};
+		const series = (Array.isArray(product.series) ? product.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && text(s.title));
+		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(s.sequence)));
+		const inSeries = numbered || (series.length === 1 ? series[0] : null);
+		if(inSeries){
+			rec.s = text(inSeries.title);
+			if(inSeries === numbered) rec.sn = text(inSeries.sequence);
+		}
+		const genres = (Array.isArray(product.category_ladders) ? product.category_ladders : [])
+			.filter((/** @type {unknown} */ l) => Text.isObject(l) && l.root === 'Genres' && Array.isArray(l.ladder))
+			.map((/** @type {Unchecked} */ l) => { const step = l.ladder[1] || l.ladder[0]; return Text.isObject(step) ? text(step.name) : ''; }).filter(Boolean);
+		if(genres.length) rec.g = [...new Set(genres)].slice(0, 3);
+		/** @type {Record<string, any>} */
+		const ed = {ext: {[site]: text(product.asin).toUpperCase()}};
+		const isbn = Isbn.parse(product.isbn);
+		if(isbn) ed.isbn = isbn;
+		const narrators = names(product.narrators);
+		if(narrators.length) ed.n = narrators;
+		if(text(product.publisher_name)) ed.p = text(product.publisher_name);
+		const released = CatalogLookup.date(product.release_date);
+		if(released) ed.d = released;
+		if(Number.isInteger(product.runtime_length_min) && product.runtime_length_min > 0) ed.len = product.runtime_length_min;
+		rec.e = [ed];
+		return Importer.book(Book.fixSeriesTitle(rec));
+	}
+
+	// ------------------------------------------------------------------ AudiobookDB
+	/**
+	 * The book AudiobookDB files an ASIN under, with the release it belongs to; null when it has none.
+	 * @param {string} asin
+	 * @returns {Promise<Book | null>}
+	 */
+	async audiobookdbByAsin(asin){
+		const book = await this.proxied('AudiobookDB', `audiobookdb/audiobooks/external/audible/${encodeURIComponent(asin)}`);
+		if(!book) return null;
+		const release = (Array.isArray(book.releases) ? book.releases : []).find((/** @type {unknown} */ r) => Text.isObject(r) && r.id === book.matchedReleaseId);
+		return CatalogLookup.audiobookdbBook(book, release || null);
+	}
+
+	/**
+	 * A book with its edition from an AudiobookDB release (and the release's book).
+	 * @param {string} id
+	 * @returns {Promise<Book>}
+	 */
+	async audiobookdbRelease(id){
+		const release = await this.proxied('AudiobookDB', `audiobookdb/releases/${encodeURIComponent(id)}`);
+		if(!release) throw new Error(`AudiobookDB has no release ${id}`);
+		const bookId = Text.isObject(release.book) && typeof release.book.id === 'string' ? release.book.id : '';
+		const book = bookId ? await this.proxied('AudiobookDB', `audiobookdb/books/${encodeURIComponent(bookId)}`) : null;
+		return CatalogLookup.audiobookdbBook(book || (Text.isObject(release.book) ? release.book : {}), release);
+	}
+
+	/**
+	 * A book from AudiobookDB, with its edition when it has only one release (of several, it can't tell which
+	 * is yours: `found` says to paste the release's address).
+	 * @param {string} id
+	 * @param {Found} found
+	 * @returns {Promise<Book>}
+	 */
+	async audiobookdbWork(id, found){
+		const book = await this.proxied('AudiobookDB', `audiobookdb/books/${encodeURIComponent(id)}`);
+		if(!book) throw new Error(`AudiobookDB has no book ${id}`);
+		const releases = (Array.isArray(book.releases) ? book.releases : []).filter((/** @type {unknown} */ r) => Text.isObject(r));
+		if(releases.length > 1) found.notes.push(`AudiobookDB has ${releases.length} releases of it; paste your release's address to fill in its edition`);
+		return CatalogLookup.audiobookdbBook(book, releases.length === 1 ? releases[0] : null);
+	}
+
+	/**
+	 * A book made of an AudiobookDB book and one of its releases: title, authors, its numbered series (not an
+	 * umbrella one numbered 0), genres, and the edition: its release id, ISBN, narrators, publisher, release date
+	 * and length. Its ASINs are left out, as AudiobookDB doesn't say which Audible site they are on.
+	 * @param {Unchecked} book
+	 * @param {Unchecked | null} release
+	 * @returns {Book}
+	 */
+	static audiobookdbBook(book, release){
+		/** @type {(x: unknown) => string} */
+		const text = x => typeof x === 'string' ? Text.tidy(x) : '';
+		/** @type {(x: unknown, role: string) => string[]} */
+		const people = (x, role) => Array.isArray(x) ? [...new Set(x.filter(p => Text.isObject(p) && Text.isObject(p.role) && p.role.name === role && Text.isObject(p.person))
+			.map(p => text(p.person.name)).filter(Boolean))] : [];
+		/** @type {Record<string, any>} */
+		const rec = {t: text(book.title) || (release ? text(release.title) : ''), a: people(book.people, 'Author')};
+		if(typeof book.id === 'string' && book.id) rec.ext = {audiobookdb: book.id};
+		const series = (Array.isArray(book.series) ? book.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && Text.isObject(s.series) && text(s.series.title));
+		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?$/.test(text(s.ordinal)) && Number(text(s.ordinal)) > 0);
+		const inSeries = numbered || (series.length === 1 ? series[0] : null);
+		if(inSeries){
+			rec.s = text(inSeries.series.title);
+			if(inSeries === numbered) rec.sn = text(inSeries.ordinal);
+		}
+		const genres = Array.isArray(book.genres) ? book.genres.map((/** @type {unknown} */ g) => Text.isObject(g) ? text(g.title) : '').filter(Boolean) : [];
+		if(genres.length) rec.g = [...new Set(genres)].slice(0, 5);
+		if(release){
+			/** @type {Record<string, any>} */
+			const ed = {};
+			if(typeof release.id === 'string' && release.id) ed.ext = {audiobookdb: release.id};
+			const isbn = Isbn.parse(release.isbn);
+			if(isbn) ed.isbn = isbn;
+			const narrators = people(release.people, 'Narrator');
+			if(narrators.length) ed.n = narrators;
+			if(Text.isObject(release.publisher) && text(release.publisher.name)) ed.p = text(release.publisher.name);
+			const released = CatalogLookup.date(release.releaseDate);
+			if(released) ed.d = released;
+			const minutes = CatalogLookup.minutes(release);
+			if(minutes) ed.len = minutes;
+			if(Object.keys(ed).length) rec.e = [ed];
+		}
+		return Importer.book(Book.fixSeriesTitle(rec));
+	}
+
+	/**
+	 * A release's length in minutes, from its seconds or its "H:MM:SS"; null when it has neither.
+	 * @param {Unchecked} release
+	 * @returns {number | null}
+	 */
+	static minutes(release){
+		let seconds = Number.isFinite(release.runtimeLengthSec) ? Number(release.runtimeLengthSec) : NaN;
+		const m = typeof release.duration === 'string' ? /^(\d+):([0-5]\d):([0-5]\d)$/.exec(release.duration.trim()) : null;
+		if(!(seconds > 0) && m) seconds = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+		return seconds >= 60 ? Math.round(seconds / 60) : null;
 	}
 
 	// ------------------------------------------------------------------ Wikidata

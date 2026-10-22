@@ -9,7 +9,7 @@ import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogLookup} from './modules/catalog-lookup.js';
-import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, browserHardcoverToken, hardcoverClient, startPage, byId, fieldById, spell,
+import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, browserHardcoverToken, hardcoverClient, browserProxy, fetchViaProxy, startPage, byId, fieldById, spell,
 	buildElement, fillElement, joined, publisherPageHref, externalFields, fillExternalFields, readExternalFields, bookPageHref, seriesPageHref } from './store.js';
 /** @import {Child} from './store.js' */
 import { authorLinks, narratorLinks, bookNarrators, coverImage, hashParts, hashOf, setAddress } from './book-list.js';
@@ -755,7 +755,8 @@ export async function fillFromCatalog(){
 	showIoStatus('Looking it up…');
 	try{
 		const token = browserHardcoverToken();
-		const found = await new CatalogLookup(url=> fetch(url), token ? hardcoverClient(token) : null).find(text);
+		const proxy = browserProxy();
+		const found = await new CatalogLookup(url=> fetch(url), token ? hardcoverClient(token) : null, proxy ? route=> fetchViaProxy(route, proxy) : null).find(text);
 		// the form was closed, or moved to another book, meanwhile
 		if(EDIT_ID !== editing || !byId('addForm').classList.contains('open')) return;
 		const filled = fillForm(found.book);

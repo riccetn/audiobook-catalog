@@ -4,7 +4,9 @@ Some catalogs don't answer requests from web pages: their APIs send no CORS head
 refuses to hand their answers to the app. AudiobookDB, Audible's catalog API, BookBrainz and ISFDB are like
 that. Open Library, Wikidata and Hardcover aren't, and the app asks them itself.
 
-The app can ask the others through a proxy of your own. It's a small Cloudflare Worker (`proxy/worker.js`)
+The app can ask the others through a proxy of your own: with one saved, the book form's *Fill in from another
+catalog* looks Audible pages, ASINs and AudiobookDB books and releases up through it
+([Everyday workflows](workflows.md)). It's a small Cloudflare Worker (`proxy/worker.js`)
 that runs on Cloudflare's free plan, which allows 100,000 requests a day. It is optional: everything else works
 without it, and catalogs that need it are just not asked.
 

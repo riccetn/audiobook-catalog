@@ -30,7 +30,7 @@ import { HardcoverSync } from '../public/modules/hardcover-sync.js';
 import { CatalogRecords } from '../public/modules/catalog-records.js';
 import { CatalogLookup } from '../public/modules/catalog-lookup.js';
 import { CatalogDatabase, CatalogConflict } from '../public/modules/catalog-database.js';
-import { fakeCatalogs } from './fake-catalogs.mjs';
+import { fakeCatalogs, fakeProxyCatalogs } from './fake-catalogs.mjs';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 import { FakeIndexedDB, FakeKeyRange } from './fake-indexeddb.mjs';
 
@@ -2266,6 +2266,53 @@ test('CatalogLookup finds a book on Open Library and Wikidata, without an accoun
 	await assert.rejects(lookup.find('just a title'), /paste the address of a book or edition/);
 	await assert.rejects(new CatalogLookup(async () => { throw new TypeError('Failed to fetch'); }, null).find('OL900W'), /could not reach Open Library/);
 	assert.ok(catalogs.sent.every(url => /^https:\/\/(openlibrary\.org|www\.wikidata\.org)\//.test(url)));
+});
+
+test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', async () => {
+	const proxy = fakeProxyCatalogs();
+	const lookup = new CatalogLookup(fakeCatalogs().fetch, null, proxy.route);
+	const plain = found => JSON.parse(JSON.stringify(found.book));
+	// an ASIN: Audible's product (its numbered series, not the umbrella one; genres one step down its ladders),
+	// then AudiobookDB's book and the release the ASIN belongs to, for what Audible lacks
+	const asin = await lookup.find('B0LANTERN2');
+	assert.deepEqual(plain(asin), { t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', g: ['Fantasy', 'Literary Fiction'], ext: { audiobookdb: 'LnTrnKpr2xYz' },
+		e: [{ ext: { 'audible.com': 'B0LANTERN2', audiobookdb: 'RlsLntrnUS01' }, isbn: '9780000000019', n: ['Hollis Marr', 'Dana Fenwick'], p: 'Gullwing Audio', d: '2021-03-04', len: 612 }] });
+	assert.deepEqual(asin.sources, ['Audible', 'AudiobookDB']);
+	assert.deepEqual(asin.notes, [], 'no need for Hardcover: Audible gave the narrators and length');
+	// an Amazon site's ASIN is asked on its Audible site, and stays the Amazon site's too
+	const uk = await lookup.find('https://www.amazon.co.uk/dp/B0LANTERNU');
+	assert.deepEqual(uk.book.editions[0].external, { 'audible.co.uk': 'B0LANTERNU', 'amazon.co.uk': 'B0LANTERNU' });
+	assert.equal(uk.book.editions[0].publisher, 'Gullwing Audio UK');
+	assert.ok(proxy.sent.some(r => r.startsWith('audible/audible.co.uk/catalog/products/B0LANTERNU?')));
+	// an AudiobookDB release, with its book; its ASIN isn't taken, as AudiobookDB doesn't say which site it is on
+	const release = await lookup.find('https://audiobookdb.org/releases/RlsLntrnUS01');
+	assert.deepEqual(plain(release), { t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', g: ['Fantasy'], ext: { audiobookdb: 'LnTrnKpr2xYz' },
+		e: [{ ext: { audiobookdb: 'RlsLntrnUS01' }, isbn: '9780000000019', n: ['Hollis Marr', 'Dana Fenwick'], p: 'Gullwing Audio', d: '2021-03-04', len: 612 }] });
+	// a book of several releases comes without an edition, and says why
+	const work = await lookup.find('https://audiobookdb.org/books/LnTrnKpr2xYz');
+	assert.equal(work.book.editions.length, 0);
+	assert.match(work.notes[0], /AudiobookDB has 2 releases of it; paste your release's address/);
+	// Open Library's edition, and Audible for what it lacks, by its ASIN
+	const keeper = await lookup.find('OL901M');
+	assert.deepEqual(keeper.sources, ['Open Library', 'Audible']);
+	assert.deepEqual(keeper.book.editions[0].narrators, ['Hollis Marr']);
+	assert.equal(keeper.book.editions[0].minutes, 612);
+	assert.deepEqual(keeper.notes, []);
+	// what neither has, and a proxy that can't be reached (said, rather than failing the lookup)
+	await assert.rejects(lookup.find('B0NOTHERE1'), /neither Audible \(audible\.com\) nor AudiobookDB has ASIN B0NOTHERE1$/);
+	await assert.rejects(lookup.find('audiobookdb.org/releases/RlsNothere01'), /AudiobookDB has no release RlsNothere01/);
+	const down = new CatalogLookup(fakeCatalogs().fetch, null, async () => { throw new TypeError('Failed to fetch'); });
+	await assert.rejects(down.find('B0LANTERN2'), /\(Audible couldn't be asked: this browser could not reach the catalog proxy \(offline, or check it on the Import & export page\); AudiobookDB couldn't be asked/);
+	const refused = new CatalogLookup(fakeCatalogs().fetch, null, async () => ({ ok: false, status: 401, json: async () => ({}) }));
+	await assert.rejects(refused.find('B0LANTERN2'), /the catalog proxy refused its key/);
+	assert.match((await down.find('OL901M')).notes[0], /^Audible couldn't be asked/);
+	// without a proxy, AudiobookDB can't be asked, and an ASIN says how it could be
+	await assert.rejects(new CatalogLookup(fakeCatalogs().fetch, null).find('https://audiobookdb.org/releases/RlsLntrnUS01'), /AudiobookDB can't be read from a web page; .* save a catalog proxy/);
+	await assert.rejects(new CatalogLookup(fakeCatalogs().fetch, null).find('B0LANTERN2'), /save your Hardcover API token on the Import & export page first, or save a catalog proxy there to ask Audible and AudiobookDB$/);
+	assert.equal(CatalogLookup.audibleSite('amazon.se'), 'audible.com');
+	assert.equal(CatalogLookup.audibleSite('amazon.de'), 'audible.de');
+	assert.equal(CatalogLookup.minutes({ duration: '26:05:31' }), 1566);
+	assert.equal(CatalogLookup.minutes({ duration: 'soon' }), null);
 });
 
 test('CatalogLookup asks Hardcover, with a token, for its books and for the ASINs, ISBNs and Goodreads ids it knows', async () => {

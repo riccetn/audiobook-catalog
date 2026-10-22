@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
-import { fakeCatalogs } from './fake-catalogs.mjs';
+import { fakeCatalogs, fakeProxyCatalogs } from './fake-catalogs.mjs';
 import { handle as handleProxy } from '../proxy/worker.js';
 import { Book } from '../public/modules/book.js';
 import { Exclusions } from '../public/modules/exclusions.js';
@@ -996,6 +996,35 @@ test('adding a book: the form on a book\'s page, which then shows the book', asy
 	const plain = await boot({ page: 'book.html', hash: '#add' });
 	plain.els.cancelAdd.listeners.click[0]();
 	assert.equal(plain.ctx.location.replaced, 'books.html');
+});
+
+test('with a catalog proxy saved, a new book is filled in from Audible and AudiobookDB through it, with its key', async () => {
+	const behind = fakeProxyCatalogs();
+	const asked = [];
+	const proxy = async (url, init) => {
+		asked.push({ url, key: init.headers['X-Proxy-Key'] });
+		return behind.route(url.replace('https://catalog-proxy.example.workers.dev/', ''));
+	};
+	const storage = new Map([['audiobook-catalog-proxy', JSON.stringify({ url: 'https://catalog-proxy.example.workers.dev', key: 'right-key' })]]);
+	const { ctx, els, get } = await boot({ page: 'book.html', hash: '#add', proxy, storage });
+	els.f_from.value = 'https://www.audible.com/pd/The-Lantern-Keeper-Audiobook/B0LANTERN2';
+	await ctx.fillFromCatalog();
+	assert.equal(els.formError.textContent, '');
+	assert.equal(els.f_t.value, 'The Lantern Keeper');
+	assert.equal(els.f_a.value, 'Ann Vale');
+	assert.equal(els.f_s.value, 'Gull Isle');
+	assert.equal(els.f_sn.value, '2');
+	assert.equal(els.f_g.value, 'Fantasy, Literary Fiction');
+	assert.equal(els.f_ext_audiobookdb.value, 'LnTrnKpr2xYz');
+	assert.deepEqual(formEditions(get), [{ n: 'Hollis Marr, Dana Fenwick', 'ext:audible.com': 'B0LANTERN2', 'ext:audiobookdb': 'RlsLntrnUS01',
+		isbn: '9780000000019', p: 'Gullwing Audio', d: '2021-03-04', len: '10h 12m' }]);
+	assert.match(els.ioStatus.textContent, /^Filled in from Audible and AudiobookDB: title, authors, series, number in the series, genres, the book's id in another catalog, an edition\.$/);
+	assert.ok(asked.length && asked.every(a => a.key === 'right-key' && a.url.startsWith('https://catalog-proxy.example.workers.dev/')));
+	// without the proxy, AudiobookDB says how it could be asked
+	const without = await boot({ page: 'book.html', hash: '#add' });
+	without.els.f_from.value = 'https://audiobookdb.org/releases/RlsLntrnUS01';
+	await without.ctx.fillFromCatalog();
+	assert.match(without.els.formError.textContent, /AudiobookDB can't be read from a web page; to ask it through your own proxy, save a catalog proxy on the Import & export page first\.$/);
 });
 
 test('a new book is filled in from another catalog: only its empty fields, and the edition', async () => {

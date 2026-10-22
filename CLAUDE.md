@@ -90,8 +90,11 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
     `HardcoverSync` (`compare`: only reads Hardcover, for every book or a series' or an author's (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`), `push`, `read`, `lookups`/`addIds`, `planExport`).
   - `CatalogLookup` (the book form's *Fill in from another catalog*: `read` names what was pasted (an ISBN, an address or bare id), `find` looks the book up with
-    the fetch and `HardcoverClient` passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and
-    Goodreads editions it knows, as Audible, Amazon and Goodreads can't be read from a page), `fill` (gaps only), `date`/`seriesOf`).
+    the fetch, `HardcoverClient` and catalog proxy passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and
+    Goodreads editions it knows, as Audible, Amazon and Goodreads can't be read from a page), and with the proxy (`proxied`) Audible's catalog API
+    (`audible`/`audibleBook`, `audibleSite`; a product without a title is one the site doesn't sell) and AudiobookDB (`audiobookdbByAsin`, `audiobookdbRelease`,
+    `audiobookdbWork`, `audiobookdbBook`; ASINs it lists aren't taken, as it doesn't say their site); `noting` keeps a catalog asked beside others from failing
+    the lookup; `fill` (gaps only), `date`/`seriesOf`/`minutes`).
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
     Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`).
@@ -149,7 +152,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   with `hardcoverCompareHref`, `#hardcover-series=<id>`/`#hardcover-author=<id>`), opens (`PENDING_COMPARE`, its ticks in
   `picks`; `drawCompare`; Apply runs `Comparison.apply` on a copy, then for Hardcover saves and `push`es the ticked part of the plan),
   Goodreads CSV export, Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
-  Audible's catalog doesn't allow browser requests, so there is no series lookup from Audible.
+  Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
   (`infoKey`, `hashKey`, `list`, `page`, labels, `href`, `works`).
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
@@ -184,7 +187,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
     in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover), Open Library and Wikidata
     (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`), and the catalog proxy at a `*.workers.dev` address (`boot`'s `proxy`;
-    the proxy test puts the real `handle` there).; covers are `<img>`s, which the fake DOM never loads.
+    the proxy test puts the real `handle` there; `fakeProxyCatalogs` answers its Audible and AudiobookDB routes).; covers are `<img>`s, which the fake DOM never loads.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 
