@@ -976,6 +976,54 @@ export function lookupHardcoverField(prefix, kind){
 	return lookup;
 }
 
+// ------------------------------------------------------------ the catalog proxy
+// Catalogs whose APIs don't answer web pages (AudiobookDB, Audible, BookBrainz, ISFDB) are asked through the
+// user's own proxy (proxy/worker.js, a Cloudflare Worker) when its address and key are saved on Import & export.
+// Like the Hardcover token they are kept in this browser only (never in a backup); without them those catalogs
+// are not asked. Hardcover is never asked through it, so the token never leaves for anywhere but Hardcover.
+export const PROXY_STORAGE_KEY = 'audiobook-catalog-proxy';
+export const PROXY_KEY_HEADER = 'X-Proxy-Key';
+
+/** @typedef {{url: string, key: string}} ProxySettings the proxy's address (no slash at the end) and its key */
+
+/** @returns {ProxySettings | null} the catalog proxy saved in this browser, or null */
+export function browserProxy(){
+	try{
+		const v = /** @type {Unchecked} */ (JSON.parse(localStorage.getItem(PROXY_STORAGE_KEY) || 'null'));
+		const url = v && typeof v.url === 'string' ? proxyAddress(v.url) : '';
+		return url && typeof v.key === 'string' && v.key ? {url, key: v.key} : null;
+	}catch{ return null; }
+}
+
+/**
+ * The proxy address typed, tidied (no slash at the end), or '' when it isn't one: https, or http only on this
+ * computer (a proxy run beside make serve), with no query or password in it.
+ * @param {string} text
+ * @returns {string}
+ */
+export function proxyAddress(text){
+	let url;
+	try{ url = new URL(text.trim()); }catch{ return ''; }
+	const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+	if(url.protocol !== 'https:' && !(local && url.protocol === 'http:')) return '';
+	if(url.search || url.hash || url.username || url.password) return '';
+	return (url.origin + url.pathname).replace(/\/+$/, '');
+}
+
+/**
+ * Asks a catalog through the proxy: `route` is the catalog and the path in its API
+ * (`audiobookdb/audiobooks/external/audible/B0…`, `ping` to see that the proxy answers).
+ * Throws plainly when no proxy is saved or the browser can't reach it.
+ * @param {string} route
+ * @param {ProxySettings | null} [proxy] the saved one when left out
+ * @returns {Promise<Response>}
+ */
+export async function fetchViaProxy(route, proxy = browserProxy()){
+	if(!proxy) throw new Error('save a catalog proxy on the Import & export page');
+	try{ return await fetch(`${proxy.url}/${route.replace(/^\/+/, '')}`, {headers: {[PROXY_KEY_HEADER]: proxy.key}}); }
+	catch(e){ throw new Error('this browser could not reach the catalog proxy (check its address, and that it allows this page in ALLOWED_ORIGINS)', {cause: e}); }
+}
+
 // ------------------------------------------------------------ Hardcover runs
 // Comparing with Hardcover, or sending to it, can take minutes, one request a second. The page running it
 // shows it on top while it goes (#bgTask), and hands each update to the page's onHardcoverJob.

@@ -55,6 +55,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 - [Audible](docs/audible.md): importing your Audible library
 - [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads
 - [Hardcover](docs/hardcover.md): comparing with your Hardcover shelves, and putting books and reads on them
+- [Catalog proxy](docs/catalog-proxy.md): an optional Cloudflare Worker of your own for the catalogs that don't answer web pages
 - [Merge a backup from another device](docs/backups.md): combining two catalogs that both changed
 - [How imports avoid clobbering your edits](docs/imports.md): the comparison an import shows, and how imported books are matched and merged
 - [Running the app and keeping your catalog](docs/saving.md): serving the pages, browser storage, backups

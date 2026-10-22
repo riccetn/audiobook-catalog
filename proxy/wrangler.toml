@@ -1,0 +1,12 @@
+# The catalog proxy's Cloudflare settings (npx wrangler deploy, from this folder). See README.md.
+name = "audiobook-catalog-proxy"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+# A workers.dev address (audiobook-catalog-proxy.<your subdomain>.workers.dev), no domain of your own needed.
+workers_dev = true
+
+[vars]
+# The pages that may use the proxy: where the app is served, and make serve. Separate them with commas.
+ALLOWED_ORIGINS = "https://riccetn.github.io, http://127.0.0.1:8000, http://localhost:8000"
+
+# PROXY_KEY is a secret, never written here (the repo is public): npx wrangler secret put PROXY_KEY

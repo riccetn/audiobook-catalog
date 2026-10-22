@@ -14,7 +14,7 @@ import {HardcoverSync} from './modules/hardcover-sync.js';
 import {Comparison} from './modules/comparison.js';
 import {
 	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
-	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken,
+	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken, PROXY_STORAGE_KEY, browserProxy, proxyAddress, fetchViaProxy,
 	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, valueFromPageHash, idFromAddress, buildElement, fillElement,
 	noteBackup, backupAge, backupAgeText
 } from './store.js';
@@ -651,6 +651,59 @@ function saveHardcoverToken(remove){
 	showHardcoverToken();
 }
 
+// ------------------------------------------------------------ the catalog proxy
+// Its address and key are kept in this browser only (never in a backup), like the Hardcover token.
+function showProxy(){
+	const proxy = browserProxy();
+	byId('proxyState').textContent = proxy
+		? `Saved in this browser only (never in a backup): ${proxy.url}`
+		: 'Paste your proxy\'s address and key and save them; they are kept in this browser only (never in a backup).';
+	byId('proxyCheck').style.display = proxy ? '' : 'none';
+	byId('proxyRemove').style.display = proxy ? '' : 'none';
+}
+
+/**
+ * Save the proxy typed in the page in this browser and check it, or `remove` the saved one.
+ * @param {boolean} remove
+ */
+async function saveProxy(remove){
+	const url = fieldById('proxyUrl'), key = fieldById('proxyKey');
+	const address = proxyAddress(url.value);
+	if(!remove){
+		if(!address){ showIoStatus('Paste the proxy\'s address first (https://…workers.dev).', true); return; }
+		if(!key.value.trim()){ showIoStatus('Paste the proxy\'s key first.', true); return; }
+	}
+	try{
+		if(remove) localStorage.removeItem(PROXY_STORAGE_KEY);
+		else localStorage.setItem(PROXY_STORAGE_KEY, JSON.stringify({url: address, key: key.value.trim()}));
+		url.value = ''; key.value = '';
+	}catch{
+		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the proxy: this browser refused to store it.`, true);
+		return;
+	}
+	showProxy();
+	if(remove) showIoStatus('Catalog proxy removed.');
+	else await checkProxy('Catalog proxy saved');
+}
+
+/**
+ * Ask the saved proxy whether it answers this page with its key, and say so.
+ * @param {string} [saved] what the status line starts with, after a save
+ */
+async function checkProxy(saved){
+	const start = saved ? `${saved}; ` : '';
+	try{
+		const res = await fetchViaProxy('ping');
+		if(res.ok){
+			const names = /** @type {{catalogs?: string[]}} */ (await res.json()).catalogs || [];
+			showIoStatus(`${start}${saved ? 'it' : 'The catalog proxy'} answers, for ${names.join(', ')}.`);
+		}else if(res.status === 401) showIoStatus(`${start}the proxy refused the key.`, true);
+		else showIoStatus(`${start}the proxy answered ${res.status}.`, true);
+	}catch(e){
+		showIoStatus(`${start}${Text.errorText(e)}.`, true);
+	}
+}
+
 /**
  * Run `task` with Hardcover, shown in the banner on top while it goes (as a `mode` job), handing it the
  * step it reports its progress through. Resolves to what it gave or threw and how long it took; to
@@ -876,6 +929,9 @@ byId('hardcoverCompareBtn').addEventListener('click', compareHardcover);
 byId('hardcoverScope').addEventListener('change', showHardcoverScope);
 byId('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
 byId('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
+byId('proxySave').addEventListener('click', ()=> saveProxy(false));
+byId('proxyCheck').addEventListener('click', ()=> checkProxy());
+byId('proxyRemove').addEventListener('click', ()=> saveProxy(true));
 byId('importCancel').addEventListener('click', closeImportPreview);
 
 byId('checkBtn').addEventListener('click', ()=> withWholeCatalog(checkCatalog));
@@ -898,4 +954,4 @@ byId('importFile').addEventListener('change', e=>{
 	if(files.length) return importBackup(files);
 });
 
-export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); showHardcoverScope(); compareFromAddress(); }, {refresh: refreshPage, onHardcoverJob});
+export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); showProxy(); showHardcoverScope(); compareFromAddress(); }, {refresh: refreshPage, onHardcoverJob});

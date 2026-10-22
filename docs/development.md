@@ -26,6 +26,7 @@ public/               the app, and all that a static server serves (make serve, 
                         exporter, merge, validation, Hardcover (no browser APIs, so the tests run them in Node)
 package.json          "type": "module" (every .js file is an ES module), Liquid (the pages), TypeScript (the type checker) and ESLint
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
+proxy/                the optional catalog proxy, a Cloudflare Worker (worker.js, wrangler.toml); deployed on its own, never served
 sample/               fictional demo data, used by the tests: the only data committed to git
 tests/                node:test suites (*.test.mjs), including the browser smoke test
 ```
@@ -53,7 +54,7 @@ The build is strict, so a misspelled variable fails it. Nothing is rendered in t
 
 ## Tests
 
-- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`),
+- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`), the catalog proxy (`proxy.test.mjs`),
   and the browser smoke test (`app.smoke.test.mjs`), which executes each page's real modules against a small fake DOM built from
   its HTML, with a fake `localStorage` holding the demo data, which the page moves into a fake IndexedDB
   (`tests/fake-indexeddb.mjs`) as a browser would (running ES modules in `node:vm` is what needs the flag;
