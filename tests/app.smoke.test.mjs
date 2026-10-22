@@ -1020,6 +1020,17 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 		isbn: '9780000000019', p: 'Gullwing Audio', d: '2021-03-04', len: '10h 12m' }]);
 	assert.match(els.ioStatus.textContent, /^Filled in from Audible and AudiobookDB: title, authors, series, number in the series, genres, the book's id in another catalog, an edition\.$/);
 	assert.ok(asked.length && asked.every(a => a.key === 'right-key' && a.url.startsWith('https://catalog-proxy.example.workers.dev/')));
+	// an ASIN the form already has fills in that edition's gaps, even where it says something else, rather than adding one
+	const again = await boot({ page: 'book.html', hash: '#add', proxy, storage });
+	typeEdition(again.els, 0, 'ext:audible.com', 'B0OTHERED1');
+	addEdition(again.els);
+	typeEdition(again.els, 1, 'ext:audible.com', 'B0LANTERN2');
+	typeEdition(again.els, 1, 'p', 'Gullwing Audio Ltd');
+	again.els.f_from.value = 'B0LANTERN2';
+	await again.ctx.fillFromCatalog();
+	assert.equal(again.els.formError.textContent, '');
+	assert.deepEqual(formEditions(again.get), [{ 'ext:audible.com': 'B0OTHERED1' }, { n: 'Hollis Marr, Dana Fenwick', 'ext:audible.com': 'B0LANTERN2', 'ext:audiobookdb': 'RlsLntrnUS01',
+		isbn: '9780000000019', p: 'Gullwing Audio Ltd', d: '2021-03-04', len: '10h 12m' }]);
 	// without the proxy, AudiobookDB says how it could be asked
 	const without = await boot({ page: 'book.html', hash: '#add' });
 	without.els.f_from.value = 'https://audiobookdb.org/releases/RlsLntrnUS01';

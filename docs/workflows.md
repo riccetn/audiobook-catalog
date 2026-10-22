@@ -45,8 +45,8 @@ site, else audible.com) and on AudiobookDB; an AudiobookDB book or release (`aud
 up there (a book of several releases comes without an edition: paste your release's address); and an edition found
 elsewhere with an ASIN is looked up on Audible for what it lacks. Hardcover is still asked for what those lack. It fills in the title, authors, series and number, genres (from Wikidata, Audible and AudiobookDB), the
 book's ids in those catalogs, and an edition (narrators, ASIN, Goodreads, Hardcover, Open Library and AudiobookDB ids, ISBN,
-publisher, release date, length): in the gaps of the first card that has nothing else in its fields, else on a
-card of its own. The status line says what was filled in and from where; look it over before saving. It is in
+publisher, release date, length): in the gaps of the card that is the same edition (it has one of its ids, an
+ASIN on any site, or its ISBN), else of the first card that has nothing else in its fields, else on a card of its own. The status line says what was filled in and from where; look it over before saving. It is in
 the form while editing a book too, where it fills in only what the book lacks.
 
 *Editions* has a card per edition, with a field for each part: description, narrators, ASINs (a field per
