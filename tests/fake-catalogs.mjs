@@ -61,3 +61,56 @@ export const openCatalogState = () => ({
 		Q9004: { id: 'Q9004', labels: { en: { language: 'en', value: 'fantasy' } }, claims: {} },
 	},
 });
+
+/**
+ * A fake of what the catalog proxy answers for Audible's catalog API and AudiobookDB's API, by route
+ * (`audible/audible.com/catalog/products/B0…`, `audiobookdb/releases/…`), in the shapes the real APIs answer
+ * (checked against them on 2026-10-22); `sent` lists the routes asked. The book is invented: "The Lantern
+ * Keeper", book 2 of Gull Isle (and of no number in the Tidewater Cycle, an umbrella series).
+ */
+export function fakeProxyCatalogs() {
+	const sent = [];
+	const json = (status, body) => ({ ok: status < 400, status, json: async () => body });
+	const ladder = (...names) => ({ root: 'Genres', ladder: names.map((name, i) => ({ id: String(1000 + i), name })) });
+	const audible = {
+		'audible.com/B0LANTERN2': { asin: 'B0LANTERN2', title: 'The Lantern Keeper', subtitle: 'Gull Isle, Book 2',
+			authors: [{ asin: 'B0AUTHOR01', name: 'Ann Vale' }], narrators: [{ name: 'Hollis Marr' }, { name: 'Dana Fenwick' }],
+			series: [{ asin: 'B0SERIES01', sequence: '', title: 'The Tidewater Cycle' }, { asin: 'B0SERIES02', sequence: '2', title: 'Gull Isle' }],
+			publisher_name: 'Gullwing Audio', release_date: '2021-03-04', runtime_length_min: 612, isbn: '9780000000019', format_type: 'unabridged',
+			publisher_summary: '<p><b>The second Gull Isle book.</b></p>',
+			category_ladders: [ladder('Science Fiction & Fantasy', 'Fantasy', 'Epic'), ladder('Science Fiction &amp; Fantasy', 'Fantasy', 'Coming of Age'), ladder('Literature & Fiction', 'Literary Fiction')] },
+		'audible.co.uk/B0LANTERNU': { asin: 'B0LANTERNU', title: 'The Lantern Keeper', authors: [{ name: 'Ann Vale' }], narrators: [{ name: 'Hollis Marr' }],
+			series: [{ sequence: '2', title: 'Gull Isle' }], publisher_name: 'Gullwing Audio UK', release_date: '2021-05-01', runtime_length_min: 611 },
+	};
+	const people = (role, ...names) => names.map((name, i) => ({ role: { name: role }, person: { id: `Prsn${role.slice(0, 4)}${i}00000`.slice(0, 12), name } }));
+	const releaseUs = { id: 'RlsLntrnUS01', title: 'The Lantern Keeper', releaseDate: '2021-03-04T00:00:00Z', duration: '10:12:20', disambiguation: 'unabridged',
+		publisher: { id: 'PblshrGullw1', name: 'Gullwing Audio' }, people: people('Narrator', 'Hollis Marr', 'Dana Fenwick') };
+	const releaseUk = { id: 'RlsLntrnUK01', title: 'The Lantern Keeper', releaseDate: '2021-05-01T00:00:00Z', duration: '10:11:00',
+		publisher: { id: 'PblshrGullw2', name: 'Gullwing Audio UK' }, people: people('Narrator', 'Hollis Marr') };
+	const book = { id: 'LnTrnKpr2xYz', title: 'The Lantern Keeper', subtitle: 'Gull Isle, Book 2', copyright: 2021, type: 'fiction',
+		genres: [{ id: 'GnrFantasy01', title: 'Fantasy' }], tags: [{ id: 'TgCozy000001', title: 'Cozy' }], people: people('Author', 'Ann Vale'),
+		series: [{ ordinal: '0', series: { id: 'SrsTidewater', title: 'The Tidewater Cycle', bookCount: 4 } }, { ordinal: '2', series: { id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3 } }],
+		releases: [releaseUs, releaseUk] };
+	const releases = {
+		RlsLntrnUS01: { ...releaseUs, isbn: '9780000000019', runtimeLengthSec: 36740, book: { id: book.id, title: book.title },
+			external: [{ id: 'ExtLntrnUS01', itemId: 'B0LANTERN2', category: { title: 'Audible', url: 'https://www.audible.com' } }] },
+	};
+	const notFound = detail => json(404, { errors: [{ status: '404', title: 'Not Found', detail }] });
+	const route = async path => {
+		sent.push(path);
+		const u = new URL(path, 'https://proxy.invalid/');
+		let m = /^\/audible\/([^/]+)\/catalog\/products\/([^/]+)$/.exec(u.pathname);
+		if (m) {
+			assert(u.searchParams.get('response_groups').includes('series'), 'Audible is asked for the series');
+			return json(200, { product: audible[`${m[1]}/${m[2]}`] || { asin: m[2], asset_details: [] }, response_groups: ['always-returned'] });
+		}
+		m = /^\/audiobookdb\/(audiobooks\/external\/audible|books|releases)\/([^/]+)$/.exec(u.pathname);
+		if (m && m[1] === 'audiobooks/external/audible') return m[2] === 'B0LANTERN2' ? json(200, { ...book, matchedReleaseId: 'RlsLntrnUS01' }) : notFound(`audiobook with id audible/${m[2]} not found`);
+		if (m && m[1] === 'books') return m[2] === book.id ? json(200, book) : notFound(`book with id ${m[2]} not found`);
+		if (m && m[1] === 'releases') return releases[m[2]] ? json(200, releases[m[2]]) : notFound(`release with id ${m[2]} not found`);
+		throw new Error(`the proxy was asked for ${path}`);
+	};
+	return { route, sent };
+}
+
+function assert(ok, message) { if (!ok) throw new Error(message); }
