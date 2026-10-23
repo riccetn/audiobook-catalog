@@ -1091,7 +1091,7 @@ test('a new book is filled in from another catalog: only its empty fields, and t
 	// what can't be looked up says why, and keeps what was pasted
 	els.f_from.value = 'https://www.audible.com/pd/B0TIDEWAT1';
 	await ctx.fillFromCatalog();
-	assert.match(els.formError.textContent, /^Couldn't fill in the book: Audible can't be read from a web page; to look its ASIN up on Hardcover, save your Hardcover API token/);
+	assert.match(els.formError.textContent, /^Couldn't fill in the book: Audible and AudiobookDB can't be read from a web page; to look it up on Hardcover, save your Hardcover API token/);
 	assert.equal(els.f_from.value, 'https://www.audible.com/pd/B0TIDEWAT1');
 	// saved, the book has it all
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
@@ -1332,7 +1332,7 @@ test('a Goodreads import adds the ISBN to the edition of books already there', a
 	const { els, get, readable } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	const csv = 'Title,Author,ISBN,ISBN13,Binding,Exclusive Shelf,Date Read\n'
 		+ 'Old Favorite,Ann Vale,"=""0306406152""","=""9780306406157""",Audible Audio,read,2023/11/04\n';
-	els.importGoodreadsBtn.listeners.click[0]();
+	els.goodreadsImportBtn.listeners.click[0]();
 	await idle();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
@@ -1527,7 +1527,7 @@ test('importing an Audible CSV previews first, then adds only new books', async 
 		+ 'x,A Crown of Embers 6: Ashfall,A Crown of Embers Series (book 6),Ilse Marlowe,A.B. Quill,Finished,B6\n'
 		+ 'x,Removed,,Ilse Marlowe,,Finished,BGONE\n'
 		+ 'x,Half Way,,Ilse Marlowe,,2h left,B7\n';
-	els.importAudibleBtn.listeners.click[0]();
+	els.audibleImportBtn.listeners.click[0]();
 	await idle();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
 	await idle();
@@ -1587,7 +1587,7 @@ test('a Goodreads import fills in dates read on books that have none', async () 
 	const { els, get } = await boot({ page: 'import.html', files: { 'books.json': mine } });
 	const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves,Date Read\n'
 		+ 'Old Favorite,Ann Vale,,Audible Audio,read,,2023/11/04\n';
-	els.importGoodreadsBtn.listeners.click[0]();
+	els.goodreadsImportBtn.listeners.click[0]();
 	await idle();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
@@ -1604,7 +1604,7 @@ test('importing a Goodreads CSV can be canceled', async () => {
 	const before = demoBooks.length;
 	const csv = 'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\n'
 		+ '"Zzz New Book (Zzz Saga, #2)",Nobody Yet,,Audible Audio,read,fantasy\n';
-	els.importGoodreadsBtn.listeners.click[0]();
+	els.goodreadsImportBtn.listeners.click[0]();
 	await idle();
 	els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'goodreads.csv', text: csv }], value: '' } });
 	await idle();
@@ -1627,7 +1627,7 @@ test('a comparison takes only what is ticked: a value of the other source in pla
 		+ 'x,Brine Songs,,Ann Vale,,Finished,B2\n'
 		+ 'x,Tidewater,,Ann Vale,,Finished,B3\n';
 	const open = async () => {
-		els.importAudibleBtn.listeners.click[0]();
+		els.audibleImportBtn.listeners.click[0]();
 		await idle();
 		els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'library.csv', text: csv }], value: '' } });
 		await idle();
@@ -1668,9 +1668,9 @@ test('Goodreads CSV downloads every book for Goodreads\' import', async () => {
 	const blobs = [];
 	ctx.Blob = class { constructor(parts) { blobs.push(parts.join('')); } };
 	ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
-	els.exportGoodreadsBtn.listeners.click[0]();
+	els.goodreadsExportBtn.listeners.click[0]();
 	await idle();
-	assert.equal(blobs[0], get('new GoodreadsExporter().write(CATALOG.books).csv'));
+	assert.equal(blobs[0], get('new CatalogConnectors.EXPORTERS[0]().write(CATALOG.books).text'));
 	assert.match(blobs[0], /^Book Id,Title,Author,/);
 	assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
 });
@@ -1848,13 +1848,13 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 
 	// on the import page, an import (Audible by id, or Goodreads by title) does not bring it back
 	const imp = await boot({ page: 'import.html', files, storage });
-	imp.els.importAudibleBtn.listeners.click[0]();
+	imp.els.audibleImportBtn.listeners.click[0]();
 	await idle();
 	imp.els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'l.csv', text:
 		'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\nx,Gone,,Ann Vale,,Finished,BGONE2\n' }], value: '' } });
 	await idle();
 	assert.match(imp.els.importPreviewBody.innerHTML, /excluded from imports\): 1/);
-	imp.els.importGoodreadsBtn.listeners.click[0]();
+	imp.els.goodreadsImportBtn.listeners.click[0]();
 	await idle();
 	imp.els.importCsvFile.listeners.change[0]({ target: { files: [{ name: 'g.csv', text:
 		'Title,Author,Additional Authors,Binding,Exclusive Shelf,Bookshelves\nGone,Ann Vale,,Audible Audio,read,\n' }], value: '' } });
@@ -2490,18 +2490,18 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 	const page = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, hardcover, setTimeout });
 	const { els, get, readable, storage } = page;
 	assert.notEqual(els.hardcoverPanel.style.display, 'none');
-	assert.match(els.hardcoverTokenState.textContent, /Paste an API token .* kept in this browser only/);
+	assert.match(els.hardcoverKeyState.textContent, /Paste an API token .* kept in this browser only/);
 	await els.hardcoverCompareBtn.listeners.click[0]();
 	await idle();
 	assert.match(els.ioStatus.textContent, /Save your Hardcover API token first/);
 	assert.equal(hc.sent.length, 0);
 
-	els.hardcoverToken.value = 'Bearer tok-123';
-	await els.hardcoverTokenSave.listeners.click[0]();
+	els.hardcoverKey.value = 'Bearer tok-123';
+	await els.hardcoverKeySave.listeners.click[0]();
 	await idle();
 	assert.equal(storage.get('audiobook-catalog-hardcover-token'), 'tok-123');
-	assert.equal(els.hardcoverToken.value, '', 'the token is not left in the page');
-	assert.match(els.hardcoverTokenState.textContent, /saved in this browser only/);
+	assert.equal(els.hardcoverKey.value, '', 'the token is not left in the page');
+	assert.match(els.hardcoverKeyState.textContent, /saved in this browser only/);
 
 	// the comparison: asked from the page, nothing changed anywhere
 	await els.hardcoverCompareBtn.listeners.click[0]();

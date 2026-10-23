@@ -3,14 +3,9 @@
 // give it a fake. Your API key, when saved, is sent only with what acts for your account (who you are, your
 // shelves, putting a book on one); the proxy passes it on to those paths alone, and refuses it anywhere else.
 import {Text} from './text.js';
+import {CatalogClient} from './catalog-client.js';
 /** @import {Unchecked} from './text.js' */
-/** @import {Step} from './hardcover-client.js' */
-
-/**
- * Asks the catalog proxy for `route` (`audiobookdb/<path>`): with `init.key`, your API key goes along; with
- * `init.body`, it is a POST of that JSON.
- * @typedef {(route: string, init?: {method?: string, body?: string, key?: string}) => Promise<Response>} ProxyFetch
- */
+/** @import {CatalogFetch, Pause} from './catalog-client.js' */
 /**
  * One of your AudiobookDB shelves, as the API answers it: its books are {id, title, people, addedAt}.
  * @typedef {{id: string, slug: string, name: string, isDefault: boolean, isExclusive: boolean, books: Unchecked[]}} AudiobookdbShelf
@@ -21,24 +16,27 @@ const RETRIES = 3;
 const LONGEST_WAIT = 60;
 
 /** Asks AudiobookDB's API through the catalog proxy, one request at a time. */
-export class AudiobookdbClient {
+export class AudiobookdbClient extends CatalogClient {
+	static CATALOG = 'audiobookdb';
+	static LABEL = 'AudiobookDB';
 	// AudiobookDB's ids, of every kind: 12 letters and digits (as ExternalCatalog takes them)
 	static ID = /^[A-Za-z0-9]{12}$/;
+	static KEY_STORAGE = 'audiobook-catalog-audiobookdb-key';
+	static KEY_HELP = 'Paste an API key from audiobookdb.org (under your account) and save it, to compare your shelves and put books on them; it is kept in this browser only (never in a backup). Without it, Compare only finds your books there.';
+	static KEY_NEEDED = false;
+	static VIA_PROXY = true;
+	static PAUSE_MS = 500;   // AudiobookDB allows a burst of 25, then about 10 a second
 
 	/**
-	 * A client that asks through `get`, with `key` (your API key, '' for none), calling `pause(ms)` between
-	 * requests and when AudiobookDB asks to slow down (it allows a burst of 25 and a daily budget).
-	 * @param {ProxyFetch} get
+	 * A client that asks through `get` (the catalog proxy), with `key` (your API key, '' for none), calling
+	 * `pause(gap)` between requests and `pause` again when AudiobookDB asks to slow down (it allows a burst of 25 and a daily budget).
+	 * @param {CatalogFetch} get
 	 * @param {string} key
-	 * @param {(ms: number) => Promise<unknown>} pause
+	 * @param {Pause} pause
 	 * @param {number} [gap] milliseconds between requests
 	 */
-	constructor(get, key, pause, gap = 500){
-		this.get = get;
-		this.key = Text.tidy(key || '');
-		this.pause = pause;
-		this.gap = gap;
-		this.asked = 0;
+	constructor(get, key, pause, gap){
+		super(get, key, pause, gap);
 		/** @type {string | undefined} whose shelves they are, once AudiobookDB said */
 		this.username = undefined;
 	}
@@ -53,7 +51,7 @@ export class AudiobookdbClient {
 	 */
 	async ask(path, {keyed = false, body} = {}){
 		for(let attempt = 0; ; attempt++){
-			if(this.asked++) await this.pause(this.gap);
+			await this.waitTurn();
 			const init = {...body ? {method: 'POST', body: JSON.stringify(body)} : {}, ...keyed && this.key ? {key: this.key} : {}};
 			const res = await this.get(`audiobookdb/${path}`, init);
 			const wait = res.status === 429 ? AudiobookdbClient.waitFor(res.headers) : 0;
@@ -176,24 +174,5 @@ export class AudiobookdbClient {
 		return (Array.isArray(release.external) ? release.external : [])
 			.filter((/** @type {unknown} */ x) => Text.isObject(x) && Text.isObject(x.category) && x.category.title === 'Audible' && typeof x.itemId === 'string')
 			.map((/** @type {Unchecked} */ x) => x.itemId.trim().toUpperCase()).filter((/** @type {string} */ a) => /^[A-Z0-9]{10}$/.test(a));
-	}
-
-	/**
-	 * Step `step` through `items`, asking `ask` of each, with how far it has got.
-	 * @template T, U
-	 * @param {T[]} items
-	 * @param {string} text
-	 * @param {Step} step
-	 * @param {(item: T) => Promise<U>} ask
-	 * @returns {Promise<U[]>}
-	 */
-	static async each(items, text, step, ask){
-		/** @type {U[]} */
-		const out = [];
-		for(let i = 0; i < items.length; i++){
-			step(text, i, items.length);
-			out.push(await ask(items[i]));
-		}
-		return out;
 	}
 }

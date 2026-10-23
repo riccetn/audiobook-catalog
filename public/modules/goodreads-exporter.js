@@ -2,6 +2,8 @@
 import {Edition} from './edition.js';
 import {Isbn} from './isbn.js';
 import {Csv} from './csv.js';
+import {FileExporter} from './file-exporter.js';
+/** @import {ExportResult} from './file-exporter.js' */
 /** @import {Book} from './book.js' */
 
 // Goodreads shelf names are lower case with hyphens: "Science Fiction" -> "science-fiction".
@@ -9,7 +11,10 @@ import {Csv} from './csv.js';
 const shelf = g => g.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
 
 /** Writes books as a Goodreads library export. */
-export class GoodreadsExporter {
+export class GoodreadsExporter extends FileExporter {
+	static CATALOG = 'goodreads';
+	static LABEL = 'Goodreads';
+	static FILE_NAME = 'goodreads-import';
 	// The columns of a Goodreads library export, which is also what goodreads.com/review/import takes.
 	static COLUMNS = ['Book Id', 'Title', 'Author', 'Additional Authors', 'ISBN', 'ISBN13', 'Publisher', 'Binding',
 		'Year Published', 'Date Read', 'Bookshelves', 'Exclusive Shelf', 'Read Count'];
@@ -19,9 +24,9 @@ export class GoodreadsExporter {
 	 * the title as Goodreads writes it, its genres as shelves, and the Goodreads id and ISBNs of one edition
 	 * so Goodreads picks that edition (without them it goes by title and author). Goodreads keeps one date
 	 * read, so a book gets its latest full date; a book without one (no dates, or only "2024-03") goes on the
-	 * shelf with no date. Returns {csv, books, withoutIds, withoutDate}.
+	 * shelf with no date. Returns {text, books, notes}, and how many are `withoutIds` and `withoutDate`.
 	 * @param {Book[]} books
-	 * @returns {{csv: string, books: number, withoutIds: number, withoutDate: number}}
+	 * @returns {ExportResult & {withoutIds: number, withoutDate: number}}
 	 */
 	write(books){
 		/** @type {Map<string, Set<Book>>} */
@@ -61,7 +66,10 @@ export class GoodreadsExporter {
 			if(!ed.idOn('goodreads') && !isbn) report.withoutIds++;
 			if(!dates.length) report.withoutDate++;
 		}
-		return {csv: lines.join('\n') + '\n', ...report};
+		const notes = [];
+		if(report.withoutIds) notes.push(`${report.withoutIds} without a Goodreads id or ISBN, which Goodreads finds by title and author`);
+		if(report.withoutDate) notes.push(`${report.withoutDate} without a full date read`);
+		return {text: lines.join('\n') + '\n', notes, ...report};
 	}
 
 	/**

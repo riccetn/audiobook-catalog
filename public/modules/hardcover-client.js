@@ -3,9 +3,9 @@
 // page keeps in this browser only. The client only ever reaches Hardcover through the fetch it is given,
 // so the tests give it a fake. Queries stay within three levels of nesting, which Hardcover plans to enforce.
 import {Text} from './text.js';
+import {CatalogClient} from './catalog-client.js';
 /** @import {Unchecked} from './text.js' */
-
-/** @typedef {(text: string, done?: number, total?: number) => void} Step reports a run's progress */
+/** @import {Step, CatalogFetch, Pause} from './catalog-client.js' */
 /** @typedef {{hc?: unknown[], asin?: unknown[], isbn?: unknown[], gr?: unknown[]}} HardcoverLookups your ids to find on Hardcover */
 /** @typedef {{hc: string | null, hcb: string}} HardcoverHit a Hardcover edition id (or null) and book id */
 /**
@@ -19,9 +19,15 @@ const PAGE = 100;         // shelf entries per request
 const BATCH = 50;         // ids per lookup
 
 /** Asks Hardcover's API, one request at a time. */
-export class HardcoverClient {
-	static API = 'https://api.hardcover.app/v1/graphql';
+export class HardcoverClient extends CatalogClient {
+	static CATALOG = 'hardcover';
+	static LABEL = 'Hardcover';
 	static ID = HARDCOVER_ID;
+	static KEY_NAME = 'API token';
+	static KEY_STORAGE = 'audiobook-catalog-hardcover-token';
+	static KEY_HELP = 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept in this browser only (never in a backup).';
+	static PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
+	static API = 'https://api.hardcover.app/v1/graphql';
 	// Hardcover's shelves (user_books.status_id): only "Read" is a finished book.
 	/** @type {Record<number, string>} */
 	static STATUSES = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'Did Not Finish', 6: 'Ignored'};
@@ -110,19 +116,17 @@ export class HardcoverClient {
 	};
 
 	/**
-	 * A client that asks Hardcover through `get` (a fetch), calling `pause()` between requests (Hardcover
-	 * allows 60 a minute). `headers` are added to each request.
-	 * @param {string} token
-	 * @param {(url: string, init: RequestInit) => Promise<Response>} get
-	 * @param {() => Promise<unknown>} pause
+	 * A client that asks Hardcover through `get` (a fetch) with `key` (your token), calling `pause(gap)` between
+	 * requests. `headers` are added to each request.
+	 * @param {CatalogFetch} get
+	 * @param {string} key
+	 * @param {Pause} pause
+	 * @param {number} [gap]
 	 * @param {Record<string, string>} [headers]
 	 */
-	constructor(token, get, pause, headers){
-		this.token = HardcoverClient.cleanToken(token);
-		this.get = get;
-		this.pause = pause;
+	constructor(get, key, pause, gap, headers){
+		super(get, key, pause, gap);
 		this.headers = headers || {};
-		this.asked = 0;
 		/** @type {number | undefined} whose shelves they are, once Hardcover said */
 		this.user = undefined;
 	}
@@ -135,9 +139,9 @@ export class HardcoverClient {
 	 * @returns {Promise<Unchecked>}
 	 */
 	async ask(query, variables){
-		if(this.asked++) await this.pause();
+		await this.waitTurn();
 		const res = await this.get(HardcoverClient.API, {method: 'POST', body: JSON.stringify({query, variables: variables || {}}), headers: {
-			'content-type': 'application/json', authorization: `Bearer ${this.token}`, ...this.headers}});
+			'content-type': 'application/json', authorization: `Bearer ${this.key}`, ...this.headers}});
 		let json = null;
 		try{ json = await res.json(); }catch{ /* reported below */ }
 		if(res.status === 401) throw new Error('Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)');
@@ -334,7 +338,7 @@ export class HardcoverClient {
 	 * @param {unknown} t
 	 * @returns {string}
 	 */
-	static cleanToken(t){
+	static cleanKey(t){
 		return String(t || '').trim().replace(/^bearer\s+/i, '').trim();
 	}
 

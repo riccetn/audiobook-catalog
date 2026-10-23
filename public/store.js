@@ -12,8 +12,8 @@ import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-
 /** @import {NamedKind} from './modules/catalog.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
-import {AudiobookdbClient} from './modules/audiobookdb-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
+import {CatalogConnectors} from './modules/catalog-connectors.js';
 /** @import {ExternalKind, ExternalId} from './modules/external-catalog.js' */
 /** @import {Unchecked} from './modules/text.js' */
 
@@ -179,20 +179,27 @@ export const seriesPageHref = id=> pageHref('index.html', '#series=' + hashValue
 /** The address of the page of the books in no series. */
 export const standalonePageHref = ()=> pageHref('index.html', '#standalone');
 /**
- * The address that compares a series' or an author's books with Hardcover on the Import & export page.
+ * The address that compares a series' or an author's books with a catalog's shelves on the Import & export page
+ * (`import.html#hardcover-series=<id>`).
+ * @param {string} catalog the catalog's key, as its client class says it (CatalogClient.CATALOG)
  * @param {'series' | 'author'} kind
  * @param {string} id the series' or the author's
  * @returns {string}
  */
-export const hardcoverCompareHref = (kind, id)=> `import.html#hardcover-${kind}=` + hashValue(id);
+export const shelfCompareHref = (catalog, kind, id)=> `import.html#${catalog}-${kind}=` + hashValue(id);
 
 /**
- * The address that compares a series' or an author's books with AudiobookDB on the Import & export page.
+ * Links that compare a series' or an author's books with each catalog's shelves (CatalogConnectors.SYNCS),
+ * with a space between them; `words(label)` is each link's text.
  * @param {'series' | 'author'} kind
- * @param {string} id the series' or the author's
- * @returns {string}
+ * @param {string} id
+ * @param {(label: string) => string} words
+ * @returns {Child[]}
  */
-export const audiobookdbCompareHref = (kind, id)=> `import.html#audiobookdb-${kind}=` + hashValue(id);
+export function shelfCompareLinks(kind, id, words){
+	return joined(CatalogConnectors.CLIENTS.map(Client=> buildElement('a', {class: `${Client.CATALOG}Compare`, href: shelfCompareHref(Client.CATALOG, kind, id)},
+		words(Client.LABEL))), ' ');
+}
 
 /**
  * What an address of one of those pages holds after `key`= (#n=id), or null: the id there, as it is.
@@ -914,38 +921,68 @@ export function externalLinks(ids, kind, cls = 'authorlink'){
 	});
 }
 
+// ------------------------------------------------------------ the catalogs' keys and clients
+// Your key for a catalog (Hardcover's token, AudiobookDB's API key) is kept in this browser only (never in a
+// backup), under its client class's KEY_STORAGE, and saved on Import & export. A catalog whose API answers web
+// pages (Hardcover) is asked from the page itself; one that doesn't (AudiobookDB) through the catalog proxy,
+// which passes the key on only with the requests that need it and never keeps it.
+/** @import {CatalogClient, ClientClass, CatalogFetch} from './modules/catalog-client.js' */
+
+/**
+ * Your key for the catalog of `Client`, as saved in this browser; '' for none.
+ * @param {typeof CatalogClient} Client
+ * @returns {string}
+ */
+export function savedKey(Client){
+	try{ return Client.cleanKey(localStorage.getItem(Client.KEY_STORAGE)); }catch{ return ''; }
+}
+
+/**
+ * Keep `key` (tidied the way its catalog takes it) as your key for the catalog of `Client` in this browser, or
+ * forget the one kept when it is ''. Throws when the browser refuses to store it.
+ * @param {typeof CatalogClient} Client
+ * @param {string} key
+ */
+export function saveKey(Client, key){
+	const clean = Client.cleanKey(key);
+	if(clean) localStorage.setItem(Client.KEY_STORAGE, clean);
+	else localStorage.removeItem(Client.KEY_STORAGE);
+}
+
+/**
+ * Asks a catalog that answers web pages from this page, saying plainly when the browser can't reach it at all.
+ * @param {string} label the catalog's name
+ * @returns {CatalogFetch}
+ */
+function fetchDirect(label){
+	return async (url, opts) => {
+		try{ return await fetch(url, opts); }
+		catch(e){ throw new Error(`this browser could not reach ${label} (offline, or ${label} refused a request from a web page)`, {cause: e}); }
+	};
+}
+
+/**
+ * A client of `Client`'s catalog asking from this page (or through the saved catalog proxy, for a catalog asked
+ * through it), with `key` (your key; the one saved in this browser when left out).
+ * @template {CatalogClient} C
+ * @param {ClientClass<C>} Client
+ * @param {string} [key]
+ * @returns {C}
+ */
+export function catalogClient(Client, key = savedKey(Client)){
+	const pause = (/** @type {number} */ ms) => new Promise(done => setTimeout(done, ms));
+	const proxy = browserProxy();
+	/** @type {CatalogFetch} */
+	const get = Client.VIA_PROXY ? (route, init) => fetchViaProxy(route, proxy, init) : fetchDirect(Client.LABEL);
+	return new Client(get, key, pause);
+}
+
+/** @returns {CatalogClient[]} a client of each catalog whose key is saved in this browser */
+export function keyedClients(){
+	return CatalogConnectors.CLIENTS.filter(Client=> savedKey(Client)).map(Client=> catalogClient(Client));
+}
+
 // ------------------------------------------------------------ Hardcover from the page
-// The page asks Hardcover itself (its API allows browser requests), with a token kept in this browser
-// only (never in a backup), saved on Import & export.
-export const HARDCOVER_TOKEN_KEY = 'audiobook-catalog-hardcover-token';
-const HARDCOVER_PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
-
-/** @returns {string} the Hardcover token saved in this browser, or '' */
-export function browserHardcoverToken(){
-	try{ return HardcoverClient.cleanToken(localStorage.getItem(HARDCOVER_TOKEN_KEY)); }catch{ return ''; }
-}
-
-/**
- * Asks Hardcover from this page, saying plainly when the browser can't reach it at all.
- * @param {string} url
- * @param {RequestInit} opts
- * @returns {Promise<Response>}
- */
-async function fetchHardcover(url, opts){
-	try{ return await fetch(url, opts); }
-	catch(e){ throw new Error('this browser could not reach Hardcover (offline, or Hardcover refused a request from a web page)', {cause: e}); }
-}
-
-/**
- * A Hardcover client asking from this page, with `token`.
- * @param {string} token
- * @returns {HardcoverClient}
- */
-export function hardcoverClient(token){
-	const pause = () => new Promise(done => setTimeout(done, HARDCOVER_PAUSE_MS));
-	return new HardcoverClient(token, fetchHardcover, pause);
-}
-
 /**
  * The Hardcover book that `text` names: its id, or the address of the book's or one of its editions'
  * pages on hardcover.app (HardcoverClient.bookId), as {id, title}. An address without the book's id
@@ -956,9 +993,9 @@ export function hardcoverClient(token){
 export async function lookupHardcoverBook(text){
 	const url = HardcoverClient.parseUrl(text);
 	if(!url || url.book) return HardcoverClient.bookId(null, text);
-	const token = browserHardcoverToken();
+	const token = savedKey(HardcoverClient);
 	if(!token) throw new Error('to look it up on Hardcover, save your Hardcover API token on the Import & export page first');
-	return HardcoverClient.bookId(hardcoverClient(token), text);
+	return HardcoverClient.bookId(catalogClient(HardcoverClient, token), text);
 }
 
 /** @typedef {{error: string, note: string}} HardcoverFieldLookup why the field can't be saved, or what to say about it */
@@ -991,11 +1028,11 @@ export function lookupHardcoverField(prefix, kind){
 	const kept = (/** @type {string} */ why)=> ({error: '', note: `Kept Hardcover's ${kind} by the name in its address, as ${why}.`});
 	/** @type {HardcoverFieldLookupOnItsWay} */
 	const lookup = (async ()=>{
-		const token = browserHardcoverToken();
+		const token = savedKey(HardcoverClient);
 		if(!token) return kept('no Hardcover API token is saved on the Import & export page to look up its number');
 		/** @type {{id: string, name: string} | null} */
 		let row;
-		try{ row = await HardcoverClient.idBySlug(hardcoverClient(token), kind, slug); }
+		try{ row = await HardcoverClient.idBySlug(catalogClient(HardcoverClient, token), kind, slug); }
 		catch(err){ return kept(`Hardcover couldn't be asked for its number (${Text.errorText(err)})`); }
 		if(!row) return {error: `Hardcover has no ${kind} at ${address}.`, note: ''};
 		const now = ExternalCatalog.readId(/** @type {HTMLInputElement} */ (field).value, kind, 'hardcover');
@@ -1064,31 +1101,8 @@ export async function fetchViaProxy(route, proxy = browserProxy(), init = {}){
 	catch(e){ throw new Error('this browser could not reach the catalog proxy (check its address, and that it allows this page in ALLOWED_ORIGINS)', {cause: e}); }
 }
 
-// ------------------------------------------------------------ AudiobookDB
-// Your AudiobookDB API key reads your shelves and puts books on them. Like the Hardcover token it is kept in this
-// browser only (never in a backup); AudiobookDB is asked through the catalog proxy, which passes the key on only
-// with the requests that need it and never keeps it.
-export const AUDIOBOOKDB_KEY_STORAGE = 'audiobook-catalog-audiobookdb-key';
-const AUDIOBOOKDB_PAUSE_MS = 500;   // AudiobookDB allows a burst of 25, then about 10 a second
-
-/** @returns {string} the AudiobookDB API key saved in this browser, or '' */
-export function browserAudiobookdbKey(){
-	try{ return Text.tidy(localStorage.getItem(AUDIOBOOKDB_KEY_STORAGE) || ''); }catch{ return ''; }
-}
-
-/**
- * An AudiobookDB client asking through the saved proxy, with `key` (your API key, '' for none).
- * @param {string} key
- * @returns {AudiobookdbClient}
- */
-export function audiobookdbClient(key){
-	const proxy = browserProxy();
-	const pause = (/** @type {number} */ ms) => new Promise(done => setTimeout(done, ms));
-	return new AudiobookdbClient((route, init) => fetchViaProxy(route, proxy, init), key, pause, AUDIOBOOKDB_PAUSE_MS);
-}
-
-// ------------------------------------------------------------ Hardcover and AudiobookDB runs
-// Comparing with Hardcover or AudiobookDB, or sending to it, can take minutes, a request or two a second. The
+// ------------------------------------------------------------ runs on a catalog's shelves
+// Comparing with a catalog's shelves (Hardcover, AudiobookDB), or sending to it, can take minutes, a request or two a second. The
 // page running it shows it on top while it goes (#bgTask), and hands each update to the page's onCatalogJob.
 /** @type {Record<CatalogJob['mode'], (catalog: string) => string>} */
 const JOB_VERBS = {compare: catalog => `Comparing with ${catalog}`, send: catalog => `Updating your ${catalog} shelves`};

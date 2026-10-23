@@ -5,9 +5,9 @@ import {ExternalCatalog} from './external-catalog.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Csv} from './csv.js';
-import {Importer} from './importer.js';
+import {FileImporter} from './file-importer.js';
 /** @import {CsvRow} from './csv.js' */
-/** @import {ReadResult} from './importer.js' */
+/** @import {ReadResult} from './file-importer.js' */
 
 // Audible's built-in "Your First Listen" sample appears in every library.
 const SAMPLE_ASINS = new Set(['B002V8N37Q']);
@@ -17,16 +17,16 @@ const SERIES_PART = /\s*(.+?)\s*\(books?\s*([^)]*)\)\s*(?:,|$)/iy;
 const cell = Csv.cell;
 
 /** Reads an Audible Library Extractor CSV. */
-export class AudibleImporter extends Importer {
+export class AudibleImporter extends FileImporter {
+	static CATALOG = 'audible';
+	static LABEL = 'Audible';
+	static EDITIONS_YOURS = true;
 	static SAMPLE_ASINS = SAMPLE_ASINS;
 
 	/** @param {string} [site] the Audible site whose ASINs the export has (audible.com unless said) */
 	constructor(site){
-		super();
-		this.site = site || ExternalCatalog.AUDIBLE_SITE;
+		super(site || ExternalCatalog.AUDIBLE_SITE);
 	}
-
-	get label(){ return 'Audible'; }
 
 	/**
 	 * @param {CsvRow} row
@@ -85,7 +85,7 @@ export class AudibleImporter extends Importer {
 		if(minutes) edition.len = minutes;
 		if(Object.keys(edition).length) rec.e = [edition];
 		// a title like "Lantern of the Deep: Ember Coast, Book 2" with no Series column
-		const book = Importer.book(Book.fixSeriesTitle(rec));
+		const book = Book.fromRecord(Book.fixSeriesTitle(rec));
 
 		const warning = ambiguous
 			? `${Text.repr(book.title)}: belongs to several series (${row.Series}); using ${Text.repr(series)}`

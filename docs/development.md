@@ -12,7 +12,7 @@ public/               the app, and all that a static server serves (make serve, 
   book.html, book.js    a book's page: everything about it, Read today, Merge, and the book form (also for a new book)
   combo-box.js          the book form's search combo boxes: the author, narrator and publisher names the catalog has, as they are typed
   book-list.js          what those three share: book cards, covers, the lists grouped by series, the address helpers
-  import.html, import.js    Audible, Goodreads and Hardcover imports, Goodreads CSV export, Check / Box sets, backups (Export / Restore / Merge)
+  import.html, import.js    export file imports (Audible, Goodreads) and exports (Goodreads), catalogs' shelves (Hardcover, AudiobookDB), Check / Box sets, backups (Export / Restore / Merge)
   duplicates.html, duplicates.js    find and merge books entered twice
   authors.html, narrators.html, publishers.html, credits.js    the lists of authors, narrators and publishers
                         (authors.js, narrators.js and publishers.js start credits.js with their kind)
@@ -22,8 +22,8 @@ public/               the app, and all that a static server serves (make serve, 
   store.js              shared by the pages: loads from IndexedDB what the page shows, and saves every edit there
   styles.css
   manifest.webmanifest, sw.js, icons/    make the app installable (on a phone) and usable offline
-  modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Contributor, the importers and
-                        exporter, merge, validation, Hardcover (no browser APIs, so the tests run them in Node)
+  modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Contributor, the external
+                        catalogs (see below), merge, validation (no browser APIs, so the tests run them in Node)
 package.json          "type": "module" (every .js file is an ES module), Liquid (the pages), TypeScript (the type checker) and ESLint
 api-docs/             TypeDoc's settings (typedoc.json) and its own package.json; make docs writes the API documentation into api-docs/out/
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
@@ -52,6 +52,31 @@ marked current (a book's page marks Books), and `script` is the page's module. T
 `layout.liquid`; a new page in it is a line there, a template in `pages/`, and its file in `sw.js`'s `APP` list.
 The build is strict, so a misspelled variable fails it. Nothing is rendered in the browser: Liquid never reaches
 `public/`.
+
+## External catalogs
+
+The pages and the book form's lookup know the external catalogs only through four base classes in `modules/`, and
+the lists of them in `CatalogConnectors` (`catalog-connectors.js`), so a catalog is added by writing a class for each
+thing it does and listing it there:
+
+| Base class | What it is | Today | A subclass writes |
+| --- | --- | --- | --- |
+| `FileImporter` | an export file to import (a CSV) | `AudibleImporter`, `GoodreadsImporter` | `CATALOG`, `LABEL`, `readRow` |
+| `FileExporter` | a file for another catalog's import | `GoodreadsExporter` | `CATALOG`, `LABEL`, `FILE_NAME`, `write` |
+| `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync` | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
+| `BookSource` | a catalog the book form's *Fill in* asks | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
+
+A `CatalogClient` subclass asks the catalog's API and says what your key for it is: `KEY_NAME` (Hardcover calls its
+key a token), `KEY_STORAGE` (where this browser keeps it), `KEY_HELP`, whether nothing works without it (`KEY_NEEDED`),
+and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` reads and saves every key the same way
+(`savedKey`, `saveKey`, `catalogClient`). Besides the class:
+
+- its ids and addresses go in `ExternalCatalog` (as before), and a proxied API's route in `proxy/worker.js`;
+- an export file's or a shelf sync's panel goes in `templates/pages/import.liquid`, its ids starting with the class's
+  `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`; a shelf sync's panel is `{% render 'shelf-panel', ... %}`);
+- each new module goes in `sw.js`'s `APP` list.
+
+`tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone.
 
 ## Tests
 
@@ -118,7 +143,7 @@ for likely mistakes, such as unused variables, needless escapes and invisible ch
 source; it doesn't format, which is left to `.editorconfig`. The rules are ESLint's own, so:
 - a catch that doesn't use the error leaves it out, `catch{ return null; }`, and one that does nothing says
   why, `catch{ /* the address just stays as it was */ }`;
-- a parameter only named to document what an override gets starts with `_` (`Importer.readRow(_row, _result)`);
+- a parameter only named to document what an override gets starts with `_` (`FileImporter.readRow(_row, _result)`);
 - where a rule is wrong for one line, say why beside it:
   `// eslint-disable-next-line no-control-regex -- the separator controls are what it matches`.
 
