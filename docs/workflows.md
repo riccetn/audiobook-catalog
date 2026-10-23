@@ -42,7 +42,9 @@ doesn't have. Audible, Amazon, Goodreads and AudiobookDB can't be read from a we
 token their addresses can't be looked up, unless you have a [catalog proxy](catalog-proxy.md) saved. With the proxy,
 an Audible or Amazon page (or a bare ASIN) is looked up on that Audible site's catalog (an Amazon site on its Audible
 site, else audible.com) and on AudiobookDB; an AudiobookDB book or release (`audiobookdb.org/releases/…`) is looked
-up there (a book of several releases comes without an edition: paste your release's address); and an edition found
+up there (a book of several releases comes without an edition: paste your release's address); a title typed instead
+of an address is searched on AudiobookDB (by the authors in the form too, when AudiobookDB has several books of that
+title: type the author first, or paste the address of the one you mean); and an edition found
 elsewhere with an ASIN is looked up on Audible for what it lacks. Hardcover is still asked for what those lack. It fills in the title, authors, series and number, genres (from Wikidata, Audible and AudiobookDB), the
 book's ids in those catalogs, and an edition (narrators, ASIN, Goodreads, Hardcover, Open Library and AudiobookDB ids, ISBN,
 publisher, release date, length): in the gaps of the card that is the same edition (it has one of its ids, an

@@ -114,6 +114,36 @@
 		</div>
 	</section>
 
+	<section class="panel" id="audiobookdbPanel">
+		<h2>AudiobookDB <span class="via">Through the proxy</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Compare</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="audiobookdbCompareBtn" title="Compare your AudiobookDB shelves with this catalog">Compare</button>
+				<label>for
+					<select id="audiobookdbScope" title="Compare every book, or only a series' or an author's">
+						<option value="">every book</option>
+						<option value="series">a series</option>
+						<option value="author">an author</option>
+					</select></label>
+				<input type="text" id="audiobookdbScopeName" list="audiobookdbScopeNames" placeholder="Name" autocomplete="off" style="display:none">
+				<datalist id="audiobookdbScopeNames"></datalist>
+			</div>
+			<p class="ioNote">Finds your books on AudiobookDB and shows the books on your AudiobookDB <em>Read</em> shelf beside this catalog's,
+				to pick what to take from AudiobookDB, and which of your books to put on your Read shelf there; for every book, or only a
+				series' or an author's. Asked through your catalog proxy (below). Nothing on AudiobookDB is changed or removed.</p>
+		</div>
+		<div class="ioRow">
+			<span class="ioLabel">API key</span>
+			<div class="rowbtns">
+				<input type="password" id="audiobookdbKey" placeholder="AudiobookDB API key" autocomplete="off" spellcheck="false">
+				<button class="iconbtn2" id="audiobookdbKeySave" title="Keep this key in this browser">Save key</button>
+				<button class="iconbtn2" id="audiobookdbKeyRemove" title="Forget the key in this browser">Remove key</button>
+			</div>
+			<p class="ioNote" id="audiobookdbKeyState"></p>
+		</div>
+	</section>
+
 	<section class="panel" id="proxyPanel">
 		<h2>Catalog proxy <span class="via">Optional</span></h2>
 		<div class="ioRow">

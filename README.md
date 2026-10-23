@@ -27,15 +27,15 @@ On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `l
 ## Start your own catalog
 
 The first time the app opens in a browser, the catalog is empty. Fill it from *Import & export*:
-import an [Audible](docs/audible.md), [Goodreads](docs/goodreads.md) or [Hardcover](docs/hardcover.md)
-library, restore a backup, or add books by hand with **+ Add a book**, whose form can fill itself in from a book's
+import an [Audible](docs/audible.md), [Goodreads](docs/goodreads.md), [Hardcover](docs/hardcover.md) or
+[AudiobookDB](docs/audiobookdb.md) library, restore a backup, or add books by hand with **+ Add a book**, whose form can fill itself in from a book's
 page on Open Library, Wikidata or Hardcover, or its ISBN.
 
 ## Using it
 
 - *Series* lists every series and opens each one's books (and edits or removes it); *Books* lists every book, searched,
   filtered and sorted; a book's title opens its own page, with everything about it and its **Edit** and **Merge**.
-  *Import & export* imports CSVs, runs Hardcover, checks the catalog, makes backups and merges them; *Duplicates*
+  *Import & export* imports CSVs, runs Hardcover and AudiobookDB, checks the catalog, makes backups and merges them; *Duplicates*
   merges books entered twice.
 - *Authors* gives each author a page with a short bio, links to their website and their Audible, Goodreads
   and Hardcover pages, and their series and titles ([Authors](docs/authors.md)). *Narrators* and *Publishers*
@@ -56,6 +56,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 - [Audible](docs/audible.md): importing your Audible library
 - [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads
 - [Hardcover](docs/hardcover.md): comparing with your Hardcover shelves, and putting books and reads on them
+- [AudiobookDB](docs/audiobookdb.md): finding your books on AudiobookDB, comparing with your shelves there, and putting books on them
 - [Catalog proxy](docs/catalog-proxy.md): an optional Cloudflare Worker of your own for the catalogs that don't answer web pages
 - [Merge a backup from another device](docs/backups.md): combining two catalogs that both changed
 - [How imports avoid clobbering your edits](docs/imports.md): the comparison an import shows, and how imported books are matched and merged

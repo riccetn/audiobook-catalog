@@ -2,7 +2,7 @@
 
 ## The comparison
 
-An Audible or Goodreads import, and **Compare** in the Hardcover panel, first show the other catalog's books
+An Audible or Goodreads import, and **Compare** in the Hardcover and AudiobookDB panels, first show the other catalog's books
 beside yours, under the panel you started from, and change nothing until you press **Apply**. Each group
 lists its books with a tickbox, and **Tick all** and **Tick none** for the group:
 

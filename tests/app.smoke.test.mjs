@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
-import { fakeCatalogs, fakeProxyCatalogs } from './fake-catalogs.mjs';
+import { fakeCatalogs, fakeProxyCatalogs, fakeAudiobookdb, audiobookdbState } from './fake-catalogs.mjs';
 import { handle as handleProxy } from '../proxy/worker.js';
 import { Book } from '../public/modules/book.js';
 import { Exclusions } from '../public/modules/exclusions.js';
@@ -1031,6 +1031,20 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 	assert.equal(again.els.formError.textContent, '');
 	assert.deepEqual(formEditions(again.get), [{ 'ext:audible.com': 'B0OTHERED1' }, { n: 'Hollis Marr, Dana Fenwick', 'ext:audible.com': 'B0LANTERN2', 'ext:audiobookdb': 'RlsLntrnUS01',
 		isbn: '9780000000019', p: 'Gullwing Audio Ltd', d: '2021-03-04', len: '10h 12m' }]);
+	// a title is looked up on AudiobookDB: by the authors typed, when it has several of that title
+	const titled = await boot({ page: 'book.html', hash: '#add', proxy, storage });
+	titled.els.f_from.value = 'the lantern keeper';
+	await titled.ctx.fillFromCatalog();
+	assert.match(titled.els.formError.textContent, /AudiobookDB has 2 books titled the lantern keeper: The Lantern Keeper by Ann Vale \(https:\/\/audiobookdb\.org\/books\/LnTrnKpr2xYz\); The Lantern Keeper by Bo Reed .*type the author first/);
+	titled.els.f_a.value = 'Ann Vale';
+	await titled.ctx.fillFromCatalog();
+	assert.equal(titled.els.formError.textContent, '');
+	assert.equal(titled.els.f_ext_audiobookdb.value, 'LnTrnKpr2xYz');
+	assert.equal(titled.els.f_s.value, 'Gull Isle');
+	assert.match(titled.els.ioStatus.textContent, /^Filled in from AudiobookDB: title, series, number in the series, genres, the book's id in another catalog\. \(AudiobookDB has 2 releases of it/);
+	titled.els.f_from.value = 'The Salt Harbor';
+	await titled.ctx.fillFromCatalog();
+	assert.match(titled.els.formError.textContent, /AudiobookDB has no book titled The Salt Harbor by Ann Vale; paste its address instead/);
 	// without the proxy, AudiobookDB says how it could be asked
 	const without = await boot({ page: 'book.html', hash: '#add' });
 	without.els.f_from.value = 'https://audiobookdb.org/releases/RlsLntrnUS01';
@@ -2664,6 +2678,165 @@ test('a series\' or an author\'s page links to comparing their books with Hardco
 	assert.match(readable(els.importPreviewBody.innerHTML), /^<p>Only books by Ann Vale: 1 book in this catalog, 2 on your Hardcover Read shelf/);
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
+});
+
+// ------------------------------------------------------------------ AudiobookDB
+const PROXY_ENV = { PROXY_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io' };
+const PROXY_SAVED = ['audiobook-catalog-proxy', JSON.stringify({ url: 'https://catalog-proxy.example.workers.dev', key: 'right-key' })];
+
+/** The real Worker (proxy/worker.js) in front of a fake AudiobookDB, as the page reaches it; `asked` is what the page sent. */
+function audiobookdbBehindProxy(state = audiobookdbState()) {
+	const abdb = fakeAudiobookdb(state);
+	const asked = [];
+	const proxy = async (url, init = {}) => {
+		asked.push({ url, headers: init.headers, method: init.method || 'GET' });
+		const request = new Request(url, { method: init.method, body: init.body, headers: { ...init.headers, Origin: 'https://example.github.io' } });
+		return handleProxy(request, PROXY_ENV, { fetch: abdb.fetch });
+	};
+	return { state, abdb, proxy, asked };
+}
+// the pause between AudiobookDB requests passes at once
+const abdbTimeout = (fn, ms) => { if (ms === 500) Promise.resolve().then(fn); return 0; };
+
+test('the page compares the catalog with AudiobookDB through the proxy, with a key kept in this browser, and puts only what is ticked on your Read shelf', async () => {
+	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] },
+		{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ ext: { 'audible.com': 'B0BRINETD1' } }] }];
+	const { state, abdb, proxy, asked } = audiobookdbBehindProxy();
+	let leaving = null;   // what leaving the page while it sends would do
+	state.onAdd = () => { if (!leaving) { leaving = { preventDefault() { this.prevented = true; } }; page.fire('beforeunload', leaving); } };
+	const storage = new Map([PROXY_SAVED]);
+	const page = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, proxy, storage, setTimeout: abdbTimeout });
+	const { els, get, readable } = page;
+	assert.match(els.audiobookdbKeyState.textContent, /Paste an API key from audiobookdb\.org .* Without it, Compare only finds your books there\./);
+	assert.equal(els.audiobookdbKeyRemove.style.display, 'none');
+
+	// without a key, Compare only finds your books, and asks nothing of your account
+	await els.audiobookdbCompareBtn.listeners.click[0]();
+	await idle();
+	assert.equal(els.importPreviewTitle.textContent, 'Compare with AudiobookDB');
+	assert.equal(els.importPreview.place, 'after audiobookdbPanel');
+	let html = readable(els.importPreviewBody.innerHTML);
+	assert.match(html, /^<p>2 books in this catalog, 2 of them on AudiobookDB \(took 0:00\)<\/p>/);
+	assert.match(html, /Save your AudiobookDB API key \(below the buttons\) to compare your shelves too/);
+	assert.match(html, /<input type="checkbox" data-pick="ids" checked=""> Save the AudiobookDB ids found for 2 books, 3 series and people/);
+	assert.ok(abdb.sent.every(s => s.method === 'GET' && s.key === null), 'no key, and nothing sent');
+	assert.ok(!abdb.sent.some(s => s.path.startsWith('users/') || s.path === 'auth/session'));
+	els.importCancel.listeners.click[0]();
+
+	els.audiobookdbKey.value = ' abdb-key-1 ';
+	els.audiobookdbKeySave.listeners.click[0]();
+	assert.equal(storage.get('audiobook-catalog-audiobookdb-key'), 'abdb-key-1');
+	assert.equal(els.audiobookdbKey.value, '', 'the key is not left in the page');
+	assert.match(els.audiobookdbKeyState.textContent, /saved in this browser only/);
+
+	// with it: your Read shelf beside the catalog, and your books to put there
+	abdb.sent.length = 0;
+	await els.audiobookdbCompareBtn.listeners.click[0]();
+	await idle();
+	html = readable(els.importPreviewBody.innerHTML);
+	assert.match(html, /^<p>2 books in this catalog, 2 of them on AudiobookDB, 2 books on your AudiobookDB Listened shelf \(took 0:00\)<\/p>/);
+	assert.match(html, /New from AudiobookDB \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:0" checked=""> Tidewater — Ann Vale {2}\[Gull Isle #1\]/);
+	assert.match(html, /Not on your AudiobookDB Listened shelf \(1\)<\/h4>.*<input type="checkbox" data-pick="add:0"> Lantern Hours — R\. T\. Hale<\/label>/);
+	assert.match(html, /On another AudiobookDB shelf, left alone \(1\)<\/h4>.*Brine Tide — Ann Vale {2}\[Gull Isle #2\]: Currently Listening/);
+	assert.match(html, /Not added, as AudiobookDB has several releases of them and none is yours: 1\..*The Paper Fen — Ann Vale/);
+	assert.match(html, /Save the AudiobookDB ids found for 2 books, 5 series and people/);
+	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
+	assert.ok(!abdb.sent.some(s => s.method === 'POST'), 'comparing sends nothing');
+	// the key went only where it is needed
+	assert.deepEqual([...new Set(abdb.sent.filter(s => s.key).map(s => s.path))], ['auth/session', 'users/username/reader/shelves']);
+	assert.ok(abdb.sent.filter(s => s.key).every(s => s.key === 'abdb-key-1'));
+	assert.ok(asked.every(a => a.headers['X-Proxy-Key'] === 'right-key'));
+	assert.ok(asked.every(a => !a.headers['X-Catalog-Key'] || /\/audiobookdb\/(auth\/session|users\/)/.test(a.url)), 'the page sends the key only there too');
+
+	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]');
+	add.checked = true;
+	add.dispatch('change');
+	assert.equal(els.importConfirm.textContent, 'Apply 3 changes');
+	await els.importConfirm.listeners.click[0]();
+	await idle();
+	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Lantern Hours', 'Brine Tide', 'Tidewater']);
+	const saved = await kept(storage);
+	assert.deepEqual(saved.books.map(b => [b.t, b.ext, b.e.map(e => e.ext)]), [
+		['Lantern Hours', { audiobookdb: 'LntrnHours01' }, [{ 'audible.com': 'B0LANTERN1', audiobookdb: 'RlsLntrnHrs1' }]],
+		['Brine Tide', { audiobookdb: 'BrineTide001' }, [{ 'audible.com': 'B0BRINETD1', audiobookdb: 'RlsBrineUS01' }]],
+		['Tidewater', { audiobookdb: 'Tidewater001' }, [{ audiobookdb: 'RlsTidewatr1' }]]]);
+	assert.deepEqual(saved.authors['R. T. Hale'].ext, { audiobookdb: 'PrsnHale0001' });
+	assert.deepEqual(saved.authors['Ann Vale'].ext, { audiobookdb: 'PrsnVale0001' });
+	assert.deepEqual(saved.seriesInfo['Gull Isle'].ext, { audiobookdb: 'SrsGullIsle1' });
+	assert.deepEqual(saved.narrators['Dana Fenwick'].ext, { audiobookdb: 'PrsnFnwk0001' });
+	assert.deepEqual(saved.publishers['Gullwing Audio'].ext, { audiobookdb: 'PblshrGullw1' });
+	assert.deepEqual(abdb.sent.filter(s => s.method === 'POST').map(s => [s.path, s.key]), [['users/username/reader/shelves/listened/books', 'abdb-key-1']]);
+	assert.deepEqual(state.shelves[2].books.map(b => b.id), ['Tidewater001', 'PaperFen0001', 'LntrnHours01']);
+	assert.ok(leaving.prevented, 'leaving while it sends is asked about');
+	assert.match(els.importPreviewBody.innerHTML, /put 1 book\(s\) on your AudiobookDB Listened shelf/);
+	assert.match(els.ioStatus.textContent, /^Added 1 book, saved AudiobookDB ids found for 2 books and 5 series and people; AudiobookDB updated\./);
+	assert.ok(![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-audiobookdb-key' && v.includes('abdb-key-1')), 'the key is in no backup or record');
+
+	// comparing again: nothing left to send, nothing left to take
+	await els.audiobookdbCompareBtn.listeners.click[0]();
+	await idle();
+	html = readable(els.importPreviewBody.innerHTML);
+	assert.doesNotMatch(html, /Not on your AudiobookDB Listened shelf|New from AudiobookDB|Save the AudiobookDB ids/);
+});
+
+test('an AudiobookDB comparison can be only a series\' or an author\'s books, and their pages link to it', async () => {
+	const home = await boot({ hash: '#series=The+Lantern+Coast' });
+	await idle();
+	assert.match(home.readable(home.els.results.innerHTML), /<a class="audiobookdbCompare" href="import\.html#audiobookdb-series=[^"]+">Compare with AudiobookDB<\/a>/);
+	const author = await boot({ page: 'author.html', hash: '#a=Marisol+Quenby' });
+	assert.match(author.readable(author.els.creditBody.innerHTML), /<a class="audiobookdbCompare" href="import\.html#audiobookdb-author=[^"]+">Compare their books with AudiobookDB<\/a>/);
+
+	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] },
+		{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ ext: { 'audible.com': 'B0BRINETD1' } }] }];
+	const { abdb, proxy } = audiobookdbBehindProxy();
+	const storage = new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
+	const { els, get, readable } = await boot({ page: 'import.html', hash: '#audiobookdb-series=Gull+Isle', files: { 'books.json': JSON.stringify(mine) },
+		proxy, storage, setTimeout: abdbTimeout });
+	await idle();
+	assert.deepEqual([els.audiobookdbScope.value, els.audiobookdbScopeName.value], ['series', 'Gull Isle']);
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(html, /^<p>Only the series “Gull Isle”: 1 book in this catalog, 1 of them on AudiobookDB, 1 book on your AudiobookDB Listened shelf/);
+	assert.match(html, /New from AudiobookDB \(1\)<\/h4>.*Tidewater — Ann Vale/);
+	assert.doesNotMatch(html, /Paper Fen|Lantern Hours/);
+	assert.match(html, /On another AudiobookDB shelf, left alone \(1\)<\/h4>.*Brine Tide/);
+	assert.match(html, /In the series on AudiobookDB, not in this catalog: 1<\/summary><ul><li>Gull Song<\/li>/);
+	assert.ok(abdb.sent.some(s => s.path === 'series/SrsGullIsle1?include=books'));
+	assert.ok(!abdb.sent.some(s => s.path === 'audiobooks/external/audible/B0LANTERN1'), 'only the series\' books are looked up');
+	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
+
+	// an author: their books on your Read shelf, by the names AudiobookDB gives them
+	els.audiobookdbScope.value = 'author';
+	els.audiobookdbScope.listeners.change[0]();
+	els.audiobookdbScopeName.value = 'R. T. Hale';
+	await els.audiobookdbCompareBtn.listeners.click[0]();
+	await idle();
+	const byHale = readable(els.importPreviewBody.innerHTML);
+	assert.match(byHale, /^<p>Only books by R\. T\. Hale: 1 book in this catalog, 1 of them on AudiobookDB, 0 books on your AudiobookDB Listened shelf/);
+	assert.match(byHale, /Not on your AudiobookDB Listened shelf \(1\)<\/h4>.*Lantern Hours/);
+	assert.doesNotMatch(byHale, /Tidewater|Brine Tide/);
+});
+
+test('AudiobookDB needs the proxy, says when the proxy is out of date, and says when it refuses the key', async () => {
+	const mine = [{ t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] }];
+	const none = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) } });
+	await none.els.audiobookdbCompareBtn.listeners.click[0]();
+	assert.match(none.els.ioStatus.textContent, /AudiobookDB is asked through your catalog proxy: save one first/);
+
+	const { proxy } = audiobookdbBehindProxy();
+	const wrong = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, proxy, setTimeout: abdbTimeout,
+		storage: new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'not-my-key']]) });
+	await wrong.els.audiobookdbCompareBtn.listeners.click[0]();
+	await idle();
+	assert.match(wrong.els.importPreviewBody.innerHTML, /Couldn't compare: AudiobookDB refused your API key/);
+	assert.equal(wrong.els.importConfirm.style.display, 'none');
+
+	// a proxy deployed before AudiobookDB's shelves: it refuses the key
+	const old = async (url, init = {}) => init.headers['X-Catalog-Key'] ? new Response('{"error":"This path takes no catalog key."}', { status: 400 }) : proxy(url, init);
+	const stale = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(mine) }, proxy: old, setTimeout: abdbTimeout,
+		storage: new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]) });
+	await stale.els.audiobookdbCompareBtn.listeners.click[0]();
+	await idle();
+	assert.match(stale.els.importPreviewBody.innerHTML, /Couldn't compare: the catalog proxy refused it \(400\): run npx wrangler deploy in proxy\/ to bring it up to date/);
 });
 
 // ------------------------------------------------------------------ the authors page
