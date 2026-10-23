@@ -10,8 +10,8 @@ A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.ht
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to write the pages and run the tests.
 
-Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`),
-and nothing else goes there: `docs/`, `templates/`, `tests/` and `proxy/` stay outside it, so they are never served.
+Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`; the published site adds the API docs at `api/`),
+and nothing else goes there: `docs/`, `templates/`, `tests/`, `api-docs/` and `proxy/` stay outside it, so they are never served.
 The one piece that runs elsewhere is the optional catalog proxy (`proxy/`, below), a Cloudflare Worker the user deploys
 themselves; the app never needs it.
 The module names below are files in `public/`.
@@ -25,8 +25,8 @@ unknown variable or filter fails it). `make test` and `make serve` build first, 
 
 - Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests**. `package.json` says
   `"type": "module"` and its devDependencies are tools only, never served or imported by the app or tests:
-  Liquid (`liquidjs`, `make pages`), TypeScript (`make typecheck`) and ESLint with `@eslint/js` and `globals` (`make lint`);
-  don't add others, use Node built-ins in tests.
+  Liquid (`liquidjs`, `make pages`), TypeScript (`make typecheck`) and ESLint with `@eslint/js` and `globals` (`make lint`),
+  plus TypeDoc (`make docs`) in the `api-docs/` workspace; don't add others, use Node built-ins in tests.
 - Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` and the classes in `modules/`.
@@ -40,19 +40,25 @@ make test       # make pages, then node --experimental-vm-modules --test tests/*
 make typecheck  # tsc -p jsconfig.json and -p jsconfig.sw.json (sw.js, with the worker's globals); needs `npm install` once
 make lint       # eslint . with the recommended rules (eslint.config.js); needs `npm install` once
 make check      # test, typecheck and lint, what CI runs; run it before a PR
+make docs       # TypeDoc: the API documentation from the JSDoc, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
 make serve      # make pages, then python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/catalog.test.mjs            # one suite (the smoke test reads the pages, so make pages after editing a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `serve`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
 `catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. There is no formatter; `.editorconfig` sets tab
 indentation for code, and otherwise match the surrounding style (see Conventions).
-CI (`.github/workflows/ci.yml`) runs `npm ci` and `make check` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
-publishes `public/` to GitHub Pages on pushes to `main`.
+CI (`.github/workflows/ci.yml`) runs `npm ci`, `make check` and `make docs` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
+publishes `public/` to GitHub Pages on pushes to `main`, with `make docs API_DOCS=public/api` first, so the API documentation is served at `/api/`.
+The docs are written into `public/` only there: locally they stay in `api-docs/out/` (the smoke test fails on files in `public/` that `sw.js` doesn't list).
+
+TypeDoc (`api-docs/typedoc.json`: `public/*.js` but `sw.js`, and `public/modules/*.js`, with `jsconfig.json`) needs TypeScript's JS API, which
+TypeScript 7 lacks, so `api-docs/` is an npm workspace (root `package.json` `workspaces`) with its own TypeScript 6 in `api-docs/node_modules/`,
+and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is the check). The doc comments on exports are the API docs.
 
 ## Architecture
 

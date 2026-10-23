@@ -1,0 +1,13 @@
+{
+	"$schema": "https://typedoc.org/schema.json",
+	"name": "Audiobook Catalog",
+	// The pages' modules and the classes they import; the service worker is no API.
+	"entryPoints": ["../public/*.js", "../public/modules/*.js"],
+	"exclude": ["../public/sw.js"],
+	"tsconfig": "../jsconfig.json",
+	// TypeDoc reads the code with TypeScript 6, which has the API TypeScript 7 (make typecheck) lacks and disagrees
+	// with it on a few types; the type check is make typecheck's, so this only documents.
+	"skipErrorChecking": true,
+	"out": "out",
+	"readme": "none"
+}

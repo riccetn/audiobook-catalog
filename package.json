@@ -7,5 +7,8 @@
 		"globals": "17.13.0",
 		"liquidjs": "10.30.0",
 		"typescript": "7.0.2"
-	}
+	},
+	"workspaces": [
+		"api-docs"
+	]
 }

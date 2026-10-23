@@ -25,6 +25,7 @@ public/               the app, and all that a static server serves (make serve, 
   modules/              the pipeline as classes, one per module: Catalog, Book, Edition, Series, Contributor, the importers and
                         exporter, merge, validation, Hardcover (no browser APIs, so the tests run them in Node)
 package.json          "type": "module" (every .js file is an ES module), Liquid (the pages), TypeScript (the type checker) and ESLint
+api-docs/             TypeDoc's settings (typedoc.json) and its own package.json; make docs writes the API documentation into api-docs/out/
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
 proxy/                the optional catalog proxy, a Cloudflare Worker (worker.js, wrangler.toml); deployed on its own, never served
 sample/               fictional demo data, used by the tests: the only data committed to git
@@ -86,6 +87,29 @@ make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig
 - `byId(id)` and `fieldById(id)` in `store.js` get the page's elements; they throw when the page lacks
   one, so a typo in an id fails at once with its name.
 - CI runs `make typecheck` as part of `make check` (below).
+
+## API documentation
+
+`make docs` writes the code's API documentation with [TypeDoc](https://typedoc.org/), from the same JSDoc comments
+and types the type checker reads: every page's module (`store.js`, `book-list.js`, `series.js`, ...) and every class
+in `modules/`, with what each exports. Open `api-docs/out/index.html` in a browser; the folder is in `.gitignore`.
+
+```sh
+npm install   # once: also installs TypeDoc
+make docs     # write api-docs/out/ (make docs API_DOCS=<folder> for another one; .\make.ps1 docs -Out <folder>)
+```
+
+- The settings are `api-docs/typedoc.json`: the entry points are `public/*.js` (but `sw.js`) and `public/modules/*.js`,
+  read with `jsconfig.json`. A comment shows up there as it is written, so the doc comments on exported functions and
+  classes are what the documentation says about them.
+- TypeDoc needs TypeScript's JavaScript API, which TypeScript 7 (the type checker, `make typecheck`) doesn't have. So
+  `api-docs/` is an npm workspace of its own, with TypeDoc and the TypeScript 6 it reads the code with in
+  `api-docs/node_modules/`; one `npm install` (or `npm ci`) at the top installs both. TypeScript 6 disagrees with 7 on a
+  few types, so TypeDoc skips the type check (`skipErrorChecking`): checking is `make typecheck`'s job.
+- `.github/workflows/pages.yml` writes the documentation into `public/api/` before publishing, so it is served at
+  `<site>/api/` beside the app (on GitHub Pages, `https://<user>.github.io/audiobook-catalog/api/`). It is written
+  only there: locally it stays in `api-docs/out/`, outside `public/`, so `make serve` and the tests never see it.
+  CI runs `make docs` on every pull request too, so a change that breaks it fails there first.
 
 ## Lint
 

@@ -15,3 +15,4 @@ jobs:
           node-version: 24
       - run: npm ci             # Liquid for the pages, TypeScript, the type checker, and ESLint
       - run: make check         # the pages, the tests, the type check and lint, as on your own machine
+      - run: make docs          # the API documentation, so a change that breaks it fails here rather than on publishing

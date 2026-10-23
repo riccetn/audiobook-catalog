@@ -2,8 +2,10 @@ NODE ?= node
 PORT ?= 8000
 TSC ?= node_modules/.bin/tsc
 ESLINT ?= node_modules/.bin/eslint
+TYPEDOC ?= api-docs/node_modules/.bin/typedoc
+API_DOCS ?= api-docs/out
 
-.PHONY: help check pages test typecheck lint serve
+.PHONY: help check pages test typecheck lint docs serve
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
@@ -25,6 +27,10 @@ typecheck:       ## check the JavaScript against its JSDoc types with TypeScript
 lint:            ## check the JavaScript for likely mistakes with ESLint (run `npm install` once first)
 	@test -x $(ESLINT) || { echo 'ESLint is not installed: run npm install first'; exit 1; }
 	$(ESLINT) .
+
+docs:            ## write the API documentation from the code's JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first)
+	@test -x $(TYPEDOC) || { echo 'TypeDoc is not installed: run npm install first'; exit 1; }
+	$(TYPEDOC) --options api-docs/typedoc.json --out $(API_DOCS)
 
 serve: pages     ## open the app at http://localhost:8000/ (serves public/; any static server works, but the pages are ES modules, so not from a file)
 	python3 -m http.server $(PORT) --bind 127.0.0.1 --directory public
