@@ -390,7 +390,7 @@ function drawCompare(){
 			const saving = [idsFound.length && Text.plural(idsFound.length, 'book'), infoIds.length && Text.plural(infoIds.length, 'series or person', 'series and people')].filter(Boolean).join(', ');
 			out.push(buildElement('label', {class: 'cmpPick cmpIds'}, buildElement('input', {type: 'checkbox', 'data-pick': 'ids', checked: compare.picks.ids,
 				onchange: (/** @type {Event} */ e)=>{ compare.picks.ids = /** @type {HTMLInputElement} */ (e.currentTarget).checked; updateApplyButton(); }}),
-				` Save the AudiobookDB ids found for ${saving}`));
+				` Save the AudiobookDB ids and covers found for ${saving}`));
 		}
 		if(audiobookdb.missing.length){
 			out.push(buildElement('details', {class: 'cmpOnlyHere'}, buildElement('summary', {}, spell(`In the series on AudiobookDB, not in this catalog: ${audiobookdb.missing.length}`)),
@@ -460,19 +460,19 @@ function applyIntoCopy(compare){
  * What applying a comparison did here, as the status line says it: "Added 2 books, filled in 1 ASIN, changed 1 value".
  * @param {MergeReport} report
  * @param {number} patched
- * @param {number} [idsFound] books that got a Hardcover or AudiobookDB id found for them
- * @param {string} [catalog] where those ids were found
+ * @param {number} [idsFound] books that got a Hardcover or AudiobookDB id (or AudiobookDB cover) found for them
+ * @param {string} [found] what was found for them, and where
  * @param {number} [infoIds] series and people that got an AudiobookDB id
  * @returns {string}
  */
-function appliedText(report, patched, idsFound = 0, catalog = 'Hardcover', infoIds = 0){
+function appliedText(report, patched, idsFound = 0, found = 'Hardcover ids', infoIds = 0){
 	/** @type {[Book[], (n: number) => string][]} */
 	const filled = [[report.backfilled, n=> `filled in ${Text.plural(n, 'ASIN')}`], [report.goodreadsFilled, n=> `filled in ${Text.plural(n, 'Goodreads id')}`],
 		[report.hardcoverFilled, n=> `filled in Hardcover ids on ${Text.plural(n, 'book')}`], [report.datesFilled, n=> `filled in dates read on ${Text.plural(n, 'book')}`],
 		[report.isbnsFilled, n=> `added ISBNs to ${Text.plural(n, 'book')}`], [report.editionsAdded, n=> `added editions to ${Text.plural(n, 'book')}`],
 		[report.detailsFilled, n=> `filled in edition details on ${Text.plural(n, 'book')}`]];
 	return [`Added ${Text.plural(report.added.length, 'book')}`, ...filled.filter(([list])=> list.length).map(([list, say])=> say(list.length)),
-		(idsFound || infoIds) && `saved ${catalog} ids found for ` + [idsFound && Text.plural(idsFound, 'book'),
+		(idsFound || infoIds) && `saved ${found} found for ` + [idsFound && Text.plural(idsFound, 'book'),
 			infoIds && Text.plural(infoIds, 'series or person', 'series and people')].filter(Boolean).join(' and '), patched && `changed ${Text.plural(patched, 'value')}`].filter(Boolean).join(', ');
 }
 
@@ -993,7 +993,7 @@ async function applyAudiobookdb(compare){
 	}
 	const {copy, report, patched, idsFound, infoIds, errors} = applyIntoCopy(compare);
 	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was changed, nothing sent to AudiobookDB.'), true); return; }
-	const here = appliedText(report, patched, idsFound, 'AudiobookDB', infoIds);
+	const here = appliedText(report, patched, idsFound, 'AudiobookDB ids and covers', infoIds);
 	if(JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books) || infoIds){
 		CATALOG.books = copy.books;
 		if(picks.ids) AudiobookdbSync.setInfoIds(CATALOG, ab.infoIds);

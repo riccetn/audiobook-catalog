@@ -53,7 +53,7 @@ const BOOK_FIELDS = [['t', 'Title'], ['a', 'Authors'], ['s', 'Series'], ['sn', '
 /** @type {[EditionField, string][]} */
 const EDITION_FIELDS = [['n', 'Narrators'], ['p', 'Publisher'], ['d', 'Released'], ['len', 'Length']];
 /** @type {Record<string, string>} what an edition's key is called in what an import fills in */
-const EDITION_LABELS = {isbn: 'ISBN', n: 'narrators', p: 'publisher', d: 'release date', len: 'length', desc: 'description'};
+const EDITION_LABELS = {isbn: 'ISBN', n: 'narrators', p: 'publisher', d: 'release date', len: 'length', desc: 'description', img: 'cover'};
 
 /** Compares the catalog with another source's books, and takes what was picked from them. */
 export class Comparison {

@@ -9,6 +9,7 @@ import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 import {Comparison} from './comparison.js';
+import {Cover} from './cover.js';
 import {CatalogLookup} from './catalog-lookup.js';
 import {AudiobookdbClient} from './audiobookdb-client.js';
 /** @import {Unchecked} from './text.js' */
@@ -43,7 +44,7 @@ import {Catalog} from './catalog.js';
  * @property {MergeOptions} opts how they are imported (Comparison.apply() takes them)
  * @property {string[]} warnings
  * @property {AudiobookdbFound} found what AudiobookDB has for your books (addIds() gives their ids)
- * @property {Book[]} idsFound the books that gain an AudiobookDB id, in the comparison's merged copy
+ * @property {Book[]} idsFound the books that gain an AudiobookDB id or cover, in the comparison's merged copy
  * @property {AudiobookdbInfoId[]} infoIds the series and people that gain an AudiobookDB id
  * @property {AudiobookdbPlan | null} plan what putting your books on AudiobookDB would do; null without your key
  * @property {number | null} onShelf how many books your Read shelf has (in the scope asked for); null without your key
@@ -136,7 +137,7 @@ export class AudiobookdbSync {
 	/**
 	 * What AudiobookDB has for `books`: a book without an AudiobookDB id is looked up by its own editions'
 	 * ASINs (a box set's edition finds the box set, not the title); a book with one, whose editions lack
-	 * their release ids, is read.
+	 * their release ids or covers, is read.
 	 * @param {Book[]} books
 	 * @param {Step} step
 	 * @returns {Promise<AudiobookdbFound>}
@@ -146,7 +147,7 @@ export class AudiobookdbSync {
 		const found = {asin: new Map(), books: new Map()};
 		const shared = Book.sharedEditionTest(books);
 		const unknown = books.filter(b => !b.idOn('audiobookdb') && b.editions.some(ed => !shared(ed) && ed.ids('asin').length));
-		const known = [...new Set(books.filter(b => b.idOn('audiobookdb') && b.editions.some(ed => !ed.idOn('audiobookdb')))
+		const known = [...new Set(books.filter(b => b.idOn('audiobookdb') && b.editions.some(ed => !ed.idOn('audiobookdb') || !ed.covers.audiobookdb))
 			.map(b => /** @type {string} */ (b.idOn('audiobookdb'))))];
 		const asked = new Set();
 		await AudiobookdbClient.each(unknown, 'Finding your books on AudiobookDB', step, async b => {
@@ -288,8 +289,8 @@ export class AudiobookdbSync {
 	 * Give your books and editions the AudiobookDB ids found for them (`found`): a book without one gets that
 	 * of the book an edition of its own is on AudiobookDB, and each edition the id of the release it is (by
 	 * its ASIN), when that release is of the book's own AudiobookDB book (a box set's edition is on its
-	 * titles, but is the box set's release). Only empty values are filled. Changes `books` in place;
-	 * returns those that gained an id.
+	 * titles, but is the box set's release), and each edition with a release id that release's cover (else the
+	 * book's). Only empty values are filled. Changes `books` in place; returns those that gained an id or a cover.
 	 * @param {Book[]} books
 	 * @param {AudiobookdbFound} found
 	 * @returns {Book[]}
@@ -314,6 +315,13 @@ export class AudiobookdbSync {
 						for(const copy of books.flatMap(x => x.editions).filter(x => x !== ed && x.sameAs(ed) && !x.idOn('audiobookdb'))) copy.external = {...copy.external, audiobookdb: release};
 						gained = true;
 					}
+				}
+				for(const ed of b.editions.filter(x => x.idOn('audiobookdb') && !x.covers.audiobookdb)){
+					const release = releases.find(r => r.id === ed.idOn('audiobookdb'));
+					const cover = release && (Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(detail.images));
+					if(!cover) continue;
+					for(const x of [ed, ...books.flatMap(y => y.editions).filter(y => y !== ed && y.sameAs(ed) && !y.covers.audiobookdb)]) x.covers = {...x.covers, audiobookdb: cover};
+					gained = true;
 				}
 			}
 			if(gained) filled.push(b);

@@ -675,20 +675,24 @@ test('back and forward step through series, searches and filters, and books', as
 	assert.match(book.els.results.innerHTML, /<h2 class="title">The Salt Road<\/h2>/);
 });
 
-test('editing a book keeps its editions', async () => {
+test('editing a book keeps its editions, and their covers', async () => {
 	const { ctx, els, get, run } = await bootBook(SALT_ROAD);
-	run("CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {ext: { 'audible.com': 'TESTASIN02' }}].map(e => Edition.fromJSON(e))");
+	const cover = 'e3'.repeat(32);
+	run(`CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642, img: {audiobookdb: '${cover}'}}, {ext: { 'audible.com': 'TESTASIN02' }}].map(e => Edition.fromJSON(e))`);
 	ctx.openEditForm(get('BOOK_FILTER'));
 	assert.equal(els.formTitle.textContent, 'Edit book');
-	assert.deepEqual(formEditions(get), [{ 'ext:audible.com': 'TESTASIN01', 'ext:goodreads': '4242', p: 'Gull Audio', len: '10h 42m' }, { 'ext:audible.com': 'TESTASIN02' }]);
+	assert.deepEqual(formEditions(get), [{ 'ext:audible.com': 'TESTASIN01', 'ext:goodreads': '4242', p: 'Gull Audio', len: '10h 42m', 'img:audiobookdb': cover }, { 'ext:audible.com': 'TESTASIN02' }]);
+	assert.doesNotMatch(els.f_editions.innerHTML, /img:|e3e3/, 'the form shows no cover key');
 	assert.match(els.f_editions.innerHTML, /Edition 2/);
 	assert.match(els.f_editions.innerHTML, /<input data-i="0" data-k="len" value="10h 42m"/);
 	els.f_t.value = 'Renamed In The App';
 	els.addForm.listeners.submit[0]({ preventDefault() {}, target: els.addForm });
 	await idle();
 	assert.deepEqual(get('({t: CATALOG.books[0].title, e: CATALOG.books[0].editions})'),
-		{ t: 'Renamed In The App', e: [{ ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642 }, { ext: { 'audible.com': 'TESTASIN02' } }] });
+		{ t: 'Renamed In The App', e: [{ ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642, img: { audiobookdb: cover } }, { ext: { 'audible.com': 'TESTASIN02' } }] });
 	assert.match(els.results.innerHTML, /<h2 class="title">Renamed In The App<\/h2>/);
+	// AudiobookDB's cover comes first, at the details' size
+	assert.match(els.results.innerHTML, new RegExp(`<img class="cover large" src="https://cdn\\.audiobookdb\\.org/${cover}/large\\.jpg"`));
 });
 
 test('the book form\'s author, series, narrator and publisher fields offer the names the catalog has as they are typed, and say which are new', async () => {
@@ -1017,7 +1021,7 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 	assert.equal(els.f_g.value, 'Fantasy, Literary Fiction');
 	assert.equal(els.f_ext_audiobookdb.value, 'LnTrnKpr2xYz');
 	assert.deepEqual(formEditions(get), [{ n: 'Hollis Marr, Dana Fenwick', 'ext:audible.com': 'B0LANTERN2', 'ext:audiobookdb': 'RlsLntrnUS01',
-		isbn: '9780000000019', p: 'Gullwing Audio', d: '2021-03-04', len: '10h 12m' }]);
+		isbn: '9780000000019', p: 'Gullwing Audio', d: '2021-03-04', len: '10h 12m', 'img:audiobookdb': 'c1'.repeat(32) }]);
 	assert.match(els.ioStatus.textContent, /^Filled in from Audible and AudiobookDB: title, authors, series, number in the series, genres, the book's id in another catalog, an edition\.$/);
 	assert.ok(asked.length && asked.every(a => a.key === 'right-key' && a.url.startsWith('https://catalog-proxy.example.workers.dev/')));
 	// an ASIN the form already has fills in that edition's gaps, even where it says something else, rather than adding one
@@ -1030,7 +1034,7 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 	await again.ctx.fillFromCatalog();
 	assert.equal(again.els.formError.textContent, '');
 	assert.deepEqual(formEditions(again.get), [{ 'ext:audible.com': 'B0OTHERED1' }, { n: 'Hollis Marr, Dana Fenwick', 'ext:audible.com': 'B0LANTERN2', 'ext:audiobookdb': 'RlsLntrnUS01',
-		isbn: '9780000000019', p: 'Gullwing Audio Ltd', d: '2021-03-04', len: '10h 12m' }]);
+		isbn: '9780000000019', p: 'Gullwing Audio Ltd', d: '2021-03-04', len: '10h 12m', 'img:audiobookdb': 'c1'.repeat(32) }]);
 	// a title is looked up on AudiobookDB: by the authors typed, when it has several of that title
 	const titled = await boot({ page: 'book.html', hash: '#add', proxy, storage });
 	titled.els.f_from.value = 'the lantern keeper';
@@ -2718,7 +2722,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	let html = readable(els.importPreviewBody.innerHTML);
 	assert.match(html, /^<p>2 books in this catalog, 2 of them on AudiobookDB \(took 0:00\)<\/p>/);
 	assert.match(html, /Save your AudiobookDB API key \(below the buttons\) to compare your shelves too/);
-	assert.match(html, /<input type="checkbox" data-pick="ids" checked=""> Save the AudiobookDB ids found for 2 books, 3 series and people/);
+	assert.match(html, /<input type="checkbox" data-pick="ids" checked=""> Save the AudiobookDB ids and covers found for 2 books, 3 series and people/);
 	assert.ok(abdb.sent.every(s => s.method === 'GET' && s.key === null), 'no key, and nothing sent');
 	assert.ok(!abdb.sent.some(s => s.path.startsWith('users/') || s.path === 'auth/session'));
 	els.importCancel.listeners.click[0]();
@@ -2739,7 +2743,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	assert.match(html, /Not on your AudiobookDB Listened shelf \(1\)<\/h4>.*<input type="checkbox" data-pick="add:0"> Lantern Hours — R\. T\. Hale<\/label>/);
 	assert.match(html, /On another AudiobookDB shelf, left alone \(1\)<\/h4>.*Brine Tide — Ann Vale {2}\[Gull Isle #2\]: Currently Listening/);
 	assert.match(html, /Not added, as AudiobookDB has several releases of them and none is yours: 1\..*The Paper Fen — Ann Vale/);
-	assert.match(html, /Save the AudiobookDB ids found for 2 books, 5 series and people/);
+	assert.match(html, /Save the AudiobookDB ids and covers found for 2 books, 5 series and people/);
 	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
 	assert.ok(!abdb.sent.some(s => s.method === 'POST'), 'comparing sends nothing');
 	// the key went only where it is needed
@@ -2760,6 +2764,8 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 		['Lantern Hours', { audiobookdb: 'LntrnHours01' }, [{ 'audible.com': 'B0LANTERN1', audiobookdb: 'RlsLntrnHrs1' }]],
 		['Brine Tide', { audiobookdb: 'BrineTide001' }, [{ 'audible.com': 'B0BRINETD1', audiobookdb: 'RlsBrineUS01' }]],
 		['Tidewater', { audiobookdb: 'Tidewater001' }, [{ audiobookdb: 'RlsTidewatr1' }]]]);
+	// the covers: Lantern Hours' book's (its release has none), Tidewater's release's; Brine Tide has none
+	assert.deepEqual(saved.books.map(b => b.e.map(e => e.img)), [[{ audiobookdb: 'a1'.repeat(32) }], [undefined], [{ audiobookdb: 'd2'.repeat(32) }]]);
 	assert.deepEqual(saved.authors['R. T. Hale'].ext, { audiobookdb: 'PrsnHale0001' });
 	assert.deepEqual(saved.authors['Ann Vale'].ext, { audiobookdb: 'PrsnVale0001' });
 	assert.deepEqual(saved.seriesInfo['Gull Isle'].ext, { audiobookdb: 'SrsGullIsle1' });
@@ -2769,7 +2775,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	assert.deepEqual(state.shelves[2].books.map(b => b.id), ['Tidewater001', 'PaperFen0001', 'LntrnHours01']);
 	assert.ok(leaving.prevented, 'leaving while it sends is asked about');
 	assert.match(els.importPreviewBody.innerHTML, /put 1 book\(s\) on your AudiobookDB Listened shelf/);
-	assert.match(els.ioStatus.textContent, /^Added 1 book, saved AudiobookDB ids found for 2 books and 5 series and people; AudiobookDB updated\./);
+	assert.match(els.ioStatus.textContent, /^Added 1 book, saved AudiobookDB ids and covers found for 2 books and 5 series and people; AudiobookDB updated\./);
 	assert.ok(![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-audiobookdb-key' && v.includes('abdb-key-1')), 'the key is in no backup or record');
 
 	// comparing again: nothing left to send, nothing left to take

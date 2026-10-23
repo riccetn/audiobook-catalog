@@ -29,16 +29,17 @@ the way an import does ([the comparison](imports.md#the-comparison)):
    within a day is quicker, as the proxy keeps the answers).
 2. With your key, the books on your *Listened* shelf there are compared with the catalog's. A book you don't have
    is offered as **New from AudiobookDB**, with its title, authors, series and number, genres, and its release
-   as an edition (its AudiobookDB id, ISBN, narrators, publisher, release date and length). AudiobookDB shelves
+   as an edition (its AudiobookDB id, ISBN, narrators, publisher, release date, length and cover). AudiobookDB shelves
    books, not releases: a book with several releases is only added when one of them is yours (by its ASIN),
    otherwise it is listed as not added: add it from the book form with your release's address.
 3. The comparison has more groups for AudiobookDB:
    - **Not on your AudiobookDB Listened shelf**: your books AudiobookDB has that aren't on *Listened* there.
      Everything in the catalog counts as read, with a date or without. Unticked: tick a book to put it on
      your *Listened* shelf.
-   - **Save the AudiobookDB ids found**: ticked, it keeps the AudiobookDB ids found for your books and their
+   - **Save the AudiobookDB ids and covers found**: ticked, it keeps the AudiobookDB ids found for your books and their
      editions (the release each one is), and for their series, authors, narrators and publishers (where
-     AudiobookDB names them the same), so later comparisons find them at once and their pages link there.
+     AudiobookDB names them the same), so later comparisons find them at once and their pages link there;
+     and each of those editions' cover ([Covers](#covers)). This needs no key.
    - **On another AudiobookDB shelf, left alone** (*To Listen* or *Currently Listening*: a book is on one
      of these and *Listened* at a time, so putting it on *Listened* would take it off) and **Not found on
      AudiobookDB** list the books that won't be put on *Listened*. *Favorites* and your own shelves don't count.
@@ -62,6 +63,16 @@ and comparing again shows what is still missing, as nothing already there is add
 
 Nothing is ever changed or removed on AudiobookDB: no book is taken off a shelf, no shelf is made, and
 AudiobookDB's own catalog (its books, people and series) is never edited.
+
+## Covers
+
+AudiobookDB has a cover for most books and releases. The address of its image can't be worked out from the
+release's id (as Amazon's is from an ASIN), so an edition keeps its key once AudiobookDB has given it: when
+*Fill in from another catalog* fills in an AudiobookDB release, and when **Compare** finds your book there (the
+release's cover, else the book's; ticked under **Save the AudiobookDB ids and covers found**). A cover already kept
+is never replaced. The book's card and details then show AudiobookDB's cover before any other, loaded from
+AudiobookDB's image server without the proxy; *Covers* off turns it off with the others. The form shows no field
+for it: removing the release from the edition doesn't remove the cover, but removing the edition does.
 
 ## When something is wrong
 

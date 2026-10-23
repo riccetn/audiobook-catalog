@@ -9,6 +9,7 @@ import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 /** @import {ContributorKind} from './contributor.js' */
 import {ExternalCatalog} from './external-catalog.js';
+import {Cover} from './cover.js';
 /** @import {Unchecked} from './text.js' */
 
 /** @typedef {{errors: string[], warnings: string[]}} Problems what the Check found */
@@ -188,7 +189,9 @@ export class Validator {
 			warnings.push(...found.warnings.map(w => `${label}: ${w}`));
 		}
 		if('n' in ed && !nameList(ed.n)) errors.push(`${label}: 'n' must be a non-empty list of narrators' names`);
-		if(!Object.keys(ed).some(k => k !== Edition.ID_KEY)) errors.push(`${label}: is empty`);
+		if('img' in ed && !Cover.isKeys(ed.img)) errors.push(`${label}: 'img' must map a catalog (${Cover.CATALOGS.join(', ')}) to its cover's key`);
+		// a cover alone is no edition
+		if(!Object.keys(ed).some(k => k !== Edition.ID_KEY && k !== 'img')) errors.push(`${label}: is empty`);
 		if(nonEmpty(ed.d) && Text.parseDate(ed.d) !== ed.d){
 			errors.push(`${label}: 'd' must be a release date (YYYY-MM-DD, YYYY-MM or YYYY), not ${repr(ed.d)}`);
 		}

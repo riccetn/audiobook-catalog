@@ -10,6 +10,7 @@ import {Book} from './book.js';
 import {Edition} from './edition.js';
 import {Importer} from './importer.js';
 import {ExternalCatalog} from './external-catalog.js';
+import {Cover} from './cover.js';
 import {HardcoverClient} from './hardcover-client.js';
 import {HardcoverSync} from './hardcover-sync.js';
 /** @import {Unchecked} from './text.js' */
@@ -528,8 +529,8 @@ export class CatalogLookup {
 
 	/**
 	 * A book made of an AudiobookDB book and one of its releases: title, authors, its numbered series (not an
-	 * umbrella one numbered 0), genres, and the edition: its release id, ISBN, narrators, publisher, release date
-	 * and length. Its ASINs are left out, as AudiobookDB doesn't say which Audible site they are on.
+	 * umbrella one numbered 0), genres, and the edition: its release id, ISBN, narrators, publisher, release date,
+	 * length and cover (the release's, else the book's). Its ASINs are left out, as AudiobookDB doesn't say which Audible site they are on.
 	 * @param {Unchecked} book
 	 * @param {Unchecked | null} release
 	 * @returns {Book}
@@ -563,6 +564,8 @@ export class CatalogLookup {
 			if(released) ed.d = released;
 			const minutes = CatalogLookup.minutes(release);
 			if(minutes) ed.len = minutes;
+			const cover = Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(book.images);
+			if(Object.keys(ed).length && cover) ed.img = {audiobookdb: cover};
 			if(Object.keys(ed).length) rec.e = [ed];
 		}
 		return Importer.book(Book.fixSeriesTitle(rec));
