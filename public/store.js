@@ -709,12 +709,9 @@ function holdNothing(){
 
 // localStorage held the catalog before IndexedDB did: under CATALOG_KEY as a backup ({books, seriesInfo, authors, narrators,
 // publishers, excluded}; the key is the one the installed app kept its own catalog under), with the "Not duplicates"
-// marks under NOT_DUP_KEY, and the edits that waited for `make serve` to save them to data/, from when the catalog still
-// lived in files, under OLD_EDITS_KEY ({data, info, authors, excluded}). Once moved, each is kept under its name +
-// MOVED_SUFFIX, a copy that is never read again.
+// marks under NOT_DUP_KEY. Once moved, each is kept under its name + MOVED_SUFFIX, a copy that is never read again.
 const CATALOG_KEY = 'audiobook-catalog-device';
 const NOT_DUP_KEY = 'audiobook-catalog-not-duplicates';
-const OLD_EDITS_KEY = 'audiobook-catalog-data';
 const MOVED_SUFFIX = '.moved-to-indexeddb';
 
 /**
@@ -726,11 +723,10 @@ function readOldCatalog(){
 	/** @type {(key: string) => string | null} */
 	const item = key => { try{ return localStorage.getItem(key); }catch{ return null; } };
 	try{
-		const raw = item(CATALOG_KEY), old = JSON.parse(item(OLD_EDITS_KEY) || 'null');
+		const raw = item(CATALOG_KEY);
+		if(!raw) return false;
 		/** @type {Unchecked} */
-		const saved = raw ? JSON.parse(raw)
-			: old && Array.isArray(old.data) ? {books: old.data, seriesInfo: old.info, authors: old.authors, excluded: old.excluded} : null;
-		if(!saved) return false;
+		const saved = JSON.parse(raw);
 		const catalog = Catalog.fromJSON(saved);
 		const marks = JSON.parse(item(NOT_DUP_KEY) || '[]');
 		if(Array.isArray(marks)) catalog.addMarkTexts(marks.filter(x=> typeof x === 'string'));
@@ -745,7 +741,7 @@ function readOldCatalog(){
 
 // Once IndexedDB holds the catalog, what localStorage kept is renamed, so it is never read again but not lost.
 function setAsideOldCatalog(){
-	for(const key of [CATALOG_KEY, NOT_DUP_KEY, OLD_EDITS_KEY]){
+	for(const key of [CATALOG_KEY, NOT_DUP_KEY]){
 		try{
 			const value = localStorage.getItem(key);
 			if(value === null) continue;
