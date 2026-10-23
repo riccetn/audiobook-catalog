@@ -2,7 +2,7 @@
 // and what it refuses.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handle, upstreamUrl, allowedOrigins, KEY_HEADER } from '../proxy/worker.js';
+import { handle, upstreamUrl, allowedOrigins, KEY_HEADER, CATALOG_KEY_HEADER } from '../proxy/worker.js';
 
 const ENV = { PROXY_KEY: 'k3y-for-tests', ALLOWED_ORIGINS: 'https://example.github.io, http://127.0.0.1:8000' };
 const APP = 'https://example.github.io';
@@ -11,7 +11,7 @@ const APP = 'https://example.github.io';
 function behind() {
 	const asked = [];
 	const fetch = async request => {
-		asked.push({ url: request.url, headers: Object.fromEntries(request.headers) });
+		asked.push({ url: request.url, method: request.method, headers: Object.fromEntries(request.headers), body: request.body ? await request.text() : null });
 		if (request.url.includes('missing')) return new Response('{"error":"not found"}', { status: 404, headers: { 'Content-Type': 'application/json' } });
 		return new Response(JSON.stringify({ asked: request.url }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': 'session=1' } });
 	};
@@ -25,10 +25,10 @@ function behind() {
 
 /**
  * @param {string} path
- * @param {{origin?: string | null, key?: string | null, method?: string, headers?: Record<string, string>}} [opts]
+ * @param {{origin?: string | null, key?: string | null, method?: string, headers?: Record<string, string>, body?: string}} [opts]
  */
-function ask(path, { origin = APP, key = ENV.PROXY_KEY, method = 'GET', headers = {} } = {}) {
-	return new Request(`https://proxy.example.workers.dev${path}`, { method, headers: {
+function ask(path, { origin = APP, key = ENV.PROXY_KEY, method = 'GET', headers = {}, body } = {}) {
+	return new Request(`https://proxy.example.workers.dev${path}`, { method, body, headers: {
 		...(origin ? { Origin: origin } : {}), ...(key ? { [KEY_HEADER]: key } : {}), ...headers } });
 }
 
@@ -65,18 +65,20 @@ test('proxy: answers only the app with the key, and passes on only the body and 
 	assert.equal(await status('/audiobookdb/x', { key: 'k3y-for-test' }), 401);
 	assert.equal(await status('/audiobookdb/x', { key: 'k3y-for-tests!' }), 401);
 	assert.equal(await status('/audiobookdb/x', { method: 'POST' }), 405);
+	assert.equal(await status('/audiobookdb/x', { method: 'DELETE' }), 405);
 	assert.equal(await status('/somewhere/else'), 404);
 	assert.equal(await status('/audiobookdb/x', { origin: null }), 200, 'curl, with the key');
 	assert.equal(asked.length, 2, 'nothing refused reached a catalog');
 	assert.equal((await handle(ask('/ping'), { ALLOWED_ORIGINS: ENV.ALLOWED_ORIGINS }, deps)).status, 500, 'no key set: refuses everything');
 });
 
-test('proxy: the preflight allows the key header, and ping says which catalogs', async () => {
+test('proxy: the preflight allows the key headers, and ping says which catalogs', async () => {
 	const { deps } = behind();
 	const pre = await handle(ask('/audiobookdb/x', { method: 'OPTIONS', key: null }), ENV, deps);
 	assert.equal(pre.status, 204);
 	assert.equal(pre.headers.get('Access-Control-Allow-Origin'), APP);
-	assert.equal(pre.headers.get('Access-Control-Allow-Headers'), KEY_HEADER);
+	assert.equal(pre.headers.get('Access-Control-Allow-Headers'), `${KEY_HEADER}, ${CATALOG_KEY_HEADER}, Content-Type`);
+	assert.equal(pre.headers.get('Access-Control-Allow-Methods'), 'GET, POST');
 	const ping = await handle(ask('/ping'), ENV, deps);
 	assert.deepEqual(await ping.json(), { ok: true, catalogs: ['audiobookdb', 'audible', 'bookbrainz', 'isfdb'] });
 	assert.deepEqual(allowedOrigins({}), ['https://riccetn.github.io', 'http://127.0.0.1:8000', 'http://localhost:8000']);
@@ -96,4 +98,54 @@ test('proxy: keeps answers found for a day, and asks again for one not found', a
 	assert.equal(kept.size, 1);
 	const down = { ...deps, fetch: async () => { throw new Error('offline'); }, cache: null };
 	assert.equal((await handle(ask('/bookbrainz/x'), ENV, down)).status, 502);
+});
+
+test('proxy: your catalog key goes only to the paths that need it, which alone take a POST and are never cached', async () => {
+	const { asked, kept, deps } = behind();
+	const shelf = '/audiobookdb/users/username/reader/shelves/read';
+	const withKey = (path, opts = {}) => ask(path, { ...opts, headers: { [CATALOG_KEY_HEADER]: 'my-api-key', ...opts.headers } });
+
+	const session = await handle(withKey('/audiobookdb/auth/session'), ENV, deps);
+	assert.equal(session.status, 200);
+	assert.equal(asked[0].headers['x-api-key'], 'my-api-key', 'sent on as AudiobookDB reads it');
+	assert.equal(asked[0].headers[CATALOG_KEY_HEADER.toLowerCase()], undefined);
+	assert.equal(session.headers.get('Cache-Control'), 'no-store');
+	assert.equal((await handle(withKey(`${shelf}?booksTake=100`), ENV, deps)).status, 200);
+	assert.equal((await handle(withKey('/audiobookdb/users/username/reader/shelves'), ENV, deps)).status, 200);
+	assert.equal((await handle(withKey('/audiobookdb/users/username/reader/shelves'), ENV, deps)).status, 200);
+	assert.equal(asked.length, 4, 'asked every time');
+	assert.equal(kept.size, 0, 'nothing of yours kept');
+
+	const put = await handle(withKey(`${shelf}/books`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: 'mine=1' },
+		body: JSON.stringify({ bookId: 'FAKEbook0001' }) }), ENV, deps);
+	assert.equal(put.status, 200);
+	assert.equal(asked[4].method, 'POST');
+	assert.equal(asked[4].body, '{"bookId":"FAKEbook0001"}');
+	assert.equal(asked[4].headers['content-type'], 'application/json');
+	assert.equal(asked[4].headers.cookie, undefined);
+	assert.equal(asked[4].headers['x-api-key'], 'my-api-key');
+
+	const status = async request => (await handle(request, ENV, deps)).status;
+	assert.equal(await status(withKey('/audiobookdb/books/FAKEbook0001')), 400, 'a key sent where none is needed');
+	assert.equal(await status(withKey('/audible/audible.com/catalog/products/B0FAKE0001')), 400);
+	assert.equal(await status(withKey(`${shelf}/books/more`, { method: 'POST' })), 405);
+	assert.equal(await status(withKey('/audiobookdb/books', { method: 'POST' })), 405, 'never the shared catalog');
+	assert.equal(await status(withKey('/audiobookdb/users/username/reader/shelves', { method: 'POST' })), 405, 'never a new shelf');
+	assert.equal(await status(ask(`${shelf}/books`, { method: 'POST' })), 401, 'sending needs the key');
+	assert.equal(await status(withKey(`${shelf}/books`, { method: 'POST', body: 'x'.repeat(20000) })), 413);
+	assert.equal(await status(withKey(`${shelf}/books`, { method: 'PUT' })), 405);
+	assert.equal(asked.length, 5, 'nothing refused reached a catalog');
+
+	assert.equal((await handle(ask(shelf), ENV, deps)).status, 200, 'a public shelf without a key');
+	assert.equal(asked[5].headers['x-api-key'], undefined);
+	assert.equal(kept.size, 0, 'and still not kept');
+});
+
+test('proxy: a catalog asking to slow down says how long, to the page too', async () => {
+	const deps = { fetch: async () => new Response('{}', { status: 429, headers: { 'Retry-After': '30', 'X-RateLimit-Remaining': '0' } }), cache: null };
+	const slow = await handle(ask('/audiobookdb/books/FAKEbook0001'), ENV, deps);
+	assert.equal(slow.status, 429);
+	assert.equal(slow.headers.get('Retry-After'), '30');
+	assert.equal(slow.headers.get('Access-Control-Expose-Headers'), 'Retry-After');
+	assert.equal(slow.headers.get('X-RateLimit-Remaining'), null);
 });

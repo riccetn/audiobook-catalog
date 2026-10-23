@@ -176,7 +176,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
 - `proxy/`: the catalog proxy, a Cloudflare Worker (`worker.js`, `wrangler.toml`; `docs/catalog-proxy.md`) for the catalogs whose APIs send
   no CORS headers. Routes name a catalog (`CATALOGS`: `audiobookdb`, `audible/<site>` (only `catalog/...`), `bookbrainz`, `isfdb`), never an
   address (`upstreamUrl`); GET only, only `ALLOWED_ORIGINS`, only with the `PROXY_KEY` secret (`X-Proxy-Key`); no cookies or other headers either
-  way; answers found cached a day; `/ping`. `handle(request, env, deps)` takes the fetch and cache so the tests run it in Node. Hardcover never goes
+  way; answers found cached a day; `/ping`. A route's `keyed` paths (AudiobookDB's `auth/session`, your shelves, and POST of a book to a shelf, `keyedPath`) take your
+  account key from `X-Catalog-Key` (`CATALOG_KEY_HEADER`) as the route's `keyHeader`, are never cached, and are the only POSTs; the key sent elsewhere is refused (400), never stored. `handle(request, env, deps)` takes the fetch and cache so the tests run it in Node. Hardcover never goes
   through it. Type checked with the pages (`jsconfig.json`), linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
