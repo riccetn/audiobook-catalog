@@ -380,8 +380,8 @@ function drawCompare(){
 	} else if(audiobookdb){
 		const {plan, idsFound, infoIds} = audiobookdb;
 		if(plan){
-			out.push(compareGroup('Not on your AudiobookDB Read shelf', plan.add.map((a, i)=> pickBox('add', i, [a.books.map(Comparison.bookLine).join('; ')])),
-				'add', plan.add.map((a, i)=> i), 'Tick a book to put it on your Read shelf on AudiobookDB.'));
+			out.push(compareGroup(`Not on your AudiobookDB ${plan.name} shelf`, plan.add.map((a, i)=> pickBox('add', i, [a.books.map(Comparison.bookLine).join('; ')])),
+				'add', plan.add.map((a, i)=> i), `Tick a book to put it on your ${plan.name} shelf on AudiobookDB.`));
 			out.push(compareGroup('On another AudiobookDB shelf, left alone', plan.otherShelf.map(([b, shelf])=> `${Comparison.bookLine(b)}: ${shelf}`), null, []));
 			out.push(compareGroup('Not found on AudiobookDB', plan.unknown.map(Comparison.bookLine), null, [],
 				'No ASIN AudiobookDB knows: give the book its AudiobookDB id in its edit form, or add it on audiobookdb.org.'));
@@ -967,7 +967,7 @@ async function compareAudiobookdb(){
 	}
 	// the catalog's own books come first in the comparison's merged copy, with the ids found
 	const found = ab.comparison.merged.books.slice(0, CATALOG.books.length).filter(inScope || (()=> true)).filter(b=> b.idOn('audiobookdb')).length;
-	const shelf = ab.onShelf === null ? '' : `, ${Text.plural(ab.onShelf, 'book')} on your AudiobookDB Read shelf`;
+	const shelf = ab.onShelf === null ? '' : `, ${Text.plural(ab.onShelf, 'book')} on your AudiobookDB ${ab.plan ? ab.plan.name : 'Read'} shelf`;
 	const notes = [spell(`${scope ? `Only ${scope.label}: ` : ''}${Text.plural(here, 'book')} in this catalog, ${found} of them on AudiobookDB${shelf} (took ${minutes(run.elapsed)})`)];
 	openCompare({source: 'audiobookdb', name: 'AudiobookDB', notes, incoming: ab.incoming, opts: ab.opts, comparison: ab.comparison,
 		warnings: ab.warnings, hardcover: null, audiobookdb: ab});

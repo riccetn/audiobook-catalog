@@ -125,9 +125,10 @@ function assert(ok, message) { if (!ok) throw new Error(message); }
 
 /**
  * Your account and AudiobookDB's catalog for fakeAudiobookdb(), every book invented: your key and username,
- * your shelves (Read holds Tidewater and The Paper Fen, Currently Listening holds Brine Tide, and your own
- * Favorites shelf holds Lantern Hours), and the books, series and people, in the shapes of AudiobookDB's
- * OpenAPI file (1.0.0) and its answers (checked on 2026-10-22).
+ * your shelves, laid out as AudiobookDB makes them (To Listen, empty; Currently Listening holds Brine Tide; Listened,
+ * its Read shelf, holds Tidewater and The Paper Fen; Favorites, not exclusive, holds Lantern Hours; an empty
+ * shelf comes without `books`), and the books, series and people, in the shapes of AudiobookDB's OpenAPI file
+ * (1.0.0) and its answers (checked on 2026-10-22 and 2026-10-23).
  */
 export function audiobookdbState() {
 	const person = (role, id, name) => ({ role: { name: role }, person: { id, name } });
@@ -148,12 +149,12 @@ export function audiobookdbState() {
 		GullSong0001: { id: 'GullSong0001', title: 'Gull Song', people: [vale], series: [gullIsle('3')], releases: [release('RlsGullSng01', 'Gull Song', null)] },
 	};
 	const onShelf = id => ({ id, title: books[id].title, people: books[id].people, addedAt: '2026-01-01T00:00:00Z' });
-	const shelf = (slug, name, isDefault, ids) => ({ id: `Shlf${slug.replace(/-/g, '').slice(0, 8).padEnd(8, '0')}`, slug, name, description: '', isDefault,
-		isExclusive: false, position: 0, books: ids.map(onShelf), bookCount: ids.length, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+	const shelf = (slug, name, isExclusive, ids) => ({ id: `Shlf${slug.replace(/-/g, '').slice(0, 8).padEnd(8, '0')}`, slug, name, description: '', isDefault: true,
+		isExclusive, position: 0, ...ids.length ? { books: ids.map(onShelf) } : {}, bookCount: ids.length, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
 	return {
 		key: 'abdb-key-1', username: 'reader', books,
-		shelves: [shelf('read', 'Read', true, ['Tidewater001', 'PaperFen0001']), shelf('currently-listening', 'Currently Listening', true, ['BrineTide001']),
-			shelf('favorites', 'Favorites', false, ['LntrnHours01'])],
+		shelves: [shelf('to-listen', 'To Listen', true, []), shelf('currently-listening', 'Currently Listening', true, ['BrineTide001']),
+			shelf('listened', 'Listened', true, ['Tidewater001', 'PaperFen0001']), shelf('favorites', 'Favorites', false, ['LntrnHours01'])],
 		series: { SrsGullIsle1: { id: 'SrsGullIsle1', title: 'Gull Isle', books: ['Tidewater001', 'BrineTide001', 'GullSong0001'].map((id, i) => ({ ordinal: String(i + 1), book: { id, title: books[id].title } })) } },
 		people: { PrsnVale0001: { id: 'PrsnVale0001', name: 'Ann Vale', roles: ['Tidewater001', 'BrineTide001', 'PaperFen0001', 'GullSong0001'].map(id => ({ role: { name: 'Author' }, book: { id, title: books[id].title } })) } },
 		onAdd: null,   // called with each book put on a shelf, before it is
@@ -191,6 +192,7 @@ export function fakeAudiobookdb(state = audiobookdbState()) {
 				const book = state.books[body.bookId];
 				if (!book) return error(404, 'Not Found');
 				if (state.onAdd) state.onAdd(body.bookId);
+				if (!shelf.books) shelf.books = [];
 				if (!shelf.books.some(b => b.id === body.bookId)) shelf.books.push({ id: book.id, title: book.title, people: book.people, addedAt: '2026-10-23T00:00:00Z' });
 				shelf.bookCount = shelf.books.length;
 				return json(200, shelf);

@@ -56,9 +56,9 @@ export class AudiobookdbClient {
 			if(this.asked++) await this.pause(this.gap);
 			const init = {...body ? {method: 'POST', body: JSON.stringify(body)} : {}, ...keyed && this.key ? {key: this.key} : {}};
 			const res = await this.get(`audiobookdb/${path}`, init);
-			if(res.status === 429 && attempt < RETRIES){
-				const wait = Number(res.headers && res.headers.get('Retry-After'));
-				await this.pause(1000 * Math.min(LONGEST_WAIT, wait > 0 ? wait : 10));
+			const wait = res.status === 429 ? AudiobookdbClient.waitFor(res.headers) : 0;
+			if(res.status === 429 && attempt < RETRIES && wait <= LONGEST_WAIT){
+				await this.pause(1000 * wait);
 				continue;
 			}
 			if(res.status === 404) return null;
@@ -74,6 +74,21 @@ export class AudiobookdbClient {
 			if(!res.ok || json === null) throw new Error(`AudiobookDB answered ${res.status}${said}`);
 			return json;
 		}
+	}
+
+	/**
+	 * How many seconds AudiobookDB asks to wait before asking again: its Retry-After, else until its
+	 * ratelimit-reset (the time the budget is filled again, in seconds since 1970, or seconds from now), else 10.
+	 * @param {Headers | undefined} headers
+	 * @param {number} [now] milliseconds since 1970
+	 * @returns {number}
+	 */
+	static waitFor(headers, now = Date.now()){
+		const retry = Number(headers && headers.get('Retry-After'));
+		if(retry > 0) return retry;
+		const reset = Number(headers && headers.get('ratelimit-reset'));
+		if(reset > 0) return Math.max(1, Math.ceil(reset > 1e9 ? reset - now / 1000 : reset));
+		return 10;
 	}
 
 	/**

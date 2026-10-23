@@ -2734,9 +2734,9 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	await els.audiobookdbCompareBtn.listeners.click[0]();
 	await idle();
 	html = readable(els.importPreviewBody.innerHTML);
-	assert.match(html, /^<p>2 books in this catalog, 2 of them on AudiobookDB, 2 books on your AudiobookDB Read shelf \(took 0:00\)<\/p>/);
+	assert.match(html, /^<p>2 books in this catalog, 2 of them on AudiobookDB, 2 books on your AudiobookDB Listened shelf \(took 0:00\)<\/p>/);
 	assert.match(html, /New from AudiobookDB \(1\)<\/h4><ul class="cmpRows"><li><label class="cmpPick"><input type="checkbox" data-pick="take:0" checked=""> Tidewater — Ann Vale {2}\[Gull Isle #1\]/);
-	assert.match(html, /Not on your AudiobookDB Read shelf \(1\)<\/h4>.*<input type="checkbox" data-pick="add:0"> Lantern Hours — R\. T\. Hale<\/label>/);
+	assert.match(html, /Not on your AudiobookDB Listened shelf \(1\)<\/h4>.*<input type="checkbox" data-pick="add:0"> Lantern Hours — R\. T\. Hale<\/label>/);
 	assert.match(html, /On another AudiobookDB shelf, left alone \(1\)<\/h4>.*Brine Tide — Ann Vale {2}\[Gull Isle #2\]: Currently Listening/);
 	assert.match(html, /Not added, as AudiobookDB has several releases of them and none is yours: 1\..*The Paper Fen — Ann Vale/);
 	assert.match(html, /Save the AudiobookDB ids found for 2 books, 5 series and people/);
@@ -2765,10 +2765,10 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	assert.deepEqual(saved.seriesInfo['Gull Isle'].ext, { audiobookdb: 'SrsGullIsle1' });
 	assert.deepEqual(saved.narrators['Dana Fenwick'].ext, { audiobookdb: 'PrsnFnwk0001' });
 	assert.deepEqual(saved.publishers['Gullwing Audio'].ext, { audiobookdb: 'PblshrGullw1' });
-	assert.deepEqual(abdb.sent.filter(s => s.method === 'POST').map(s => [s.path, s.key]), [['users/username/reader/shelves/read/books', 'abdb-key-1']]);
-	assert.deepEqual(state.shelves[0].books.map(b => b.id), ['Tidewater001', 'PaperFen0001', 'LntrnHours01']);
+	assert.deepEqual(abdb.sent.filter(s => s.method === 'POST').map(s => [s.path, s.key]), [['users/username/reader/shelves/listened/books', 'abdb-key-1']]);
+	assert.deepEqual(state.shelves[2].books.map(b => b.id), ['Tidewater001', 'PaperFen0001', 'LntrnHours01']);
 	assert.ok(leaving.prevented, 'leaving while it sends is asked about');
-	assert.match(els.importPreviewBody.innerHTML, /put 1 book\(s\) on your AudiobookDB Read shelf/);
+	assert.match(els.importPreviewBody.innerHTML, /put 1 book\(s\) on your AudiobookDB Listened shelf/);
 	assert.match(els.ioStatus.textContent, /^Added 1 book, saved AudiobookDB ids found for 2 books and 5 series and people; AudiobookDB updated\./);
 	assert.ok(![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-audiobookdb-key' && v.includes('abdb-key-1')), 'the key is in no backup or record');
 
@@ -2776,7 +2776,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	await els.audiobookdbCompareBtn.listeners.click[0]();
 	await idle();
 	html = readable(els.importPreviewBody.innerHTML);
-	assert.doesNotMatch(html, /Not on your AudiobookDB Read shelf|New from AudiobookDB|Save the AudiobookDB ids/);
+	assert.doesNotMatch(html, /Not on your AudiobookDB Listened shelf|New from AudiobookDB|Save the AudiobookDB ids/);
 });
 
 test('an AudiobookDB comparison can be only a series\' or an author\'s books, and their pages link to it', async () => {
@@ -2795,7 +2795,7 @@ test('an AudiobookDB comparison can be only a series\' or an author\'s books, an
 	await idle();
 	assert.deepEqual([els.audiobookdbScope.value, els.audiobookdbScopeName.value], ['series', 'Gull Isle']);
 	const html = readable(els.importPreviewBody.innerHTML);
-	assert.match(html, /^<p>Only the series “Gull Isle”: 1 book in this catalog, 1 of them on AudiobookDB, 1 book on your AudiobookDB Read shelf/);
+	assert.match(html, /^<p>Only the series “Gull Isle”: 1 book in this catalog, 1 of them on AudiobookDB, 1 book on your AudiobookDB Listened shelf/);
 	assert.match(html, /New from AudiobookDB \(1\)<\/h4>.*Tidewater — Ann Vale/);
 	assert.doesNotMatch(html, /Paper Fen|Lantern Hours/);
 	assert.match(html, /On another AudiobookDB shelf, left alone \(1\)<\/h4>.*Brine Tide/);
@@ -2811,8 +2811,8 @@ test('an AudiobookDB comparison can be only a series\' or an author\'s books, an
 	await els.audiobookdbCompareBtn.listeners.click[0]();
 	await idle();
 	const byHale = readable(els.importPreviewBody.innerHTML);
-	assert.match(byHale, /^<p>Only books by R\. T\. Hale: 1 book in this catalog, 1 of them on AudiobookDB, 0 books on your AudiobookDB Read shelf/);
-	assert.match(byHale, /Not on your AudiobookDB Read shelf \(1\)<\/h4>.*Lantern Hours/);
+	assert.match(byHale, /^<p>Only books by R\. T\. Hale: 1 book in this catalog, 1 of them on AudiobookDB, 0 books on your AudiobookDB Listened shelf/);
+	assert.match(byHale, /Not on your AudiobookDB Listened shelf \(1\)<\/h4>.*Lantern Hours/);
 	assert.doesNotMatch(byHale, /Tidewater|Brine Tide/);
 });
 

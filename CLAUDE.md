@@ -100,7 +100,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     (`whoAmI`, `shelves`, `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release) and `AudiobookdbSync` (`compare`: finds your books
     (`find`: by their AudiobookDB id, else their own editions' ASINs), then with the key your Read shelf (`readShelf`) as incoming books (`incoming`: the release that is yours,
     else a lone one; none of several, so not `addable`); for a series or an author only that part (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and
-    people ids), `planExport` (every book on Read, as everything in the catalog counts as read; a book on another of AudiobookDB's own shelves is left alone), `push`; add-only:
+    people ids), `planExport` (every book on Read, as everything in the catalog counts as read; a book on another exclusive shelf, To Listen or Currently Listening, is left alone; Read is the Listened shelf), `push`; add-only:
     never takes a book off a shelf, makes a shelf or edits AudiobookDB's catalog).
   - `CatalogLookup` (the book form's *Fill in from another catalog*: `read` names what was pasted (an ISBN, an address or bare id), `find` looks the book up with
     the fetch, `HardcoverClient` and catalog proxy passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and

@@ -27,9 +27,10 @@ import {Catalog} from './catalog.js';
 /** @typedef {{kind: NamedKind, name: string, id: string}} AudiobookdbInfoId an AudiobookDB id found for a series or person of yours */
 /**
  * What an export to AudiobookDB would do (AudiobookdbSync.planExport()): the books to put on your Read shelf
- * (`shelf`, its slug), those on another of its own shelves (left alone), and those AudiobookDB doesn't have.
+ * (`shelf`, its slug, and `name`, as AudiobookDB shows it: *Listened*), those on another of its own shelves (left alone), and those AudiobookDB doesn't have.
  * @typedef {object} AudiobookdbPlan
  * @property {string} shelf
+ * @property {string} name
  * @property {{book: string, books: Book[]}[]} add
  * @property {[Book, string][]} otherShelf
  * @property {Book[]} unknown
@@ -181,7 +182,7 @@ export class AudiobookdbSync {
 		const problems = [];
 		for(let i = 0; i < plan.add.length; i++){
 			const a = plan.add[i];
-			step('Putting books on your AudiobookDB Read shelf', i, plan.add.length);
+			step(`Putting books on your AudiobookDB ${plan.name} shelf`, i, plan.add.length);
 			try{
 				await this.client.addToShelf(plan.shelf, a.book);
 				shelved++;
@@ -195,7 +196,7 @@ export class AudiobookdbSync {
 				}
 			}
 		}
-		out(`put ${shelved} book(s) on your AudiobookDB Read shelf`);
+		out(`put ${shelved} book(s) on your AudiobookDB ${plan.name} shelf`);
 		for(const p of problems.slice(0, 15)) out('    ! ' + p);
 		return problems.length ? 1 : 0;
 	}
@@ -388,9 +389,9 @@ export class AudiobookdbSync {
 	// --------------------------------------------------------------- the export
 	/**
 	 * What an export to AudiobookDB would do: each of your books (everything in the catalog counts as read)
-	 * goes on your Read shelf as its AudiobookDB book, unless it is there already. A book on another of
-	 * AudiobookDB's own shelves (Currently listening, say) is left alone, as sending never takes a book off one;
-	 * your own shelves don't count. Books without an AudiobookDB id are listed as unknown.
+	 * goes on your Read shelf as its AudiobookDB book, unless it is there already. A book on another of the
+	 * shelves that hold a book on one of them only (exclusive: To Listen, Currently Listening) is left alone, as
+	 * putting it on Read would take it off that one; the others (Favorites, your own) don't count. Books without an AudiobookDB id are listed as unknown.
 	 * @param {Book[]} books
 	 * @param {AudiobookdbShelf[]} shelves
 	 * @param {AudiobookdbShelf} read
@@ -398,11 +399,11 @@ export class AudiobookdbSync {
 	 */
 	static planExport(books, shelves, read){
 		/** @type {AudiobookdbPlan} */
-		const plan = {shelf: read.slug, add: [], otherShelf: [], unknown: []};
-		const onRead = new Set(read.books.map(b => b.id));
+		const plan = {shelf: read.slug, name: tidyText(read.name) || read.slug, add: [], otherShelf: [], unknown: []};
+		const onRead = new Set(list(read.books).map(b => b.id));
 		/** @type {Map<unknown, string>} */
 		const elsewhere = new Map();
-		for(const s of shelves) if(s !== read && s.isDefault) for(const b of s.books) if(!elsewhere.has(b.id)) elsewhere.set(b.id, tidyText(s.name) || s.slug);
+		for(const s of shelves) if(s !== read && s.isExclusive) for(const b of list(s.books)) if(!elsewhere.has(b.id)) elsewhere.set(b.id, tidyText(s.name) || s.slug);
 		/** @type {Map<string, Book[]>} */
 		const wanted = new Map();
 		for(const b of books){
