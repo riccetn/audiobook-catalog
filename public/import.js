@@ -1,37 +1,36 @@
-// The import and export page: comparing the catalog with Audible and Goodreads exports and with Hardcover and
-// AudiobookDB, to take books and values from them (and send books and reads to Hardcover and AudiobookDB), and backups.
-// It shows only how many books there are until an action needs every book (an import, Check, Box sets,
-// Hardcover, AudiobookDB, Export, Restore or Merge), and then holds the whole catalog. Loading and saving live in store.js.
+// The import and export page: comparing the catalog with export files (Audible's, Goodreads') and with catalogs'
+// shelves (Hardcover's, AudiobookDB's), to take books and values from them (and send books and reads to those
+// shelves), files for other catalogs' imports, and backups. It knows the external catalogs only through
+// CatalogConnectors and their base classes (FileImporter, FileExporter, ShelfSync, CatalogClient), and each
+// catalog's panel by its prefix (its CATALOG). It shows only how many books there are until an action needs
+// every book (an import, Check, Box sets, a comparison, Export, Restore or Merge), and then holds the whole
+// catalog. Loading and saving live in store.js.
 import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
 import {Backup} from './modules/backup.js';
 import {CatalogRecords} from './modules/catalog-records.js';
-import {AudibleImporter} from './modules/audible-importer.js';
-import {GoodreadsImporter} from './modules/goodreads-importer.js';
-import {GoodreadsExporter} from './modules/goodreads-exporter.js';
-import {HardcoverClient} from './modules/hardcover-client.js';
-import {HardcoverSync} from './modules/hardcover-sync.js';
-import {AudiobookdbSync} from './modules/audiobookdb-sync.js';
+import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {Comparison} from './modules/comparison.js';
 import {
 	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, showIoStatus,
-	minutes, showCatalogJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken, PROXY_STORAGE_KEY, browserProxy, proxyAddress, fetchViaProxy,
-	hardcoverClient, AUDIOBOOKDB_KEY_STORAGE, browserAudiobookdbKey, audiobookdbClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, valueFromPageHash, idFromAddress, buildElement, fillElement,
+	minutes, showCatalogJob, PROXY_STORAGE_KEY, browserProxy, proxyAddress, fetchViaProxy,
+	savedKey, saveKey, catalogClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, valueFromPageHash, idFromAddress, buildElement, fillElement,
 	noteBackup, backupAge, backupAgeText
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
-/** @import {Importer} from './modules/importer.js' */
+/** @import {FileImporter} from './modules/file-importer.js' */
+/** @import {FileExporter} from './modules/file-exporter.js' */
+/** @import {ShelfSync, ShelfComparison, SyncPlan} from './modules/shelf-sync.js' */
+/** @import {ClientClass} from './modules/catalog-client.js' */
 /** @import {CatalogJob} from './store.js' */
 /** @import {MergeOptions, MergeReport} from './modules/merger.js' */
 /** @import {ComparisonResult, ComparedBook, Difference} from './modules/comparison.js' */
-/** @import {HardcoverComparison, HardcoverPlan, HardcoverPart} from './modules/hardcover-sync.js' */
-/** @import {AudiobookdbComparison, AudiobookdbPlan, AudiobookdbPart} from './modules/audiobookdb-sync.js' */
-/** @import {Step} from './modules/hardcover-client.js' */
+/** @import {Step} from './modules/catalog-client.js' */
 
 /** @typedef {CatalogJob['mode']} CatalogMode */
-/** @typedef {'audible' | 'goodreads'} ImportKind */
-/** @typedef {'hardcover' | 'audiobookdb'} OnlineCatalog a catalog compared online, by its panel's prefix */
+/** @typedef {typeof FileImporter} ImporterClass */
+/** @typedef {typeof ShelfSync} SyncClass */
 
 function refreshPage(){
 	return afterSaving(async ()=>{
@@ -89,14 +88,15 @@ function exportBackup(){
 	noteBackup().then(refreshPage);
 }
 
-function exportGoodreads(){
-	const out = new GoodreadsExporter().write(CATALOG.books);
-	download(out.csv, 'text/csv', 'goodreads-import');
-	/** @type {string[]} */
-	const notes = [];
-	if(out.withoutIds) notes.push(`${out.withoutIds} without a Goodreads id or ISBN, which Goodreads finds by title and author`);
-	if(out.withoutDate) notes.push(`${out.withoutDate} without a full date read`);
-	showIoStatus(`Goodreads CSV with ${out.books} books downloaded${notes.length ? ' (' + notes.join('; ') + ')' : ''}.`);
+/**
+ * Download the catalog as an export file for another catalog's import.
+ * @param {FileExporter} exporter
+ */
+function exportFile(exporter){
+	const {LABEL, FORMAT, FILE_NAME, TYPE} = exporter.kind;
+	const out = exporter.write(CATALOG.books);
+	download(out.text, TYPE, FILE_NAME);
+	showIoStatus(`${LABEL} ${FORMAT} with ${out.books} books downloaded${out.notes.length ? ' (' + out.notes.join('; ') + ')' : ''}.`);
 }
 
 /**
@@ -154,45 +154,49 @@ async function importBackup(files){
 	}
 }
 
-// ------------------------------------------------------------ Comparing with Audible, Goodreads, Hardcover and AudiobookDB
+// ------------------------------------------------------------ Comparing with export files and catalogs' shelves
 // An import shows the books of the other source beside this catalog's (Comparison), and takes only what is
 // ticked: the books to import (new ones, and those it has more of), and the values of the other source to put
-// in place of this catalog's. For Hardcover and AudiobookDB the same view also picks books (and reads) to put there.
-// Like every edit in the page, the result is then saved (see persist).
-/** @type {Record<ImportKind, () => Importer>} */
-const IMPORTERS = {
-	// an Audible export's ASINs are those of the site picked beside the buttons (audible.com unless changed)
-	audible: ()=> new AudibleImporter(fieldById('audibleImportSite').value),
-	goodreads: ()=> new GoodreadsImporter(),
-};
-/** @type {ImportKind} */
-let IMPORT_KIND = 'audible';
+// in place of this catalog's. For a catalog's shelves (ShelfSync) the same view also picks books (and reads) to
+// put there. Like every edit in the page, the result is then saved (see persist).
+/**
+ * An importer of `Importer`'s files; the site picked beside its button, for an export of a catalog with
+ * several (Audible's ASINs are those of the site picked, audible.com unless changed).
+ * @param {ImporterClass} Importer
+ * @returns {FileImporter}
+ */
+function importerOf(Importer){
+	const site = document.getElementById(`${Importer.CATALOG}ImportSite`);
+	return new /** @type {new (site?: string) => FileImporter} */ (Importer)(site ? /** @type {HTMLSelectElement} */ (site).value : undefined);
+}
+/** @type {ImporterClass} */
+let IMPORT_KIND = CatalogConnectors.IMPORTERS[0];
 
 /**
  * What is ticked in a comparison: the incoming books to import (by place), those whose edition goes into the
- * book they find (an edition ticked imports its book), the differences to take (by key), the Hardcover or
- * AudiobookDB plan's books to put on the Read shelf and reads to add (by place), and whether to keep the ids found there.
+ * book they find (an edition ticked imports its book), the differences to take (by key), the books of a
+ * catalog's plan to put on its Read shelf and reads to add (by place), and whether to keep the ids found there.
  * @typedef {{take: Set<number>, editions: Set<number>, patch: Set<string>, add: Set<number>, reads: Set<number>, ids: boolean}} ComparePicks
  */
 /**
  * A comparison open in the preview.
  * @typedef {object} PendingCompare
- * @property {ImportKind | OnlineCatalog} source
+ * @property {string} source the other source's catalog (its panel's prefix)
  * @property {string} name the other source's name, as the page says it
+ * @property {boolean} editionsYours whether its editions are yours (an export of your library's), so they are ticked
  * @property {string[]} notes lines on top: what was read
  * @property {Book[]} incoming
  * @property {MergeOptions} [opts]
  * @property {ComparisonResult} comparison
  * @property {string[]} warnings
- * @property {HardcoverComparison | null} hardcover
- * @property {AudiobookdbComparison | null} audiobookdb
+ * @property {{sync: ShelfSync, result: ShelfComparison} | null} online the comparison with a catalog's shelves
  * @property {ComparePicks} picks
  */
 /** @type {PendingCompare | null} */
 let PENDING_COMPARE = null;   // until it is applied or closed
 
 /**
- * A comparison to open, with what an import would take ticked; but the edition Goodreads or Hardcover has
+ * A comparison to open, with what an import would take ticked; but the edition a catalog has
  * for a book you have is unticked, as it may be one picked there for want of the one you have.
  * @param {Omit<PendingCompare, 'picks'>} compare
  * @returns {PendingCompare}
@@ -200,7 +204,7 @@ let PENDING_COMPARE = null;   // until it is applied or closed
 function pendingCompare(compare){
 	const books = compare.comparison.books;
 	const take = new Set(books.filter(b=> b.kind === 'new' || (b.kind === 'gains' && (b.gains.length || b.added.length))).map(b=> b.at));
-	const editions = new Set(compare.source === 'audible' ? books.filter(b=> b.editionGains.length).map(b=> b.at) : []);
+	const editions = new Set(compare.editionsYours ? books.filter(b=> b.editionGains.length).map(b=> b.at) : []);
 	return {...compare, picks: {take, editions, patch: new Set(), add: new Set(), reads: new Set(), ids: true}};
 }
 
@@ -238,13 +242,13 @@ function pickedCount(compare){
 }
 
 /**
- * How many books, series and people gain an id found on Hardcover or AudiobookDB in a comparison.
+ * How many books, series and people gain an id found on a catalog in a comparison with its shelves.
  * @param {PendingCompare} compare
  * @returns {number}
  */
 function idsToSave(compare){
-	const {hardcover, audiobookdb} = compare;
-	return hardcover ? hardcover.idsFound.length : audiobookdb ? audiobookdb.idsFound.length + audiobookdb.infoIds.length : 0;
+	const {online} = compare;
+	return online ? online.result.idsFound.length + online.result.infoIds.length : 0;
 }
 
 /**
@@ -337,7 +341,7 @@ function differenceRow(d, name){
 /** Draw the comparison open (PENDING_COMPARE) in the preview. */
 function drawCompare(){
 	const compare = /** @type {PendingCompare} */ (PENDING_COMPARE);
-	const {name, comparison, hardcover, audiobookdb} = compare;
+	const {name, comparison, online} = compare;
 	const books = comparison.books;
 	const of = (/** @type {ComparedBook['kind']} */ kind)=> books.filter(b=> b.kind === kind);
 	const fresh = of('new'), gains = of('gains');
@@ -354,64 +358,66 @@ function drawCompare(){
 	out.push(compareGroup(`${name} has more`, gains.map(b=> b.gains.length || b.added.length
 		? [pickBox('take', b.at, [Comparison.bookLine(b.books[0] || b.theirs)]), messageList([...b.gains, ...b.added.map(a=> `adds ${Comparison.bookLine(a)}`)]), fromEdition(b)]
 		: [buildElement('span', {class: 'cmpBook'}, Comparison.bookLine(b.books[0])), fromEdition(b)]), 'take', gains.filter(b=> b.gains.length || b.added.length).map(b=> b.at),
-		spell(compare.source === 'audible' ? 'Ticked, importing fills in what this catalog lacks, and changes nothing it has.'
+		spell(compare.editionsYours ? 'Ticked, importing fills in what this catalog lacks, and changes nothing it has.'
 			: `Ticked, importing fills in what this catalog lacks, and changes nothing it has. The ${name} edition is left out unless you tick it, as it may have been picked there for want of yours.`)));
 	out.push(compareGroup('Different in both', differing.map(b=> [buildElement('span', {class: 'cmpBook'}, Comparison.bookLine(b.books[0])),
 		buildElement('ul', {}, b.differences.map(d=> differenceRow(d, name)))]),
 		'patch', differing.flatMap(b=> b.differences.map(d=> d.key)), spell(`Tick a value to use the one on ${name} in place of this catalog's.` +
-			(compare.source === 'audible' ? '' : ` An edition's values are those of the edition picked on ${name}, which may not be yours.`))));
+			(compare.editionsYours ? '' : ` An edition's values are those of the edition picked on ${name}, which may not be yours.`))));
 
-	if(hardcover){
-		const {plan} = hardcover;
-		const dates = (/** @type {string[]} */ d)=> d.length ? `: read ${d.join(', ')}` : '';
-		out.push(compareGroup('Not on your Hardcover Read shelf', plan.add.map((a, i)=> pickBox('add', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)])),
-			'add', plan.add.map((a, i)=> i), 'Tick a book to put it on your Read shelf on Hardcover, with its dates read.'));
-		out.push(compareGroup('Reads Hardcover lacks', plan.reads.map((a, i)=> pickBox('reads', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)])),
-			'reads', plan.reads.map((a, i)=> i), 'Tick a book to add these reads to it on Hardcover.'));
-		if(hardcover.idsFound.length){
-			out.push(buildElement('label', {class: 'cmpPick cmpIds'}, buildElement('input', {type: 'checkbox', 'data-pick': 'ids', checked: compare.picks.ids,
-				onchange: (/** @type {Event} */ e)=>{ compare.picks.ids = /** @type {HTMLInputElement} */ (e.currentTarget).checked; updateApplyButton(); }}),
-				` Save the Hardcover ids found for ${Text.plural(hardcover.idsFound.length, 'book')}`));
-		}
-		out.push(compareGroup('On another Hardcover shelf, left alone', plan.otherShelf.map(([b, status])=> `${Comparison.bookLine(b)}: ${status}`), null, []));
-		out.push(compareGroup('Not found on Hardcover', plan.unknown.map(Comparison.bookLine), null, [],
-			'No ASIN, ISBN or Goodreads id Hardcover knows: give the book a "Hardcover <edition id>" in its edit form.'));
-		if(plan.inexact.length) out.push(para(`Dates read without a day, which Hardcover can't take: ${plan.inexact.length}`));
-	} else if(audiobookdb){
-		const {plan, idsFound, infoIds} = audiobookdb;
-		if(plan){
-			out.push(compareGroup(`Not on your AudiobookDB ${plan.name} shelf`, plan.add.map((a, i)=> pickBox('add', i, [a.books.map(Comparison.bookLine).join('; ')])),
-				'add', plan.add.map((a, i)=> i), `Tick a book to put it on your ${plan.name} shelf on AudiobookDB.`));
-			out.push(compareGroup('On another AudiobookDB shelf, left alone', plan.otherShelf.map(([b, shelf])=> `${Comparison.bookLine(b)}: ${shelf}`), null, []));
-			out.push(compareGroup('Not found on AudiobookDB', plan.unknown.map(Comparison.bookLine), null, [],
-				'No ASIN AudiobookDB knows: give the book its AudiobookDB id in its edit form, or add it on audiobookdb.org.'));
-		} else out.push(para('Save your AudiobookDB API key (below the buttons) to compare your shelves too, and to put books on them.'));
-		if(idsFound.length || infoIds.length){
-			const saving = [idsFound.length && Text.plural(idsFound.length, 'book'), infoIds.length && Text.plural(infoIds.length, 'series or person', 'series and people')].filter(Boolean).join(', ');
-			out.push(buildElement('label', {class: 'cmpPick cmpIds'}, buildElement('input', {type: 'checkbox', 'data-pick': 'ids', checked: compare.picks.ids,
-				onchange: (/** @type {Event} */ e)=>{ compare.picks.ids = /** @type {HTMLInputElement} */ (e.currentTarget).checked; updateApplyButton(); }}),
-				` Save the AudiobookDB ids and covers found for ${saving}`));
-		}
-		if(audiobookdb.missing.length){
-			out.push(buildElement('details', {class: 'cmpOnlyHere'}, buildElement('summary', {}, spell(`In the series on AudiobookDB, not in this catalog: ${audiobookdb.missing.length}`)),
-				messageList(audiobookdb.missing, 100)));
-		}
-	} else if(comparison.onlyHere.length){
+	if(online) out.push(...shelfSections(compare, online.sync, online.result));
+	else if(comparison.onlyHere.length){
 		out.push(buildElement('details', {class: 'cmpOnlyHere'}, buildElement('summary', {}, spell(`Only in this catalog: ${comparison.onlyHere.length}`)),
 			messageList(comparison.onlyHere.map(Comparison.bookLine), 100)));
 	}
 	const excluded = of('excluded'), notAdded = of('notAdded');
 	if(excluded.length) out.push(para(`Skipped (excluded from imports): ${excluded.length}`), messageList(excluded.map(b=> Comparison.bookLine(b.theirs)), 10));
-	if(notAdded.length){
-		out.push(para(spell(audiobookdb ? `Not added, as AudiobookDB has several releases of them and none is yours: ${notAdded.length}. Add them from the book form with your release's address.`
-			: `Not added, as Hardcover has no audiobook edition picked for them: ${notAdded.length}`)), messageList(notAdded.map(b=> Comparison.bookLine(b.theirs)), 10));
+	if(notAdded.length && online){
+		out.push(para(spell(online.sync.kind.notAdded(notAdded.length))), messageList(notAdded.map(b=> Comparison.bookLine(b.theirs)), 10));
 	}
 	if(compare.warnings.length) out.push(para(`Needs a look (${compare.warnings.length}):`, 'warn'), messageList(compare.warnings));
-	if(!pickedCount(compare) && !fresh.length && !gains.length && !differing.length && !(hardcover && (hardcover.plan.add.length || hardcover.plan.reads.length))
-		&& !(audiobookdb && audiobookdb.plan && audiobookdb.plan.add.length)){
+	const plan = online && online.result.plan;
+	if(!pickedCount(compare) && !fresh.length && !gains.length && !differing.length && !(plan && (plan.add.length || plan.reads.length))){
 		out.push(para(spell('Nothing to take or send: both have the same.')));
 	}
 	showPreview(spell(`Compare with ${name}`), out, applyLabel());
+}
+
+/**
+ * The part of a comparison that is about a catalog's shelves: what putting your books there would do, to
+ * tick, and the ids found there to keep.
+ * @param {PendingCompare} compare
+ * @param {ShelfSync} sync
+ * @param {ShelfComparison} result
+ * @returns {Child[]}
+ */
+function shelfSections(compare, sync, result){
+	const label = sync.label, {plan, idsFound, infoIds} = result;
+	/** @type {Child[]} */
+	const out = [];
+	if(plan){
+		const dates = (/** @type {string[] | undefined} */ d)=> d && d.length ? `: read ${d.join(', ')}` : '';
+		out.push(compareGroup(`Not on your ${label} ${plan.name} shelf`, plan.add.map((a, i)=> pickBox('add', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)])),
+			'add', plan.add.map((a, i)=> i), `Tick a book to put it on your ${plan.name} shelf on ${label}${sync.kind.SENDS_READS ? ', with its dates read' : ''}.`));
+		out.push(compareGroup(`Reads ${label} lacks`, plan.reads.map((a, i)=> pickBox('reads', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)])),
+			'reads', plan.reads.map((a, i)=> i), `Tick a book to add these reads to it on ${label}.`));
+	} else out.push(para(`Save your ${label} ${sync.kind.CLIENT.KEY_NAME} (below the buttons) to compare your shelves too, and to put books on them.`));
+	if(idsFound.length || infoIds.length){
+		const saving = [idsFound.length && Text.plural(idsFound.length, 'book'), infoIds.length && Text.plural(infoIds.length, 'series or person', 'series and people')].filter(Boolean).join(', ');
+		out.push(buildElement('label', {class: 'cmpPick cmpIds'}, buildElement('input', {type: 'checkbox', 'data-pick': 'ids', checked: compare.picks.ids,
+			onchange: (/** @type {Event} */ e)=>{ compare.picks.ids = /** @type {HTMLInputElement} */ (e.currentTarget).checked; updateApplyButton(); }}),
+			` Save the ${label} ${sync.kind.FOUND} found for ${saving}`));
+	}
+	if(plan){
+		out.push(compareGroup(`On another ${label} shelf, left alone`, plan.otherShelf.map(([b, shelf])=> `${Comparison.bookLine(b)}: ${shelf}`), null, []));
+		out.push(compareGroup(`Not found on ${label}`, plan.unknown.map(Comparison.bookLine), null, [], sync.kind.NOT_FOUND));
+		if(plan.inexact.length) out.push(para(`Dates read without a day, which ${label} can't take: ${plan.inexact.length}`));
+	}
+	if(result.missing.length){
+		out.push(buildElement('details', {class: 'cmpOnlyHere'}, buildElement('summary', {}, spell(`In the series on ${label}, not in this catalog: ${result.missing.length}`)),
+			messageList(result.missing, 100)));
+	}
+	return out;
 }
 
 /**
@@ -426,18 +432,18 @@ function openCompare(compare){
 }
 
 /**
- * Show the books of an Audible or Goodreads export beside this catalog's.
- * @param {ImportKind} kind
+ * Show the books of an export file beside this catalog's.
+ * @param {ImporterClass} Importer
  * @param {string} text the export's text
  * @param {string} fileName
  */
-function compareExport(kind, text, fileName){
-	const importer = IMPORTERS[kind]();
+function compareExport(Importer, text, fileName){
+	const importer = importerOf(Importer);
 	const result = importer.read(text);
 	const notes = [`${Text.plural(result.books.length, 'finished book')} read from ${fileName}`];
 	if(result.skippedUnfinished) notes.push(`Not finished yet, skipped: ${result.skippedUnfinished}`);
-	openCompare({source: kind, name: importer.label, notes, incoming: result.books, comparison: Comparison.compare(CATALOG, result.books),
-		warnings: result.warnings, hardcover: null, audiobookdb: null});
+	openCompare({source: Importer.CATALOG, name: importer.label, editionsYours: Importer.EDITIONS_YOURS, notes, incoming: result.books,
+		comparison: Comparison.compare(CATALOG, result.books), warnings: result.warnings, online: null});
 }
 
 /**
@@ -448,10 +454,9 @@ function applyIntoCopy(compare){
 	const copy = CATALOG.clone();
 	const {take, editions} = compare.picks;
 	const {report, patched} = Comparison.apply(copy, compare.incoming, {...compare.picks, take: new Set([...take, ...editions])}, compare.opts);
-	const {hardcover, audiobookdb, picks} = compare;
-	const idsFound = !picks.ids ? 0 : hardcover ? HardcoverSync.addIds(copy.books, hardcover.found).length
-		: audiobookdb ? AudiobookdbSync.addIds(copy.books, audiobookdb.found).length : 0;
-	const infoIds = picks.ids && audiobookdb ? AudiobookdbSync.setInfoIds(copy, audiobookdb.infoIds) : 0;
+	const {online, picks} = compare;
+	const idsFound = picks.ids && online ? online.sync.kind.addIds(copy.books, online.result.found).length : 0;
+	const infoIds = picks.ids && online ? online.sync.kind.setInfoIds(copy, online.result.infoIds) : 0;
 	const errors = copy.bookErrors();
 	return {copy, report, patched, idsFound, infoIds, errors};
 }
@@ -460,12 +465,12 @@ function applyIntoCopy(compare){
  * What applying a comparison did here, as the status line says it: "Added 2 books, filled in 1 ASIN, changed 1 value".
  * @param {MergeReport} report
  * @param {number} patched
- * @param {number} [idsFound] books that got a Hardcover or AudiobookDB id (or AudiobookDB cover) found for them
- * @param {string} [found] what was found for them, and where
- * @param {number} [infoIds] series and people that got an AudiobookDB id
+ * @param {number} [idsFound] books that got an id (or a cover) found for them on the catalog compared
+ * @param {string} [found] where, and what was found ("AudiobookDB ids and covers")
+ * @param {number} [infoIds] series and people that got an id found there
  * @returns {string}
  */
-function appliedText(report, patched, idsFound = 0, found = 'Hardcover ids', infoIds = 0){
+function appliedText(report, patched, idsFound = 0, found = '', infoIds = 0){
 	/** @type {[Book[], (n: number) => string][]} */
 	const filled = [[report.backfilled, n=> `filled in ${Text.plural(n, 'ASIN')}`], [report.goodreadsFilled, n=> `filled in ${Text.plural(n, 'Goodreads id')}`],
 		[report.hardcoverFilled, n=> `filled in Hardcover ids on ${Text.plural(n, 'book')}`], [report.datesFilled, n=> `filled in dates read on ${Text.plural(n, 'book')}`],
@@ -479,8 +484,7 @@ function appliedText(report, patched, idsFound = 0, found = 'Hardcover ids', inf
 function applyCompare(){
 	const compare = PENDING_COMPARE;
 	if(!compare) return;
-	if(compare.hardcover) return applyHardcover(compare);
-	if(compare.audiobookdb) return applyAudiobookdb(compare);
+	if(compare.online) return applyShelfSync(compare);
 	closeImportPreview();
 	// applied to the catalog as it is now, in case books were edited while the comparison was open
 	const {copy, report, patched, errors} = applyIntoCopy(compare);
@@ -656,41 +660,45 @@ function applyTidy(){
 	showIoStatus(`Added ${Text.plural(added, 'book')} for box sets.`);
 }
 
-// ------------------------------------------------------------ Hardcover
-// The page asks Hardcover itself, as Hardcover's API allows browser requests, with a token kept in this
-// browser only (never in a backup). Comparing only reads Hardcover; applying saves the catalog first, then
-// sends what was ticked, and that stops if you leave the page, so the browser asks first.
+// ------------------------------------------------------------ the catalogs' shelves, and your keys for them
+// Each catalog in CatalogConnectors.SYNCS has a panel (its prefix is its client's CATALOG), with its Compare
+// button and your key for it (Hardcover's token, AudiobookDB's API key), kept in this browser only (never in a
+// backup). Comparing only reads the catalog; applying saves the catalog first, then sends what was ticked,
+// and that stops if you leave the page, so the browser asks first.
 /** @type {CatalogJob | null} */
 let PAGE_RUN = null;           // a run going on in this page (showCatalogJob)
 
-function showHardcoverToken(){
-	const saved = Boolean(browserHardcoverToken());
-	byId('hardcoverTokenState').textContent = saved
-		? 'Your Hardcover API token is saved in this browser only (never in a backup).'
-		: 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept in this browser only (never in a backup).';
-	byId('hardcoverTokenRemove').style.display = saved ? '' : 'none';
+/**
+ * Say in its panel whether your key for `Client`'s catalog is saved.
+ * @param {ClientClass} Client
+ */
+function showKey(Client){
+	const saved = Boolean(savedKey(Client)), prefix = Client.CATALOG;
+	byId(`${prefix}KeyState`).textContent = saved
+		? `Your ${Client.LABEL} ${Client.KEY_NAME} is saved in this browser only (never in a backup).` : Client.KEY_HELP;
+	byId(`${prefix}KeyRemove`).style.display = saved ? '' : 'none';
 }
 
 /**
- * Save the token pasted in the page in this browser, or `remove` the saved one.
+ * Save the key pasted in `Client`'s panel in this browser, or `remove` the saved one.
+ * @param {ClientClass} Client
  * @param {boolean} remove
  */
-function saveHardcoverToken(remove){
-	const input = fieldById('hardcoverToken');
-	if(!remove && !input.value.trim()){ showIoStatus('Paste your Hardcover API token first.', true); return; }
+function saveKeyOf(Client, remove){
+	const input = fieldById(`${Client.CATALOG}Key`), name = `${Client.LABEL} ${Client.KEY_NAME}`;
+	if(!remove && !Client.cleanKey(input.value)){ showIoStatus(`Paste your ${name} first.`, true); return; }
 	try{
-		if(remove) localStorage.removeItem(HARDCOVER_TOKEN_KEY);
-		else localStorage.setItem(HARDCOVER_TOKEN_KEY, HardcoverClient.cleanToken(input.value));
+		saveKey(Client, remove ? '' : input.value);
 		input.value = '';
-		showIoStatus(remove ? 'Hardcover token removed.' : 'Hardcover token saved.');
+		showIoStatus(remove ? `${name} removed.` : `${name} saved.`);
 	}catch{
-		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the token: this browser refused to store it.`, true);
+		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the ${Client.KEY_NAME}: this browser refused to store it.`, true);
 	}
-	showHardcoverToken();
+	showKey(Client);
 }
 
 // ------------------------------------------------------------ the catalog proxy
-// Its address and key are kept in this browser only (never in a backup), like the Hardcover token.
+// Its address and key are kept in this browser only (never in a backup), like your keys for the catalogs.
 function showProxy(){
 	const proxy = browserProxy();
 	byId('proxyState').textContent = proxy
@@ -743,7 +751,7 @@ async function checkProxy(saved){
 }
 
 /**
- * Run `task` with Hardcover or AudiobookDB (`catalog`), shown in the banner on top while it goes (as a `mode`
+ * Run `task` with a catalog's shelves (`catalog`, its name), shown in the banner on top while it goes (as a `mode`
  * job), handing it the step it reports its progress through. Resolves to what it gave or threw and how long it
  * took; to undefined when another run is going on.
  * @template T
@@ -776,8 +784,8 @@ async function withCatalogJob(catalog, mode, task){
 }
 
 /**
- * The part of the catalog to compare with Hardcover or AudiobookDB, as picked beside its panel's button: null for every book.
- * @param {OnlineCatalog} online
+ * The part of the catalog to compare with a catalog's shelves, as picked beside its panel's button: null for every book.
+ * @param {string} online the panel's prefix
  * @returns {{kind: 'series' | 'author', name: string, label: string} | null}
  */
 function scopeOf(online){
@@ -789,7 +797,7 @@ function scopeOf(online){
 
 /**
  * The name field shows for a series or an author, and offers the names in the catalog.
- * @param {OnlineCatalog} online
+ * @param {string} online the panel's prefix
  */
 function showScope(online){
 	const kind = fieldById(`${online}Scope`).value;
@@ -804,12 +812,13 @@ function showScope(online){
 }
 
 /**
- * A series' or an author's page links here to compare their books with Hardcover or AudiobookDB
+ * A series' or an author's page links here to compare their books with a catalog's shelves
  * (#hardcover-series=<id>, #audiobookdb-author=<id>): pick them beside that Compare button, and compare.
  */
 async function compareFromAddress(){
-	const online = /** @type {OnlineCatalog | undefined} */ ((/^#(hardcover|audiobookdb)-/.exec(location.hash) || [])[1]);
-	if(!online || !await holdWholeCatalog()) return;   // the names are the catalog's
+	const Sync = CatalogConnectors.SYNCS.find(S=> location.hash.startsWith(`#${S.CLIENT.CATALOG}-`));
+	if(!Sync || !await holdWholeCatalog()) return;   // the names are the catalog's
+	const online = Sync.CLIENT.CATALOG;
 	for(const [kind, key] of /** @type {const} */ ([['series', 'series'], ['author', 'authors']])){
 		const id = idFromAddress(key, valueFromPageHash(location.hash, `${online}-${kind}`));
 		const name = id === null ? undefined : CATALOG.nameOf(key, id);
@@ -818,201 +827,84 @@ async function compareFromAddress(){
 		fieldById(`${online}ScopeName`).value = name;
 		showScope(online);
 		byId(`${online}Panel`).scrollIntoView({block: 'start'});
-		await (online === 'hardcover' ? compareHardcover() : compareAudiobookdb());
+		await compareShelfSync(Sync);
 		return;
 	}
 }
 
 /**
- * A series or an author to compare with Hardcover, with the Hardcover id its info has (a number; a name kept
- * from a page's address is not one).
- * @param {'series' | 'author'} kind
- * @param {string} name
- * @returns {HardcoverPart}
+ * Show your shelves on `Sync`'s catalog beside this catalog, or beside a series' or an author's books. Only
+ * reads that catalog.
+ * @param {SyncClass} Sync
  */
-function hardcoverPart(kind, name){
-	const id = CATALOG.nameIds[kind === 'series' ? 'series' : 'authors'].get(name);
-	const info = id === undefined ? undefined : (kind === 'series' ? CATALOG.series : CATALOG.authors).get(id);
-	const hardcover = info && info.external.hardcover;
-	return {kind, name, ...hardcover && HardcoverClient.ID.test(hardcover) ? {hardcover} : {}};
-}
-
-// Show your Hardcover shelves beside this catalog, or beside a series' or an author's books. Only reads Hardcover.
-async function compareHardcover(){
+async function compareShelfSync(Sync){
 	if(PAGE_RUN) return;
-	const token = browserHardcoverToken();
-	if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
-	const scope = scopeOf('hardcover');
+	const Client = Sync.CLIENT, label = Client.LABEL, prefix = Client.CATALOG;
+	const key = savedKey(Client);
+	if(Client.VIA_PROXY && !browserProxy()){ showIoStatus(`${label} is asked through your catalog proxy: save one first (below).`, true); return; }
+	if(Client.KEY_NEEDED && !key){ showIoStatus(`Save your ${label} ${Client.KEY_NAME} first (below the buttons).`, true); return; }
+	const scope = scopeOf(prefix);
 	if(scope && !scope.name){ showIoStatus(`Type the ${scope.kind === 'series' ? 'series' : 'author'} to compare first.`, true); return; }
 	if(!await holdWholeCatalog()) return;
-	const inScope = scope ? Comparison.scope(scope.kind, scope.name) : null;
-	const here = inScope ? CATALOG.books.filter(inScope).length : CATALOG.books.length;
-	if(scope && !here){ showIoStatus(spell(`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`), true); return; }
+	if(scope && !Sync.inScope(CATALOG, scope).length){ showIoStatus(spell(`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`), true); return; }
 	closeImportPreview();
 	await whenSaved();   // compared with the catalog as saved
-	const run = await withCatalogJob('Hardcover', 'compare', step=> new HardcoverSync(hardcoverClient(token)).compare(CATALOG, step, scope ? hardcoverPart(scope.kind, scope.name) : undefined));
+	const sync = new /** @type {new (client: unknown) => ShelfSync} */ (Sync)(catalogClient(Client, key));
+	const run = await withCatalogJob(label, 'compare', step=> sync.compare(CATALOG, step, scope ? Sync.part(CATALOG, scope.kind, scope.name) : undefined));
 	if(!run) return;
-	const hc = run.value;
-	if(!hc){
-		showPreview(spell('Compare with Hardcover'), [para(`Couldn't compare: ${Text.errorText(run.error)}`, 'warn')], '', 'hardcoverPanel');
+	const result = run.value;
+	if(!result){
+		showPreview(spell(`Compare with ${label}`), [para(`Couldn't compare: ${Text.errorText(run.error)}`, 'warn')], '', `${prefix}Panel`);
 		return;
 	}
-	const notes = [scope
-		? spell(`Only ${scope.label}: ${Text.plural(here, 'book')} in this catalog, ${hc.incoming.length} on your Hardcover Read shelf (took ${minutes(run.elapsed)})`)
-		: `${Text.plural(hc.incoming.length, 'book')} on your Hardcover Read shelf` + (hc.otherShelves ? `, ${hc.otherShelves} on other shelves` : '') + ` (took ${minutes(run.elapsed)})`];
-	openCompare({source: 'hardcover', name: 'Hardcover', notes, incoming: hc.incoming, opts: hc.opts, comparison: hc.comparison,
-		warnings: hc.warnings, hardcover: hc, audiobookdb: null});
+	const notes = [spell(`${sync.summary(result, CATALOG, scope)} (took ${minutes(run.elapsed)})`)];
+	openCompare({source: prefix, name: label, editionsYours: false, notes, incoming: result.incoming, opts: result.opts, comparison: result.comparison,
+		warnings: result.warnings, online: {sync, result}});
 }
 
 /**
- * Take in what is ticked of a Hardcover comparison, save it, and then send what is ticked to Hardcover.
+ * Take in what is ticked of a comparison with a catalog's shelves, save it, and then send what is ticked there.
  * @param {PendingCompare} compare
  */
-async function applyHardcover(compare){
-	const hc = /** @type {HardcoverComparison} */ (compare.hardcover);
-	const token = browserHardcoverToken();
+async function applyShelfSync(compare){
+	const {sync, result} = /** @type {NonNullable<PendingCompare['online']>} */ (compare.online);
+	const Client = sync.kind.CLIENT, label = sync.label;
+	const key = savedKey(Client);
 	const {picks} = compare;
-	/** @type {HardcoverPlan} */
-	const plan = {add: hc.plan.add.filter((a, i)=> picks.add.has(i)), reads: hc.plan.reads.filter((a, i)=> picks.reads.has(i)), otherShelf: [], unknown: [], inexact: []};
+	/** @type {SyncPlan | null} */
+	const plan = result.plan && {...result.plan, add: result.plan.add.filter((a, i)=> picks.add.has(i)), reads: result.plan.reads.filter((a, i)=> picks.reads.has(i)),
+		otherShelf: [], unknown: [], inexact: []};
+	const sending = Boolean(plan && (plan.add.length || plan.reads.length));
 	if(PAGE_RUN) return;
-	if((plan.add.length || plan.reads.length) && !token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
+	if(sending && !key){ showIoStatus(`Save your ${label} ${Client.KEY_NAME} first (below the buttons).`, true); return; }
 	closeImportPreview();
 	await whenSaved();
 	if(await storedRevision() !== SEEN_REVISION){
-		showIoStatus(spell('The catalog was edited in another tab since you compared; nothing was changed, nothing sent to Hardcover. Compare again.'), true);
-		return;
-	}
-	const {copy, report, patched, idsFound, errors} = applyIntoCopy(compare);
-	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was changed, nothing sent to Hardcover.'), true); return; }
-	const here = appliedText(report, patched, idsFound);
-	if(JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books)){
-		CATALOG.books = copy.books;
-		await persist();   // kept before anything is sent, so the ids found stay even if Hardcover stops answering
-		refreshPage();
-	}
-	if(!plan.add.length && !plan.reads.length){ showIoStatus(here + '.'); return; }
-	/** @type {string[]} */
-	const lines = [];
-	const say = (/** @type {string} */ line)=>{ lines.push(line); };
-	const run = await withCatalogJob('Hardcover', 'send', step=> new HardcoverSync(hardcoverClient(/** @type {string} */ (token))).push(plan, say, say, step));
-	if(!run) return;
-	if(run.error) lines.push(`error: ${Text.errorText(run.error)}`);
-	const ok = !run.error && run.value === 0;
-	showPreview(`Hardcover updated (took ${minutes(run.elapsed)})`, [para(here + ' here.'), buildElement('pre', {}, lines.join('\n'))], '', 'hardcoverPanel');
-	showIoStatus(ok ? `${here}; Hardcover updated.` : 'Not everything went through on Hardcover; see the details.', !ok);
-}
-
-// ------------------------------------------------------------ AudiobookDB
-// AudiobookDB is asked through the catalog proxy, with your API key (kept in this browser only, never in a
-// backup) for your shelves. Comparing only reads it; applying saves the catalog first, then puts what was
-// ticked on your Read shelf there, which stops if you leave the page, so the browser asks first.
-function showAudiobookdbKey(){
-	const saved = Boolean(browserAudiobookdbKey());
-	byId('audiobookdbKeyState').textContent = saved
-		? 'Your AudiobookDB API key is saved in this browser only (never in a backup).'
-		: 'Paste an API key from audiobookdb.org (under your account) and save it, to compare your shelves and put books on them; it is kept in this browser only (never in a backup). Without it, Compare only finds your books there.';
-	byId('audiobookdbKeyRemove').style.display = saved ? '' : 'none';
-}
-
-/**
- * Save the AudiobookDB key pasted in the page in this browser, or `remove` the saved one.
- * @param {boolean} remove
- */
-function saveAudiobookdbKey(remove){
-	const input = fieldById('audiobookdbKey');
-	if(!remove && !input.value.trim()){ showIoStatus('Paste your AudiobookDB API key first.', true); return; }
-	try{
-		if(remove) localStorage.removeItem(AUDIOBOOKDB_KEY_STORAGE);
-		else localStorage.setItem(AUDIOBOOKDB_KEY_STORAGE, input.value.trim());
-		input.value = '';
-		showIoStatus(remove ? 'AudiobookDB key removed.' : 'AudiobookDB key saved.');
-	}catch{
-		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the key: this browser refused to store it.`, true);
-	}
-	showAudiobookdbKey();
-}
-
-/**
- * A series or an author to compare with AudiobookDB, with the AudiobookDB id its info has.
- * @param {'series' | 'author'} kind
- * @param {string} name
- * @returns {AudiobookdbPart}
- */
-function audiobookdbPart(kind, name){
-	const id = CATALOG.nameIds[kind === 'series' ? 'series' : 'authors'].get(name);
-	const info = id === undefined ? undefined : (kind === 'series' ? CATALOG.series : CATALOG.authors).get(id);
-	const audiobookdb = info && info.external.audiobookdb;
-	return {kind, name, ...audiobookdb ? {audiobookdb} : {}};
-}
-
-// Show your AudiobookDB shelves beside this catalog, or beside a series' or an author's books. Only reads AudiobookDB.
-async function compareAudiobookdb(){
-	if(PAGE_RUN) return;
-	if(!browserProxy()){ showIoStatus('AudiobookDB is asked through your catalog proxy: save one first (below).', true); return; }
-	const scope = scopeOf('audiobookdb');
-	if(scope && !scope.name){ showIoStatus(`Type the ${scope.kind === 'series' ? 'series' : 'author'} to compare first.`, true); return; }
-	if(!await holdWholeCatalog()) return;
-	const inScope = scope ? Comparison.scope(scope.kind, scope.name) : null;
-	const here = inScope ? CATALOG.books.filter(inScope).length : CATALOG.books.length;
-	if(scope && !here){ showIoStatus(spell(`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`), true); return; }
-	closeImportPreview();
-	await whenSaved();   // compared with the catalog as saved
-	const key = browserAudiobookdbKey();
-	const run = await withCatalogJob('AudiobookDB', 'compare', step=> new AudiobookdbSync(audiobookdbClient(key)).compare(CATALOG, step, scope ? audiobookdbPart(scope.kind, scope.name) : undefined));
-	if(!run) return;
-	const ab = run.value;
-	if(!ab){
-		showPreview('Compare with AudiobookDB', [para(`Couldn't compare: ${Text.errorText(run.error)}`, 'warn')], '', 'audiobookdbPanel');
-		return;
-	}
-	// the catalog's own books come first in the comparison's merged copy, with the ids found
-	const found = ab.comparison.merged.books.slice(0, CATALOG.books.length).filter(inScope || (()=> true)).filter(b=> b.idOn('audiobookdb')).length;
-	const shelf = ab.onShelf === null ? '' : `, ${Text.plural(ab.onShelf, 'book')} on your AudiobookDB ${ab.plan ? ab.plan.name : 'Read'} shelf`;
-	const notes = [spell(`${scope ? `Only ${scope.label}: ` : ''}${Text.plural(here, 'book')} in this catalog, ${found} of them on AudiobookDB${shelf} (took ${minutes(run.elapsed)})`)];
-	openCompare({source: 'audiobookdb', name: 'AudiobookDB', notes, incoming: ab.incoming, opts: ab.opts, comparison: ab.comparison,
-		warnings: ab.warnings, hardcover: null, audiobookdb: ab});
-}
-
-/**
- * Take in what is ticked of an AudiobookDB comparison, save it, and then put what is ticked on your Read shelf there.
- * @param {PendingCompare} compare
- */
-async function applyAudiobookdb(compare){
-	const ab = /** @type {AudiobookdbComparison} */ (compare.audiobookdb);
-	const key = browserAudiobookdbKey();
-	const {picks} = compare;
-	/** @type {AudiobookdbPlan | null} */
-	const plan = ab.plan && {...ab.plan, add: ab.plan.add.filter((a, i)=> picks.add.has(i)), otherShelf: [], unknown: []};
-	if(PAGE_RUN) return;
-	if(plan && plan.add.length && !key){ showIoStatus('Save your AudiobookDB API key first (below the buttons).', true); return; }
-	closeImportPreview();
-	await whenSaved();
-	if(await storedRevision() !== SEEN_REVISION){
-		showIoStatus(spell('The catalog was edited in another tab since you compared; nothing was changed, nothing sent to AudiobookDB. Compare again.'), true);
+		showIoStatus(spell(`The catalog was edited in another tab since you compared; nothing was changed, nothing sent to ${label}. Compare again.`), true);
 		return;
 	}
 	const {copy, report, patched, idsFound, infoIds, errors} = applyIntoCopy(compare);
-	if(errors.length){ showIoStatus(spell('The catalog changed and the import no longer validates; nothing was changed, nothing sent to AudiobookDB.'), true); return; }
-	const here = appliedText(report, patched, idsFound, 'AudiobookDB ids and covers', infoIds);
+	if(errors.length){ showIoStatus(spell(`The catalog changed and the import no longer validates; nothing was changed, nothing sent to ${label}.`), true); return; }
+	const here = appliedText(report, patched, idsFound, `${label} ${sync.kind.FOUND}`, infoIds);
 	if(JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books) || infoIds){
 		CATALOG.books = copy.books;
-		if(picks.ids) AudiobookdbSync.setInfoIds(CATALOG, ab.infoIds);
-		await persist();   // kept before anything is sent, so the ids found stay even if AudiobookDB stops answering
+		if(picks.ids) sync.kind.setInfoIds(CATALOG, result.infoIds);
+		await persist();   // kept before anything is sent, so the ids found stay even if the catalog stops answering
 		refreshPage();
 	}
-	if(!plan || !plan.add.length){ showIoStatus(here + '.'); return; }
+	if(!plan || !sending){ showIoStatus(here + '.'); return; }
 	/** @type {string[]} */
 	const lines = [];
 	const say = (/** @type {string} */ line)=>{ lines.push(line); };
-	const run = await withCatalogJob('AudiobookDB', 'send', step=> new AudiobookdbSync(audiobookdbClient(key)).push(plan, say, say, step));
+	const run = await withCatalogJob(label, 'send', step=> sync.push(plan, say, say, step));
 	if(!run) return;
 	if(run.error) lines.push(`error: ${Text.errorText(run.error)}`);
 	const ok = !run.error && run.value === 0;
-	showPreview(`AudiobookDB updated (took ${minutes(run.elapsed)})`, [para(here + ' here.'), buildElement('pre', {}, lines.join('\n'))], '', 'audiobookdbPanel');
-	showIoStatus(ok ? `${here}; AudiobookDB updated.` : 'Not everything went through on AudiobookDB; see the details.', !ok);
+	showPreview(`${label} updated (took ${minutes(run.elapsed)})`, [para(here + ' here.'), buildElement('pre', {}, lines.join('\n'))], '', `${Client.CATALOG}Panel`);
+	showIoStatus(ok ? `${here}; ${label} updated.` : `Not everything went through on ${label}; see the details.`, !ok);
 }
 
-// Leaving the page stops sending to Hardcover or AudiobookDB: the browser asks first. (Nothing is lost by stopping
+// Leaving the page stops sending to a catalog's shelves: the browser asks first. (Nothing is lost by stopping
 // early: compare and apply again to carry on, as nothing already there is added twice.)
 addEventListener('beforeunload', e => {
 	if(PAGE_RUN && !PAGE_RUN.dryRun){ e.preventDefault(); e.returnValue = ''; }
@@ -1023,7 +915,7 @@ addEventListener('beforeunload', e => {
  * @param {CatalogJob | null} job
  */
 function onCatalogJob(job){
-	for(const id of ['hardcoverCompareBtn', 'audiobookdbCompareBtn']) /** @type {HTMLButtonElement} */ (byId(id)).disabled = Boolean(job && job.running);
+	for(const Sync of CatalogConnectors.SYNCS) /** @type {HTMLButtonElement} */ (byId(`${Sync.CLIENT.CATALOG}CompareBtn`)).disabled = Boolean(job && job.running);
 }
 
 /**
@@ -1046,23 +938,34 @@ function closeImportPreview(){
 }
 
 /**
- * Read an Audible or Goodreads export, and preview its import.
- * @param {ImportKind} kind
+ * Read an export file, and preview its import.
+ * @param {ImporterClass} Importer
  * @param {File} file
  */
-async function importCsv(kind, file){
+async function importCsv(Importer, file){
 	if(!await holdWholeCatalog()) return;
 	try{
 		const [{text}] = await readFiles([file]);
-		compareExport(kind, text, file.name);
+		compareExport(Importer, text, file.name);
 	}catch{
 		closeImportPreview();
-		showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind]().label} export.`, true);
+		showIoStatus(`Couldn't read that file as a ${Importer.LABEL} export.`, true);
 	}
 }
 
-byId('importAudibleBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'audible'; byId('importCsvFile').click(); });
-byId('importGoodreadsBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'goodreads'; byId('importCsvFile').click(); });
+for(const Importer of CatalogConnectors.IMPORTERS){
+	byId(`${Importer.CATALOG}ImportBtn`).addEventListener('click', ()=>{ IMPORT_KIND = Importer; byId('importCsvFile').click(); });
+}
+for(const Exporter of CatalogConnectors.EXPORTERS){
+	byId(`${Exporter.CATALOG}ExportBtn`).addEventListener('click', ()=> withWholeCatalog(()=> exportFile(new /** @type {new () => FileExporter} */ (Exporter)())));
+}
+for(const Sync of CatalogConnectors.SYNCS){
+	const Client = Sync.CLIENT, prefix = Client.CATALOG;
+	byId(`${prefix}CompareBtn`).addEventListener('click', ()=> compareShelfSync(Sync));
+	byId(`${prefix}Scope`).addEventListener('change', ()=> showScope(prefix));
+	byId(`${prefix}KeySave`).addEventListener('click', ()=> saveKeyOf(Client, false));
+	byId(`${prefix}KeyRemove`).addEventListener('click', ()=> saveKeyOf(Client, true));
+}
 /**
  * When files are picked in the file field `id`, hand them to `take`, and empty the field, so the same file
  * can be picked again.
@@ -1079,14 +982,6 @@ function onFilesPicked(id, take){
 }
 onFilesPicked('importCsvFile', files=> importCsv(IMPORT_KIND, files[0]));
 byId('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : applyCompare());
-byId('hardcoverCompareBtn').addEventListener('click', compareHardcover);
-byId('hardcoverScope').addEventListener('change', ()=> showScope('hardcover'));
-byId('hardcoverTokenSave').addEventListener('click', ()=> saveHardcoverToken(false));
-byId('hardcoverTokenRemove').addEventListener('click', ()=> saveHardcoverToken(true));
-byId('audiobookdbCompareBtn').addEventListener('click', compareAudiobookdb);
-byId('audiobookdbScope').addEventListener('change', ()=> showScope('audiobookdb'));
-byId('audiobookdbKeySave').addEventListener('click', ()=> saveAudiobookdbKey(false));
-byId('audiobookdbKeyRemove').addEventListener('click', ()=> saveAudiobookdbKey(true));
 byId('proxySave').addEventListener('click', ()=> saveProxy(false));
 byId('proxyCheck').addEventListener('click', ()=> checkProxy());
 byId('proxyRemove').addEventListener('click', ()=> saveProxy(true));
@@ -1095,11 +990,15 @@ byId('importCancel').addEventListener('click', closeImportPreview);
 byId('checkBtn').addEventListener('click', ()=> withWholeCatalog(checkCatalog));
 byId('boxSetsBtn').addEventListener('click', ()=> withWholeCatalog(previewBoxSets));
 byId('exportBtn').addEventListener('click', ()=> withWholeCatalog(exportBackup));
-byId('exportGoodreadsBtn').addEventListener('click', ()=> withWholeCatalog(exportGoodreads));
 byId('importBtn').addEventListener('click', ()=> byId('importFile').click());
 byId('mergeBtn').addEventListener('click', ()=> byId('mergeFile').click());
 onFilesPicked('mergeFile', files=> mergeBackupFile(files[0]));
 byId('mergePreferSelect').addEventListener('change', ()=>{ if(PENDING_MERGE) previewMerge(); });
 onFilesPicked('importFile', importBackup);
 
-export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); showAudiobookdbKey(); showProxy(); showScope('hardcover'); showScope('audiobookdb'); compareFromAddress(); }, {refresh: refreshPage, onCatalogJob});
+export const READY = startPage(()=>{
+	refreshPage();
+	for(const Sync of CatalogConnectors.SYNCS){ showKey(Sync.CLIENT); showScope(Sync.CLIENT.CATALOG); }
+	showProxy();
+	compareFromAddress();
+}, {refresh: refreshPage, onCatalogJob});

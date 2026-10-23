@@ -31,6 +31,15 @@ import { AudiobookdbClient } from '../public/modules/audiobookdb-client.js';
 import { AudiobookdbSync } from '../public/modules/audiobookdb-sync.js';
 import { CatalogRecords } from '../public/modules/catalog-records.js';
 import { CatalogLookup } from '../public/modules/catalog-lookup.js';
+import { CatalogConnectors } from '../public/modules/catalog-connectors.js';
+import { CatalogClient } from '../public/modules/catalog-client.js';
+import { ShelfSync } from '../public/modules/shelf-sync.js';
+import { FileImporter } from '../public/modules/file-importer.js';
+import { FileExporter } from '../public/modules/file-exporter.js';
+import { BookSource } from '../public/modules/book-source.js';
+import { OpenLibrarySource } from '../public/modules/open-library-source.js';
+import { AudibleSource } from '../public/modules/audible-source.js';
+import { AudiobookdbSource } from '../public/modules/audiobookdb-source.js';
 import { CatalogDatabase, CatalogConflict } from '../public/modules/catalog-database.js';
 import { fakeCatalogs, fakeProxyCatalogs, fakeAudiobookdb, audiobookdbState } from './fake-catalogs.mjs';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
@@ -166,13 +175,13 @@ test('external catalogs: a Hardcover series or person is kept by its number, or 
 
 test('HardcoverClient.idBySlug finds the number of a series, author or publisher by the name in its address', async () => {
 	const hc = fakeHardcover(hardcoverState());
-	const client = new HardcoverClient('tok-123', hc.fetch, async () => {});
+	const client = new HardcoverClient(hc.fetch, 'tok-123', async () => {});
 	assert.deepEqual(await HardcoverClient.idBySlug(client, 'series', 'the-lantern-coast'), { id: '3101', name: 'The Lantern Coast' });
 	assert.deepEqual(await HardcoverClient.idBySlug(client, 'narrator', 'w-ashcombe'), { id: '4101', name: 'W. Ashcombe' }, 'one merged into another is that one');
 	assert.deepEqual(await HardcoverClient.idBySlug(client, 'publisher', 'kestrel-row-audio'), { id: '5101', name: 'Kestrel Row Audio' });
 	assert.equal(await HardcoverClient.idBySlug(client, 'author', 'nobody'), null);
 	assert.deepEqual(hc.sent.map(s => s.query.split('(')[0]), ['query SeriesBySlug', 'query AuthorBySlug', 'query PublisherBySlug', 'query AuthorBySlug']);
-	await assert.rejects(HardcoverClient.idBySlug(new HardcoverClient('bad', hc.fetch, async () => {}), 'author', 'x'), /refused your token/);
+	await assert.rejects(HardcoverClient.idBySlug(new HardcoverClient(hc.fetch, 'bad', async () => {}), 'author', 'x'), /refused your token/);
 });
 
 test('external catalogs: a form field takes an id or an address, and ids are tidied and checked', () => {
@@ -556,7 +565,7 @@ test('Goodreads CSV: every book on the read shelf, one own edition\'s ids, the l
 	];
 	const out = new GoodreadsExporter().write(Bs(books));
 	assert.deepEqual([out.books, out.withoutIds, out.withoutDate], [4, 2, 3]);
-	const rows = Csv.parse(out.csv);
+	const rows = Csv.parse(out.text);
 	assert.deepEqual(rows[0], { 'Book Id': '4242', Title: 'Kept (Saga, Told, #2)', Author: 'Ann Vale', 'Additional Authors': 'Bo Reed',
 		ISBN: '0306406152', ISBN13: '9780306406157', Publisher: '', Binding: 'Audiobook', 'Year Published': '2020',
 		'Date Read': '2024/03/15', Bookshelves: 'science-fiction, witches', 'Exclusive Shelf': 'read', 'Read Count': '3' });
@@ -567,7 +576,7 @@ test('Goodreads CSV: every book on the read shelf, one own edition\'s ids, the l
 	assert.deepEqual([rows[3].Title, rows[3]['Exclusive Shelf'], rows[3]['Date Read']], ['Say "hi"', 'read', '']);
 
 	// Goodreads' own import format, so our Goodreads import reads it back
-	const back = new GoodreadsImporter().read(out.csv).books;
+	const back = new GoodreadsImporter().read(out.text).books;
 	assert.deepEqual(back.map(b => [b.title, b.series, b.number]), [['Kept', 'Saga, Told', '2'], ['Boxed One', undefined, undefined],
 		['Boxed Two', undefined, undefined], ['Say "hi"', undefined, undefined]]);
 });
@@ -884,7 +893,7 @@ test('merge: another Hardcover book found by a box set\'s edition on titles in a
 	// exports: the set goes to Hardcover and Goodreads as the set's edition, its titles without it
 	assert.deepEqual(HardcoverSync.planExport(Bs(books), []).add.map(a => [a.book, a.edition]), [[71, null], [72, null], [70, 700]]);
 	const rows = Csv.parse(new GoodreadsExporter().write(Bs([book('One', 'Ann Vale', { s: 'Gull Isle', sn: '1', ...ed({ ext: { goodreads: '9' } }) }),
-		book('Gull Isle Duology', 'Ann Vale', { s: 'Gull Isle', sn: '1-2', ...ed({ ext: { goodreads: '9' } }) })])).csv);
+		book('Gull Isle Duology', 'Ann Vale', { s: 'Gull Isle', sn: '1-2', ...ed({ ext: { goodreads: '9' } }) })])).text);
 	assert.deepEqual(rows.map(r => r['Book Id']), ['', '9']);
 });
 
@@ -1739,7 +1748,7 @@ test('Hardcover addresses name a book or an edition, and editions take an editio
 
 test('HardcoverClient.bookId finds the book an address names, asking Hardcover only when the address lacks its id', async () => {
 	const hc = fakeHardcover(hardcoverState());
-	const client = new HardcoverClient('tok-123', hc.fetch, async () => {});
+	const client = new HardcoverClient(hc.fetch, 'tok-123', async () => {});
 	assert.deepEqual(await HardcoverClient.bookId(client, ' 77 '), { id: '77' });
 	assert.deepEqual(await HardcoverClient.bookId(client, 'https://hardcover.app/id/book/78'), { id: '78' });
 	assert.equal(hc.sent.length, 0);
@@ -1759,7 +1768,7 @@ test('HardcoverClient.ask asks one query a request, pausing between them, and sa
 	const sent = [];
 	let paused = 0, answer = { ok: true, status: 200, json: async () => ({ data: { me: [{ id: 42 }] } }) };
 	const get = async (url, init) => { sent.push([url, init]); return answer; };
-	const client = new HardcoverClient(' Bearer tok-123 ', get, async () => { paused++; });
+	const client = new HardcoverClient(get, ' Bearer tok-123 ', async () => { paused++; });
 	const ask = (query, variables) => client.ask(query, variables);
 	assert.deepEqual(await ask('query { me { id } }'), { me: [{ id: 42 }] });
 	assert.equal(paused, 0, 'no pause before the first request');
@@ -1774,11 +1783,11 @@ test('HardcoverClient.ask asks one query a request, pausing between them, and sa
 	assert.equal(paused, 1);
 	answer = { ok: true, status: 200, json: async () => ({ errors: [{ message: 'field "x" not found' }] }) };
 	await assert.rejects(ask('query { x }'), /^Error: Hardcover: field "x" not found$/);
-	const named = new HardcoverClient('t', get, async () => {}, { 'user-agent': 'test' });
+	const named = new HardcoverClient(get, 't', async () => {}, undefined, { 'user-agent': 'test' });
 	answer = { ok: true, status: 200, json: async () => ({ data: {} }) };
 	await named.ask('query { me { id } }');
 	assert.equal(sent.at(-1)[1].headers['user-agent'], 'test');
-	assert.equal(HardcoverClient.cleanToken('  bearer abc '), 'abc');
+	assert.equal(HardcoverClient.cleanKey('  bearer abc '), 'abc');
 });
 
 test('British spelling: the first English language decides, and spelled() respells the app\'s words but not names or identifiers', () => {
@@ -2203,7 +2212,7 @@ test('a merge reports what became of each incoming book', () => {
 
 test('comparing with Hardcover only reads it, and plans what putting your books there would do', async () => {
 	const hc = fakeHardcover(hardcoverState());
-	const sync = new HardcoverSync(new HardcoverClient('tok-123', hc.fetch, async () => {}));
+	const sync = new HardcoverSync(new HardcoverClient(hc.fetch, 'tok-123', async () => {}));
 	const catalog = new Catalog({ books: Bs([{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] }]) });
 	const before = JSON.stringify(catalog);
 	const steps = [];
@@ -2222,7 +2231,7 @@ test('comparing with Hardcover can be only a series\' or an author\'s books, on 
 	assert.ok(!Comparison.scope('series', 'Gull Isle')(B({ t: 'X', a: ['Ann Vale'] })));
 	assert.ok(Comparison.scope('author', 'ann vale')(B({ t: 'X', a: ['Bo Reed', 'Ann Vale'] })));
 	const hc = fakeHardcover(hardcoverState());
-	const sync = new HardcoverSync(new HardcoverClient('tok-123', hc.fetch, async () => {}));
+	const sync = new HardcoverSync(new HardcoverClient(hc.fetch, 'tok-123', async () => {}));
 	const catalog = new Catalog({ books: Bs([
 		{ t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ ext: { 'audible.com': 'B0LANTERN1' } }] },
 		{ t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2' },
@@ -2249,7 +2258,7 @@ test('comparing with Hardcover can be only a series\' or an author\'s books, on 
 	state.books[77].featured_book_series.series.name = 'Gull Isle Series';
 	const other = fakeHardcover(state);
 	const named = new Catalog({ books: Bs([{ t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ ext: { 'audible.com': 'B0TIDEWAT1' } }] }]) });
-	const parts = await new HardcoverSync(new HardcoverClient('tok-123', other.fetch, async () => {})).compare(named, () => {}, { kind: 'series', name: 'Gull Isle', hardcover: '3999' });
+	const parts = await new HardcoverSync(new HardcoverClient(other.fetch, 'tok-123', async () => {})).compare(named, () => {}, { kind: 'series', name: 'Gull Isle', id: '3999' });
 	assert.deepEqual(other.sent.find(s => s.query.startsWith('query ShelfBySeries')).variables.ids, [3999, 3102]);
 	assert.deepEqual(parts.comparison.books.map(b => [b.theirs.title, b.kind]), [['Tidewater', 'gains']]);
 	assert.deepEqual(byHale.plan.add.map(a => a.book), [80]);
@@ -2381,24 +2390,24 @@ test('CatalogLookup.read names what was pasted: an ISBN, an address in a catalog
 });
 
 test('CatalogLookup reads the dates and series catalogs write', () => {
-	assert.equal(CatalogLookup.date('March 4, 2021'), '2021-03-04');
-	assert.equal(CatalogLookup.date('4 Mar 2021'), '2021-03-04');
-	assert.equal(CatalogLookup.date('Mar. 2021'), '2021-03');
-	assert.equal(CatalogLookup.date('2021'), '2021');
-	assert.equal(CatalogLookup.date('2021-03-04T00:00:00Z'), '2021-03-04');
-	assert.equal(CatalogLookup.date('Spring 2021'), '2021');
-	assert.equal(CatalogLookup.date('February 30, 2021'), null);
-	assert.equal(CatalogLookup.date('soon'), null);
-	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle (2)'), { name: 'Gull Isle', number: '2' });
-	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle ; 2'), { name: 'Gull Isle', number: '2' });
-	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle -- book 2.5'), { name: 'Gull Isle', number: '2.5' });
-	assert.deepEqual(CatalogLookup.seriesOf('Gull Isle'), { name: 'Gull Isle', number: null });
-	assert.equal(CatalogLookup.seriesOf(''), null);
+	assert.equal(BookSource.date('March 4, 2021'), '2021-03-04');
+	assert.equal(BookSource.date('4 Mar 2021'), '2021-03-04');
+	assert.equal(BookSource.date('Mar. 2021'), '2021-03');
+	assert.equal(BookSource.date('2021'), '2021');
+	assert.equal(BookSource.date('2021-03-04T00:00:00Z'), '2021-03-04');
+	assert.equal(BookSource.date('Spring 2021'), '2021');
+	assert.equal(BookSource.date('February 30, 2021'), null);
+	assert.equal(BookSource.date('soon'), null);
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle (2)'), { name: 'Gull Isle', number: '2' });
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle ; 2'), { name: 'Gull Isle', number: '2' });
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle -- book 2.5'), { name: 'Gull Isle', number: '2.5' });
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle'), { name: 'Gull Isle', number: null });
+	assert.equal(OpenLibrarySource.seriesOf(''), null);
 });
 
 test('CatalogLookup finds a book on Open Library and Wikidata, without an account', async () => {
 	const catalogs = fakeCatalogs();
-	const lookup = new CatalogLookup(catalogs.fetch, null);
+	const lookup = new CatalogLookup(catalogs.fetch, []);
 	const edition = await lookup.find('https://openlibrary.org/books/OL901M');
 	assert.deepEqual(JSON.parse(JSON.stringify(edition.book)), { t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', ext: { openlibrary: 'OL900W' },
 		e: [{ ext: { 'amazon.com': 'B0LANTERN2', goodreads: '5151', openlibrary: 'OL901M' }, isbn: '9780000000019', n: ['Hollis Marr'], p: 'Gullwing Audio', d: '2021-03-04' }] });
@@ -2415,16 +2424,16 @@ test('CatalogLookup finds a book on Open Library and Wikidata, without an accoun
 	await assert.rejects(lookup.find('OL1M'), /Open Library has no edition OL1M/);
 	await assert.rejects(lookup.find('Q9002'), /names no author, so it is not a book/);
 	await assert.rejects(lookup.find('9780000000002'), /no catalog has a book with ISBN 9780000000002 \(to ask Hardcover too/);
-	await assert.rejects(lookup.find('B0TIDEWAT1'), /Audible can't be read from a web page; to look its ASIN up on Hardcover, save your Hardcover API token/);
+	await assert.rejects(lookup.find('B0TIDEWAT1'), /Audible and AudiobookDB can't be read from a web page; to look it up on Hardcover, save your Hardcover API token/);
 	await assert.rejects(lookup.find('hardcover.app/id/book/77'), /to look it up on Hardcover, save your Hardcover API token/);
 	await assert.rejects(lookup.find('just a title'), /paste the address of a book or edition/);
-	await assert.rejects(new CatalogLookup(async () => { throw new TypeError('Failed to fetch'); }, null).find('OL900W'), /could not reach Open Library/);
+	await assert.rejects(new CatalogLookup(async () => { throw new TypeError('Failed to fetch'); }, []).find('OL900W'), /could not reach Open Library/);
 	assert.ok(catalogs.sent.every(url => /^https:\/\/(openlibrary\.org|www\.wikidata\.org)\//.test(url)));
 });
 
 test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', async () => {
 	const proxy = fakeProxyCatalogs();
-	const lookup = new CatalogLookup(fakeCatalogs().fetch, null, proxy.route);
+	const lookup = new CatalogLookup(fakeCatalogs().fetch, [], proxy.route);
 	const plain = found => JSON.parse(JSON.stringify(found.book));
 	// an ASIN: Audible's product (its numbered series, not the umbrella one; genres one step down its ladders),
 	// then AudiobookDB's book and the release the ASIN belongs to, for what Audible lacks
@@ -2453,25 +2462,25 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	assert.equal(keeper.book.editions[0].minutes, 612);
 	assert.deepEqual(keeper.notes, []);
 	// what neither has, and a proxy that can't be reached (said, rather than failing the lookup)
-	await assert.rejects(lookup.find('B0NOTHERE1'), /neither Audible \(audible\.com\) nor AudiobookDB has ASIN B0NOTHERE1$/);
+	await assert.rejects(lookup.find('B0NOTHERE1'), /no catalog has a book with ASIN B0NOTHERE1 \(to ask Hardcover too, save your Hardcover API token on the Import & export page\)$/);
 	await assert.rejects(lookup.find('audiobookdb.org/releases/RlsNothere01'), /AudiobookDB has no release RlsNothere01/);
-	const down = new CatalogLookup(fakeCatalogs().fetch, null, async () => { throw new TypeError('Failed to fetch'); });
+	const down = new CatalogLookup(fakeCatalogs().fetch, [], async () => { throw new TypeError('Failed to fetch'); });
 	await assert.rejects(down.find('B0LANTERN2'), /\(Audible couldn't be asked: this browser could not reach the catalog proxy \(offline, or check it on the Import & export page\); AudiobookDB couldn't be asked/);
-	const refused = new CatalogLookup(fakeCatalogs().fetch, null, async () => ({ ok: false, status: 401, json: async () => ({}) }));
+	const refused = new CatalogLookup(fakeCatalogs().fetch, [], async () => ({ ok: false, status: 401, json: async () => ({}) }));
 	await assert.rejects(refused.find('B0LANTERN2'), /the catalog proxy refused its key/);
 	assert.match((await down.find('OL901M')).notes[0], /^Audible couldn't be asked/);
 	// without a proxy, AudiobookDB can't be asked, and an ASIN says how it could be
-	await assert.rejects(new CatalogLookup(fakeCatalogs().fetch, null).find('https://audiobookdb.org/releases/RlsLntrnUS01'), /AudiobookDB can't be read from a web page; .* save a catalog proxy/);
-	await assert.rejects(new CatalogLookup(fakeCatalogs().fetch, null).find('B0LANTERN2'), /save your Hardcover API token on the Import & export page first, or save a catalog proxy there to ask Audible and AudiobookDB$/);
-	assert.equal(CatalogLookup.audibleSite('amazon.se'), 'audible.com');
-	assert.equal(CatalogLookup.audibleSite('amazon.de'), 'audible.de');
-	assert.equal(CatalogLookup.minutes({ duration: '26:05:31' }), 1566);
-	assert.equal(CatalogLookup.minutes({ duration: 'soon' }), null);
+	await assert.rejects(new CatalogLookup(fakeCatalogs().fetch, []).find('https://audiobookdb.org/releases/RlsLntrnUS01'), /AudiobookDB can't be read from a web page; .* save a catalog proxy/);
+	await assert.rejects(new CatalogLookup(fakeCatalogs().fetch, []).find('B0LANTERN2'), /save your Hardcover API token on the Import & export page first, or save a catalog proxy there to ask Audible and AudiobookDB$/);
+	assert.equal(AudibleSource.site('amazon.se'), 'audible.com');
+	assert.equal(AudibleSource.site('amazon.de'), 'audible.de');
+	assert.equal(AudiobookdbSource.minutes({ duration: '26:05:31' }), 1566);
+	assert.equal(AudiobookdbSource.minutes({ duration: 'soon' }), null);
 });
 
 test('CatalogLookup asks Hardcover, with a token, for its books and for the ASINs, ISBNs and Goodreads ids it knows', async () => {
 	const hc = fakeHardcover(hardcoverState());
-	const lookup = new CatalogLookup(fakeCatalogs().fetch, new HardcoverClient('tok-123', hc.fetch, async () => {}));
+	const lookup = new CatalogLookup(fakeCatalogs().fetch, [new HardcoverClient(hc.fetch, 'tok-123', async () => {})]);
 	const tidewater = { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: { hardcover: '77' },
 		e: [{ ext: { 'amazon.com': 'B0TIDEWAT1', hardcover: '501' }, n: ['Hollis Marr'], len: 600 }] };
 	// a book's page by its name: its audiobook edition comes with it
@@ -2485,13 +2494,124 @@ test('CatalogLookup asks Hardcover, with a token, for its books and for the ASIN
 	const goodreads = await lookup.find('https://www.goodreads.com/book/show/4242');
 	assert.deepEqual(JSON.parse(JSON.stringify(goodreads.book)), { t: 'Brine Songs', a: ['Ann Vale'], ext: { hardcover: '81' }, e: [{ ext: { goodreads: '4242' } }] });
 	await assert.rejects(lookup.find('https://www.goodreads.com/work/editions/99'), /Hardcover knows Goodreads editions/);
-	await assert.rejects(lookup.find('B0NOTHERE1'), /Hardcover has no edition with ASIN B0NOTHERE1/);
+	await assert.rejects(lookup.find('B0NOTHERE1'), /no catalog has a book with ASIN B0NOTHERE1 \(to ask Audible and AudiobookDB too, save a catalog proxy on the Import & export page\)$/);
 	// Open Library's edition, and Hardcover's for what it lacks (by its ISBN, which Hardcover doesn't have here)
 	const keeper = await lookup.find('OL901M');
 	assert.deepEqual(keeper.sources, ['Open Library']);
 	assert.deepEqual(keeper.notes, []);
 	// a refused token is said, and Open Library still answers
-	const refused = await new CatalogLookup(fakeCatalogs().fetch, new HardcoverClient('bad', hc.fetch, async () => {})).find('9780000000019');
+	const refused = await new CatalogLookup(fakeCatalogs().fetch, [new HardcoverClient(hc.fetch, 'bad', async () => {})]).find('9780000000019');
 	assert.deepEqual(refused.sources, ['Open Library']);
 	assert.match(refused.notes[0], /Hardcover couldn't be asked: Hardcover refused your token/);
+});
+
+// ------------------------------------------------------------ the catalogs' base classes
+// A catalog the app doesn't have, written only against the base classes, as a new one would be.
+class ShelfmarkClient extends CatalogClient {
+	static CATALOG = 'shelfmark';
+	static LABEL = 'Shelfmark';
+	static ID = /^sm\d+$/;
+	static KEY_STORAGE = 'audiobook-catalog-shelfmark-key';
+	static KEY_HELP = 'Paste a key from shelfmark.example.';
+}
+class ShelfmarkSync extends ShelfSync {
+	static CLIENT = ShelfmarkClient;
+	async send(entry){
+		if(entry.books[0].title === 'Refused') throw new Error('Shelfmark said no');
+		return { shelved: 1, reads: 0, problems: [] };
+	}
+}
+class ShelfmarkSource extends BookSource {
+	static CATALOG = 'shelfmark';
+	static LABEL = 'Shelfmark';
+	static NAMES = ['Shelfmark'];
+	static NEEDS = 'key';
+	static CLIENT = ShelfmarkClient;
+	static FILLS_IN = true;
+	static read(value){ return /^sm\d+$/.test(value) ? { catalog: 'shelfmark', kind: 'book', id: value } : null; }
+	answers(pasted){ return pasted.kind === 'isbn' ? 'fallback' : super.answers(pasted); }
+	async lookup(pasted){
+		if(pasted.kind === 'isbn') return pasted.id === '9780000000019' ? null : B(book('By ISBN', 'Ann Vale', ed({ isbn: pasted.id, n: ['Hollis Marr'], len: 300 })));
+		if(pasted.id !== 'sm7') throw new Error(`Shelfmark has no book ${pasted.id}`);
+		return B(book('Tidewater', 'Ann Vale', ed({ isbn: '9780000000002' })));
+	}
+}
+
+test('a catalog written against the base classes alone: its client, its key and its part of a series', () => {
+	const client = new ShelfmarkClient(async () => new Response('{}'), '  sk-1 ', async () => {});
+	assert.equal(client.key, 'sk-1', 'the key is tidied the way its catalog takes it');
+	assert.equal(client.gap, CatalogClient.PAUSE_MS);
+	assert.equal(client.label, 'Shelfmark');
+	assert.equal(new ShelfmarkSync(client).label, 'Shelfmark');
+	const catalog = Catalog.fromJSON({ books: [book('One', 'Ann Vale', { s: 'Gull Isle', sn: '1' })], seriesInfo: { 'Gull Isle': { ext: { shelfmark: 'sm42' } } } });
+	catalog.assignIds();
+	assert.deepEqual(ShelfmarkSync.part(catalog, 'series', 'Gull Isle'), { kind: 'series', name: 'Gull Isle', id: 'sm42' });
+	assert.deepEqual(ShelfmarkSync.part(catalog, 'author', 'Ann Vale'), { kind: 'author', name: 'Ann Vale' });
+	assert.equal(ShelfSync.sameName({ kind: 'series', name: 'The Gull Isle' })('Gull Isle'), true);
+	assert.equal(ShelfSync.sameName({ kind: 'author', name: 'Ann Vale' })('ann vale'), true);
+	assert.equal(ShelfSync.sameName({ kind: 'author', name: 'Ann Vale' })('Bo Reed'), false);
+	assert.equal(ShelfmarkSync.notAdded(2), "Not added, as Shelfmark can't tell which edition is yours: 2");
+	assert.throws(() => new ShelfmarkSync(client).summary(), /Shelfmark: summary is not written/);
+});
+
+test('ShelfSync.push sends each entry of a plan, says what it did, and stops after failures in a row', async () => {
+	const sync = new ShelfmarkSync(new ShelfmarkClient(async () => new Response('{}'), 'sk-1', async () => {}));
+	const entry = title => ({ books: [B(book(title))] });
+	const run = async (plan) => {
+		const out = [], err = [], steps = [];
+		const code = await sync.push({ name: 'Read', reads: [], otherShelf: [], unknown: [], inexact: [], ...plan }, l => out.push(l), l => err.push(l), (t, d, n) => steps.push([t, d, n]));
+		return { code, out, err, steps };
+	};
+	const ok = await run({ add: [entry('One'), entry('Two')] });
+	assert.deepEqual(ok, { code: 0, out: ['put 2 book(s) on your Shelfmark Read shelf'], err: [],
+		steps: [['Putting books on your Shelfmark Read shelf', 0, 2], ['Putting books on your Shelfmark Read shelf', 1, 2]] });
+	const some = await run({ add: [entry('Refused'), entry('Two')] });
+	assert.deepEqual([some.code, some.out], [1, ['put 1 book(s) on your Shelfmark Read shelf', '    ! Refused: not added (Shelfmark said no)']]);
+	const stopped = await run({ add: [entry('Refused'), entry('Refused'), entry('Refused'), entry('Two')] });
+	assert.equal(stopped.code, 1);
+	assert.deepEqual(stopped.out, []);
+	assert.match(stopped.err[0], /^error: Shelfmark said no; stopped after putting 0 book\(s\) on Shelfmark\. Run it again/);
+});
+
+test('CatalogLookup asks a source written against BookSource alone: its own ids, a fallback, what it needs, and what it fills in', async () => {
+	const keyed = new CatalogLookup(fakeCatalogs().fetch, [new ShelfmarkClient(async () => new Response('{}'), 'sk-1', async () => {})], null, [ShelfmarkSource, OpenLibrarySource]);
+	const own = await keyed.find('sm7');
+	assert.deepEqual(own.sources, ['Shelfmark']);
+	assert.equal(own.book.title, 'Tidewater');
+	assert.equal(own.book.external.shelfmark, 'sm7', 'the id pasted stays');
+	await assert.rejects(keyed.find('sm8'), /Shelfmark has no book sm8/);
+	// an ISBN: Open Library first, and Shelfmark only when it has none
+	const isbn = await keyed.find('9780000000019');
+	assert.deepEqual(isbn.sources, ['Open Library']);
+	const fallback = await keyed.find('9780000000026');
+	assert.deepEqual(fallback.sources, ['Shelfmark']);
+	await assert.rejects(keyed.find('typed words'), /paste the address of a book or edition on Shelfmark or Open Library, or an ISBN$/);
+	// without its key: what to save, and a note for what it would fill in
+	const unkeyed = new CatalogLookup(fakeCatalogs().fetch, [], null, [ShelfmarkSource, OpenLibrarySource]);
+	await assert.rejects(unkeyed.find('sm7'), /to look it up on Shelfmark, save your Shelfmark API key on the Import & export page first/);
+	const noted = await unkeyed.find('OL901M');
+	assert.deepEqual(noted.notes, ['to fill in narrators and length from Shelfmark too, save your Shelfmark API key on the Import & export page']);
+});
+
+test('CatalogConnectors lists each catalog once, with what the pages need of it', () => {
+	for(const list of [CatalogConnectors.IMPORTERS, CatalogConnectors.EXPORTERS, CatalogConnectors.SOURCES]){
+		for(const Kind of list) assert.ok(Kind.CATALOG && Kind.LABEL, `${Kind.name} names its catalog`);
+		assert.equal(new Set(list.map(Kind => Kind.CATALOG)).size, list.length);
+	}
+	for(const Importer of CatalogConnectors.IMPORTERS) assert.ok(Importer.prototype instanceof FileImporter);
+	for(const Exporter of CatalogConnectors.EXPORTERS) assert.ok(Exporter.prototype instanceof FileExporter);
+	for(const Source of CatalogConnectors.SOURCES) assert.ok(Source.prototype instanceof BookSource);
+	assert.deepEqual(CatalogConnectors.CLIENTS.map(Client => Client.CATALOG), CatalogConnectors.SYNCS.map(Sync => Sync.CLIENT.CATALOG));
+	for(const Client of CatalogConnectors.CLIENTS){
+		assert.ok(Client.prototype instanceof CatalogClient);
+		assert.ok(ExternalCatalog.get(Client.CATALOG), `${Client.LABEL} is an external catalog`);
+		assert.match(Client.KEY_STORAGE, /^audiobook-catalog-/);
+		assert.ok(Client.KEY_HELP);
+	}
+	// a key is a key, whatever its catalog calls it: Hardcover's token keeps its form
+	assert.equal(HardcoverClient.cleanKey(' Bearer tok-1 '), 'tok-1');
+	assert.equal(AudiobookdbClient.cleanKey(' abdb-1 '), 'abdb-1');
+	const out = new GoodreadsExporter().write(Bs([book('One', 'Ann Vale')]));
+	assert.deepEqual([out.books, out.notes], [1, ['1 without a Goodreads id or ISBN, which Goodreads finds by title and author', '1 without a full date read']]);
+	assert.throws(() => new FileExporter().write([]), /write is not written/);
 });

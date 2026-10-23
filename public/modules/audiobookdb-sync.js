@@ -10,10 +10,12 @@ import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 import {Comparison} from './comparison.js';
 import {Cover} from './cover.js';
-import {CatalogLookup} from './catalog-lookup.js';
+import {AudiobookdbSource} from './audiobookdb-source.js';
 import {AudiobookdbClient} from './audiobookdb-client.js';
+import {ShelfSync} from './shelf-sync.js';
 /** @import {Unchecked} from './text.js' */
-/** @import {Step} from './hardcover-client.js' */
+/** @import {Step} from './catalog-client.js' */
+/** @import {ShelfPart, InfoId, PlanEntry, Sent} from './shelf-sync.js' */
 /** @import {AudiobookdbShelf} from './audiobookdb-client.js' */
 import {Catalog} from './catalog.js';
 /** @import {NamedKind} from './catalog.js' */
@@ -25,7 +27,6 @@ import {Catalog} from './catalog.js';
  * book id, the book as AudiobookDB answers it (people, series, releases).
  * @typedef {{asin: Map<string, {book: string, release: string | null}>, books: Map<string, Unchecked>}} AudiobookdbFound
  */
-/** @typedef {{kind: NamedKind, name: string, id: string}} AudiobookdbInfoId an AudiobookDB id found for a series or person of yours */
 /**
  * What an export to AudiobookDB would do (AudiobookdbSync.planExport()): the books to put on your Read shelf
  * (`shelf`, its slug, and `name`, as AudiobookDB shows it: *Listened*), those on another of its own shelves (left alone), and those AudiobookDB doesn't have.
@@ -33,8 +34,10 @@ import {Catalog} from './catalog.js';
  * @property {string} shelf
  * @property {string} name
  * @property {{book: string, books: Book[]}[]} add
+ * @property {never[]} reads none: AudiobookDB keeps no dates read
  * @property {[Book, string][]} otherShelf
  * @property {Book[]} unknown
+ * @property {never[]} inexact none
  */
 /**
  * Your AudiobookDB shelves beside the catalog (AudiobookdbSync.compare()).
@@ -45,12 +48,11 @@ import {Catalog} from './catalog.js';
  * @property {string[]} warnings
  * @property {AudiobookdbFound} found what AudiobookDB has for your books (addIds() gives their ids)
  * @property {Book[]} idsFound the books that gain an AudiobookDB id or cover, in the comparison's merged copy
- * @property {AudiobookdbInfoId[]} infoIds the series and people that gain an AudiobookDB id
+ * @property {InfoId[]} infoIds the series and people that gain an AudiobookDB id
  * @property {AudiobookdbPlan | null} plan what putting your books on AudiobookDB would do; null without your key
  * @property {number | null} onShelf how many books your Read shelf has (in the scope asked for); null without your key
  * @property {string[]} missing the series' books on AudiobookDB that aren't in the catalog (a series only)
  */
-/** @typedef {{kind: 'series' | 'author', name: string, audiobookdb?: string}} AudiobookdbPart a series or an author, and its AudiobookDB id when it has one */
 
 /** @type {(x: unknown) => string} */
 const tidyText = x => typeof x === 'string' ? Text.tidy(x) : '';
@@ -58,9 +60,14 @@ const tidyText = x => typeof x === 'string' ? Text.tidy(x) : '';
 const list = x => Array.isArray(x) ? x.filter(Text.isObject) : [];
 
 /** Compares the catalog with your AudiobookDB shelves, and puts books on your Read shelf there. */
-export class AudiobookdbSync {
+export class AudiobookdbSync extends ShelfSync {
+	static CLIENT = AudiobookdbClient;
+	static NOT_FOUND = 'No ASIN AudiobookDB knows: give the book its AudiobookDB id in its edit form, or add it on audiobookdb.org.';
+	static FOUND = 'ids and covers';
+
 	/** @param {AudiobookdbClient} client */
 	constructor(client){
+		super(client);
 		this.client = client;
 	}
 
@@ -72,7 +79,7 @@ export class AudiobookdbSync {
 	 * Only reads AudiobookDB; `step(text, done, total)` hears how far it has got.
 	 * @param {Catalog} catalog
 	 * @param {Step} step
-	 * @param {AudiobookdbPart} [part]
+	 * @param {ShelfPart} [part]
 	 * @returns {Promise<AudiobookdbComparison>}
 	 */
 	async compare(catalog, step, part){
@@ -135,6 +142,30 @@ export class AudiobookdbSync {
 	}
 
 	/**
+	 * @param {number} count
+	 * @returns {string}
+	 */
+	static notAdded(count){
+		return `Not added, as AudiobookDB has several releases of them and none is yours: ${count}. Add them from the book form with your release's address.`;
+	}
+
+	/**
+	 * What a comparison's first line says it read.
+	 * @param {AudiobookdbComparison} result
+	 * @param {Catalog} catalog
+	 * @param {{kind: 'series' | 'author', name: string, label: string} | null} scope
+	 * @returns {string}
+	 */
+	summary(result, catalog, scope){
+		const here = ShelfSync.inScope(catalog, scope).length;
+		// the catalog's own books come first in the comparison's merged copy, with the ids found
+		const mine = result.comparison.merged.books.slice(0, catalog.books.length);
+		const found = (scope ? mine.filter(Comparison.scope(scope.kind, scope.name)) : mine).filter(b => b.idOn('audiobookdb')).length;
+		const shelf = result.onShelf === null ? '' : `, ${Text.plural(result.onShelf, 'book')} on your AudiobookDB ${result.plan ? result.plan.name : 'Read'} shelf`;
+		return `${scope ? `Only ${scope.label}: ` : ''}${Text.plural(here, 'book')} in this catalog, ${found} of them on AudiobookDB${shelf}`;
+	}
+
+	/**
 	 * What AudiobookDB has for `books`: a book without an AudiobookDB id is looked up by its own editions'
 	 * ASINs (a box set's edition finds the box set, not the title); a book with one, whose editions lack
 	 * their release ids or covers, is read.
@@ -169,37 +200,14 @@ export class AudiobookdbSync {
 	}
 
 	/**
-	 * Carry out planExport()'s plan (or the part of it picked) on AudiobookDB: put its books on your Read
-	 * shelf. Stops after three failures in a row. Returns a promise of the exit code.
+	 * Send one entry of planExport()'s plan to AudiobookDB: put its book on your Read shelf.
+	 * @param {PlanEntry} entry
 	 * @param {AudiobookdbPlan} plan
-	 * @param {(line: string) => void} out
-	 * @param {(line: string) => void} err
-	 * @param {Step} step
-	 * @returns {Promise<number>}
+	 * @returns {Promise<Sent>}
 	 */
-	async push(plan, out, err, step){
-		let shelved = 0, failed = 0;
-		/** @type {string[]} */
-		const problems = [];
-		for(let i = 0; i < plan.add.length; i++){
-			const a = plan.add[i];
-			step(`Putting books on your AudiobookDB ${plan.name} shelf`, i, plan.add.length);
-			try{
-				await this.client.addToShelf(plan.shelf, a.book);
-				shelved++;
-				failed = 0;
-			}catch(exc){
-				problems.push(`${a.books[0].title}: not added (${Text.errorText(exc)})`);
-				if(++failed === 3){
-					err(`error: ${Text.errorText(exc)}; stopped after putting ${shelved} book(s) on AudiobookDB. ` +
-						'Run it again to carry on: what is already there is not added twice.');
-					return 1;
-				}
-			}
-		}
-		out(`put ${shelved} book(s) on your AudiobookDB ${plan.name} shelf`);
-		for(const p of problems.slice(0, 15)) out('    ! ' + p);
-		return problems.length ? 1 : 0;
+	async send(entry, plan){
+		await this.client.addToShelf(plan.shelf, /** @type {AudiobookdbPlan['add'][number]} */ (entry).book);
+		return {shelved: 1, reads: 0, problems: []};
 	}
 
 	// ------------------------------------------------------------ reading answers
@@ -230,14 +238,14 @@ export class AudiobookdbSync {
 	/**
 	 * The AudiobookDB id of a series or an author: the one given, else the one AudiobookDB gives it on your
 	 * books of it it has (named the same, as Comparison.scope compares names); null when there is none.
-	 * @param {AudiobookdbPart} part
+	 * @param {ShelfPart} part
 	 * @param {Book[]} books your books of it
 	 * @param {AudiobookdbFound} found
 	 * @returns {string | null}
 	 */
 	static partId(part, books, found){
-		if(part.audiobookdb && AudiobookdbClient.ID.test(part.audiobookdb)) return part.audiobookdb;
-		const scope = Comparison.scope(part.kind, part.name);
+		if(part.id && AudiobookdbClient.ID.test(part.id)) return part.id;
+		const same = ShelfSync.sameName(part);
 		for(const b of books){
 			const detail = found.books.get(b.idOn('audiobookdb') || '');
 			if(!detail) continue;
@@ -245,8 +253,7 @@ export class AudiobookdbSync {
 				: list(detail.people).filter(p => Text.isObject(p.role) && p.role.name === 'Author').map(p => p.person).filter(Text.isObject);
 			for(const row of rows){
 				const named = tidyText(row.name);
-				if(typeof row.id === 'string' && named &&
-					scope(new Book(part.kind === 'series' ? {title: '-', authors: ['-'], series: named} : {title: '-', authors: [named]}))) return row.id;
+				if(typeof row.id === 'string' && same(named)) return row.id;
 			}
 		}
 		return null;
@@ -279,7 +286,7 @@ export class AudiobookdbSync {
 			}
 			if(release && releases.length > 1) break;
 		}
-		const book = CatalogLookup.audiobookdbBook(detail, release);
+		const book = AudiobookdbSource.book(detail, release);
 		if(!book.title || !book.authors.length) return null;
 		if(asin && book.editions[0]) book.editions[0].external = {[asin[0]]: asin[1], ...book.editions[0].external};
 		return book;
@@ -338,10 +345,10 @@ export class AudiobookdbSync {
 	 * @param {Book[]} books
 	 * @param {AudiobookdbFound} found
 	 * @param {Book[]} [added]
-	 * @returns {AudiobookdbInfoId[]}
+	 * @returns {InfoId[]}
 	 */
 	static infoIds(catalog, books, found, added = []){
-		/** @type {Map<string, AudiobookdbInfoId>} */
+		/** @type {Map<string, InfoId>} */
 		const ids = new Map();
 		/** @type {Map<NamedKind, Set<string>>} */
 		const named = new Map();
@@ -377,7 +384,7 @@ export class AudiobookdbSync {
 	 * Give the catalog's series and people the AudiobookDB ids found (infoIds), where they have none yet and
 	 * the catalog has them (on its books, or with info).
 	 * @param {Catalog} catalog changed in place
-	 * @param {AudiobookdbInfoId[]} found
+	 * @param {InfoId[]} found
 	 * @returns {number} how many gained one
 	 */
 	static setInfoIds(catalog, found){
@@ -407,7 +414,7 @@ export class AudiobookdbSync {
 	 */
 	static planExport(books, shelves, read){
 		/** @type {AudiobookdbPlan} */
-		const plan = {shelf: read.slug, name: tidyText(read.name) || read.slug, add: [], otherShelf: [], unknown: []};
+		const plan = {shelf: read.slug, name: tidyText(read.name) || read.slug, add: [], reads: [], otherShelf: [], unknown: [], inexact: []};
 		const onRead = new Set(list(read.books).map(b => b.id));
 		/** @type {Map<unknown, string>} */
 		const elsewhere = new Map();

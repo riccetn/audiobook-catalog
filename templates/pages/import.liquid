@@ -59,7 +59,7 @@
 						<option value="audible.in">audible.in</option>
 						<option value="audible.co.jp">audible.co.jp</option>
 					</select></label>
-				<button class="iconbtn2" id="importAudibleBtn" title="Compare the finished books in an Audible Library Extractor CSV with this catalog">Import CSV</button>
+				<button class="iconbtn2" id="audibleImportBtn" title="Compare the finished books in an Audible Library Extractor CSV with this catalog">Import CSV</button>
 			</div>
 			<p class="ioNote">Shows the finished books in an Audible Library Extractor CSV beside this catalog's, to pick what to take.
 				Pick the Audible site the export is from first: its ASINs are that site's. (Audible can't import a list of books, so there is no export.)</p>
@@ -71,78 +71,32 @@
 		<div class="ioRow">
 			<span class="ioLabel">Import</span>
 			<div class="rowbtns">
-				<button class="iconbtn2" id="importGoodreadsBtn" title="Compare the read audiobooks in a Goodreads library export CSV with this catalog">Import CSV</button>
+				<button class="iconbtn2" id="goodreadsImportBtn" title="Compare the read audiobooks in a Goodreads library export CSV with this catalog">Import CSV</button>
 			</div>
 			<p class="ioNote">Shows the read audiobooks in a Goodreads library export beside this catalog's, to pick what to take.</p>
 		</div>
 		<div class="ioRow">
 			<span class="ioLabel">Export</span>
 			<div class="rowbtns">
-				<button class="iconbtn2" id="exportGoodreadsBtn" title="Download a CSV for Goodreads' import">Download CSV</button>
+				<button class="iconbtn2" id="goodreadsExportBtn" title="Download a CSV for Goodreads' import">Download CSV</button>
 			</div>
 			<p class="ioNote">A CSV of every book for Goodreads' <a href="https://www.goodreads.com/review/import" target="_blank" rel="noopener">import page</a>: on the <em>read</em> shelf, with the latest date read, genres as shelves, and the Goodreads id and ISBN of an edition so Goodreads picks that edition.</p>
 		</div>
 	</section>
 
-	<section class="panel" id="hardcoverPanel">
-		<h2>Hardcover <span class="via">Online</span></h2>
-		<div class="ioRow">
-			<span class="ioLabel">Compare</span>
-			<div class="rowbtns">
-				<button class="iconbtn2" id="hardcoverCompareBtn" title="Compare your Hardcover shelves with this catalog">Compare</button>
-				<label>for
-					<select id="hardcoverScope" title="Compare every book, or only a series' or an author's">
-						<option value="">every book</option>
-						<option value="series">a series</option>
-						<option value="author">an author</option>
-					</select></label>
-				<input type="text" id="hardcoverScopeName" list="hardcoverScopeNames" placeholder="Name" autocomplete="off" style="display:none">
-				<datalist id="hardcoverScopeNames"></datalist>
-			</div>
-			<p class="ioNote">Shows the books on your Hardcover <em>Read</em> shelf beside this catalog's, to pick what to take from Hardcover,
+	{%- capture hardcover_note -%}
+		Shows the books on your Hardcover <em>Read</em> shelf beside this catalog's, to pick what to take from Hardcover,
 				and which of your books and dates read to put on your Read shelf there; for every book, or only a series' or an author's.
-				Nothing on Hardcover is changed or removed.</p>
-		</div>
-		<div class="ioRow">
-			<span class="ioLabel">Token</span>
-			<div class="rowbtns">
-				<input type="password" id="hardcoverToken" placeholder="Hardcover API token" autocomplete="off" spellcheck="false">
-				<button class="iconbtn2" id="hardcoverTokenSave" title="Keep this token in this browser">Save token</button>
-				<button class="iconbtn2" id="hardcoverTokenRemove" title="Forget the token in this browser">Remove token</button>
-			</div>
-			<p class="ioNote" id="hardcoverTokenState"></p>
-		</div>
-	</section>
+				Nothing on Hardcover is changed or removed.
+	{%- endcapture %}
+	{% render 'shelf-panel', catalog: 'hardcover', label: 'Hardcover', via: 'Online', note: hardcover_note, key_label: 'Token', key_name: 'API token', key_word: 'token' %}
 
-	<section class="panel" id="audiobookdbPanel">
-		<h2>AudiobookDB <span class="via">Through the proxy</span></h2>
-		<div class="ioRow">
-			<span class="ioLabel">Compare</span>
-			<div class="rowbtns">
-				<button class="iconbtn2" id="audiobookdbCompareBtn" title="Compare your AudiobookDB shelves with this catalog">Compare</button>
-				<label>for
-					<select id="audiobookdbScope" title="Compare every book, or only a series' or an author's">
-						<option value="">every book</option>
-						<option value="series">a series</option>
-						<option value="author">an author</option>
-					</select></label>
-				<input type="text" id="audiobookdbScopeName" list="audiobookdbScopeNames" placeholder="Name" autocomplete="off" style="display:none">
-				<datalist id="audiobookdbScopeNames"></datalist>
-			</div>
-			<p class="ioNote">Finds your books on AudiobookDB and shows the books on your AudiobookDB <em>Read</em> shelf beside this catalog's,
+	{%- capture audiobookdb_note -%}
+		Finds your books on AudiobookDB and shows the books on your AudiobookDB <em>Read</em> shelf beside this catalog's,
 				to pick what to take from AudiobookDB, and which of your books to put on your Read shelf there; for every book, or only a
-				series' or an author's. Asked through your catalog proxy (below). Nothing on AudiobookDB is changed or removed.</p>
-		</div>
-		<div class="ioRow">
-			<span class="ioLabel">API key</span>
-			<div class="rowbtns">
-				<input type="password" id="audiobookdbKey" placeholder="AudiobookDB API key" autocomplete="off" spellcheck="false">
-				<button class="iconbtn2" id="audiobookdbKeySave" title="Keep this key in this browser">Save key</button>
-				<button class="iconbtn2" id="audiobookdbKeyRemove" title="Forget the key in this browser">Remove key</button>
-			</div>
-			<p class="ioNote" id="audiobookdbKeyState"></p>
-		</div>
-	</section>
+				series' or an author's. Asked through your catalog proxy (below). Nothing on AudiobookDB is changed or removed.
+	{%- endcapture %}
+	{% render 'shelf-panel', catalog: 'audiobookdb', label: 'AudiobookDB', via: 'Through the proxy', note: audiobookdb_note, key_label: 'API key', key_name: 'API key', key_word: 'key' %}
 
 	<section class="panel" id="proxyPanel">
 		<h2>Catalog proxy <span class="via">Optional</span></h2>

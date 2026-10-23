@@ -104,6 +104,14 @@ export class Book {
 	}
 
 	/**
+	 * A book made of what another catalog or an export holds, in the stored form, tidied the way the catalog
+	 * keeps it (tidyJSON()).
+	 * @param {Unchecked} rec
+	 * @returns {Book}
+	 */
+	static fromRecord(rec){ return Book.fromJSON(Book.tidyJSON(rec)); }
+
+	/**
 	 * Set the value of one of the stored book's keys (as fromJSON() reads it).
 	 * @param {string} key
 	 * @param {unknown} v

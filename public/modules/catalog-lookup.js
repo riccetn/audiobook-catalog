@@ -1,171 +1,169 @@
-// A book looked up in the external catalogs a web page may read, to fill in the book form: Open Library and
-// Wikidata answer any page without an account (open CORS, no key), and Hardcover does with the token saved in
-// this browser. Audible and AudiobookDB don't answer web pages, so they are asked through the user's own catalog
-// proxy (proxy/worker.js) when one is saved; without it, Audible's and Amazon's ASINs (and Goodreads' ids) are
-// looked up on Hardcover, which knows them. Nothing here changes the catalog; the requests are passed in, so
-// the tests run it offline.
+// A book looked up in the external catalogs a web page may read, to fill in the book form. Each catalog is a
+// BookSource (CatalogConnectors.SOURCES); this asks them in turn, by what was pasted: the catalog whose id it
+// is, the others that know such an id (an ISBN, an ASIN), and then those that fill in what the rest lack
+// (narrators, length) by the edition found. What each needs (a token, the catalog proxy) the sources say, so
+// nothing here names a catalog. Nothing here changes the catalog; the requests are passed in, so the tests run
+// it offline.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {Edition} from './edition.js';
-import {Importer} from './importer.js';
 import {ExternalCatalog} from './external-catalog.js';
-import {Cover} from './cover.js';
-import {HardcoverClient} from './hardcover-client.js';
-import {HardcoverSync} from './hardcover-sync.js';
-/** @import {Unchecked} from './text.js' */
+/** @import {BookSource} from './book-source.js' */
+import {CatalogConnectors} from './catalog-connectors.js';
+/** @import {Get, Pasted, Found} from './book-source.js' */
+/** @import {CatalogClient} from './catalog-client.js' */
 
-/** @typedef {(url: string) => Promise<{ok: boolean, status: number, json: () => Promise<unknown>}>} Get a fetch of an address */
+const ON_THE_PAGE = 'on the Import & export page';
+
 /**
- * What was pasted: an ISBN, or an id in an external catalog of a book or an edition (`slug` for a Hardcover
- * book's page, whose id only Hardcover knows).
- * @typedef {{catalog: string, kind: 'book' | 'edition' | 'isbn', id: string, slug?: string}} Pasted
+ * "A, B or C".
+ * @param {string[]} items
+ * @param {string} last
+ * @returns {string}
  */
-/**
- * What a lookup found: the book (with one edition at most), the catalogs that gave it, and what could not be
- * asked and why.
- * @typedef {{book: Book, sources: string[], notes: string[]}} Found
- */
-
-const OPEN_LIBRARY = 'https://openlibrary.org';
-const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
-// Wikidata's properties of a book: its title, authors, series (with the number as a qualifier), genres, and
-// its ids in catalogs this app knows
-const P = {title: 'P1476', author: 'P50', series: 'P179', number: 'P1545', genre: 'P136', openLibrary: 'P648', goodreadsWork: 'P8383', isfdbTitle: 'P1274'};
-const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
-const NO_HARDCOVER = 'save your Hardcover API token on the Import & export page';
-const NO_PROXY = 'save a catalog proxy on the Import & export page';
-// What Audible's catalog API is asked for: the people, series, edition details and genres
-const AUDIBLE_GROUPS = 'contributors,media,product_attrs,product_desc,product_details,product_extended_attrs,series,category_ladders';
-
-// A value read from a catalog's answer as text, tidied; '' when it isn't text.
-/** @type {(x: unknown) => string} */
-const tidyText = x => typeof x === 'string' ? Text.tidy(x) : '';
+const listed = (items, last) => items.length > 1 ? `${items.slice(0, -1).join(', ')} ${last} ${items[items.length - 1]}` : items.join('');
 
 /** Looks books up in the external catalogs a page may read. */
 export class CatalogLookup {
 	/**
-	 * @param {Get} get asks Open Library and Wikidata
-	 * @param {HardcoverClient | null} hardcover asks Hardcover, or null when there is no token
+	 * @param {Get} get asks the catalogs that answer web pages (Open Library, Wikidata)
+	 * @param {CatalogClient[]} clients ask the catalogs whose key is saved (Hardcover with your token)
 	 * @param {Get | null} [proxy] asks through the catalog proxy, given a route (`audible/audible.com/catalog/products/B0…`,
 	 *   `audiobookdb/releases/…`), or null when none is saved
+	 * @param {(typeof BookSource)[]} [sources] the catalogs asked, in order
 	 */
-	constructor(get, hardcover, proxy = null){
-		this.get = get;
-		this.hardcover = hardcover;
-		this.proxy = proxy;
+	constructor(get, clients, proxy = null, sources = CatalogConnectors.SOURCES){
+		const context = {get, clients, proxy};
+		/** @type {BookSource[]} */
+		this.sources = sources.map(Source => new Source(context));
 	}
 
 	/**
 	 * What a pasted address or id names: an ISBN; an address of a book's or edition's page in an external
-	 * catalog (also a Hardcover book's page by its name); a bare Open Library id (OL…W, OL…M), Wikidata item
-	 * (Q…) or ASIN (audible.com's, as the book form takes a bare one). null when it is none of them.
+	 * catalog (also one only its catalog reads, such as a Hardcover book's page by its name); a bare id a
+	 * source reads (OL…W, Q…, an ASIN). null when it is none of them.
 	 * @param {unknown} text
+	 * @param {(typeof BookSource)[]} [sources]
 	 * @returns {Pasted | null}
 	 */
-	static read(text){
+	static read(text, sources = CatalogConnectors.SOURCES){
 		const value = Text.tidy(String(text || ''));
 		if(!value) return null;
 		const isbn = Isbn.parse(value.replace(/^isbn(?:-1[03])?:?\s*/i, ''));
 		if(isbn) return {catalog: 'isbn', kind: 'isbn', id: isbn};
-		const hardcover = HardcoverClient.parseUrl(value);
-		if(hardcover){
-			if(hardcover.edition) return {catalog: 'hardcover', kind: 'edition', id: hardcover.edition};
-			if(hardcover.book) return {catalog: 'hardcover', kind: 'book', id: hardcover.book};
-			return {catalog: 'hardcover', kind: 'book', id: '', slug: hardcover.slug};
+		for(const Source of sources){
+			const pasted = Source.read(value);
+			if(pasted) return pasted;
 		}
 		for(const kind of /** @type {const} */ (['edition', 'book'])){
 			const found = ExternalCatalog.fromAddress(value, kind);
 			if(found) return {...found, kind};
 		}
-		if(/^OL\d+M$/i.test(value)) return {catalog: 'openlibrary', kind: 'edition', id: value.toUpperCase()};
-		if(/^OL\d+W$/i.test(value)) return {catalog: 'openlibrary', kind: 'book', id: value.toUpperCase()};
-		if(/^Q\d+$/i.test(value)) return {catalog: 'wikidata', kind: 'book', id: value.toUpperCase()};
-		if(/^B0[A-Z0-9]{8}$/i.test(value)) return {catalog: ExternalCatalog.AUDIBLE_SITE, kind: 'edition', id: value.toUpperCase()};
 		return null;
 	}
 
+	/** @returns {string} the catalogs whose addresses can be pasted: "Open Library, Wikidata or Audible" */
+	get pastable(){
+		return listed([...new Set(this.sources.flatMap(s => s.kind.NAMES))], 'or');
+	}
+
 	/**
-	 * The book `text` names, from the catalogs that have it: the one pasted first, then Hardcover (when it
-	 * wasn't the one) by the edition's ISBN or ASIN, for the narrators and length Open Library and Wikidata
-	 * don't have. What the first has wins; the others only fill in what it lacks. Throws with a short reason
-	 * when `text` names nothing this can look up, or no catalog has it. Text that is no address, id or ISBN is
-	 * a title, searched on AudiobookDB through the proxy (by `authors` too, when the form has them).
+	 * The book `text` names, from the catalogs that have it: the one whose id it is (and those that know such an
+	 * id too, or when it has none), then those that fill in what the first lacks, by the edition's ASIN or ISBN.
+	 * What the first has wins; the others only fill in what it lacks. Throws with a short reason when `text`
+	 * names nothing this can look up, or no catalog has it. Text that is no address, id or ISBN is a title,
+	 * searched on the source that SEARCHES (by `authors` too, when the form has them).
 	 * @param {unknown} text
 	 * @param {string[]} [authors]
 	 * @returns {Promise<Found>}
 	 */
 	async find(text, authors = []){
-		let pasted = CatalogLookup.read(text);
-		if(!pasted && this.proxy && Text.tidy(String(text || '')).length >= 3) pasted = {catalog: 'audiobookdb', kind: 'book', id: await this.audiobookdbSearch(Text.tidy(String(text)), authors)};
-		if(!pasted) throw new Error(`paste the address of a book or edition on Open Library, Wikidata, Hardcover, Audible, Amazon, Goodreads or AudiobookDB, or an ISBN${this.proxy ? ', or type its title' : ''}`);
+		const typed = Text.tidy(String(text || ''));
+		let pasted = CatalogLookup.read(typed, this.sources.map(s => s.kind));
+		const searcher = this.sources.find(s => s.kind.SEARCHES && s.available);
+		if(!pasted && searcher && typed.length >= 3) pasted = {catalog: searcher.kind.CATALOG, kind: 'book', id: await searcher.search(typed, authors)};
+		if(!pasted) throw new Error(`paste the address of a book or edition on ${this.pastable}, or an ISBN${searcher ? ', or type its title' : ''}`);
 		/** @type {Found} */
 		const found = {book: new Book(), sources: [], notes: []};
-		/** @type {(source: string, book: Book | null) => void} */
+		/** @type {Set<BookSource>} */
+		const asked = new Set();
+		/** @type {(source: BookSource, book: Book | null) => void} */
 		const take = (source, book) => {
 			if(!book) return;
 			CatalogLookup.fill(found.book, book);
-			if(!found.sources.includes(source)) found.sources.push(source);
+			if(!found.sources.includes(source.label)) found.sources.push(source.label);
 		};
-		const family = ExternalCatalog.family(pasted.catalog);
-		let audibleAsked = false;
-		if(pasted.catalog === 'openlibrary') take('Open Library', pasted.kind === 'edition' ? await this.openLibraryEdition(pasted.id) : await this.openLibraryWork(pasted.id));
-		else if(pasted.catalog === 'wikidata') take('Wikidata', await this.wikidata(pasted.id));
-		else if(pasted.kind === 'isbn'){
-			// Hardcover first, as it knows audiobooks best
-			take('Hardcover', await this.hardcoverBy('isbn', pasted.id, found));
-			take('Open Library', await this.openLibraryIsbn(pasted.id));
-		}
-		else if(pasted.catalog === 'hardcover'){
-			if(!this.hardcover) throw new Error(`to look it up on Hardcover, ${NO_HARDCOVER} first`);
-			take('Hardcover', await this.hardcoverPasted(pasted));
-		}
-		else if(pasted.catalog === 'audiobookdb'){
-			if(!this.proxy) throw new Error(`AudiobookDB can't be read from a web page; to ask it through your own proxy, ${NO_PROXY} first`);
-			take('AudiobookDB', pasted.kind === 'edition' ? await this.audiobookdbRelease(pasted.id) : await this.audiobookdbWork(pasted.id, found));
-		}
-		else if(family === 'asin' && this.proxy){
-			// Audible first, as it is the store's own catalog; AudiobookDB for what it lacks; Hardcover when neither has it
-			const site = CatalogLookup.audibleSite(pasted.catalog);
-			audibleAsked = true;
-			take('Audible', await this.noting(found, 'Audible', () => this.audible(site, pasted.id)));
-			take('AudiobookDB', await this.noting(found, 'AudiobookDB', () => this.audiobookdbByAsin(pasted.id)));
-			if(!found.sources.length) take('Hardcover', await this.hardcoverBy('asin', pasted.id, found));
-			if(!found.sources.length) throw new Error(`neither Audible (${site}) nor AudiobookDB${this.hardcover ? ' nor Hardcover' : ''} has ASIN ${pasted.id}${found.notes.length ? ` (${found.notes.join('; ')})` : ''}`);
-		}
-		else if(family === 'asin' || pasted.catalog === 'goodreads'){
-			const name = family === 'asin' ? ExternalCatalog.groupOf(pasted.catalog)?.name || 'Audible' : 'Goodreads';
-			if(!this.hardcover) throw new Error(`${name} can't be read from a web page; to look its ${family === 'asin' ? 'ASIN' : 'id'} up on Hardcover, ${NO_HARDCOVER} first${family === 'asin' ? `, or ${NO_PROXY.replace(' on the Import & export page', '')} there to ask Audible and AudiobookDB` : ''}`);
-			if(family === 'goodreads' && pasted.kind === 'book') throw new Error('Hardcover knows Goodreads editions (goodreads.com/book/show/…), not their works; paste the edition\'s address');
-			const book = await this.hardcoverBy(family === 'asin' ? 'asin' : 'gr', pasted.id, found);
-			if(!book) throw new Error(`Hardcover has no edition with ${family === 'asin' ? 'ASIN' : 'Goodreads id'} ${pasted.id}`);
-			take('Hardcover', book);
-		}
-		else throw new Error(`${ExternalCatalog.name(pasted.catalog)} can't be read from a web page; paste an address on Open Library, Wikidata, Hardcover, Audible or AudiobookDB, or an ISBN`);
+		/** @type {(source: BookSource, what: Pasted, noted: boolean) => Promise<void>} */
+		const ask = async (source, what, noted) => {
+			asked.add(source);
+			if(!noted){ take(source, await source.lookup(what, found)); return; }
+			try{ take(source, await source.lookup(what, found)); }
+			catch(err){ found.notes.push(`${source.label} couldn't be asked: ${Text.errorText(err)}`); }
+		};
+		const answering = (/** @type {'own' | 'also' | 'fallback'} */ how) => this.sources.filter(s => s.answers(/** @type {Pasted} */ (pasted)) === how);
+		const candidates = [...answering('own'), ...answering('also'), ...answering('fallback')];
+		const usable = candidates.filter(s => s.available);
+		if(!candidates.length) throw new Error(`${ExternalCatalog.name(pasted.catalog)} can't be read from a web page; paste an address on ${this.pastable}, or an ISBN`);
+		if(!usable.length) throw new Error(CatalogLookup.unavailable(candidates));
+		// a catalog asked beside others doesn't stop the lookup when it can't be asked
+		const noted = usable.length > 1;
+		for(const source of usable.filter(s => s.answers(/** @type {Pasted} */ (pasted)) !== 'fallback')) await ask(source, pasted, noted);
+		for(const source of usable.filter(s => s.answers(/** @type {Pasted} */ (pasted)) === 'fallback')) if(!found.sources.length) await ask(source, pasted, noted);
 		// the id pasted stays, on the book or its edition
 		if(pasted.kind === 'book' && pasted.id && !found.book.external[pasted.catalog]) found.book.external[pasted.catalog] = pasted.id;
 		if(!found.sources.length){
-			const where = pasted.kind === 'isbn' ? `with ISBN ${pasted.id}` : pasted.id;
-			throw new Error(`no catalog has a book ${where}${this.hardcover ? '' : ` (to ask Hardcover too, ${NO_HARDCOVER})`}`);
+			const where = pasted.kind === 'isbn' ? `with ISBN ${pasted.id}` : ExternalCatalog.family(pasted.catalog) === 'asin' ? `with ASIN ${pasted.id}` : pasted.id;
+			const unasked = candidates.filter(s => !s.available);
+			throw new Error(`no catalog has a book ${where}${found.notes.length ? ` (${found.notes.join('; ')})` : ''}` +
+				(unasked.length ? ` (to ask ${listed(unasked.map(s => s.label), 'and')} too, ${listed([...new Set(unasked.map(s => s.needsText))], 'and')} ${ON_THE_PAGE})` : ''));
 		}
 		if(pasted.kind === 'edition'){
 			if(!found.book.editions.length) found.book.editions = [new Edition()];
 			const [ed] = found.book.editions;
 			if(!ed.external[pasted.catalog]) ed.external = ExternalCatalog.order({[pasted.catalog]: pasted.id, ...ed.external}) || {};
 		}
-		// Audible (through the proxy) and Hardcover for what the others lack (narrators, length), by the edition's ASIN or ISBN
+		// those that know narrators and length, for what the others lack, by the edition's ASIN or ISBN
 		const ed = found.book.editions[0];
-		const audibleKey = ed && Object.keys(ed.external).find(key => ExternalCatalog.groupOf(key)?.key === 'audible');
-		if(ed && this.proxy && !audibleAsked && ed.ids('asin')[0]){
-			const site = CatalogLookup.audibleSite(audibleKey || ExternalCatalog.AUDIBLE_SITE), asin = audibleKey ? ed.external[audibleKey] : ed.ids('asin')[0];
-			take('Audible', await this.noting(found, 'Audible', () => this.audible(site, asin)));
-		}
-		if(!found.sources.includes('Hardcover') && ed){
-			const asin = ed.ids('asin')[0], isbn = ed.isbns()[0];
-			if(this.hardcover && (asin || isbn)) take('Hardcover', await this.hardcoverBy(asin ? 'asin' : 'isbn', asin || isbn, found));
-			else if(!this.hardcover && (!ed.narrators.length || !ed.minutes)) found.notes.push(`to fill in narrators and length from Hardcover too, ${NO_HARDCOVER}`);
+		if(!ed) return found;
+		for(const source of this.sources.filter(s => s.kind.FILLS_IN && !asked.has(s) && !found.sources.includes(s.label))){
+			const what = CatalogLookup.editionIds(ed).find(x => source.answers(x));
+			if(!what) continue;
+			if(source.available) await ask(source, what, true);
+			// a key is saved in a moment; a proxy is set up once, and so not asked for each book
+			else if(source.kind.NEEDS === 'key' && (!ed.narrators.length || !ed.minutes)) found.notes.push(`to fill in narrators and length from ${source.label} too, ${source.needsText} ${ON_THE_PAGE}`);
 		}
 		return found;
+	}
+
+	/**
+	 * Why none of `sources` can be asked (each needs what isn't saved), and what to save.
+	 * @param {BookSource[]} sources
+	 * @returns {string}
+	 */
+	static unavailable(sources){
+		const proxied = sources.filter(s => s.kind.NEEDS === 'proxy').map(s => s.label);
+		const keyed = sources.filter(s => s.kind.NEEDS !== 'proxy');
+		const proxy = `${listed(proxied, 'and')} can't be read from a web page; `;
+		if(!keyed.length) return `${proxy}to ask ${proxied.length > 1 ? 'them' : 'it'} through your own proxy, save a catalog proxy ${ON_THE_PAGE} first`;
+		const ask = `to look it up on ${listed(keyed.map(s => s.label), 'or')}, ${listed([...new Set(keyed.map(s => s.needsText))], 'or')} ${ON_THE_PAGE} first`;
+		return proxied.length ? `${proxy}${ask}, or save a catalog proxy there to ask ${listed(proxied, 'and')}` : ask;
+	}
+
+	/**
+	 * What an edition can be looked up by elsewhere: its ASIN (an Audible site's first, under that site), then its ISBN.
+	 * @param {Edition} ed
+	 * @returns {Pasted[]}
+	 */
+	static editionIds(ed){
+		/** @type {Pasted[]} */
+		const ids = [];
+		const audible = Object.keys(ed.external).find(key => ExternalCatalog.groupOf(key)?.key === 'audible');
+		const asin = audible ? ed.external[audible] : ed.ids('asin')[0];
+		if(asin) ids.push({catalog: audible || ExternalCatalog.AUDIBLE_SITE, kind: 'edition', id: asin});
+		const isbn = ed.isbns()[0];
+		if(isbn) ids.push({catalog: 'isbn', kind: 'isbn', id: isbn});
+		return ids;
 	}
 
 	/**
@@ -189,529 +187,5 @@ export class CatalogLookup {
 		if(!ed) return;
 		if(!book.editions.length) book.editions = [ed];
 		else if(!book.editions[0].conflictsWith(ed)) book.editions[0].fillFrom(ed);
-	}
-
-	// ------------------------------------------------------------------ Open Library
-	/**
-	 * An Open Library answer, or null when it has no such page.
-	 * @param {string} path
-	 * @returns {Promise<Unchecked | null>}
-	 */
-	async openLibrary(path){
-		return this.json('Open Library', OPEN_LIBRARY + path);
-	}
-
-	/**
-	 * @param {string} source what the reasons call it
-	 * @param {string} url
-	 * @returns {Promise<Unchecked | null>} the answer, null for a 404; throws with a short reason otherwise
-	 */
-	async json(source, url){
-		let res;
-		try{ res = await this.get(url); }
-		catch(e){ throw new Error(`this browser could not reach ${source} (offline?)`, {cause: e}); }
-		return CatalogLookup.answer(source, res);
-	}
-
-	/**
-	 * @param {string} source
-	 * @param {Awaited<ReturnType<Get>>} res
-	 * @param {boolean} [list] a list is wanted (a search's), not a book
-	 * @returns {Promise<Unchecked | null>} what `res` holds, null for a 404; throws with a short reason otherwise
-	 */
-	static async answer(source, res, list = false){
-		if(res.status === 404) return null;
-		if(!res.ok) throw new Error(`${source} answered ${res.status}`);
-		const json = await res.json().catch(() => null);
-		if(list ? !Array.isArray(json) : !Text.isObject(json)) throw new Error(`${source} sent something that isn't ${list ? 'a list of books' : 'a book'}`);
-		return json;
-	}
-
-	/**
-	 * The names of Open Library's authors, by their keys ("/authors/OL1A"); those it doesn't have are left out.
-	 * @param {unknown[]} keys
-	 * @returns {Promise<string[]>}
-	 */
-	async openLibraryAuthors(keys){
-		const names = [];
-		for(const key of keys.filter(k => typeof k === 'string' && /^\/authors\/OL\d+A$/.test(k)).slice(0, 10)){
-			const author = await this.openLibrary(`${key}.json`);
-			if(author && typeof author.name === 'string' && Text.tidy(author.name)) names.push(Text.tidy(author.name));
-		}
-		return [...new Set(names)];
-	}
-
-	/**
-	 * A book from Open Library's work.
-	 * @param {string} id OL…W
-	 * @returns {Promise<Book>}
-	 */
-	async openLibraryWork(id){
-		const work = await this.openLibrary(`/works/${id}.json`);
-		if(!work) throw new Error(`Open Library has no work ${id}`);
-		const authors = await this.openLibraryAuthors((Array.isArray(work.authors) ? work.authors : [])
-			.map((/** @type {unknown} */ a) => Text.isObject(a) && Text.isObject(a.author) ? a.author.key : null));
-		return CatalogLookup.openLibraryBook(work, null, authors);
-	}
-
-	/**
-	 * A book with its edition from Open Library's edition (and its work, for the authors when the edition
-	 * names none).
-	 * @param {string} id OL…M
-	 * @returns {Promise<Book>}
-	 */
-	async openLibraryEdition(id){
-		const edition = await this.openLibrary(`/books/${id}.json`);
-		if(!edition) throw new Error(`Open Library has no edition ${id}`);
-		return this.openLibraryOf(edition);
-	}
-
-	/**
-	 * The book of the edition with this ISBN on Open Library; null when it has none.
-	 * @param {string} isbn
-	 * @returns {Promise<Book | null>}
-	 */
-	async openLibraryIsbn(isbn){
-		const edition = await this.openLibrary(`/isbn/${isbn}.json`);
-		return edition ? this.openLibraryOf(edition) : null;
-	}
-
-	/**
-	 * @param {Unchecked} edition an Open Library edition
-	 * @returns {Promise<Book>}
-	 */
-	async openLibraryOf(edition){
-		const workKey = Array.isArray(edition.works) && Text.isObject(edition.works[0]) && typeof edition.works[0].key === 'string' ? edition.works[0].key : null;
-		const work = workKey && /^\/works\/OL\d+W$/.test(workKey) ? await this.openLibrary(`${workKey}.json`) : null;
-		const of = (/** @type {Unchecked | null} */ x) => x && Array.isArray(x.authors) ? x.authors.map((/** @type {unknown} */ a) =>
-			Text.isObject(a) ? Text.isObject(a.author) ? a.author.key : a.key : null) : [];
-		const editionAuthors = of(edition);
-		const authors = await this.openLibraryAuthors(editionAuthors.length ? editionAuthors : of(work));
-		return CatalogLookup.openLibraryBook(work || {}, edition, authors);
-	}
-
-	/**
-	 * A book made of an Open Library work and edition (either may be all but empty) and its authors' names.
-	 * @param {Unchecked} work
-	 * @param {Unchecked | null} edition
-	 * @param {string[]} authors
-	 * @returns {Book}
-	 */
-	static openLibraryBook(work, edition, authors){
-		/** @type {(x: unknown, re: RegExp) => string | null} */
-		const idOf = (x, re) => { const m = re.exec(tidyText(x)); return m ? m[1] : null; };
-		/** @type {(x: unknown) => unknown} */
-		const first = x => Array.isArray(x) ? x[0] : undefined;
-		/** @type {Record<string, any>} */
-		const rec = {t: tidyText(work.title) || (edition ? tidyText(edition.title) : ''), a: authors};
-		const workId = idOf(work.key, /^\/works\/(OL\d+W)$/);
-		if(workId) rec.ext = {openlibrary: workId};
-		if(edition){
-			const series = CatalogLookup.seriesOf(tidyText(first(edition.series)));
-			if(series){ rec.s = series.name; if(series.number) rec.sn = series.number; }
-			/** @type {Record<string, any>} */
-			const ed = {ext: {}};
-			const editionId = idOf(edition.key, /^\/books\/(OL\d+M)$/);
-			if(editionId) ed.ext.openlibrary = editionId;
-			const ids = Text.isObject(edition.identifiers) ? edition.identifiers : {};
-			const goodreads = tidyText(first(ids.goodreads));
-			if(/^\d+$/.test(goodreads)) ed.ext.goodreads = goodreads;
-			// Open Library's Amazon id is amazon.com's; a print book's is its ISBN-10, which is no ASIN
-			const amazon = tidyText(first(ids.amazon)).toUpperCase();
-			if(/^B[A-Z0-9]{9}$/.test(amazon)) ed.ext[ExternalCatalog.AMAZON_SITE] = amazon;
-			const isbn = [first(edition.isbn_13), first(edition.isbn_10)].map(Isbn.parse).find(Boolean);
-			if(isbn) ed.isbn = isbn;
-			const publisher = tidyText(first(edition.publishers));
-			if(publisher) ed.p = publisher;
-			const released = CatalogLookup.date(edition.publish_date);
-			if(released) ed.d = released;
-			const narrators = (Array.isArray(edition.contributors) ? edition.contributors : [])
-				.filter((/** @type {unknown} */ c) => Text.isObject(c) && /narrat|read/i.test(tidyText(c.role))).map((/** @type {Unchecked} */ c) => tidyText(c.name)).filter(Boolean);
-			if(narrators.length) ed.n = narrators;
-			if(!Object.keys(ed.ext).length) delete ed.ext;
-			if(Object.keys(ed).length) rec.e = [ed];
-		}
-		return Importer.book(Book.fixSeriesTitle(rec));
-	}
-
-	/**
-	 * A series as Open Library writes it on an edition ("Discworld (3)", "The Expanse ; 1", "Discworld -- 3")
-	 * as {name, number}; null when there is none.
-	 * @param {string} text
-	 * @returns {{name: string, number: string | null} | null}
-	 */
-	static seriesOf(text){
-		const value = Text.tidy(text);
-		if(!value) return null;
-		const m = /^(.*?)[\s,;:(#-]+(?:(?:book|vol(?:ume)?|no|number)\.?\s*)?#?\s*(\d+(?:\.\d+)?)\)?$/i.exec(value);
-		if(m && Text.tidy(m[1])) return {name: Text.tidy(m[1]), number: m[2]};
-		return {name: value, number: null};
-	}
-
-	/**
-	 * A date as catalogs write it ("1988", "October 1, 1988", "1 Oct 1988", "Oct 1988", "1988-10-01") in the
-	 * catalog's form (YYYY-MM-DD, YYYY-MM or YYYY); null when it is none of them.
-	 * @param {unknown} text
-	 * @returns {string | null}
-	 */
-	static date(text){
-		const value = Text.tidy(String(text || '')).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
-		const iso = Text.parseDate(value.replace(/T.*$/, ''));
-		if(iso) return iso;
-		const month = (/** @type {string} */ name) => { const i = MONTHS.findIndex(m => name.length >= 3 && m.startsWith(name.toLowerCase())); return i < 0 ? null : i + 1; };
-		/** @type {(y: string, mo: number | null, d?: string) => string | null} */
-		const make = (y, mo, d) => mo ? Text.parseDate(d ? `${y}-${mo}-${d}` : `${y}-${mo}`) : null;
-		let m = /^([a-z]+) (\d{1,2}) (\d{4})$/i.exec(value);
-		if(m && month(m[1])) return make(m[3], month(m[1]), m[2]);
-		m = /^(\d{1,2}) ([a-z]+) (\d{4})$/i.exec(value);
-		if(m && month(m[2])) return make(m[3], month(m[2]), m[1]);
-		m = /^([a-z]+) (\d{4})$/i.exec(value);
-		if(m && month(m[1])) return make(m[2], month(m[1]));
-		// a season, or words around the year
-		m = /^(?:[a-z]+ )*(\d{4})$/i.exec(value);
-		return m ? m[1] : null;
-	}
-
-	/**
-	 * What `ask` gives, or null when it throws, with the reason in `found`'s notes; for a catalog asked beside
-	 * others, which shouldn't stop the lookup.
-	 * @param {Found} found
-	 * @param {string} source
-	 * @param {() => Promise<Book | null>} ask
-	 * @returns {Promise<Book | null>}
-	 */
-	async noting(found, source, ask){
-		try{ return await ask(); }
-		catch(err){ found.notes.push(`${source} couldn't be asked: ${Text.errorText(err)}`); return null; }
-	}
-
-	/**
-	 * An answer through the catalog proxy (`route` is the catalog and the path in its API); null for a 404.
-	 * @param {string} source
-	 * @param {string} route
-	 * @param {boolean} [list] a list is wanted (a search's), not a book
-	 * @returns {Promise<Unchecked | null>}
-	 */
-	async proxied(source, route, list = false){
-		if(!this.proxy) throw new Error(`${source} can't be read from a web page; ${NO_PROXY}`);
-		let res;
-		try{ res = await this.proxy(route); }
-		catch(e){ throw new Error('this browser could not reach the catalog proxy (offline, or check it on the Import & export page)', {cause: e}); }
-		if(res.status === 401) throw new Error('the catalog proxy refused its key (check it on the Import & export page)');
-		return CatalogLookup.answer(source, res, list);
-	}
-
-	// ------------------------------------------------------------------ Audible
-	/**
-	 * The Audible site whose catalog API answers for an ASIN of `key`: the site itself, an Amazon site's Audible
-	 * (amazon.de: audible.de), else audible.com.
-	 * @param {string} key
-	 * @returns {string}
-	 */
-	static audibleSite(key){
-		const site = key.replace(/^amazon\./, 'audible.');
-		return ExternalCatalog.get(site)?.group === 'audible' ? site : ExternalCatalog.AUDIBLE_SITE;
-	}
-
-	/**
-	 * A book with its edition from Audible's catalog API on `site`; null when the site doesn't sell it (Audible
-	 * answers that with a product of only its ASIN).
-	 * @param {string} site
-	 * @param {string} asin
-	 * @returns {Promise<Book | null>}
-	 */
-	async audible(site, asin){
-		const answer = await this.proxied('Audible', `audible/${site}/catalog/products/${encodeURIComponent(asin)}?response_groups=${AUDIBLE_GROUPS}`);
-		const product = answer && Text.isObject(answer.product) ? answer.product : null;
-		return product && typeof product.title === 'string' && Text.tidy(product.title) ? CatalogLookup.audibleBook(product, site) : null;
-	}
-
-	/**
-	 * A book made of an Audible product: title, authors, its numbered series (not an umbrella one without a
-	 * number), genres (the second step of each of its genre ladders: "Fantasy" under "Science Fiction & Fantasy"),
-	 * and the edition: its ASIN on `site`, ISBN, narrators, publisher, release date and length.
-	 * @param {Unchecked} product
-	 * @param {string} site
-	 * @returns {Book}
-	 */
-	static audibleBook(product, site){
-		/** @type {(x: unknown) => string} */
-		const text = x => typeof x === 'string' ? Text.tidy(x.replace(/&amp;/g, '&')) : '';
-		/** @type {(x: unknown) => string[]} */
-		const names = x => Array.isArray(x) ? [...new Set(x.map(p => Text.isObject(p) ? text(p.name) : '').filter(Boolean))] : [];
-		/** @type {Record<string, any>} */
-		const rec = {t: text(product.title), a: names(product.authors)};
-		const series = (Array.isArray(product.series) ? product.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && text(s.title));
-		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(s.sequence)));
-		const inSeries = numbered || (series.length === 1 ? series[0] : null);
-		if(inSeries){
-			rec.s = text(inSeries.title);
-			if(inSeries === numbered) rec.sn = text(inSeries.sequence);
-		}
-		const genres = (Array.isArray(product.category_ladders) ? product.category_ladders : [])
-			.filter((/** @type {unknown} */ l) => Text.isObject(l) && l.root === 'Genres' && Array.isArray(l.ladder))
-			.map((/** @type {Unchecked} */ l) => { const step = l.ladder[1] || l.ladder[0]; return Text.isObject(step) ? text(step.name) : ''; }).filter(Boolean);
-		if(genres.length) rec.g = [...new Set(genres)].slice(0, 3);
-		/** @type {Record<string, any>} */
-		const ed = {ext: {[site]: text(product.asin).toUpperCase()}};
-		const isbn = Isbn.parse(product.isbn);
-		if(isbn) ed.isbn = isbn;
-		const narrators = names(product.narrators);
-		if(narrators.length) ed.n = narrators;
-		if(text(product.publisher_name)) ed.p = text(product.publisher_name);
-		const released = CatalogLookup.date(product.release_date);
-		if(released) ed.d = released;
-		if(Number.isInteger(product.runtime_length_min) && product.runtime_length_min > 0) ed.len = product.runtime_length_min;
-		rec.e = [ed];
-		return Importer.book(Book.fixSeriesTitle(rec));
-	}
-
-	// ------------------------------------------------------------------ AudiobookDB
-	/**
-	 * The book AudiobookDB files an ASIN under, with the release it belongs to; null when it has none.
-	 * @param {string} asin
-	 * @returns {Promise<Book | null>}
-	 */
-	async audiobookdbByAsin(asin){
-		const book = await this.proxied('AudiobookDB', `audiobookdb/audiobooks/external/audible/${encodeURIComponent(asin)}`);
-		if(!book) return null;
-		const release = (Array.isArray(book.releases) ? book.releases : []).find((/** @type {unknown} */ r) => Text.isObject(r) && r.id === book.matchedReleaseId);
-		return CatalogLookup.audiobookdbBook(book, release || null);
-	}
-
-	/**
-	 * The AudiobookDB book with the title `title` (spelled any way, punctuation aside), by one of `authors` when
-	 * any are given. Throws, naming a few, when there are several, and when there is none.
-	 * @param {string} title
-	 * @param {string[]} authors
-	 * @returns {Promise<string>} its id
-	 */
-	async audiobookdbSearch(title, authors){
-		const answer = await this.proxied('AudiobookDB', `audiobookdb/books?q=${encodeURIComponent(title)}&take=50`, true);
-		const books = Array.isArray(answer) ? answer.filter(b => Text.isObject(b) && typeof b.id === 'string' && Text.norm(tidyText(b.title)) === Text.norm(title)) : [];
-		/** @type {(b: Unchecked) => string[]} */
-		const names = b => Array.isArray(b.authors) ? b.authors.map((/** @type {unknown} */ a) => Text.isObject(a) ? tidyText(a.name) : '').filter(Boolean) : [];
-		const wanted = new Set(authors.map(Text.norm).filter(Boolean));
-		const hits = wanted.size ? books.filter(b => names(b).some(n => wanted.has(Text.norm(n)))) : books;
-		if(hits.length === 1) return hits[0].id;
-		if(!hits.length) throw new Error(`AudiobookDB has no book titled ${title}${wanted.size ? ` by ${authors.join(', ')}` : ''}; paste its address instead`);
-		const some = hits.slice(0, 3).map(b => `${tidyText(b.title)} by ${names(b).join(', ') || 'no author'} (${ExternalCatalog.url('audiobookdb', 'book', b.id)})`);
-		throw new Error(`AudiobookDB has ${hits.length} books titled ${title}: ${some.join('; ')}${hits.length > 3 ? '…' : ''}; type the author first, or paste the address of the one you mean`);
-	}
-
-	/**
-	 * A book with its edition from an AudiobookDB release (and the release's book).
-	 * @param {string} id
-	 * @returns {Promise<Book>}
-	 */
-	async audiobookdbRelease(id){
-		const release = await this.proxied('AudiobookDB', `audiobookdb/releases/${encodeURIComponent(id)}`);
-		if(!release) throw new Error(`AudiobookDB has no release ${id}`);
-		const bookId = Text.isObject(release.book) && typeof release.book.id === 'string' ? release.book.id : '';
-		const book = bookId ? await this.proxied('AudiobookDB', `audiobookdb/books/${encodeURIComponent(bookId)}`) : null;
-		return CatalogLookup.audiobookdbBook(book || (Text.isObject(release.book) ? release.book : {}), release);
-	}
-
-	/**
-	 * A book from AudiobookDB, with its edition when it has only one release (of several, it can't tell which
-	 * is yours: `found` says to paste the release's address).
-	 * @param {string} id
-	 * @param {Found} found
-	 * @returns {Promise<Book>}
-	 */
-	async audiobookdbWork(id, found){
-		const book = await this.proxied('AudiobookDB', `audiobookdb/books/${encodeURIComponent(id)}`);
-		if(!book) throw new Error(`AudiobookDB has no book ${id}`);
-		const releases = (Array.isArray(book.releases) ? book.releases : []).filter((/** @type {unknown} */ r) => Text.isObject(r));
-		if(releases.length > 1) found.notes.push(`AudiobookDB has ${releases.length} releases of it; paste your release's address to fill in its edition`);
-		return CatalogLookup.audiobookdbBook(book, releases.length === 1 ? releases[0] : null);
-	}
-
-	/**
-	 * A book made of an AudiobookDB book and one of its releases: title, authors, its numbered series (not an
-	 * umbrella one numbered 0), genres, and the edition: its release id, ISBN, narrators, publisher, release date,
-	 * length and cover (the release's, else the book's). Its ASINs are left out, as AudiobookDB doesn't say which Audible site they are on.
-	 * @param {Unchecked} book
-	 * @param {Unchecked | null} release
-	 * @returns {Book}
-	 */
-	static audiobookdbBook(book, release){
-		/** @type {(x: unknown, role: string) => string[]} */
-		const people = (x, role) => Array.isArray(x) ? [...new Set(x.filter(p => Text.isObject(p) && Text.isObject(p.role) && p.role.name === role && Text.isObject(p.person))
-			.map(p => tidyText(p.person.name)).filter(Boolean))] : [];
-		/** @type {Record<string, any>} */
-		const rec = {t: tidyText(book.title) || (release ? tidyText(release.title) : ''), a: people(book.people, 'Author')};
-		if(typeof book.id === 'string' && book.id) rec.ext = {audiobookdb: book.id};
-		const series = (Array.isArray(book.series) ? book.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && Text.isObject(s.series) && tidyText(s.series.title));
-		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?$/.test(tidyText(s.ordinal)) && Number(tidyText(s.ordinal)) > 0);
-		const inSeries = numbered || (series.length === 1 ? series[0] : null);
-		if(inSeries){
-			rec.s = tidyText(inSeries.series.title);
-			if(inSeries === numbered) rec.sn = tidyText(inSeries.ordinal);
-		}
-		const genres = Array.isArray(book.genres) ? book.genres.map((/** @type {unknown} */ g) => Text.isObject(g) ? tidyText(g.title) : '').filter(Boolean) : [];
-		if(genres.length) rec.g = [...new Set(genres)].slice(0, 5);
-		if(release){
-			/** @type {Record<string, any>} */
-			const ed = {};
-			if(typeof release.id === 'string' && release.id) ed.ext = {audiobookdb: release.id};
-			const isbn = Isbn.parse(release.isbn);
-			if(isbn) ed.isbn = isbn;
-			const narrators = people(release.people, 'Narrator');
-			if(narrators.length) ed.n = narrators;
-			if(Text.isObject(release.publisher) && tidyText(release.publisher.name)) ed.p = tidyText(release.publisher.name);
-			const released = CatalogLookup.date(release.releaseDate);
-			if(released) ed.d = released;
-			const minutes = CatalogLookup.minutes(release);
-			if(minutes) ed.len = minutes;
-			const cover = Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(book.images);
-			if(Object.keys(ed).length && cover) ed.img = {audiobookdb: cover};
-			if(Object.keys(ed).length) rec.e = [ed];
-		}
-		return Importer.book(Book.fixSeriesTitle(rec));
-	}
-
-	/**
-	 * A release's length in minutes, from its seconds or its "H:MM:SS"; null when it has neither.
-	 * @param {Unchecked} release
-	 * @returns {number | null}
-	 */
-	static minutes(release){
-		let seconds = Number.isFinite(release.runtimeLengthSec) ? Number(release.runtimeLengthSec) : NaN;
-		const m = typeof release.duration === 'string' ? /^(\d+):([0-5]\d):([0-5]\d)$/.exec(release.duration.trim()) : null;
-		if(!(seconds > 0) && m) seconds = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
-		return seconds >= 60 ? Math.round(seconds / 60) : null;
-	}
-
-	// ------------------------------------------------------------------ Wikidata
-	/**
-	 * Wikidata's items, by id, with their labels (in English) and claims.
-	 * @param {string[]} ids
-	 * @param {boolean} claims
-	 * @returns {Promise<Record<string, Unchecked>>}
-	 */
-	async wikidataItems(ids, claims){
-		if(!ids.length) return {};
-		const params = new URLSearchParams({action: 'wbgetentities', ids: ids.slice(0, 50).join('|'), props: claims ? 'labels|claims' : 'labels',
-			languages: 'en', languagefallback: '1', format: 'json', origin: '*'});
-		const answer = await this.json('Wikidata', `${WIKIDATA_API}?${params}`);
-		return answer && Text.isObject(answer.entities) ? answer.entities : {};
-	}
-
-	/**
-	 * A book from its Wikidata item: its title, authors, series and number, genres, and its ids in Open Library
-	 * (a work), Goodreads (a work) and ISFDB (a title).
-	 * @param {string} id Q…
-	 * @returns {Promise<Book>}
-	 */
-	async wikidata(id){
-		const item = (await this.wikidataItems([id], true))[id];
-		if(!Text.isObject(item) || 'missing' in item) throw new Error(`Wikidata has no item ${id}`);
-		const claims = Text.isObject(item.claims) ? item.claims : {};
-		/** @type {(prop: string) => Unchecked[]} */
-		const of = prop => Array.isArray(claims[prop]) ? claims[prop].filter((/** @type {unknown} */ c) => Text.isObject(c) && c.rank !== 'deprecated') : [];
-		/** @type {(claim: Unchecked) => unknown} */
-		const value = claim => Text.isObject(claim.mainsnak) && Text.isObject(claim.mainsnak.datavalue) ? claim.mainsnak.datavalue.value : undefined;
-		/** @type {(prop: string) => string[]} the items a property names */
-		const items = prop => of(prop).map(c => { const v = value(c); return Text.isObject(v) && typeof v.id === 'string' ? v.id : ''; }).filter(Boolean);
-		/** @type {(prop: string) => string} */
-		const string = prop => { const v = of(prop).map(value).find(x => typeof x === 'string'); return typeof v === 'string' ? Text.tidy(v) : ''; };
-		const authors = items(P.author), series = items(P.series), genres = items(P.genre).slice(0, 5);
-		if(!authors.length) throw new Error(`Wikidata's ${id} names no author, so it is not a book`);
-		const labels = await this.wikidataItems([...new Set([...authors, ...series.slice(0, 1), ...genres])], false);
-		/** @type {(x: string) => string} */
-		const label = x => { const l = labels[x] && Text.isObject(labels[x].labels) ? labels[x].labels.en : null; return Text.isObject(l) && typeof l.value === 'string' ? Text.tidy(l.value) : ''; };
-		const own = Text.isObject(item.labels) && Text.isObject(item.labels.en) ? item.labels.en.value : '';
-		const title = of(P.title).map(value).find(v => Text.isObject(v) && typeof v.text === 'string');
-		/** @type {Record<string, any>} */
-		const rec = {t: Text.tidy(Text.isObject(title) ? title.text : typeof own === 'string' ? own : ''), a: authors.map(label).filter(Boolean)};
-		if(!rec.t || !rec.a.length) throw new Error(`Wikidata's ${id} has no title or author in English`);
-		const [inSeries] = of(P.series);
-		if(inSeries && label(series[0])){
-			rec.s = label(series[0]);
-			const qualifiers = Text.isObject(inSeries.qualifiers) && Array.isArray(inSeries.qualifiers[P.number]) ? inSeries.qualifiers[P.number] : [];
-			const n = qualifiers.map((/** @type {Unchecked} */ q) => Text.isObject(q.datavalue) ? q.datavalue.value : null).find((/** @type {unknown} */ x) => typeof x === 'string');
-			if(n && /^\d+(?:\.\d+)?$/.test(n.trim())) rec.sn = n.trim();
-		}
-		const g = genres.map(label).filter(Boolean);
-		if(g.length) rec.g = g;
-		/** @type {Record<string, string>} */
-		const ext = {wikidata: id};
-		const openLibrary = string(P.openLibrary).toUpperCase(), goodreads = string(P.goodreadsWork), isfdb = string(P.isfdbTitle);
-		if(/^OL\d+W$/.test(openLibrary)) ext.openlibrary = openLibrary;
-		if(/^\d+$/.test(goodreads)) ext.goodreads = goodreads;
-		if(/^\d+$/.test(isfdb)) ext.isfdb = isfdb;
-		rec.ext = ext;
-		return Importer.book(rec);
-	}
-
-	// ------------------------------------------------------------------ Hardcover
-	/**
-	 * A book from Hardcover by its book or edition id, or its page's name (pasted).
-	 * @param {Pasted} pasted
-	 * @returns {Promise<Book>}
-	 */
-	async hardcoverPasted(pasted){
-		const client = /** @type {HardcoverClient} */ (this.hardcover);
-		if(pasted.kind === 'edition'){
-			const book = await this.hardcoverBook(null, pasted.id);
-			if(!book) throw new Error(`Hardcover has no edition ${pasted.id}`);
-			return book;
-		}
-		const id = pasted.id || (await HardcoverClient.bookId(client, `hardcover.app/books/${pasted.slug}`)).id;
-		const book = await this.hardcoverBook(id, null);
-		if(!book) throw new Error(`Hardcover has no book ${id}`);
-		return book;
-	}
-
-	/**
-	 * A book from Hardcover by an edition's ASIN, ISBN or Goodreads id; null when Hardcover has none, or can't
-	 * be asked (no token, or it refused: `found` notes why).
-	 * @param {'asin' | 'isbn' | 'gr'} kind
-	 * @param {string} id
-	 * @param {Found} found
-	 * @returns {Promise<Book | null>}
-	 */
-	async hardcoverBy(kind, id, found){
-		if(!this.hardcover) return null;
-		try{
-			const hits = (await this.hardcover.find({[kind]: [id]}, () => {}))[kind];
-			const hit = hits.get(id);
-			if(!hit) return null;
-			return await this.hardcoverBook(hit.hcb, hit.hc);
-		}catch(err){
-			found.notes.push(`Hardcover couldn't be asked: ${Text.errorText(err)}`);
-			return null;
-		}
-	}
-
-	/**
-	 * A book from Hardcover: the book (by its id, or the edition's) with the edition, or with its audiobook
-	 * edition when none is named; null when Hardcover has no such book or edition.
-	 * @param {string | null} bookId
-	 * @param {string | null} editionId
-	 * @returns {Promise<Book | null>}
-	 */
-	async hardcoverBook(bookId, editionId){
-		const client = /** @type {HardcoverClient} */ (this.hardcover);
-		/** @type {Unchecked | null} */
-		let edition = null;
-		if(editionId){
-			const [row] = (await client.ask(HardcoverClient.QUERIES.editions, {ids: [Number(editionId)]})).editions || [];
-			if(!Text.isObject(row)) return null;
-			edition = row;
-			if(!bookId && Number.isInteger(row.book_id)) bookId = String(row.book_id);
-		}
-		if(!bookId) return null;
-		const [book] = (await client.ask(HardcoverClient.QUERIES.books, {ids: [Number(bookId)]})).books || [];
-		if(!Text.isObject(book) || typeof book.title !== 'string') return null;
-		if(!edition){
-			const [audio] = (await client.ask(HardcoverClient.QUERIES.audioEditions, {book: Number(bookId)})).editions || [];
-			if(Text.isObject(audio)) edition = audio;
-		}
-		const rec = HardcoverSync.bookRecord(book);
-		rec.ext = {hardcover: bookId};
-		if(edition) rec.e = [HardcoverSync.edition(edition).toJSON()];
-		return Importer.book(Book.fixSeriesTitle(rec));
 	}
 }

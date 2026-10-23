@@ -1,0 +1,33 @@
+{%- comment -%}
+	A catalog's shelves on Import & export (ShelfSync in import.js): Compare, for every book or a series' or an
+	author's, and your key for the catalog. `catalog` is the panel's prefix (its client's CATALOG), `label` its
+	name, `via` how it is asked, `note` what Compare does, `key_label` the row's label, `key_name` what the
+	catalog calls the key ('API token') and `key_word` the buttons' word for it ('token').
+{%- endcomment %}
+	<section class="panel" id="{{ catalog }}Panel">
+		<h2>{{ label }} <span class="via">{{ via }}</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Compare</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="{{ catalog }}CompareBtn" title="Compare your {{ label }} shelves with this catalog">Compare</button>
+				<label>for
+					<select id="{{ catalog }}Scope" title="Compare every book, or only a series' or an author's">
+						<option value="">every book</option>
+						<option value="series">a series</option>
+						<option value="author">an author</option>
+					</select></label>
+				<input type="text" id="{{ catalog }}ScopeName" list="{{ catalog }}ScopeNames" placeholder="Name" autocomplete="off" style="display:none">
+				<datalist id="{{ catalog }}ScopeNames"></datalist>
+			</div>
+			<p class="ioNote">{{ note }}</p>
+		</div>
+		<div class="ioRow">
+			<span class="ioLabel">{{ key_label }}</span>
+			<div class="rowbtns">
+				<input type="password" id="{{ catalog }}Key" placeholder="{{ label }} {{ key_name }}" autocomplete="off" spellcheck="false">
+				<button class="iconbtn2" id="{{ catalog }}KeySave" title="Keep this {{ key_word }} in this browser">Save {{ key_word }}</button>
+				<button class="iconbtn2" id="{{ catalog }}KeyRemove" title="Forget the {{ key_word }} in this browser">Remove {{ key_word }}</button>
+			</div>
+			<p class="ioNote" id="{{ catalog }}KeyState"></p>
+		</div>
+	</section>
