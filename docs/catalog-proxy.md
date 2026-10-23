@@ -15,13 +15,19 @@ without it, and catalogs that need it are just not asked.
 - **Only these catalogs.** A request names a catalog and a path in its API (`/audiobookdb/audiobooks/...`,
   `/audible/audible.co.uk/catalog/products/<ASIN>`), never an address, so it can't be used to reach any other
   site. Only `GET` is allowed, and for Audible only its public catalog API (`/1.0/catalog/...`), never anything
-  to do with an account.
+  to do with an account. The one exception is your AudiobookDB account, below.
 - **Only your pages.** It answers only the origins in `ALLOWED_ORIGINS` (in `proxy/wrangler.toml`): the
   app on GitHub Pages and `make serve`.
 - **Only with the key.** Every request needs the proxy's key (the `PROXY_KEY` secret on Cloudflare), so a
   copy of the address alone is no use to anyone. The key is never in the repository.
 - **Nothing else passes through.** No cookies go either way, and the catalog's answer comes back with only its
   body and type. Answers found are kept for a day, so asking twice doesn't bother the catalog twice.
+- **Your AudiobookDB key only where it's needed.** Reading your AudiobookDB shelves and putting a book on one
+  need your AudiobookDB API key. The app sends it with just those requests, and the proxy passes it on to
+  just three of AudiobookDB's paths: who you are (`auth/session`), your shelves (`users/username/<you>/shelves...`)
+  and putting a book on a shelf, the only `POST` it allows. A key sent with any other request is refused, not
+  passed on. The proxy never stores the key, and never caches what those paths answer. It can't make shelves,
+  take a book off one, or change AudiobookDB's catalog.
 - **Never Hardcover.** Hardcover answers pages itself, so your Hardcover token goes only to Hardcover.
 
 ## Setting it up
@@ -69,7 +75,8 @@ curl -H "X-Proxy-Key: <your key>" https://audiobook-catalog-proxy.<subdomain>.wo
 - **A new key:** run `npx wrangler secret put PROXY_KEY` again, then save the new key in the app.
 - **The app served from somewhere else:** add its origin (`https://name.example`, no path) to
   `ALLOWED_ORIGINS` in `wrangler.toml` and run `npx wrangler deploy` again.
-- **After `git pull`:** if `proxy/worker.js` changed, run `npx wrangler deploy` again.
+- **After `git pull`:** if `proxy/worker.js` changed, run `npx wrangler deploy` again. A proxy deployed before
+  AudiobookDB's shelves were added refuses the key (*the proxy answered 405* or *400*) until you do.
 - **To take it down:** run `npx wrangler delete` and press **Remove proxy** in the app.
 
 ## When something is wrong
