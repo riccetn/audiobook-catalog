@@ -107,8 +107,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   `wholeCatalog()` (or `startPage`'s `{whole: true}`, the Duplicates page) holds every record from then on (`WHOLE`); `afterSaving(task)`
   runs a read once the saves are done, and `whenSaved` waits for those reads too. Reading all of it (`CatalogDatabase`, `CatalogRecords.toCatalog`); with none
   it starts **empty**, never with the demo data; one that can't be read is set aside (meta `unreadable`); when nothing was saved
-  yet, the catalog localStorage kept (`audiobook-catalog-device`, backup-shaped, plus `audiobook-catalog-not-duplicates`, or the
-  old `audiobook-catalog-data` edits) is read through `Catalog.fromJSON`, saved, and its keys renamed `….moved-to-indexeddb`;
+  yet, the catalog localStorage kept (`audiobook-catalog-device`, backup-shaped, plus `audiobook-catalog-not-duplicates`) is read through `Catalog.fromJSON`, saved, and its keys renamed `….moved-to-indexeddb`;
   without IndexedDB the page shows that catalog and saves nothing),
   `persist` (async, queued; writes only the records that changed, with the ids `fromCatalog` gives; when another tab saved
   since this page last read or wrote (`SEEN_REVISION`), first takes in what it changed (`catchUp`: `CatalogRecords.merge`, then

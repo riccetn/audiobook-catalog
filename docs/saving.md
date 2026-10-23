@@ -76,6 +76,3 @@ It also takes the data files of a catalog from
 before it lived in the browser: pick `books.json`, `series-info.json`, `authors.json`, `excluded.txt` and
 `not-duplicates.txt` (from `data/`) together. Only `books.json` is needed; series info and author info
 the files don't have are kept as they are, and the exclusions and marks are added to those kept already.
-
-Edits made in a page that was waiting for the old `make serve` to save them to `data/` are taken as the
-catalog the first time the app opens in that browser, if it has no catalog yet.

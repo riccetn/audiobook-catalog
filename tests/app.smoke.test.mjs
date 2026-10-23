@@ -1497,17 +1497,6 @@ test('a series\' site, from before authors kept their own, goes to its author wh
 	assert.equal(database.records('meta').some(m => m.key === 'reshape'), false);
 });
 
-test('edits from before, which waited for make serve to save them, become the catalog', async () => {
-	const old = { base: 'x', data: [{ t: 'Waiting', a: ['Me'] }], infoBase: 'y', info: { S: { total: 2, status: 'ongoing' } }, excluded: ['BGONE'] };
-	const { storage } = await boot({ files: null, storage: new Map([['audiobook-catalog-data', JSON.stringify(old)]]) });
-	assert.deepEqual((await kept(storage)).books, old.data);
-	assert.deepEqual((await kept(storage)).seriesInfo, old.info);
-	assert.deepEqual((await kept(storage)).excluded, ['BGONE']);
-	assert.equal(storage.has(CATALOG_KEY), false);
-	assert.equal(storage.has('audiobook-catalog-data'), false, 'moved to IndexedDB');
-	assert.deepEqual((await kept(storage)).books, old.data);
-});
-
 test('a catalog this browser can\'t read is set aside, not overwritten', async () => {
 	const { get, els, storage } = await boot({ storage: new Map([[CATALOG_KEY, '{not json']]) });
 	assert.deepEqual(get('CATALOG.books'), []);
