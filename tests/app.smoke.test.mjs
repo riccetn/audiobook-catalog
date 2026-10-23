@@ -1360,15 +1360,14 @@ test('authors are lists: the author filter offers each author on its own, and th
 	book.els.addForm.listeners.submit[0]({ preventDefault() {} });
 	await idle();
 	assert.deepEqual(book.get('CATALOG.book(BOOK_FILTER).authors'), ['Ferran Doyle', 'Cass Merriweather']);
-});
 
-test('authors and narrators written as comma separated text load as lists', async () => {
+	// authors and narrators written as comma separated text, from before, load as lists
 	const mine = JSON.stringify([{ t: 'Old Style', a: 'Ann Vale, Bo Reed', e: [{ ext: { 'audible.com': 'B1' }, n: 'Cy Hale, Di Moss' }] }]);
-	const { els, readable, storage } = await boot({ page: 'books.html', files: { 'books.json': mine } });
-	assert.deepEqual((await kept(storage)).books, [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }]);
+	const old = await boot({ page: 'books.html', files: { 'books.json': mine } });
+	assert.deepEqual((await kept(old.storage)).books, [{ t: 'Old Style', a: ['Ann Vale', 'Bo Reed'], e: [{ ext: { 'audible.com': 'B1' }, n: ['Cy Hale', 'Di Moss'] }] }]);
 	await idle();
-	assert.match(readable(els.authorFilter.innerHTML), /<option value="Bo Reed">/);
-	assert.match(readable(els.results.innerHTML), /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. <a href="narrator\.html#n=Cy\+Hale">Cy Hale<\/a>, <a href="narrator\.html#n=Di\+Moss">Di Moss<\/a><\/div>/);
+	assert.match(old.readable(old.els.authorFilter.innerHTML), /<option value="Bo Reed">/);
+	assert.match(old.readable(old.els.results.innerHTML), /Ann Vale<\/a>, <a [^>]*>Bo Reed<\/a> — narr\. <a href="narrator\.html#n=Cy\+Hale">Cy Hale<\/a>, <a href="narrator\.html#n=Di\+Moss">Di Moss<\/a><\/div>/);
 });
 
 test('with no catalog in this browser it starts empty, not with the demo, and says where books come from', async () => {
@@ -1916,7 +1915,7 @@ test('removing a book closes its form, and an edit after it saves to the right b
 	assert.deepEqual((await kept(storage)).books.map(b => b.t), ['Second, Again']);
 });
 
-test('series show which books are missing, and can be filtered to those', async () => {
+test('series show which books are missing, and can be filtered to those; one without a note shows none', async () => {
 	const { els, storage } = await boot();
 	await idle();
 	// (worked out on the Duplicates page, which holds the whole catalog)
@@ -1937,6 +1936,12 @@ test('series show which books are missing, and can be filtered to those', async 
 	ctx2.openSeries(seriesIdOf(get2, gaps[0]));
 	await idle();
 	assert.match(els2.results.innerHTML, /class="series-note">[^<]*missing #/);
+
+	// a series without a note shows none, never "undefined"
+	const mine = JSON.stringify([{ t: 'Gull Song', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ n: ['Cy Hale'] }] }]);
+	const noNote = await boot({ files: { 'books.json': mine, 'series-info.json': JSON.stringify({ 'Gull Isle': { total: 5, status: 'ongoing' } }) } });
+	assert.match(noNote.els.results.innerHTML, /missing #/);
+	assert.doesNotMatch(noNote.els.results.innerHTML, /undefined/);
 });
 
 test('a series and a book keep their ids in external catalogs, typed as an id or pasted as an address', async () => {
@@ -3083,13 +3088,6 @@ test('Box sets on the import page adds a set beside the titles sharing its editi
 	assert.equal(els.importConfirm.style.display, 'none');
 });
 
-
-test('Series info without note should not be rendered as "undefined"', async() => {
-	const mine = JSON.stringify([{ t: 'Lol', a: ['Jonathan Smith'], s: 'Pop', sn: '1', e: [{'n':'Michel Reed'}] }]);
-	const info = JSON.stringify({ 'Pop': { total: 5, status: 'ongoing' }});
-	const { els } = await boot({ files: { 'books.json': mine, 'series-info.json': info } });
-	assert.doesNotMatch(els.results.innerHTML, /undefined/);
-});
 
 test('a browser that prefers British English sees "catalogue"; any other sees "catalog", and the data is never respelled', async () => {
 	const titled = JSON.stringify([{ t: 'The Catalog of Stars', a: ['Ann Vale'], e: [{ ext: { 'audible.com': 'B1' } }] }]);

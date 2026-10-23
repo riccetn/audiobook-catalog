@@ -24,7 +24,7 @@ import {ExternalCatalog} from './external-catalog.js';
  */
 
 /**
- * Which book's value mergeBooks keeps, as an index into the books merged; by default the first that has one.
+ * Which book's value Book.merge() keeps, as an index into the books merged; by default the first that has one.
  * For `external`, the picked book's ids come first, and the others add the catalogs it has no id in.
  * @typedef {{title?: number, authors?: number, series?: number, external?: number, joinEditions?: boolean}} Picks
  */

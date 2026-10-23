@@ -41,7 +41,7 @@ const B = rec => Book.fromJSON(rec);
 const Bs = recs => recs.map(B);
 const E = rec => Edition.fromJSON(rec);
 const book = (t, a = 'Author', extra = {}) => ({ t, a: [a], ...extra });
-// A book's editions: ed({ asin: { 'audible.com': 'B1' } }, { gr: '7' }) -> { e: [{ asin: { 'audible.com': 'B1' } }, { gr: '7' }] }
+// A book's editions: ed({ ext: { 'audible.com': 'B1' } }, { ext: { goodreads: '7' } }) -> { e: [{ ext: { 'audible.com': 'B1' } }, { ext: { goodreads: '7' } }] }
 const ed = (...editions) => ({ e: editions });
 // The merge of imports, on books as stored: `books` gains what `incoming` has (changed in place, as stored),
 // and the report lists books as stored.
@@ -401,10 +401,6 @@ test('dates read: a plain string becomes a list', () => {
 	assert.deepEqual(Book.tidyJSON({ t: 'A', a: ['B'], r: '2024-03-15' }).r, ['2024-03-15']);
 	assert.deepEqual(Backup.read({ books: [{ t: 'A', a: ['B'], r: '2024' }], seriesInfo: {} }).books[0].read, ['2024']);
 	assert.deepEqual(Backup.read([{ t: 'A', a: ['B'], r: '2024' }]).books[0].read, ['2024']);
-	assert.deepEqual(Backup.read({ books: [], seriesInfo: {}, excluded: ['B9'] }).excluded, ['B9']);
-	assert.equal(Backup.read({ books: [], seriesInfo: {} }).excluded, null);
-	assert.throws(() => Backup.read({ books: [], excluded: 'B9' }), /excluded/);
-	assert.throws(() => Backup.read({ books: [], excluded: [7] }), /excluded/);
 });
 
 // -------------------------------------------------------------------- CSV
@@ -890,7 +886,7 @@ test('merge: another Hardcover book found by a box set\'s edition on titles in a
 	assert.deepEqual(rows.map(r => r['Book Id']), ['', '9']);
 });
 
-test('boxSetBooks keeps each box set in the catalog as its own book and as its titles', () => {
+test('Merger.boxSets keeps each box set in the catalog as its own book and as its titles', () => {
 	const tide = { ext: { 'audible.com': 'BTIDE' } }, ember = { ext: { 'audible.com': 'BEMBER' }, desc: 'Ember: Books 1-2' };
 	const books = Bs([
 		book('Tide: Books 1-3', 'Bo Lin', { s: 'Tide', sn: '1-3', r: ['2024'], ...ed({ ...tide }) }),
@@ -1048,7 +1044,7 @@ test('saving a book keeps the copies of a shared edition in step', () => {
 });
 
 // ------------------------------------------------------------------ duplicates
-test('findDuplicates pairs books an import would match, but not a box set\'s titles', () => {
+test('duplicate groups pair books an import would match, but not a box set\'s titles', () => {
 	const books = [
 		book('The Salt Road', 'Marisol Quenby', { s: 'Lantern Coast', sn: '1', ...ed({ ext: { 'audible.com': 'B1' } }) }),
 		book('Beacons', 'Marisol Quenby', { s: 'Lantern Coast', sn: '2', ...ed({ ext: { 'audible.com': 'BBOX' } }) }),
@@ -1066,7 +1062,7 @@ test('findDuplicates pairs books an import would match, but not a box set\'s tit
 	assert.deepEqual(findDuplicates([]), []);
 });
 
-test('mergeBooks keeps the picked fields and combines genres, dates read and editions', () => {
+test('Book.merge keeps the picked fields and combines genres, dates read and editions', () => {
 	const a = book('Salt Road', 'Marisol Quenby', { s: 'Lantern Coast', sn: '1', g: ['Fantasy'], r: ['2025-11-20'],
 		...ed({ ext: { goodreads: '4242' }, p: 'Gullwing Audio' }, { isbn: ISBN_BOX }) });
 	const b = book('The Salt Road', 'Marisol Quenby', { s: 'The Lantern Coast', sn: '1',
@@ -1129,17 +1125,20 @@ test('narrators: a narrator on the book moves onto its editions', () => {
 	assert.deepEqual(existing[0].e, [{ ext: { 'audible.com': 'B1', goodreads: '7' }, n: ['Mine'] }]);
 });
 
-test('a count is written with its word, singular for one', () => {
+test('text helpers: a count with its word, a long list cut to its first three, and what went wrong, whatever was thrown', () => {
 	assert.equal(Text.plural(1, 'book'), '1 book');
 	assert.equal(Text.plural(0, 'book'), '0 books');
 	assert.equal(Text.plural(3, 'Goodreads id'), '3 Goodreads ids');
 	assert.equal(Text.plural(2, 'series', 'series'), '2 series');
-});
 
-test('a long list is cut to its first three, saying how many more', () => {
 	assert.equal(Text.firstThree(['a', 'b']), 'a, b');
 	assert.equal(Text.firstThree(['a', 'b', 'c']), 'a, b, c');
 	assert.equal(Text.firstThree(['a', 'b', 'c', 'd', 'e'], '; '), 'a; b; c and 2 more');
+
+	assert.equal(Text.errorText(new Error('no such book')), 'no such book');
+	assert.equal(Text.errorText({ message: 'from another realm' }), 'from another realm');
+	assert.equal(Text.errorText('just text'), 'just text');
+	assert.equal(Text.errorText(null), 'null');
 });
 
 test('an edition is found by its external ids and its ISBN', () => {
@@ -1404,12 +1403,16 @@ test('narrators\' and publishers\' works come from the editions, each book once'
 	assert.deepEqual(catalog.works('narrators', 'Nobody'), { series: [], titles: [] });
 });
 
-test('backups carry author info, and older ones have none', () => {
+test('backups carry author info and exclusions, and older ones have neither', () => {
 	const authors = { 'Ann Vale': { bio: 'Hi.' } };
 	assert.deepEqual(json(Object.fromEntries(Backup.read({ books: [], authors }).authors)), authors);
 	assert.equal(Backup.read({ books: [] }).authors, null);
 	assert.equal(Backup.read([]).authors, null);
 	assert.throws(() => Backup.read({ books: [], authors: [] }), /authors is not an object/);
+	assert.deepEqual(Backup.read({ books: [], seriesInfo: {}, excluded: ['B9'] }).excluded, ['B9']);
+	assert.equal(Backup.read({ books: [], seriesInfo: {} }).excluded, null);
+	assert.throws(() => Backup.read({ books: [], excluded: 'B9' }), /excluded/);
+	assert.throws(() => Backup.read({ books: [], excluded: [7] }), /excluded/);
 });
 
 test('merging a backup: a book the backup still has is not removed, and the same catalog merges to itself', () => {
@@ -1520,7 +1523,7 @@ const HC_SHELF = [
 	{ id: 3, book_id: 79, edition_id: null, status_id: 1, user_book_reads: [] },
 ];
 
-test('readHardcover: the Read shelf as books, with every finished date and the Hardcover ids', () => {
+test('HardcoverSync.read: the Read shelf as books, with every finished date and the Hardcover ids', () => {
 	const result = HardcoverSync.read(HC_SHELF, HC_BOOKS, HC_EDITIONS);
 	assert.equal(result.otherShelves, 1);
 	assert.deepEqual(json(result.books), [
@@ -1532,7 +1535,7 @@ test('readHardcover: the Read shelf as books, with every finished date and the H
 	assert.deepEqual(HardcoverSync.read([{ id: 9, book_id: 99, status_id: 3 }], HC_BOOKS, HC_EDITIONS).warnings, ['Hardcover book 99: not found, skipped']);
 });
 
-test('hardcoverFindQuery asks only for the ids there are, and hardcoverMatches reads the answer', () => {
+test('HardcoverClient.findQuery asks only for the ids there are, and matches reads the answer', () => {
 	assert.equal(HardcoverClient.findQuery({ hc: [], asin: [], isbn: [], gr: [] }), null);
 	const q = HardcoverClient.findQuery({ hc: [], asin: ['B0TIDEWAT1'], isbn: [], gr: ['4242'] });
 	assert.deepEqual(q.variables, { asin: ['B0TIDEWAT1'], gr: ['4242'] });
@@ -1549,7 +1552,7 @@ test('hardcoverFindQuery asks only for the ids there are, and hardcoverMatches r
 	assert.deepEqual(found.gr.get('4242'), { hc: null, hcb: '79' });
 });
 
-test('addHardcoverIds fills in the ids found (box set copies alike), never changing one you have', () => {
+test('HardcoverSync.addIds fills in the ids found (box set copies alike), never changing one you have', () => {
 	const books = Bs([
 		book('Tidewater', 'Ann Vale', ed({ ext: { 'audible.com': 'B0TIDEWAT1' } })),
 		book('Box One', 'Ann Vale', ed({ ext: { 'audible.com': 'B0BOXSET01' } })), book('Box Two', 'Ann Vale', ed({ ext: { 'audible.com': 'B0BOXSET01' } })),
@@ -1573,7 +1576,7 @@ test('addHardcoverIds fills in the ids found (box set copies alike), never chang
 	assert.deepEqual(Object.keys(json(books[0])), ['t', 'a', 'ext', 'e']);
 });
 
-test('planHardcoverExport adds what is missing on Hardcover and leaves everything there alone', () => {
+test('HardcoverSync.planExport adds what is missing on Hardcover and leaves everything there alone', () => {
 	const books = [
 		book('Tidewater', 'Ann Vale', { r: ['2022-01-09', '2024-03-15', '2025'], ext: { hardcover: '77' }, ...ed({ ext: { hardcover: '501' } }) }),
 		book('Fen', 'Ann Vale', { ext: { hardcover: '78' } }),
@@ -1639,7 +1642,7 @@ test('Hardcover addresses name a book or an edition, and editions take an editio
 	assert.deepEqual(json(Edition.parse('Hardcover book https://hardcover.app/books/tidewater/editions/501').bad), ['Hardcover book https://hardcover.app/books/tidewater/editions/501']);
 });
 
-test('hardcoverBookId finds the book an address names, asking Hardcover only when the address lacks its id', async () => {
+test('HardcoverClient.bookId finds the book an address names, asking Hardcover only when the address lacks its id', async () => {
 	const hc = fakeHardcover(hardcoverState());
 	const client = new HardcoverClient('tok-123', hc.fetch, async () => {});
 	assert.deepEqual(await HardcoverClient.bookId(client, ' 77 '), { id: '77' });
@@ -1657,14 +1660,7 @@ test('hardcoverBookId finds the book an address names, asking Hardcover only whe
 	await assert.rejects(HardcoverClient.bookId(null, 'https://hardcover.app/books/tidewater'), /needs Hardcover/);
 });
 
-test('errorText gives what went wrong, whatever was thrown', () => {
-	assert.equal(Text.errorText(new Error('no such book')), 'no such book');
-	assert.equal(Text.errorText({ message: 'from another realm' }), 'from another realm');
-	assert.equal(Text.errorText('just text'), 'just text');
-	assert.equal(Text.errorText(null), 'null');
-});
-
-test('hardcoverAsker asks one query a request, pausing between them, and says plainly when Hardcover says no', async () => {
+test('HardcoverClient.ask asks one query a request, pausing between them, and says plainly when Hardcover says no', async () => {
 	const sent = [];
 	let paused = 0, answer = { ok: true, status: 200, json: async () => ({ data: { me: [{ id: 42 }] } }) };
 	const get = async (url, init) => { sent.push([url, init]); return answer; };
@@ -1690,12 +1686,10 @@ test('hardcoverAsker asks one query a request, pausing between them, and says pl
 	assert.equal(HardcoverClient.cleanToken('  bearer abc '), 'abc');
 });
 
-test('British spelling: the first English language decides; otherwise American', () => {
+test('British spelling: the first English language decides, and spelled() respells the app\'s words but not names or identifiers', () => {
 	for (const langs of [['en-GB'], ['en_AU'], ['sv-SE', 'sv', 'en-GB', 'en-US'], ['en-IE'], ['en-Latn-NZ'], ['EN-in']]) assert.equal(Text.prefersBritish(langs), true, langs.join());
 	for (const langs of [[], ['en'], ['en-US', 'en-GB'], ['sv-SE', 'sv'], ['fr-CA'], ['de-GB']]) assert.equal(Text.prefersBritish(langs), false, langs.join());
-});
 
-test('spelled() respells the app\'s words for British readers, and leaves names and identifiers as they are', () => {
 	assert.equal(Text.spelled('Check the catalog', true), 'Check the catalogue');
 	assert.equal(Text.spelled('Audiobook Catalog · this catalog\'s version · two catalogs', true), 'Audiobook Catalogue · this catalogue\'s version · two catalogues');
 	assert.equal(Text.spelled('the catalogue', true), 'the catalogue');
