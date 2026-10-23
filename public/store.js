@@ -4,6 +4,7 @@
 import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
+import {Contributor} from './modules/contributor.js';
 import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-database.js';
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 /** @import {RecordSet, Snapshot, StoreName} from './modules/catalog-records.js' */
@@ -31,7 +32,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
  */
 
 // British spelling ("catalogue") when the browser's first English language is a British one, else American.
-export const BRITISH = (() => { try{ return Text.prefersBritish(navigator.languages || [navigator.language]); }catch{ return false; } })();
+const BRITISH = (() => { try{ return Text.prefersBritish(navigator.languages || [navigator.language]); }catch{ return false; } })();
 
 /**
  * The page's own text in the spelling this browser prefers (see BRITISH); never a book's title or other data.
@@ -125,9 +126,13 @@ export function fillElement(el, ...children){ el.replaceChildren(...nodes(childr
  */
 export function joined(items, separator){ return items.flatMap((x, i)=> i ? [separator, x] : [x]); }
 
+/**
+ * A value as an address after the # writes it: encoded, with spaces as +.
+ * @type {(v: string) => string}
+ */
+export const hashValue = v=> encodeURIComponent(v).replace(/%20/g, '+');
 // The addresses of an author's, a narrator's and a publisher's page: by the id they are stored under, so a
-// link holds while their name is spelled another way (spaces as +, as the catalog page writes its own addresses).
-const hashValue = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
+// link holds while their name is spelled another way.
 /** @type {Record<ContributorKind, [string, string]>} */
 const CREDIT_PAGES = {authors: ['author.html', '#a='], narrators: ['narrator.html', '#n='], publishers: ['publisher.html', '#p=']};
 /**
@@ -155,7 +160,7 @@ export const publisherPageHref = name=> namedPageHref('publishers', name);
  * @param {string} hash
  * @returns {string}
  */
-export function pageHref(file, hash){
+function pageHref(file, hash){
 	const here = typeof location === 'object' ? location.pathname || '' : '';
 	return (here.endsWith('/' + file) || (file === 'index.html' && here.endsWith('/')) ? '' : file) + hash;
 }
@@ -244,7 +249,7 @@ export async function storedRevision(){
 
 // When this browser last downloaded (or restored) a backup, and the catalog's revision then, so the pages can say
 // how old the newest backup is and how many saves came since. It is about this browser's copy, so localStorage keeps it.
-export const BACKUP_KEY = 'audiobook-catalog-last-backup';
+const BACKUP_KEY = 'audiobook-catalog-last-backup';
 
 /** @returns {{time: string, revision: number | null} | null} the last backup this browser noted, if any */
 function lastBackup(){
@@ -475,19 +480,17 @@ export function queryCatalog(ask){
  * @returns {Promise<void>}
  */
 export function wholeCatalog(){
-	return reading(loadWhole());
-}
-
-async function loadWhole(){
-	if(WHOLE || !DATABASE) return;
-	await SAVING;
-	const stored = await DATABASE.load();
-	CATALOG.replaceWith(stored ? CatalogRecords.toCatalog(stored.records) : new Catalog());
-	CATALOG.assignIds();
-	SAVED = stored ? CatalogRecords.snapshot(stored.records) : new Map();
-	if(stored) SEEN_REVISION = stored.revision;
-	POSITIONS = new Map();
-	WHOLE = true;
+	return reading((async () => {
+		if(WHOLE || !DATABASE) return;
+		await SAVING;
+		const stored = await DATABASE.load();
+		CATALOG.replaceWith(stored ? CatalogRecords.toCatalog(stored.records) : new Catalog());
+		CATALOG.assignIds();
+		SAVED = stored ? CatalogRecords.snapshot(stored.records) : new Map();
+		if(stored) SEEN_REVISION = stored.revision;
+		POSITIONS = new Map();
+		WHOLE = true;
+	})());
 }
 
 /**
@@ -508,9 +511,7 @@ async function takeInNamesTyped(){
 		}
 	}
 	if(!ask.length) return;
-	/** @type {Record<string, string>} */
-	const one = {authors: 'author', narrators: 'narrator', publishers: 'publisher'};
-	const {result} = await DATABASE.read(r => Promise.all(ask.map(({kind, name}) => kind === 'series' ? r.all('series', 'name', name) : r.all('contributors', 'kindName', [one[kind], name]))));
+	const {result} = await DATABASE.read(r => Promise.all(ask.map(({kind, name}) => kind === 'series' ? r.all('series', 'name', name) : r.all('contributors', 'kindName', [Contributor.ONE[kind], name]))));
 	result.forEach((found, i) => {
 		const rec = found[0];
 		if(!rec) return;
@@ -546,8 +547,8 @@ async function saveNow(){
 	if(!DATABASE){ showIoStatus(SAVE_REFUSED, true); return; }
 	const unstorable = CatalogRecords.unstorable(CATALOG);
 	if(unstorable.length){
-		showIoStatus(spell(`Not saved: these values can't be kept, as they aren't what their field holds: ${unstorable.slice(0, 3).join('; ')}` +
-			`${unstorable.length > 3 ? ` and ${unstorable.length - 3} more` : ''}. Export a backup, fix them there (Check lists them) and Restore it.`), true);
+		showIoStatus(spell(`Not saved: these values can't be kept, as they aren't what their field holds: ${Text.firstThree(unstorable, '; ')}. ` +
+			'Export a backup, fix them there (Check lists them) and Restore it.'), true);
 		return;
 	}
 	// another tab may save again while this page takes in its last save, so this page tries a few times
@@ -585,7 +586,7 @@ async function saveNow(){
 			const both = tries < 3 ? await catchUp() : [];
 			if(both){
 				showIoStatus(spell(both.length
-					? `Not saved: ${both.slice(0, 3).join(', ')}${both.length > 3 ? ` and ${both.length - 3} more` : ''} changed in another tab too. Reload this page to see that, then make this change again.`
+					? `Not saved: ${Text.firstThree(both)} changed in another tab too. Reload this page to see that, then make this change again.`
 					: 'The catalog was changed in another tab. Reload this page to see that; this change was not saved.'), true);
 				return;
 			}
@@ -628,15 +629,6 @@ async function catchUp(){
 	if(redrawPage) redrawPage(before);
 	updateNav();
 	return null;
-}
-
-/**
- * Add entries (an ASIN, "ISBN 978...", "Goodreads 12345" or "Title | Author") to the books imports skip; returns how many were new.
- * @param {string[]} entries
- * @returns {number}
- */
-export function addExclusions(entries){
-	return CATALOG.addExclusions(entries);
 }
 
 // Ask the browser not to clear this site's storage when space runs low; on a phone it may otherwise.
@@ -842,7 +834,7 @@ export function externalFields(prefix, kind, except = []){
  * @param {ExternalKind} kind
  * @param {string} group
  */
-export function externalFieldToId(prefix, kind, group){
+function externalFieldToId(prefix, kind, group){
 	const field = /** @type {HTMLInputElement | null} */ (document.getElementById(prefix + group));
 	const text = field ? Text.tidy(field.value) : '';
 	if(!field || !text) return;
@@ -1016,7 +1008,7 @@ export function lookupHardcoverField(prefix, kind){
 // Like the Hardcover token they are kept in this browser only (never in a backup); without them those catalogs
 // are not asked. Hardcover is never asked through it, so the token never leaves for anywhere but Hardcover.
 export const PROXY_STORAGE_KEY = 'audiobook-catalog-proxy';
-export const PROXY_KEY_HEADER = 'X-Proxy-Key';
+const PROXY_KEY_HEADER = 'X-Proxy-Key';
 
 /** @typedef {{url: string, key: string}} ProxySettings the proxy's address (no slash at the end) and its key */
 

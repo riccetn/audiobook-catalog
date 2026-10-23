@@ -866,7 +866,7 @@ test('collections: a range is a collection, sorted after the titles of its serie
 	const books = Bs([book('Set B', 'A', { s: 'S', sn: '4-6' }), book('Set A', 'A', { s: 'S', sn: '1-3' }), book('Omnibus', 'A', { s: 'S', sn: '1-6' }),
 		book('Three', 'A', { s: 'S', sn: '3' }), book('Loose', 'A', { s: 'S' }), book('One', 'A', { s: 'S', sn: '1' }), book('Novella', 'A', { s: 'S', sn: '1.5' })]);
 	assert.deepEqual(books.sort(Book.bySeriesNumber).map(b => b.title), ['One', 'Novella', 'Three', 'Loose', 'Set A', 'Omnibus', 'Set B']);
-	assert.deepEqual(new Catalog({ books }).authorWorks('A').series[0].books.map(b => b.title).slice(-3), ['Set A', 'Omnibus', 'Set B']);
+	assert.deepEqual(new Catalog({ books }).works('authors', 'A').series[0].books.map(b => b.title).slice(-3), ['Set A', 'Omnibus', 'Set B']);
 });
 
 test('merge: another Hardcover book found by a box set\'s edition on titles in a row is kept as their collection', () => {
@@ -1136,6 +1136,31 @@ test('a count is written with its word, singular for one', () => {
 	assert.equal(Text.plural(2, 'series', 'series'), '2 series');
 });
 
+test('a long list is cut to its first three, saying how many more', () => {
+	assert.equal(Text.firstThree(['a', 'b']), 'a, b');
+	assert.equal(Text.firstThree(['a', 'b', 'c']), 'a, b, c');
+	assert.equal(Text.firstThree(['a', 'b', 'c', 'd', 'e'], '; '), 'a; b; c and 2 more');
+});
+
+test('an edition is found by its external ids and its ISBN', () => {
+	const ed = Edition.fromJSON({ ext: { 'audible.co.uk': 'B0GULL0001', goodreads: '4242' }, isbn: '978-0-306-40615-7' });
+	assert.deepEqual(ed.idAndIsbnKeys(), ['asin B0GULL0001', 'goodreads 4242', 'isbn 9780306406157']);
+	assert.deepEqual(Edition.fromJSON({ d: '2020-01-01' }).idAndIsbnKeys(), []);
+});
+
+test('the errors that stop an import are the books\', not the series info\'s', () => {
+	const catalog = Catalog.fromJSON({ books: [{ t: 'Gull Song', a: ['Ann Vale'], s: 'Gull Isle', e: [{ d: '2020-01-01' }] },
+		{ t: 'Lone', a: ['Ann Vale'], sn: '2', e: [{ d: '2020-01-01' }] }], seriesInfo: { 'Gull Isle': { total: 0, status: 'paused' } } });
+	assert.equal(catalog.validate().errors.length, 3);
+	assert.deepEqual(catalog.bookErrors(), ["book #1 ('Lone'): has a series number but no series"]);
+});
+
+test('a Hardcover book starts a stored book with its title, authors and featured series', () => {
+	assert.deepEqual(HardcoverSync.bookRecord({ title: ' Gull Song ', contributions: [{ author: { name: 'Ann Vale' } }],
+		featured_book_series: { position: 2.5, series: { name: 'Gull Isle' } } }), { t: 'Gull Song', a: ['Ann Vale'], s: 'Gull Isle', sn: '2.5' });
+	assert.deepEqual(HardcoverSync.bookRecord({ title: 'Alone', contributions: [], featured_book_series: null }), { t: 'Alone', a: [] });
+});
+
 test('authors and narrators are lists; comma separated text from before is split on load', () => {
 	assert.deepEqual(Text.splitNames('Ann Vale, R. T. Hale; Bo Reed & Cy Hale and Di Moss'), ['Ann Vale', 'R. T. Hale', 'Bo Reed', 'Cy Hale', 'Di Moss']);
 	assert.deepEqual(Text.splitNames('Ann Vale, Jr., Bo Reed, III'), ['Ann Vale, Jr.', 'Bo Reed, III']);
@@ -1359,11 +1384,11 @@ test('an author\'s works: their series in series order, then their other titles,
 		{ t: 'Apple Hill', a: ['Bo Reed', 'Ann Vale'] }, book('Not Hers', 'Bo Reed', { s: 'Tide Saga', sn: '2' }),
 		book('Boxed', 'Ann Vale', { s: 'Ash Cycle', sn: '1-3' }),
 	]) });
-	const works = catalog.authorWorks('Ann Vale');
+	const works = catalog.works('authors', 'Ann Vale');
 	assert.deepEqual(works.series.map(s => [s.name, s.books.map(b => b.title)]),
 		[['Ash Cycle', ['Boxed']], ['Tide Saga', ['First', 'Third', 'Novella']]]);
 	assert.deepEqual(works.titles.map(b => b.title), ['Apple Hill', 'Zebra Days']);
-	assert.deepEqual(catalog.authorWorks('Nobody'), { series: [], titles: [] });
+	assert.deepEqual(catalog.works('authors', 'Nobody'), { series: [], titles: [] });
 });
 
 test('narrators\' and publishers\' works come from the editions, each book once', () => {
@@ -1373,10 +1398,10 @@ test('narrators\' and publishers\' works come from the editions, each book once'
 		book('Apple Hill', 'Bo Reed', { e: [{ n: ['Cy Hale'], p: 'Harbor Sound' }] }),
 		book('Unread Edition', 'Bo Reed'),
 	]) });
-	const works = catalog.narratorWorks('Di Moss');
+	const works = catalog.works('narrators', 'Di Moss');
 	assert.deepEqual(works.series.map(s => [s.name, s.books.map(b => b.title)]), [['Tide Saga', ['First', 'Second']]]);
-	assert.deepEqual(catalog.publisherWorks('Harbor Sound').titles.map(b => b.title), ['Apple Hill']);
-	assert.deepEqual(catalog.narratorWorks('Nobody'), { series: [], titles: [] });
+	assert.deepEqual(catalog.works('publishers', 'Harbor Sound').titles.map(b => b.title), ['Apple Hill']);
+	assert.deepEqual(catalog.works('narrators', 'Nobody'), { series: [], titles: [] });
 });
 
 test('backups carry author info, and older ones have none', () => {

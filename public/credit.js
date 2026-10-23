@@ -10,9 +10,9 @@ import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, queryCatalog, byId, fieldById, spell, buildElement, fillElement, joined,
-	authorPageHref, valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref, bookPageHref, seriesPageHref } from './store.js';
+	valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref, bookPageHref, seriesPageHref } from './store.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
-import {setAddress} from './book-list.js';
+import {setAddress, nameLinks, authorLinks, statusTag} from './book-list.js';
 /** @import {CreditKind} from './credit-kinds.js' */
 /** @import {Book} from './modules/book.js' */
 /** @import {Child} from './store.js' */
@@ -31,8 +31,6 @@ let JOINING = null;                   // the name of another one Save was presse
 
 const bookHref = (/** @type {Book} */ b)=> bookPageHref(b.id || '');
 const seriesHref = (/** @type {string} */ name)=> seriesPageHref(CATALOG.idFor('series', name));
-/** @type {(names: string[], href: (name: string) => string) => Child[]} */
-const nameLinks = (names, href)=> joined(names.map(x=> buildElement('a', {href: href(x)}, x)), ', ');
 /** @returns {Map<string, Contributor>} what the catalog keeps about the page's kind, by id */
 const kept = ()=> CATALOG[KIND.infoKey];
 /** @type {(id: string) => string} the name of the one stored under `id` */
@@ -87,7 +85,7 @@ function creditBookLine(b, name){
 		: KIND === CREDIT_KINDS.narrator ? [...new Set(b.editions.filter(ed=> ed.narrators.includes(name)).flatMap(ed=> ed.narrators))].filter(x=> x !== name)
 		: [];
 	return buildElement('li', {}, b.number && [buildElement('span', {class: 'num'}, '#' + b.number), ' '], buildElement('a', {href: bookHref(b)}, b.title),
-		!isAuthor && b.authors.length > 0 && [' ', buildElement('span', {class: 'with'}, 'by ', nameLinks(b.authors, authorPageHref))],
+		!isAuthor && b.authors.length > 0 && [' ', buildElement('span', {class: 'with'}, 'by ', authorLinks(b.authors))],
 		others.length > 0 && [' ', buildElement('span', {class: 'with'}, 'with ', nameLinks(others, KIND.href))]);
 }
 
@@ -103,7 +101,7 @@ function seriesHeading(s){
 	const si = CATALOG.seriesInfo(s.name);
 	return buildElement('p', {class: 'series-title'}, link,
 		' ', buildElement('span', {class: 'n'}, `${Series.owned(s.books)} owned${si ? ' of ' + si.total : ''}`),
-		si && [' ', buildElement('span', {class: `status ${si.status}`}, si.status === 'complete' ? 'complete' : 'ongoing')]);
+		si && [' ', statusTag(si.status)]);
 }
 
 /**
@@ -121,7 +119,7 @@ function missingNote(s){
 function renderCreditPage(id){
 	const name = nameOf(id);
 	const info = kept().get(id) || new Contributor(name);
-	const {series, titles} = KIND.works(name);
+	const {series, titles} = CATALOG.works(KIND.infoKey, name);
 	const count = series.reduce((n, s)=> n + s.books.length, 0) + titles.length;
 	byId('subtitle').textContent = count
 		? `${Text.plural(count, 'audiobook')}${series.length ? ' in ' + Text.plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`

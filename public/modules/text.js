@@ -147,6 +147,14 @@ export class Text {
 	static plural(n, word, many = word + 's'){ return `${n} ${n === 1 ? word : many}`; }
 
 	/**
+	 * The first three of `items`, saying how many more there are: "a, b, c and 2 more".
+	 * @param {string[]} items
+	 * @param {string} [separator]
+	 * @returns {string}
+	 */
+	static firstThree(items, separator = ', '){ return items.slice(0, 3).join(separator) + (items.length > 3 ? ` and ${items.length - 3} more` : ''); }
+
+	/**
 	 * Names as a list. Before they were lists, the authors ("a") and an edition's narrators ("n") were one
 	 * comma separated string; that is split (splitNames). A list keeps its names as they are, without
 	 * repeats or empty ones; anything else is left for the Check to report. Returns null for no names.

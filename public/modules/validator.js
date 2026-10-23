@@ -22,9 +22,6 @@ function nonEmpty(v){ return typeof v === 'string' && v.trim() !== ''; }
 // A list of names, as authors and narrators are kept.
 /** @type {(v: unknown) => boolean} */
 const nameList = v => Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string' && x.trim() !== '');
-// The editions of a stored book that are objects.
-/** @type {(rec: Unchecked) => Record<string, any>[]} */
-const storedEditions = rec => rec && Array.isArray(rec.e) ? rec.e.filter(Text.isObject) : [];
 
 /** Checks a stored catalog; every method is static. */
 export class Validator {
@@ -84,11 +81,11 @@ export class Validator {
 				warnings.push(`${label}: unusual series number ${repr(b.sn)}`);
 			}
 			const titleKey = Text.key(Text.norm(b.t), Book.firstAuthor(b.a));
-			const editions = storedEditions(b).map(Edition.fromJSON);
+			const editions = Book.storedEditions(b).map(Edition.fromJSON);
 			const isbns = editions.flatMap(ed => ed.isbns());
 			for(const isbn of new Set(isbns.filter((x, j) => isbns.indexOf(x) !== j))) warnings.push(`${label}: lists ISBN ${isbn} on two editions`);
 			editions.forEach((ed, j) => {
-				const stored = storedEditions(b)[j];
+				const stored = Book.storedEditions(b)[j];
 				for(const key of ed.idKeys()){
 					const family = key.slice(0, key.indexOf(' ')), v = key.slice(key.indexOf(' ') + 1);
 					const other = seen.get(key);
@@ -122,7 +119,7 @@ export class Validator {
 				}
 			}
 		}
-		for(const ed of books.flatMap(storedEditions)){
+		for(const ed of books.flatMap(Book.storedEditions)){
 			if(typeof ed.p === 'string' && Text.tidy(ed.p) !== ed.p) untidy.set(Text.key('publisher', ed.p), ['publisher', ed.p, Text.tidy(ed.p)]);
 			for(const n of Array.isArray(ed.n) ? ed.n : []){
 				if(typeof n === 'string' && Text.normalizeName(n) !== n) untidy.set(Text.key('narrator', n), ['narrator', n, Text.normalizeName(n)]);
@@ -220,7 +217,7 @@ export class Validator {
 		const errors = [];
 		/** @type {string[]} */
 		const warnings = [];
-		const one = {authors: 'author', narrators: 'narrator', publishers: 'publisher'}[kind];
+		const one = Contributor.ONE[kind];
 		if(entries === undefined || entries === null) return {errors, warnings};
 		if(!Text.isObject(entries)) return {errors: [`${kind}: must map ${one} names to their info`], warnings};
 		for(const [name, entry] of Object.entries(entries)){

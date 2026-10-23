@@ -49,12 +49,16 @@ function textList(v){ return Array.isArray(v) && v.every(nonEmpty); }
 // The ISBN of a stored edition, 13-digit, in a list; [] when it has none (or not a valid one).
 /** @type {(ed: Unchecked) => string[]} */
 const storedIsbns = ed => { const isbn = Text.isObject(ed) && typeof ed.isbn === 'string' ? Isbn.parse(ed.isbn) : null; return isbn ? [isbn] : []; };
-// The editions of a stored book that are objects.
-/** @type {(rec: Unchecked) => Record<string, any>[]} */
-const storedEditions = rec => rec && Array.isArray(rec.e) ? rec.e.filter(Text.isObject) : [];
 
 /** A title in the catalog. */
 export class Book {
+	/**
+	 * The editions of a stored book that are objects.
+	 * @param {Unchecked} rec
+	 * @returns {Record<string, any>[]}
+	 */
+	static storedEditions(rec){ return rec && Array.isArray(rec.e) ? rec.e.filter(Text.isObject) : []; }
+
 	/** the keys of a stored book, in order */
 	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'ext', 'e'];
 	// The key a backup keeps the book's id under, before the others. It is not one of KEYS, as it says which
@@ -307,11 +311,10 @@ export class Book {
 	 * @returns {(ed: Edition) => boolean}
 	 */
 	static sharedEditionTest(books){
-		const ids = (/** @type {Edition} */ ed) => [...ed.idKeys(), ...ed.isbns().map(x => 'isbn ' + x)];
 		/** @type {Map<string, number>} */
 		const owners = new Map();
-		for(const b of books) for(const id of new Set(b.editions.flatMap(ids))) owners.set(id, (owners.get(id) || 0) + 1);
-		return ed => ids(ed).some(id => (owners.get(id) || 0) > 1);
+		for(const b of books) for(const id of new Set(b.editions.flatMap(ed => ed.idAndIsbnKeys()))) owners.set(id, (owners.get(id) || 0) + 1);
+		return ed => ed.idAndIsbnKeys().some(id => (owners.get(id) || 0) > 1);
 	}
 
 	/**
@@ -530,7 +533,7 @@ export class Book {
 		const owners = new Map();   // Hardcover book id on editions -> how many books have it
 		for(const b of books){
 			// (editions held the Hardcover book id before it moved to the book)
-			const ids = new Set(storedEditions(b).map(ed => ed.hcb).filter(v => typeof v === 'string' && v.trim()).map(v => v.trim()));
+			const ids = new Set(Book.storedEditions(b).map(ed => ed.hcb).filter(v => typeof v === 'string' && v.trim()).map(v => v.trim()));
 			for(const id of ids) owners.set(id, (owners.get(id) || 0) + 1);
 		}
 		const pickHcb = (/** @type {string[]} */ ids) => ids.find(id => owners.get(id) === 1) || ids[0];

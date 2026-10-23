@@ -4,15 +4,16 @@
 import {Text} from './modules/text.js';
 import {Edition} from './modules/edition.js';
 import {Book} from './modules/book.js';
+import {Catalog} from './modules/catalog.js';
 import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogLookup} from './modules/catalog-lookup.js';
-import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, addExclusions, showIoStatus, lookupHardcoverBook, browserHardcoverToken, hardcoverClient, browserProxy, fetchViaProxy, startPage, byId, fieldById, spell,
+import { CATALOG, STATUS_TIME, persist, loadRecords, queryCatalog, afterSaving, showIoStatus, lookupHardcoverBook, browserHardcoverToken, hardcoverClient, browserProxy, fetchViaProxy, startPage, byId, fieldById, spell,
 	buildElement, fillElement, joined, publisherPageHref, externalFields, fillExternalFields, readExternalFields, bookPageHref, seriesPageHref } from './store.js';
 /** @import {Child} from './store.js' */
-import { authorLinks, narratorLinks, bookNarrators, coverImage, hashParts, hashOf, setAddress } from './book-list.js';
+import { authorLinks, narratorLinks, bookNarrators, coverImage, hashParts, hashText, hashOf, setAddress } from './book-list.js';
 import { comboBox, comboField, newNames, refreshNewNotes } from './combo-box.js';
 
 // Books and series are known by the ids they are stored under, so a book retitled (here or in another tab)
@@ -20,7 +21,7 @@ import { comboBox, comboField, newNames, refreshNewNotes } from './combo-box.js'
 /** @type {string | null} */
 export let BOOK_FILTER = null;        // the id of the book shown (#book=...), or null
 /** @type {{series: string, author: string} | null} */
-export let ADDING = null;             // what a book being added starts with (#add): a series' id and an author's name, or ''
+let ADDING = null;                    // what a book being added starts with (#add): a series' id and an author's name, or ''
 /** @type {string | null} */
 export let EDIT_ID = null;            // the id of the book being edited, or null when adding one
 /** @type {{id: string, q: string, found: string[], more: number} | null} */
@@ -31,10 +32,11 @@ let REMOVING = null;           // a book removed but kept until its Undo is gone
 let REMOVED = null;            // the id of the book last removed here, so its page says so
 
 /**
- * Show what BOOK_FILTER or ADDING say, once the saves asked for are done and it is read.
+ * Show what BOOK_FILTER or ADDING say, once the saves asked for are done and it is read (again, after an
+ * edit, or another tab's).
  * @returns {Promise<void>} once it is drawn
  */
-function showView(){
+export function refreshView(){
 	return afterSaving(async ()=>{ await loadView(); render(); });
 }
 
@@ -49,7 +51,7 @@ async function loadView(){
 	if(BOOK_FILTER === null) return;
 	await loadRecords({books: [BOOK_FILTER]});
 	const b = CATALOG.book(BOOK_FILTER);
-	const keys = b ? [...new Set(b.editions.flatMap(ed=> [...ed.idKeys(), ...ed.isbns().map(x=> 'isbn ' + x)]))] : [];
+	const keys = b ? [...new Set(b.editions.flatMap(ed=> ed.idAndIsbnKeys()))] : [];
 	if(keys.length) await loadRecords({editionKeys: keys});
 }
 
@@ -68,15 +70,6 @@ async function resolveAddress(){
 		return book ? book.id : text;
 	});
 	if(id !== text){ BOOK_FILTER = id; setAddress('replace', addressNow()); }
-}
-
-/**
- * Read what the page shows again from the stored catalog, once the saves asked for are done (after an
- * edit, or another tab's).
- * @returns {Promise<void>}
- */
-export function refreshView(){
-	return showView();
 }
 
 export function render(){
@@ -106,8 +99,7 @@ export function render(){
  */
 function stateFromHash(hash){
 	const p = hashParts(hash);
-	const text = (/** @type {string} */ k)=>{ const v = p.get(k); return typeof v === 'string' ? v.trim() : ''; };
-	return {book: text('book') || null, adding: p.has('add') ? {series: text('series'), author: text('author')} : null};
+	return {book: hashText(p, 'book') || null, adding: p.has('add') ? {series: hashText(p, 'series'), author: hashText(p, 'author')} : null};
 }
 
 /** @returns {string} the address of what is shown now */
@@ -115,21 +107,11 @@ function addressNow(){
 	return ADDING ? hashOf([['add', true], ['series', ADDING.series], ['author', ADDING.author]]) : hashOf([['book', BOOK_FILTER || '']]);
 }
 
-/**
- * Show a book's page, recorded in the address: a new history entry, so Back returns here.
- * @param {string} id
- * @returns {Promise<void>} once it is drawn
- */
-export function openBook(id){
-	setAddress('push', hashOf([['book', id]]));
-	return showAddress();
-}
-
 // Back and forward (and a link to another book, a box set's): show what the address says, from the top of
 // the page when it is another book.
 function showAddress(){
 	const st = stateFromHash(location.hash);
-	if(st.book === BOOK_FILTER && JSON.stringify(st.adding) === JSON.stringify(ADDING)) return showView();
+	if(st.book === BOOK_FILTER && JSON.stringify(st.adding) === JSON.stringify(ADDING)) return refreshView();
 	closeForm();
 	MERGE_SEARCH = null;
 	BOOK_FILTER = st.book; ADDING = st.adding;
@@ -148,9 +130,7 @@ let SHARED = new Map();
 function sharedEditions(){
 	/** @type {Map<string, [Book, Edition][]>} */
 	const byKey = new Map();
-	/** @type {(ed: Edition) => string[]} */
-	const keys = ed=> [...ed.idKeys(), ...ed.isbns().map(x=> 'isbn ' + x)];
-	CATALOG.books.forEach(b=> b.editions.forEach(ed=> keys(ed).forEach(k=>{
+	CATALOG.books.forEach(b=> b.editions.forEach(ed=> ed.idAndIsbnKeys().forEach(k=>{
 		let list = byKey.get(k);
 		if(!list) byKey.set(k, list = []);
 		list.push([b, ed]);
@@ -160,7 +140,7 @@ function sharedEditions(){
 	CATALOG.books.forEach(b=> b.editions.forEach(ed=>{
 		/** @type {Set<Book>} */
 		const others = new Set();
-		for(const k of keys(ed)) for(const [other, x] of byKey.get(k) || []) if(other !== b && x.sameAs(ed)) others.add(other);
+		for(const k of ed.idAndIsbnKeys()) for(const [other, x] of byKey.get(k) || []) if(other !== b && x.sameAs(ed)) others.add(other);
 		if(others.size) shared.set(ed, [...others]);
 	}));
 	return shared;
@@ -361,7 +341,7 @@ export function finishRemoving(){
 	const i = CATALOG.books.findIndex(b=> b.id === id);
 	if(i < 0) return;
 	const [removed] = CATALOG.books.splice(i, 1);
-	addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
+	CATALOG.addExclusions(removed.exclusionEntries());   // so the next import does not bring it back
 	render(); persist(); refreshView();
 }
 addEventListener('pagehide', finishRemoving);
@@ -400,10 +380,9 @@ export async function loadFormNames(){
  */
 function newEntries(b){
 	if(!FORM_NAMES_READ) return [];
-	/** @type {['series' | 'author' | 'narrator' | 'publisher', string[]][]} */
-	const named = [['series', b.series ? [b.series] : []], ['author', b.authors], ['narrator', [...new Set(b.editions.flatMap(ed=> ed.narrators))]],
-		['publisher', [...new Set(b.editions.map(ed=> ed.publisher || '').filter(Boolean))]]];
-	return named.flatMap(([kind, names])=> newNames(FORM_NAMES[kind], names.join(', '), true).map(name=> `the ${NOUNS[kind][0]} ${name}`));
+	/** @type {['series' | 'author' | 'narrator' | 'publisher', import('./modules/catalog.js').NamedKind][]} */
+	const kinds = [['series', 'series'], ['author', 'authors'], ['narrator', 'narrators'], ['publisher', 'publishers']];
+	return kinds.flatMap(([kind, named])=> newNames(FORM_NAMES[kind], Catalog.namesOn(named)(b).join(', '), true).map(name=> `the ${NOUNS[kind][0]} ${name}`));
 }
 
 /**
@@ -901,7 +880,7 @@ byId('addForm').addEventListener('submit', async e=>{
 	b.editions = editions;
 
 	// editing an edition a box set shares with other books edits it there too, so those books are loaded first
-	const keys = [...new Set(editions.flatMap(ed=> [...ed.idKeys(), ...ed.isbns().map(x=> 'isbn ' + x)]))];
+	const keys = [...new Set(editions.flatMap(ed=> ed.idAndIsbnKeys()))];
 	if(keys.length) await loadRecords({editionKeys: keys});
 	if(EDIT_ID !== null && !CATALOG.book(EDIT_ID)){ closeForm(); return; }
 	const added = newEntries(b);

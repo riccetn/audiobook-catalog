@@ -3,7 +3,8 @@
 import {CatalogRecords} from './modules/catalog-records.js';
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 import { CATALOG, queryCatalog, afterSaving, startPage, byId, fieldById, spell, buildElement, fillElement } from './store.js';
-import { BookList, bookGroups, readOrdered, watchCoversBox, showEmptyCatalog, showBackupNudge, hashParts, hashOf, setAddress } from './book-list.js';
+import { BookList, bookGroups, readOrdered, watchCoversBox, showEmptyCatalog, showBackupNudge, hashParts, hashText, hashOf, setAddress,
+	watchSearchAndFilters } from './book-list.js';
 
 // The page holds only what it shows, read from the stored catalog by loadView(): the ids of the books the
 // search and filters find, in the order they are listed, of which the first are drawn (Show more draws more).
@@ -146,27 +147,19 @@ function addressNow(){
 // Back and forward (and an address typed or pasted in): show what the address says.
 function showAddress(){
 	const p = hashParts(location.hash);
-	const text = (/** @type {string} */ k)=>{ const v = p.get(k); return typeof v === 'string' ? v.trim() : ''; };
 	// the address's search is trimmed; leave the box alone when it already says that, or a space being typed is lost
 	const box = fieldById('q');
-	if(box.value.trim() !== text('q')) box.value = text('q');
-	fieldById('authorFilter').value = text('author');
-	fieldById('genreFilter').value = text('genre');
-	fieldById('readFilter').value = text('read') === 'undated' ? UNDATED : text('read');
-	fieldById('sortBy').value = ['read', 'added'].includes(text('sort')) ? text('sort') : '';
+	if(box.value.trim() !== hashText(p, 'q')) box.value = hashText(p, 'q');
+	fieldById('authorFilter').value = hashText(p, 'author');
+	fieldById('genreFilter').value = hashText(p, 'genre');
+	fieldById('readFilter').value = hashText(p, 'read') === 'undated' ? UNDATED : hashText(p, 'read');
+	fieldById('sortBy').value = ['read', 'added'].includes(hashText(p, 'sort')) ? hashText(p, 'sort') : '';
 	if(addressNow() !== location.hash) setAddress('replace', addressNow());
 	return showView();
 }
 addEventListener('popstate', showAddress);
 addEventListener('hashchange', ()=>{ if(addressNow() !== location.hash) showAddress(); });
 
-// Typing a search is one step back, however many letters it took: the first change of the search adds a
-// history entry, the rest of the typing updates it.
-byId('q').addEventListener('input', ()=>{
-	const typing = !!(history.state && history.state.search);
-	setAddress(typing ? 'replace' : 'push', addressNow(), {search: true});
-	showView();
-});
 FILTERS.forEach(id=> byId(id).addEventListener('change', ()=>{ setAddress('push', addressNow()); showView(); }));
 
 // On a phone the filters fold away behind a button (styles.css), which says how many are on.
@@ -174,10 +167,7 @@ function showFilterCount(){
 	const on = FILTERS.filter(id=> fieldById(id).value).length;
 	byId('filtersBtn').textContent = on ? `Filters · ${on}` : 'Filters';
 }
-byId('filtersBtn').addEventListener('click', ()=>{
-	const open = byId('controls').classList.toggle('filtersOpen');
-	byId('filtersBtn').setAttribute('aria-expanded', String(open));
-});
+watchSearchAndFilters(addressNow, showView);
 watchCoversBox(()=> render());
 
 // The search and filters in the address (a link, a bookmark, or Back from another page), once the filters have their options.

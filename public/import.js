@@ -13,7 +13,7 @@ import {HardcoverClient} from './modules/hardcover-client.js';
 import {HardcoverSync} from './modules/hardcover-sync.js';
 import {Comparison} from './modules/comparison.js';
 import {
-	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, addExclusions, showIoStatus,
+	CATALOG, SEEN_REVISION, storedRevision, whenSaved, persist, showIoStatus,
 	minutes, showHardcoverJob, HARDCOVER_TOKEN_KEY, browserHardcoverToken, PROXY_STORAGE_KEY, browserProxy, proxyAddress, fetchViaProxy,
 	hardcoverClient, startPage, afterSaving, queryCatalog, wholeCatalog, byId, fieldById, spell, valueFromPageHash, idFromAddress, buildElement, fillElement,
 	noteBackup, backupAge, backupAgeText
@@ -39,19 +39,26 @@ function refreshPage(){
 }
 
 /**
- * Run `task` once the page holds the whole catalog, which it keeps from then on; undefined when it can't be read.
- * @template T
- * @param {() => T} task
- * @returns {Promise<T | undefined>}
+ * Hold the whole catalog, which the page keeps from then on; false, said on the status line, when it can't be read.
+ * @returns {Promise<boolean>}
  */
-async function withWholeCatalog(task){
+async function holdWholeCatalog(){
 	try{
 		await wholeCatalog();
+		return true;
 	}catch(e){
 		showIoStatus(spell(`Couldn't read the catalog kept in this browser: ${Text.errorText(e)}. Reload the page.`), true);
-		return undefined;
+		return false;
 	}
-	return task();
+}
+
+/**
+ * Run `task` once the page holds the whole catalog (holdWholeCatalog); not when it can't be read.
+ * @param {() => void} task
+ * @returns {Promise<void>}
+ */
+async function withWholeCatalog(task){
+	if(await holdWholeCatalog()) task();
 }
 
 /**
@@ -90,14 +97,6 @@ function exportGoodreads(){
 }
 
 /**
- * What a FileReader that was asked to readAsText() read: its onload event's target is the reader, and
- * its result a string.
- * @param {ProgressEvent<FileReader>} e
- * @returns {string}
- */
-const readText = e => /** @type {string} */ (/** @type {FileReader} */ (e.target).result);
-
-/**
  * Pick the files to read; resolves to [{name, text}].
  * @param {Iterable<File>} files
  * @returns {Promise<{name: string, text: string}[]>}
@@ -105,7 +104,8 @@ const readText = e => /** @type {string} */ (/** @type {FileReader} */ (e.target
 function readFiles(files){
 	return Promise.all([...files].map(file=> /** @type {Promise<{name: string, text: string}>} */ (new Promise((resolve, reject)=>{
 		const reader = new FileReader();
-		reader.onload = e=> resolve({name: file.name, text: readText(e)});
+		// the event's target is the reader, which read a string
+		reader.onload = e=> resolve({name: file.name, text: /** @type {string} */ (/** @type {FileReader} */ (e.target).result)});
 		reader.onerror = ()=> reject(new Error(`couldn't read ${file.name}`));
 		reader.readAsText(file);
 	}))));
@@ -117,7 +117,7 @@ function readFiles(files){
  * @param {File[]} files
  */
 async function importBackup(files){
-	if(!await withWholeCatalog(()=> true)) return;   // what it replaces is all of it
+	if(!await holdWholeCatalog()) return;   // what it replaces is all of it
 	try{
 		const {books, series, authors, narrators, publishers, excluded, notDuplicates, nameIds} = Backup.readFiles(await readFiles(files));
 		const bad = books.some(b=> !b.title || !b.authors.length);
@@ -126,8 +126,7 @@ async function importBackup(files){
 		const unstorable = CatalogRecords.unstorable(new Catalog({books, series: series || undefined, authors: authors || undefined,
 			narrators: narrators || undefined, publishers: publishers || undefined}));
 		if(unstorable.length){
-			showIoStatus(`Not restored: fix these values in the backup first (they aren't what their field holds): ${unstorable.slice(0, 3).join('; ')}` +
-				(unstorable.length > 3 ? ` and ${unstorable.length - 3} more.` : '.'), true);
+			showIoStatus(`Not restored: fix these values in the backup first (they aren't what their field holds): ${Text.firstThree(unstorable, '; ')}.`, true);
 			return;
 		}
 		// the info kept is by name here, as it is moved over to the ids its names have
@@ -142,7 +141,7 @@ async function importBackup(files){
 			const restored = {series, authors, narrators, publishers}[kind];
 			CATALOG.replaceInfo(kind, restored || had);
 		}
-		const newlyExcluded = addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
+		const newlyExcluded = CATALOG.addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
 		CATALOG.addMarkTexts([...keptMarks, ...notDuplicates || []]);   // likewise the pairs marked "Not duplicates"
 		persist(); noteBackup().then(refreshPage);   // what was restored is in that backup
 		showIoStatus(`Restored ${books.length} books` + (series ? ` and the release details of ${series.size} series` : '') +
@@ -186,7 +185,7 @@ let IMPORT_KIND = 'audible';
  * @property {ComparePicks} picks
  */
 /** @type {PendingCompare | null} */
-export let PENDING_COMPARE = null;   // until it is applied or closed
+let PENDING_COMPARE = null;   // until it is applied or closed
 
 /**
  * A comparison to open, with what an import would take ticked; but the edition Goodreads or Hardcover has
@@ -201,12 +200,6 @@ function pendingCompare(compare){
 	return {...compare, picks: {take, editions, patch: new Set(), add: new Set(), reads: new Set(), ids: true}};
 }
 
-/**
- * A book in a preview list: title, author and series.
- * @param {Book} b
- * @returns {string}
- */
-const bookLine = b=> Comparison.bookLine(b);
 
 /**
  * A paragraph of the preview.
@@ -240,13 +233,39 @@ function pickedCount(compare){
 	return picks.take.size + [...picks.editions].filter(at=> !picks.take.has(at)).length + picks.patch.size + picks.add.size + picks.reads.size + (picks.ids && hardcover && hardcover.idsFound.length ? 1 : 0);
 }
 
-function updateApplyButton(){
-	const n = PENDING_COMPARE ? pickedCount(PENDING_COMPARE) : 0;
+/**
+ * The preview's buttons: the confirm button, labeled `confirm`, and Cancel; only Close when `confirm` is ''.
+ * @param {string} confirm
+ */
+function showPreviewButtons(confirm){
 	const confirmBtn = byId('importConfirm');
-	confirmBtn.style.display = n ? '' : 'none';
-	confirmBtn.textContent = `Apply ${Text.plural(n, 'change')}`;
-	byId('importCancel').textContent = n ? 'Cancel' : 'Close';
+	confirmBtn.style.display = confirm ? '' : 'none';
+	confirmBtn.textContent = confirm;
+	byId('importCancel').textContent = confirm ? 'Cancel' : 'Close';
 }
+
+/**
+ * Show `body` in the preview under `title`, with its buttons (showPreviewButtons), and open it under the
+ * panel `panelId` when given (openPreview).
+ * @param {string} title
+ * @param {Child[]} body
+ * @param {string} confirm
+ * @param {string} [panelId]
+ */
+function showPreview(title, body, confirm, panelId){
+	byId('importPreviewTitle').textContent = title;
+	fillElement(byId('importPreviewBody'), body);
+	showPreviewButtons(confirm);
+	if(panelId) openPreview(panelId);
+}
+
+/** @returns {string} the comparison's Apply button's label, for the changes ticked; '' for none */
+function applyLabel(){
+	const n = PENDING_COMPARE ? pickedCount(PENDING_COMPARE) : 0;
+	return n ? `Apply ${Text.plural(n, 'change')}` : '';
+}
+
+function updateApplyButton(){ showPreviewButtons(applyLabel()); }
 
 /**
  * A tickbox of the comparison, for the pick `key` of `group`.
@@ -314,16 +333,16 @@ function drawCompare(){
 	out.push(para(spell(`${fresh.length} new, ${gains.length} with more to give, ${differing.length} with values that differ, ${same.length} the same as in this catalog.`)));
 
 	// a new book as it would be added, in the series spelling in use
-	out.push(compareGroup(`New from ${name}`, fresh.map(b=> [pickBox('take', b.at, [bookLine(b.added[0] || b.theirs)]),
-		b.added.length > 1 && messageList(b.added.map(bookLine))]), 'take', fresh.map(b=> b.at)));
+	out.push(compareGroup(`New from ${name}`, fresh.map(b=> [pickBox('take', b.at, [Comparison.bookLine(b.added[0] || b.theirs)]),
+		b.added.length > 1 && messageList(b.added.map(Comparison.bookLine))]), 'take', fresh.map(b=> b.at)));
 	const fromEdition = (/** @type {ComparedBook} */ b)=> b.editionGains.length ?
 		buildElement('ul', {}, buildElement('li', {}, pickBox('editions', b.at, [`the ${name} edition: ${b.editionGains.join('; ')}`]))) : null;
 	out.push(compareGroup(`${name} has more`, gains.map(b=> b.gains.length || b.added.length
-		? [pickBox('take', b.at, [bookLine(b.books[0] || b.theirs)]), messageList([...b.gains, ...b.added.map(a=> `adds ${bookLine(a)}`)]), fromEdition(b)]
-		: [buildElement('span', {class: 'cmpBook'}, bookLine(b.books[0])), fromEdition(b)]), 'take', gains.filter(b=> b.gains.length || b.added.length).map(b=> b.at),
+		? [pickBox('take', b.at, [Comparison.bookLine(b.books[0] || b.theirs)]), messageList([...b.gains, ...b.added.map(a=> `adds ${Comparison.bookLine(a)}`)]), fromEdition(b)]
+		: [buildElement('span', {class: 'cmpBook'}, Comparison.bookLine(b.books[0])), fromEdition(b)]), 'take', gains.filter(b=> b.gains.length || b.added.length).map(b=> b.at),
 		spell(compare.source === 'audible' ? 'Ticked, importing fills in what this catalog lacks, and changes nothing it has.'
 			: `Ticked, importing fills in what this catalog lacks, and changes nothing it has. The ${name} edition is left out unless you tick it, as it may have been picked there for want of yours.`)));
-	out.push(compareGroup('Different in both', differing.map(b=> [buildElement('span', {class: 'cmpBook'}, bookLine(b.books[0])),
+	out.push(compareGroup('Different in both', differing.map(b=> [buildElement('span', {class: 'cmpBook'}, Comparison.bookLine(b.books[0])),
 		buildElement('ul', {}, b.differences.map(d=> differenceRow(d, name)))]),
 		'patch', differing.flatMap(b=> b.differences.map(d=> d.key)), spell(`Tick a value to use the one on ${name} in place of this catalog's.` +
 			(compare.source === 'audible' ? '' : ` An edition's values are those of the edition picked on ${name}, which may not be yours.`))));
@@ -331,35 +350,33 @@ function drawCompare(){
 	if(hardcover){
 		const {plan} = hardcover;
 		const dates = (/** @type {string[]} */ d)=> d.length ? `: read ${d.join(', ')}` : '';
-		out.push(compareGroup('Not on your Hardcover Read shelf', plan.add.map((a, i)=> pickBox('add', i, [a.books.map(bookLine).join('; '), dates(a.dates)])),
+		out.push(compareGroup('Not on your Hardcover Read shelf', plan.add.map((a, i)=> pickBox('add', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)])),
 			'add', plan.add.map((a, i)=> i), 'Tick a book to put it on your Read shelf on Hardcover, with its dates read.'));
-		out.push(compareGroup('Reads Hardcover lacks', plan.reads.map((a, i)=> pickBox('reads', i, [a.books.map(bookLine).join('; '), dates(a.dates)])),
+		out.push(compareGroup('Reads Hardcover lacks', plan.reads.map((a, i)=> pickBox('reads', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)])),
 			'reads', plan.reads.map((a, i)=> i), 'Tick a book to add these reads to it on Hardcover.'));
 		if(hardcover.idsFound.length){
 			out.push(buildElement('label', {class: 'cmpPick cmpIds'}, buildElement('input', {type: 'checkbox', 'data-pick': 'ids', checked: compare.picks.ids,
 				onchange: (/** @type {Event} */ e)=>{ compare.picks.ids = /** @type {HTMLInputElement} */ (e.currentTarget).checked; updateApplyButton(); }}),
 				` Save the Hardcover ids found for ${Text.plural(hardcover.idsFound.length, 'book')}`));
 		}
-		out.push(compareGroup('On another Hardcover shelf, left alone', plan.otherShelf.map(([b, status])=> `${bookLine(b)}: ${status}`), null, []));
-		out.push(compareGroup('Not found on Hardcover', plan.unknown.map(bookLine), null, [],
+		out.push(compareGroup('On another Hardcover shelf, left alone', plan.otherShelf.map(([b, status])=> `${Comparison.bookLine(b)}: ${status}`), null, []));
+		out.push(compareGroup('Not found on Hardcover', plan.unknown.map(Comparison.bookLine), null, [],
 			'No ASIN, ISBN or Goodreads id Hardcover knows: give the book a "Hardcover <edition id>" in its edit form.'));
 		if(plan.inexact.length) out.push(para(`Dates read without a day, which Hardcover can't take: ${plan.inexact.length}`));
 	} else if(comparison.onlyHere.length){
 		out.push(buildElement('details', {class: 'cmpOnlyHere'}, buildElement('summary', {}, spell(`Only in this catalog: ${comparison.onlyHere.length}`)),
-			messageList(comparison.onlyHere.map(bookLine), 100)));
+			messageList(comparison.onlyHere.map(Comparison.bookLine), 100)));
 	}
 	const excluded = of('excluded'), notAdded = of('notAdded');
-	if(excluded.length) out.push(para(`Skipped (excluded from imports): ${excluded.length}`), messageList(excluded.map(b=> bookLine(b.theirs)), 10));
+	if(excluded.length) out.push(para(`Skipped (excluded from imports): ${excluded.length}`), messageList(excluded.map(b=> Comparison.bookLine(b.theirs)), 10));
 	if(notAdded.length){
-		out.push(para(spell(`Not added, as Hardcover has no audiobook edition picked for them: ${notAdded.length}`)), messageList(notAdded.map(b=> bookLine(b.theirs)), 10));
+		out.push(para(spell(`Not added, as Hardcover has no audiobook edition picked for them: ${notAdded.length}`)), messageList(notAdded.map(b=> Comparison.bookLine(b.theirs)), 10));
 	}
 	if(compare.warnings.length) out.push(para(`Needs a look (${compare.warnings.length}):`, 'warn'), messageList(compare.warnings));
 	if(!pickedCount(compare) && !fresh.length && !gains.length && !differing.length && !(hardcover && (hardcover.plan.add.length || hardcover.plan.reads.length))){
 		out.push(para(spell('Nothing to take or send: both have the same.')));
 	}
-	byId('importPreviewTitle').textContent = spell(`Compare with ${name}`);
-	fillElement(byId('importPreviewBody'), out);
-	updateApplyButton();
+	showPreview(spell(`Compare with ${name}`), out, applyLabel());
 }
 
 /**
@@ -397,8 +414,7 @@ function applyIntoCopy(compare){
 	const {take, editions} = compare.picks;
 	const {report, patched} = Comparison.apply(copy, compare.incoming, {...compare.picks, take: new Set([...take, ...editions])}, compare.opts);
 	const idsFound = compare.hardcover && compare.picks.ids ? HardcoverSync.addIds(copy.books, compare.hardcover.found).length : 0;
-	// series-info problems are not the import's doing (a series renamed in the page); only block on the books
-	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
+	const errors = copy.bookErrors();
 	return {copy, report, patched, idsFound, errors};
 }
 
@@ -449,9 +465,8 @@ function mergeIntoCatalog(backup){
 	const m = backup.mergeInto(CATALOG, prefer);
 	const merged = new Catalog({books: m.books, series: m.series, authors: m.authors, narrators: m.narrators, publishers: m.publishers});
 	const errors = merged.validate({contributors: true}).errors;
-	const changes = m.added.length + m.updated.length + m.removed.length + m.infoAdded.length + m.infoChanged.length +
-		m.authorsAdded.length + m.authorsChanged.length + m.narratorsAdded.length + m.narratorsChanged.length +
-		m.publishersAdded.length + m.publishersChanged.length + m.excluded.length + m.notDuplicates.length;
+	const changes = [m.added, m.updated, m.removed, m.infoAdded, m.infoChanged, m.authorsAdded, m.authorsChanged, m.narratorsAdded,
+		m.narratorsChanged, m.publishersAdded, m.publishersChanged, m.excluded, m.notDuplicates].reduce((n, list)=> n + list.length, 0);
 	return {m, errors, changes};
 }
 
@@ -459,7 +474,7 @@ function previewMerge(){
 	if(!PENDING_MERGE) return;
 	const {backup, fileName} = PENDING_MERGE;
 	const {m, errors, changes} = mergeIntoCatalog(backup);
-	const list = (/** @type {Book[]} */ books) => messageList(books.map(bookLine));
+	const list = (/** @type {Book[]} */ books) => messageList(books.map(Comparison.bookLine));
 	/** @type {Child[]} */
 	const out = [para(`${backup.books.length} books in ${fileName}; ${m.books.length} after merging.`)];
 	out.push(para(`New from the backup: ${m.added.length}`), list(m.added));
@@ -469,7 +484,7 @@ function previewMerge(){
 	if(m.conflicts.length){
 		const kept = fieldById('mergePreferSelect').value === 'backup' ? "the backup's" : spell("this catalog's");
 		out.push(para(`Title, author or series differ, keeping ${kept}: ${m.conflicts.length}`),
-			messageList(m.conflicts.map(c=> `${bookLine(c.mine)} / backup: ${bookLine(c.theirs)}`)));
+			messageList(m.conflicts.map(c=> `${Comparison.bookLine(c.mine)} / backup: ${Comparison.bookLine(c.theirs)}`)));
 	}
 	const infoDiffer = m.infoChanged.length + m.infoKept.length;
 	if(m.infoAdded.length || infoDiffer){
@@ -491,15 +506,8 @@ function previewMerge(){
 	} else if(!changes){
 		out.push(para(spell('Nothing to merge: this catalog already has everything in the backup.')));
 	}
-	const ok = !errors.length && changes;
-	byId('importPreviewTitle').textContent = 'Merge a backup';
-	fillElement(byId('importPreviewBody'), out);
 	byId('mergePrefer').classList.add('show');
-	const confirmBtn = byId('importConfirm');
-	confirmBtn.style.display = ok ? '' : 'none';
-	confirmBtn.textContent = 'Merge';
-	byId('importCancel').textContent = ok ? 'Cancel' : 'Close';
-	openPreview('backupPanel');
+	showPreview('Merge a backup', out, !errors.length && changes ? 'Merge' : '', 'backupPanel');
 }
 
 function applyMerge(){
@@ -509,11 +517,8 @@ function applyMerge(){
 	closeImportPreview();
 	if(errors.length || !changes){ showIoStatus(spell('The catalog changed and the merge no longer applies; nothing was changed.'), true); return; }
 	CATALOG.books = m.books;
-	CATALOG.replaceInfo('series', m.series);
-	CATALOG.replaceInfo('authors', m.authors);
-	CATALOG.replaceInfo('narrators', m.narrators);
-	CATALOG.replaceInfo('publishers', m.publishers);
-	addExclusions(m.excluded);
+	for(const kind of /** @type {const} */ (['series', 'authors', 'narrators', 'publishers'])) CATALOG.replaceInfo(kind, m[kind]);
+	CATALOG.addExclusions(m.excluded);
 	CATALOG.addMarkTexts(m.notDuplicates);
 	refreshPage(); persist();
 	showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.`);
@@ -523,23 +528,20 @@ function applyMerge(){
  * Read a backup to merge, and preview the merge.
  * @param {File} file
  */
-function mergeBackupFile(file){
-	const reader = new FileReader();
-	reader.onload = async e=>{
-		if(!await withWholeCatalog(()=> true)) return;
-		try{
-			const backup = Backup.read(JSON.parse(readText(e)));
-			if(backup.books.some(b=> !b.title || !b.authors.length)) throw new Error('missing title/author');
-			PENDING_COMPARE = null;
-			PENDING_MERGE = {backup, fileName: file.name};
-			PENDING_TIDY = null;
-			previewMerge();
-		}catch{
-			closeImportPreview();
-			showIoStatus(spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
-		}
-	};
-	reader.readAsText(file);
+async function mergeBackupFile(file){
+	if(!await holdWholeCatalog()) return;
+	try{
+		const [{text}] = await readFiles([file]);
+		const backup = Backup.read(JSON.parse(text));
+		if(backup.books.some(b=> !b.title || !b.authors.length)) throw new Error('missing title/author');
+		PENDING_COMPARE = null;
+		PENDING_MERGE = {backup, fileName: file.name};
+		PENDING_TIDY = null;
+		previewMerge();
+	}catch{
+		closeImportPreview();
+		showIoStatus(spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
+	}
 }
 
 // ------------------------------------------------------------ Check the catalog, box sets
@@ -557,13 +559,7 @@ function showTidyPreview(title, body, confirm){
 	PENDING_COMPARE = null;
 	PENDING_MERGE = null;
 	byId('mergePrefer').classList.remove('show');
-	byId('importPreviewTitle').textContent = title;
-	fillElement(byId('importPreviewBody'), body);
-	const confirmBtn = byId('importConfirm');
-	confirmBtn.style.display = PENDING_TIDY ? '' : 'none';
-	confirmBtn.textContent = confirm;
-	byId('importCancel').textContent = PENDING_TIDY ? 'Cancel' : 'Close';
-	openPreview('checkPanel');
+	showPreview(title, body, PENDING_TIDY ? confirm : '', 'checkPanel');
 }
 
 function checkCatalog(){
@@ -584,7 +580,7 @@ function checkCatalog(){
 function boxSetsIntoCopy(){
 	const copy = CATALOG.clone();
 	const report = copy.addBoxSets();
-	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
+	const errors = copy.bookErrors();
 	return {copy, report, errors};
 }
 
@@ -594,7 +590,7 @@ function previewBoxSets(){
 	const out = [para(`Box sets: ${report.boxSets.length}`),
 		messageList(report.boxSets.map(b=> `${b.title} \u2014 ${Text.namesText(b.authors)}: ${Text.plural(b.titles, 'title')} already here`))];
 	if(report.excluded.length) out.push(para(`Skipped (excluded from imports): ${report.excluded.length}`));
-	out.push(para(`New: ${report.added.length}`), messageList(report.added.map(bookLine)));
+	out.push(para(`New: ${report.added.length}`), messageList(report.added.map(Comparison.bookLine)));
 	if(report.boxSets.some(b=> b.added)){
 		out.push(para(spell('A title not in the catalog yet is named \u201CSeries, Book N\u201D until you rename it on its card.')));
 	}
@@ -765,7 +761,7 @@ function showHardcoverScope(){
  * #hardcover-author=<id>): pick them beside the Compare button, and compare.
  */
 async function compareFromAddress(){
-	if(!/^#hardcover-/.test(location.hash) || !await withWholeCatalog(()=> true)) return;   // the names are the catalog's
+	if(!/^#hardcover-/.test(location.hash) || !await holdWholeCatalog()) return;   // the names are the catalog's
 	for(const [kind, key] of /** @type {const} */ ([['series', 'series'], ['author', 'authors']])){
 		const id = idFromAddress(key, valueFromPageHash(location.hash, `hardcover-${kind}`));
 		const name = id === null ? undefined : CATALOG.nameOf(key, id);
@@ -800,7 +796,7 @@ async function compareHardcover(){
 	if(!token){ showIoStatus('Save your Hardcover API token first (below the buttons).', true); return; }
 	const scope = hardcoverScope();
 	if(scope && !scope.name){ showIoStatus(`Type the ${scope.kind === 'series' ? 'series' : 'author'} to compare first.`, true); return; }
-	if(!await withWholeCatalog(()=> true)) return;
+	if(!await holdWholeCatalog()) return;
 	const inScope = scope ? Comparison.scope(scope.kind, scope.name) : null;
 	const here = inScope ? CATALOG.books.filter(inScope).length : CATALOG.books.length;
 	if(scope && !here){ showIoStatus(spell(`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`), true); return; }
@@ -810,10 +806,7 @@ async function compareHardcover(){
 	if(!run) return;
 	const hc = run.value;
 	if(!hc){
-		byId('importPreviewTitle').textContent = spell('Compare with Hardcover');
-		fillElement(byId('importPreviewBody'), para(`Couldn't compare: ${Text.errorText(run.error)}`, 'warn'));
-		updateApplyButton();
-		openPreview('hardcoverPanel');
+		showPreview(spell('Compare with Hardcover'), [para(`Couldn't compare: ${Text.errorText(run.error)}`, 'warn')], '', 'hardcoverPanel');
 		return;
 	}
 	const notes = [scope
@@ -857,10 +850,7 @@ async function applyHardcover(compare){
 	if(!run) return;
 	if(run.error) lines.push(`error: ${Text.errorText(run.error)}`);
 	const ok = !run.error && run.value === 0;
-	byId('importPreviewTitle').textContent = `Hardcover updated (took ${minutes(run.elapsed)})`;
-	fillElement(byId('importPreviewBody'), para(here + ' here.'), buildElement('pre', {}, lines.join('\n')));
-	updateApplyButton();
-	openPreview('hardcoverPanel');
+	showPreview(`Hardcover updated (took ${minutes(run.elapsed)})`, [para(here + ' here.'), buildElement('pre', {}, lines.join('\n'))], '', 'hardcoverPanel');
 	showIoStatus(ok ? `${here}; Hardcover updated.` : 'Not everything went through on Hardcover; see the details.', !ok);
 }
 
@@ -902,28 +892,34 @@ function closeImportPreview(){
  * @param {ImportKind} kind
  * @param {File} file
  */
-function importCsv(kind, file){
-	const reader = new FileReader();
-	reader.onload = async e=>{
-		if(!await withWholeCatalog(()=> true)) return;
-		try{
-			compareExport(kind, readText(e), file.name);
-		}catch{
-			closeImportPreview();
-			showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind]().label} export.`, true);
-		}
-	};
-	reader.readAsText(file);
+async function importCsv(kind, file){
+	if(!await holdWholeCatalog()) return;
+	try{
+		const [{text}] = await readFiles([file]);
+		compareExport(kind, text, file.name);
+	}catch{
+		closeImportPreview();
+		showIoStatus(`Couldn't read that file as a ${IMPORTERS[kind]().label} export.`, true);
+	}
 }
 
 byId('importAudibleBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'audible'; byId('importCsvFile').click(); });
 byId('importGoodreadsBtn').addEventListener('click', ()=>{ IMPORT_KIND = 'goodreads'; byId('importCsvFile').click(); });
-byId('importCsvFile').addEventListener('change', e=>{
-	const input = /** @type {HTMLInputElement} */ (e.target);
-	const file = input.files && input.files[0];
-	if(file) importCsv(IMPORT_KIND, file);
-	input.value = '';
-});
+/**
+ * When files are picked in the file field `id`, hand them to `take`, and empty the field, so the same file
+ * can be picked again.
+ * @param {string} id
+ * @param {(files: File[]) => Promise<void>} take
+ */
+function onFilesPicked(id, take){
+	byId(id).addEventListener('change', e=>{
+		const input = /** @type {HTMLInputElement} */ (e.target);
+		const files = [...(input.files || [])];
+		input.value = '';
+		if(files.length) return take(files);
+	});
+}
+onFilesPicked('importCsvFile', files=> importCsv(IMPORT_KIND, files[0]));
 byId('importConfirm').addEventListener('click', ()=> PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : applyCompare());
 byId('hardcoverCompareBtn').addEventListener('click', compareHardcover);
 byId('hardcoverScope').addEventListener('change', showHardcoverScope);
@@ -940,18 +936,8 @@ byId('exportBtn').addEventListener('click', ()=> withWholeCatalog(exportBackup))
 byId('exportGoodreadsBtn').addEventListener('click', ()=> withWholeCatalog(exportGoodreads));
 byId('importBtn').addEventListener('click', ()=> byId('importFile').click());
 byId('mergeBtn').addEventListener('click', ()=> byId('mergeFile').click());
-byId('mergeFile').addEventListener('change', e=>{
-	const input = /** @type {HTMLInputElement} */ (e.target);
-	const file = input.files && input.files[0];
-	if(file) mergeBackupFile(file);
-	input.value = '';
-});
+onFilesPicked('mergeFile', files=> mergeBackupFile(files[0]));
 byId('mergePreferSelect').addEventListener('change', ()=>{ if(PENDING_MERGE) previewMerge(); });
-byId('importFile').addEventListener('change', e=>{
-	const input = /** @type {HTMLInputElement} */ (e.target);
-	const files = [...(input.files || [])];
-	input.value = '';
-	if(files.length) return importBackup(files);
-});
+onFilesPicked('importFile', importBackup);
 
 export const READY = startPage(()=>{ refreshPage(); showHardcoverToken(); showProxy(); showHardcoverScope(); compareFromAddress(); }, {refresh: refreshPage, onHardcoverJob});

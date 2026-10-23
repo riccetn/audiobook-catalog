@@ -138,12 +138,8 @@ import {Isbn} from './isbn.js';
  */
 /** @typedef {(kind: NamedKind, name: string) => string} IdOf the id a series or person is stored under, by name */
 
-/** @type {Record<ContributorKind, CreditKind>} */
-const CREDIT_KIND = {authors: 'author', narrators: 'narrator', publishers: 'publisher'};
 /** @type {Record<CreditKind, ContributorKind>} */
 const CONTRIBUTOR_KIND = {author: 'authors', narrator: 'narrators', publisher: 'publishers'};
-/** @type {(ed: Edition) => string[]} */
-const editionIdKeys = ed => [...new Set([...ed.idKeys(), ...ed.isbns().map(x => 'isbn ' + x)])];
 /** @type {(ids: Record<string, string>) => string[]} external ids as an index finds them: "hardcover 77" */
 const externalKeys = ids => Object.entries(ExternalCatalog.order(ids) || {}).map(([catalog, id]) => catalog + ' ' + id);
 /** @type {(list: string[]) => string | undefined} */
@@ -307,7 +303,7 @@ export class CatalogRecords {
 		/** @type {Map<string, string>} */
 		const authorNames = new Map([...ids.authors].map(([name, id]) => [id, name]));
 		const contributors = Contributor.KINDS.flatMap(kind => [...ids[kind]].map(([name, id]) =>
-			CatalogRecords.contributorRecord(CREDIT_KIND[kind], id, name, catalog[kind].get(id), creditedBooks.get(id) || [], x => authorNames.get(x) || '')));
+			CatalogRecords.contributorRecord(Contributor.ONE[kind], id, name, catalog[kind].get(id), creditedBooks.get(id) || [], x => authorNames.get(x) || '')));
 
 		return {books, editions: [...editions.values()], series, contributors, credits, marks: [...catalog.marks.values()].map(m => ({...m})),
 			exclusions: catalog.exclusions.entries.map((entry, position) => ({entry, position}))};
@@ -382,7 +378,7 @@ export class CatalogRecords {
 	static editionRecord(ed, bookIds, idOf){
 		/** @type {EditionRecord} */
 		const rec = {id: /** @type {string} */ (ed.id), bookIds, external: /** @type {Record<string, string>} */ (ExternalCatalog.order(ed.external) || {}),
-			narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)), idKeys: editionIdKeys(ed)};
+			narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)), idKeys: ed.idAndIsbnKeys()};
 		if(ed.isbn) rec.isbn = ed.isbn;
 		if(ed.publisher) rec.publisherId = idOf('publishers', ed.publisher);
 		if(ed.released) rec.released = ed.released;
@@ -627,8 +623,8 @@ export class CatalogRecords {
 	 * @returns {string}
 	 */
 	static ownText(store, rec){
-		const derived = (CatalogRecords.DERIVED[store] || []).filter(k => k !== 'position');
-		return JSON.stringify(Object.keys(rec).filter(k => !derived.includes(k)).sort().map(k => [k, rec[k]]));
+		const own = CatalogRecords.ownFields(store, rec);
+		return JSON.stringify(Object.keys(own).sort().map(k => [k, own[k]]));
 	}
 
 	/**

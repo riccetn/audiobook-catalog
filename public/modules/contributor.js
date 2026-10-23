@@ -27,7 +27,7 @@ const OLD_LINKS = {audible: 'audible', goodreads: 'goodreads', hardcover: 'hardc
 export class Contributor {
 	/** @type {ContributorKind[]} the kinds, in the order backups and the Check list them */
 	static KINDS = ['authors', 'narrators', 'publishers'];
-	/** @type {Record<ContributorKind, ExternalKind>} what an external catalog calls each kind */
+	/** @type {Record<ContributorKind, 'author' | 'narrator' | 'publisher'>} one of each kind, as an external catalog and the stored records call them */
 	static ONE = {authors: 'author', narrators: 'narrator', publishers: 'publisher'};
 	/** @type {ContributorKey[]} the keys of a stored entry, in order */
 	static KEYS = ['bio', 'url', 'ext', 'links'];
