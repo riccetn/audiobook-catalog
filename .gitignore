@@ -9,3 +9,6 @@ node_modules/
 
 # written by make pages from templates/
 public/*.html
+
+# written by make docs
+api-docs/out/

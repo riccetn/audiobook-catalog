@@ -11,17 +11,18 @@ pages' HTML from [Liquid](https://liquidjs.com/) templates (`make pages`), so th
 
 ```sh
 git clone <this repo> && cd audiobook-catalog
-npm install   # once: Liquid, TypeScript and ESLint
+npm install   # once: Liquid, TypeScript, ESLint and TypeDoc
 make pages    # write the pages into public/ from templates/ (test and serve do it first)
 make test     # all tests, including a browser smoke test
 make typecheck   # check the code against its types (TypeScript)
 make lint     # look for likely mistakes (ESLint)
 make check    # everything CI runs: test, typecheck and lint
+make docs     # the API documentation (TypeDoc) in api-docs/out/; published at <site>/api/ beside the app
 make serve    # serves public/ at http://localhost:8000/ (any static server, or GitHub Pages, works too)
 make help
 ```
 
-On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `lint`, `serve`, `help`) runs the same commands in PowerShell.
+On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `lint`, `docs`, `serve`, `help`) runs the same commands in PowerShell.
 
 ## Start your own catalog
 
@@ -60,7 +61,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 - [How imports avoid clobbering your edits](docs/imports.md): the comparison an import shows, and how imported books are matched and merged
 - [Running the app and keeping your catalog](docs/saving.md): serving the pages, browser storage, backups
 - [On your phone](docs/phone.md): installing the app
-- [Development](docs/development.md): file layout, tests and type checking
+- [Development](docs/development.md): file layout, tests, type checking and the API documentation
 
 ## Privacy
 

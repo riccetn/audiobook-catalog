@@ -1,9 +1,10 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, serve or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, docs, serve or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'serve')]
+	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'docs', 'serve')]
 	[string]$Command = 'help',
-	[int]$Port = 8000
+	[int]$Port = 8000,
+	[string]$Out = 'api-docs/out'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +24,7 @@ switch ($Command) {
 		'test      - run the tests: the catalog classes and the browser smoke test'
 		'typecheck - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
 		'lint      - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
+		'docs      - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
 		'serve     - open the app at http://localhost:8000/ (serves public/; -Port for another port)'
 	}
 	'check' {
@@ -63,6 +65,14 @@ switch ($Command) {
 			exit 1
 		}
 		Invoke-Native 'node' @($eslint, '.')
+	}
+	'docs' {
+		$typedoc = 'api-docs/node_modules/typedoc/bin/typedoc'
+		if (-not (Test-Path $typedoc)) {
+			Write-Host 'TypeDoc is not installed: run npm install first'
+			exit 1
+		}
+		Invoke-Native 'node' @($typedoc, '--options', 'api-docs/typedoc.json', '--out', $Out)
 	}
 	'serve' {
 		& $PSCommandPath pages
