@@ -12,7 +12,7 @@ import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-
 /** @import {ContributorKind} from './modules/contributor.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
-/** @import {ExternalKind} from './modules/external-catalog.js' */
+/** @import {ExternalKind, ExternalId} from './modules/external-catalog.js' */
 /** @import {Unchecked} from './modules/text.js' */
 
 /**
@@ -827,8 +827,39 @@ export function externalFields(prefix, kind, except = []){
 		const lookup = g.key === 'hardcover' && kind !== 'book' && kind !== 'edition'
 			? {onchange: async ()=> { const found = await lookupHardcoverField(prefix, kind); if(found && found.note) showIoStatus(found.note); }} : {};
 		return buildElement('div', {}, buildElement('label', {for: prefix + g.key}, g.name),
-			buildElement('input', {id: prefix + g.key, 'data-group': g.key, placeholder: `id, or its address on ${example}`, ...lookup}));
+			buildElement('input', {id: prefix + g.key, 'data-group': g.key, placeholder: `id, or its address on ${example}`, ...lookup,
+				onfocusout: ()=> externalFieldToId(prefix, kind, g.key)}));
 	});
+}
+
+/**
+ * When a field externalFields() made is left holding a page's address, it is given the id the address names,
+ * which is what is kept. An address on another of the group's sites (audible.co.uk in the Audible field)
+ * stays an address, tidied, as the id alone would be read as the usual site's. An address pasted into another
+ * catalog's field moves to that catalog's field, when the form has one that is empty or holds the same id.
+ * Anything else is left for Save to refuse, saying why.
+ * @param {string} prefix
+ * @param {ExternalKind} kind
+ * @param {string} group
+ */
+export function externalFieldToId(prefix, kind, group){
+	const field = /** @type {HTMLInputElement | null} */ (document.getElementById(prefix + group));
+	const text = field ? Text.tidy(field.value) : '';
+	if(!field || !text) return;
+	/** @param {ExternalId} found @param {string} into the group of the field it goes in */
+	const shown = (found, into)=> {
+		const bare = ExternalCatalog.readId(found.id, kind, into);
+		return bare && bare.catalog === found.catalog ? found.id : ExternalCatalog.url(found.catalog, kind, found.id) || text;
+	};
+	const found = ExternalCatalog.readId(text, kind, group);
+	if(found){ field.value = shown(found, group); return; }
+	const elsewhere = ExternalCatalog.fromAddress(text, kind), g = elsewhere && ExternalCatalog.groupOf(elsewhere.catalog);
+	const other = g ? /** @type {HTMLInputElement | null} */ (document.getElementById(prefix + g.key)) : null;
+	if(!elsewhere || !g || !other) return;
+	const value = shown(elsewhere, g.key), there = Text.tidy(other.value);
+	if(there && there !== value) return;
+	other.value = value;
+	field.value = '';
 }
 
 /**
@@ -933,7 +964,7 @@ export async function lookupHardcoverBook(text){
 }
 
 /** @typedef {{error: string, note: string}} HardcoverFieldLookup why the field can't be saved, or what to say about it */
-/** @typedef {Promise<HardcoverFieldLookup> & {text?: string}} HardcoverFieldLookupOnItsWay */
+/** @typedef {Promise<HardcoverFieldLookup> & {slug?: string}} HardcoverFieldLookupOnItsWay the lookup, and the name it looks up */
 /** @type {WeakMap<Element, HardcoverFieldLookupOnItsWay>} each field's lookup on its way, so a Save waits for it */
 const HARDCOVER_FIELD_LOOKUPS = new WeakMap();
 
@@ -955,8 +986,10 @@ export function lookupHardcoverField(prefix, kind){
 	const found = text ? ExternalCatalog.readId(text, kind, 'hardcover') : null;
 	if(!field || !found || !ExternalCatalog.isFallbackId('hardcover', kind, found.id)) return null;
 	const onItsWay = HARDCOVER_FIELD_LOOKUPS.get(field);
-	if(onItsWay && onItsWay.text === text) return onItsWay;
-	const slug = found.id, address = ExternalCatalog.url('hardcover', kind, slug);
+	const slug = found.id;
+	// the same name, as an address or alone (leaving the field turns its address into the name)
+	if(onItsWay && onItsWay.slug === slug) return onItsWay;
+	const address = ExternalCatalog.url('hardcover', kind, slug);
 	const kept = (/** @type {string} */ why)=> ({error: '', note: `Kept Hardcover's ${kind} by the name in its address, as ${why}.`});
 	/** @type {HardcoverFieldLookupOnItsWay} */
 	const lookup = (async ()=>{
@@ -967,10 +1000,11 @@ export function lookupHardcoverField(prefix, kind){
 		try{ row = await HardcoverClient.idBySlug(hardcoverClient(token), kind, slug); }
 		catch(err){ return kept(`Hardcover couldn't be asked for its number (${Text.errorText(err)})`); }
 		if(!row) return {error: `Hardcover has no ${kind} at ${address}.`, note: ''};
-		if(Text.tidy(/** @type {HTMLInputElement} */ (field).value) === text) /** @type {HTMLInputElement} */ (field).value = row.id;
+		const now = ExternalCatalog.readId(/** @type {HTMLInputElement} */ (field).value, kind, 'hardcover');
+		if(now && now.id === slug) /** @type {HTMLInputElement} */ (field).value = row.id;
 		return {error: '', note: `Found on Hardcover: ${row.name || slug} (${kind} ${row.id}).`};
 	})();
-	lookup.text = text;
+	lookup.slug = slug;
 	HARDCOVER_FIELD_LOOKUPS.set(field, lookup);
 	lookup.finally(()=>{ if(HARDCOVER_FIELD_LOOKUPS.get(field) === lookup) HARDCOVER_FIELD_LOOKUPS.delete(field); });
 	return lookup;
