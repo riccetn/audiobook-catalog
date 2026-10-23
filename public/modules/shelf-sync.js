@@ -59,6 +59,8 @@ export class ShelfSync {
 	static STOP_AFTER = 3;
 	/** What the comparison says of the books it doesn't find there. */
 	static NOT_FOUND = '';
+	/** What Compare finds on your books besides the books themselves, which Apply saves when ticked: "ids", "ids and covers". */
+	static FOUND = 'ids';
 
 	/** @param {CatalogClient} client */
 	constructor(client){

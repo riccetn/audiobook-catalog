@@ -85,7 +85,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
   - `Series` (series info `total status note external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`; `moveSites` gives an old series' site (`url`) to its one author or publisher, else its note), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word, `firstThree` for a long list),
-    `Cover` (`addresses`: a book's cover addresses from its editions' ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
+    `Cover` (`addresses`: a book's cover addresses, first its editions' AudiobookDB cover keys (`img`, `Edition.covers`; `CATALOGS`, `isKeys`, `audiobookdbKey` reads one from an answer's `images`), then from their ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save; `bookRecord`/`seriesRecord`/`contributorRecord`/`creditsOf`, which a save
@@ -104,7 +104,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
       queries, `parseUrl`/`bookId`, `idBySlug`) and `AudiobookdbClient` (through the catalog proxy; the key goes only with `keyed` asks (`whoAmI`, `shelves`,
       `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release).
     - `ShelfSync` (your shelves on a catalog: `CLIENT`, `compare(catalog, step, part)` gives a `ShelfComparison` with a `SyncPlan` (`name`, `add`, `reads`,
-      `otherShelf`, `unknown`, `inexact`), `summary`, `push` (the plan's entries in turn, each by the subclass's `send`; stops after `STOP_AFTER` failures in a row),
+      `otherShelf`, `unknown`, `inexact`), `summary`, `push` (the plan's entries in turn, each by the subclass's `send`; stops after `STOP_AFTER` failures in a row), `FOUND` (what Apply saves besides books: AudiobookDB's "ids and covers"),
       `part` (a series' or author's id there), `addIds`/`setInfoIds`, `notAdded`, `NOT_FOUND`, `SENDS_READS`, `inScope`, `sameName`) with `HardcoverSync`
       (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`;
       both read the shelf's books with `readShelfBooks` and plan with `planFor`; `bookRecord`, which `HardcoverSource` uses too, `read`, `lookups`/`addIds`, `planExport`)
@@ -225,9 +225,9 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
 
 A backup is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}`; the browser keeps the same catalog as
 IndexedDB records (below). `books` is a list of titles with short keys `uid t a s sn g r ext e` (the id it is stored under, title, list of authors, series,
-series number as text, genres, dates read, its own external ids (`{"hardcover": "77", "goodreads": "99"}`), editions). Each edition in `e` has `uid ext isbn n p d len desc`
+series number as text, genres, dates read, its own external ids (`{"hardcover": "77", "goodreads": "99"}`), editions). Each edition in `e` has `uid ext isbn n p d len desc img`
 (its stored id (a box set's copies share it), its ids by external catalog, `{"audible.com": "B0…", "amazon.com": "B0…", "goodreads": "4242", "hardcover": "501"}`, one ISBN, list of narrators, publisher, release date,
-length in minutes, free-text description) and must not be empty. Entries keep only ids, never addresses: `ExternalCatalog` makes the link
+length in minutes, free-text description, and its cover's key by catalog, `{"audiobookdb": "<the image's hash>"}`, filled in by Fill in and AudiobookDB's Compare (`AudiobookdbSync.addIds`), kept through the form as hidden `img:` fields) and must not be empty (a cover alone is empty). Entries keep only ids, never addresses: `ExternalCatalog` makes the link
 from an id and reads the id out of a pasted address. An edition's `ext` names it
 (`idKeys`, `"asin B0…"` for any site's ASIN; `ids('asin')` gives an ASIN of any site, and only another id under the same key disagrees) and matches books; the ISBN names an edition too (`conflictsWith`: another ISBN is another
 edition) but never matches books. Editions with an ISBN list or an `hcb`, from before, are split and the

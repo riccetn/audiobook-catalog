@@ -84,11 +84,12 @@ export function fakeProxyCatalogs() {
 	};
 	const people = (role, ...names) => names.map((name, i) => ({ role: { name: role }, person: { id: `Prsn${role.slice(0, 4)}${i}00000`.slice(0, 12), name } }));
 	const releaseUs = { id: 'RlsLntrnUS01', title: 'The Lantern Keeper', releaseDate: '2021-03-04T00:00:00Z', duration: '10:12:20', disambiguation: 'unabridged',
-		publisher: { id: 'PblshrGullw1', name: 'Gullwing Audio' }, people: people('Narrator', 'Hollis Marr', 'Dana Fenwick') };
+		publisher: { id: 'PblshrGullw1', name: 'Gullwing Audio' }, people: people('Narrator', 'Hollis Marr', 'Dana Fenwick'), images: [abdbImage('ImgLntrnUS01', 'c1'.repeat(32))] };
 	const releaseUk = { id: 'RlsLntrnUK01', title: 'The Lantern Keeper', releaseDate: '2021-05-01T00:00:00Z', duration: '10:11:00',
 		publisher: { id: 'PblshrGullw2', name: 'Gullwing Audio UK' }, people: people('Narrator', 'Hollis Marr') };
 	const book = { id: 'LnTrnKpr2xYz', title: 'The Lantern Keeper', subtitle: 'Gull Isle, Book 2', copyright: 2021, type: 'fiction',
 		genres: [{ id: 'GnrFantasy01', title: 'Fantasy' }], tags: [{ id: 'TgCozy000001', title: 'Cozy' }], people: people('Author', 'Ann Vale'),
+		images: [abdbImage('ImgLntrnKpr1', 'b0'.repeat(32))],
 		series: [{ ordinal: '0', series: { id: 'SrsTidewater', title: 'The Tidewater Cycle', bookCount: 4 } }, { ordinal: '2', series: { id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3 } }],
 		releases: [releaseUs, releaseUk] };
 	const releases = {
@@ -121,6 +122,16 @@ export function fakeProxyCatalogs() {
 	return { route, sent };
 }
 
+/**
+ * An image as AudiobookDB lists it: `url` is its key under the image server, which only answers with a size added.
+ * @param {string} id
+ * @param {string} hash
+ */
+function abdbImage(id, hash) {
+	const url = `https://cdn.audiobookdb.org/${hash}`;
+	return { id, url, sourceUrl: `${url}/source.jpg:book`, width: 2400, height: 2400, blurdata: 'U00000fQfQfQfQfQfQfQfQfQfQfQ' };
+}
+
 function assert(ok, message) { if (!ok) throw new Error(message); }
 
 /**
@@ -136,12 +147,13 @@ export function audiobookdbState() {
 	const release = (id, title, asin, extra = {}) => ({ id, title, releaseDate: '2020-02-02T00:00:00Z', duration: '8:00:00',
 		publisher: { id: 'PblshrGullw1', name: 'Gullwing Audio' }, external: asin ? [audible(asin)] : [], ...extra });
 	const vale = person('Author', 'PrsnVale0001', 'Ann Vale');
+	// Lantern Hours has a cover only on its book, Tidewater on its release, Brine Tide none
 	const gullIsle = n => ({ ordinal: n, position: { value: n, label: n }, series: { id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3 } });
 	const books = {
-		LntrnHours01: { id: 'LntrnHours01', title: 'Lantern Hours', people: [person('Author', 'PrsnHale0001', 'R. T. Hale')], series: [],
+		LntrnHours01: { id: 'LntrnHours01', title: 'Lantern Hours', people: [person('Author', 'PrsnHale0001', 'R. T. Hale')], series: [], images: [abdbImage('ImgLntrnHrs1', 'a1'.repeat(32))],
 			releases: [release('RlsLntrnHrs1', 'Lantern Hours', 'B0LANTERN1', { people: [person('Narrator', 'PrsnMarr0001', 'Hollis Marr')] })] },
 		Tidewater001: { id: 'Tidewater001', title: 'Tidewater', people: [vale], series: [gullIsle('1')],
-			releases: [release('RlsTidewatr1', 'Tidewater', 'B0TIDEWAT1', { duration: '9:30:00', people: [person('Narrator', 'PrsnFnwk0001', 'Dana Fenwick')] })] },
+			releases: [release('RlsTidewatr1', 'Tidewater', 'B0TIDEWAT1', { duration: '9:30:00', images: [abdbImage('ImgTidewatr1', 'd2'.repeat(32))], people: [person('Narrator', 'PrsnFnwk0001', 'Dana Fenwick')] })] },
 		BrineTide001: { id: 'BrineTide001', title: 'Brine Tide', people: [vale], series: [gullIsle('2')],
 			releases: [release('RlsBrineUS01', 'Brine Tide', 'B0BRINETD1'), release('RlsBrineUK01', 'Brine Tide', 'B0BRINEUK1')] },
 		PaperFen0001: { id: 'PaperFen0001', title: 'The Paper Fen', people: [vale], series: [],

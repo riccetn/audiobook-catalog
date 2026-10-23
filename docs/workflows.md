@@ -14,11 +14,13 @@ Above it, the crumb links back to the book's series. The card has no buttons; th
 and **Merge**. In the book form (**Edit**) the book's ids in other catalogs are
 folded under *The book in other catalogs*, which names the catalogs it has one in.
 
-**Covers**: a book's card shows a small cover, and its details a larger one. Nothing is stored for it: the
-page asks for the cover by the ids the book's editions already have, first Amazon's image of each ASIN (an
-audiobook's square cover), then Open Library's of the edition's Open Library id and of its ISBN, and shows the first
-that loads. A book whose editions have none of those, or that neither site has a cover for, shows none.
-Asking tells Amazon and Open Library those ids, so *Covers* (next to *+ Add a book* on *Series* and *Books*) turns them off; the choice
+**Covers**: a book's card shows a small cover, and its details a larger one. First comes AudiobookDB's cover of
+an edition, when the edition has one: *Fill in from another catalog* and AudiobookDB's **Compare** keep it with the
+edition ([AudiobookDB](audiobookdb.md#covers)). Otherwise nothing is stored for it: the page asks for the cover by the
+ids the book's editions already have, first Amazon's image of each ASIN (an audiobook's square cover), then Open
+Library's of the edition's Open Library id and of its ISBN, and shows the first that loads. A book whose editions have
+none of those, or that no site has a cover for, shows none.
+Asking tells AudiobookDB, Amazon and Open Library which covers you look at, so *Covers* (next to *+ Add a book* on *Series* and *Books*) turns them off; the choice
 is kept in this browser. Firefox's strict tracking protection blocks Amazon's images; the cover then comes
 from Open Library when it has one.
 

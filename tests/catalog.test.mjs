@@ -1683,7 +1683,7 @@ test('AudiobookdbSync: your Read shelf, the release that is yours, and the ids f
 	assert.deepEqual(json(AudiobookdbSync.incoming(books.BrineTide001, mine)).e, [{ ext: { 'audible.co.uk': 'B0BRINEUK1', audiobookdb: 'RlsBrineUK01' },
 		p: 'Gullwing Audio', d: '2020-02-02', len: 480 }]);
 	assert.deepEqual(json(AudiobookdbSync.incoming(books.Tidewater001, [])), { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: { audiobookdb: 'Tidewater001' },
-		e: [{ ext: { audiobookdb: 'RlsTidewatr1' }, n: ['Dana Fenwick'], p: 'Gullwing Audio', d: '2020-02-02', len: 570 }] });
+		e: [{ ext: { audiobookdb: 'RlsTidewatr1' }, n: ['Dana Fenwick'], p: 'Gullwing Audio', d: '2020-02-02', len: 570, img: { audiobookdb: 'd2'.repeat(32) } }] });
 	assert.equal(AudiobookdbSync.incoming(books.PaperFen0001, []).editions.length, 0);
 	assert.equal(AudiobookdbSync.incoming({ id: 'Nameless0001', title: 'Nameless', people: [] }, []), null, 'no author');
 
@@ -2265,6 +2265,46 @@ test('comparing with Hardcover can be only a series\' or an author\'s books, on 
 	assert.deepEqual(byHale.idsFound.map(b => b.title), ['Lantern Hours']);
 });
 
+test('a book\'s AudiobookDB cover is kept by its key on the edition, and looked for before any other', () => {
+	const key = 'f4'.repeat(32), other = '5e'.repeat(32);
+	assert.equal(Cover.audiobookdbKey([{ id: 'Img000000001', url: `https://cdn.audiobookdb.org/${key}`, sourceUrl: `https://cdn.audiobookdb.org/${key}/source.jpg:book` }]), key);
+	for (const none of [undefined, [], [{ url: 'https://example.com/' + key }], [{ url: 'https://cdn.audiobookdb.org/abc' }], ['x']]) assert.equal(Cover.audiobookdbKey(none), null);
+	const book = Book.fromJSON({ t: 'The Glass Orchard', a: ['Wren Halloway'], e: [{ ext: { 'audible.com': 'B0GLASS001' } }, { ext: { audiobookdb: 'RlsGlass0001' }, img: { audiobookdb: key } }] });
+	assert.deepEqual(Cover.addresses(book), [`https://cdn.audiobookdb.org/${key}/small.jpg`, 'https://m.media-amazon.com/images/P/B0GLASS001.01.MZZZZZZZ.jpg']);
+	assert.equal(Cover.addresses(book, 'large')[0], `https://cdn.audiobookdb.org/${key}/large.jpg`);
+	// stored as it was read, and checked
+	assert.deepEqual(json(book).e[1], { ext: { audiobookdb: 'RlsGlass0001' }, img: { audiobookdb: key } });
+	assert.deepEqual(Validator.validate([json(book)], {}).errors, []);
+	const bad = Book.fromJSON({ t: 'T', a: ['A'], e: [{ ext: { 'audible.com': 'B1' }, img: { audiobookdb: 'https://cdn.audiobookdb.org/' + key } }, { img: { audiobookdb: key } }] });
+	assert.deepEqual(json(bad).e[0].img, { audiobookdb: 'https://cdn.audiobookdb.org/' + key }, 'kept aside for the Check');
+	assert.deepEqual(Validator.validate([json(bad)], {}).errors.map(e => e.replace(/^.*?edition/, 'edition')),
+		["edition #1: 'img' must map a catalog (audiobookdb) to its cover's key", 'edition #2: is empty']);
+	// the edition's form keeps it without showing it; a cover alone is no edition
+	assert.deepEqual(Edition.fromFields(book.editions[1].fields()).editions.map(e => e.toJSON()), [{ ext: { audiobookdb: 'RlsGlass0001' }, img: { audiobookdb: key } }]);
+	assert.deepEqual(Edition.fromFields({ 'img:audiobookdb': key }).editions, []);
+	// filling in never replaces one
+	const ed = Edition.fromJSON({ ext: { audiobookdb: 'RlsGlass0001' }, img: { audiobookdb: key } });
+	assert.deepEqual(ed.fillFrom(Edition.fromJSON({ ext: { audiobookdb: 'RlsGlass0001' }, img: { audiobookdb: other } })), []);
+	assert.deepEqual(Edition.fromJSON({ ext: { audiobookdb: 'RlsGlass0001' } }).fillFrom(ed), ['img']);
+	// kept in this browser's records
+	const catalog = Catalog.fromJSON({ books: [json(book)] });
+	assert.deepEqual(CatalogRecords.toCatalog(recordsOf(catalog)).books[0].editions[1].covers, { audiobookdb: key });
+});
+
+test('AudiobookdbSync.addIds gives an edition with a release id that release\'s cover, else its book\'s, and its box set\'s copies too', () => {
+	const books = audiobookdbState().books;
+	const found = { asin: new Map(), books: new Map([['Tidewater001', books.Tidewater001], ['LntrnHours01', books.LntrnHours01]]) };
+	const mine = ext => ({ ext: { audiobookdb: ext } });
+	const list = Bs([
+		book('Tidewater', 'Ann Vale', { ...mine('Tidewater001'), ...ed({ ext: { 'audible.com': 'B0TIDEWAT1', audiobookdb: 'RlsTidewatr1' } }) }),
+		book('Tidewater too', 'Ann Vale', ed({ ext: { 'audible.com': 'B0TIDEWAT1' } })),
+		book('Lantern Hours', 'R. T. Hale', { ...mine('LntrnHours01'), ...ed({ ext: { audiobookdb: 'RlsLntrnHrs1' } }, { ext: { 'audible.com': 'B0ELSEWHR1' } }) }),
+	]);
+	assert.deepEqual(AudiobookdbSync.addIds(list, found).map(b => b.title), ['Tidewater', 'Lantern Hours']);
+	assert.deepEqual(json(list).map(b => b.e.map(e => e.img && e.img.audiobookdb)), [['d2'.repeat(32)], ['d2'.repeat(32)], ['a1'.repeat(32), undefined]]);
+	assert.deepEqual(AudiobookdbSync.addIds(list, found), [], 'once it has one, nothing more');
+});
+
 test('a book\'s cover is looked for by its ASINs first, then its Open Library edition and its ISBN', () => {
 	const book = Book.fromJSON({t: 'The Glass Orchard', a: ['Wren Halloway'], e: [
 		{ext: {'audible.co.uk': 'B0GLASS001', 'amazon.com': 'B0GLASS002', goodreads: '4242'}, isbn: '9780000000002'},
@@ -2399,7 +2439,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	// then AudiobookDB's book and the release the ASIN belongs to, for what Audible lacks
 	const asin = await lookup.find('B0LANTERN2');
 	assert.deepEqual(plain(asin), { t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', g: ['Fantasy', 'Literary Fiction'], ext: { audiobookdb: 'LnTrnKpr2xYz' },
-		e: [{ ext: { 'audible.com': 'B0LANTERN2', audiobookdb: 'RlsLntrnUS01' }, isbn: '9780000000019', n: ['Hollis Marr', 'Dana Fenwick'], p: 'Gullwing Audio', d: '2021-03-04', len: 612 }] });
+		e: [{ ext: { 'audible.com': 'B0LANTERN2', audiobookdb: 'RlsLntrnUS01' }, isbn: '9780000000019', n: ['Hollis Marr', 'Dana Fenwick'], p: 'Gullwing Audio', d: '2021-03-04', len: 612, img: { audiobookdb: 'c1'.repeat(32) } }] });
 	assert.deepEqual(asin.sources, ['Audible', 'AudiobookDB']);
 	assert.deepEqual(asin.notes, [], 'no need for Hardcover: Audible gave the narrators and length');
 	// an Amazon site's ASIN is asked on its Audible site, and stays the Amazon site's too
@@ -2410,7 +2450,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	// an AudiobookDB release, with its book; its ASIN isn't taken, as AudiobookDB doesn't say which site it is on
 	const release = await lookup.find('https://audiobookdb.org/releases/RlsLntrnUS01');
 	assert.deepEqual(plain(release), { t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', g: ['Fantasy'], ext: { audiobookdb: 'LnTrnKpr2xYz' },
-		e: [{ ext: { audiobookdb: 'RlsLntrnUS01' }, isbn: '9780000000019', n: ['Hollis Marr', 'Dana Fenwick'], p: 'Gullwing Audio', d: '2021-03-04', len: 612 }] });
+		e: [{ ext: { audiobookdb: 'RlsLntrnUS01' }, isbn: '9780000000019', n: ['Hollis Marr', 'Dana Fenwick'], p: 'Gullwing Audio', d: '2021-03-04', len: 612, img: { audiobookdb: 'c1'.repeat(32) } }] });
 	// a book of several releases comes without an edition, and says why
 	const work = await lookup.find('https://audiobookdb.org/books/LnTrnKpr2xYz');
 	assert.equal(work.book.editions.length, 0);

@@ -62,6 +62,7 @@ import {Isbn} from './isbn.js';
  * @property {string} [released]
  * @property {number} [minutes]
  * @property {string} [description]
+ * @property {Record<string, string>} [covers] the key of its cover by catalog ({"audiobookdb": "<the image's hash>"})
  * @property {string[]} idKeys "asin B0…" (whichever site), "goodreads 12345", "hardcover 678", "isbn 978…", for matching imports
  */
 /**
@@ -384,6 +385,7 @@ export class CatalogRecords {
 		if(ed.released) rec.released = ed.released;
 		if(ed.minutes !== undefined) rec.minutes = ed.minutes;
 		if(ed.description) rec.description = ed.description;
+		if(Object.keys(ed.covers).length) rec.covers = {...ed.covers};
 		return rec;
 	}
 
@@ -514,7 +516,7 @@ export class CatalogRecords {
 				if(!ed) throw new Error(`no edition is stored under ${id}`);
 				return new Edition({id: ed.id, external: CatalogRecords.editionExternal(ed), isbn: ed.isbn,
 					narrators: ed.narratorIds.map(n => nameOf(n, 'narrator')), publisher: ed.publisherId === undefined ? undefined : nameOf(ed.publisherId, 'publisher'),
-					released: ed.released, minutes: ed.minutes, description: ed.description});
+					released: ed.released, minutes: ed.minutes, description: ed.description, covers: ed.covers});
 			}),
 		});
 	}
