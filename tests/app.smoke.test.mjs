@@ -1983,6 +1983,36 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 	assert.deepEqual(book.get('CATALOG.books[0].external'), { goodreads: '990001', openlibrary: 'OL123W', wikidata: 'Q1001' });
 });
 
+test('an address pasted into a series\', person\'s or book\'s id field becomes the id when the field is left', async () => {
+	const { ctx, els, get } = await boot({ hash: '#series=The+Lantern+Coast' });
+	ctx.openSeriesForm(seriesIdOf(get, 'The Lantern Coast'));
+	await idle();
+	const leave = (input, value) => { input.value = value; input.dispatch('focusout'); return input.value; };
+	assert.equal(leave(els.sf_ext_audible, 'https://www.audible.com/series/The-Lantern-Coast-Audiobooks/B0LANTERN1?ref=x'), 'B0LANTERN1');
+	assert.equal(leave(els.sf_ext_goodreads, ' https://www.goodreads.com/series/90002-the-lantern-coast '), '90002');
+	assert.equal(leave(els.sf_ext_hardcover, 'https://hardcover.app/series/the-lantern-coast'), 'the-lantern-coast', 'the name in it, until Hardcover gives the number');
+	// another Audible site keeps its address, so the site isn't lost
+	assert.equal(leave(els.sf_ext_audible, 'https://www.audible.co.uk/series/Lantern/B0LANTERN1?ref=x'), 'https://www.audible.co.uk/series/B0LANTERN1');
+	// pasted into another catalog's field, it moves to that one's
+	els.sf_ext_goodreads.value = '';
+	assert.equal(leave(els.sf_ext_audible, 'https://www.goodreads.com/series/90003'), '');
+	assert.equal(els.sf_ext_goodreads.value, '90003');
+	// unless that one holds another id; what isn't an address there is left for Save to refuse
+	assert.equal(leave(els.sf_ext_audible, 'https://www.goodreads.com/series/90004'), 'https://www.goodreads.com/series/90004');
+	assert.equal(els.sf_ext_goodreads.value, '90003');
+	assert.equal(leave(els.sf_ext_goodreads, 'https://www.goodreads.com/book/show/4242'), 'https://www.goodreads.com/book/show/4242');
+	assert.equal(leave(els.sf_ext_goodreads, ''), '');
+
+	// a book's ids, and a narrator's
+	const book = await bootBook(SALT_ROAD);
+	book.ctx.openEditForm(book.get('BOOK_FILTER'));
+	assert.equal(leave(book.els.f_ext_openlibrary, 'https://openlibrary.org/works/OL123W/The_Salt_Road'), 'OL123W');
+	assert.equal(leave(book.els.f_ext_wikidata, 'https://www.wikidata.org/wiki/Q1001'), 'Q1001');
+	const narrator = await boot({ page: 'narrator.html', hash: '#n=Tobias+Frane' });
+	narrator.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	assert.equal(leave(narrator.els.cf_ext_goodreads, 'https://www.goodreads.com/author/show/5150.Tobias_Frane'), '5150');
+});
+
 test('an edition has fields for Goodreads and Hardcover, and one for another catalog once it is picked or used', async () => {
 	const { ctx, els, get } = await bootBook(SALT_ROAD);
 	const id = get('BOOK_FILTER');
@@ -2867,6 +2897,14 @@ test('a Hardcover address in the series or info form is looked up for its number
 	edit();
 	els.cf_ext_hardcover.value = 'w-ashcombe';
 	await els.cf_ext_hardcover.listeners.change[0]();
+	await idle();
+	assert.equal(els.cf_ext_hardcover.value, '4101');
+	// the address becomes the name in it when the field is left, and then the number Hardcover gives
+	els.cf_ext_hardcover.value = 'https://hardcover.app/authors/wendell-ashcombe';
+	const looking = els.cf_ext_hardcover.listeners.change[0]();
+	els.cf_ext_hardcover.dispatch('focusout');
+	assert.equal(els.cf_ext_hardcover.value, 'wendell-ashcombe');
+	await looking;
 	await idle();
 	assert.equal(els.cf_ext_hardcover.value, '4101');
 	// a number, or an address by number, is not looked up

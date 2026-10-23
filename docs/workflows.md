@@ -67,7 +67,7 @@ pages: the page looks the book up on Hardcover and puts its id in the field (whe
 when you save). That needs your Hardcover API token, saved on the *Import & export* page (see
 [Hardcover](hardcover.md)). The Goodreads book field takes the id of the book's work on Goodreads (all its
 editions), or the address of its page (`https://www.goodreads.com/work/editions/99`); the AudiobookDB, Open Library, ISFDB, BookBrainz and
-Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address. Several authors, or several narrators of an
+Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address, and show just the id when you leave them. Several authors, or several narrators of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
 match the name you are typing (those starting with it first): click one, or pick it with the arrow keys and Enter,
@@ -106,6 +106,7 @@ each with a page of their bio, links, series and titles; their names on the book
 the series' ids on Audible, Goodreads, Hardcover, AudiobookDB, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
 `https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each).
+When you leave a field holding an address it shows just the id, and an address pasted into another catalog's field moves to that one's.
 Every field is optional, and clearing them all keeps nothing about the series. The form checks the same rules as **Check**.
 The same form renames the series: change its name and every book in the series gets the new name.
 Renaming it to a series you already have moves its books into that one; the first **Save** says so and

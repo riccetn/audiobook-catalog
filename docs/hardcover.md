@@ -55,7 +55,7 @@ book's audiobook edition) with its narrators, ASIN, ISBN, publisher, release dat
 (linked as `https://hardcover.app/id/author/4101`, which keeps working when Hardcover renames the page). Their pages'
 addresses have a name in them instead (`https://hardcover.app/authors/marisol-quenby`), so when you paste one, or
 the name alone, into the Hardcover field of the series or info form, the page asks Hardcover for the number as
-soon as you leave the field (or when you save), with the same token. If Hardcover can't be asked (no token saved,
+soon as you leave the field (or when you save), with the same token; meanwhile the field shows the name alone. If Hardcover can't be asked (no token saved,
 offline, the token refused), the name is kept instead and the status line says so; it links to the page by its
 address until Hardcover renames it. Saving the form again later, with Hardcover reachable, swaps it for the
 number. A name Hardcover has no page for is refused. Entries saved before Hardcover ids were numbers keep their

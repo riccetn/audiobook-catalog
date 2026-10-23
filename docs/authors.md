@@ -23,8 +23,9 @@ The Audible, Amazon, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, Boo
 address of their page from the browser's address bar (`https://www.audible.co.uk/author/Name/B0...` on any
 Audible store, `https://www.amazon.com/stores/author/B0...`, `https://www.goodreads.com/author/show/1234...`,
 `https://hardcover.app/authors/name` (Hardcover is asked for the author's number, see [Hardcover](hardcover.md)), `https://audiobookdb.org/people/GRNdEqe6PKeT`, `https://openlibrary.org/authors/OL789A`, `https://www.isfdb.org/cgi-bin/ea.cgi?77`,
-`https://www.wikidata.org/wiki/Q1001`, ...) and the id is read from it. A bare id in the Audible or Amazon field is
-audible.com's or amazon.com's; for another store, paste the address, and the field shows it that way. The
+`https://www.wikidata.org/wiki/Q1001`, ...) and the id is read from it: when you leave the field it shows just the id, and
+an address pasted into another catalog's field moves to that one's (when it is empty). A bare id in the Audible or Amazon field is
+audible.com's or amazon.com's; for another store, paste the address, and the field keeps it as an address (without the name in it). The
 form refuses what is neither an id nor an address there (a Hardcover address in the Goodreads field, say).
 Clearing every field keeps nothing about them; the author stays. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
 
