@@ -1,21 +1,22 @@
 // The Goodreads importer: a Goodreads library export CSV, of which audio editions on the "read" shelf are kept.
 import {Text} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
+import {Book} from './book.js';
 import {Series} from './series.js';
 import {Csv} from './csv.js';
-import {Importer} from './importer.js';
+import {FileImporter} from './file-importer.js';
 /** @import {CsvRow} from './csv.js' */
-/** @import {ReadResult} from './importer.js' */
+/** @import {ReadResult} from './file-importer.js' */
 
 // Goodreads has no "audiobook" flag; the edition's binding is the best signal there is.
 const AUDIO_BINDINGS = new Set(['Audio CD', 'Audiobook', 'Audible Audio', 'MP3 CD', 'MP3 Book', 'Audio']);
 const cell = Csv.cell;
 
 /** Reads a Goodreads library export CSV. */
-export class GoodreadsImporter extends Importer {
+export class GoodreadsImporter extends FileImporter {
+	static CATALOG = 'goodreads';
+	static LABEL = 'Goodreads';
 	static AUDIO_BINDINGS = AUDIO_BINDINGS;
-
-	get label(){ return 'Goodreads'; }
 
 	/**
 	 * @param {CsvRow} row
@@ -55,7 +56,7 @@ export class GoodreadsImporter extends Importer {
 		if(Object.keys(edition).length) rec.e = [edition];
 		const read = Text.parseDate(cell(row, 'Date Read'));   // Goodreads keeps only the latest read
 		if(read) rec.r = [read];
-		const book = Importer.book(rec);
+		const book = Book.fromRecord(rec);
 		if(book.authors.length && book.title) result.books.push(book);
 	}
 

@@ -93,21 +93,36 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     `page`, `keys`, `count`: by index, a page at a time), `save` with the revision check that throws `CatalogConflict`, which works the
     derived fields out from the stored records so a page holding a slice can save (`SaveTransaction`), `setAside`, the kept Duplicates count;
     the browser's `indexedDB` is passed in). `MemoryReader` answers a `CatalogReader`'s questions from records in memory.
-  - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
-    (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
-    `HardcoverSync` (`compare`: only reads Hardcover, for every book or a series' or an author's (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`; both read the shelf's books with `readShelfBooks` and plan with `planFor`), `bookRecord` (a Hardcover book's title, authors and series, which `CatalogLookup` uses too), `push`, `read`, `lookups`/`addIds`, `planExport`).
-  - `AudiobookdbClient` (AudiobookDB's API through the catalog proxy: `ask` with the proxy fetch, your key and a pause passed in; the key goes only with `keyed` asks
-    (`whoAmI`, `shelves`, `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release) and `AudiobookdbSync` (`compare`: finds your books
-    (`find`: by their AudiobookDB id, else their own editions' ASINs), then with the key your Read shelf (`readShelf`) as incoming books (`incoming`: the release that is yours,
-    else a lone one; none of several, so not `addable`); for a series or an author only that part (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and
-    people ids), `planExport` (every book on Read, as everything in the catalog counts as read; a book on another exclusive shelf, To Listen or Currently Listening, is left alone; Read is the Listened shelf), `push`; add-only:
-    never takes a book off a shelf, makes a shelf or edits AudiobookDB's catalog).
-  - `CatalogLookup` (the book form's *Fill in from another catalog*: `read` names what was pasted (an ISBN, an address or bare id), `find` looks the book up with
-    the fetch, `HardcoverClient` and catalog proxy passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and
-    Goodreads editions it knows, as Audible, Amazon and Goodreads can't be read from a page), and with the proxy (`proxied`) Audible's catalog API
-    (`audible`/`audibleBook`, `audibleSite`; a product without a title is one the site doesn't sell) and AudiobookDB (`audiobookdbByAsin`, `audiobookdbRelease`,
-    `audiobookdbWork`, `audiobookdbBook`, and a typed title by `audiobookdbSearch`, narrowed by the form's authors; ASINs it lists aren't taken, as it doesn't say their site); `noting` keeps a catalog asked beside others from failing
-    the lookup; `fill` (gaps only), `date`/`seriesOf`/`minutes`).
+  - The external catalogs, which the pages and `CatalogLookup` reach only through four base classes and the lists of them in
+    `CatalogConnectors` (`IMPORTERS`, `EXPORTERS`, `SYNCS`, their `CLIENTS`, `SOURCES`, in the order they are asked), so a catalog is added by writing a class per
+    role and listing it there (`docs/development.md`, *External catalogs*); a class says what it is in statics (`CATALOG`, its ExternalCatalog key and its
+    panel's prefix on Import & export; `LABEL`), and the pages read them, never a catalog's name:
+    - `FileImporter` (reads an export file a row at a time into books, `readRow`; `EDITIONS_YOURS`; a site picked by the panel's `<CATALOG>ImportSite`) with
+      `AudibleImporter` and `GoodreadsImporter`; `FileExporter` (`write` gives `{text, books, notes}`; `FORMAT`, `FILE_NAME`, `TYPE`) with `GoodreadsExporter`.
+    - `CatalogClient` (fetch, key and pause passed in, `waitTurn` between requests, `each` for progress; your key: `KEY_NAME` (Hardcover's is a token,
+      no other difference), `KEY_STORAGE`, `KEY_HELP`, `KEY_NEEDED`, `cleanKey`; `VIA_PROXY`, `PAUSE_MS`, `ID`) with `HardcoverClient` (GraphQL `ask`;
+      queries, `parseUrl`/`bookId`, `idBySlug`) and `AudiobookdbClient` (through the catalog proxy; the key goes only with `keyed` asks (`whoAmI`, `shelves`,
+      `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release).
+    - `ShelfSync` (your shelves on a catalog: `CLIENT`, `compare(catalog, step, part)` gives a `ShelfComparison` with a `SyncPlan` (`name`, `add`, `reads`,
+      `otherShelf`, `unknown`, `inexact`), `summary`, `push` (the plan's entries in turn, each by the subclass's `send`; stops after `STOP_AFTER` failures in a row),
+      `part` (a series' or author's id there), `addIds`/`setInfoIds`, `notAdded`, `NOT_FOUND`, `SENDS_READS`, `inScope`, `sameName`) with `HardcoverSync`
+      (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`;
+      both read the shelf's books with `readShelfBooks` and plan with `planFor`; `bookRecord`, which `HardcoverSource` uses too, `read`, `lookups`/`addIds`, `planExport`)
+      and `AudiobookdbSync` (finds your books (`find`: by their AudiobookDB id, else their own editions' ASINs), then with the key your Read shelf (`readShelf`) as
+      incoming books (`incoming`: the release that is yours, else a lone one; none of several, so not `addable`); for a series or an author only that part
+      (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids), `planExport` (every book on Read, as everything in the catalog counts as
+      read; a book on another exclusive shelf, To Listen or Currently Listening, is left alone; Read is the Listened shelf); add-only: never takes a book off a
+      shelf, makes a shelf or edits AudiobookDB's catalog). Comparing only reads the catalog; sending only adds.
+    - `BookSource` (a catalog the book form's *Fill in from another catalog* asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
+      `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
+      (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the
+      proxy, by any Audible or Amazon site's ASIN on its site, `site`; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
+      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the form's authors; ASINs it lists aren't taken, as it doesn't say their site;
+      `book`, `minutes`), `HardcoverSource` (with the token: its books, and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
+      `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
+      sources, with the fetch, the clients whose key is saved and the catalog proxy passed in: the candidates in order own, also, fallback (a fallback only when
+      none found it; one asked beside others has its failure noted, not thrown), then the `FILLS_IN` ones by the edition; `unavailable` says what to save;
+      `fill` (gaps only), `editionIds`).
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
     Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`).
@@ -128,10 +143,10 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   the status line (`showIoStatus`, with an optional Undo for `STATUS_TIME`), `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below),
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group; `externalFieldToId` turns a pasted address into its id, or moves it to its catalog's field, on focusout) and `externalLinks`, the page links
-  (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
-  Hardcover; `hardcoverClient(token)`), the AudiobookDB API key (localStorage `audiobook-catalog-audiobookdb-key`, `browserAudiobookdbKey`, `audiobookdbClient(key)`;
-  sent only through the proxy, with the requests that need it), the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
-  `proxyAddress` (https, or http on this computer), `fetchViaProxy(route, proxy, {key, body})` with the `X-Proxy-Key` header (and `X-Catalog-Key` for a catalog key, a POST for a body); set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover and AudiobookDB run banner (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
+  (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), your key for each catalog (Hardcover's token, localStorage `audiobook-catalog-hardcover-token`, only ever sent to
+  Hardcover; AudiobookDB's API key, `audiobook-catalog-audiobookdb-key`, sent only through the proxy, with the requests that need it): `savedKey(Client)`,
+  `saveKey(Client, key)`, `catalogClient(Client, key)` (asking directly, or through the proxy for `VIA_PROXY`), `keyedClients()`, the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
+  `proxyAddress` (https, or http on this computer), `fetchViaProxy(route, proxy, {key, body})` with the `X-Proxy-Key` header (and `X-Catalog-Key` for a catalog key, a POST for a body); set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the run banner of a catalog's shelves (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onCatalogJob`;
   the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
@@ -161,11 +176,13 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
   and the book form (`openEditForm`; Remove book is in it; *Fill in from another catalog*, `fillFromCatalog`, fills its empty fields), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
-- `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): the comparison an Audible or
-  Goodreads CSV import, or the Hardcover or AudiobookDB panel's Compare (`HardcoverSync.compare`, `AudiobookdbSync.compare`; for a series or an author, which their pages link to
-  with `hardcoverCompareHref`/`audiobookdbCompareHref`, `#hardcover-series=<id>`/`#audiobookdb-author=<id>`; `scopeOf`/`showScope` by the panel's prefix), opens (`PENDING_COMPARE`, its ticks in
-  `picks`; `drawCompare`; Apply runs `Comparison.apply` on a copy, then for Hardcover or AudiobookDB saves and `push`es the ticked part of the plan),
-  Goodreads CSV export, Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
+- `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
+  their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
+  `<CATALOG>Key`/`KeySave`/`KeyRemove`/`KeyState`, `showKey`/`saveKeyOf`). The comparison an export file's import (`compareExport`), or a shelf sync's Compare
+  (`compareShelfSync(Sync)`; for a series or an author, which their pages link to with `shelfCompareLinks`/`shelfCompareHref`, `#hardcover-series=<id>`/`#audiobookdb-author=<id>`;
+  `scopeOf`/`showScope` by the panel's prefix), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
+  `picks`; `drawCompare`, `shelfSections`; Apply runs `Comparison.apply` on a copy, then for a shelf sync saves and `push`es the ticked part of the plan, `applyShelfSync`),
+  file exports (`exportFile`), Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
   (`infoKey`, `hashKey`, `list`, `page`, labels, `href`).

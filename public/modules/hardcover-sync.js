@@ -6,12 +6,14 @@ import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {Edition} from './edition.js';
 import {Book} from './book.js';
-import {Importer} from './importer.js';
 import {HardcoverClient} from './hardcover-client.js';
+import {ShelfSync} from './shelf-sync.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Comparison} from './comparison.js';
 /** @import {Unchecked} from './text.js' */
-/** @import {Step, HardcoverLookups, HardcoverFound} from './hardcover-client.js' */
+/** @import {HardcoverLookups, HardcoverFound} from './hardcover-client.js' */
+/** @import {Step} from './catalog-client.js' */
+/** @import {ShelfPart, PlanEntry, Sent, PlanGroup, InfoId} from './shelf-sync.js' */
 /** @import {Catalog} from './catalog.js' */
 /** @import {MergeOptions} from './merger.js' */
 /** @import {ComparisonResult} from './comparison.js' */
@@ -19,6 +21,7 @@ import {Comparison} from './comparison.js';
 /**
  * What an export to Hardcover would do (HardcoverSync.planExport()).
  * @typedef {object} HardcoverPlan
+ * @property {string} name
  * @property {{book: number, edition: number | null, dates: string[], books: Book[]}[]} add
  * @property {{userBook: number, edition: number | null, dates: string[], books: Book[]}[]} reads
  * @property {[Book, string][]} otherShelf
@@ -35,17 +38,25 @@ import {Comparison} from './comparison.js';
  * @property {number} otherShelves how many of your Hardcover books are on other shelves
  * @property {HardcoverFound} found the Hardcover ids of your editions' ids (addIds() gives them)
  * @property {Book[]} idsFound the books that gain a Hardcover id from them, in the comparison's merged copy
+ * @property {InfoId[]} infoIds none: Hardcover's series and people ids are found in their forms
  * @property {HardcoverPlan} plan what putting your books on Hardcover would do
+ * @property {string[]} missing none
  */
-/** @typedef {{kind: 'series' | 'author', name: string, hardcover?: string}} HardcoverPart a series or an author, and its Hardcover id when it has one */
 /** @typedef {{books: Book[], audio: Set<Book>, otherShelves: number, warnings: string[]}} HardcoverShelf your Read shelf as books (HardcoverSync.read()) */
 
 const READ = HardcoverClient.READ;
 
 /** Compares the catalog with your Hardcover shelves, and puts books and reads on them. */
-export class HardcoverSync {
+export class HardcoverSync extends ShelfSync {
+	static CLIENT = HardcoverClient;
+	static SENDS_READS = true;
+	// a request Hardcover refuses (the token, its rate limit) refuses the next one too
+	static STOP_AFTER = 1;
+	static NOT_FOUND = 'No ASIN, ISBN or Goodreads id Hardcover knows: give the book a "Hardcover <edition id>" in its edit form.';
+
 	/** @param {HardcoverClient} client */
 	constructor(client){
+		super(client);
 		this.client = client;
 	}
 
@@ -60,7 +71,7 @@ export class HardcoverSync {
 	 * `step(text, done, total)` hears how far it has got.
 	 * @param {Catalog} catalog
 	 * @param {Step} step
-	 * @param {HardcoverPart} [part]
+	 * @param {ShelfPart} [part]
 	 * @returns {Promise<HardcoverComparison>}
 	 */
 	async compare(catalog, step, part){
@@ -75,7 +86,7 @@ export class HardcoverSync {
 		const ids = await client.find(HardcoverSync.lookups(books), step);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		const plan = await this.planFor(books, shelf, step);
-		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
+		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, infoIds: [], plan, missing: []};
 	}
 
 	/**
@@ -86,7 +97,7 @@ export class HardcoverSync {
 	 * any way Comparison.scope takes as the same).
 	 * @param {Catalog} catalog
 	 * @param {Step} step
-	 * @param {HardcoverPart} part
+	 * @param {ShelfPart} part
 	 * @returns {Promise<HardcoverComparison>}
 	 */
 	async comparePart(catalog, step, part){
@@ -111,7 +122,27 @@ export class HardcoverSync {
 		const books = comparison.merged.books.filter(scope);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		const plan = await this.planFor(books, shelf, step);
-		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
+		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, infoIds: [], plan, missing: []};
+	}
+
+	/**
+	 * @param {number} count
+	 * @returns {string}
+	 */
+	static notAdded(count){
+		return `Not added, as Hardcover has no audiobook edition picked for them: ${count}`;
+	}
+
+	/**
+	 * What a comparison's first line says it read.
+	 * @param {HardcoverComparison} result
+	 * @param {Catalog} catalog
+	 * @param {{kind: 'series' | 'author', name: string, label: string} | null} scope
+	 * @returns {string}
+	 */
+	summary(result, catalog, scope){
+		if(scope) return `Only ${scope.label}: ${Text.plural(ShelfSync.inScope(catalog, scope).length, 'book')} in this catalog, ${result.incoming.length} on your Hardcover Read shelf`;
+		return `${Text.plural(result.incoming.length, 'book')} on your Hardcover Read shelf` + (result.otherShelves ? `, ${result.otherShelves} on other shelves` : '');
 	}
 
 	/**
@@ -150,19 +181,17 @@ export class HardcoverSync {
 	/**
 	 * The Hardcover ids of a series or an author (`part`): the one given, those named exactly as it is, and
 	 * those of `books` (Hardcover books) with the same name, as Comparison.scope compares names.
-	 * @param {HardcoverPart} part
+	 * @param {ShelfPart} part
 	 * @param {number[]} books
 	 * @param {Step} step
 	 * @returns {Promise<number[]>}
 	 */
 	async partIds(part, books, step){
-		const scope = Comparison.scope(part.kind, part.name);
 		// whether a Hardcover series or author of that name is the one asked for
-		const same = (/** @type {unknown} */ name) => typeof name === 'string' &&
-			scope(new Book(part.kind === 'series' ? {title: '-', authors: ['-'], series: name} : {title: '-', authors: [name]}));
+		const same = ShelfSync.sameName(part);
 		/** @type {Set<number>} */
 		const ids = new Set();
-		if(part.hardcover && HardcoverClient.ID.test(part.hardcover)) ids.add(Number(part.hardcover));
+		if(part.id && HardcoverClient.ID.test(part.id)) ids.add(Number(part.id));
 		for(const row of await this.client.named(part.kind, [part.name])) if(Number.isInteger(row.id)) ids.add(row.id);
 		for(const book of await this.client.bookParts(books, step)){
 			const rows = part.kind === 'series' ? (Array.isArray(book.book_series) ? book.book_series : []).map((/** @type {any} */ x) => x && x.series)
@@ -173,46 +202,33 @@ export class HardcoverSync {
 	}
 
 	/**
-	 * Carry out planExport()'s plan (or the part of it picked) on Hardcover: put its `add` books on your Read
-	 * shelf and add its `reads`. Returns a promise of the exit code.
-	 * @param {HardcoverPlan} plan
-	 * @param {(line: string) => void} out
-	 * @param {(line: string) => void} err
-	 * @param {Step} step
-	 * @returns {Promise<number>}
+	 * Send one entry of planExport()'s plan to Hardcover: put its book on your Read shelf with its reads
+	 * (`add`), or add its reads to the book there (`reads`).
+	 * @param {PlanEntry} entry
+	 * @param {HardcoverPlan} _plan
+	 * @param {PlanGroup} group
+	 * @returns {Promise<Sent>}
 	 */
-	async push(plan, out, err, step){
+	async send(entry, _plan, group){
 		const client = this.client, QUERIES = HardcoverClient.QUERIES;
-		let shelved = 0, reads = 0, done = 0;
-		const total = plan.add.length + plan.reads.length;
-		/** @type {string[]} */
-		const problems = [];
-		/** @type {(userBook: number, edition: number | null, date: string, book: Book) => Promise<void>} */
-		const addRead = async (userBook, edition, date, book) => {
-			const r = (await client.ask(QUERIES.addRead, {id: userBook, read: {finished_at: date, ...(edition ? {edition_id: edition} : {})}})).insert_user_book_read;
-			if(!r || r.error) problems.push(`${book.title}: read ${date} not added (${r && r.error || 'no answer'})`); else reads++;
+		/** @type {Sent} */
+		const sent = {shelved: 0, reads: 0, problems: []};
+		const a = /** @type {HardcoverPlan['add'][number] & HardcoverPlan['reads'][number]} */ (entry);
+		/** @type {(userBook: number, date: string) => Promise<void>} */
+		const addRead = async (userBook, date) => {
+			const r = (await client.ask(QUERIES.addRead, {id: userBook, read: {finished_at: date, ...(a.edition ? {edition_id: a.edition} : {})}})).insert_user_book_read;
+			if(!r || r.error) sent.problems.push(`${a.books[0].title}: read ${date} not added (${r && r.error || 'no answer'})`); else sent.reads++;
 		};
-		try{
-			for(const a of plan.add){
-				step('Putting books on your Hardcover Read shelf', done++, total);
-				const object = {book_id: a.book, status_id: READ, ...(a.edition ? {edition_id: a.edition} : {})};
-				const r = (await client.ask(QUERIES.addBook, {object})).insert_user_book;
-				if(!r || r.error || !r.id){ problems.push(`${a.books[0].title}: not added (${r && r.error || 'no answer'})`); continue; }
-				shelved++;
-				for(const d of a.dates) await addRead(r.id, a.edition, d, a.books[0]);
-			}
-			for(const a of plan.reads){
-				step('Adding reads to books on your Read shelf', done++, total);
-				for(const d of a.dates) await addRead(a.userBook, a.edition, d, a.books[0]);
-			}
-		}catch(exc){
-			err(`error: ${Text.errorText(exc)}; stopped after putting ${shelved} book(s) on Hardcover and adding ${reads} read(s). ` +
-				'Run it again to carry on: what is already there is not added twice.');
-			return 1;
+		if(group === 'reads'){
+			for(const d of a.dates) await addRead(a.userBook, d);
+			return sent;
 		}
-		out(`put ${shelved} book(s) on your Hardcover Read shelf and added ${reads} read(s)`);
-		for(const p of problems.slice(0, 15)) out('    ! ' + p);
-		return problems.length ? 1 : 0;
+		const object = {book_id: a.book, status_id: READ, ...(a.edition ? {edition_id: a.edition} : {})};
+		const r = (await client.ask(QUERIES.addBook, {object})).insert_user_book;
+		if(!r || r.error || !r.id){ sent.problems.push(`${a.books[0].title}: not added (${r && r.error || 'no answer'})`); return sent; }
+		sent.shelved++;
+		for(const d of a.dates) await addRead(r.id, d);
+		return sent;
 	}
 
 	// ------------------------------------------------------------ reading answers
@@ -307,7 +323,7 @@ export class HardcoverSync {
 			if(dates.length) rec.r = dates;
 			rec.ext = {hardcover: String(ub.book_id)};
 			if(Text.isObject(edition)) rec.e = [HardcoverSync.edition(edition).toJSON()];
-			const read = Importer.book(Book.fixSeriesTitle(rec));
+			const read = Book.fromRecord(Book.fixSeriesTitle(rec));
 			result.books.push(read);
 			if(edition && edition.reading_format_id === HardcoverClient.AUDIO) result.audio.add(read);
 		}
@@ -392,7 +408,7 @@ export class HardcoverSync {
 	 */
 	static planExport(books, shelf, editionBooks){
 		/** @type {HardcoverPlan} */
-		const plan = {add: [], reads: [], otherShelf: [], unknown: [], inexact: []};
+		const plan = {name: 'Read', add: [], reads: [], otherShelf: [], unknown: [], inexact: []};
 		const onShelf = new Map();
 		for(const ub of shelf) if(Text.isObject(ub) && !onShelf.has(ub.book_id)) onShelf.set(ub.book_id, ub);
 		/** @type {Map<string, number>} */
