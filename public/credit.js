@@ -10,7 +10,7 @@ import {Contributor} from './modules/contributor.js';
 import {Series} from './modules/series.js';
 import {Validator} from './modules/validator.js';
 import { CATALOG, persist, showIoStatus, startPage, afterSaving, loadRecords, queryCatalog, byId, fieldById, spell, buildElement, fillElement, joined,
-	valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref, bookPageHref, seriesPageHref } from './store.js';
+	valueFromPageHash, idFromAddress, externalFields, fillExternalFields, readExternalFields, externalLinks, lookupHardcoverField, hardcoverCompareHref, audiobookdbCompareHref, bookPageHref, seriesPageHref } from './store.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
 import {setAddress, nameLinks, authorLinks, statusTag} from './book-list.js';
 /** @import {CreditKind} from './credit-kinds.js' */
@@ -136,7 +136,8 @@ function renderCreditPage(id){
 		links.length > 0 && buildElement('p', {class: 'author-links'}, joined(links, ' ')),
 		!info.bio && !links.length && buildElement('p', {class: 'hint'}, 'No bio or links yet: add them with Edit, at the end of the page.'),
 		KIND === CREDIT_KINDS.author && count > 0 && buildElement('p', {class: 'author-actions'},
-			buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('author', id)}, 'Compare their books with Hardcover')),
+			buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('author', id)}, 'Compare their books with Hardcover'), ' ',
+			buildElement('a', {class: 'audiobookdbCompare', href: audiobookdbCompareHref('author', id)}, 'Compare their books with AudiobookDB')),
 	];
 	series.forEach(s=> out.push(buildElement('div', {class: 'series-group'}, seriesHeading(s), missingNote(s),
 		buildElement('ul', {class: 'author-books'}, s.books.map(b=> creditBookLine(b, name))))));

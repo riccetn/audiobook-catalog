@@ -114,3 +114,90 @@ export function fakeProxyCatalogs() {
 }
 
 function assert(ok, message) { if (!ok) throw new Error(message); }
+
+/**
+ * Your account and AudiobookDB's catalog for fakeAudiobookdb(), every book invented: your key and username,
+ * your shelves (Read holds Tidewater and The Paper Fen, Currently Listening holds Brine Tide, and your own
+ * Favorites shelf holds Lantern Hours), and the books, series and people, in the shapes of AudiobookDB's
+ * OpenAPI file (1.0.0) and its answers (checked on 2026-10-22).
+ */
+export function audiobookdbState() {
+	const person = (role, id, name) => ({ role: { name: role }, person: { id, name } });
+	const audible = asin => ({ id: `Ext${asin.slice(2, 11)}`, itemId: asin, category: { title: 'Audible', url: 'https://www.audible.com' } });
+	const release = (id, title, asin, extra = {}) => ({ id, title, releaseDate: '2020-02-02T00:00:00Z', duration: '8:00:00',
+		publisher: { id: 'PblshrGullw1', name: 'Gullwing Audio' }, external: asin ? [audible(asin)] : [], ...extra });
+	const vale = person('Author', 'PrsnVale0001', 'Ann Vale');
+	const gullIsle = n => ({ ordinal: n, position: { value: n, label: n }, series: { id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3 } });
+	const books = {
+		LntrnHours01: { id: 'LntrnHours01', title: 'Lantern Hours', people: [person('Author', 'PrsnHale0001', 'R. T. Hale')], series: [],
+			releases: [release('RlsLntrnHrs1', 'Lantern Hours', 'B0LANTERN1', { people: [person('Narrator', 'PrsnMarr0001', 'Hollis Marr')] })] },
+		Tidewater001: { id: 'Tidewater001', title: 'Tidewater', people: [vale], series: [gullIsle('1')],
+			releases: [release('RlsTidewatr1', 'Tidewater', 'B0TIDEWAT1', { duration: '9:30:00', people: [person('Narrator', 'PrsnFnwk0001', 'Dana Fenwick')] })] },
+		BrineTide001: { id: 'BrineTide001', title: 'Brine Tide', people: [vale], series: [gullIsle('2')],
+			releases: [release('RlsBrineUS01', 'Brine Tide', 'B0BRINETD1'), release('RlsBrineUK01', 'Brine Tide', 'B0BRINEUK1')] },
+		PaperFen0001: { id: 'PaperFen0001', title: 'The Paper Fen', people: [vale], series: [],
+			releases: [release('RlsPaperUS01', 'The Paper Fen', null), release('RlsPaperUK01', 'The Paper Fen', null)] },
+		GullSong0001: { id: 'GullSong0001', title: 'Gull Song', people: [vale], series: [gullIsle('3')], releases: [release('RlsGullSng01', 'Gull Song', null)] },
+	};
+	const onShelf = id => ({ id, title: books[id].title, people: books[id].people, addedAt: '2026-01-01T00:00:00Z' });
+	const shelf = (slug, name, isDefault, ids) => ({ id: `Shlf${slug.replace(/-/g, '').slice(0, 8).padEnd(8, '0')}`, slug, name, description: '', isDefault,
+		isExclusive: false, position: 0, books: ids.map(onShelf), bookCount: ids.length, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+	return {
+		key: 'abdb-key-1', username: 'reader', books,
+		shelves: [shelf('read', 'Read', true, ['Tidewater001', 'PaperFen0001']), shelf('currently-listening', 'Currently Listening', true, ['BrineTide001']),
+			shelf('favorites', 'Favorites', false, ['LntrnHours01'])],
+		series: { SrsGullIsle1: { id: 'SrsGullIsle1', title: 'Gull Isle', books: ['Tidewater001', 'BrineTide001', 'GullSong0001'].map((id, i) => ({ ordinal: String(i + 1), book: { id, title: books[id].title } })) } },
+		people: { PrsnVale0001: { id: 'PrsnVale0001', name: 'Ann Vale', roles: ['Tidewater001', 'BrineTide001', 'PaperFen0001', 'GullSong0001'].map(id => ({ role: { name: 'Author' }, book: { id, title: books[id].title } })) } },
+		onAdd: null,   // called with each book put on a shelf, before it is
+	};
+}
+
+/**
+ * A fake of AudiobookDB's API behind the catalog proxy: `fetch` takes the Request the proxy sends
+ * (https://audiobookdb.org/api/...) and answers from `state` (audiobookdbState()), as AudiobookDB would:
+ * your session and shelves only with your key (X-API-Key), a book put on a shelf only once. `sent` lists
+ * what was asked: {method, path, key}.
+ * @param {ReturnType<typeof audiobookdbState>} state
+ */
+export function fakeAudiobookdb(state = audiobookdbState()) {
+	const sent = [];
+	const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+	const error = (status, title) => json(status, { errors: [{ status: String(status), title }] });
+	const fetch = async request => {
+		const u = new URL(request.url);
+		assert(u.origin === 'https://audiobookdb.org' && u.pathname.startsWith('/api/'), `AudiobookDB was asked for ${request.url}`);
+		const path = u.pathname.slice('/api/'.length);
+		const key = request.headers.get('x-api-key');
+		const body = request.method === 'POST' ? JSON.parse(await request.text()) : null;
+		sent.push({ method: request.method, path: path + u.search, key });
+		const mine = key === state.key;
+		let m;
+		if (path === 'auth/session') return mine ? json(200, { id: 'user-1', username: state.username, role: 'user' }) : error(401, 'Unauthorized');
+		if ((m = /^users\/username\/([^/]+)\/shelves(?:\/([^/]+)(\/books)?)?$/.exec(path))) {
+			if (m[1] !== state.username) return error(404, 'Not Found');
+			if (!mine) return error(key ? 401 : 403, key ? 'Unauthorized' : 'shelves are private');
+			const shelf = m[2] && state.shelves.find(s => s.slug === m[2]);
+			if (m[2] && !shelf) return error(404, 'Not Found');
+			if (m[3]) {
+				assert(request.method === 'POST', 'only putting books on shelves');
+				const book = state.books[body.bookId];
+				if (!book) return error(404, 'Not Found');
+				if (state.onAdd) state.onAdd(body.bookId);
+				if (!shelf.books.some(b => b.id === body.bookId)) shelf.books.push({ id: book.id, title: book.title, people: book.people, addedAt: '2026-10-23T00:00:00Z' });
+				shelf.bookCount = shelf.books.length;
+				return json(200, shelf);
+			}
+			return json(200, m[2] ? shelf : state.shelves);
+		}
+		assert(request.method === 'GET', `AudiobookDB was sent a ${request.method} to ${path}`);
+		if ((m = /^audiobooks\/external\/audible\/([^/]+)$/.exec(path))) {
+			const book = Object.values(state.books).find(b => b.releases.some(r => r.external.some(x => x.itemId === m[1])));
+			return book ? json(200, { ...book, matchedReleaseId: book.releases.find(r => r.external.some(x => x.itemId === m[1])).id }) : error(404, 'Not Found');
+		}
+		if ((m = /^books\/([^/]+)$/.exec(path))) return state.books[m[1]] ? json(200, state.books[m[1]]) : error(404, 'Not Found');
+		if ((m = /^series\/([^/]+)$/.exec(path))) return state.series[m[1]] ? json(200, state.series[m[1]]) : error(404, 'Not Found');
+		if ((m = /^people\/([^/]+)$/.exec(path))) return state.people[m[1]] ? json(200, state.people[m[1]]) : error(404, 'Not Found');
+		throw new Error(`AudiobookDB was asked for ${path}`);
+	};
+	return { fetch, sent };
+}

@@ -8,7 +8,7 @@ import {CatalogRecords} from './modules/catalog-records.js';
 /** @import {SeriesRecord} from './modules/catalog-records.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, showIoStatus, startPage, byId, fieldById, spell, buildElement, fillElement, joined, creditPageHref,
-	fillExternalFields, readExternalFields, externalFields, lookupHardcoverField, idFromAddress, hardcoverCompareHref, seriesPageHref, standalonePageHref } from './store.js';
+	fillExternalFields, readExternalFields, externalFields, lookupHardcoverField, idFromAddress, hardcoverCompareHref, audiobookdbCompareHref, seriesPageHref, standalonePageHref } from './store.js';
 /** @import {Child} from './store.js' */
 import { BookList, STANDALONE, bookGroups, readOrdered, statusTag, seriesLinks, totalText, watchCoversBox, showEmptyCatalog, showBackupNudge,
 	hashParts, hashText, hashOf, setAddress, watchSearchAndFilters } from './book-list.js';
@@ -123,8 +123,9 @@ export function render(){
 	byId('subtitle').textContent = spell(`${TOTAL_BOOKS} audiobooks in the catalog`);
 	byId('resultCount').textContent = '';
 	fillElement(byId('results'), books.length ? bookGroups(books, {more: LIST.rest, onMore: ()=> showMore(),
-		// it can be compared with Hardcover, and edited, after its books
-		heading: id=> [' ', buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('series', id)}, 'Compare with Hardcover')],
+		// it can be compared with Hardcover and AudiobookDB, and edited, after its books
+		heading: id=> [' ', buildElement('a', {class: 'hardcoverCompare', href: hardcoverCompareHref('series', id)}, 'Compare with Hardcover'),
+			' ', buildElement('a', {class: 'audiobookdbCompare', href: audiobookdbCompareHref('series', id)}, 'Compare with AudiobookDB')],
 		after: id=> seriesEditButton(id)})
 		: [buildElement('p', {class: 'empty'}, name === null ? 'No books in this series.' : `No books in ${name} yet.`),
 			SERIES_FILTER !== STANDALONE && name !== null && seriesEditButton(SERIES_FILTER)]);

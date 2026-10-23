@@ -152,7 +152,7 @@ h1{
 .author-links{display:flex; gap:.8rem; flex-wrap:wrap; margin:0 0 1.4rem;}
 .author-links .authorlink{font-size:.82rem;}
 .author-actions{margin:0 0 1.4rem;}
-.hardcoverCompare{font-size:.8rem; color:var(--moss);}
+.hardcoverCompare, .audiobookdbCompare{font-size:.8rem; color:var(--moss);}
 .author-books{list-style:none; margin:0; padding:0; background:var(--card); border:1px solid var(--line); border-radius:9px;}
 .author-books li{padding:.45rem .9rem; border-top:1px solid var(--line); font-size:.9rem; overflow-wrap:anywhere;}
 .author-books li:first-child{border-top:none;}
@@ -358,8 +358,8 @@ h1{
 .srow-foot{display:flex; gap:.6rem; align-items:center; margin-top:.4rem; flex-wrap:wrap;}
 .series-title a, .book .title a{text-decoration:none; color:inherit;}
 .series-title a:hover, .book .title a:hover{color:var(--moss);}
-.series-title a.hardcoverCompare{color:var(--moss); font-family:system-ui,sans-serif; font-weight:normal;}
-.series-title a.hardcoverCompare:hover{color:var(--moss-dark);}
+.series-title a.hardcoverCompare, .series-title a.audiobookdbCompare{color:var(--moss); font-family:system-ui,sans-serif; font-weight:normal;}
+.series-title a.hardcoverCompare:hover, .series-title a.audiobookdbCompare:hover{color:var(--moss-dark);}
 .filtersBtn{display:none; padding:.6rem .8rem; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); font-size:.9rem; font-weight:600; cursor:pointer;}
 /* Phones: less space around the page and above the list. The page links stay on one line that scrolls
    sideways, and the filters fold away behind the Filters button (series.js, books.js), two to a row when open. */

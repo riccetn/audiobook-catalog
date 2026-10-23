@@ -12,13 +12,15 @@ import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-
 /** @import {NamedKind} from './modules/catalog.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
 import {HardcoverClient} from './modules/hardcover-client.js';
+import {AudiobookdbClient} from './modules/audiobookdb-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 /** @import {ExternalKind, ExternalId} from './modules/external-catalog.js' */
 /** @import {Unchecked} from './modules/text.js' */
 
 /**
- * Comparing with Hardcover, or sending to it, going on (or just ended) in a page, as showHardcoverJob() shows it.
- * @typedef {object} HardcoverJob
+ * Comparing with Hardcover or AudiobookDB, or sending to it, going on (or just ended) in a page, as showCatalogJob() shows it.
+ * @typedef {object} CatalogJob
+ * @property {string} catalog its name, as the page says it ("Hardcover")
  * @property {'compare' | 'send'} mode
  * @property {boolean} dryRun only reading: nothing is written
  * @property {boolean} running
@@ -185,6 +187,14 @@ export const standalonePageHref = ()=> pageHref('index.html', '#standalone');
 export const hardcoverCompareHref = (kind, id)=> `import.html#hardcover-${kind}=` + hashValue(id);
 
 /**
+ * The address that compares a series' or an author's books with AudiobookDB on the Import & export page.
+ * @param {'series' | 'author'} kind
+ * @param {string} id the series' or the author's
+ * @returns {string}
+ */
+export const audiobookdbCompareHref = (kind, id)=> `import.html#audiobookdb-${kind}=` + hashValue(id);
+
+/**
  * What an address of one of those pages holds after `key`= (#n=id), or null: the id there, as it is.
  * @param {string} hash
  * @param {string} key
@@ -234,11 +244,11 @@ let WHOLE = false;
 /** @type {Map<string, number>} */
 let POSITIONS = new Map();            // the place among all the books of each book loaded, while not WHOLE
 
-// The page's own hooks, from startPage(): onHardcoverJob(job), when the page has it, does more with each
-// update of a Hardcover run (see showHardcoverJob); redrawPage() draws the page again when a save took in
+// The page's own hooks, from startPage(): onCatalogJob(job), when the page has it, does more with each
+// update of a Hardcover or AudiobookDB run (see showCatalogJob); redrawPage() draws the page again when a save took in
 // what another tab changed.
-/** @type {((job: HardcoverJob | null) => void) | null} */
-let onHardcoverJob = null;
+/** @type {((job: CatalogJob | null) => void) | null} */
+let onCatalogJob = null;
 /** @type {((before: Book[]) => void) | null} */
 let redrawPage = null;
 
@@ -1005,6 +1015,7 @@ export function lookupHardcoverField(prefix, kind){
 // are not asked. Hardcover is never asked through it, so the token never leaves for anywhere but Hardcover.
 export const PROXY_STORAGE_KEY = 'audiobook-catalog-proxy';
 const PROXY_KEY_HEADER = 'X-Proxy-Key';
+const CATALOG_KEY_HEADER = 'X-Catalog-Key';   // your key for a catalog, which the proxy passes on only where it is needed
 
 /** @typedef {{url: string, key: string}} ProxySettings the proxy's address (no slash at the end) and its key */
 
@@ -1034,32 +1045,62 @@ export function proxyAddress(text){
 
 /**
  * Asks a catalog through the proxy: `route` is the catalog and the path in its API
- * (`audiobookdb/audiobooks/external/audible/B0…`, `ping` to see that the proxy answers).
- * Throws plainly when no proxy is saved or the browser can't reach it.
+ * (`audiobookdb/audiobooks/external/audible/B0…`, `ping` to see that the proxy answers). With `init.key`
+ * (your key for that catalog, AudiobookDB's) it goes along for the proxy to pass on, and with `init.body` it
+ * is a POST of that JSON. Throws plainly when no proxy is saved or the browser can't reach it.
  * @param {string} route
  * @param {ProxySettings | null} [proxy] the saved one when left out
+ * @param {{method?: string, body?: string, key?: string}} [init]
  * @returns {Promise<Response>}
  */
-export async function fetchViaProxy(route, proxy = browserProxy()){
+export async function fetchViaProxy(route, proxy = browserProxy(), init = {}){
 	if(!proxy) throw new Error('save a catalog proxy on the Import & export page');
-	try{ return await fetch(`${proxy.url}/${route.replace(/^\/+/, '')}`, {headers: {[PROXY_KEY_HEADER]: proxy.key}}); }
+	/** @type {Record<string, string>} */
+	const headers = {[PROXY_KEY_HEADER]: proxy.key};
+	if(init.key) headers[CATALOG_KEY_HEADER] = init.key;
+	if(init.body !== undefined) headers['Content-Type'] = 'application/json';
+	const ask = init.body !== undefined ? {method: 'POST', body: init.body, headers} : {headers};
+	try{ return await fetch(`${proxy.url}/${route.replace(/^\/+/, '')}`, ask); }
 	catch(e){ throw new Error('this browser could not reach the catalog proxy (check its address, and that it allows this page in ALLOWED_ORIGINS)', {cause: e}); }
 }
 
-// ------------------------------------------------------------ Hardcover runs
-// Comparing with Hardcover, or sending to it, can take minutes, one request a second. The page running it
-// shows it on top while it goes (#bgTask), and hands each update to the page's onHardcoverJob.
-/** @type {Record<string, string>} */
-const HARDCOVER_VERBS = {compare: 'Comparing with Hardcover', send: 'Updating your Hardcover shelves'};
+// ------------------------------------------------------------ AudiobookDB
+// Your AudiobookDB API key reads your shelves and puts books on them. Like the Hardcover token it is kept in this
+// browser only (never in a backup); AudiobookDB is asked through the catalog proxy, which passes the key on only
+// with the requests that need it and never keeps it.
+export const AUDIOBOOKDB_KEY_STORAGE = 'audiobook-catalog-audiobookdb-key';
+const AUDIOBOOKDB_PAUSE_MS = 500;   // AudiobookDB allows a burst of 25, then about 10 a second
+
+/** @returns {string} the AudiobookDB API key saved in this browser, or '' */
+export function browserAudiobookdbKey(){
+	try{ return Text.tidy(localStorage.getItem(AUDIOBOOKDB_KEY_STORAGE) || ''); }catch{ return ''; }
+}
+
+/**
+ * An AudiobookDB client asking through the saved proxy, with `key` (your API key, '' for none).
+ * @param {string} key
+ * @returns {AudiobookdbClient}
+ */
+export function audiobookdbClient(key){
+	const proxy = browserProxy();
+	const pause = (/** @type {number} */ ms) => new Promise(done => setTimeout(done, ms));
+	return new AudiobookdbClient((route, init) => fetchViaProxy(route, proxy, init), key, pause, AUDIOBOOKDB_PAUSE_MS);
+}
+
+// ------------------------------------------------------------ Hardcover and AudiobookDB runs
+// Comparing with Hardcover or AudiobookDB, or sending to it, can take minutes, a request or two a second. The
+// page running it shows it on top while it goes (#bgTask), and hands each update to the page's onCatalogJob.
+/** @type {Record<CatalogJob['mode'], (catalog: string) => string>} */
+const JOB_VERBS = {compare: catalog => `Comparing with ${catalog}`, send: catalog => `Updating your ${catalog} shelves`};
 
 /** @type {(ms: number) => string} */
 export const minutes = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 /**
- * Show a Hardcover run in the banner on top (#bgTask), and hand it to the page's own onHardcoverJob.
- * @param {HardcoverJob | null} job
+ * Show a Hardcover or AudiobookDB run in the banner on top (#bgTask), and hand it to the page's own onCatalogJob.
+ * @param {CatalogJob | null} job
  */
-export function showHardcoverJob(job){
+export function showCatalogJob(job){
 	const el = document.getElementById('bgTask');
 	if(el){
 		el.classList.toggle('show', Boolean(job && job.running));
@@ -1067,13 +1108,13 @@ export function showHardcoverJob(job){
 		else {
 			const counted = typeof job.total === 'number' && Number.isInteger(job.total) && job.total > 0;
 			fillElement(el, buildElement('span', {class: 'spinner', 'aria-hidden': 'true'}), buildElement('div', {class: 'bgTaskText'},
-				buildElement('strong', {}, HARDCOVER_VERBS[job.mode] || 'Working with Hardcover'),
+				buildElement('strong', {}, JOB_VERBS[job.mode](job.catalog)),
 				' ', buildElement('span', {class: 'bgTaskTime'}, minutes(job.elapsed)), buildElement('br'), job.step || '',
 				counted && [`: ${job.done} of ${job.total} `, buildElement('progress', {max: job.total, value: job.done})],
 				!job.dryRun && [buildElement('br'), buildElement('small', {}, spell('Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.'))]));
 		}
 	}
-	if(onHardcoverJob) onHardcoverJob(job);
+	if(onCatalogJob) onCatalogJob(job);
 }
 
 /**
@@ -1081,12 +1122,12 @@ export function showHardcoverJob(job){
  * `init`, which loads what it shows (loadRecords, queryCatalog); with `page.whole` CATALOG holds the whole
  * catalog before. `page.refresh(before)` draws it again after a save took in another tab's changes
  * (`before` are the books the page had, as their places in CATALOG.books may have changed); it and
- * `page.onHardcoverJob` (see showHardcoverJob) are optional.
+ * `page.onCatalogJob` (see showCatalogJob) are optional.
  * @param {() => void | Promise<void>} init
- * @param {{whole?: boolean, refresh?: (before: Book[]) => void, onHardcoverJob?: (job: HardcoverJob | null) => void}} [page]
+ * @param {{whole?: boolean, refresh?: (before: Book[]) => void, onCatalogJob?: (job: CatalogJob | null) => void}} [page]
  */
 export async function startPage(init, page = {}){
-	({onHardcoverJob = null, refresh: redrawPage = null} = page);
+	({onCatalogJob = null, refresh: redrawPage = null} = page);
 	await loadCatalog(!!page.whole);
 	CATALOG.assignIds();   // the page knows every entry by its id (a catalog that can't be saved has none yet)
 	askToKeepStorage();

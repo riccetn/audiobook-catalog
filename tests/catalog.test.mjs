@@ -27,10 +27,12 @@ import { GoodreadsImporter } from '../public/modules/goodreads-importer.js';
 import { GoodreadsExporter } from '../public/modules/goodreads-exporter.js';
 import { HardcoverClient } from '../public/modules/hardcover-client.js';
 import { HardcoverSync } from '../public/modules/hardcover-sync.js';
+import { AudiobookdbClient } from '../public/modules/audiobookdb-client.js';
+import { AudiobookdbSync } from '../public/modules/audiobookdb-sync.js';
 import { CatalogRecords } from '../public/modules/catalog-records.js';
 import { CatalogLookup } from '../public/modules/catalog-lookup.js';
 import { CatalogDatabase, CatalogConflict } from '../public/modules/catalog-database.js';
-import { fakeCatalogs, fakeProxyCatalogs } from './fake-catalogs.mjs';
+import { fakeCatalogs, fakeProxyCatalogs, fakeAudiobookdb, audiobookdbState } from './fake-catalogs.mjs';
 import { fakeHardcover, hardcoverState } from './fake-hardcover.mjs';
 import { FakeIndexedDB, FakeKeyRange } from './fake-indexeddb.mjs';
 
@@ -1610,6 +1612,90 @@ test('HardcoverSync.planExport adds what is missing on Hardcover and leaves ever
 	const editionBooks = new Map([['700', '70'], ['731', '73']]);
 	assert.deepEqual(HardcoverSync.planExport(Bs(lone), [], editionBooks).add.map(a => [a.book, a.edition]), [[72, null], [73, 731]]);
 	assert.deepEqual(HardcoverSync.planExport(Bs(lone.slice(0, 1)), []).add.map(a => [a.book, a.edition]), [[72, 700]], 'without it, a lone box set edition is taken as the book\'s');
+});
+
+// ------------------------------------------------------------------ AudiobookDB
+/** An AudiobookdbClient asking a fake AudiobookDB as the proxy would (route in), with `key`; `asked` is what it sent. */
+function audiobookdbClient(key = 'abdb-key-1', answer = null) {
+	const abdb = fakeAudiobookdb(audiobookdbState());
+	const asked = [];
+	const get = async (route, init = {}) => {
+		asked.push({ route, ...init });
+		if (answer) { const res = answer(route, init); if (res) return res; }
+		return abdb.fetch(new Request(`https://audiobookdb.org/api/${route.replace(/^audiobookdb\//, '')}`,
+			{ method: init.body ? 'POST' : 'GET', body: init.body, headers: init.key ? { 'X-API-Key': init.key } : {} }));
+	};
+	const paused = [];
+	return { client: new AudiobookdbClient(get, key, async ms => { paused.push(ms); }), asked, paused, abdb };
+}
+
+test('AudiobookdbClient sends your key only with what acts for your account, waits when asked to, and says plainly what went wrong', async () => {
+	const { client, asked, paused } = audiobookdbClient();
+	assert.equal((await client.byAsin('B0LANTERN1')).matchedReleaseId, 'RlsLntrnHrs1');
+	assert.equal(await client.book('NoSuchBook01'), null, 'a 404 is nothing');
+	assert.deepEqual((await client.shelves()).map(s => [s.slug, s.books.length]), [['read', 2], ['currently-listening', 1], ['favorites', 1]]);
+	await client.addToShelf('read', 'LntrnHours01');
+	assert.deepEqual(asked.map(a => [a.route, a.key || null, a.body || null]), [
+		['audiobookdb/audiobooks/external/audible/B0LANTERN1', null, null], ['audiobookdb/books/NoSuchBook01', null, null],
+		['audiobookdb/auth/session', 'abdb-key-1', null], ['audiobookdb/users/username/reader/shelves', 'abdb-key-1', null],
+		['audiobookdb/users/username/reader/shelves/read/books', 'abdb-key-1', '{"bookId":"LntrnHours01"}']]);
+	assert.deepEqual(paused, [500, 500, 500, 500], 'a pause between requests');
+
+	let slow = 2;
+	const busy = audiobookdbClient('abdb-key-1', () => slow-- > 0 ? new Response('{}', { status: 429, headers: { 'Retry-After': '7' } }) : null);
+	assert.equal((await busy.client.book('Tidewater001')).title, 'Tidewater');
+	assert.deepEqual(busy.paused, [7000, 500, 7000, 500], 'waits as long as it was asked, then asks again');
+	const spent = audiobookdbClient('abdb-key-1', () => new Response('{}', { status: 429 }));
+	await assert.rejects(spent.client.book('Tidewater001'), /AudiobookDB asks to slow down/);
+	await assert.rejects(audiobookdbClient('wrong-key').client.shelves(), /AudiobookDB refused your API key/);
+	await assert.rejects(audiobookdbClient('').client.shelves(), /save your AudiobookDB API key first/);
+	const old = audiobookdbClient('abdb-key-1', (route, init) => init.key ? new Response('{"error":"This path takes no catalog key."}', { status: 400 }) : null);
+	await assert.rejects(old.client.shelves(), /run npx wrangler deploy in proxy\/ to bring it up to date/);
+});
+
+test('AudiobookdbSync: your Read shelf, the release that is yours, and the ids found (never a box set\'s book on a title)', () => {
+	const { books } = audiobookdbState();
+	const shelves = audiobookdbState().shelves;
+	assert.equal(AudiobookdbSync.readShelf(shelves).slug, 'read');
+	assert.equal(AudiobookdbSync.readShelf([{ ...shelves[2], slug: 'finished', name: 'Finished', isDefault: true }]).slug, 'finished');
+	assert.throws(() => AudiobookdbSync.readShelf(shelves.slice(1)), /no Read shelf of yours \(your shelves: Currently Listening, Favorites\)/);
+
+	// the release that is yours: by its ASIN, under your edition's site; one alone; none of several
+	const mine = Bs([book('Brine Tide', 'Ann Vale', { ext: { audiobookdb: 'BrineTide001' }, ...ed({ ext: { 'audible.co.uk': 'B0BRINEUK1' } }) })]);
+	assert.deepEqual(json(AudiobookdbSync.incoming(books.BrineTide001, mine)).e, [{ ext: { 'audible.co.uk': 'B0BRINEUK1', audiobookdb: 'RlsBrineUK01' },
+		p: 'Gullwing Audio', d: '2020-02-02', len: 480 }]);
+	assert.deepEqual(json(AudiobookdbSync.incoming(books.Tidewater001, [])), { t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: { audiobookdb: 'Tidewater001' },
+		e: [{ ext: { audiobookdb: 'RlsTidewatr1' }, n: ['Dana Fenwick'], p: 'Gullwing Audio', d: '2020-02-02', len: 570 }] });
+	assert.equal(AudiobookdbSync.incoming(books.PaperFen0001, []).editions.length, 0);
+	assert.equal(AudiobookdbSync.incoming({ id: 'Nameless0001', title: 'Nameless', people: [] }, []), null, 'no author');
+
+	// ids: a title on a box set's edition doesn't become the box set; one you have stays
+	const found = { asin: new Map([['B0BRINETD1', { book: 'BrineTide001', release: 'RlsBrineUS01' }], ['B0BOXSET01', { book: 'GullBoxSet01', release: 'RlsBoxSet001' }],
+		['B0KEPT0001', { book: 'LntrnHours01', release: 'RlsLntrnHrs1' }]]), books: new Map([['BrineTide001', books.BrineTide001]]) };
+	const list = Bs([
+		book('Brine Tide', 'Ann Vale', ed({ ext: { 'audible.com': 'B0BRINETD1' } }, { ext: { 'audible.co.uk': 'B0BRINEUK1' } })),
+		book('Box One', 'Ann Vale', ed({ ext: { 'audible.com': 'B0BOXSET01' } })), book('Box Two', 'Ann Vale', ed({ ext: { 'audible.com': 'B0BOXSET01' } })),
+		book('Kept', 'Ann Vale', { ext: { audiobookdb: 'Mine00000001' }, ...ed({ ext: { 'audible.com': 'B0KEPT0001' } }) }),
+	]);
+	assert.deepEqual(AudiobookdbSync.addIds(list, found).map(b => b.title), ['Brine Tide']);
+	assert.deepEqual(json(list).map(b => [b.ext && b.ext.audiobookdb, b.e.map(e => e.ext.audiobookdb)]), [
+		['BrineTide001', ['RlsBrineUS01', 'RlsBrineUK01']], [undefined, [undefined]], [undefined, [undefined]], ['Mine00000001', [undefined]]]);
+});
+
+test('AudiobookdbSync.planExport puts every book on Read once, and leaves one on another of AudiobookDB\'s shelves alone', () => {
+	const shelves = audiobookdbState().shelves;
+	const books = Bs([
+		book('Lantern Hours', 'R. T. Hale', { ext: { audiobookdb: 'LntrnHours01' } }),          // only on your own Favorites shelf
+		book('Tidewater', 'Ann Vale', { ext: { audiobookdb: 'Tidewater001' } }),               // on Read already
+		book('Brine Tide', 'Ann Vale', { ext: { audiobookdb: 'BrineTide001' } }),              // Currently Listening
+		book('Box One', 'Ann Vale', { ext: { audiobookdb: 'GullBoxSet01' } }), book('Box Two', 'Ann Vale', { ext: { audiobookdb: 'GullBoxSet01' } }),
+		book('Nowhere', 'Ann Vale'),
+	]);
+	const plan = json(AudiobookdbSync.planExport(books, shelves, shelves[0]));
+	assert.equal(plan.shelf, 'read');
+	assert.deepEqual(plan.add.map(a => [a.book, a.books.map(b => b.t)]), [['LntrnHours01', ['Lantern Hours']], ['GullBoxSet01', ['Box One', 'Box Two']]]);
+	assert.deepEqual(plan.otherShelf.map(([b, s]) => [b.t, s]), [['Brine Tide', 'Currently Listening']]);
+	assert.deepEqual(plan.unknown.map(b => b.t), ['Nowhere']);
 });
 
 test('merge: another Hardcover book found by a box set\'s edition is the box set, and its reads go to every title', () => {

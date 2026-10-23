@@ -96,6 +96,12 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
     `HardcoverSync` (`compare`: only reads Hardcover, for every book or a series' or an author's (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`; both read the shelf's books with `readShelfBooks` and plan with `planFor`), `bookRecord` (a Hardcover book's title, authors and series, which `CatalogLookup` uses too), `push`, `read`, `lookups`/`addIds`, `planExport`).
+  - `AudiobookdbClient` (AudiobookDB's API through the catalog proxy: `ask` with the proxy fetch, your key and a pause passed in; the key goes only with `keyed` asks
+    (`whoAmI`, `shelves`, `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release) and `AudiobookdbSync` (`compare`: finds your books
+    (`find`: by their AudiobookDB id, else their own editions' ASINs), then with the key your Read shelf (`readShelf`) as incoming books (`incoming`: the release that is yours,
+    else a lone one; none of several, so not `addable`); for a series or an author only that part (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and
+    people ids), `planExport` (every book on Read, as everything in the catalog counts as read; a book on another of AudiobookDB's own shelves is left alone), `push`; add-only:
+    never takes a book off a shelf, makes a shelf or edits AudiobookDB's catalog).
   - `CatalogLookup` (the book form's *Fill in from another catalog*: `read` names what was pasted (an ISBN, an address or bare id), `find` looks the book up with
     the fetch, `HardcoverClient` and catalog proxy passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and
     Goodreads editions it knows, as Audible, Amazon and Goodreads can't be read from a page), and with the proxy (`proxied`) Audible's catalog API
@@ -123,9 +129,10 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group; `externalFieldToId` turns a pasted address into its id, or moves it to its catalog's field, on focusout) and `externalLinks`, the page links
   (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), the Hardcover token (localStorage `audiobook-catalog-hardcover-token`, only ever sent to
-  Hardcover; `hardcoverClient(token)`), the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
-  `proxyAddress` (https, or http on this computer), `fetchViaProxy(route)` with the `X-Proxy-Key` header; set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover run banner (`showHardcoverJob`, `#bgTask`).
-  Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onHardcoverJob`;
+  Hardcover; `hardcoverClient(token)`), the AudiobookDB API key (localStorage `audiobook-catalog-audiobookdb-key`, `browserAudiobookdbKey`, `audiobookdbClient(key)`;
+  sent only through the proxy, with the requests that need it), the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
+  `proxyAddress` (https, or http on this computer), `fetchViaProxy(route, proxy, {key, body})` with the `X-Proxy-Key` header (and `X-Catalog-Key` for a catalog key, a POST for a body); set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the Hardcover and AudiobookDB run banner (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
+  Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onCatalogJob`;
   the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
   addresses (`index.html#series=<id>`, `book.html#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
@@ -155,9 +162,9 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   and the book form (`openEditForm`; Remove book is in it; *Fill in from another catalog*, `fillFromCatalog`, fills its empty fields), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): the comparison an Audible or
-  Goodreads CSV import, or the Hardcover panel's Compare (`HardcoverSync.compare`; for a series or an author, which their pages link to
-  with `hardcoverCompareHref`, `#hardcover-series=<id>`/`#hardcover-author=<id>`), opens (`PENDING_COMPARE`, its ticks in
-  `picks`; `drawCompare`; Apply runs `Comparison.apply` on a copy, then for Hardcover saves and `push`es the ticked part of the plan),
+  Goodreads CSV import, or the Hardcover or AudiobookDB panel's Compare (`HardcoverSync.compare`, `AudiobookdbSync.compare`; for a series or an author, which their pages link to
+  with `hardcoverCompareHref`/`audiobookdbCompareHref`, `#hardcover-series=<id>`/`#audiobookdb-author=<id>`; `scopeOf`/`showScope` by the panel's prefix), opens (`PENDING_COMPARE`, its ticks in
+  `picks`; `drawCompare`; Apply runs `Comparison.apply` on a copy, then for Hardcover or AudiobookDB saves and `push`es the ticked part of the plan),
   Goodreads CSV export, Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
@@ -195,7 +202,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
     in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover), Open Library and Wikidata
     (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`), and the catalog proxy at a `*.workers.dev` address (`boot`'s `proxy`;
-    the proxy test puts the real `handle` there; `fakeProxyCatalogs` answers its Audible and AudiobookDB routes).; covers are `<img>`s, which the fake DOM never loads.
+    the proxy test puts the real `handle` there; `fakeProxyCatalogs` answers its Audible and AudiobookDB routes, and `fakeAudiobookdb` (`audiobookdbState`) is AudiobookDB behind the real Worker, with your account and shelves).; covers are `<img>`s, which the fake DOM never loads.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 

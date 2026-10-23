@@ -6,7 +6,8 @@ that. Open Library, Wikidata and Hardcover aren't, and the app asks them itself.
 
 The app can ask the others through a proxy of your own: with one saved, the book form's *Fill in from another
 catalog* looks Audible pages, ASINs and AudiobookDB books and releases up through it
-([Everyday workflows](workflows.md)). It's a small Cloudflare Worker (`proxy/worker.js`)
+([Everyday workflows](workflows.md)), and the AudiobookDB panel on *Import & export* compares the catalog with
+your AudiobookDB shelves ([AudiobookDB](audiobookdb.md)). It's a small Cloudflare Worker (`proxy/worker.js`)
 that runs on Cloudflare's free plan, which allows 100,000 requests a day. It is optional: everything else works
 without it, and catalogs that need it are just not asked.
 
