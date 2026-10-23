@@ -88,13 +88,16 @@ export class CatalogLookup {
 	 * The book `text` names, from the catalogs that have it: the one pasted first, then Hardcover (when it
 	 * wasn't the one) by the edition's ISBN or ASIN, for the narrators and length Open Library and Wikidata
 	 * don't have. What the first has wins; the others only fill in what it lacks. Throws with a short reason
-	 * when `text` names nothing this can look up, or no catalog has it.
+	 * when `text` names nothing this can look up, or no catalog has it. Text that is no address, id or ISBN is
+	 * a title, searched on AudiobookDB through the proxy (by `authors` too, when the form has them).
 	 * @param {unknown} text
+	 * @param {string[]} [authors]
 	 * @returns {Promise<Found>}
 	 */
-	async find(text){
-		const pasted = CatalogLookup.read(text);
-		if(!pasted) throw new Error('paste the address of a book or edition on Open Library, Wikidata, Hardcover, Audible, Amazon, Goodreads or AudiobookDB, or an ISBN');
+	async find(text, authors = []){
+		let pasted = CatalogLookup.read(text);
+		if(!pasted && this.proxy && Text.tidy(String(text || '')).length >= 3) pasted = {catalog: 'audiobookdb', kind: 'book', id: await this.audiobookdbSearch(Text.tidy(String(text)), authors)};
+		if(!pasted) throw new Error(`paste the address of a book or edition on Open Library, Wikidata, Hardcover, Audible, Amazon, Goodreads or AudiobookDB, or an ISBN${this.proxy ? ', or type its title' : ''}`);
 		/** @type {Found} */
 		const found = {book: new Book(), sources: [], notes: []};
 		/** @type {(source: string, book: Book | null) => void} */
@@ -212,13 +215,14 @@ export class CatalogLookup {
 	/**
 	 * @param {string} source
 	 * @param {Awaited<ReturnType<Get>>} res
+	 * @param {boolean} [list] a list is wanted (a search's), not a book
 	 * @returns {Promise<Unchecked | null>} what `res` holds, null for a 404; throws with a short reason otherwise
 	 */
-	static async answer(source, res){
+	static async answer(source, res, list = false){
 		if(res.status === 404) return null;
 		if(!res.ok) throw new Error(`${source} answered ${res.status}`);
 		const json = await res.json().catch(() => null);
-		if(!Text.isObject(json)) throw new Error(`${source} sent something that isn't a book`);
+		if(list ? !Array.isArray(json) : !Text.isObject(json)) throw new Error(`${source} sent something that isn't ${list ? 'a list of books' : 'a book'}`);
 		return json;
 	}
 
@@ -384,15 +388,16 @@ export class CatalogLookup {
 	 * An answer through the catalog proxy (`route` is the catalog and the path in its API); null for a 404.
 	 * @param {string} source
 	 * @param {string} route
+	 * @param {boolean} [list] a list is wanted (a search's), not a book
 	 * @returns {Promise<Unchecked | null>}
 	 */
-	async proxied(source, route){
+	async proxied(source, route, list = false){
 		if(!this.proxy) throw new Error(`${source} can't be read from a web page; ${NO_PROXY}`);
 		let res;
 		try{ res = await this.proxy(route); }
 		catch(e){ throw new Error('this browser could not reach the catalog proxy (offline, or check it on the Import & export page)', {cause: e}); }
 		if(res.status === 401) throw new Error('the catalog proxy refused its key (check it on the Import & export page)');
-		return CatalogLookup.answer(source, res);
+		return CatalogLookup.answer(source, res, list);
 	}
 
 	// ------------------------------------------------------------------ Audible
@@ -471,6 +476,26 @@ export class CatalogLookup {
 		if(!book) return null;
 		const release = (Array.isArray(book.releases) ? book.releases : []).find((/** @type {unknown} */ r) => Text.isObject(r) && r.id === book.matchedReleaseId);
 		return CatalogLookup.audiobookdbBook(book, release || null);
+	}
+
+	/**
+	 * The AudiobookDB book with the title `title` (spelled any way, punctuation aside), by one of `authors` when
+	 * any are given. Throws, naming a few, when there are several, and when there is none.
+	 * @param {string} title
+	 * @param {string[]} authors
+	 * @returns {Promise<string>} its id
+	 */
+	async audiobookdbSearch(title, authors){
+		const answer = await this.proxied('AudiobookDB', `audiobookdb/books?q=${encodeURIComponent(title)}&take=50`, true);
+		const books = Array.isArray(answer) ? answer.filter(b => Text.isObject(b) && typeof b.id === 'string' && Text.norm(tidyText(b.title)) === Text.norm(title)) : [];
+		/** @type {(b: Unchecked) => string[]} */
+		const names = b => Array.isArray(b.authors) ? b.authors.map((/** @type {unknown} */ a) => Text.isObject(a) ? tidyText(a.name) : '').filter(Boolean) : [];
+		const wanted = new Set(authors.map(Text.norm).filter(Boolean));
+		const hits = wanted.size ? books.filter(b => names(b).some(n => wanted.has(Text.norm(n)))) : books;
+		if(hits.length === 1) return hits[0].id;
+		if(!hits.length) throw new Error(`AudiobookDB has no book titled ${title}${wanted.size ? ` by ${authors.join(', ')}` : ''}; paste its address instead`);
+		const some = hits.slice(0, 3).map(b => `${tidyText(b.title)} by ${names(b).join(', ') || 'no author'} (${ExternalCatalog.url('audiobookdb', 'book', b.id)})`);
+		throw new Error(`AudiobookDB has ${hits.length} books titled ${title}: ${some.join('; ')}${hits.length > 3 ? '…' : ''}; type the author first, or paste the address of the one you mean`);
 	}
 
 	/**

@@ -106,7 +106,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     the fetch, `HardcoverClient` and catalog proxy passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and
     Goodreads editions it knows, as Audible, Amazon and Goodreads can't be read from a page), and with the proxy (`proxied`) Audible's catalog API
     (`audible`/`audibleBook`, `audibleSite`; a product without a title is one the site doesn't sell) and AudiobookDB (`audiobookdbByAsin`, `audiobookdbRelease`,
-    `audiobookdbWork`, `audiobookdbBook`; ASINs it lists aren't taken, as it doesn't say their site); `noting` keeps a catalog asked beside others from failing
+    `audiobookdbWork`, `audiobookdbBook`, and a typed title by `audiobookdbSearch`, narrowed by the form's authors; ASINs it lists aren't taken, as it doesn't say their site); `noting` keeps a catalog asked beside others from failing
     the lookup; `fill` (gaps only), `date`/`seriesOf`/`minutes`).
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;

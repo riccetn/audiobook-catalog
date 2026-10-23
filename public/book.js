@@ -735,7 +735,7 @@ export async function fillFromCatalog(){
 	try{
 		const token = browserHardcoverToken();
 		const proxy = browserProxy();
-		const found = await new CatalogLookup(url=> fetch(url), token ? hardcoverClient(token) : null, proxy ? route=> fetchViaProxy(route, proxy) : null).find(text);
+		const found = await new CatalogLookup(url=> fetch(url), token ? hardcoverClient(token) : null, proxy ? route=> fetchViaProxy(route, proxy) : null).find(text, Text.splitNames(fieldById('f_a').value));
 		// the form was closed, or moved to another book, meanwhile
 		if(EDIT_ID !== editing || !byId('addForm').classList.contains('open')) return;
 		const filled = fillForm(found.book);

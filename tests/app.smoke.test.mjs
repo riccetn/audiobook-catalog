@@ -1031,6 +1031,20 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 	assert.equal(again.els.formError.textContent, '');
 	assert.deepEqual(formEditions(again.get), [{ 'ext:audible.com': 'B0OTHERED1' }, { n: 'Hollis Marr, Dana Fenwick', 'ext:audible.com': 'B0LANTERN2', 'ext:audiobookdb': 'RlsLntrnUS01',
 		isbn: '9780000000019', p: 'Gullwing Audio Ltd', d: '2021-03-04', len: '10h 12m' }]);
+	// a title is looked up on AudiobookDB: by the authors typed, when it has several of that title
+	const titled = await boot({ page: 'book.html', hash: '#add', proxy, storage });
+	titled.els.f_from.value = 'the lantern keeper';
+	await titled.ctx.fillFromCatalog();
+	assert.match(titled.els.formError.textContent, /AudiobookDB has 2 books titled the lantern keeper: The Lantern Keeper by Ann Vale \(https:\/\/audiobookdb\.org\/books\/LnTrnKpr2xYz\); The Lantern Keeper by Bo Reed .*type the author first/);
+	titled.els.f_a.value = 'Ann Vale';
+	await titled.ctx.fillFromCatalog();
+	assert.equal(titled.els.formError.textContent, '');
+	assert.equal(titled.els.f_ext_audiobookdb.value, 'LnTrnKpr2xYz');
+	assert.equal(titled.els.f_s.value, 'Gull Isle');
+	assert.match(titled.els.ioStatus.textContent, /^Filled in from AudiobookDB: title, series, number in the series, genres, the book's id in another catalog\. \(AudiobookDB has 2 releases of it/);
+	titled.els.f_from.value = 'The Salt Harbor';
+	await titled.ctx.fillFromCatalog();
+	assert.match(titled.els.formError.textContent, /AudiobookDB has no book titled The Salt Harbor by Ann Vale; paste its address instead/);
 	// without the proxy, AudiobookDB says how it could be asked
 	const without = await boot({ page: 'book.html', hash: '#add' });
 	without.els.f_from.value = 'https://audiobookdb.org/releases/RlsLntrnUS01';

@@ -104,6 +104,14 @@ export function fakeProxyCatalogs() {
 			assert(u.searchParams.get('response_groups').includes('series'), 'Audible is asked for the series');
 			return json(200, { product: audible[`${m[1]}/${m[2]}`] || { asin: m[2], asset_details: [] }, response_groups: ['always-returned'] });
 		}
+		if (u.pathname === '/audiobookdb/books') {
+			// a title search: list items, with up to 3 authors; another author's book of the same title too
+			const q = u.searchParams.get('q').toLowerCase();
+			const items = [{ id: book.id, title: book.title, authors: [{ id: 'PrsnAuth0000', name: 'Ann Vale' }], releaseCount: 2 },
+				{ id: 'LnTrnKprBoR1', title: 'The Lantern Keeper', authors: [{ id: 'PrsnBoReed01', name: 'Bo Reed' }], releaseCount: 1 },
+				{ id: 'LnTrnKprsGd1', title: 'The Lantern Keeper\'s Guide', authors: [{ id: 'PrsnAuth0000', name: 'Ann Vale' }], releaseCount: 1 }];
+			return json(200, items.filter(i => i.title.toLowerCase().includes(q)));
+		}
 		m = /^\/audiobookdb\/(audiobooks\/external\/audible|books|releases)\/([^/]+)$/.exec(u.pathname);
 		if (m && m[1] === 'audiobooks/external/audible') return m[2] === 'B0LANTERN2' ? json(200, { ...book, matchedReleaseId: 'RlsLntrnUS01' }) : notFound(`audiobook with id audible/${m[2]} not found`);
 		if (m && m[1] === 'books') return m[2] === book.id ? json(200, book) : notFound(`book with id ${m[2]} not found`);
