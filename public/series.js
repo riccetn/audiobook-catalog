@@ -11,7 +11,7 @@ import { CATALOG, persist, loadRecords, queryCatalog, afterSaving, showIoStatus,
 	fillExternalFields, readExternalFields, externalFields, lookupHardcoverField, idFromAddress, hardcoverCompareHref, seriesPageHref, standalonePageHref } from './store.js';
 /** @import {Child} from './store.js' */
 import { BookList, STANDALONE, bookGroups, readOrdered, statusTag, seriesLinks, totalText, watchCoversBox, showEmptyCatalog, showBackupNudge,
-	hashParts, hashOf, setAddress } from './book-list.js';
+	hashParts, hashText, hashOf, setAddress, watchSearchAndFilters } from './book-list.js';
 
 // Series are known by the ids they are stored under, so a series renamed (here or in another tab) is still the one shown.
 /** @type {string | null} */
@@ -198,12 +198,10 @@ function renderOverview(){
  */
 export function movedAddress(hash){
 	const p = hashParts(hash);
-	const book = p.get('book');
-	if(typeof book === 'string' && book.trim()) return 'book.html' + hashOf([['book', book.trim()]]);
+	const book = hashText(p, 'book');
+	if(book) return 'book.html' + hashOf([['book', book]]);
 	if(!p.has('books')) return null;
-	/** @type {(k: string) => [string, string]} */
-	const part = k=> { const v = p.get(k); return [k, typeof v === 'string' ? v.trim() : '']; };
-	return 'books.html' + hashOf(['q', 'author', 'genre', 'read', 'sort'].map(part));
+	return 'books.html' + hashOf(['q', 'author', 'genre', 'read', 'sort'].map(k=> [k, hashText(p, k)]));
 }
 
 /**
@@ -213,11 +211,10 @@ export function movedAddress(hash){
  */
 function stateFromHash(hash){
 	const p = hashParts(hash);
-	const q = p.get('q'), series = p.get('series');
-	const text = typeof series === 'string' ? series.trim() : '';
+	const series = hashText(p, 'series');
 	// by id, or by a name as addresses had them before (loadView finds the id then)
-	return {series: p.has('standalone') ? STANDALONE : text ? idFromAddress('series', text) ?? text : null,
-		q: typeof q === 'string' ? q.trim() : '', missing: p.get('missing') === true};
+	return {series: p.has('standalone') ? STANDALONE : series ? idFromAddress('series', series) ?? series : null,
+		q: hashText(p, 'q'), missing: p.get('missing') === true};
 }
 
 /** @returns {string} the address of what is shown now */
@@ -259,22 +256,12 @@ function showAddress(){
 addEventListener('popstate', showAddress);
 addEventListener('hashchange', showAddress);
 
-// Typing a search is one step back, however many letters it took: the first change of the search adds a
-// history entry, the rest of the typing updates it.
-byId('q').addEventListener('input', ()=>{
-	const typing = !!(history.state && history.state.search);
-	setAddress(typing ? 'replace' : 'push', addressNow(), {search: true});
-	showView();
-});
 byId('missingFilter').addEventListener('change', ()=>{ setAddress('push', addressNow()); showView(); });
 // On a phone the filter folds away behind a button (styles.css), which says when it is on.
 function showFilterCount(){
 	byId('filtersBtn').textContent = fieldById('missingFilter').value ? 'Filters · 1' : 'Filters';
 }
-byId('filtersBtn').addEventListener('click', ()=>{
-	const open = byId('controls').classList.toggle('filtersOpen');
-	byId('filtersBtn').setAttribute('aria-expanded', String(open));
-});
+watchSearchAndFilters(addressNow, showView);
 watchCoversBox(()=> render());
 
 // ------------------------------------------------------------------ the series form

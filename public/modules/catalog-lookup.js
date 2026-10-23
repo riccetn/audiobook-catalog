@@ -37,6 +37,10 @@ const NO_PROXY = 'save a catalog proxy on the Import & export page';
 // What Audible's catalog API is asked for: the people, series, edition details and genres
 const AUDIBLE_GROUPS = 'contributors,media,product_attrs,product_desc,product_details,product_extended_attrs,series,category_ladders';
 
+// A value read from a catalog's answer as text, tidied; '' when it isn't text.
+/** @type {(x: unknown) => string} */
+const tidyText = x => typeof x === 'string' ? Text.tidy(x) : '';
+
 /** Looks books up in the external catalogs a page may read. */
 export class CatalogLookup {
 	/**
@@ -289,37 +293,35 @@ export class CatalogLookup {
 	 * @returns {Book}
 	 */
 	static openLibraryBook(work, edition, authors){
-		/** @type {(x: unknown) => string} */
-		const text = x => typeof x === 'string' ? Text.tidy(x) : '';
 		/** @type {(x: unknown, re: RegExp) => string | null} */
-		const idOf = (x, re) => { const m = re.exec(text(x)); return m ? m[1] : null; };
+		const idOf = (x, re) => { const m = re.exec(tidyText(x)); return m ? m[1] : null; };
 		/** @type {(x: unknown) => unknown} */
 		const first = x => Array.isArray(x) ? x[0] : undefined;
 		/** @type {Record<string, any>} */
-		const rec = {t: text(work.title) || (edition ? text(edition.title) : ''), a: authors};
+		const rec = {t: tidyText(work.title) || (edition ? tidyText(edition.title) : ''), a: authors};
 		const workId = idOf(work.key, /^\/works\/(OL\d+W)$/);
 		if(workId) rec.ext = {openlibrary: workId};
 		if(edition){
-			const series = CatalogLookup.seriesOf(text(first(edition.series)));
+			const series = CatalogLookup.seriesOf(tidyText(first(edition.series)));
 			if(series){ rec.s = series.name; if(series.number) rec.sn = series.number; }
 			/** @type {Record<string, any>} */
 			const ed = {ext: {}};
 			const editionId = idOf(edition.key, /^\/books\/(OL\d+M)$/);
 			if(editionId) ed.ext.openlibrary = editionId;
 			const ids = Text.isObject(edition.identifiers) ? edition.identifiers : {};
-			const goodreads = text(first(ids.goodreads));
+			const goodreads = tidyText(first(ids.goodreads));
 			if(/^\d+$/.test(goodreads)) ed.ext.goodreads = goodreads;
 			// Open Library's Amazon id is amazon.com's; a print book's is its ISBN-10, which is no ASIN
-			const amazon = text(first(ids.amazon)).toUpperCase();
+			const amazon = tidyText(first(ids.amazon)).toUpperCase();
 			if(/^B[A-Z0-9]{9}$/.test(amazon)) ed.ext[ExternalCatalog.AMAZON_SITE] = amazon;
 			const isbn = [first(edition.isbn_13), first(edition.isbn_10)].map(Isbn.parse).find(Boolean);
 			if(isbn) ed.isbn = isbn;
-			const publisher = text(first(edition.publishers));
+			const publisher = tidyText(first(edition.publishers));
 			if(publisher) ed.p = publisher;
 			const released = CatalogLookup.date(edition.publish_date);
 			if(released) ed.d = released;
 			const narrators = (Array.isArray(edition.contributors) ? edition.contributors : [])
-				.filter((/** @type {unknown} */ c) => Text.isObject(c) && /narrat|read/i.test(text(c.role))).map((/** @type {Unchecked} */ c) => text(c.name)).filter(Boolean);
+				.filter((/** @type {unknown} */ c) => Text.isObject(c) && /narrat|read/i.test(tidyText(c.role))).map((/** @type {Unchecked} */ c) => tidyText(c.name)).filter(Boolean);
 			if(narrators.length) ed.n = narrators;
 			if(!Object.keys(ed.ext).length) delete ed.ext;
 			if(Object.keys(ed).length) rec.e = [ed];
@@ -508,22 +510,20 @@ export class CatalogLookup {
 	 * @returns {Book}
 	 */
 	static audiobookdbBook(book, release){
-		/** @type {(x: unknown) => string} */
-		const text = x => typeof x === 'string' ? Text.tidy(x) : '';
 		/** @type {(x: unknown, role: string) => string[]} */
 		const people = (x, role) => Array.isArray(x) ? [...new Set(x.filter(p => Text.isObject(p) && Text.isObject(p.role) && p.role.name === role && Text.isObject(p.person))
-			.map(p => text(p.person.name)).filter(Boolean))] : [];
+			.map(p => tidyText(p.person.name)).filter(Boolean))] : [];
 		/** @type {Record<string, any>} */
-		const rec = {t: text(book.title) || (release ? text(release.title) : ''), a: people(book.people, 'Author')};
+		const rec = {t: tidyText(book.title) || (release ? tidyText(release.title) : ''), a: people(book.people, 'Author')};
 		if(typeof book.id === 'string' && book.id) rec.ext = {audiobookdb: book.id};
-		const series = (Array.isArray(book.series) ? book.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && Text.isObject(s.series) && text(s.series.title));
-		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?$/.test(text(s.ordinal)) && Number(text(s.ordinal)) > 0);
+		const series = (Array.isArray(book.series) ? book.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && Text.isObject(s.series) && tidyText(s.series.title));
+		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?$/.test(tidyText(s.ordinal)) && Number(tidyText(s.ordinal)) > 0);
 		const inSeries = numbered || (series.length === 1 ? series[0] : null);
 		if(inSeries){
-			rec.s = text(inSeries.series.title);
-			if(inSeries === numbered) rec.sn = text(inSeries.ordinal);
+			rec.s = tidyText(inSeries.series.title);
+			if(inSeries === numbered) rec.sn = tidyText(inSeries.ordinal);
 		}
-		const genres = Array.isArray(book.genres) ? book.genres.map((/** @type {unknown} */ g) => Text.isObject(g) ? text(g.title) : '').filter(Boolean) : [];
+		const genres = Array.isArray(book.genres) ? book.genres.map((/** @type {unknown} */ g) => Text.isObject(g) ? tidyText(g.title) : '').filter(Boolean) : [];
 		if(genres.length) rec.g = [...new Set(genres)].slice(0, 5);
 		if(release){
 			/** @type {Record<string, any>} */
@@ -533,7 +533,7 @@ export class CatalogLookup {
 			if(isbn) ed.isbn = isbn;
 			const narrators = people(release.people, 'Narrator');
 			if(narrators.length) ed.n = narrators;
-			if(Text.isObject(release.publisher) && text(release.publisher.name)) ed.p = text(release.publisher.name);
+			if(Text.isObject(release.publisher) && tidyText(release.publisher.name)) ed.p = tidyText(release.publisher.name);
 			const released = CatalogLookup.date(release.releaseDate);
 			if(released) ed.d = released;
 			const minutes = CatalogLookup.minutes(release);
@@ -681,14 +681,8 @@ export class CatalogLookup {
 			const [audio] = (await client.ask(HardcoverClient.QUERIES.audioEditions, {book: Number(bookId)})).editions || [];
 			if(Text.isObject(audio)) edition = audio;
 		}
-		/** @type {Record<string, any>} */
-		const rec = {t: Text.tidy(book.title), a: HardcoverSync.people(book.contributions), ext: {hardcover: bookId}};
-		const series = Text.isObject(book.featured_book_series) ? book.featured_book_series : null;
-		if(series && Text.isObject(series.series) && typeof series.series.name === 'string' && Text.tidy(series.series.name)){
-			rec.s = Text.tidy(series.series.name);
-			const number = HardcoverSync.position(series.position);
-			if(number) rec.sn = number;
-		}
+		const rec = HardcoverSync.bookRecord(book);
+		rec.ext = {hardcover: bookId};
 		if(edition) rec.e = [HardcoverSync.edition(edition).toJSON()];
 		return Importer.book(Book.fixSeriesTitle(rec));
 	}

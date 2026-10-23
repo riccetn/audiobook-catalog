@@ -9,24 +9,29 @@ import {Cover} from './modules/cover.js';
 /** @import {CoverSize} from './modules/cover.js' */
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 import { CATALOG, backupAge, needsBackup, loadRecords, byId, spell, buildElement, fillElement, joined, authorPageHref, narratorPageHref,
-	externalLinks, bookPageHref, seriesPageHref } from './store.js';
+	externalLinks, bookPageHref, seriesPageHref, hashValue } from './store.js';
 /** @import {Child} from './store.js' */
 
 // How many books a list draws at a time; Show more draws more.
-export const PAGE_SIZE = 50;
+const PAGE_SIZE = 50;
 // The series filter's value for the books in no series.
 export const STANDALONE = '__standalone__';
 
 /**
- * Authors' names, each a link to their page on the authors page.
- * @type {(names: string[]) => Child[]}
+ * Names, each a link to the address `href` gives it, joined with commas.
+ * @type {(names: string[], href: (name: string) => string) => Child[]}
  */
-export const authorLinks = names => joined(names.map(x=> buildElement('a', {href: authorPageHref(x)}, x)), ', ');
+export const nameLinks = (names, href)=> joined(names.map(x=> buildElement('a', {href: href(x)}, x)), ', ');
 /**
- * Narrators' names, each a link to their page on the narrators page.
+ * Authors' names, each a link to their page.
  * @type {(names: string[]) => Child[]}
  */
-export const narratorLinks = names => joined(names.map(x=> buildElement('a', {href: narratorPageHref(x)}, x)), ', ');
+export const authorLinks = names => nameLinks(names, authorPageHref);
+/**
+ * Narrators' names, each a link to their page.
+ * @type {(names: string[]) => Child[]}
+ */
+export const narratorLinks = names => nameLinks(names, narratorPageHref);
 /**
  * A series' status, as a tag.
  * @type {(status: string | undefined) => HTMLSpanElement}
@@ -60,7 +65,7 @@ function seriesOrder(a, b){
  */
 function ownedText(books){
 	const sets = books.filter(b=> b.isCollection()).length;
-	return `${Series.owned(books)} owned` + (sets ? ` + ${sets} box set${sets > 1 ? 's' : ''}` : '');
+	return `${Series.owned(books)} owned` + (sets ? ` + ${Text.plural(sets, 'box set')}` : '');
 }
 
 /**
@@ -77,7 +82,7 @@ export function bookNarrators(b){
 // the choice is this browser's.
 const COVERS_KEY = 'audiobook-catalog-covers';
 /** @returns {boolean} whether books show their covers (they do unless turned off) */
-export function coversShown(){ try{ return localStorage.getItem(COVERS_KEY) !== 'off'; }catch{ return true; } }
+function coversShown(){ try{ return localStorage.getItem(COVERS_KEY) !== 'off'; }catch{ return true; } }
 
 /**
  * The Covers box of a list: ticked as the choice is, which it changes, and then the list is drawn again.
@@ -283,6 +288,25 @@ export async function showBackupNudge(){
 }
 
 /**
+ * A list page's search box and Filters button. Typing a search is one step back, however many letters it
+ * took: the first change of the search adds a history entry, the rest of the typing updates it. On a phone
+ * the filters fold away behind the button (styles.css), which opens them.
+ * @param {() => string} addressNow the address of what the page shows now
+ * @param {() => unknown} showView shows what the search says
+ */
+export function watchSearchAndFilters(addressNow, showView){
+	byId('q').addEventListener('input', ()=>{
+		const typing = !!(history.state && history.state.search);
+		setAddress(typing ? 'replace' : 'push', addressNow(), {search: true});
+		showView();
+	});
+	byId('filtersBtn').addEventListener('click', ()=>{
+		const open = byId('controls').classList.toggle('filtersOpen');
+		byId('filtersBtn').setAttribute('aria-expanded', String(open));
+	});
+}
+
+/**
  * The address's #a=1&b -> its parts, by name (true for a part without a value); anything malformed is read as best it can be.
  * @param {string | null} hash
  * @returns {Map<string, string | true>}
@@ -299,13 +323,23 @@ export function hashParts(hash){
 }
 
 /**
+ * A part of an address's parts (hashParts), trimmed; '' when it has no value.
+ * @param {Map<string, string | true>} parts
+ * @param {string} key
+ * @returns {string}
+ */
+export function hashText(parts, key){
+	const v = parts.get(key);
+	return typeof v === 'string' ? v.trim() : '';
+}
+
+/**
  * Parts -> an address's #a=1&b ('' for none); a part whose value is '' or false is left out.
  * @param {[string, string | boolean][]} parts
  * @returns {string}
  */
 export function hashOf(parts){
-	const enc = (/** @type {string} */ v)=> encodeURIComponent(v).replace(/%20/g, '+');
-	const kept = parts.filter(([, v])=> v !== '' && v !== false).map(([k, v])=> v === true ? k : k + '=' + enc(String(v)));
+	const kept = parts.filter(([, v])=> v !== '' && v !== false).map(([k, v])=> v === true ? k : k + '=' + hashValue(String(v)));
 	return kept.length ? '#' + kept.join('&') : '';
 }
 

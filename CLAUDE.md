@@ -66,18 +66,19 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     `nameIds` (the ids series and people are known by, by name, each an entry of its own: `idFor` (gives a new name one), `nameOf`, `namesOf`, `booksOf`, `removeEntry`/`removeProblem`, `seriesInfo`,
     `infoByName`/`replaceInfo` for the name-keyed backup shape; `renameEntry` renames a series or person on every book and keeps their id), `assignIds` (before every save);
     `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `book(id)`, `saveBook(id, book)`, `merge` (an import), `addBoxSets`,
-    `duplicates()`, `addExclusions`, `renameEntry`, `seriesBooks`, `authorWorks`,
-    `narratorWorks` and `publisherWorks` (all `creditedWorks` with `authorsOf`/`narratorsOf`/`publishersOf`).
-  - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`,
+    `duplicates()`, `addExclusions`, `renameEntry`, `seriesBooks`, `works(kind, name)` (an
+    author's, narrator's or publisher's books, by `namesOn`: `authorsOf`/`narratorsOf`/`publishersOf`), and `bookErrors` (`validate`'s errors but the
+    series info's, which stop an import, a merge or the box sets).
+  - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`, `static storedEditions` (a stored book's editions that are objects),
     `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`fixIds`.
-  - `Edition` (`id external isbn narrators publisher released minutes description`): `idOn`/`ids`/`idKeys`, `sameAs`/`conflictsWith`/`fillFrom`,
+  - `Edition` (`id external isbn narrators publisher released minutes description`): `idOn`/`ids`/`idKeys`/`idAndIsbnKeys` (its ids and "isbn 978…", what finds it and its box set's copies), `sameAs`/`conflictsWith`/`fillFrom`,
     `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`/`fixIds`.
   - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata, with a
     description and, per kind (`book edition series author narrator publisher`), the id's pattern and its page's address; `GROUPS` (one form
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
   - `Series` (series info `total status note external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`; `moveSites` gives an old series' site (`url`) to its one author or publisher, else its note), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
-    `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word),
+    `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word, `firstThree` for a long list),
     `Cover` (`addresses`: a book's cover addresses from its editions' ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
@@ -88,7 +89,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
     the browser's `indexedDB` is passed in). `MemoryReader` answers a `CatalogReader`'s questions from records in memory.
   - `Importer` (reads a CSV a row at a time into books) with `AudibleImporter` and `GoodreadsImporter`; `GoodreadsExporter`
     (CSV for Goodreads' import); `HardcoverClient` (GraphQL `ask`, with fetch and pause passed in; queries, `parseUrl`/`bookId`, `idBySlug`) and
-    `HardcoverSync` (`compare`: only reads Hardcover, for every book or a series' or an author's (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`), `push`, `read`, `lookups`/`addIds`, `planExport`).
+    `HardcoverSync` (`compare`: only reads Hardcover, for every book or a series' or an author's (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`; both read the shelf's books with `readShelfBooks` and plan with `planFor`), `bookRecord` (a Hardcover book's title, authors and series, which `CatalogLookup` uses too), `push`, `read`, `lookups`/`addIds`, `planExport`).
   - `CatalogLookup` (the book form's *Fill in from another catalog*: `read` names what was pasted (an ISBN, an address or bare id), `find` looks the book up with
     the fetch, `HardcoverClient` and catalog proxy passed in: Open Library and Wikidata (open CORS, no key), Hardcover with the token (its books, and the ASINs, ISBNs and
     Goodreads editions it knows, as Audible, Amazon and Goodreads can't be read from a page), and with the proxy (`proxied`) Audible's catalog API
@@ -132,7 +133,8 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   narrators and dates read) and cover (`coverImage`, an `<img>` that tries each of `Cover.addresses` in turn, unless *Covers* is off,
   `coversShown`/`watchCoversBox`, localStorage `audiobook-catalog-covers`), `BookList` (the ids listed, `PAGE_SIZE` = 50 loaded at a
   time, `more`), `readOrdered` (series order from the indexes alone), `bookGroups` (books grouped by series with their headings, or
-  `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, and the address helpers `hashParts`/`hashOf`/`setAddress`.
+  `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, `nameLinks` (and `authorLinks`/`narratorLinks`), `statusTag`, `watchSearchAndFilters` (the series and books pages' search box and Filters button),
+  and the address helpers `hashParts`/`hashText`/`hashOf` (with `store.js`'s `hashValue`)/`setAddress`.
 - `combo-box.js`: a search combo box (`comboBox(input, list, {names, multiple, onPick})`, `comboField` builds one): an
   `<input>` listing the names matching what is typed (`matchingNames`; in a field of several names, the one the cursor is in, `namePart`),
   picked with a click or the arrow keys and Enter, and a note below it naming what is new (`newNames`, `refreshNewNotes`). The book form's
@@ -143,7 +145,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`
   (`movedAddress`, with `location.replace`).
 - `books.js` (`books.html`, *Books*): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
-- `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`, `openBook`; `bookDetails`, with the other books of its box set
+- `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`; `bookDetails`, with the other books of its box set
   loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
   and the book form (`openEditForm`; Remove book is in it; *Fill in from another catalog*, `fillFromCatalog`, fills its empty fields), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
@@ -154,7 +156,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
   Goodreads CSV export, Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
-  (`infoKey`, `hashKey`, `list`, `page`, labels, `href`, `works`).
+  (`infoKey`, `hashKey`, `list`, `page`, labels, `href`).
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
   `publishers.js` with `startCreditsPage(kind)`): the list of authors, narrators or publishers (read from the contributors
   records alone, `LIST`). An address from when the list also showed one's page (`authors.html#a=<id>`) goes to their page
@@ -162,7 +164,7 @@ publishes `public/` to GitHub Pages on pushes to `main`.
 - `credit.js` (`author.html`, `narrator.html`, `publisher.html`, started by `author.js`/`narrator.js`/`publisher.js` with
   `startCreditPage(kind)`): one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`; loads their books by their credits; without an
   address it goes to the list): bio and links from `CATALOG.authors` (`.narrators`, `.publishers`, by id), their series and
-  titles from the books (`authorWorks`/`narratorWorks`/`publisherWorks`), and the form (its Name renames them on every book, `renameEntry`, and a name the catalog has joins them on a second Save; Remove author/narrator/publisher). Names on the catalog's book
+  titles from the books (`CATALOG.works`), and the form (its Name renames them on every book, `renameEntry`, and a name the catalog has joins them on a second Save; Remove author/narrator/publisher). Names on the catalog's book
   cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).

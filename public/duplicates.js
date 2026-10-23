@@ -1,5 +1,5 @@
 // The duplicates page: books that look like one title entered twice (the way an import would match
-// them; see Duplicates.groups), plus a pair picked by hand with the merge button on the catalog page
+// them; see Duplicates.groups), plus a pair picked by hand with Merge on a book's page
 // (duplicates.html#merge=<id>,<id>, the ids the two books are stored under). Merging keeps one entry, with the title, author and series you
 // pick, and every genre, date read and edition of the others; the rest are removed without excluding
 // them from imports (the kept book carries their ids, so an import finds it). Pairs marked
@@ -137,7 +137,7 @@ export function renderDuplicates(){
 		(SPLIT.length ? `; ${Text.plural(SPLIT.length, 'book')} with editions that look like one` : '');
 	fillElement(byId('dupBody'),
 		!DUP_GROUPS.length && buildElement('p', {class: 'empty'}, spell('No books look like duplicates. To merge two books anyway, ' +
-			'press \u21C4 on one of them in the catalog and then on the other.')),
+			'press Merge on the page of one of them and find the other there.')),
 		DUP_GROUPS.map(duplicateGroup),
 		renderSplit());
 }
@@ -205,7 +205,7 @@ export function mergeGroup(g){
 	// an edition a box set shares with other titles gets what the merged one gained there too
 	copy.saveBook(keep, merged);
 	copy.books = copy.books.filter(b=> b.id === keep || !ids.includes(/** @type {string} */ (b.id)));
-	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
+	const errors = copy.bookErrors();
 	if(errors.length){
 		showIoStatus(`Couldn't merge ${merged.title}: ${errors[0]}`, true);
 		return;
@@ -237,7 +237,7 @@ export function joinBookEditions(id){
 	const joined = b.clone();
 	joined.editions = [Edition.join(b.editions)];
 	copy.saveBook(id, joined);
-	const errors = copy.validate().errors.filter(e=> !e.startsWith('series-info'));
+	const errors = copy.bookErrors();
 	if(errors.length){
 		showIoStatus(`Couldn't join the editions of ${b.title}: ${errors[0]}`, true);
 		return;

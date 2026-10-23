@@ -29,8 +29,6 @@ import {Text} from './text.js';
 // An edition's values without its id, for "is this copy the same edition?".
 /** @type {(ed: Edition) => string} */
 const editionValues = ed => JSON.stringify(Edition.KEYS.map(k => ed.value(k)));
-/** @type {(ed: Edition) => string[]} */
-const editionIdKeys = ed => [...new Set([...ed.idKeys(), ...ed.isbns().map(x => 'isbn ' + x)])];
 
 /**
  * The parts of a catalog; each may be left out. The info is given by name, as a backup has it; the
@@ -172,7 +170,7 @@ export class Catalog {
 		for(const b of this.books){
 			const own = new Set();
 			for(const ed of b.editions){
-				const values = editionValues(ed), shareable = editionIdKeys(ed).length > 0;
+				const values = editionValues(ed), shareable = ed.idAndIsbnKeys().length > 0;
 				let id = ed.id;
 				if(id && (own.has(id) || (valuesOf.has(id) && valuesOf.get(id) !== values))) id = undefined;
 				if(!id && shareable) id = idOf.get(values);
@@ -308,6 +306,13 @@ export class Catalog {
 		}
 		return problems;
 	}
+
+	/**
+	 * validate()'s errors about the books, which stop an import, a merge or the box sets; one about series
+	 * info is not their doing (a series renamed in the page).
+	 * @returns {string[]}
+	 */
+	bookErrors(){ return this.validate().errors.filter(e => !e.startsWith('series-info')); }
 
 	// ------------------------------------------------------------------ books
 	/**
@@ -588,7 +593,7 @@ export class Catalog {
 		if(kind !== 'authors' || name === undefined) return '';
 		const alone = this.books.filter(b => b.authors.length === 1 && b.authors[0] === name);
 		if(!alone.length) return '';
-		const titles = alone.slice(0, 3).map(b => b.title).join(', ') + (alone.length > 3 ? ` and ${alone.length - 3} more` : '');
+		const titles = Text.firstThree(alone.map(b => b.title));
 		return `${name} is the only author of ${Text.plural(alone.length, 'book')} (${titles}): give ${alone.length > 1 ? 'them' : 'it'} another author first, or remove ${alone.length > 1 ? 'them' : 'it'}.`;
 	}
 
@@ -606,31 +611,26 @@ export class Catalog {
 	}
 
 	/**
-	 * What `name` wrote (alone or with others), from the books: {series: [{name, books}], titles} with each
-	 * series' books in series order and the books outside a series by title.
+	 * What the author, narrator or publisher `name` is credited with on the books (an author alone or with
+	 * others, a narrator or publisher on any edition, each book once): {series: [{name, books}], titles} with
+	 * each series' books in series order and the books outside a series by title.
+	 * @param {ContributorKind} kind
 	 * @param {string} name
 	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
 	 */
-	authorWorks(name){
-		return this.creditedWorks(Catalog.authorsOf, name);
-	}
-
-	/**
-	 * The books `name` narrates (any edition of them), as authorWorks() gives an author's.
-	 * @param {string} name
-	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
-	 */
-	narratorWorks(name){
-		return this.creditedWorks(Catalog.narratorsOf, name);
-	}
-
-	/**
-	 * The books `name` publishes (any edition of them), as authorWorks() gives an author's.
-	 * @param {string} name
-	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
-	 */
-	publisherWorks(name){
-		return this.creditedWorks(Catalog.publishersOf, name);
+	works(kind, name){
+		const namesOf = Catalog.namesOn(kind);
+		const own = this.books.filter(b => namesOf(b).includes(name));
+		/** @type {Map<string, Book[]>} */
+		const bySeries = new Map();
+		for(const b of own){
+			if(!b.series) continue;
+			const list = bySeries.get(b.series);
+			if(list) list.push(b); else bySeries.set(b.series, [b]);
+		}
+		const series = [...bySeries].sort((x, y) => x[0].localeCompare(y[0])).map(([s, list]) => ({name: s, books: list.sort(Book.bySeriesNumber)}));
+		const titles = own.filter(b => !b.series).sort((x, y) => x.title.localeCompare(y.title));
+		return {series, titles};
 	}
 
 	/**
@@ -648,25 +648,4 @@ export class Catalog {
 	static narratorsOf(b){ return [...new Set(b.editions.flatMap(ed => ed.narrators))]; }
 	/** @param {Book} b @returns {string[]} the publishers of all its editions, each once */
 	static publishersOf(b){ return [...new Set(b.editions.map(ed => ed.publisher || '').filter(Boolean))]; }
-
-	/**
-	 * The books `namesOf` credits to `name`: {series: [{name, books}], titles} with each series' books in
-	 * series order and the books outside a series by title.
-	 * @param {(b: Book) => string[]} namesOf
-	 * @param {string} name
-	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
-	 */
-	creditedWorks(namesOf, name){
-		const own = this.books.filter(b => namesOf(b).includes(name));
-		/** @type {Map<string, Book[]>} */
-		const bySeries = new Map();
-		for(const b of own){
-			if(!b.series) continue;
-			const list = bySeries.get(b.series);
-			if(list) list.push(b); else bySeries.set(b.series, [b]);
-		}
-		const series = [...bySeries].sort((x, y) => x[0].localeCompare(y[0])).map(([s, list]) => ({name: s, books: list.sort(Book.bySeriesNumber)}));
-		const titles = own.filter(b => !b.series).sort((x, y) => x.title.localeCompare(y.title));
-		return {series, titles};
-	}
 }

@@ -199,6 +199,13 @@ export class Edition {
 	 */
 	idKeys(){ return [...new Set(this.externalList().map(([key, v]) => ExternalCatalog.family(key) + ' ' + v))]; }
 
+	/**
+	 * idKeys() and its ISBN as "isbn 978…": what the editions index finds it by, and what tells a box set's
+	 * copies of it on other books.
+	 * @returns {string[]}
+	 */
+	idAndIsbnKeys(){ return [...this.idKeys(), ...this.isbns().map(x => 'isbn ' + x)]; }
+
 	/** @returns {string[]} the ISBN, 13-digit, in a list; [] when there is none (or not a valid one) */
 	isbns(){
 		const isbn = this.isbn ? Isbn.parse(this.isbn) : null;

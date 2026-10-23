@@ -3,6 +3,7 @@
 // a catalog set aside because it could not be read. The browser's indexedDB is passed in, so the tests
 // can pass a fake one.
 import {CatalogRecords} from './catalog-records.js';
+import {Contributor} from './contributor.js';
 /** @import {RecordSet, StoreName, Changes} from './catalog-records.js' */
 
 /** What a save finds when another tab saved since this page last read or wrote the catalog. */
@@ -488,9 +489,7 @@ class SaveTransaction {
 				if(ed.publisherId) await name(ed.publisherId, 'publisher');
 			}
 			const book = CatalogRecords.bookOf(rec, editions, x => /** @type {string} */ (this.names.get(x)));
-			/** @type {Record<string, string>} */
-			const kindOf = {series: 'series', authors: 'author', narrators: 'narrator', publishers: 'publisher'};
-			const derived = CatalogRecords.bookRecord(book, (kind, n) => /** @type {string} */ (ids.get(kindOf[kind] + '\n' + n)), rec.position);
+			const derived = CatalogRecords.bookRecord(book, (kind, n) => /** @type {string} */ (ids.get((kind === 'series' ? 'series' : Contributor.ONE[kind]) + '\n' + n)), rec.position);
 			const fresh = {...derived, ...CatalogRecords.ownFields('books', rec)};
 			this.os('books').put(fresh);
 			const old = oldBooks.get(id);

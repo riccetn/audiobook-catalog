@@ -68,24 +68,13 @@ export class HardcoverSync {
 		const client = this.client;
 		step('Reading your Hardcover shelves');
 		const shelf = await client.shelf(step);
-		const read = shelf.filter(ub => ub && ub.status_id === READ);
-		const found = await client.rows('books', [...new Set(read.map(ub => ub.book_id))], step);
-		const editions = await client.rows('editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
-		const result = HardcoverSync.read(shelf, found, editions);
-		const audio = result.audio;
-		/** @type {MergeOptions} */
-		const opts = {allDates: true, addable: book => audio.has(book)};
+		const {result, opts} = await this.readShelfBooks(shelf, step);
 		const incoming = result.books;
 		const comparison = Comparison.compare(catalog, incoming, opts);
 		const books = comparison.merged.books;
 		const ids = await client.find(HardcoverSync.lookups(books), step);
 		const idsFound = HardcoverSync.addIds(books, ids);
-		// which Hardcover book each edition belongs to, so a box set's edition is never sent as a title's
-		/** @type {Map<string, string>} */
-		const editionBooks = new Map();
-		const rows = await client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
-		for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
-		const plan = HardcoverSync.planExport(books, shelf, editionBooks);
+		const plan = await this.planFor(books, shelf, step);
 		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
 	}
 
@@ -115,24 +104,47 @@ export class HardcoverSync {
 		for(const ub of [...await client.shelfOf(part.kind, partIds, step), ...await client.shelfOfBooks(theirs, step)]){
 			if(Text.isObject(ub) && !seen.has(ub.id)){ seen.add(ub.id); shelf.push(ub); }
 		}
-		const read = shelf.filter(ub => ub.status_id === READ);
-		const found = await client.rows('books', [...new Set(read.map(ub => ub.book_id))], step);
-		const editions = await client.rows('editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
-		const result = HardcoverSync.read(shelf, found, editions);
-		const audio = result.audio;
-		/** @type {MergeOptions} */
-		const opts = {allDates: true, addable: book => audio.has(book)};
+		const {result, opts} = await this.readShelfBooks(shelf, step);
 		// a book Hardcover has under another name of the series or author is in it when it is one of yours
 		const incoming = result.books.filter(b => scope(b) || theirs.includes(Number(b.idOn('hardcover'))));
 		const comparison = Comparison.compare(catalog, incoming, opts);
 		const books = comparison.merged.books.filter(scope);
 		const idsFound = HardcoverSync.addIds(books, ids);
+		const plan = await this.planFor(books, shelf, step);
+		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
+	}
+
+	/**
+	 * The books on the Read shelf among `shelf` (your shelf entries), with the books and editions they are
+	 * read from Hardcover, and the options an import of them takes: an audiobook edition read is a book
+	 * that may be added.
+	 * @param {Unchecked[]} shelf
+	 * @param {Step} step
+	 * @returns {Promise<{result: HardcoverShelf, opts: MergeOptions}>}
+	 */
+	async readShelfBooks(shelf, step){
+		const read = shelf.filter(ub => ub && ub.status_id === READ);
+		const found = await this.client.rows('books', [...new Set(read.map(ub => ub.book_id))], step);
+		const editions = await this.client.rows('editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
+		const result = HardcoverSync.read(shelf, found, editions);
+		const audio = result.audio;
+		return {result, opts: {allDates: true, addable: book => audio.has(book)}};
+	}
+
+	/**
+	 * What putting `books` on Hardcover would do, beside `shelf` (planExport), once it is known which
+	 * Hardcover book each of their editions belongs to, so a box set's edition is never sent as a title's.
+	 * @param {Book[]} books
+	 * @param {Unchecked[]} shelf
+	 * @param {Step} step
+	 * @returns {Promise<HardcoverPlan>}
+	 */
+	async planFor(books, shelf, step){
 		/** @type {Map<string, string>} */
 		const editionBooks = new Map();
-		const rows = await client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
+		const rows = await this.client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
 		for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
-		const plan = HardcoverSync.planExport(books, shelf, editionBooks);
-		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, plan};
+		return HardcoverSync.planExport(books, shelf, editionBooks);
 	}
 
 	/**
@@ -238,6 +250,23 @@ export class HardcoverSync {
 	}
 
 	/**
+	 * A Hardcover book as a stored book's start: its title, authors, and featured series with its number there.
+	 * @param {Unchecked} book one with a title
+	 * @returns {Record<string, any>}
+	 */
+	static bookRecord(book){
+		/** @type {Record<string, any>} */
+		const rec = {t: Text.tidy(book.title), a: HardcoverSync.people(book.contributions)};
+		const series = Text.isObject(book.featured_book_series) ? book.featured_book_series : null;
+		if(series && Text.isObject(series.series) && typeof series.series.name === 'string' && Text.tidy(series.series.name)){
+			rec.s = Text.tidy(series.series.name);
+			const number = HardcoverSync.position(series.position);
+			if(number) rec.sn = number;
+		}
+		return rec;
+	}
+
+	/**
 	 * "2" for a position of 2, "2.5" for 2.5; null when there is none.
 	 * @param {unknown} position
 	 * @returns {string | null}
@@ -268,17 +297,10 @@ export class HardcoverSync {
 				continue;
 			}
 			const edition = ub.edition_id ? editions.get(ub.edition_id) : null;
-			/** @type {Record<string, any>} */
-			const rec = {t: Text.tidy(book.title), a: HardcoverSync.people(book.contributions)};
+			const rec = HardcoverSync.bookRecord(book);
 			if(!rec.a.length){
 				result.warnings.push(`${Text.repr(rec.t)}: no author on Hardcover, skipped`);
 				continue;
-			}
-			const series = Text.isObject(book.featured_book_series) ? book.featured_book_series : null;
-			if(series && Text.isObject(series.series) && typeof series.series.name === 'string' && Text.tidy(series.series.name)){
-				rec.s = Text.tidy(series.series.name);
-				const number = HardcoverSync.position(series.position);
-				if(number) rec.sn = number;
 			}
 			const reads = Array.isArray(ub.user_book_reads) ? ub.user_book_reads : [];
 			const dates = [...new Set(reads.map((/** @type {unknown} */ r) => Text.isObject(r) && Text.parseDate(r.finished_at)).filter(d => typeof d === 'string'))].sort();

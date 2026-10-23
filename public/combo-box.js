@@ -8,7 +8,7 @@ import { buildElement, fillElement } from './store.js';
 import {Text} from './modules/text.js';
 
 // How many names the list shows at most; typing more narrows it down.
-export const COMBO_MAX = 8;
+const COMBO_MAX = 8;
 
 /**
  * The names matching what was typed, best first: those starting with it, then those with a word starting
@@ -19,7 +19,7 @@ export const COMBO_MAX = 8;
  * @param {string[]} [skip]
  * @returns {string[]}
  */
-export function matchingNames(names, typed, skip = []){
+function matchingNames(names, typed, skip = []){
 	const q = Text.norm(typed);
 	if(!q) return [];
 	const left = new Set(skip.map(x=> Text.norm(x)));
@@ -42,7 +42,7 @@ export function matchingNames(names, typed, skip = []){
  * @param {number} at the cursor
  * @returns {[number, number]}
  */
-export function namePart(text, at){
+function namePart(text, at){
 	const before = text.slice(0, at), after = text.slice(at);
 	const start = Math.max(before.lastIndexOf(','), before.lastIndexOf(';')) + 1;
 	const stop = after.search(/[,;]/);
