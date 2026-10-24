@@ -18,6 +18,7 @@ import { Validator } from '../public/modules/validator.js';
 import { Merger } from '../public/modules/merger.js';
 import { Duplicates } from '../public/modules/duplicates.js';
 import { Backup, NewerBackup } from '../public/modules/backup.js';
+import { BackupV1 } from '../public/modules/backup-v1.js';
 import { Catalog } from '../public/modules/catalog.js';
 import { Comparison } from '../public/modules/comparison.js';
 import { Csv } from '../public/modules/csv.js';
@@ -1291,6 +1292,15 @@ test('a version 2 backup reads back as the catalog it was written from, ids and 
 	// a hand-written one may leave out the empty parts
 	assert.deepEqual(json(Catalog.fromJSON({ version: 2, books: { b: { title: 'Alone', authorIds: ['a'] } }, contributors: { a: { kind: 'author', name: 'Me' } } }).books),
 		[{ uid: 'b', t: 'Alone', a: ['Me'] }]);
+});
+
+test('a backup without a version is version 1, read by BackupV1 alone', () => {
+	const v1 = { books: [book('Tide One', 'Ann Vale', { s: 'Tide Saga' })], seriesInfo: { 'Tide Saga': { total: 3 } }, ids: { series: { 'Tide Saga': 's1' } } };
+	assert.deepEqual(json(Backup.read(v1)), json(new Backup(BackupV1.read(v1))));
+	assert.equal(BackupV1.read(v1).nameIds.series.get('Tide Saga'), 's1');
+	assert.deepEqual(BackupV1.fromFiles([{ name: 'books.json', text: '[]' }, { name: 'excluded.txt', text: 'BGONE\n' }]), { books: [], excluded: ['BGONE'] });
+	const v2 = Backup.write(v2Catalog());
+	assert.deepEqual(BackupV1.fromFiles([{ name: 'b.json', text: JSON.stringify(v2) }]), json(v2), 'a later version is passed on whole');
 });
 
 test('a version 2 backup that is not one is refused, saying why; a value that is not what its field holds is kept aside', () => {
