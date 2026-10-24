@@ -48,7 +48,7 @@ the version 1 tables for the books, editions, series and people). The credits an
 are left out, and so is every derived field; the page works them out again when it saves what it restored.
 A part left out counts as empty. Restore and Merge refuse a version 2 backup whose records don't fit
 together (a book lists an author, series or edition the backup has no record of; two series have one
-name; a field no backup has), saying which, and one from a newer version of the page than the one open
+name; a field no backup has, or a value that isn't what its field holds), saying which, and one from a newer version of the page than the one open
 (reload it to update). A later version will bring the ones before it up to date when it reads them.
 
 ### Version 1

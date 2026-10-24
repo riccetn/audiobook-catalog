@@ -4,7 +4,7 @@
 const CACHE = 'audiobook-catalog-v12';
 const APP = ['./', 'index.html', 'books.html', 'book.html', 'import.html', 'duplicates.html', 'authors.html', 'narrators.html', 'publishers.html', 'author.html', 'narrator.html', 'publisher.html', 'styles.css', 'store.js', 'book-list.js',
 	'series.js', 'books.js', 'book.js', 'combo-box.js', 'import.js', 'duplicates.js', 'authors.js', 'credits.js', 'narrators.js', 'publishers.js', 'credit.js', 'credit-kinds.js', 'author.js', 'narrator.js', 'publisher.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
-	'modules/audible-importer.js', 'modules/contributor.js', 'modules/backup.js', 'modules/book.js', 'modules/catalog.js', 'modules/comparison.js',
+	'modules/audible-importer.js', 'modules/contributor.js', 'modules/backup.js', 'modules/backup-v1.js', 'modules/book.js', 'modules/catalog.js', 'modules/comparison.js',
 	'modules/cover.js', 'modules/csv.js', 'modules/duplicates.js', 'modules/edition.js', 'modules/external-catalog.js', 'modules/exclusions.js', 'modules/goodreads-exporter.js',
 	'modules/goodreads-importer.js', 'modules/hardcover-client.js', 'modules/hardcover-sync.js', 'modules/file-importer.js', 'modules/file-exporter.js', 'modules/isbn.js',
 	'modules/merger.js', 'modules/series.js', 'modules/text.js', 'modules/validator.js', 'modules/catalog-records.js', 'modules/catalog-database.js', 'modules/catalog-lookup.js',

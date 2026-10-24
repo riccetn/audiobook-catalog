@@ -7,7 +7,7 @@
 // catalog. Loading and saving live in store.js.
 import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
-import {Backup, NewerBackup} from './modules/backup.js';
+import {Backup, NewerBackup, UnreadableBackup} from './modules/backup.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {Comparison} from './modules/comparison.js';
@@ -153,7 +153,7 @@ async function importBackup(files){
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
 	}catch(exc){
 		showIoStatus(exc instanceof NewerBackup ? "Not restored: a newer version of the catalog made that backup. Reload the page to update it, then try again."
-			: spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
+			: exc instanceof UnreadableBackup ? `Not restored: ${exc.message}.` : spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
 	}
 }
 
@@ -595,7 +595,7 @@ async function mergeBackupFile(file){
 	}catch(exc){
 		closeImportPreview();
 		showIoStatus(exc instanceof NewerBackup ? "Not merged: a newer version of the catalog made that backup. Reload the page to update it, then try again."
-			: spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
+			: exc instanceof UnreadableBackup ? `Not merged: ${exc.message}.` : spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
 	}
 }
 

@@ -107,8 +107,8 @@ make typecheck    # tsc --noEmit with checkJs and strict, over public/ (jsconfig
 - Functions say what they take and give with `@param` and `@returns`; a variable that starts empty says
   what it will hold (`/** @type {string[]} */`).
 - The checker only knows what the code says. A catalog read from the old localStorage, a backup or a CSV is
-  `Unchecked` (any) until the code has checked it: `Backup.read()` and `Book.fixBooks()` bring it to the
-  current format, and `Validator.validate()` is what makes sure it describes `Book`s before `Book.fromJSON()` makes them.
+  `Unchecked` (any) until the code has checked it: `Backup.read()` (with `BackupV1`, for a backup
+  from before version 2 and the old localStorage catalog) brings it to the current format, and `Validator.validate()` is what makes sure it describes `Book`s before `Book.fromJSON()` makes them.
 - `byId(id)` and `fieldById(id)` in `store.js` get the page's elements; they throw when the page lacks
   one, so a typo in an id fails at once with its name.
 - CI runs `make typecheck` as part of `make check` (below).
