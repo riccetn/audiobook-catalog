@@ -86,7 +86,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   - `Series` (series info `total status note external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`; `moveSites` gives an old series' site (`url`) to its one author or publisher, else its note), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word, `firstThree` for a long list),
     `Cover` (`addresses`: a book's cover addresses, first its editions' AudiobookDB cover keys (`img`, `Edition.covers`; `CATALOGS`, `isKeys`, `audiobookdbKey` reads one from an answer's `images`), then from their ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
-    `Backup` (`read`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`).
+    `Backup` (`write` (version 2), `read` (any version), `readRecords`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`, which matches series and people by uid too: `renamed`; `NewerBackup`).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save; `bookRecord`/`seriesRecord`/`contributorRecord`/`creditsOf`, which a save
     also uses from inside its transaction) and `CatalogDatabase` (`open`, `load`, `read(fn)` with a `CatalogReader` (`get`, `all`, `under`,
@@ -223,8 +223,11 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
 
 ## Data model (short form; full table in `docs/data-format.md`)
 
-A backup is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}`; the browser keeps the same catalog as
-IndexedDB records (below). `books` is a list of titles with short keys `uid t a s sn g r ext e` (the id it is stored under, title, list of authors, series,
+A backup (`Backup.write`, version 2) is the IndexedDB records: `{version: 2, books, editions, series, contributors, marks, exclusions}`, each store's
+records by uid (the uid not repeated inside), without derived fields (`Backup.FIELDS` lists what is kept), references by uid, books in the catalog's order, exclusions a sorted list;
+no credits or meta. `Backup.readRecords` checks it, puts it together with `CatalogRecords.toCatalog`, then reads it as version 1 (so a malformed value is kept aside as there); a
+later version adds a step from 2, and a version above `Backup.VERSION` throws `NewerBackup`. Version 1 (no `version`, still read, and what `Catalog.toJSON` writes for the Check
+and the tests) is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}`. `books` is a list of titles with short keys `uid t a s sn g r ext e` (the id it is stored under, title, list of authors, series,
 series number as text, genres, dates read, its own external ids (`{"hardcover": "77", "goodreads": "99"}`), editions). Each edition in `e` has `uid ext isbn n p d len desc img`
 (its stored id (a box set's copies share it), its ids by external catalog, `{"audible.com": "B0…", "amazon.com": "B0…", "goodreads": "4242", "hardcover": "501"}`, one ISBN, list of narrators, publisher, release date,
 length in minutes, free-text description, and its cover's key by catalog, `{"audiobookdb": "<the image's hash>"}`, filled in by Fill in and AudiobookDB's Compare (`AudiobookdbSync.addIds`), kept through the form as hidden `img:` fields) and must not be empty (a cover alone is empty). Entries keep only ids, never addresses: `ExternalCatalog` makes the link

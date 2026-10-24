@@ -66,7 +66,7 @@ the values the message names, and Restore it.
 ## Backups
 
 **Export** on *Import & export* downloads a backup: the books, series, author, narrator and publisher info, the list of books
-imports skip and the "Not duplicates" marks, as one JSON file. It is the only copy of your catalog
+imports skip and the "Not duplicates" marks, as one JSON file (its format is in [Data format](data-format.md#backups)). It is the only copy of your catalog
 outside the browser, so export now and then and keep the files somewhere safe.
 
 **Restore** replaces the catalog with a backup; the books, editions, series and people keep the ids they

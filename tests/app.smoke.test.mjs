@@ -15,6 +15,7 @@ import { Book } from '../public/modules/book.js';
 import { Exclusions } from '../public/modules/exclusions.js';
 import { Duplicates } from '../public/modules/duplicates.js';
 import { CatalogRecords } from '../public/modules/catalog-records.js';
+import { Catalog } from '../public/modules/catalog.js';
 import { FakeIndexedDB, FakeKeyRange } from './fake-indexeddb.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1715,13 +1716,21 @@ test('Export includes series and author info, and Import brings them back', asyn
 	first.els.exportBtn.listeners.click[0]();
 	await idle();
 	const backup = JSON.parse(blobs[0]);
-	assert.deepEqual(withoutIds(backup), { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), authors: JSON.parse(DEMO_AUTHORS),
+	// version 2: the stored records by store and id, without what is derived
+	assert.deepEqual(Object.keys(backup), ['version', 'books', 'editions', 'series', 'contributors', 'marks', 'exclusions']);
+	assert.equal(backup.version, 2);
+	const byName = JSON.parse(JSON.stringify(Catalog.fromJSON(backup)));
+	assert.deepEqual(withoutIds(byName), { books: demoBooks, seriesInfo: JSON.parse(DEMO_INFO), authors: JSON.parse(DEMO_AUTHORS),
 		narrators: JSON.parse(DEMO_NARRATORS), publishers: JSON.parse(DEMO_PUBLISHERS), excluded: [], notDuplicates: [] });
-	// with the ids everything is stored under, so a Restore keeps them
-	assert.equal(backup.books[0].uid, first.get('CATALOG.books[0].id'));
-	assert.ok(backup.books.every(b => b.uid && (b.e || []).every(ed => ed.uid)));
-	assert.equal(Object.keys(backup.ids.series).length, new Set(demoBooks.map(b => b.s).filter(Boolean)).size);
-	assert.ok(Object.keys(backup.ids.narrators).length);
+	assert.deepEqual(Object.keys(backup.books), first.get('CATALOG.books.map(b => b.id)'), 'by the ids they are stored under, in the catalog\'s order');
+	const [firstId, firstBook] = Object.entries(backup.books)[0];
+	assert.deepEqual(Object.keys(firstBook).filter(k => !CatalogRecords.DERIVED.books.includes(k)), Object.keys(firstBook), 'nothing derived');
+	assert.equal(firstBook.title, first.get('CATALOG.books[0].title'));
+	assert.ok(!('id' in firstBook) && firstId);
+	assert.ok(firstBook.authorIds.every(id => backup.contributors[id].kind === 'author'), 'authors by id');
+	assert.ok(Object.values(backup.books).every(b => b.editionIds.every(id => backup.editions[id])));
+	assert.equal(Object.keys(backup.series).length, new Set(demoBooks.map(b => b.s).filter(Boolean)).size);
+	assert.ok(Object.values(backup.contributors).some(c => c.kind === 'narrator'));
 
 	// into a page that has no series info: it comes back, and survives a reload
 	const mine = JSON.stringify([{ t: 'Mine', a: ['Me'] }]);
@@ -1731,17 +1740,24 @@ test('Export includes series and author info, and Import brings them back', asyn
 	await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
 	await idle();
 	assert.deepEqual(other.get('CATALOG.books'), demoBooks);
-	assert.deepEqual(other.get('CATALOG.toJSON().seriesInfo'), backup.seriesInfo);
-	assert.deepEqual(other.get('CATALOG.toJSON().authors'), backup.authors);
-	assert.deepEqual(other.get('[CATALOG.toJSON().narrators, CATALOG.toJSON().publishers]'), [backup.narrators, backup.publishers]);
+	assert.deepEqual(other.get('CATALOG.toJSON().seriesInfo'), byName.seriesInfo);
+	assert.deepEqual(other.get('CATALOG.toJSON().authors'), byName.authors);
+	assert.deepEqual(other.get('[CATALOG.toJSON().narrators, CATALOG.toJSON().publishers]'), [byName.narrators, byName.publishers]);
 	await other.saved();
-	assert.deepEqual(other.database.records('books').map(b => b.id).sort(), backup.books.map(b => b.uid).sort(), 'the books keep their ids');
-	assert.deepEqual(other.database.records('series').map(x => x.id).sort(), Object.values(backup.ids.series).sort());
+	assert.deepEqual(other.database.records('books').map(b => b.id).sort(), Object.keys(backup.books).sort(), 'the books keep their ids');
+	assert.deepEqual(other.database.records('series').map(x => x.id).sort(), Object.keys(backup.series).sort());
+	assert.deepEqual(other.database.records('contributors').map(x => x.id).sort(), Object.keys(backup.contributors).sort());
 	await boot({ files, storage: other.storage });
-	assert.deepEqual((await kept(other.storage)).seriesInfo, backup.seriesInfo);
+	assert.deepEqual((await kept(other.storage)).seriesInfo, byName.seriesInfo);
 	const reloaded = await kept(other.storage);
-	assert.deepEqual(reloaded.authors, backup.authors);
-	assert.deepEqual([reloaded.narrators, reloaded.publishers], [backup.narrators, backup.publishers]);
+	assert.deepEqual(reloaded.authors, byName.authors);
+	assert.deepEqual([reloaded.narrators, reloaded.publishers], [byName.narrators, byName.publishers]);
+
+	// a backup from a newer version of the page is refused, saying so
+	await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify({ ...backup, version: 3, books: {} }) }], value: '' } });
+	await idle();
+	assert.match(other.els.ioStatus.textContent, /^Not restored: a newer version of the catalog made that backup/);
+	assert.equal(other.get('CATALOG.books.length'), demoBooks.length);
 
 	// an older backup (a plain list of books) still imports and keeps the current series and author info
 	const legacy = await boot({ page: 'import.html' });
@@ -1876,7 +1892,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 	imp.els.exportBtn.listeners.click[0]();
 	await idle();
 	const backup = JSON.parse(blobs[0]);
-	assert.deepEqual(backup.excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
+	assert.deepEqual(backup.exclusions, ['BGONE2', 'BOLD', 'Gone | Ann Vale'], 'a list, sorted');
 	const other = await boot({ page: 'import.html', files: { 'books.json': '[]', 'excluded.txt': 'BOLD\nOther\n' } });
 	await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
 	await idle();
@@ -2432,7 +2448,14 @@ test('"Not duplicates" marks are kept in this browser and travel in backups', as
 	imp.ctx.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
 	imp.els.exportBtn.listeners.click[0]();
 	await idle();
-	assert.deepEqual(JSON.parse(blobs[0]).notDuplicates, [ledger]);
+	const exported = JSON.parse(blobs[0]);
+	assert.deepEqual(Object.values(exported.marks), [{ kind: 'notDuplicates', bookIds: imp.get('CATALOG.books.slice(0, 2).map(b => b.id).sort()') }], 'by the ids of the books');
+	// which a Restore elsewhere keeps pointing at those books
+	const copy = await boot({ page: 'import.html', files: { 'books.json': '[]' } });
+	await copy.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: blobs[0] }], value: '' } });
+	await idle();
+	assert.deepEqual(copy.get('[...CATALOG.marks.values()]'), Object.entries(exported.marks).map(([id, m]) => ({ id, ...m })));
+	assert.deepEqual(copy.get('CATALOG.markTexts()'), [ledger]);
 	const backup = { books, seriesInfo: {}, notDuplicates: [ledger, pairKey(2, 3)] };
 	const other = await boot({ page: 'import.html', files: { 'books.json': JSON.stringify(books) } });
 	await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(backup) }], value: '' } });
