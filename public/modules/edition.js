@@ -29,10 +29,6 @@ import {Cover} from './cover.js';
 const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => def.family !== 'asin');
 const CATALOG_LABEL = `(?:${OTHER_CATALOGS.map(def => Text.escapeRegExp(def.name).replace(/ /g, '\\s+')).join('|')})(?:\\s+(?:book|edition))?(?:\\s+id)?`;
 const EDITION_PART = new RegExp(`^(asin|${CATALOG_LABEL}|gr|isbns?|publisher|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`, 'i');
-// Before ids were kept by external catalog, an edition kept them under keys of their own: its ASINs by
-// site ("asin"), before that one ASIN ("id", audible.com's), its Goodreads id ("gr") and Hardcover id ("hc").
-/** @type {Record<string, string>} */
-const OLD_ID_KEYS = {gr: 'goodreads', hc: 'hardcover'};
 
 // A list of names, as the narrators are kept.
 /**
@@ -549,8 +545,8 @@ export class Edition {
 	}
 
 	// ------------------------------------------------------------------ as stored
-	// What follows works on editions as they are stored, which may be in an older format or not right at
-	// all; reading the catalog (Book.fixBooks) brings them to the current format.
+	// What follows works on editions as they are stored, which may not be right at all (a backup from
+	// before version 2 is brought to the current format by BackupV1 first).
 
 	/**
 	 * A stored edition with its keys in the usual order (unknown keys last, for the Check to report).
@@ -592,47 +588,14 @@ export class Edition {
 	}
 
 	/**
-	 * A stored edition with its ids under `ext`, by external catalog, as they are kept now: the ASINs it kept
-	 * by site ("asin"), the ASIN it kept as "id" before that (audible.com's), its Goodreads id ("gr") and
-	 * Hardcover id ("hc"). An old id that disagrees with the one `ext` has for its catalog, or that is not
-	 * text, is left where it is for the Check to report.
-	 * @param {Unchecked} ed
-	 * @returns {Unchecked}
-	 */
-	static fixIds(ed){
-		if(!Text.isObject(ed) || !['id', 'asin', 'gr', 'hc'].some(k => k in ed)) return ed;
-		if(ed.ext !== undefined && !Text.isObject(ed.ext)) return ed;
-		/** @type {Record<string, any>} */
-		const out = {...ed};
-		/** @type {Record<string, unknown>} */
-		const ext = {...(ed.ext || {})};
-		/** @type {(catalog: string, v: unknown) => boolean} whether the old key's id went into ext */
-		const move = (catalog, v) => {
-			if(typeof v !== 'string') return false;
-			if(!v.trim()) return true;
-			if(ext[catalog] !== undefined && ext[catalog] !== v.trim()) return false;
-			ext[catalog] = v.trim();
-			return true;
-		};
-		if('asin' in out && Text.isObject(out.asin) && Object.entries(out.asin).every(([site, v]) => typeof v === 'string' && !(ext[site] !== undefined && ext[site] !== v.trim()))){
-			for(const [site, v] of Object.entries(out.asin)) move(site, v);
-			delete out.asin;
-		}
-		if('id' in out && move(ExternalCatalog.AUDIBLE_SITE, out.id)) delete out.id;
-		for(const [key, catalog] of Object.entries(OLD_ID_KEYS)) if(key in out && move(catalog, out[key])) delete out[key];
-		const ordered = ExternalCatalog.order(ext);
-		if(ordered) out.ext = ordered; else delete out.ext;
-		return Edition.order(out);
-	}
-
-	/**
 	 * A copy of a stored edition with tidy text in every value, and its ISBN in the 13-digit form.
 	 * @param {Unchecked} ed
 	 * @returns {Unchecked}
 	 */
 	static tidyJSON(ed){
 		if(!Text.isObject(ed)) return ed;
-		const out = Text.fixPeople({...ed});
+		/** @type {Record<string, any>} */
+		const out = {...ed};
 		for(const key of ['p', 'd', 'desc']){
 			if(typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}

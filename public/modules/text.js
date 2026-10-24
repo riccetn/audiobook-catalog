@@ -154,45 +154,6 @@ export class Text {
 	 */
 	static firstThree(items, separator = ', '){ return items.slice(0, 3).join(separator) + (items.length > 3 ? ` and ${items.length - 3} more` : ''); }
 
-	/**
-	 * Names as a list. Before they were lists, the authors ("a") and an edition's narrators ("n") were one
-	 * comma separated string; that is split (splitNames). A list keeps its names as they are, without
-	 * repeats or empty ones; anything else is left for the Check to report. Returns null for no names.
-	 * @param {unknown} v
-	 * @returns {unknown}
-	 */
-	static fixNames(v){
-		if(typeof v === 'string') return Text.splitNames(v).length ? Text.splitNames(v) : null;
-		if(!Array.isArray(v)) return v;
-		const names = v.filter((x, i) => !(typeof x === 'string' && (!x.trim() || v.indexOf(x) !== i)));
-		return !names.length ? null : names.length === v.length ? v : names;
-	}
-
-	/**
-	 * A stored book or edition with its authors ("a") and narrators ("n") as lists (fixNames()), its
-	 * editions' too; the record itself is returned when nothing changes.
-	 * @template T
-	 * @param {T} rec
-	 * @returns {T}
-	 */
-	static fixPeople(rec){
-		if(!Text.isObject(rec)) return rec;
-		/** @type {Record<string, any>} */
-		let out = rec;
-		for(const k of ['a', 'n']){
-			if(!(k in rec)) continue;
-			const names = Text.fixNames(rec[k]);
-			if(names === rec[k]) continue;
-			if(out === rec) out = {...rec};
-			if(names === null) delete out[k]; else out[k] = names;
-		}
-		if(Array.isArray(rec.e) && rec.e.some(ed => Text.fixPeople(ed) !== ed)){
-			if(out === rec) out = {...rec};
-			out.e = rec.e.map(Text.fixPeople);
-		}
-		return /** @type {T} */ (out);
-	}
-
 	// ------------------------------------------------------------------ dates and lengths
 	/**
 	 * A date as the catalog keeps it (a date read, a release date): "2024-03-15", or just "2024-03" /

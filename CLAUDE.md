@@ -76,9 +76,9 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     author's, narrator's or publisher's books, by `namesOn`: `authorsOf`/`narratorsOf`/`publishersOf`), and `bookErrors` (`validate`'s errors but the
     series info's, which stop an import, a merge or the box sets).
   - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`, `static storedEditions` (a stored book's editions that are objects),
-    `lookupKeys`, `static bySeriesNumber`/`merge`, and the JSON-level migrations `fixBooks`/`tidyJSON`/`fixEditions`/`fixSeriesTitle`/`fixIds`.
+    `lookupKeys`, `static bySeriesNumber`/`merge`, `tidyJSON` (tidy text, one edition per ISBN) and `fixSeriesTitle` (imports' titles with the series in them).
   - `Edition` (`id external isbn narrators publisher released minutes description`): `idOn`/`ids`/`idKeys`/`idAndIsbnKeys` (its ids and "isbn 978…", what finds it and its box set's copies), `sameAs`/`conflictsWith`/`fillFrom`,
-    `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`/`fixIds`.
+    `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`.
   - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata, with a
     description and, per kind (`book edition series author narrator publisher`), the id's pattern and its page's address; `GROUPS` (one form
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
@@ -87,8 +87,11 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word, `firstThree` for a long list),
     `Cover` (`addresses`: a book's cover addresses, first its editions' AudiobookDB cover keys (`img`, `Edition.covers`; `CATALOGS`, `isKeys`, `audiobookdbKey` reads one from an answer's `images`), then from their ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`write` (version 2), `read` (any version), `readRecords`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`, which matches series and people by uid too: `renamed`; `NewerBackup`),
-    `BackupV1` (everything about backups before version 2: `read` (the catalog by name, or a plain list of books) gives a `BackupInit`, `readIds`, `fromFiles` (the old `data/` files picked together)).
-    Keep version 1 code in `BackupV1`, not in `Backup`.
+    `BackupV1` (everything about backups before version 2, which `Backup.read` hands anything without a `version`: `read` (the catalog by name, a plain list of books, or several
+    files) gives a `BackupInit`, `readIds`, `fromFiles` (the old `data/` files picked together), and the migrations of old book and edition shapes: `fixBooks`, `fixReadDates`,
+    `fixEditions`, `fixBookIds`, `fixEditionIds`, `fixPeople`/`fixNames`). Nothing else imports it: dropping version 1 is deleting `backup-v1.js` and that one line in `Backup.read`
+    (and its `sw.js` entry). Keep anything only the old format needs there, not in `Backup`, `Book`, `Edition` or `Text`. (`Contributor.fixLinks` and `Series.moveSites` stay
+    where they are: IndexedDB's older records need them too.)
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save; `bookRecord`/`seriesRecord`/`contributorRecord`/`creditsOf`, which a save
     also uses from inside its transaction) and `CatalogDatabase` (`open`, `load`, `read(fn)` with a `CatalogReader` (`get`, `all`, `under`,
@@ -227,7 +230,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
 
 A backup (`Backup.write`, version 2) is the IndexedDB records: `{version: 2, books, editions, series, contributors, marks, exclusions}`, each store's
 records by uid (the uid not repeated inside), without derived fields (`Backup.FIELDS` lists what is kept), references by uid, books in the catalog's order, exclusions a sorted list;
-no credits or meta. `Backup.readRecords` checks it, puts it together with `CatalogRecords.toCatalog`, then reads it by name with `BackupV1.read` (so a malformed value is kept aside as there); a
+no credits or meta. `Backup.readRecords` checks every field's type (`SHAPES`; a value that isn't what its field holds is refused, as a record can't keep it aside) and puts it together with `CatalogRecords.toCatalog`; a
 later version adds a step from 2, and a version above `Backup.VERSION` throws `NewerBackup`. Version 1 (no `version`, still read, and what `Catalog.toJSON` writes for the Check
 and the tests) is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}`. `books` is a list of titles with short keys `uid t a s sn g r ext e` (the id it is stored under, title, list of authors, series,
 series number as text, genres, dates read, its own external ids (`{"hardcover": "77", "goodreads": "99"}`), editions). Each edition in `e` has `uid ext isbn n p d len desc img`
@@ -236,11 +239,11 @@ length in minutes, free-text description, and its cover's key by catalog, `{"aud
 from an id and reads the id out of a pasted address. An edition's `ext` names it
 (`idKeys`, `"asin B0…"` for any site's ASIN; `ids('asin')` gives an ASIN of any site, and only another id under the same key disagrees) and matches books; the ISBN names an edition too (`conflictsWith`: another ISBN is another
 edition) but never matches books. Editions with an ISBN list or an `hcb`, from before, are split and the
-id lifted to the book on load (`Edition.splitIsbns`, `Book.fixBooks`); the old keys `id`/`asin`/`gr`/`hc` on an edition and `hcb` on a book become `ext` (`Edition.fixIds`, `Book.fixIds`).
+id lifted to the book on load (`Edition.splitIsbns`, `BackupV1.fixBooks`); the old keys `id`/`asin`/`gr`/`hc` on an edition and `hcb` on a book become `ext` (`BackupV1.fixEditionIds`, `fixBookIds`).
 Audible imports' ASINs are the picked Audible site's (audible.com by default), Hardcover's and Goodreads' amazon.com's. A box set is one edition copied onto each of its titles, linked by the shared
 identifier (`sameAs`), and also a book of its own numbered with its range (`"1-3"`). Books from before editions (with `id`/`gr`/`isbn`/`n` on the book) are
-migrated on load by `Book.fixBooks`, and so are authors and narrators written as one comma separated
-string (`Text.fixPeople`/`splitNames`; `namesText` joins a list back for display). Matching and "Not duplicates"
+migrated on load by `BackupV1.fixBooks`, and so are authors and narrators written as one comma separated
+string (`BackupV1.fixPeople`/`Text.splitNames`; `namesText` joins a list back for display). Matching and "Not duplicates"
 keys use the first author (`Book.firstAuthor`/`firstName`). A missing `r` means the read date is unknown, not unread. `seriesInfo` maps a series
 name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, ext}` (an old `url` is moved, `Catalog.moveSeriesSites`). `authors` (optional;
 missing means `{}`) maps an author's name (as in `a`) to `{bio, url, ext, links}` (ids by catalog, and other addresses; the old `audible`/`goodreads`/`hardcover`

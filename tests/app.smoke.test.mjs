@@ -1758,6 +1758,12 @@ test('Export includes series and author info, and Import brings them back', asyn
 	await idle();
 	assert.match(other.els.ioStatus.textContent, /^Not restored: a newer version of the catalog made that backup/);
 	assert.equal(other.get('CATALOG.books.length'), demoBooks.length);
+	// nor one whose records don't fit together, which is named
+	const broken = { ...backup, books: { b1: { title: 'Lost', authorIds: ['nobody'] } } };
+	await other.els.importFile.listeners.change[0]({ target: { files: [{ name: 'b.json', text: JSON.stringify(broken) }], value: '' } });
+	await idle();
+	assert.equal(other.els.ioStatus.textContent, 'Not restored: no author is stored under nobody.');
+	assert.equal(other.get('CATALOG.books.length'), demoBooks.length);
 
 	// an older backup (a plain list of books) still imports and keeps the current series and author info
 	const legacy = await boot({ page: 'import.html' });

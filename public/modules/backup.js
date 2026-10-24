@@ -12,6 +12,8 @@ import {Exclusions} from './exclusions.js';
 import {Duplicates} from './duplicates.js';
 import {BackupV1} from './backup-v1.js';
 import {CatalogRecords} from './catalog-records.js';
+import {ExternalCatalog} from './external-catalog.js';
+import {Cover} from './cover.js';
 import {Catalog} from './catalog.js';
 /** @import {NameIds, NamedKind} from './catalog.js' */
 /** @import {Mark} from './duplicates.js' */
@@ -71,22 +73,31 @@ import {Catalog} from './catalog.js';
 /** @typedef {Exclude<StoreName, 'credits' | 'exclusions'>} BackupStore the stores whose records a backup keeps by uid */
 
 /** @type {(v: unknown) => boolean} */
-const isTextList = v => Array.isArray(v) && v.every(x => typeof x === 'string');
+const isText = v => typeof v === 'string' && !!v.trim();
 /** @type {(v: unknown) => boolean} */
-const isTextMap = v => Text.isObject(v) && Object.values(v).every(x => typeof x === 'string');
-// What the references and lists of a version 2 backup's records must be, so that the records fit together;
-// the other values are checked as a version 1 backup's are (Book.fromJSON keeps one that is wrong aside).
+const isTextList = v => Array.isArray(v) && v.every(isText);
+// What each field of a version 2 backup's records must be, and what to call it when it isn't. The records
+// are stored as they are, so a value that is none of these is refused rather than kept aside.
 /** @type {Record<string, [(v: unknown) => boolean, string]>} */
 const SHAPES = {
-	authorIds: [isTextList, 'a list of ids'], editionIds: [isTextList, 'a list of ids'], narratorIds: [isTextList, 'a list of ids'],
-	bookIds: [isTextList, 'a list of ids'], genres: [isTextList, 'a list of texts'], read: [isTextList, 'a list of dates'],
-	links: [isTextList, 'a list of addresses'], seriesId: [v => typeof v === 'string', 'an id'], publisherId: [v => typeof v === 'string', 'an id'],
-	external: [isTextMap, 'ids by catalog'], covers: [isTextMap, 'keys by catalog'], name: [v => typeof v === 'string' && !!v.trim(), 'a name'],
-	kind: [v => typeof v === 'string', 'a kind'],
+	title: [isText, 'a text'], number: [isText, 'a text'], isbn: [isText, 'a text'], released: [isText, 'a text'], description: [isText, 'a text'],
+	note: [v => typeof v === 'string', 'a text'], bio: [v => typeof v === 'string', 'a text'], url: [isText, 'a text'], key: [isText, 'a text'],
+	name: [isText, 'a name'], seriesId: [isText, 'an id'], publisherId: [isText, 'an id'],
+	authorIds: [isTextList, 'a list of ids'], editionIds: [isTextList, 'a list of ids'], narratorIds: [isTextList, 'a list of ids'], bookIds: [isTextList, 'a list of ids'],
+	genres: [isTextList, 'a list of texts'], read: [isTextList, 'a list of dates'], links: [isTextList, 'a list of addresses'],
+	external: [v => ExternalCatalog.isIds(v) || (Text.isObject(v) && !Object.keys(v).length), 'ids by catalog'], covers: [Cover.isKeys, 'keys by catalog'],
+	minutes: [v => typeof v === 'number', 'a number'], total: [v => typeof v === 'number' || v === 'many', 'a number or "many"'],
+	status: [v => Series.STATUSES.includes(/** @type {any} */ (v)), Series.STATUSES.join(' or ')],
 };
+// The kinds a store's records may have.
+/** @type {Partial<Record<BackupStore, string[]>>} */
+const KINDS = {contributors: ['author', 'narrator', 'publisher'], marks: ['notDuplicates', 'keepSeparate', 'text']};
 // The lists a record always has, which a backup written by hand may leave out.
 /** @type {Partial<Record<BackupStore, string[]>>} */
 const LISTS = {books: ['authorIds', 'genres', 'read', 'editionIds'], editions: ['narratorIds']};
+
+/** A version 2 backup that isn't one: its message says what is wrong, for Restore and Merge to show. */
+export class UnreadableBackup extends Error {}
 
 /** A backup the page can't read because a newer version of it wrote it. */
 export class NewerBackup extends Error {
@@ -149,27 +160,26 @@ export class Backup {
 	}
 
 	/**
-	 * Read a backup exported from the page: version 2 (write(), readRecords()), or version 1, which has no
-	 * `version` (BackupV1.read() says what it takes; what a backup predates is null, so callers leave theirs
+	 * Read a backup exported from the page: version 2 (write(), readRecords()), or one without a `version`,
+	 * from before (BackupV1.read() says what it takes; what a backup predates is null, so callers leave theirs
 	 * alone). A backup of a version after this page's throws NewerBackup. Throws when it is none of these, or
 	 * a part of it is not what it should be.
 	 * @param {Unchecked} data
 	 * @returns {Backup}
 	 */
 	static read(data){
-		if(Text.isObject(data) && data.version !== undefined){
-			const {version} = data;
-			if(!Number.isInteger(version) || version < 1) throw new Error('version is not a version number');
-			if(version > Backup.VERSION) throw new NewerBackup(version);
-			if(version === 2) return Backup.readRecords(data);
-		}
-		return new Backup(BackupV1.read(data));
+		// a backup without a version is from before version 2 (BackupV1, which goes when this line does)
+		if(!(Text.isObject(data) && 'version' in data)) return new Backup(BackupV1.read(data));
+		const {version} = data;
+		if(!Number.isInteger(version) || version < 2) throw new Error('version is not a version number');
+		if(version > Backup.VERSION) throw new NewerBackup(version);
+		try{ return Backup.readRecords(data); }
+		catch(exc){ throw new UnreadableBackup(Text.errorText(exc), {cause: exc}); }
 	}
 
 	/**
-	 * Read a version 2 backup (write()): its records are put together as the stored ones are (CatalogRecords.toCatalog),
-	 * then read by name as version 1 is (BackupV1.read(), the shape Catalog.toJSON() writes), so a value that isn't what its field holds is kept aside to be named as it is there.
-	 * Throws when a record is not an object, has a field FIELDS doesn't list, or a reference or list isn't one,
+	 * Read a version 2 backup (write()): its records are put together as the stored ones are (CatalogRecords.toCatalog).
+	 * Throws when a record is not an object, has a field FIELDS doesn't list or one that is not what SHAPES says,
 	 * or when they don't fit together (a book lists an edition, author or series the backup has no record of, two series have one name).
 	 * @param {Record<string, unknown>} data
 	 * @returns {Backup}
@@ -192,6 +202,8 @@ export class Backup {
 					if(shape && !shape[0](v)) throw new Error(`${store} ${Text.repr(id)}: ${field} is not ${shape[1]}`);
 					rec[field] = v;
 				}
+				const kinds = KINDS[store];
+				if(kinds && !kinds.includes(/** @type {string} */ (rec.kind))) throw new Error(`${store} ${Text.repr(id)}: kind is not ${kinds.slice(0, -1).join(', ')} or ${kinds[kinds.length - 1]}`);
 				if(store === 'books') rec.position = position;
 				return rec;
 			});
@@ -199,7 +211,6 @@ export class Backup {
 		const exclusions = data.exclusions === undefined ? [] : data.exclusions;
 		if(!isTextList(exclusions)) throw new Error('exclusions is not a list of texts');
 		records.exclusions = /** @type {string[]} */ (exclusions).map((entry, position) => ({entry, position}));
-		for(const rec of records.contributors) if(!['author', 'narrator', 'publisher'].includes(/** @type {string} */ (rec.kind))) throw new Error(`contributors ${Text.repr(rec.id)}: kind is not author, narrator or publisher`);
 		for(const [store, nameOf] of /** @type {const} */ ([['series', (/** @type {Record<string, unknown>} */ r) => r.name], ['contributors', (/** @type {Record<string, unknown>} */ r) => `${r.kind} ${r.name}`]])){
 			const seen = new Set();
 			for(const rec of records[store]){
@@ -209,18 +220,19 @@ export class Backup {
 			}
 		}
 		const catalog = CatalogRecords.toCatalog(/** @type {RecordSet} */ (/** @type {unknown} */ (records)));
-		const backup = new Backup(BackupV1.read(JSON.parse(JSON.stringify(catalog))));
-		backup.marks = [...catalog.marks.values()];
-		return backup;
+		return new Backup({books: catalog.books, series: catalog.infoByName('series'), authors: catalog.infoByName('authors'),
+			narrators: catalog.infoByName('narrators'), publishers: catalog.infoByName('publishers'), nameIds: catalog.nameIds,
+			excluded: catalog.exclusions.entries, notDuplicates: catalog.markTexts(), marks: [...catalog.marks.values()]});
 	}
 
 	/**
-	 * What Restore was given: a backup, or the data files a catalog kept before it lived in the browser,
-	 * picked together (BackupV1.fromFiles()), read as read() reads a backup. `files` are [{name, text}].
+	 * What Restore was given, as read() reads it: a backup is one file; several are the data files a catalog
+	 * kept before it lived in the browser, picked together, which only a backup from before version 2 has
+	 * (read() hands them to BackupV1). `files` are [{name, text}].
 	 * @param {{name: string, text: string}[]} files
 	 * @returns {Backup}
 	 */
-	static readFiles(files){ return Backup.read(BackupV1.fromFiles(files)); }
+	static readFiles(files){ return Backup.read(files.length === 1 ? JSON.parse(files[0].text) : files); }
 
 	/**
 	 * Merge this backup, made on another device, into `catalog`, when both have changed since they were
