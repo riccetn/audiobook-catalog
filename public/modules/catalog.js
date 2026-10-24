@@ -1,8 +1,9 @@
 // The catalog itself: the books, the series info, the author info, the exclusions list and the "Not
 // duplicates" marks, and what is done to them as a whole. Inside, an entry is known by the id it is stored
 // under: a book by Book.id, a series or person by their id in nameIds (the books name them, so a name leads
-// to its id), and their info and the marks by those ids. It is stored (in backups) by name, as
-// {books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}; toJSON() writes that and fromJSON() reads it.
+// to its id), and their info and the marks by those ids. toJSON() writes it by name, as a version 1 backup has it
+// ({books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}), which the Check reads, and
+// fromJSON() reads a backup of any version; Export writes version 2, the stored records (Backup.write).
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
@@ -92,14 +93,17 @@ export class Catalog {
 	 * @returns {Catalog}
 	 */
 	static fromBackup(backup){
-		return new Catalog({books: backup.books, series: backup.series || new Map(), authors: backup.authors || new Map(),
+		const catalog = new Catalog({books: backup.books, series: backup.series || new Map(), authors: backup.authors || new Map(),
 			narrators: backup.narrators || new Map(), publishers: backup.publishers || new Map(),
-			exclusions: Exclusions.parse((backup.excluded || []).join('\n')), notDuplicates: backup.notDuplicates || [],
+			exclusions: Exclusions.parse((backup.excluded || []).join('\n')), notDuplicates: backup.marks ? [] : backup.notDuplicates || [],
 			nameIds: backup.nameIds || Catalog.emptyNameIds()});
+		// a version 2 backup's marks point at its books by id, as the catalog's do
+		if(backup.marks){ catalog.addMarks(backup.marks.map(m => ({...m}))); catalog.resolveMarks(); }
+		return catalog;
 	}
 
 	/**
-	 * The catalog as a backup holds it, by name; `ids` (the ids of series and people by name) only when there are any.
+	 * The catalog as a version 1 backup holds it, by name; `ids` (the ids of series and people by name) only when there are any.
 	 * @returns {{books: Book[], seriesInfo: Record<string, Series>, authors: Record<string, Contributor>, narrators: Record<string, Contributor>,
 	 *   publishers: Record<string, Contributor>, excluded: string[], notDuplicates: string[], ids?: Record<NamedKind, Record<string, string>>}}
 	 */

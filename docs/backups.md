@@ -12,6 +12,9 @@ Goodreads or Hardcover id (so each title of a box set finds its own book).
   always adds it to the exclusions); then it is removed here too.
 - A book both have keeps all the genres, dates read and editions of both.
 - Author, narrator and publisher info only the backup has is added.
+- A series, author, narrator or publisher the backup has under the same id as here, but by another name,
+  was renamed on one side: it stays one, under this side's name, or the backup's when you choose *the
+  backup's version* (the preview lists those renamed).
 - Where the title, author or series differ, and for series, author, narrator or publisher info both have but differently, this side's
   version is kept; choose *the backup's version* in the preview to take
   the backup's instead. The preview lists each such book.

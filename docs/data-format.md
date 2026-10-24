@@ -1,8 +1,62 @@
 # Data format
 
-A backup ([Running the app and keeping your catalog](saving.md)) is one JSON file:
+A backup ([Running the app and keeping your catalog](saving.md)) is one JSON file holding the records the
+browser keeps in IndexedDB ([How the browser keeps it](#how-the-browser-keeps-it), below), without the
+fields that only exist for its indexes. Everything in it is known by its id, never by a title or name.
+
+## Backups
+
+**Export** writes version 2: a field per store, each the store's records by their id, and the exclusions
+as a sorted list of their entries. Records point at each other by id, as in the browser. (Invented data,
+ids shortened.)
+
+```json
+{
+  "version": 2,
+  "books": {
+    "b-71c2": {"title": "The Glass Orchard", "authorIds": ["c-1a90"], "seriesId": "s-5e31", "number": "1",
+               "genres": ["fantasy"], "read": ["2025-03-14"], "external": {"hardcover": "77"}, "editionIds": ["e-9d04"]},
+    "b-0f6a": {"title": "Salt and Lanterns", "authorIds": ["c-1a90"], "genres": [], "read": [], "editionIds": []}
+  },
+  "editions": {
+    "e-9d04": {"external": {"audible.com": "B0EXAMPLE1"}, "isbn": "9780000000002", "narratorIds": ["c-44b7"],
+               "publisherId": "c-8e12", "released": "2021-05-04", "minutes": 742, "covers": {"audiobookdb": "3f9a"}}
+  },
+  "series": {"s-5e31": {"name": "Orchard Cycle", "total": 3, "status": "ongoing", "external": {"goodreads": "123"}}},
+  "contributors": {
+    "c-1a90": {"kind": "author", "name": "Mira Holloway", "bio": "Writes about orchards."},
+    "c-44b7": {"kind": "narrator", "name": "Tobias Fenn"},
+    "c-8e12": {"kind": "publisher", "name": "Lantern Audio"}
+  },
+  "marks": {"pair b-0f6a b-71c2": {"kind": "notDuplicates", "bookIds": ["b-0f6a", "b-71c2"]}},
+  "exclusions": ["B0EXAMPLE9", "Lost Voyage | Mira Holloway"]
+}
+```
+
+| field | holds |
+|-------|-------|
+| `version` | `2`. A backup without it is version 1 (below) |
+| `books` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external`, `editionIds`, in the catalog's order (what *recently added* sorts by) |
+| `editions` | `external`, `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`, `covers`; the books it is on are the ones that list it (a box set's edition is listed by each of its titles) |
+| `series` | `name`, `total`, `status`, `note`, `external` |
+| `contributors` | `kind` (`author`, `narrator` or `publisher`), `name`, `bio`, `url`, `external`, `links` |
+| `marks` | the Duplicates page's marks: "Not duplicates" (`kind` `notDuplicates`, `bookIds`), "Keep separate" (`keepSeparate`, `bookIds`, `editionIds`, `key`), or a mark from an older backup that matched no book (`text`, `key`) |
+| `exclusions` | the entries imports skip (an ASIN, `ISBN 978…`, `Goodreads 12345`, `Title \| Author`) |
+
+The values mean what the same fields of the browser's records mean ([below](#how-the-browser-keeps-it), and
+the version 1 tables for the books, editions, series and people). The credits and the browser's own `meta`
+are left out, and so is every derived field; the page works them out again when it saves what it restored.
+A part left out counts as empty. Restore and Merge refuse a version 2 backup whose records don't fit
+together (a book lists an author, series or edition the backup has no record of; two series have one
+name; a field no backup has), saying which, and one from a newer version of the page than the one open
+(reload it to update). A later version will bring the ones before it up to date when it reads them.
+
+### Version 1
+
+Backups exported before version 2, which have no `version`, are the catalog by name:
 `{"books": [...], "seriesInfo": {...}, "authors": {...}, "narrators": {...}, "publishers": {...}, "excluded": [...], "notDuplicates": [...], "ids": {...}}`.
-The browser keeps the same catalog as records in IndexedDB ([How the browser keeps it](#how-the-browser-keeps-it), below).
+Restore and Merge still read them, and the old `data/` files picked together, and so does the Check, which
+reads the catalog in this shape. The rest of this section, and the sections up to *Ids*, describe it.
 The books (`books.json` before the catalog moved into the browser) are a list of titles, with short keys to keep it small:
 
 | key  | meaning                                             | required |
@@ -142,7 +196,7 @@ from one site matches an edition another site gave. **Check** reports an id its 
 
 ## Ids
 
-`ids` maps each series, author, narrator and publisher name to the id it is stored under:
+In version 1, `ids` maps each series, author, narrator and publisher name to the id it is stored under:
 `{"series": {"The Lantern Coast": "3f2b…"}, "authors": {…}, "narrators": {…}, "publishers": {…}}`. With the books' and
 editions' `uid`, it lets a Restore put back the same records, and a **Merge** find a book by its id first
 (before its ASIN, title or place in a series), even when it was retitled on the other device. It also

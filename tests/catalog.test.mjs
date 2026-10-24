@@ -17,7 +17,7 @@ import { Exclusions } from '../public/modules/exclusions.js';
 import { Validator } from '../public/modules/validator.js';
 import { Merger } from '../public/modules/merger.js';
 import { Duplicates } from '../public/modules/duplicates.js';
-import { Backup } from '../public/modules/backup.js';
+import { Backup, NewerBackup } from '../public/modules/backup.js';
 import { Catalog } from '../public/modules/catalog.js';
 import { Comparison } from '../public/modules/comparison.js';
 import { Csv } from '../public/modules/csv.js';
@@ -1227,6 +1227,125 @@ test('backups carry the "Not duplicates" marks, and not-duplicates.txt lists the
 	assert.deepEqual(Duplicates.parseMarks('# header\n\n' + marks[0] + '\r\n  ' + marks[0] + '  \n["editions","id B1"]'),
 		[marks[0], '["editions","id B1"]']);
 	assert.deepEqual(Duplicates.parseMarks(''), []);
+});
+
+// ------------------------------------------------------------ version 2 backups
+// A catalog with a box set (one edition on two titles), series and people with info, one with no books, marks and exclusions.
+const v2Catalog = () => {
+	let n = 0;
+	const catalog = Catalog.fromJSON({
+		books: [
+			book('Tide One', 'Ann Vale', { s: 'Tide Saga', sn: '1', g: ['sea'], r: ['2024-05-01'], ext: { hardcover: '77' },
+				...ed({ ext: { 'audible.com': 'BSET' }, n: ['Cy Hale'], p: 'Gull Audio', len: 600 }, { isbn: '9780000000002' }) }),
+			book('Tide Two', 'Ann Vale', { s: 'Tide Saga', sn: '2', ...ed({ ext: { 'audible.com': 'BSET' }, n: ['Cy Hale'], p: 'Gull Audio', len: 600 }) }),
+			book('Tide Waters', 'Ann Vale'),
+		],
+		seriesInfo: { 'Tide Saga': { total: 3, status: 'ongoing' } },
+		authors: { 'Ann Vale': { bio: 'Writes about the sea.' }, 'Bo Reed': { url: 'https://example.com/' } },
+		excluded: ['Lost | Ann Vale', 'BGONE'],
+	});
+	catalog.assignIds(() => `u${++n}`);
+	catalog.markNotDuplicates([catalog.books[0], catalog.books[2]]);
+	return catalog;
+};
+
+test('a version 2 backup is the stored records by store and uid, without what is derived', () => {
+	const catalog = v2Catalog();
+	const backup = json(Backup.write(catalog));
+	assert.deepEqual(Object.keys(backup), ['version', 'books', 'editions', 'series', 'contributors', 'marks', 'exclusions']);
+	assert.equal(backup.version, Backup.VERSION);
+	const ids = catalog.nameIds;
+	const [one, two] = catalog.books;
+	assert.deepEqual(backup.books[one.id], { title: 'Tide One', authorIds: [ids.authors.get('Ann Vale')], seriesId: ids.series.get('Tide Saga'), number: '1',
+		genres: ['sea'], read: ['2024-05-01'], external: { hardcover: '77' }, editionIds: one.editions.map(e => e.id) });
+	assert.deepEqual(Object.keys(backup.books), catalog.books.map(b => b.id), 'in the catalog\'s order');
+	assert.equal(one.editions[0].id, two.editions[0].id, 'the box set\'s edition is one record');
+	assert.deepEqual(backup.editions[one.editions[0].id], { external: { 'audible.com': 'BSET' }, narratorIds: [ids.narrators.get('Cy Hale')],
+		publisherId: ids.publishers.get('Gull Audio'), minutes: 600 });
+	assert.deepEqual(backup.series, { [ids.series.get('Tide Saga')]: { name: 'Tide Saga', total: 3, status: 'ongoing' } });
+	assert.deepEqual(backup.contributors[ids.authors.get('Bo Reed')], { kind: 'author', name: 'Bo Reed', url: 'https://example.com/' }, 'with no books too');
+	assert.deepEqual(Object.values(backup.marks), [{ kind: 'notDuplicates', bookIds: [one.id, catalog.books[2].id].sort() }]);
+	assert.deepEqual(backup.exclusions, ['BGONE', 'Lost | Ann Vale'], 'a list, sorted');
+
+	// what a record keeps is what FIELDS lists; everything else in it is derived
+	const records = CatalogRecords.fromCatalog(catalog);
+	for (const store of Backup.STORES) {
+		for (const rec of records[store]) {
+			const other = Object.keys(rec).filter(k => k !== 'id' && !Backup.FIELDS[store].includes(k) && !CatalogRecords.DERIVED[store].includes(k));
+			assert.deepEqual(other, [], `${store} fields a backup leaves out`);
+		}
+	}
+});
+
+test('a version 2 backup reads back as the catalog it was written from, ids and marks too', () => {
+	const catalog = v2Catalog();
+	const read = Catalog.fromJSON(JSON.parse(JSON.stringify(Backup.write(catalog))));
+	const sorted = c => ({ ...json(c), excluded: [...c.exclusions.entries].sort() });
+	assert.deepEqual(sorted(read), sorted(catalog));
+	assert.deepEqual(json([...read.marks.values()]), json([...catalog.marks.values()]));
+	assert.deepEqual(read.books.map(b => b.editions.map(e => e.id)), catalog.books.map(b => b.editions.map(e => e.id)));
+	const backup = Backup.read(json(Backup.write(catalog)));
+	assert.deepEqual(json(backup.marks), json([...catalog.marks.values()]));
+	// Restore takes it alone among the files
+	assert.equal(Backup.readFiles([{ name: 'b.json', text: JSON.stringify(Backup.write(catalog)) }]).books.length, 3);
+	// a hand-written one may leave out the empty parts
+	assert.deepEqual(json(Catalog.fromJSON({ version: 2, books: { b: { title: 'Alone', authorIds: ['a'] } }, contributors: { a: { kind: 'author', name: 'Me' } } }).books),
+		[{ uid: 'b', t: 'Alone', a: ['Me'] }]);
+});
+
+test('a version 2 backup that is not one is refused, saying why; a value that is not what its field holds is kept aside', () => {
+	const backup = () => json(Backup.write(v2Catalog()));
+	const id = b => Object.keys(b.books)[0];
+	/** @type {[(b: any) => void, RegExp][]} */
+	const cases = [
+		[b => { b.books[id(b)].shelf = 'x'; }, /has a field no backup has: 'shelf'/],
+		[b => { b.books[id(b)].authorIds = 'u1'; }, /authorIds is not a list of ids/],
+		[b => { b.books[id(b)].authorIds = ['nobody']; }, /no author is stored under nobody/],
+		[b => { b.books[id(b)].editionIds = ['nothing']; }, /no edition is stored under nothing/],
+		[b => { b.books = []; }, /books is not an object/],
+		[b => { b.exclusions = { BGONE: {} }; }, /exclusions is not a list of texts/],
+		[b => { Object.values(b.contributors)[0].kind = 'reader'; }, /kind is not author, narrator or publisher/],
+		[b => { b.series.other = { name: 'Tide Saga' }; }, /two series are named 'Tide Saga'/],
+		[b => { b.version = 'two'; }, /version is not a version number/],
+	];
+	for (const [spoil, error] of cases) {
+		const b = backup();
+		spoil(b);
+		assert.throws(() => Backup.read(b), error);
+	}
+	assert.throws(() => Backup.read({ ...backup(), version: 3 }), NewerBackup);
+	const odd = backup();
+	odd.books[id(odd)].number = 5;
+	assert.deepEqual(CatalogRecords.unstorable(Catalog.fromJSON(odd)), ["book #0 ('Tide One'): 'sn'"]);
+});
+
+test('merging a backup: a series or person it has under our id but another name is ours, renamed on one side', () => {
+	const mine = v2Catalog();
+	const there = Catalog.fromJSON(json(Backup.write(mine)));   // the same catalog on another device
+	there.renameEntry('series', 'Tide Saga', 'The Tide Saga');
+	there.renameEntry('authors', 'Bo Reed', 'Bo Reede');
+	const backup = Backup.read(json(Backup.write(there)));
+
+	const keep = backup.mergeInto(mine);
+	assert.deepEqual(keep.renamed, []);
+	assert.deepEqual(keep.books.map(b => b.series), ['Tide Saga', 'Tide Saga', undefined], 'ours kept, not a second series');
+	assert.deepEqual([...keep.series.keys()], ['Tide Saga']);
+	assert.deepEqual([...keep.authors.keys()].sort(), ['Ann Vale', 'Bo Reed']);
+	assert.deepEqual([keep.added, keep.updated, keep.infoAdded, keep.authorsAdded], [[], [], [], []]);
+
+	const take = backup.mergeInto(mine, 'backup');
+	assert.deepEqual(take.renamed, [{ kind: 'series', from: 'Tide Saga', to: 'The Tide Saga' }, { kind: 'authors', from: 'Bo Reed', to: 'Bo Reede' }]);
+	assert.deepEqual(take.books.map(b => b.series), ['The Tide Saga', 'The Tide Saga', undefined]);
+	assert.deepEqual([...take.series.keys()], ['The Tide Saga']);
+	assert.equal(mine.books[0].series, 'Tide Saga', 'nothing it was given changes');
+	assert.equal(mine.seriesInfo('Tide Saga').name, 'Tide Saga');
+	// applied as the page applies it, the series keeps its id
+	const seriesId = mine.nameIds.series.get('Tide Saga');
+	for (const { kind, from, to } of take.renamed) mine.renameEntry(kind, from, to);
+	mine.books = take.books;
+	mine.replaceInfo('series', take.series);
+	assert.equal(mine.nameIds.series.get('The Tide Saga'), seriesId);
+	assert.equal(mine.seriesInfo('The Tide Saga').total, 3);
 });
 
 // ------------------------------------------------------------ merge a backup

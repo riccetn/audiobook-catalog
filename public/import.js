@@ -7,7 +7,7 @@
 // catalog. Loading and saving live in store.js.
 import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
-import {Backup} from './modules/backup.js';
+import {Backup, NewerBackup} from './modules/backup.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {Comparison} from './modules/comparison.js';
@@ -82,8 +82,8 @@ function download(text, type, name){
 }
 
 function exportBackup(){
-	// {books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates} (Catalog.toJSON)
-	download(JSON.stringify(CATALOG, null, '\t'), 'application/json', 'audiobook-catalog-backup');
+	// version 2: the stored records by store and id (Backup.write)
+	download(JSON.stringify(Backup.write(CATALOG), null, '\t'), 'application/json', 'audiobook-catalog-backup');
 	showIoStatus('Backup downloaded.');
 	noteBackup().then(refreshPage);
 }
@@ -122,7 +122,7 @@ function readFiles(files){
 async function importBackup(files){
 	if(!await holdWholeCatalog()) return;   // what it replaces is all of it
 	try{
-		const {books, series, authors, narrators, publishers, excluded, notDuplicates, nameIds} = Backup.readFiles(await readFiles(files));
+		const {books, series, authors, narrators, publishers, excluded, notDuplicates, marks, nameIds} = Backup.readFiles(await readFiles(files));
 		const bad = books.some(b=> !b.title || !b.authors.length);
 		if(bad) throw new Error('missing title/author');
 		// the catalog is kept as records, which have no place for a value that isn't what its field holds
@@ -145,12 +145,15 @@ async function importBackup(files){
 			CATALOG.replaceInfo(kind, restored || had);
 		}
 		const newlyExcluded = CATALOG.addExclusions(excluded || []);   // added to, never replaced: removing one is a hand edit
-		CATALOG.addMarkTexts([...keptMarks, ...notDuplicates || []]);   // likewise the pairs marked "Not duplicates"
+		// likewise the pairs marked "Not duplicates": a version 2 backup's by the ids of its books, an older one's as text
+		CATALOG.addMarkTexts([...keptMarks, ...marks ? [] : notDuplicates || []]);
+		if(marks){ CATALOG.addMarks(marks.map(m=> ({...m}))); CATALOG.resolveMarks(); }
 		persist(); noteBackup().then(refreshPage);   // what was restored is in that backup
 		showIoStatus(`Restored ${books.length} books` + (series ? ` and the release details of ${series.size} series` : '') +
 			(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'));
-	}catch{
-		showIoStatus(spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
+	}catch(exc){
+		showIoStatus(exc instanceof NewerBackup ? "Not restored: a newer version of the catalog made that backup. Reload the page to update it, then try again."
+			: spell("Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files."), true);
 	}
 }
 
@@ -512,7 +515,7 @@ function mergeIntoCatalog(backup){
 	const merged = new Catalog({books: m.books, series: m.series, authors: m.authors, narrators: m.narrators, publishers: m.publishers});
 	const errors = merged.validate({contributors: true}).errors;
 	const changes = [m.added, m.updated, m.removed, m.infoAdded, m.infoChanged, m.authorsAdded, m.authorsChanged, m.narratorsAdded,
-		m.narratorsChanged, m.publishersAdded, m.publishersChanged, m.excluded, m.notDuplicates].reduce((n, list)=> n + list.length, 0);
+		m.narratorsChanged, m.publishersAdded, m.publishersChanged, m.excluded, m.notDuplicates, m.renamed].reduce((n, list)=> n + list.length, 0);
 	return {m, errors, changes};
 }
 
@@ -545,6 +548,9 @@ function previewMerge(){
 			out.push(para(`${label}: ${added.length} added` + (differ ? `, ${differ} differing (keeping ${changed.length ? "the backup's" : spell("this catalog's")})` : '')));
 		}
 	}
+	if(m.renamed.length){
+		out.push(para(`Renamed as in the backup: ${m.renamed.length}`), messageList(m.renamed.map(r=> `${r.from} \u2192 ${r.to}`)));
+	}
 	if(m.excluded.length) out.push(para(`More books excluded from imports: ${m.excluded.length}`));
 	if(m.notDuplicates.length) out.push(para(`More books marked "Not duplicates": ${m.notDuplicates.length}`));
 	if(errors.length){
@@ -562,6 +568,8 @@ function applyMerge(){
 	const {m, errors, changes} = mergeIntoCatalog(PENDING_MERGE.backup);
 	closeImportPreview();
 	if(errors.length || !changes){ showIoStatus(spell('The catalog changed and the merge no longer applies; nothing was changed.'), true); return; }
+	// a series or person renamed keeps their id (the merged books have the new name already)
+	for(const {kind, from, to} of m.renamed) CATALOG.renameEntry(kind, from, to);
 	CATALOG.books = m.books;
 	for(const kind of /** @type {const} */ (['series', 'authors', 'narrators', 'publishers'])) CATALOG.replaceInfo(kind, m[kind]);
 	CATALOG.addExclusions(m.excluded);
@@ -584,9 +592,10 @@ async function mergeBackupFile(file){
 		PENDING_MERGE = {backup, fileName: file.name};
 		PENDING_TIDY = null;
 		previewMerge();
-	}catch{
+	}catch(exc){
 		closeImportPreview();
-		showIoStatus(spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
+		showIoStatus(exc instanceof NewerBackup ? "Not merged: a newer version of the catalog made that backup. Reload the page to update it, then try again."
+			: spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."), true);
 	}
 }
 
