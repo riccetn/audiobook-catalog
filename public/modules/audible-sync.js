@@ -62,7 +62,7 @@ export class AudibleSync extends ShelfSync {
 				`${site} lists none of your books in the series ${part.name}; paste the series' address on ${site} in its form`,
 			);
 		step(`Reading the series ${part.name} on ${site}`);
-		const series = await client.product(site, asin, 'relationships,product_attrs');
+		const series = await client.series(site, asin, 'relationships,product_desc');
 		if (!series) throw new Error(`${site} has no series ${asin}`);
 		const children = (Array.isArray(series.relationships) ? series.relationships : []).filter(
 			(/** @type {unknown} */ r) =>
@@ -212,7 +212,7 @@ export class AudibleSync extends ShelfSync {
 		const products = await this.client.products(
 			site,
 			[...byAsin.keys()],
-			'series',
+			'series,product_desc', // the title comes with product_desc
 			step,
 			'Finding the series on Audible',
 		);

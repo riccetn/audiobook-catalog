@@ -61,6 +61,23 @@ export class AudibleClient extends CatalogClient {
 	}
 
 	/**
+	 * A series on `site` with the response `groups` asked, its books under `relationships`; null when the site
+	 * doesn't have it. Its books are what counts: a series' answer may come without a title.
+	 * @param {string} site
+	 * @param {string} asin
+	 * @param {string} groups
+	 * @returns {Promise<Unchecked | null>}
+	 */
+	async series(site, asin, groups) {
+		const answer = await this.ask(site, `products/${encodeURIComponent(asin)}?response_groups=${groups}`);
+		const product = answer && answer.product;
+		return Text.isObject(product) &&
+			(AudibleClient.titled(product) || (Array.isArray(product.relationships) && product.relationships.length))
+			? product
+			: null;
+	}
+
+	/**
 	 * The products of `asins` on `site`, BATCH at a time, by ASIN; those the site doesn't have are left out.
 	 * @param {string} site
 	 * @param {string[]} asins

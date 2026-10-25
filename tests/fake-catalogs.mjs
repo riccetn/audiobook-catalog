@@ -262,6 +262,13 @@ export function fakeProxyCatalogs() {
 		sent.push(path);
 		const u = new URL(path, 'https://proxy.invalid/');
 		const stub = asin => ({asin, asset_details: [], is_vvab: false}); // what a site that doesn't sell it answers
+		// as Audible answers: the title comes with product_desc or media, not with product_attrs (checked 2026-10-25)
+		const asked = (product, groups) => {
+			if (!product || /\b(product_desc|media)\b/.test(groups)) return product;
+			const rest = {...product};
+			delete rest.title;
+			return rest;
+		};
 		let m = /^\/audible\/([^/]+)\/catalog\/products\/([^/]+)$/.exec(u.pathname);
 		if (m) {
 			const groups = u.searchParams.get('response_groups');
@@ -269,7 +276,10 @@ export function fakeProxyCatalogs() {
 				groups.includes(m[2] === 'B0SERIES02' ? 'relationships' : 'series'),
 				'Audible is asked for the series',
 			);
-			return json(200, {product: audible[`${m[1]}/${m[2]}`] || stub(m[2]), response_groups: ['always-returned']});
+			return json(200, {
+				product: asked(audible[`${m[1]}/${m[2]}`], groups) || stub(m[2]),
+				response_groups: ['always-returned'],
+			});
 		}
 		m = /^\/audible\/([^/]+)\/catalog\/products$/.exec(u.pathname);
 		if (m) {
@@ -278,7 +288,8 @@ export function fakeProxyCatalogs() {
 				return json(400, {
 					message: `Number of requested asins ${asins.length} is greater than maximum allowed asins 50`,
 				});
-			const products = asins.map(a => audible[`${m[1]}/${a}`] || stub(a));
+			const groups = u.searchParams.get('response_groups');
+			const products = asins.map(a => asked(audible[`${m[1]}/${a}`], groups) || stub(a));
 			return json(200, {products, response_groups: ['always-returned'], total_results: products.length});
 		}
 		if (u.pathname === '/audiobookdb/books') {
