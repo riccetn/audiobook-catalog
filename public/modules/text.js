@@ -14,7 +14,7 @@ const WORD_START = '(?<![\\p{L}\\p{N}_])';
 const RUN_TOGETHER_INITIALS = new RegExp(WORD_START + '([A-Z])\\.(?=[A-Z]\\.)', 'gu');
 const INVISIBLE = /[\u200B\uFEFF]/g;
 // eslint-disable-next-line no-control-regex -- the separator controls are what it matches
-const WHITESPACE = /[\s\x1c-\x1f]+/g;   // \s plus the ASCII separator controls
+const WHITESPACE = /[\s\x1c-\x1f]+/g; // \s plus the ASCII separator controls
 // What follows a comma without being a name of its own: "Ann Vale, Jr.".
 const NAME_SUFFIX = /^(jr|sr|i{2,3}|iv|phd|md)\.?$/i;
 
@@ -33,14 +33,16 @@ export class Text {
 	 * @param {unknown} v
 	 * @returns {v is Record<string, any>}
 	 */
-	static isObject(v){ return v !== null && typeof v === 'object' && !Array.isArray(v); }
+	static isObject(v) {
+		return v !== null && typeof v === 'object' && !Array.isArray(v);
+	}
 
 	/**
 	 * Trim and collapse whitespace: tabs, newlines, non-breaking spaces and runs of spaces become one space.
 	 * @param {string} text
 	 * @returns {string}
 	 */
-	static tidy(text){
+	static tidy(text) {
 		return text.replace(INVISIBLE, '').replace(WHITESPACE, ' ').trim();
 	}
 
@@ -49,7 +51,7 @@ export class Text {
 	 * @param {string} name
 	 * @returns {string}
 	 */
-	static normalizeName(name){
+	static normalizeName(name) {
 		return Text.tidy(name).replace(RUN_TOGETHER_INITIALS, '$1. ');
 	}
 
@@ -58,8 +60,8 @@ export class Text {
 	 * @param {unknown[]} names
 	 * @returns {unknown[]}
 	 */
-	static tidyNames(names){
-		const out = names.map(x => typeof x === 'string' ? Text.normalizeName(x) : x);
+	static tidyNames(names) {
+		const out = names.map(x => (typeof x === 'string' ? Text.normalizeName(x) : x));
 		return out.filter((x, i) => typeof x !== 'string' || out.indexOf(x) === i);
 	}
 
@@ -69,9 +71,13 @@ export class Text {
 	 * @param {unknown} text
 	 * @returns {string}
 	 */
-	static norm(text){
-		return String(text || '').normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase()
-			.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+	static norm(text) {
+		return String(text || '')
+			.normalize('NFKD')
+			.replace(/\p{M}+/gu, '')
+			.toLowerCase()
+			.replace(/[^\p{L}\p{N}]+/gu, ' ')
+			.trim();
 	}
 
 	/**
@@ -80,8 +86,11 @@ export class Text {
 	 * @param {unknown} text
 	 * @returns {string}
 	 */
-	static asciiNorm(text){
-		return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+	static asciiNorm(text) {
+		return String(text || '')
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, ' ')
+			.trim();
 	}
 
 	/**
@@ -89,22 +98,26 @@ export class Text {
 	 * @param {...unknown} parts
 	 * @returns {string}
 	 */
-	static key(...parts){ return JSON.stringify(parts); }
+	static key(...parts) {
+		return JSON.stringify(parts);
+	}
 
 	/**
 	 * @param {string} s
 	 * @returns {string}
 	 */
-	static escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+	static escapeRegExp(s) {
+		return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
 
 	/**
 	 * Quote a value for a message, Python-repr style: 'Title', or "It's" when it contains a quote.
 	 * @param {unknown} v
 	 * @returns {string}
 	 */
-	static repr(v){
-		if(Array.isArray(v)) return '[' + v.map(Text.repr).join(', ') + ']';
-		if(typeof v !== 'string') return String(v);
+	static repr(v) {
+		if (Array.isArray(v)) return '[' + v.map(Text.repr).join(', ') + ']';
+		if (typeof v !== 'string') return String(v);
 		const q = v.includes("'") && !v.includes('"') ? '"' : "'";
 		const body = v.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 		return q + (q === "'" ? body.replace(/'/g, "\\'") : body) + q;
@@ -118,11 +131,14 @@ export class Text {
 	 * @param {unknown} text
 	 * @returns {string[]}
 	 */
-	static splitNames(text){
+	static splitNames(text) {
 		/** @type {string[]} */
 		const names = [];
-		for(const part of String(text || '').split(/[,;]|\s&\s|\sand\s/).map(x => Text.tidy(x)).filter(Boolean)){
-			if(NAME_SUFFIX.test(part) && names.length) names[names.length - 1] += ', ' + part;
+		for (const part of String(text || '')
+			.split(/[,;]|\s&\s|\sand\s/)
+			.map(x => Text.tidy(x))
+			.filter(Boolean)) {
+			if (NAME_SUFFIX.test(part) && names.length) names[names.length - 1] += ', ' + part;
 			else names.push(part);
 		}
 		return names.filter((x, i) => names.indexOf(x) === i);
@@ -133,7 +149,7 @@ export class Text {
 	 * @param {unknown} names
 	 * @returns {string}
 	 */
-	static namesText(names){
+	static namesText(names) {
 		return Array.isArray(names) ? names.join(', ') : String(names || '');
 	}
 
@@ -144,7 +160,9 @@ export class Text {
 	 * @param {string} [many] the word for any other count than one
 	 * @returns {string}
 	 */
-	static plural(n, word, many = word + 's'){ return `${n} ${n === 1 ? word : many}`; }
+	static plural(n, word, many = word + 's') {
+		return `${n} ${n === 1 ? word : many}`;
+	}
 
 	/**
 	 * The first three of `items`, saying how many more there are: "a, b, c and 2 more".
@@ -152,7 +170,9 @@ export class Text {
 	 * @param {string} [separator]
 	 * @returns {string}
 	 */
-	static firstThree(items, separator = ', '){ return items.slice(0, 3).join(separator) + (items.length > 3 ? ` and ${items.length - 3} more` : ''); }
+	static firstThree(items, separator = ', ') {
+		return items.slice(0, 3).join(separator) + (items.length > 3 ? ` and ${items.length - 3} more` : '');
+	}
 
 	// ------------------------------------------------------------------ dates and lengths
 	/**
@@ -162,18 +182,18 @@ export class Text {
 	 * @param {unknown} text
 	 * @returns {string | null}
 	 */
-	static parseDate(text){
+	static parseDate(text) {
 		const m = /^(\d{4})(?:[-/](\d{1,2})(?:[-/](\d{1,2}))?)?$/.exec(Text.tidy(String(text || '')));
-		if(!m) return null;
+		if (!m) return null;
 		const [, y, mo, d] = m;
-		if(mo === undefined) return y;
+		if (mo === undefined) return y;
 		const month = Number(mo);
-		if(month < 1 || month > 12) return null;
+		if (month < 1 || month > 12) return null;
 		const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
-		if(d === undefined) return `${y}-${pad(month)}`;
+		if (d === undefined) return `${y}-${pad(month)}`;
 		const day = Number(d);
 		const daysInMonth = new Date(Date.UTC(Number(y), month, 0)).getUTCDate();
-		if(day < 1 || day > daysInMonth) return null;
+		if (day < 1 || day > daysInMonth) return null;
 		return `${y}-${pad(month)}-${pad(day)}`;
 	}
 
@@ -182,11 +202,16 @@ export class Text {
 	 * @param {unknown} text
 	 * @returns {{dates: string[], bad: string[]}}
 	 */
-	static parseDates(text){
-		const dates = new Set(), bad = [];
-		for(const part of String(text || '').split(/[,;]/).map(x => x.trim()).filter(Boolean)){
+	static parseDates(text) {
+		const dates = new Set(),
+			bad = [];
+		for (const part of String(text || '')
+			.split(/[,;]/)
+			.map(x => x.trim())
+			.filter(Boolean)) {
 			const date = Text.parseDate(part);
-			if(date) dates.add(date); else bad.push(part);
+			if (date) dates.add(date);
+			else bad.push(part);
 		}
 		return {dates: [...dates].sort(), bad};
 	}
@@ -197,12 +222,12 @@ export class Text {
 	 * @param {unknown} text
 	 * @returns {number | null}
 	 */
-	static parseLength(text){
+	static parseLength(text) {
 		const s = Text.tidy(String(text || '')).toLowerCase();
 		let m = /^(\d+):(\d{1,2})(?::\d{1,2})?$/.exec(s);
-		if(m) return Number(m[1]) * 60 + Number(m[2]) || null;
+		if (m) return Number(m[1]) * 60 + Number(m[2]) || null;
 		m = /^(?:(\d+)\s*h(?:ours?|rs?)?)?(?:\s*(?:and|,)?\s*(\d+)\s*m(?:in(?:ute)?s?)?)?$/.exec(s);
-		if(!m || (m[1] === undefined && m[2] === undefined)) return null;
+		if (!m || (m[1] === undefined && m[2] === undefined)) return null;
 		return Number(m[1] || 0) * 60 + Number(m[2] || 0) || null;
 	}
 
@@ -211,8 +236,9 @@ export class Text {
 	 * @param {number} minutes
 	 * @returns {string}
 	 */
-	static formatLength(minutes){
-		const h = Math.floor(minutes / 60), m = minutes % 60;
+	static formatLength(minutes) {
+		const h = Math.floor(minutes / 60),
+			m = minutes % 60;
 		return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 	}
 
@@ -222,7 +248,7 @@ export class Text {
 	 * @param {string} text
 	 * @returns {string | null}
 	 */
-	static webHost(text){
+	static webHost(text) {
 		const m = /^https?:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)*)(?::\d+)?(?:[/?#]\S*)?$/i.exec(text);
 		return m ? m[1].toLowerCase() : null;
 	}
@@ -235,9 +261,9 @@ export class Text {
 	 * @param {readonly string[]} languages BCP 47 tags, as `en-GB` or `en_AU`
 	 * @returns {boolean}
 	 */
-	static prefersBritish(languages){
+	static prefersBritish(languages) {
 		const english = languages.map(tag => String(tag).split(/[-_]/)).find(parts => parts[0].toLowerCase() === 'en');
-		if(!english) return false;
+		if (!english) return false;
 		// the region is the two-letter subtag after the language (and after a four-letter script, if any)
 		const region = english.slice(1).find(part => /^[a-z]{2}$/i.test(part));
 		return !!region && BRITISH_REGIONS.has(region.toUpperCase());
@@ -250,11 +276,14 @@ export class Text {
 	 * @param {boolean} british
 	 * @returns {string}
 	 */
-	static spelled(text, british){
-		if(!british) return text;
-		for(const [us, uk] of BRITISH_WORDS){
+	static spelled(text, british) {
+		if (!british) return text;
+		for (const [us, uk] of BRITISH_WORDS) {
 			// the word, capitalized or not and with a plural s, but not inside another word (audiobook-catalog-backup is a file name)
-			text = text.replace(new RegExp(`(?<![\\w:-])([${us[0]}${us[0].toUpperCase()}])${us.slice(1)}(s?)\\b(?!-)`, 'g'), `$1${uk.slice(1)}$2`);
+			text = text.replace(
+				new RegExp(`(?<![\\w:-])([${us[0]}${us[0].toUpperCase()}])${us.slice(1)}(s?)\\b(?!-)`, 'g'),
+				`$1${uk.slice(1)}$2`,
+			);
 		}
 		return text;
 	}
@@ -265,7 +294,7 @@ export class Text {
 	 * @param {unknown} exc
 	 * @returns {string}
 	 */
-	static errorText(exc){
+	static errorText(exc) {
 		return exc !== null && typeof exc === 'object' && 'message' in exc ? String(exc.message) : String(exc);
 	}
 }

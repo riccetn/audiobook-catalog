@@ -37,12 +37,16 @@ const TEXT_FIELDS = {t: 'title', s: 'series', sn: 'number'};
  * @param {unknown} v
  * @returns {v is string}
  */
-function nonEmpty(v){ return typeof v === 'string' && v.trim() !== ''; }
+function nonEmpty(v) {
+	return typeof v === 'string' && v.trim() !== '';
+}
 /**
  * @param {unknown} v
  * @returns {v is string[]}
  */
-function textList(v){ return Array.isArray(v) && v.every(nonEmpty); }
+function textList(v) {
+	return Array.isArray(v) && v.every(nonEmpty);
+}
 
 /** A title in the catalog. */
 export class Book {
@@ -51,7 +55,9 @@ export class Book {
 	 * @param {Unchecked} rec
 	 * @returns {Record<string, any>[]}
 	 */
-	static storedEditions(rec){ return rec && Array.isArray(rec.e) ? rec.e.filter(Text.isObject) : []; }
+	static storedEditions(rec) {
+		return rec && Array.isArray(rec.e) ? rec.e.filter(Text.isObject) : [];
+	}
 
 	/** the keys of a stored book, in order */
 	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'ext', 'e'];
@@ -60,7 +66,17 @@ export class Book {
 	static ID_KEY = 'uid';
 
 	/** @param {BookInit} [init] */
-	constructor({title = '', authors = [], series, number, genres = [], read = [], external = {}, editions = [], id} = {}){
+	constructor({
+		title = '',
+		authors = [],
+		series,
+		number,
+		genres = [],
+		read = [],
+		external = {},
+		editions = [],
+		id,
+	} = {}) {
 		/** @type {string | undefined} the id it is stored under (CatalogRecords gives one to a book that has none) */
 		this.id = id;
 		this.title = title;
@@ -90,10 +106,10 @@ export class Book {
 	 * @param {Unchecked} json
 	 * @returns {Book}
 	 */
-	static fromJSON(json){
-		if(!Text.isObject(json)) throw new Error('a book is not an object');
+	static fromJSON(json) {
+		if (!Text.isObject(json)) throw new Error('a book is not an object');
 		const book = new Book();
-		for(const [k, v] of Object.entries(json)) book.set(k, v);
+		for (const [k, v] of Object.entries(json)) book.set(k, v);
 		return book;
 	}
 
@@ -103,31 +119,106 @@ export class Book {
 	 * @param {Unchecked} rec
 	 * @returns {Book}
 	 */
-	static fromRecord(rec){ return Book.fromJSON(Book.tidyJSON(rec)); }
+	static fromRecord(rec) {
+		return Book.fromJSON(Book.tidyJSON(rec));
+	}
 
 	/**
 	 * Set the value of one of the stored book's keys (as fromJSON() reads it).
 	 * @param {string} key
 	 * @param {unknown} v
 	 */
-	set(key, v){
+	set(key, v) {
 		delete this.extra[key];
 		/** @type {(ok: boolean, apply: () => void, reset: () => void) => void} */
-		const put = (ok, apply, reset) => { reset(); if(ok) apply(); else if(v !== undefined) this.extra[key] = v; };
-		if(key === Book.ID_KEY) put(nonEmpty(v), () => { this.id = /** @type {string} */ (v); }, () => { this.id = undefined; });
-		else if(key === 't') put(nonEmpty(v), () => { this.title = /** @type {string} */ (v); }, () => { this.title = ''; });
-		else if(key === 'a') put(textList(v) && v.length > 0, () => { this.authors = [.../** @type {string[]} */ (v)]; }, () => { this.authors = []; });
-		else if(key === 'g') put(textList(v), () => { this.genres = [.../** @type {string[]} */ (v)]; }, () => { this.genres = []; });
-		else if(key === 'r') put(Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'), () => { this.read = [.../** @type {string[]} */ (v)]; }, () => { this.read = []; });
-		else if(key === 'ext') put(ExternalCatalog.isIds(v), () => { this.external = {.../** @type {Record<string, string>} */ (v)}; }, () => { this.external = {}; });
-		else if(key === 'e'){
-			put(Array.isArray(v) && v.length > 0 && v.every(Text.isObject), () => { this.editions = /** @type {unknown[]} */ (v).map(Edition.fromJSON); }, () => { this.editions = []; });
-		}
-		else if(Object.hasOwn(TEXT_FIELDS, key)){
+		const put = (ok, apply, reset) => {
+			reset();
+			if (ok) apply();
+			else if (v !== undefined) this.extra[key] = v;
+		};
+		if (key === Book.ID_KEY)
+			put(
+				nonEmpty(v),
+				() => {
+					this.id = /** @type {string} */ (v);
+				},
+				() => {
+					this.id = undefined;
+				},
+			);
+		else if (key === 't')
+			put(
+				nonEmpty(v),
+				() => {
+					this.title = /** @type {string} */ (v);
+				},
+				() => {
+					this.title = '';
+				},
+			);
+		else if (key === 'a')
+			put(
+				textList(v) && v.length > 0,
+				() => {
+					this.authors = [.../** @type {string[]} */ (v)];
+				},
+				() => {
+					this.authors = [];
+				},
+			);
+		else if (key === 'g')
+			put(
+				textList(v),
+				() => {
+					this.genres = [.../** @type {string[]} */ (v)];
+				},
+				() => {
+					this.genres = [];
+				},
+			);
+		else if (key === 'r')
+			put(
+				Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'),
+				() => {
+					this.read = [.../** @type {string[]} */ (v)];
+				},
+				() => {
+					this.read = [];
+				},
+			);
+		else if (key === 'ext')
+			put(
+				ExternalCatalog.isIds(v),
+				() => {
+					this.external = {.../** @type {Record<string, string>} */ (v)};
+				},
+				() => {
+					this.external = {};
+				},
+			);
+		else if (key === 'e') {
+			put(
+				Array.isArray(v) && v.length > 0 && v.every(Text.isObject),
+				() => {
+					this.editions = /** @type {unknown[]} */ (v).map(Edition.fromJSON);
+				},
+				() => {
+					this.editions = [];
+				},
+			);
+		} else if (Object.hasOwn(TEXT_FIELDS, key)) {
 			const field = TEXT_FIELDS[key];
-			put(nonEmpty(v), () => { this[field] = /** @type {string} */ (v); }, () => { if(field === 'title') this.title = ''; else this[field] = undefined; });
-		}
-		else if(v !== undefined) this.extra[key] = v;
+			put(
+				nonEmpty(v),
+				() => {
+					this[field] = /** @type {string} */ (v);
+				},
+				() => {
+					if (field === 'title') this.title = '';
+					else this[field] = undefined;
+				},
+			);
+		} else if (v !== undefined) this.extra[key] = v;
 	}
 
 	/**
@@ -135,43 +226,56 @@ export class Book {
 	 * @param {string} key
 	 * @returns {unknown}
 	 */
-	value(key){
+	value(key) {
 		/** @type {unknown} */
 		let v;
-		if(key === Book.ID_KEY) v = this.id;
-		else if(key === 't') v = this.title || undefined;
-		else if(key === 'a') v = this.authors.length ? [...this.authors] : undefined;
-		else if(key === 'g') v = this.genres.length ? [...this.genres] : undefined;
-		else if(key === 'r') v = this.read.length ? [...this.read] : undefined;
-		else if(key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
-		else if(key === 'e') v = this.editions.length ? this.editions.map(ed => ed.toJSON()) : undefined;
-		else if(Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
+		if (key === Book.ID_KEY) v = this.id;
+		else if (key === 't') v = this.title || undefined;
+		else if (key === 'a') v = this.authors.length ? [...this.authors] : undefined;
+		else if (key === 'g') v = this.genres.length ? [...this.genres] : undefined;
+		else if (key === 'r') v = this.read.length ? [...this.read] : undefined;
+		else if (key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
+		else if (key === 'e') v = this.editions.length ? this.editions.map(ed => ed.toJSON()) : undefined;
+		else if (Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
 		return v === undefined ? this.extra[key] : v;
 	}
 
 	/** @returns {Record<string, unknown>} the book as it is stored, its keys in the usual order */
-	toJSON(){
+	toJSON() {
 		/** @type {Record<string, unknown>} */
 		const out = {};
-		for(const k of [Book.ID_KEY, ...Book.KEYS]){ const v = this.value(k); if(v !== undefined) out[k] = v; }
-		for(const [k, v] of Object.entries(this.extra)) if(!(k in out)) out[k] = v;
+		for (const k of [Book.ID_KEY, ...Book.KEYS]) {
+			const v = this.value(k);
+			if (v !== undefined) out[k] = v;
+		}
+		for (const [k, v] of Object.entries(this.extra)) if (!(k in out)) out[k] = v;
 		return out;
 	}
 
 	/** @returns {Book} a copy, sharing nothing with this one */
-	clone(){ return Book.fromJSON(JSON.parse(JSON.stringify(this))); }
+	clone() {
+		return Book.fromJSON(JSON.parse(JSON.stringify(this)));
+	}
 
 	/**
 	 * The book as text that ignores the order of its dates read, and anything that is not a book's or an
 	 * edition's value, for "did it change?".
 	 * @returns {string}
 	 */
-	text(){
+	text() {
 		const j = this.toJSON();
 		/** @type {(ed: unknown) => unknown} */
-		const edition = ed => Text.isObject(ed) ? Edition.KEYS.filter(k => ed[k] !== undefined).map(k => [k, ed[k]]) : ed;
-		return JSON.stringify(Book.KEYS.filter(k => j[k] !== undefined).map(k =>
-			k === 'e' && Array.isArray(j.e) ? [k, j.e.map(edition)] : k === 'r' && Array.isArray(j.r) ? [k, [...j.r].sort()] : [k, j[k]]));
+		const edition = ed =>
+			Text.isObject(ed) ? Edition.KEYS.filter(k => ed[k] !== undefined).map(k => [k, ed[k]]) : ed;
+		return JSON.stringify(
+			Book.KEYS.filter(k => j[k] !== undefined).map(k =>
+				k === 'e' && Array.isArray(j.e)
+					? [k, j.e.map(edition)]
+					: k === 'r' && Array.isArray(j.r)
+						? [k, [...j.r].sort()]
+						: [k, j[k]],
+			),
+		);
 	}
 
 	// ------------------------------------------------------------------ what it is
@@ -180,7 +284,7 @@ export class Book {
 	 * @param {string} catalog
 	 * @returns {string | null}
 	 */
-	idOn(catalog){
+	idOn(catalog) {
 		const v = Object.hasOwn(this.external, catalog) ? this.external[catalog] : null;
 		return typeof v === 'string' && v ? v : null;
 	}
@@ -190,28 +294,39 @@ export class Book {
 	 * @param {string} family
 	 * @returns {string[]}
 	 */
-	ids(family){ return [...new Set(this.editions.flatMap(ed => ed.ids(family)))]; }
+	ids(family) {
+		return [...new Set(this.editions.flatMap(ed => ed.ids(family)))];
+	}
 
 	/** @returns {string[]} the ISBNs of all its editions, without repeats */
-	isbns(){ return [...new Set(this.editions.flatMap(ed => ed.isbns()))]; }
+	isbns() {
+		return [...new Set(this.editions.flatMap(ed => ed.isbns()))];
+	}
 
 	/** @returns {string[]} the narrators of its editions, without repeats, e.g. ["Ann Vale", "R. T. Hale"] */
-	narrators(){ return [...new Set(this.editions.flatMap(ed => ed.narrators))]; }
+	narrators() {
+		return [...new Set(this.editions.flatMap(ed => ed.narrators))];
+	}
 
 	/** @returns {string} the first author, as matching compares them (firstAuthor()) */
-	authorKey(){ return Book.firstAuthor(this.authors); }
+	authorKey() {
+		return Book.firstAuthor(this.authors);
+	}
 
 	/** Whether it is a collection of several titles of its series (a box set): its number is a range. */
-	isCollection(){ return !!(this.series && Series.range(this.number)); }
+	isCollection() {
+		return !!(this.series && Series.range(this.number));
+	}
 
 	/**
 	 * [first, last] of a box set's series range ("1-3" -> [1, 3]), or null for a single title or no series.
 	 * @returns {[number, number] | null}
 	 */
-	boxRange(){
+	boxRange() {
 		const m = this.series && Series.BOX_RANGE.exec(String(this.number || '').trim());
-		if(!m) return null;
-		const lo = Number(m[1]), hi = Number(m[2]);
+		if (!m) return null;
+		const lo = Number(m[1]),
+			hi = Number(m[2]);
 		return lo < hi && hi - lo < Series.BOX_MAX ? [lo, hi] : null;
 	}
 
@@ -221,7 +336,7 @@ export class Book {
 	 * @param {string} date
 	 * @returns {boolean}
 	 */
-	hasReadDate(date){
+	hasReadDate(date) {
 		return this.read.some(d => d === date || date.startsWith(d + '-') || d.startsWith(date + '-'));
 	}
 
@@ -230,13 +345,15 @@ export class Book {
 	 * its own (another edition of it), then series, then title.
 	 * @returns {string[]}
 	 */
-	keys(){
+	keys() {
 		const keys = [];
-		for(const id of new Set(this.editions.flatMap(ed => ed.idKeys()))) keys.push(Text.key('ext', id));
-		for(const [catalog, id] of Object.entries(ExternalCatalog.order(this.external) || {})) keys.push(Text.key('book', catalog, id));
+		for (const id of new Set(this.editions.flatMap(ed => ed.idKeys()))) keys.push(Text.key('ext', id));
+		for (const [catalog, id] of Object.entries(ExternalCatalog.order(this.external) || {}))
+			keys.push(Text.key('book', catalog, id));
 		// a title or series of only punctuation or symbols has an empty key, which must not match anything
-		if(this.series && this.number && Series.norm(this.series)) keys.push(Text.key('series', this.authorKey(), Series.norm(this.series), this.number.trim()));
-		if(Text.norm(this.title)) keys.push(Text.key('title', Text.norm(this.title), this.authorKey()));
+		if (this.series && this.number && Series.norm(this.series))
+			keys.push(Text.key('series', this.authorKey(), Series.norm(this.series), this.number.trim()));
+		if (Text.norm(this.title)) keys.push(Text.key('title', Text.norm(this.title), this.authorKey()));
 		return keys;
 	}
 
@@ -246,17 +363,17 @@ export class Book {
 	 * (long incoming vs short existing) so a boxed set is never mistaken for its first book.
 	 * @returns {string[]}
 	 */
-	lookupKeys(){
+	lookupKeys() {
 		const keys = this.keys();
 		const author = this.authorKey();
 		const title = this.title;
 		const variants = [];
-		if(title.includes(':')) variants.push(title.slice(title.lastIndexOf(':') + 1));
+		if (title.includes(':')) variants.push(title.slice(title.lastIndexOf(':') + 1));
 		const stripped = title.replace(TRAILING_BOOK_N, '');
-		if(stripped !== title) variants.push(stripped);
-		for(const v of variants){
+		if (stripped !== title) variants.push(stripped);
+		for (const v of variants) {
 			const k = Text.key('title', Text.norm(v), author);
-			if(Text.norm(v) && !keys.includes(k)) keys.push(k);
+			if (Text.norm(v) && !keys.includes(k)) keys.push(k);
 		}
 		return keys;
 	}
@@ -267,14 +384,17 @@ export class Book {
 	 * would break the line, and matching ignores punctuation anyway, so they are dropped.
 	 * @returns {string[]}
 	 */
-	exclusionEntries(){
+	exclusionEntries() {
 		/** @type {(v: unknown) => string} */
 		const clean = v => Text.tidy(String(v || '').replace(/[#|]/g, ' '));
 		const entries = [];
-		for(const id of this.ids('asin')) if(clean(id)) entries.push(clean(id));
-		for(const gr of this.ids('goodreads')) if(ExternalCatalog.isId('goodreads', 'edition', gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
-		for(const hc of this.ids('hardcover')) if(ExternalCatalog.isId('hardcover', 'edition', hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
-		if(clean(this.title) && clean(Text.namesText(this.authors))) entries.push(`${clean(this.title)} | ${clean(Text.namesText(this.authors))}`);
+		for (const id of this.ids('asin')) if (clean(id)) entries.push(clean(id));
+		for (const gr of this.ids('goodreads'))
+			if (ExternalCatalog.isId('goodreads', 'edition', gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
+		for (const hc of this.ids('hardcover'))
+			if (ExternalCatalog.isId('hardcover', 'edition', hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
+		if (clean(this.title) && clean(Text.namesText(this.authors)))
+			entries.push(`${clean(this.title)} | ${clean(Text.namesText(this.authors))}`);
 		return entries;
 	}
 
@@ -284,14 +404,18 @@ export class Book {
 	 * @param {unknown} authors a list of names, or names as text
 	 * @returns {string}
 	 */
-	static firstName(authors){ return String((Array.isArray(authors) ? authors[0] : authors) || '').split(/,| and | & /)[0]; }
+	static firstName(authors) {
+		return String((Array.isArray(authors) ? authors[0] : authors) || '').split(/,| and | & /)[0];
+	}
 
 	/**
 	 * The first author as matching compares them (norm()).
 	 * @param {unknown} authors a list of names, or names as text
 	 * @returns {string}
 	 */
-	static firstAuthor(authors){ return Text.norm(Book.firstName(authors)); }
+	static firstAuthor(authors) {
+		return Text.norm(Book.firstName(authors));
+	}
 
 	/**
 	 * Order of books in a series: by number ("2", "2.5"), unnumbered ones after them, and collections ("4-6")
@@ -300,10 +424,18 @@ export class Book {
 	 * @param {Book} y
 	 * @returns {number}
 	 */
-	static bySeriesNumber(x, y){
-		const n = (/** @type {Book} */ b) => { const v = parseFloat(b.number || ''); return Number.isFinite(v) ? v : Infinity; };
+	static bySeriesNumber(x, y) {
+		const n = (/** @type {Book} */ b) => {
+			const v = parseFloat(b.number || '');
+			return Number.isFinite(v) ? v : Infinity;
+		};
 		const last = (/** @type {Book} */ b) => (Series.range(b.number) || [0, 0])[1];
-		return (Number(x.isCollection()) - Number(y.isCollection())) || n(x) - n(y) || last(x) - last(y) || x.title.localeCompare(y.title);
+		return (
+			Number(x.isCollection()) - Number(y.isCollection()) ||
+			n(x) - n(y) ||
+			last(x) - last(y) ||
+			x.title.localeCompare(y.title)
+		);
 	}
 
 	/**
@@ -312,10 +444,12 @@ export class Book {
 	 * @param {Book[]} books
 	 * @returns {(ed: Edition) => boolean}
 	 */
-	static sharedEditionTest(books){
+	static sharedEditionTest(books) {
 		/** @type {Map<string, number>} */
 		const owners = new Map();
-		for(const b of books) for(const id of new Set(b.editions.flatMap(ed => ed.idAndIsbnKeys()))) owners.set(id, (owners.get(id) || 0) + 1);
+		for (const b of books)
+			for (const id of new Set(b.editions.flatMap(ed => ed.idAndIsbnKeys())))
+				owners.set(id, (owners.get(id) || 0) + 1);
 		return ed => ed.idAndIsbnKeys().some(id => (owners.get(id) || 0) > 1);
 	}
 
@@ -330,7 +464,7 @@ export class Book {
 	 * @param {Picks} [pick]
 	 * @returns {Book}
 	 */
-	static merge(books, pick = {}){
+	static merge(books, pick = {}) {
 		/** @type {(field: 'title' | 'authors' | 'series' | 'external', has: (b: Book) => boolean) => Book | undefined} */
 		const from = (field, has) => {
 			const i = pick[field];
@@ -339,27 +473,27 @@ export class Book {
 		const out = new Book();
 		// the merged book is the first one that has an id, so its record stays
 		const kept = books.find(b => b.id);
-		if(kept) out.id = kept.id;
+		if (kept) out.id = kept.id;
 		const title = from('title', b => b.title !== '');
-		if(title) out.title = title.title;
+		if (title) out.title = title.title;
 		const authors = from('authors', b => b.authors.length > 0);
-		if(authors) out.authors = [...authors.authors];
+		if (authors) out.authors = [...authors.authors];
 		const series = from('series', b => !!b.series);
-		if(series){
+		if (series) {
 			out.series = series.series;
-			if(series.number) out.number = series.number;
+			if (series.number) out.number = series.number;
 		}
 		out.genres = [...new Set(books.flatMap(b => b.genres))];
 		out.read = [...new Set(books.flatMap(b => b.read))].sort();
 		const external = from('external', b => Object.keys(b.external).length > 0);
-		for(const b of external ? [external, ...books] : books){
-			for(const [catalog, id] of Object.entries(b.external)) if(!out.idOn(catalog)) out.external[catalog] = id;
+		for (const b of external ? [external, ...books] : books) {
+			for (const [catalog, id] of Object.entries(b.external)) if (!out.idOn(catalog)) out.external[catalog] = id;
 		}
 		/** @type {Edition[]} */
 		const editions = [];
-		for(const ed of books.flatMap(b => b.editions)){
+		for (const ed of books.flatMap(b => b.editions)) {
 			const same = editions.find(x => x.sameAs(ed));
-			if(same) same.fillFrom(ed);
+			if (same) same.fillFrom(ed);
 			else editions.push(ed.clone());
 		}
 		out.editions = pick.joinEditions && Edition.joinable(editions) ? [Edition.join(editions)] : editions;
@@ -379,14 +513,14 @@ export class Book {
 	 * @param {T} rec
 	 * @returns {T}
 	 */
-	static fixSeriesTitle(rec){
-		if(!Text.isObject(rec) || typeof rec.t !== 'string') return rec;
+	static fixSeriesTitle(rec) {
+		if (!Text.isObject(rec) || typeof rec.t !== 'string') return rec;
 		const split = Series.splitTitle(rec.t);
-		if(!split || !split[0]) return rec;
+		if (!split || !split[0]) return rec;
 		const [t, s, sn] = split;
-		if(!rec.s && !rec.sn) return {...rec, t, s, sn};
-		if(typeof rec.s !== 'string' || Series.norm(rec.s) !== Series.norm(s)) return rec;
-		if(rec.sn && Number(rec.sn) !== Number(sn)) return rec;
+		if (!rec.s && !rec.sn) return {...rec, t, s, sn};
+		if (typeof rec.s !== 'string' || Series.norm(rec.s) !== Series.norm(s)) return rec;
+		if (rec.sn && Number(rec.sn) !== Number(sn)) return rec;
 		return {...rec, t, ...(rec.sn ? {} : {sn})};
 	}
 
@@ -396,24 +530,26 @@ export class Book {
 	 * @param {Unchecked} rec
 	 * @returns {Unchecked}
 	 */
-	static tidyJSON(rec){
-		if(!Text.isObject(rec)) return rec;
+	static tidyJSON(rec) {
+		if (!Text.isObject(rec)) return rec;
 		const out = {...rec};
-		if(Array.isArray(out.e)) out.e = out.e.flatMap((/** @type {Unchecked} */ ed) => Text.isObject(ed) ? Edition.splitIsbns(ed) : [ed]);
-		if(Array.isArray(out.e) && !out.e.length) delete out.e;
-		for(const key of ['t', 's', 'sn']){
-			if(typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
+		if (Array.isArray(out.e))
+			out.e = out.e.flatMap((/** @type {Unchecked} */ ed) => (Text.isObject(ed) ? Edition.splitIsbns(ed) : [ed]));
+		if (Array.isArray(out.e) && !out.e.length) delete out.e;
+		for (const key of ['t', 's', 'sn']) {
+			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
-		if(Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
-		if(Array.isArray(out.a)) out.a = Text.tidyNames(out.a);
-		if(Array.isArray(out.g)){
-			out.g = out.g.map((/** @type {unknown} */ x) => typeof x === 'string' ? Text.tidy(x) : x).filter((/** @type {unknown} */ x) => x !== '');
+		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
+		if (Array.isArray(out.a)) out.a = Text.tidyNames(out.a);
+		if (Array.isArray(out.g)) {
+			out.g = out.g
+				.map((/** @type {unknown} */ x) => (typeof x === 'string' ? Text.tidy(x) : x))
+				.filter((/** @type {unknown} */ x) => x !== '');
 		}
-		if(Array.isArray(out.r)){
-			out.r = out.r.map((/** @type {unknown} */ x) => typeof x === 'string' ? Text.tidy(x) : x);
+		if (Array.isArray(out.r)) {
+			out.r = out.r.map((/** @type {unknown} */ x) => (typeof x === 'string' ? Text.tidy(x) : x));
 		}
-		if(Array.isArray(out.e)) out.e = out.e.map(Edition.tidyJSON);
+		if (Array.isArray(out.e)) out.e = out.e.map(Edition.tidyJSON);
 		return out;
 	}
-
 }

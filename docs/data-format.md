@@ -14,13 +14,28 @@ ids shortened.)
 {
   "version": 2,
   "books": {
-    "b-71c2": {"title": "The Glass Orchard", "authorIds": ["c-1a90"], "seriesId": "s-5e31", "number": "1",
-               "genres": ["fantasy"], "read": ["2025-03-14"], "external": {"hardcover": "77"}, "editionIds": ["e-9d04"]},
+    "b-71c2": {
+      "title": "The Glass Orchard",
+      "authorIds": ["c-1a90"],
+      "seriesId": "s-5e31",
+      "number": "1",
+      "genres": ["fantasy"],
+      "read": ["2025-03-14"],
+      "external": {"hardcover": "77"},
+      "editionIds": ["e-9d04"]
+    },
     "b-0f6a": {"title": "Salt and Lanterns", "authorIds": ["c-1a90"], "genres": [], "read": [], "editionIds": []}
   },
   "editions": {
-    "e-9d04": {"external": {"audible.com": "B0EXAMPLE1"}, "isbn": "9780000000002", "narratorIds": ["c-44b7"],
-               "publisherId": "c-8e12", "released": "2021-05-04", "minutes": 742, "covers": {"audiobookdb": "3f9a"}}
+    "e-9d04": {
+      "external": {"audible.com": "B0EXAMPLE1"},
+      "isbn": "9780000000002",
+      "narratorIds": ["c-44b7"],
+      "publisherId": "c-8e12",
+      "released": "2021-05-04",
+      "minutes": 742,
+      "covers": {"audiobookdb": "3f9a"}
+    }
   },
   "series": {"s-5e31": {"name": "Orchard Cycle", "total": 3, "status": "ongoing", "external": {"goodreads": "123"}}},
   "contributors": {
@@ -33,15 +48,15 @@ ids shortened.)
 }
 ```
 
-| field | holds |
-|-------|-------|
-| `version` | `2`. A backup without it is version 1 (below) |
-| `books` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external`, `editionIds`, in the catalog's order (what *recently added* sorts by) |
-| `editions` | `external`, `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`, `covers`; the books it is on are the ones that list it (a box set's edition is listed by each of its titles) |
-| `series` | `name`, `total`, `status`, `note`, `external` |
-| `contributors` | `kind` (`author`, `narrator` or `publisher`), `name`, `bio`, `url`, `external`, `links` |
-| `marks` | the Duplicates page's marks: "Not duplicates" (`kind` `notDuplicates`, `bookIds`), "Keep separate" (`keepSeparate`, `bookIds`, `editionIds`, `key`), or a mark from an older backup that matched no book (`text`, `key`) |
-| `exclusions` | the entries imports skip (an ASIN, `ISBN 978…`, `Goodreads 12345`, `Title \| Author`) |
+| field          | holds                                                                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `version`      | `2`. A backup without it is version 1 (below)                                                                                                                                                                            |
+| `books`        | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external`, `editionIds`, in the catalog's order (what _recently added_ sorts by)                                                                          |
+| `editions`     | `external`, `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`, `covers`; the books it is on are the ones that list it (a box set's edition is listed by each of its titles)                     |
+| `series`       | `name`, `total`, `status`, `note`, `external`                                                                                                                                                                            |
+| `contributors` | `kind` (`author`, `narrator` or `publisher`), `name`, `bio`, `url`, `external`, `links`                                                                                                                                  |
+| `marks`        | the Duplicates page's marks: "Not duplicates" (`kind` `notDuplicates`, `bookIds`), "Keep separate" (`keepSeparate`, `bookIds`, `editionIds`, `key`), or a mark from an older backup that matched no book (`text`, `key`) |
+| `exclusions`   | the entries imports skip (an ASIN, `ISBN 978…`, `Goodreads 12345`, `Title \| Author`)                                                                                                                                    |
 
 The values mean what the same fields of the browser's records mean ([below](#how-the-browser-keeps-it), and
 the version 1 tables for the books, editions, series and people). The credits and the browser's own `meta`
@@ -56,41 +71,56 @@ name; a field no backup has, or a value that isn't what its field holds), saying
 Backups exported before version 2, which have no `version`, are the catalog by name:
 `{"books": [...], "seriesInfo": {...}, "authors": {...}, "narrators": {...}, "publishers": {...}, "excluded": [...], "notDuplicates": [...], "ids": {...}}`.
 Restore and Merge still read them, and the old `data/` files picked together, and so does the Check, which
-reads the catalog in this shape. The rest of this section, and the sections up to *Ids*, describe it.
+reads the catalog in this shape. The rest of this section, and the sections up to _Ids_, describe it.
 The books (`books.json` before the catalog moved into the browser) are a list of titles, with short keys to keep it small:
 
-| key  | meaning                                             | required |
-|------|-----------------------------------------------------|----------|
-| `t`  | title                                               | yes      |
-| `a`  | list of authors, one name each (`["Ann Vale", "Bo Reed"]`) | yes |
-| `s`  | series name                                         |          |
-| `sn` | position in series, as text (`"3"`, `"4-6"` for a box set, which is listed after the series' titles) |  |
-| `g`  | list of genre/tag strings                           |          |
-| `r`  | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |  |
-| `ext` | the book's own ids in [external catalogs](#external-catalogs) (`{"hardcover": "77", "goodreads": "99"}`): Hardcover's book, whose every edition is an edition of this book, and Goodreads' work |  |
-| `e`  | list of the title's editions (below)                |          |
-| `uid` | the id the book is stored under in the browser, which never changes (written first) |  |
+| key   | meaning                                                                                                                                                                                                                                                                                      | required |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `t`   | title                                                                                                                                                                                                                                                                                        | yes      |
+| `a`   | list of authors, one name each (`["Ann Vale", "Bo Reed"]`)                                                                                                                                                                                                                                   | yes      |
+| `s`   | series name                                                                                                                                                                                                                                                                                  |          |
+| `sn`  | position in series, as text (`"3"`, `"4-6"` for a box set, which is listed after the series' titles)                                                                                                                                                                                         |          |
+| `g`   | list of genre/tag strings                                                                                                                                                                                                                                                                    |          |
+| `r`   | list of dates you read it, oldest first (`["2023-06-02", "2025-11-20"]`); `"2024-03"` or `"2024"` when you don't remember the day. A single date may be written as a plain string (`"r": "2024-03-15"`); it is read as a list. No `r` means the date is unknown, not that the book is unread |          |
+| `ext` | the book's own ids in [external catalogs](#external-catalogs) (`{"hardcover": "77", "goodreads": "99"}`): Hardcover's book, whose every edition is an edition of this book, and Goodreads' work                                                                                              |          |
+| `e`   | list of the title's editions (below)                                                                                                                                                                                                                                                         |          |
+| `uid` | the id the book is stored under in the browser, which never changes (written first)                                                                                                                                                                                                          |          |
 
 Each title can have several **editions** (the Audible release, a UK release with another narrator, a
 dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
 its ids in external catalogs and its ISBN are what imports and box sets go by:
 
-| key    | meaning                                                                  |
-|--------|--------------------------------------------------------------------------|
+| key    | meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ext`  | the edition's ids in [external catalogs](#external-catalogs): `{"audible.com": "B0…", "amazon.com": "B0…", "goodreads": "4242", "hardcover": "501"}`. Each Audible and Amazon site may give one edition an ASIN of its own, so each is kept under its site's address (`audible.com`, `audible.co.uk`, `amazon.com`, `amazon.de`, …); Goodreads' id is the number in `goodreads.com/book/show/…`, Hardcover's the one in `hardcover.app/id/edition/…`. Re-imports recognize the book by any of them (an ASIN on any site); only another id in the same catalog (another ASIN on the same site) makes another edition |
-| `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page saves |
-| `n`    | list of this edition's narrators, one name each (`["Tobias Frane"]`)     |
-| `p`    | publisher                                                                |
-| `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                   |
-| `len`  | length in whole minutes (`642`)                                          |
-| `desc` | your own description of the edition, free text (`"UK edition"`, `"First edition"`, `"Dramatized adaptation"`, `"Audio CD"`) |
-| `img` | the key of its cover by catalog: `{"audiobookdb": "<64 hex digits>"}`, the hash AudiobookDB keeps the image under (its address can't be made from the release's id, unlike Amazon's from an ASIN). Filled in from AudiobookDB, never typed; an edition of only a cover is empty |
-| `uid`  | the id the edition is stored under in the browser, which never changes; a box set's copies share it (written first) |
+| `isbn` | this edition's ISBN, the 13-digit form without hyphens (`"9780000000002"`). One per edition: another ISBN is another edition. It may be written with hyphens or as an ISBN-10, and is tidied to the 13-digit form when the page saves                                                                                                                                                                                                                                                                                                                                                                               |
+| `n`    | list of this edition's narrators, one name each (`["Tobias Frane"]`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `p`    | publisher                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `d`    | release date (`"2021-05-04"`, `"2021-05"` or `"2021"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `len`  | length in whole minutes (`642`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `desc` | your own description of the edition, free text (`"UK edition"`, `"First edition"`, `"Dramatized adaptation"`, `"Audio CD"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `img`  | the key of its cover by catalog: `{"audiobookdb": "<64 hex digits>"}`, the hash AudiobookDB keeps the image under (its address can't be made from the release's id, unlike Amazon's from an ASIN). Filled in from AudiobookDB, never typed; an edition of only a cover is empty                                                                                                                                                                                                                                                                                                                                     |
+| `uid`  | the id the edition is stored under in the browser, which never changes; a box set's copies share it (written first)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ```json
-{"t":"The Salt Road","a":["Marisol Quenby"],"s":"The Lantern Coast","sn":"1","ext":{"hardcover":"77"},
- "e":[{"ext":{"audible.com":"B0SAMPLE01","amazon.com":"B0SAMPLE03","goodreads":"9001","hardcover":"501"},"isbn":"9780000000002","n":["Tobias Frane"],"p":"Gullwing Audio","d":"2019-04-02","len":642},
-      {"ext":{"audible.co.uk":"B0SAMPLE02"},"n":["Hollis Marr","Dana Whitlock"],"desc":"UK edition"}]}
+{
+  "t": "The Salt Road",
+  "a": ["Marisol Quenby"],
+  "s": "The Lantern Coast",
+  "sn": "1",
+  "ext": {"hardcover": "77"},
+  "e": [
+    {
+      "ext": {"audible.com": "B0SAMPLE01", "amazon.com": "B0SAMPLE03", "goodreads": "9001", "hardcover": "501"},
+      "isbn": "9780000000002",
+      "n": ["Tobias Frane"],
+      "p": "Gullwing Audio",
+      "d": "2019-04-02",
+      "len": 642
+    },
+    {"ext": {"audible.co.uk": "B0SAMPLE02"}, "n": ["Hollis Marr", "Dana Whitlock"], "desc": "UK edition"}
+  ]
+}
 ```
 
 **Which site an ASIN is from**: an Audible import's ASINs are from the Audible site you pick (audible.com
@@ -104,7 +134,7 @@ The details of each of them show "Also in this edition: …", and editing the ed
 the others. **Check** warns when the copies disagree. A box set is also a book of its own, whose
 series number is the range it holds (`"sn": "2-3"`), with the same edition. Imports keep a box set this
 way, as its own book and as its titles ([Box sets](imports.md#box-sets)), and **Box sets** on the
-*Import & export* page brings older box sets up to date. (A box set with nothing to tie it to its titles is just the one book
+_Import & export_ page brings older box sets up to date. (A box set with nothing to tie it to its titles is just the one book
 with a range.)
 
 **Older files**: before editions, a book held its `id`, `gr` and `isbn` itself, and its narrator (`n`)
@@ -137,16 +167,21 @@ The author info (`authors`, `authors.json` before) maps an author's name (as the
 no book names any more is one too) to what you keep about them; every field is optional:
 
 ```json
-{"Marisol Quenby": {"bio": "Writes seafaring fantasy.\n\nLives by the sea.", "url": "https://example.com/",
-  "ext": {"audible.com": "B0SAMPLEA1", "goodreads": "1234", "hardcover": "marisol-quenby"}}}
+{
+  "Marisol Quenby": {
+    "bio": "Writes seafaring fantasy.\n\nLives by the sea.",
+    "url": "https://example.com/",
+    "ext": {"audible.com": "B0SAMPLEA1", "goodreads": "1234", "hardcover": "marisol-quenby"}
+  }
+}
 ```
 
-| key     | meaning                                                              |
-|---------|----------------------------------------------------------------------|
-| `bio`   | a short bio, free text; a blank line (`\n\n`) starts a new paragraph |
-| `url`   | the author's own website                                             |
+| key     | meaning                                                                                                                                                                                                                                                                                      |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bio`   | a short bio, free text; a blank line (`\n\n`) starts a new paragraph                                                                                                                                                                                                                         |
+| `url`   | the author's own website                                                                                                                                                                                                                                                                     |
 | `ext`   | their ids in [external catalogs](#external-catalogs): their author page's ASIN on an Audible or Amazon site, the number of their Goodreads page, their number on Hardcover (or, when Hardcover couldn't be asked for it, the name in their Hardcover page's address). The page links to each |
-| `links` | other pages about them, as a list of addresses: where an author page's address from before could not be read as an id, it is kept here |
+| `links` | other pages about them, as a list of addresses: where an author page's address from before could not be read as an id, it is kept here                                                                                                                                                       |
 
 Links must start with `http://` or `https://`; **Check** warns when an id is not one its catalog
 gives, and when one of `links` is an external catalog's page (keep its id in `ext` instead). Until 2026-10 the entry kept
@@ -165,8 +200,12 @@ Wikidata item and an AudiobookDB id, and a publisher an ISFDB and a BookBrainz i
 optional (missing means `{}`).
 
 ```json
-{"narrators": {"Ingrid Voss": {"bio": "Narrates fantasy.", "ext": {"audible.com": "Ingrid Voss", "hardcover": "4102"}}},
- "publishers": {"Kestrel Row Audio": {"url": "https://example.com/", "ext": {"hardcover": "5101"}}}}
+{
+  "narrators": {
+    "Ingrid Voss": {"bio": "Narrates fantasy.", "ext": {"audible.com": "Ingrid Voss", "hardcover": "4102"}}
+  },
+  "publishers": {"Kestrel Row Audio": {"url": "https://example.com/", "ext": {"hardcover": "5101"}}}
+}
 ```
 
 ## External catalogs
@@ -176,17 +215,17 @@ their page there: the app knows, for each catalog, how its pages' addresses are 
 (`modules/external-catalog.js`), so it makes the link from the id, and reads the id out of an address
 pasted into a form. The key in `ext` is the catalog's:
 
-| key | catalog | ids it gives |
-|-----|---------|--------------|
-| `audible.com`, `audible.co.uk`, `audible.de`, `audible.fr`, `audible.it`, `audible.es`, `audible.ca`, `audible.com.au`, `audible.in`, `audible.co.jp` | an Audible store | an edition's ASIN (`/pd/B0…`), a series' (`/series/B0…`) and an author's (`/author/B0…`); a narrator's or publisher's name, for Audible's search |
-| `amazon.com`, `amazon.co.uk`, … (each Audible store's Amazon twin, and `amazon.se`, `amazon.nl`, `amazon.pl`, `amazon.com.br`, `amazon.com.mx`) | an Amazon store | an edition's ASIN (`/dp/B0…`) and an author's (`/stores/author/B0…`) |
-| `goodreads` | Goodreads | a book's work (`/work/editions/99`), an edition (`/book/show/4242`), a series (`/series/90001`), an author or narrator (`/author/show/1234`) |
-| `hardcover` | Hardcover | a book (`/id/book/77`), an edition (`/id/edition/501`), a series (`/id/series/3101`), an author or narrator (`/id/author/4101`), a publisher (`/id/publisher/5101`), each by its number; a series' or person's page by the name in its address (`/authors/marisol-quenby`) when Hardcover couldn't be asked for the number |
-| `audiobookdb` | AudiobookDB (`audiobookdb.org`), a community catalog of audiobooks | a book (`/books/37kLciJjQmfe`), an edition, which AudiobookDB calls a release (`/releases/…`), a series (`/series/…`), an author or narrator, both people there (`/people/…`), a publisher (`/publishers/…`), each by its twelve-character id, in which case matters. Its API sends no CORS headers, so the page only links to it |
-| `openlibrary` | Open Library (`openlibrary.org`) | a book's work (`/works/OL123W`), an edition (`/books/OL456M`), an author (`/authors/OL789A`) |
-| `isfdb` | ISFDB, the Internet Speculative Fiction Database (`isfdb.org`) | a book's title (`/cgi-bin/title.cgi?194342`), an edition, which ISFDB calls a publication (`pl.cgi?…`), a series (`pe.cgi?…`), an author (`ea.cgi?…`), a publisher (`publisher.cgi?…`) |
-| `bookbrainz` | BookBrainz (`bookbrainz.org`) | a book's work (`/work/…`), an edition (`/edition/…`), a series, an author or narrator (`/author/…`), a publisher, each by its UUID |
-| `wikidata` | Wikidata (`wikidata.org`) | the item (`/wiki/Q1001`) of a book, a series, an author, a narrator or a publisher; not of an edition, since an item's address doesn't say whether it is a book or an edition |
+| key                                                                                                                                                   | catalog                                                            | ids it gives                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `audible.com`, `audible.co.uk`, `audible.de`, `audible.fr`, `audible.it`, `audible.es`, `audible.ca`, `audible.com.au`, `audible.in`, `audible.co.jp` | an Audible store                                                   | an edition's ASIN (`/pd/B0…`), a series' (`/series/B0…`) and an author's (`/author/B0…`); a narrator's or publisher's name, for Audible's search                                                                                                                                                                                  |
+| `amazon.com`, `amazon.co.uk`, … (each Audible store's Amazon twin, and `amazon.se`, `amazon.nl`, `amazon.pl`, `amazon.com.br`, `amazon.com.mx`)       | an Amazon store                                                    | an edition's ASIN (`/dp/B0…`) and an author's (`/stores/author/B0…`)                                                                                                                                                                                                                                                              |
+| `goodreads`                                                                                                                                           | Goodreads                                                          | a book's work (`/work/editions/99`), an edition (`/book/show/4242`), a series (`/series/90001`), an author or narrator (`/author/show/1234`)                                                                                                                                                                                      |
+| `hardcover`                                                                                                                                           | Hardcover                                                          | a book (`/id/book/77`), an edition (`/id/edition/501`), a series (`/id/series/3101`), an author or narrator (`/id/author/4101`), a publisher (`/id/publisher/5101`), each by its number; a series' or person's page by the name in its address (`/authors/marisol-quenby`) when Hardcover couldn't be asked for the number        |
+| `audiobookdb`                                                                                                                                         | AudiobookDB (`audiobookdb.org`), a community catalog of audiobooks | a book (`/books/37kLciJjQmfe`), an edition, which AudiobookDB calls a release (`/releases/…`), a series (`/series/…`), an author or narrator, both people there (`/people/…`), a publisher (`/publishers/…`), each by its twelve-character id, in which case matters. Its API sends no CORS headers, so the page only links to it |
+| `openlibrary`                                                                                                                                         | Open Library (`openlibrary.org`)                                   | a book's work (`/works/OL123W`), an edition (`/books/OL456M`), an author (`/authors/OL789A`)                                                                                                                                                                                                                                      |
+| `isfdb`                                                                                                                                               | ISFDB, the Internet Speculative Fiction Database (`isfdb.org`)     | a book's title (`/cgi-bin/title.cgi?194342`), an edition, which ISFDB calls a publication (`pl.cgi?…`), a series (`pe.cgi?…`), an author (`ea.cgi?…`), a publisher (`publisher.cgi?…`)                                                                                                                                            |
+| `bookbrainz`                                                                                                                                          | BookBrainz (`bookbrainz.org`)                                      | a book's work (`/work/…`), an edition (`/edition/…`), a series, an author or narrator (`/author/…`), a publisher, each by its UUID                                                                                                                                                                                                |
+| `wikidata`                                                                                                                                            | Wikidata (`wikidata.org`)                                          | the item (`/wiki/Q1001`) of a book, a series, an author, a narrator or a publisher; not of an edition, since an item's address doesn't say whether it is a book or an edition                                                                                                                                                     |
 
 Every ASIN, on any Audible or Amazon site, names the same edition wherever it is found, so an import
 from one site matches an edition another site gave. **Check** reports an id its catalog doesn't give
@@ -207,7 +246,7 @@ without ids still work: whatever has none gets a new one.
 
 The browser keeps the catalog in IndexedDB, database `audiobook-catalog`, as plain objects with
 descriptive field names. Every record has an id that never changes (`crypto.randomUUID()`), and records
-point at each other by id, so renaming a series changes one record. Fields marked *derived* are written
+point at each other by id, so renaming a series changes one record. Fields marked _derived_ are written
 from the others on every save, only so an index can sort or filter without reading other records
 (`modules/catalog-records.js`). Every index that sorts ends with the record's key, so a page can ask for
 the next rows after the last one it shows (`IDBKeyRange.lowerBound([sortTitle, id], true)`), which is
@@ -216,16 +255,16 @@ how a list can be paged or scrolled without loading all of it. A page reads only
 its own transaction, from the records stored: a book's credits, a series' or person's counts, an
 and an edition's `bookIds`.
 
-| store | key | holds | indexes |
-|-------|-----|-------|---------|
-| `books` | `id` | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external` (its ids by catalog), `editionIds` (in order), `position` (the catalog's order; a book added by a page that doesn't hold them all gets the next one when saved); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `readYears` (`"2024"`, or `"undated"`), `search` (the text the search looks in), `standalone` (1 when it has no series), `words`, `externalKeys` (`"hardcover 77"`) | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `standalone` [standalone, sortTitle, id], `byPosition` [position, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `search`, `genres`, `readYears`, `words`, `editionIds` and `externalKeys` (multiEntry) |
-| `editions` | `id` | `bookIds` (a box set's edition is one record on all its titles), `external` (its ids by catalog), `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`, `covers` (`img`); derived: `idKeys` (`"asin B0…"` for an ASIN on any site, `"goodreads 4242"`, `"hardcover 501"`, `"isbn 978…"`) | `bookIds`, `idKeys`, `narratorIds` (multiEntry), `publisherId` |
-| `series` | `id` | `name`, `total`, `status`, `note`, `external`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead`, `authorIds` (its books' authors), `externalKeys` | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id], `externalKeys` (multiEntry) |
-| `contributors` | `id` | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `external`, `links`; derived: `sortName`, `bookCount`, `seriesCount`, `topAuthorIds` and `authorCount` (a narrator's or publisher's: the authors of most of their books, for the list), `externalKeys` | `kindName` [kind, name] (unique), `byName` [kind, sortName, id], `externalKeys` (multiEntry) |
-| `credits` | [contributorId, bookId] | derived: who is credited on which book, as what, with the book's `sortTitle`, `seriesId` and `numberKey` | `byTitle` [contributorId, sortTitle, bookId], `bySeries` [contributorId, seriesId, numberKey, bookId], `bookId` |
-| `marks` | `id` | "Not duplicates" (`bookIds`), "Keep separate" (`bookIds`, `editionIds`), or a mark that matched no book (`key`, its text) | `bookIds` (multiEntry) |
-| `exclusions` | `entry` | an entry of the exclusions list, and its `position` in it | `byPosition` [position, entry] |
-| `meta` | `key` | `revision` (bumped by every save; when another tab saved since the page read it, the page takes in the records that tab changed before it saves, and refuses when both changed the same record), `duplicates` (how many the Duplicates link counts, with the `revision` it was counted at), `reshape` (while the records still need saving again after an upgrade), and `unreadable` (a catalog set aside) | |
+| store          | key                     | holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | indexes                                                                                                                                                                                                                                                                                                                                                 |
+| -------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `books`        | `id`                    | `title`, `authorIds`, `seriesId`, `number`, `genres`, `read`, `external` (its ids by catalog), `editionIds` (in order), `position` (the catalog's order; a book added by a page that doesn't hold them all gets the next one when saved); derived: `sortTitle`, `titleKey`, `firstAuthorKey`, `seriesKey`, `isCollection`, `numberKey`, `numberEnd`, `lastRead`, `readYears` (`"2024"`, or `"undated"`), `search` (the text the search looks in), `standalone` (1 when it has no series), `words`, `externalKeys` (`"hardcover 77"`) | `byTitle` [sortTitle, id], `bySeries` [seriesId, isCollection, numberKey, numberEnd, sortTitle, id], `standalone` [standalone, sortTitle, id], `byPosition` [position, id], `byLastRead` [lastRead, id], `byAuthorTitle` and `byAuthorSeries` (import matching), `search`, `genres`, `readYears`, `words`, `editionIds` and `externalKeys` (multiEntry) |
+| `editions`     | `id`                    | `bookIds` (a box set's edition is one record on all its titles), `external` (its ids by catalog), `isbn`, `narratorIds`, `publisherId`, `released`, `minutes`, `description`, `covers` (`img`); derived: `idKeys` (`"asin B0…"` for an ASIN on any site, `"goodreads 4242"`, `"hardcover 501"`, `"isbn 978…"`)                                                                                                                                                                                                                       | `bookIds`, `idKeys`, `narratorIds` (multiEntry), `publisherId`                                                                                                                                                                                                                                                                                          |
+| `series`       | `id`                    | `name`, `total`, `status`, `note`, `external`; derived: `sortName`, `bookCount`, `owned`, `missing`, `lastRead`, `authorIds` (its books' authors), `externalKeys`                                                                                                                                                                                                                                                                                                                                                                    | `name` (unique), `byName` [sortName, id], `byStatus` [status, sortName, id], `externalKeys` (multiEntry)                                                                                                                                                                                                                                                |
+| `contributors` | `id`                    | `kind` (`author`, `narrator`, `publisher`), `name`, `bio`, `url`, `external`, `links`; derived: `sortName`, `bookCount`, `seriesCount`, `topAuthorIds` and `authorCount` (a narrator's or publisher's: the authors of most of their books, for the list), `externalKeys`                                                                                                                                                                                                                                                             | `kindName` [kind, name] (unique), `byName` [kind, sortName, id], `externalKeys` (multiEntry)                                                                                                                                                                                                                                                            |
+| `credits`      | [contributorId, bookId] | derived: who is credited on which book, as what, with the book's `sortTitle`, `seriesId` and `numberKey`                                                                                                                                                                                                                                                                                                                                                                                                                             | `byTitle` [contributorId, sortTitle, bookId], `bySeries` [contributorId, seriesId, numberKey, bookId], `bookId`                                                                                                                                                                                                                                         |
+| `marks`        | `id`                    | "Not duplicates" (`bookIds`), "Keep separate" (`bookIds`, `editionIds`), or a mark that matched no book (`key`, its text)                                                                                                                                                                                                                                                                                                                                                                                                            | `bookIds` (multiEntry)                                                                                                                                                                                                                                                                                                                                  |
+| `exclusions`   | `entry`                 | an entry of the exclusions list, and its `position` in it                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `byPosition` [position, entry]                                                                                                                                                                                                                                                                                                                          |
+| `meta`         | `key`                   | `revision` (bumped by every save; when another tab saved since the page read it, the page takes in the records that tab changed before it saves, and refuses when both changed the same record), `duplicates` (how many the Duplicates link counts, with the `revision` it was counted at), `reshape` (while the records still need saving again after an upgrade), and `unreadable` (a catalog set aside)                                                                                                                           |                                                                                                                                                                                                                                                                                                                                                         |
 
 Every series and every person has a record, with info or without, and keeps it when no book names them any
 more: it goes only when they are removed (**Remove series**, **Remove author**, ...).

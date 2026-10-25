@@ -22,9 +22,9 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {string} value
 	 * @returns {Pasted | null}
 	 */
-	static read(value){
-		if(/^OL\d+M$/i.test(value)) return {catalog: 'openlibrary', kind: 'edition', id: value.toUpperCase()};
-		if(/^OL\d+W$/i.test(value)) return {catalog: 'openlibrary', kind: 'book', id: value.toUpperCase()};
+	static read(value) {
+		if (/^OL\d+M$/i.test(value)) return {catalog: 'openlibrary', kind: 'edition', id: value.toUpperCase()};
+		if (/^OL\d+W$/i.test(value)) return {catalog: 'openlibrary', kind: 'book', id: value.toUpperCase()};
 		return null;
 	}
 
@@ -33,7 +33,7 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {Pasted} pasted
 	 * @returns {Answers}
 	 */
-	answers(pasted){
+	answers(pasted) {
 		return pasted.kind === 'isbn' ? 'also' : super.answers(pasted);
 	}
 
@@ -41,8 +41,8 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {Pasted} pasted
 	 * @returns {Promise<Book | null>}
 	 */
-	async lookup(pasted){
-		if(pasted.kind === 'isbn') return this.byIsbn(pasted.id);
+	async lookup(pasted) {
+		if (pasted.kind === 'isbn') return this.byIsbn(pasted.id);
 		return pasted.kind === 'edition' ? this.edition(pasted.id) : this.work(pasted.id);
 	}
 
@@ -51,7 +51,7 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {string} path
 	 * @returns {Promise<Unchecked | null>}
 	 */
-	async ask(path){
+	async ask(path) {
 		return this.json(OPEN_LIBRARY + path);
 	}
 
@@ -60,11 +60,11 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {unknown[]} keys
 	 * @returns {Promise<string[]>}
 	 */
-	async authors(keys){
+	async authors(keys) {
 		const names = [];
-		for(const key of keys.filter(k => typeof k === 'string' && /^\/authors\/OL\d+A$/.test(k)).slice(0, 10)){
+		for (const key of keys.filter(k => typeof k === 'string' && /^\/authors\/OL\d+A$/.test(k)).slice(0, 10)) {
 			const author = await this.ask(`${key}.json`);
-			if(author && typeof author.name === 'string' && Text.tidy(author.name)) names.push(Text.tidy(author.name));
+			if (author && typeof author.name === 'string' && Text.tidy(author.name)) names.push(Text.tidy(author.name));
 		}
 		return [...new Set(names)];
 	}
@@ -74,11 +74,14 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {string} id OL…W
 	 * @returns {Promise<Book>}
 	 */
-	async work(id){
+	async work(id) {
 		const work = await this.ask(`/works/${id}.json`);
-		if(!work) throw new Error(`Open Library has no work ${id}`);
-		const authors = await this.authors((Array.isArray(work.authors) ? work.authors : [])
-			.map((/** @type {unknown} */ a) => Text.isObject(a) && Text.isObject(a.author) ? a.author.key : null));
+		if (!work) throw new Error(`Open Library has no work ${id}`);
+		const authors = await this.authors(
+			(Array.isArray(work.authors) ? work.authors : []).map((/** @type {unknown} */ a) =>
+				Text.isObject(a) && Text.isObject(a.author) ? a.author.key : null,
+			),
+		);
 		return OpenLibrarySource.book(work, null, authors);
 	}
 
@@ -88,9 +91,9 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {string} id OL…M
 	 * @returns {Promise<Book>}
 	 */
-	async edition(id){
+	async edition(id) {
 		const edition = await this.ask(`/books/${id}.json`);
-		if(!edition) throw new Error(`Open Library has no edition ${id}`);
+		if (!edition) throw new Error(`Open Library has no edition ${id}`);
 		return this.bookOf(edition);
 	}
 
@@ -99,7 +102,7 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {string} isbn
 	 * @returns {Promise<Book | null>}
 	 */
-	async byIsbn(isbn){
+	async byIsbn(isbn) {
 		const edition = await this.ask(`/isbn/${isbn}.json`);
 		return edition ? this.bookOf(edition) : null;
 	}
@@ -108,11 +111,18 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {Unchecked} edition an Open Library edition
 	 * @returns {Promise<Book>}
 	 */
-	async bookOf(edition){
-		const workKey = Array.isArray(edition.works) && Text.isObject(edition.works[0]) && typeof edition.works[0].key === 'string' ? edition.works[0].key : null;
+	async bookOf(edition) {
+		const workKey =
+			Array.isArray(edition.works) && Text.isObject(edition.works[0]) && typeof edition.works[0].key === 'string'
+				? edition.works[0].key
+				: null;
 		const work = workKey && /^\/works\/OL\d+W$/.test(workKey) ? await this.ask(`${workKey}.json`) : null;
-		const of = (/** @type {Unchecked | null} */ x) => x && Array.isArray(x.authors) ? x.authors.map((/** @type {unknown} */ a) =>
-			Text.isObject(a) ? Text.isObject(a.author) ? a.author.key : a.key : null) : [];
+		const of = (/** @type {Unchecked | null} */ x) =>
+			x && Array.isArray(x.authors)
+				? x.authors.map((/** @type {unknown} */ a) =>
+						Text.isObject(a) ? (Text.isObject(a.author) ? a.author.key : a.key) : null,
+					)
+				: [];
 		const editionAuthors = of(edition);
 		const authors = await this.authors(editionAuthors.length ? editionAuthors : of(work));
 		return OpenLibrarySource.book(work || {}, edition, authors);
@@ -125,39 +135,47 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {string[]} authors
 	 * @returns {Book}
 	 */
-	static book(work, edition, authors){
+	static book(work, edition, authors) {
 		/** @type {(x: unknown, re: RegExp) => string | null} */
-		const idOf = (x, re) => { const m = re.exec(tidyText(x)); return m ? m[1] : null; };
+		const idOf = (x, re) => {
+			const m = re.exec(tidyText(x));
+			return m ? m[1] : null;
+		};
 		/** @type {(x: unknown) => unknown} */
-		const first = x => Array.isArray(x) ? x[0] : undefined;
+		const first = x => (Array.isArray(x) ? x[0] : undefined);
 		/** @type {Record<string, any>} */
 		const rec = {t: tidyText(work.title) || (edition ? tidyText(edition.title) : ''), a: authors};
 		const workId = idOf(work.key, /^\/works\/(OL\d+W)$/);
-		if(workId) rec.ext = {openlibrary: workId};
-		if(edition){
+		if (workId) rec.ext = {openlibrary: workId};
+		if (edition) {
 			const series = OpenLibrarySource.seriesOf(tidyText(first(edition.series)));
-			if(series){ rec.s = series.name; if(series.number) rec.sn = series.number; }
+			if (series) {
+				rec.s = series.name;
+				if (series.number) rec.sn = series.number;
+			}
 			/** @type {Record<string, any>} */
 			const ed = {ext: {}};
 			const editionId = idOf(edition.key, /^\/books\/(OL\d+M)$/);
-			if(editionId) ed.ext.openlibrary = editionId;
+			if (editionId) ed.ext.openlibrary = editionId;
 			const ids = Text.isObject(edition.identifiers) ? edition.identifiers : {};
 			const goodreads = tidyText(first(ids.goodreads));
-			if(/^\d+$/.test(goodreads)) ed.ext.goodreads = goodreads;
+			if (/^\d+$/.test(goodreads)) ed.ext.goodreads = goodreads;
 			// Open Library's Amazon id is amazon.com's; a print book's is its ISBN-10, which is no ASIN
 			const amazon = tidyText(first(ids.amazon)).toUpperCase();
-			if(/^B[A-Z0-9]{9}$/.test(amazon)) ed.ext[ExternalCatalog.AMAZON_SITE] = amazon;
+			if (/^B[A-Z0-9]{9}$/.test(amazon)) ed.ext[ExternalCatalog.AMAZON_SITE] = amazon;
 			const isbn = [first(edition.isbn_13), first(edition.isbn_10)].map(Isbn.parse).find(Boolean);
-			if(isbn) ed.isbn = isbn;
+			if (isbn) ed.isbn = isbn;
 			const publisher = tidyText(first(edition.publishers));
-			if(publisher) ed.p = publisher;
+			if (publisher) ed.p = publisher;
 			const released = BookSource.date(edition.publish_date);
-			if(released) ed.d = released;
+			if (released) ed.d = released;
 			const narrators = (Array.isArray(edition.contributors) ? edition.contributors : [])
-				.filter((/** @type {unknown} */ c) => Text.isObject(c) && /narrat|read/i.test(tidyText(c.role))).map((/** @type {Unchecked} */ c) => tidyText(c.name)).filter(Boolean);
-			if(narrators.length) ed.n = narrators;
-			if(!Object.keys(ed.ext).length) delete ed.ext;
-			if(Object.keys(ed).length) rec.e = [ed];
+				.filter((/** @type {unknown} */ c) => Text.isObject(c) && /narrat|read/i.test(tidyText(c.role)))
+				.map((/** @type {Unchecked} */ c) => tidyText(c.name))
+				.filter(Boolean);
+			if (narrators.length) ed.n = narrators;
+			if (!Object.keys(ed.ext).length) delete ed.ext;
+			if (Object.keys(ed).length) rec.e = [ed];
 		}
 		return Book.fromRecord(Book.fixSeriesTitle(rec));
 	}
@@ -168,11 +186,11 @@ export class OpenLibrarySource extends BookSource {
 	 * @param {string} text
 	 * @returns {{name: string, number: string | null} | null}
 	 */
-	static seriesOf(text){
+	static seriesOf(text) {
 		const value = Text.tidy(text);
-		if(!value) return null;
+		if (!value) return null;
 		const m = /^(.*?)[\s,;:(#-]+(?:(?:book|vol(?:ume)?|no|number)\.?\s*)?#?\s*(\d+(?:\.\d+)?)\)?$/i.exec(value);
-		if(m && Text.tidy(m[1])) return {name: Text.tidy(m[1]), number: m[2]};
+		if (m && Text.tidy(m[1])) return {name: Text.tidy(m[1]), number: m[2]};
 		return {name: value, number: null};
 	}
 }

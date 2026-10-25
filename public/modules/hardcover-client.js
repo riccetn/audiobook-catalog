@@ -15,8 +15,8 @@ import {CatalogClient} from './catalog-client.js';
 
 // Hardcover's own ids, as books keep them (a book's Hardcover id, an edition's).
 const HARDCOVER_ID = /^\d+$/;
-const PAGE = 100;         // shelf entries per request
-const BATCH = 50;         // ids per lookup
+const PAGE = 100; // shelf entries per request
+const BATCH = 50; // ids per lookup
 
 /** Asks Hardcover's API, one request at a time. */
 export class HardcoverClient extends CatalogClient {
@@ -25,14 +25,22 @@ export class HardcoverClient extends CatalogClient {
 	static ID = HARDCOVER_ID;
 	static KEY_NAME = 'API token';
 	static KEY_STORAGE = 'audiobook-catalog-hardcover-token';
-	static KEY_HELP = 'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept in this browser only (never in a backup).';
-	static PAUSE_MS = 1000;   // Hardcover allows 60 requests a minute
+	static KEY_HELP =
+		'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept in this browser only (never in a backup).';
+	static PAUSE_MS = 1000; // Hardcover allows 60 requests a minute
 	static API = 'https://api.hardcover.app/v1/graphql';
 	// Hardcover's shelves (user_books.status_id): only "Read" is a finished book.
 	/** @type {Record<number, string>} */
-	static STATUSES = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'Did Not Finish', 6: 'Ignored'};
+	static STATUSES = {
+		1: 'Want to Read',
+		2: 'Currently Reading',
+		3: 'Read',
+		4: 'Paused',
+		5: 'Did Not Finish',
+		6: 'Ignored',
+	};
 	static READ = 3;
-	static AUDIO = 2;          // editions.reading_format_id of an audiobook
+	static AUDIO = 2; // editions.reading_format_id of an audiobook
 	static PAGE = PAGE;
 	static BATCH = BATCH;
 	static QUERIES = {
@@ -124,7 +132,7 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {number} [gap]
 	 * @param {Record<string, string>} [headers]
 	 */
-	constructor(get, key, pause, gap, headers){
+	constructor(get, key, pause, gap, headers) {
 		super(get, key, pause, gap);
 		this.headers = headers || {};
 		/** @type {number | undefined} whose shelves they are, once Hardcover said */
@@ -138,16 +146,32 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Record<string, unknown>} [variables]
 	 * @returns {Promise<Unchecked>}
 	 */
-	async ask(query, variables){
+	async ask(query, variables) {
 		await this.waitTurn();
-		const res = await this.get(HardcoverClient.API, {method: 'POST', body: JSON.stringify({query, variables: variables || {}}), headers: {
-			'content-type': 'application/json', authorization: `Bearer ${this.key}`, ...this.headers}});
+		const res = await this.get(HardcoverClient.API, {
+			method: 'POST',
+			body: JSON.stringify({query, variables: variables || {}}),
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${this.key}`,
+				...this.headers,
+			},
+		});
 		let json = null;
-		try{ json = await res.json(); }catch{ /* reported below */ }
-		if(res.status === 401) throw new Error('Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)');
-		if(res.status === 429) throw new Error('Hardcover\'s rate limit was reached; try again later');
-		if(!res.ok || !json) throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);
-		if(Array.isArray(json.errors) && json.errors.length) throw new Error(`Hardcover: ${json.errors.map((/** @type {any} */ e) => e && e.message).join('; ')}`);
+		try {
+			json = await res.json();
+		} catch {
+			/* reported below */
+		}
+		if (res.status === 401)
+			throw new Error(
+				'Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)',
+			);
+		if (res.status === 429) throw new Error("Hardcover's rate limit was reached; try again later");
+		if (!res.ok || !json)
+			throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);
+		if (Array.isArray(json.errors) && json.errors.length)
+			throw new Error(`Hardcover: ${json.errors.map((/** @type {any} */ e) => e && e.message).join('; ')}`);
 		return json.data || {};
 	}
 
@@ -156,7 +180,7 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Step} step
 	 * @returns {Promise<Unchecked[]>}
 	 */
-	async shelf(step){
+	async shelf(step) {
 		return this.shelfPages(HardcoverClient.QUERIES.shelf, {}, step);
 	}
 
@@ -167,11 +191,12 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Step} step
 	 * @returns {Promise<Unchecked[]>}
 	 */
-	async shelfOf(kind, ids, step){
+	async shelfOf(kind, ids, step) {
 		/** @type {Unchecked[]} */
 		const shelf = [];
 		const query = kind === 'series' ? HardcoverClient.QUERIES.shelfBySeries : HardcoverClient.QUERIES.shelfByAuthor;
-		for(let i = 0; i < ids.length; i += BATCH) shelf.push(...await this.shelfPages(query, {ids: ids.slice(i, i + BATCH)}, step));
+		for (let i = 0; i < ids.length; i += BATCH)
+			shelf.push(...(await this.shelfPages(query, {ids: ids.slice(i, i + BATCH)}, step)));
 		return shelf;
 	}
 
@@ -181,9 +206,12 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {string[]} names
 	 * @returns {Promise<Unchecked[]>}
 	 */
-	async named(kind, names){
-		if(!names.length) return [];
-		const data = await this.ask(kind === 'series' ? HardcoverClient.QUERIES.seriesByName : HardcoverClient.QUERIES.authorsByName, {names});
+	async named(kind, names) {
+		if (!names.length) return [];
+		const data = await this.ask(
+			kind === 'series' ? HardcoverClient.QUERIES.seriesByName : HardcoverClient.QUERIES.authorsByName,
+			{names},
+		);
 		const rows = kind === 'series' ? data.series : data.authors;
 		return Array.isArray(rows) ? rows.filter(Text.isObject) : [];
 	}
@@ -194,13 +222,13 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Step} step
 	 * @returns {Promise<Unchecked[]>}
 	 */
-	async bookParts(ids, step){
+	async bookParts(ids, step) {
 		/** @type {Unchecked[]} */
 		const rows = [];
-		for(let i = 0; i < ids.length; i += BATCH){
+		for (let i = 0; i < ids.length; i += BATCH) {
 			step('Finding the series or author on Hardcover', i, ids.length);
 			const books = (await this.ask(HardcoverClient.QUERIES.bookParts, {ids: ids.slice(i, i + BATCH)})).books;
-			if(Array.isArray(books)) rows.push(...books.filter(Text.isObject));
+			if (Array.isArray(books)) rows.push(...books.filter(Text.isObject));
 		}
 		return rows;
 	}
@@ -211,10 +239,17 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Step} step
 	 * @returns {Promise<Unchecked[]>}
 	 */
-	async shelfOfBooks(books, step){
+	async shelfOfBooks(books, step) {
 		/** @type {Unchecked[]} */
 		const shelf = [];
-		for(let i = 0; i < books.length; i += BATCH) shelf.push(...await this.shelfPages(HardcoverClient.QUERIES.shelfByBooks, {books: books.slice(i, i + BATCH)}, step));
+		for (let i = 0; i < books.length; i += BATCH)
+			shelf.push(
+				...(await this.shelfPages(
+					HardcoverClient.QUERIES.shelfByBooks,
+					{books: books.slice(i, i + BATCH)},
+					step,
+				)),
+			);
 		return shelf;
 	}
 
@@ -225,19 +260,19 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Step} step
 	 * @returns {Promise<Unchecked[]>}
 	 */
-	async shelfPages(query, variables, step){
-		if(this.user === undefined){
+	async shelfPages(query, variables, step) {
+		if (this.user === undefined) {
 			const me = await this.ask(HardcoverClient.QUERIES.me);
 			const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
-			if(!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
+			if (!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
 			this.user = user;
 		}
 		const shelf = [];
-		for(let offset = 0; ; offset += PAGE){
+		for (let offset = 0; ; offset += PAGE) {
 			const page = (await this.ask(query, {...variables, user: this.user, offset})).user_books || [];
 			shelf.push(...page);
 			step(`Reading your Hardcover shelves: ${shelf.length} books`);
-			if(page.length < PAGE) return shelf;
+			if (page.length < PAGE) return shelf;
 		}
 	}
 
@@ -249,11 +284,13 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {string} [doing]
 	 * @returns {Promise<Map<unknown, Unchecked>>}
 	 */
-	async rows(kind, ids, step, doing){
+	async rows(kind, ids, step, doing) {
 		const rows = new Map();
-		for(let i = 0; i < ids.length; i += BATCH){
+		for (let i = 0; i < ids.length; i += BATCH) {
 			step(doing || `Reading the ${kind} on your Read shelf`, i, ids.length);
-			for(const row of (await this.ask(HardcoverClient.QUERIES[kind], {ids: ids.slice(i, i + BATCH)}))[kind] || []) rows.set(row.id, row);
+			for (const row of (await this.ask(HardcoverClient.QUERIES[kind], {ids: ids.slice(i, i + BATCH)}))[kind] ||
+				[])
+				rows.set(row.id, row);
 		}
 		return rows;
 	}
@@ -264,17 +301,18 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Step} step
 	 * @returns {Promise<HardcoverFound>}
 	 */
-	async find(lookups, step){
+	async find(lookups, step) {
 		/** @type {HardcoverFound} */
 		const found = {hc: new Map(), asin: new Map(), isbn: new Map(), gr: new Map()};
 		const longest = Math.max(0, ...Object.values(lookups).map(l => l.length));
-		for(let i = 0; i < longest; i += BATCH){
+		for (let i = 0; i < longest; i += BATCH) {
 			step('Finding your books on Hardcover', i, longest);
 			const slice = Object.fromEntries(Object.entries(lookups).map(([k, l]) => [k, l.slice(i, i + BATCH)]));
 			const q = HardcoverClient.findQuery(slice);
-			if(!q) continue;
+			if (!q) continue;
 			const matches = HardcoverClient.matches(await this.ask(q.query, q.variables));
-			for(const k of /** @type {(keyof HardcoverFound)[]} */ (Object.keys(found))) for(const [id, hit] of matches[k]) if(!found[k].has(id)) found[k].set(id, hit);
+			for (const k of /** @type {(keyof HardcoverFound)[]} */ (Object.keys(found)))
+				for (const [id, hit] of matches[k]) if (!found[k].has(id)) found[k].set(id, hit);
 		}
 		return found;
 	}
@@ -286,7 +324,7 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {HardcoverLookups} ids
 	 * @returns {{query: string, variables: Record<string, unknown[]>} | null}
 	 */
-	static findQuery(ids){
+	static findQuery(ids) {
 		/** @type {string[]} */
 		const parts = [];
 		/** @type {string[]} */
@@ -296,7 +334,7 @@ export class HardcoverClient extends CatalogClient {
 		const fields = 'id book_id asin isbn_13 reading_format_id';
 		/** @type {(name: string, type: string, list: unknown[] | undefined, part: string) => void} */
 		const add = (name, type, list, part) => {
-			if(!list || !list.length) return;
+			if (!list || !list.length) return;
 			vars.push(`$${name}: ${type}`);
 			variables[name] = list;
 			parts.push(part);
@@ -304,9 +342,13 @@ export class HardcoverClient extends CatalogClient {
 		add('hc', '[Int!]', ids.hc, `byId: editions(where: {id: {_in: $hc}}) { ${fields} }`);
 		add('asin', '[String!]', ids.asin, `byAsin: editions(where: {asin: {_in: $asin}}) { ${fields} }`);
 		add('isbn', '[String!]', ids.isbn, `byIsbn: editions(where: {isbn_13: {_in: $isbn}}) { ${fields} }`);
-		add('gr', '[String!]', ids.gr,
-			'byGoodreads: book_mappings(where: {platform: {name: {_eq: "Goodreads"}}, external_id: {_in: $gr}}) { book_id external_id }');
-		if(!parts.length) return null;
+		add(
+			'gr',
+			'[String!]',
+			ids.gr,
+			'byGoodreads: book_mappings(where: {platform: {name: {_eq: "Goodreads"}}, external_id: {_in: $gr}}) { book_id external_id }',
+		);
+		if (!parts.length) return null;
 		return {query: `query Find(${vars.join(', ')}) {\n  ${parts.join('\n  ')}\n}`, variables};
 	}
 
@@ -317,18 +359,24 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {Unchecked} data
 	 * @returns {HardcoverFound}
 	 */
-	static matches(data){
+	static matches(data) {
 		/** @type {HardcoverFound} */
 		const out = {hc: new Map(), asin: new Map(), isbn: new Map(), gr: new Map()};
 		/** @type {(name: string) => Record<string, any>[]} */
-		const list = name => data && Array.isArray(data[name]) ? data[name].filter(Text.isObject) : [];
+		const list = name => (data && Array.isArray(data[name]) ? data[name].filter(Text.isObject) : []);
 		const audio = (/** @type {Record<string, any>} */ ed) => ed.reading_format_id === HardcoverClient.AUDIO;
 		/** @type {(map: Map<string, HardcoverHit>, k: string, v: HardcoverHit) => void} */
-		const put = (map, k, v) => { const had = map.get(k); if(!had || (!had.hc && v.hc)) map.set(k, v); };
-		for(const ed of list('byId')) put(out.hc, String(ed.id), {hc: String(ed.id), hcb: String(ed.book_id)});
-		for(const ed of list('byAsin')) if(ed.asin) put(out.asin, ed.asin, {hc: String(ed.id), hcb: String(ed.book_id)});
-		for(const ed of list('byIsbn')) if(ed.isbn_13) put(out.isbn, ed.isbn_13, {hc: audio(ed) ? String(ed.id) : null, hcb: String(ed.book_id)});
-		for(const m of list('byGoodreads')) if(m.external_id) put(out.gr, String(m.external_id), {hc: null, hcb: String(m.book_id)});
+		const put = (map, k, v) => {
+			const had = map.get(k);
+			if (!had || (!had.hc && v.hc)) map.set(k, v);
+		};
+		for (const ed of list('byId')) put(out.hc, String(ed.id), {hc: String(ed.id), hcb: String(ed.book_id)});
+		for (const ed of list('byAsin'))
+			if (ed.asin) put(out.asin, ed.asin, {hc: String(ed.id), hcb: String(ed.book_id)});
+		for (const ed of list('byIsbn'))
+			if (ed.isbn_13) put(out.isbn, ed.isbn_13, {hc: audio(ed) ? String(ed.id) : null, hcb: String(ed.book_id)});
+		for (const m of list('byGoodreads'))
+			if (m.external_id) put(out.gr, String(m.external_id), {hc: null, hcb: String(m.book_id)});
 		return out;
 	}
 
@@ -338,8 +386,11 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {unknown} t
 	 * @returns {string}
 	 */
-	static cleanKey(t){
-		return String(t || '').trim().replace(/^bearer\s+/i, '').trim();
+	static cleanKey(t) {
+		return String(t || '')
+			.trim()
+			.replace(/^bearer\s+/i, '')
+			.trim();
 	}
 
 	/**
@@ -351,17 +402,19 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {unknown} text
 	 * @returns {{book?: string, edition?: string, slug?: string} | null}
 	 */
-	static parseUrl(text){
-		const m = /^(?:https?:\/\/)?(?:www\.)?hardcover\.app(\/[^?#\s]*)?(?:[?#]\S*)?$/i.exec(String(text || '').trim());
-		if(!m) return null;
+	static parseUrl(text) {
+		const m = /^(?:https?:\/\/)?(?:www\.)?hardcover\.app(\/[^?#\s]*)?(?:[?#]\S*)?$/i.exec(
+			String(text || '').trim(),
+		);
+		if (!m) return null;
 		const [first, second, third, fourth] = (m[1] || '').split('/').filter(Boolean);
-		const id = (/** @type {string | undefined} */ x) => HARDCOVER_ID.test(x || '') ? x : null;
-		if(first === 'id' && id(third)){
-			if(/^books?$/.test(second)) return {book: third};
-			if(/^editions?$/.test(second)) return {edition: third};
+		const id = (/** @type {string | undefined} */ x) => (HARDCOVER_ID.test(x || '') ? x : null);
+		if (first === 'id' && id(third)) {
+			if (/^books?$/.test(second)) return {book: third};
+			if (/^editions?$/.test(second)) return {edition: third};
 		}
-		if(first === 'books' && second){
-			if(third === 'editions') return id(fourth) ? {edition: fourth, slug: second} : null;
+		if (first === 'books' && second) {
+			if (third === 'editions') return id(fourth) ? {edition: fourth, slug: second} : null;
 			return {slug: second};
 		}
 		return null;
@@ -376,22 +429,31 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {unknown} text
 	 * @returns {Promise<{id: string, title?: string}>}
 	 */
-	static async bookId(client, text){
+	static async bookId(client, text) {
 		const value = String(text || '').trim();
-		if(HARDCOVER_ID.test(value)) return {id: value};
+		if (HARDCOVER_ID.test(value)) return {id: value};
 		const url = HardcoverClient.parseUrl(value);
-		if(!url) throw new Error('not a Hardcover book id, or the address of a book or edition on hardcover.app');
-		if(url.book) return {id: url.book};
-		if(!client) throw new Error('finding the book of this address needs Hardcover');
-		if(url.edition){
-			const [edition] = (await client.ask(HardcoverClient.QUERIES.editionBook, {id: Number(url.edition)})).editions || [];
-			if(!Text.isObject(edition) || !Number.isInteger(edition.book_id)) throw new Error(`Hardcover has no edition ${url.edition}`);
-			return {id: String(edition.book_id), title: Text.isObject(edition.book) && typeof edition.book.title === 'string' ? edition.book.title : ''};
+		if (!url) throw new Error('not a Hardcover book id, or the address of a book or edition on hardcover.app');
+		if (url.book) return {id: url.book};
+		if (!client) throw new Error('finding the book of this address needs Hardcover');
+		if (url.edition) {
+			const [edition] =
+				(await client.ask(HardcoverClient.QUERIES.editionBook, {id: Number(url.edition)})).editions || [];
+			if (!Text.isObject(edition) || !Number.isInteger(edition.book_id))
+				throw new Error(`Hardcover has no edition ${url.edition}`);
+			return {
+				id: String(edition.book_id),
+				title: Text.isObject(edition.book) && typeof edition.book.title === 'string' ? edition.book.title : '',
+			};
 		}
 		const [book] = (await client.ask(HardcoverClient.QUERIES.bookBySlug, {slug: url.slug})).books || [];
-		if(!Text.isObject(book) || !Number.isInteger(book.id)) throw new Error(`Hardcover has no book at hardcover.app/books/${url.slug}`);
+		if (!Text.isObject(book) || !Number.isInteger(book.id))
+			throw new Error(`Hardcover has no book at hardcover.app/books/${url.slug}`);
 		// a book merged into another one lives on as that one
-		return {id: String(Number.isInteger(book.canonical_id) ? book.canonical_id : book.id), title: typeof book.title === 'string' ? book.title : ''};
+		return {
+			id: String(Number.isInteger(book.canonical_id) ? book.canonical_id : book.id),
+			title: typeof book.title === 'string' ? book.title : '',
+		};
 	}
 
 	/**
@@ -403,14 +465,22 @@ export class HardcoverClient extends CatalogClient {
 	 * @param {string} slug
 	 * @returns {Promise<{id: string, name: string} | null>}
 	 */
-	static async idBySlug(client, kind, slug){
-		const [query, table] = kind === 'series' ? [HardcoverClient.QUERIES.seriesBySlug, 'series']
-			: kind === 'publisher' ? [HardcoverClient.QUERIES.publisherBySlug, 'publishers'] : [HardcoverClient.QUERIES.authorBySlug, 'authors'];
+	static async idBySlug(client, kind, slug) {
+		const [query, table] =
+			kind === 'series'
+				? [HardcoverClient.QUERIES.seriesBySlug, 'series']
+				: kind === 'publisher'
+					? [HardcoverClient.QUERIES.publisherBySlug, 'publishers']
+					: [HardcoverClient.QUERIES.authorBySlug, 'authors'];
 		const [row] = (await client.ask(query, {slug}))[table] || [];
 		// a publisher's id is a bigint, which Hardcover may send as text
-		const number = (/** @type {unknown} */ x) => Number.isInteger(x) || (typeof x === 'string' && HARDCOVER_ID.test(x)) ? String(x) : null;
-		if(!Text.isObject(row) || !number(row.id)) return null;
+		const number = (/** @type {unknown} */ x) =>
+			Number.isInteger(x) || (typeof x === 'string' && HARDCOVER_ID.test(x)) ? String(x) : null;
+		if (!Text.isObject(row) || !number(row.id)) return null;
 		// one merged into another lives on as that one
-		return {id: /** @type {string} */ (number(row.canonical_id) || number(row.id)), name: typeof row.name === 'string' ? row.name : ''};
+		return {
+			id: /** @type {string} */ (number(row.canonical_id) || number(row.id)),
+			name: typeof row.name === 'string' ? row.name : '',
+		};
 	}
 }

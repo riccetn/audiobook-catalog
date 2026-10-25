@@ -19,14 +19,16 @@ export class FileExporter {
 	static TYPE = 'text/csv';
 
 	/** @returns {typeof FileExporter} the exporter's class, with what it says of its file */
-	get kind(){ return /** @type {typeof FileExporter} */ (this.constructor); }
+	get kind() {
+		return /** @type {typeof FileExporter} */ (this.constructor);
+	}
 
 	/**
 	 * Write `books` into the file.
 	 * @param {Book[]} _books
 	 * @returns {ExportResult}
 	 */
-	write(_books){
+	write(_books) {
 		throw new Error(`${this.kind.LABEL}: write is not written`);
 	}
 }

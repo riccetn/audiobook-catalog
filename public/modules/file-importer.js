@@ -21,22 +21,24 @@ export class FileImporter {
 	 * @param {string} [site] the site of the catalog the export is from, for a catalog with several (Audible's);
 	 *   its panel's `<CATALOG>ImportSite` field picks it
 	 */
-	constructor(site){
+	constructor(site) {
 		this.site = site || '';
 	}
 
 	/** @returns {string} a short name for the export, for the page */
-	get label(){ return /** @type {typeof FileImporter} */ (this.constructor).LABEL; }
+	get label() {
+		return /** @type {typeof FileImporter} */ (this.constructor).LABEL;
+	}
 
 	/**
 	 * Read the text of an export.
 	 * @param {unknown} text
 	 * @returns {ReadResult}
 	 */
-	read(text){
+	read(text) {
 		/** @type {ReadResult} */
 		const result = {books: [], warnings: [], skippedUnfinished: 0};
-		for(const row of Csv.parse(text)) this.readRow(row, result);
+		for (const row of Csv.parse(text)) this.readRow(row, result);
 		return result;
 	}
 
@@ -45,7 +47,7 @@ export class FileImporter {
 	 * @param {CsvRow} _row
 	 * @param {ReadResult} _result
 	 */
-	readRow(_row, _result){
+	readRow(_row, _result) {
 		throw new Error(`${this.label}: readRow is not written`);
 	}
 }

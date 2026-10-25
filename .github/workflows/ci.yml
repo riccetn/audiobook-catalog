@@ -13,6 +13,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: npm ci             # Liquid for the pages, TypeScript, the type checker, and ESLint
-      - run: make check         # the pages, the tests, the type check and lint, as on your own machine
-      - run: make docs          # the API documentation, so a change that breaks it fails here rather than on publishing
+      - run: npm ci # Liquid for the pages, TypeScript, the type checker, ESLint and Prettier
+      - run: make check # the pages, the tests, the type check, lint and the format check, as on your own machine
+      - run: make docs # the API documentation, so a change that breaks it fails here rather than on publishing

@@ -34,14 +34,22 @@ import {CatalogConnectors} from './modules/catalog-connectors.js';
  */
 
 // British spelling ("catalogue") when the browser's first English language is a British one, else American.
-const BRITISH = (() => { try{ return Text.prefersBritish(navigator.languages || [navigator.language]); }catch{ return false; } })();
+const BRITISH = (() => {
+	try {
+		return Text.prefersBritish(navigator.languages || [navigator.language]);
+	} catch {
+		return false;
+	}
+})();
 
 /**
  * The page's own text in the spelling this browser prefers (see BRITISH); never a book's title or other data.
  * @param {string} text
  * @returns {string}
  */
-export function spell(text){ return Text.spelled(text, BRITISH); }
+export function spell(text) {
+	return Text.spelled(text, BRITISH);
+}
 
 // Attributes of the page's own elements that hold text a reader sees.
 const TEXT_ATTRIBUTES = ['title', 'placeholder', 'aria-label', 'alt'];
@@ -50,14 +58,14 @@ const TEXT_ATTRIBUTES = ['title', 'placeholder', 'aria-label', 'alt'];
  * Respell the text in `node` and below, in place (see spell).
  * @param {Node} node
  */
-function respell(node){
-	for(const child of node.childNodes){
-		if(child.nodeType === Node.TEXT_NODE) child.nodeValue = spell(child.nodeValue || '');
-		else if(child.nodeType === Node.ELEMENT_NODE){
+function respell(node) {
+	for (const child of node.childNodes) {
+		if (child.nodeType === Node.TEXT_NODE) child.nodeValue = spell(child.nodeValue || '');
+		else if (child.nodeType === Node.ELEMENT_NODE) {
 			const el = /** @type {Element} */ (child);
-			for(const name of TEXT_ATTRIBUTES){
+			for (const name of TEXT_ATTRIBUTES) {
 				const value = el.getAttribute(name);
-				if(value !== null) el.setAttribute(name, spell(value));
+				if (value !== null) el.setAttribute(name, spell(value));
 			}
 			respell(el);
 		}
@@ -66,7 +74,7 @@ function respell(node){
 
 // The page as written is American, so respell it before the page's module finds its elements and
 // fills them in; at this point it holds only the page's own text.
-if(BRITISH){
+if (BRITISH) {
 	document.title = spell(document.title);
 	respell(document.body);
 }
@@ -82,12 +90,13 @@ if(BRITISH){
  * @param {Child[]} children
  * @returns {(Node | string)[]}
  */
-export function nodes(children){
+export function nodes(children) {
 	/** @type {(Node | string)[]} */
 	const out = [];
-	for(const c of children){
-		if(Array.isArray(c)) out.push(...nodes(c));
-		else if(c !== null && c !== undefined && c !== false && c !== '') out.push(typeof c === 'number' ? String(c) : c);
+	for (const c of children) {
+		if (Array.isArray(c)) out.push(...nodes(c));
+		else if (c !== null && c !== undefined && c !== false && c !== '')
+			out.push(typeof c === 'number' ? String(c) : c);
 	}
 	return out;
 }
@@ -102,12 +111,12 @@ export function nodes(children){
  * @param {...Child} children
  * @returns {HTMLElementTagNameMap[K]}
  */
-export function buildElement(tag, attrs = {}, ...children){
+export function buildElement(tag, attrs = {}, ...children) {
 	const el = document.createElement(tag);
-	for(const [name, value] of Object.entries(attrs)){
-		if(typeof value === 'function') el.addEventListener(name.slice(2), value);
-		else if(value === true) el.setAttribute(name, '');
-		else if(value !== null && value !== undefined && value !== false) el.setAttribute(name, String(value));
+	for (const [name, value] of Object.entries(attrs)) {
+		if (typeof value === 'function') el.addEventListener(name.slice(2), value);
+		else if (value === true) el.setAttribute(name, '');
+		else if (value !== null && value !== undefined && value !== false) el.setAttribute(name, String(value));
 	}
 	el.append(...nodes(children));
 	return el;
@@ -118,7 +127,9 @@ export function buildElement(tag, attrs = {}, ...children){
  * @param {Element} el
  * @param {...Child} children
  */
-export function fillElement(el, ...children){ el.replaceChildren(...nodes(children)); }
+export function fillElement(el, ...children) {
+	el.replaceChildren(...nodes(children));
+}
 
 /**
  * `items` with `separator` between each two, as children for buildElement() or fillElement(): links joined with ', '.
@@ -126,43 +137,49 @@ export function fillElement(el, ...children){ el.replaceChildren(...nodes(childr
  * @param {string} separator
  * @returns {Child[]}
  */
-export function joined(items, separator){ return items.flatMap((x, i)=> i ? [separator, x] : [x]); }
+export function joined(items, separator) {
+	return items.flatMap((x, i) => (i ? [separator, x] : [x]));
+}
 
 /**
  * A value as an address after the # writes it: encoded, with spaces as +.
  * @type {(v: string) => string}
  */
-export const hashValue = v=> encodeURIComponent(v).replace(/%20/g, '+');
+export const hashValue = v => encodeURIComponent(v).replace(/%20/g, '+');
 // The addresses of an author's, a narrator's and a publisher's page: by the id they are stored under, so a
 // link holds while their name is spelled another way.
 /** @type {Record<ContributorKind, [string, string]>} */
-const CREDIT_PAGES = {authors: ['author.html', '#a='], narrators: ['narrator.html', '#n='], publishers: ['publisher.html', '#p=']};
+const CREDIT_PAGES = {
+	authors: ['author.html', '#a='],
+	narrators: ['narrator.html', '#n='],
+	publishers: ['publisher.html', '#p='],
+};
 /**
  * The address of the page of the author, narrator or publisher stored under `id`.
  * @param {ContributorKind} kind
  * @param {string} id
  * @returns {string}
  */
-export const creditPageHref = (kind, id)=> pageHref(CREDIT_PAGES[kind][0], CREDIT_PAGES[kind][1] + hashValue(id));
+export const creditPageHref = (kind, id) => pageHref(CREDIT_PAGES[kind][0], CREDIT_PAGES[kind][1] + hashValue(id));
 /**
  * The address of someone's page, by name: their id when the page holds it, else their name, which their page
  * looks up. Never a new id: a page holding only some of the catalog would make up one no record has.
  * @type {(kind: ContributorKind, name: string) => string}
  */
-const namedPageHref = (kind, name)=> creditPageHref(kind, CATALOG.nameIds[kind].get(name) ?? name);
+const namedPageHref = (kind, name) => creditPageHref(kind, CATALOG.nameIds[kind].get(name) ?? name);
 /** @type {(name: string) => string} */
-export const authorPageHref = name=> namedPageHref('authors', name);
+export const authorPageHref = name => namedPageHref('authors', name);
 /** @type {(name: string) => string} */
-export const narratorPageHref = name=> namedPageHref('narrators', name);
+export const narratorPageHref = name => namedPageHref('narrators', name);
 /** @type {(name: string) => string} */
-export const publisherPageHref = name=> namedPageHref('publishers', name);
+export const publisherPageHref = name => namedPageHref('publishers', name);
 /**
  * The address of `file` showing `hash`: only the hash on that page itself, so the page shows it without loading again.
  * @param {string} file
  * @param {string} hash
  * @returns {string}
  */
-function pageHref(file, hash){
+function pageHref(file, hash) {
 	const here = typeof location === 'object' ? location.pathname || '' : '';
 	return (here.endsWith('/' + file) || (file === 'index.html' && here.endsWith('/')) ? '' : file) + hash;
 }
@@ -170,14 +187,14 @@ function pageHref(file, hash){
  * The address of a book's page, by the id it is stored under.
  * @type {(id: string) => string}
  */
-export const bookPageHref = id=> pageHref('book.html', '#book=' + hashValue(id));
+export const bookPageHref = id => pageHref('book.html', '#book=' + hashValue(id));
 /**
  * The address of a series' page (its books), by the id it is stored under.
  * @type {(id: string) => string}
  */
-export const seriesPageHref = id=> pageHref('index.html', '#series=' + hashValue(id));
+export const seriesPageHref = id => pageHref('index.html', '#series=' + hashValue(id));
 /** The address of the page of the books in no series. */
-export const standalonePageHref = ()=> pageHref('index.html', '#standalone');
+export const standalonePageHref = () => pageHref('index.html', '#standalone');
 /**
  * The address that compares a series' or an author's books with a catalog's shelves on the Import & export page
  * (`import.html#hardcover-series=<id>`).
@@ -186,7 +203,7 @@ export const standalonePageHref = ()=> pageHref('index.html', '#standalone');
  * @param {string} id the series' or the author's
  * @returns {string}
  */
-export const shelfCompareHref = (catalog, kind, id)=> `import.html#${catalog}-${kind}=` + hashValue(id);
+export const shelfCompareHref = (catalog, kind, id) => `import.html#${catalog}-${kind}=` + hashValue(id);
 
 /**
  * Links that compare a series' or an author's books with each catalog's shelves (CatalogConnectors.SYNCS),
@@ -196,9 +213,17 @@ export const shelfCompareHref = (catalog, kind, id)=> `import.html#${catalog}-${
  * @param {(label: string) => string} words
  * @returns {Child[]}
  */
-export function shelfCompareLinks(kind, id, words){
-	return joined(CatalogConnectors.CLIENTS.map(Client=> buildElement('a', {class: `${Client.CATALOG}Compare`, href: shelfCompareHref(Client.CATALOG, kind, id)},
-		words(Client.LABEL))), ' ');
+export function shelfCompareLinks(kind, id, words) {
+	return joined(
+		CatalogConnectors.CLIENTS.map(Client =>
+			buildElement(
+				'a',
+				{class: `${Client.CATALOG}Compare`, href: shelfCompareHref(Client.CATALOG, kind, id)},
+				words(Client.LABEL),
+			),
+		),
+		' ',
+	);
 }
 
 /**
@@ -207,11 +232,15 @@ export function shelfCompareLinks(kind, id, words){
  * @param {string} key
  * @returns {string | null}
  */
-export function valueFromPageHash(hash, key){
+export function valueFromPageHash(hash, key) {
 	const m = new RegExp(`^#${key}=(.*)$`).exec(String(hash || ''));
-	if(!m) return null;
+	if (!m) return null;
 	let value = m[1].replace(/\+/g, ' ');
-	try{ value = decodeURIComponent(value); }catch{ /* not encoded: kept as written */ }
+	try {
+		value = decodeURIComponent(value);
+	} catch {
+		/* not encoded: kept as written */
+	}
 	return value.trim() || null;
 }
 
@@ -222,9 +251,9 @@ export function valueFromPageHash(hash, key){
  * @param {string | null} value
  * @returns {string | null}
  */
-export function idFromAddress(kind, value){
-	if(value === null) return null;
-	if(CATALOG.nameOf(kind, value) !== undefined) return value;
+export function idFromAddress(kind, value) {
+	if (value === null) return null;
+	if (CATALOG.nameOf(kind, value) !== undefined) return value;
 	return CATALOG.nameIds[kind].get(value) ?? null;
 }
 
@@ -232,24 +261,24 @@ export function idFromAddress(kind, value){
 // import confirmed) moves it in with CATALOG.replaceWith().
 export const CATALOG = new Catalog();
 /** @type {number | null} */
-export let SEEN_REVISION = null;      // the revision of the stored catalog this page last read or wrote; null while none was ever saved
+export let SEEN_REVISION = null; // the revision of the stored catalog this page last read or wrote; null while none was ever saved
 
 /** @type {CatalogDatabase | null} */
 let DATABASE = null;
 /** @type {Snapshot} */
-let SAVED = new Map();               // the records as this page last read or wrote them, so a save writes only what changed
-let SAVE_REFUSED = '';                // why nothing can be saved in this browser, when nothing can
+let SAVED = new Map(); // the records as this page last read or wrote them, so a save writes only what changed
+let SAVE_REFUSED = ''; // why nothing can be saved in this browser, when nothing can
 /** @type {Promise<void>} */
-let SAVING = Promise.resolve();       // the saves asked for, one after another
+let SAVING = Promise.resolve(); // the saves asked for, one after another
 /** @type {Promise<void>} */
-let COUNTING = Promise.resolve();     // what waits for the saves: the Duplicates link's count, and pages drawn again (afterSaving)
-let READING = Promise.resolve();      // the reads pages wait on (see reading())
+let COUNTING = Promise.resolve(); // what waits for the saves: the Duplicates link's count, and pages drawn again (afterSaving)
+let READING = Promise.resolve(); // the reads pages wait on (see reading())
 let STARTUP_NOTICE = '';
 // A page holds only what it shows (loadRecords() brings in more), unless it asked for the whole catalog
 // (startPage's `whole`, or wholeCatalog()); a page in a browser without IndexedDB holds all of it.
 let WHOLE = false;
 /** @type {Map<string, number>} */
-let POSITIONS = new Map();            // the place among all the books of each book loaded, while not WHOLE
+let POSITIONS = new Map(); // the place among all the books of each book loaded, while not WHOLE
 
 // The page's own hooks, from startPage(): onCatalogJob(job), when the page has it, does more with each
 // update of a Hardcover or AudiobookDB run (see showCatalogJob); redrawPage() draws the page again when a save took in
@@ -260,8 +289,12 @@ let onCatalogJob = null;
 let redrawPage = null;
 
 /** @returns {Promise<number | null>} the revision of the catalog as it is stored now (another tab may have saved since) */
-export async function storedRevision(){
-	try{ return DATABASE ? await DATABASE.revision() : null; }catch{ return null; }
+export async function storedRevision() {
+	try {
+		return DATABASE ? await DATABASE.revision() : null;
+	} catch {
+		return null;
+	}
 }
 
 // When this browser last downloaded (or restored) a backup, and the catalog's revision then, so the pages can say
@@ -269,18 +302,24 @@ export async function storedRevision(){
 const BACKUP_KEY = 'audiobook-catalog-last-backup';
 
 /** @returns {{time: string, revision: number | null} | null} the last backup this browser noted, if any */
-function lastBackup(){
-	try{
+function lastBackup() {
+	try {
 		const v = JSON.parse(localStorage.getItem(BACKUP_KEY) || 'null');
 		return v && typeof v.time === 'string' && !isNaN(Date.parse(v.time)) ? v : null;
-	}catch{ return null; }
+	} catch {
+		return null;
+	}
 }
 
 /** Note that the catalog as stored now is in a backup (one just downloaded or restored). */
-export async function noteBackup(){
+export async function noteBackup() {
 	await whenSaved();
 	const revision = await storedRevision();
-	try{ localStorage.setItem(BACKUP_KEY, JSON.stringify({time: new Date().toISOString(), revision})); }catch{ /* the backup just goes unnoted */ }
+	try {
+		localStorage.setItem(BACKUP_KEY, JSON.stringify({time: new Date().toISOString(), revision}));
+	} catch {
+		/* the backup just goes unnoted */
+	}
 }
 
 /**
@@ -288,11 +327,13 @@ export async function noteBackup(){
  * @param {number} [now]
  * @returns {Promise<{days: number | null, changes: number}>}
  */
-export async function backupAge(now = Date.now()){
+export async function backupAge(now = Date.now()) {
 	const last = lastBackup();
-	const revision = await storedRevision() || 0;
-	return {days: last ? Math.max(0, Math.floor((now - Date.parse(last.time)) / 86400000)) : null,
-		changes: Math.max(0, revision - (last && last.revision || 0))};
+	const revision = (await storedRevision()) || 0;
+	return {
+		days: last ? Math.max(0, Math.floor((now - Date.parse(last.time)) / 86400000)) : null,
+		changes: Math.max(0, revision - ((last && last.revision) || 0)),
+	};
 }
 
 /**
@@ -300,10 +341,13 @@ export async function backupAge(now = Date.now()){
  * @param {{days: number | null, changes: number}} age
  * @returns {string}
  */
-export function backupAgeText({days, changes}){
-	if(days === null) return 'No backup downloaded in this browser yet.';
+export function backupAgeText({days, changes}) {
+	if (days === null) return 'No backup downloaded in this browser yet.';
 	const when = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
-	return `Last backup ${when}; ` + (changes ? `${Text.plural(changes, 'change')} saved since.` : 'nothing changed since.');
+	return (
+		`Last backup ${when}; ` +
+		(changes ? `${Text.plural(changes, 'change')} saved since.` : 'nothing changed since.')
+	);
 }
 
 /**
@@ -312,10 +356,13 @@ export function backupAgeText({days, changes}){
  * @param {{days: number | null, changes: number}} age
  * @returns {boolean}
  */
-export const needsBackup = ({days, changes})=> changes > 0 && (days === null ? changes >= 10 : days >= 14 || changes >= 50);
+export const needsBackup = ({days, changes}) =>
+	changes > 0 && (days === null ? changes >= 10 : days >= 14 || changes >= 50);
 
 /** @returns {Promise<void>} when the saves asked for so far are done, and the Duplicates link counted after them */
-export function whenSaved(){ return Promise.all([SAVING, COUNTING, READING]).then(() => {}); }
+export function whenSaved() {
+	return Promise.all([SAVING, COUNTING, READING]).then(() => {});
+}
 
 /**
  * Note a read the page waits on (loadRecords and the like), so whenSaved() waits for it too.
@@ -323,7 +370,7 @@ export function whenSaved(){ return Promise.all([SAVING, COUNTING, READING]).the
  * @param {Promise<T>} read
  * @returns {Promise<T>}
  */
-function reading(read){
+function reading(read) {
 	READING = Promise.all([READING, read.catch(() => {})]).then(() => {});
 	return read;
 }
@@ -333,21 +380,28 @@ function reading(read){
  * @param {Catalog} catalog
  * @returns {number}
  */
-function duplicateCount(catalog){
+function duplicateCount(catalog) {
 	const duplicates = catalog.duplicates();
 	return duplicates.groups().length + duplicates.splitEditions().length;
 }
 
 /** @param {number | null} n how many, or null while that isn't known */
-function showDuplicateCount(n){ byId('dupCount').textContent = n ? ` (${n})` : ''; }
+function showDuplicateCount(n) {
+	byId('dupCount').textContent = n ? ` (${n})` : '';
+}
 
 // The page links: the duplicates link says how many duplicates and books with split editions there are.
 // That takes every book, so a page that holds only some shows the count kept with the revision it was
 // counted at; when the catalog changed since, it counts again after the page is drawn, reading every
 // book but keeping none, and keeps the count for the next page.
-export function updateNav(){
-	if(WHOLE){ showDuplicateCount(duplicateCount(CATALOG)); return; }
-	COUNTING = COUNTING.then(() => SAVING).then(countDuplicates).catch(() => {});
+export function updateNav() {
+	if (WHOLE) {
+		showDuplicateCount(duplicateCount(CATALOG));
+		return;
+	}
+	COUNTING = COUNTING.then(() => SAVING)
+		.then(countDuplicates)
+		.catch(() => {});
 }
 
 /**
@@ -356,20 +410,33 @@ export function updateNav(){
  * @param {() => Promise<void> | void} task
  * @returns {Promise<void>}
  */
-export function afterSaving(task){
-	const run = COUNTING.then(() => SAVING).then(task).catch(e => showIoStatus(spell(`Couldn't read the catalog kept in this browser: ${Text.errorText(e)}. Reload the page.`), true));
+export function afterSaving(task) {
+	const run = COUNTING.then(() => SAVING)
+		.then(task)
+		.catch(e =>
+			showIoStatus(
+				spell(`Couldn't read the catalog kept in this browser: ${Text.errorText(e)}. Reload the page.`),
+				true,
+			),
+		);
 	COUNTING = run;
 	return run;
 }
 
-async function countDuplicates(){
-	if(!DATABASE) return;
+async function countDuplicates() {
+	if (!DATABASE) return;
 	const [kept, revision] = await Promise.all([DATABASE.duplicateCount(), DATABASE.revision()]);
-	if(revision === null){ showDuplicateCount(0); return; }
-	if(kept && kept.revision === revision){ showDuplicateCount(kept.count); return; }
+	if (revision === null) {
+		showDuplicateCount(0);
+		return;
+	}
+	if (kept && kept.revision === revision) {
+		showDuplicateCount(kept.count);
+		return;
+	}
 	showDuplicateCount(null);
 	const stored = await DATABASE.load();
-	if(!stored) return;
+	if (!stored) return;
 	const n = duplicateCount(CatalogRecords.toCatalog(stored.records));
 	showDuplicateCount(n);
 	await DATABASE.keepDuplicateCount(stored.revision, n);
@@ -380,7 +447,8 @@ async function countDuplicates(){
  * or NEW_POSITION for one it added (the save puts it after the others).
  * @type {(b: Book, index: number) => number}
  */
-const positionOf = (b, index) => WHOLE ? index : POSITIONS.get(/** @type {string} */ (b.id)) ?? CatalogRecords.NEW_POSITION;
+const positionOf = (b, index) =>
+	WHOLE ? index : (POSITIONS.get(/** @type {string} */ (b.id)) ?? CatalogRecords.NEW_POSITION);
 
 /** @returns {RecordSet} the records of what the page holds now */
 const recordsNow = () => CatalogRecords.fromCatalog(CATALOG, undefined, WHOLE ? undefined : positionOf);
@@ -415,26 +483,65 @@ const loaded = (store, key) => !!(SAVED.get(store) || new Map()).has(JSON.string
  * @param {(store: StoreName, key: IDBValidKey) => boolean} has
  * @returns {Promise<RecordSet>}
  */
-async function readWanted(r, want, has){
+async function readWanted(r, want, has) {
 	const bookIds = new Set(want.books || []);
-	const seriesBooks = [...want.seriesBooks || []];
-	for(const name of want.seriesNamed || []) for(const rec of await r.all('series', 'name', name)) seriesBooks.push(rec.id);
-	for(const key of want.editionKeys || []) for(const ed of await r.all('editions', 'idKeys', key)) for(const id of ed.bookIds) bookIds.add(id);
-	for(const id of seriesBooks) for(const key of await r.allKeys('books', 'bySeries', r.keyRange.bound([id], [id, []]))) bookIds.add(/** @type {string} */ (key));
+	const seriesBooks = [...(want.seriesBooks || [])];
+	for (const name of want.seriesNamed || [])
+		for (const rec of await r.all('series', 'name', name)) seriesBooks.push(rec.id);
+	for (const key of want.editionKeys || [])
+		for (const ed of await r.all('editions', 'idKeys', key)) for (const id of ed.bookIds) bookIds.add(id);
+	for (const id of seriesBooks)
+		for (const key of await r.allKeys('books', 'bySeries', r.keyRange.bound([id], [id, []])))
+			bookIds.add(/** @type {string} */ (key));
 	/** @type {(store: StoreName, ids: Iterable<string>) => string[]} */
 	const lacking = (store, ids) => [...new Set(ids)].filter(id => !has(store, id));
 	/** @type {import('./modules/catalog-records.js').BookRecord[]} */
 	const books = await r.get('books', lacking('books', bookIds));
 	/** @type {import('./modules/catalog-records.js').EditionRecord[]} */
-	const editions = await r.get('editions', lacking('editions', books.flatMap(b => b.editionIds)));
-	const others = await r.get('books', lacking('books', editions.flatMap(ed => ed.bookIds)).filter(id => !bookIds.has(id)));
+	const editions = await r.get(
+		'editions',
+		lacking(
+			'editions',
+			books.flatMap(b => b.editionIds),
+		),
+	);
+	const others = await r.get(
+		'books',
+		lacking(
+			'books',
+			editions.flatMap(ed => ed.bookIds),
+		).filter(id => !bookIds.has(id)),
+	);
 	const seen = new Set(editions.map(ed => ed.id));
-	editions.push(...await r.get('editions', lacking('editions', others.flatMap(b => b.editionIds)).filter(id => !seen.has(id))));
+	editions.push(
+		...(await r.get(
+			'editions',
+			lacking(
+				'editions',
+				others.flatMap(b => b.editionIds),
+			).filter(id => !seen.has(id)),
+		)),
+	);
 	books.push(...others);
-	const series = lacking('series', [...books.map(b => b.seriesId).filter(x => x !== undefined), ...seriesBooks, ...want.series || []]);
-	const people = lacking('contributors', [...books.flatMap(b => b.authorIds), ...editions.flatMap(ed => [...ed.narratorIds, ...ed.publisherId ? [ed.publisherId] : []]),
-		...want.contributors || []]);
-	return {books, editions, series: await r.get('series', series), contributors: await r.get('contributors', people), credits: [], marks: [], exclusions: []};
+	const series = lacking('series', [
+		...books.map(b => b.seriesId).filter(x => x !== undefined),
+		...seriesBooks,
+		...(want.series || []),
+	]);
+	const people = lacking('contributors', [
+		...books.flatMap(b => b.authorIds),
+		...editions.flatMap(ed => [...ed.narratorIds, ...(ed.publisherId ? [ed.publisherId] : [])]),
+		...(want.contributors || []),
+	]);
+	return {
+		books,
+		editions,
+		series: await r.get('series', series),
+		contributors: await r.get('contributors', people),
+		credits: [],
+		marks: [],
+		exclusions: [],
+	};
 }
 
 /**
@@ -442,21 +549,24 @@ async function readWanted(r, want, has){
  * already stays as the page has it.
  * @param {RecordSet} records
  */
-function takeIn(records){
+function takeIn(records) {
 	const now = recordsNow();
 	/** @type {Record<string, any[]>} */
 	const combined = {};
-	for(const store of CatalogRecords.STORE_NAMES){
+	for (const store of CatalogRecords.STORE_NAMES) {
 		const mine = /** @type {Record<string, any>[]} */ (now[store]);
 		const keys = new Set(mine.map(rec => JSON.stringify(CatalogRecords.keyOf(store, rec))));
-		const fresh = /** @type {Record<string, any>[]} */ (records[store]).filter(rec => !keys.has(JSON.stringify(CatalogRecords.keyOf(store, rec))));
+		const fresh = /** @type {Record<string, any>[]} */ (records[store]).filter(
+			rec => !keys.has(JSON.stringify(CatalogRecords.keyOf(store, rec))),
+		);
 		combined[store] = [...mine, ...fresh];
-		if(!CatalogRecords.DERIVED[store]) continue;
-		if(!SAVED.has(store)) SAVED.set(store, new Map());
+		if (!CatalogRecords.DERIVED[store]) continue;
+		if (!SAVED.has(store)) SAVED.set(store, new Map());
 		const saved = /** @type {Map<string, string>} */ (SAVED.get(store));
-		for(const rec of fresh) saved.set(JSON.stringify(CatalogRecords.keyOf(store, rec)), CatalogRecords.ownText(store, rec));
+		for (const rec of fresh)
+			saved.set(JSON.stringify(CatalogRecords.keyOf(store, rec)), CatalogRecords.ownText(store, rec));
 	}
-	for(const b of records.books) if(!POSITIONS.has(b.id)) POSITIONS.set(b.id, b.position);
+	for (const b of records.books) if (!POSITIONS.has(b.id)) POSITIONS.set(b.id, b.position);
 	CATALOG.replaceWith(CatalogRecords.toCatalog(/** @type {RecordSet} */ (/** @type {unknown} */ (combined))));
 	CATALOG.assignIds();
 }
@@ -467,14 +577,16 @@ function takeIn(records){
  * @param {Wanted} want
  * @returns {Promise<void>}
  */
-export function loadRecords(want){
-	return reading((async () => {
-		if(WHOLE || !DATABASE) return;
-		await SAVING;
-		const db = DATABASE;
-		const {result} = await db.read(r => readWanted(r, want, loaded));
-		takeIn(result);
-	})());
+export function loadRecords(want) {
+	return reading(
+		(async () => {
+			if (WHOLE || !DATABASE) return;
+			await SAVING;
+			const db = DATABASE;
+			const {result} = await db.read(r => readWanted(r, want, loaded));
+			takeIn(result);
+		})(),
+	);
 }
 
 /**
@@ -484,30 +596,34 @@ export function loadRecords(want){
  * @param {(reader: CatalogReader) => Promise<T>} ask
  * @returns {Promise<T>}
  */
-export function queryCatalog(ask){
-	return reading((async () => {
-		await SAVING;
-		if(DATABASE && !WHOLE) return (await DATABASE.read(ask)).result;
-		return ask(/** @type {CatalogReader} */ (/** @type {unknown} */ (new MemoryReader(recordsNow()))));
-	})());
+export function queryCatalog(ask) {
+	return reading(
+		(async () => {
+			await SAVING;
+			if (DATABASE && !WHOLE) return (await DATABASE.read(ask)).result;
+			return ask(/** @type {CatalogReader} */ (/** @type {unknown} */ (new MemoryReader(recordsNow()))));
+		})(),
+	);
 }
 
 /**
  * Hold the whole catalog from now on (an import, Check or Export needs every book), once the saves asked for are done.
  * @returns {Promise<void>}
  */
-export function wholeCatalog(){
-	return reading((async () => {
-		if(WHOLE || !DATABASE) return;
-		await SAVING;
-		const stored = await DATABASE.load();
-		CATALOG.replaceWith(stored ? CatalogRecords.toCatalog(stored.records) : new Catalog());
-		CATALOG.assignIds();
-		SAVED = stored ? CatalogRecords.snapshot(stored.records) : new Map();
-		if(stored) SEEN_REVISION = stored.revision;
-		POSITIONS = new Map();
-		WHOLE = true;
-	})());
+export function wholeCatalog() {
+	return reading(
+		(async () => {
+			if (WHOLE || !DATABASE) return;
+			await SAVING;
+			const stored = await DATABASE.load();
+			CATALOG.replaceWith(stored ? CatalogRecords.toCatalog(stored.records) : new Catalog());
+			CATALOG.assignIds();
+			SAVED = stored ? CatalogRecords.snapshot(stored.records) : new Map();
+			if (stored) SEEN_REVISION = stored.revision;
+			POSITIONS = new Map();
+			WHOLE = true;
+		})(),
+	);
 }
 
 /**
@@ -516,33 +632,55 @@ export function wholeCatalog(){
  * record's info, so the save adds no second one.
  * @returns {Promise<void>}
  */
-async function takeInNamesTyped(){
-	if(WHOLE || !DATABASE) return;
+async function takeInNamesTyped() {
+	if (WHOLE || !DATABASE) return;
 	/** @type {{kind: import('./modules/catalog.js').NamedKind, name: string}[]} */
 	const ask = [];
-	for(const kind of Catalog.NAMED_KINDS){
+	for (const kind of Catalog.NAMED_KINDS) {
 		const store = kind === 'series' ? 'series' : 'contributors';
-		for(const name of CATALOG.namesOf(kind)){
+		for (const name of CATALOG.namesOf(kind)) {
 			const id = CATALOG.nameIds[kind].get(name);
-			if(id === undefined || !loaded(store, id)) ask.push({kind, name});
+			if (id === undefined || !loaded(store, id)) ask.push({kind, name});
 		}
 	}
-	if(!ask.length) return;
-	const {result} = await DATABASE.read(r => Promise.all(ask.map(({kind, name}) => kind === 'series' ? r.all('series', 'name', name) : r.all('contributors', 'kindName', [Contributor.ONE[kind], name]))));
+	if (!ask.length) return;
+	const {result} = await DATABASE.read(r =>
+		Promise.all(
+			ask.map(({kind, name}) =>
+				kind === 'series'
+					? r.all('series', 'name', name)
+					: r.all('contributors', 'kindName', [Contributor.ONE[kind], name]),
+			),
+		),
+	);
 	result.forEach((found, i) => {
 		const rec = found[0];
-		if(!rec) return;
-		const {kind, name} = ask[i], store = kind === 'series' ? 'series' : 'contributors';
-		const info = CATALOG.infoMap(kind), had = CATALOG.nameIds[kind].get(name);
+		if (!rec) return;
+		const {kind, name} = ask[i],
+			store = kind === 'series' ? 'series' : 'contributors';
+		const info = CATALOG.infoMap(kind),
+			had = CATALOG.nameIds[kind].get(name);
 		const typed = had === undefined ? undefined : info.get(had);
-		if(had !== undefined) info.delete(had);
+		if (had !== undefined) info.delete(had);
 		CATALOG.nameIds[kind].set(name, rec.id);
-		const stored = CatalogRecords.toCatalog({books: [], editions: [], series: store === 'series' ? [rec] : [], contributors: store === 'contributors' ? [rec] : [],
-			credits: [], marks: [], exclusions: []}).infoMap(kind).get(rec.id);
+		const stored = CatalogRecords.toCatalog({
+			books: [],
+			editions: [],
+			series: store === 'series' ? [rec] : [],
+			contributors: store === 'contributors' ? [rec] : [],
+			credits: [],
+			marks: [],
+			exclusions: [],
+		})
+			.infoMap(kind)
+			.get(rec.id);
 		const entry = typed || stored;
-		if(entry) info.set(rec.id, entry);
-		if(!SAVED.has(store)) SAVED.set(store, new Map());
-		/** @type {Map<string, string>} */ (SAVED.get(store)).set(JSON.stringify(rec.id), CatalogRecords.ownText(store, rec));
+		if (entry) info.set(rec.id, entry);
+		if (!SAVED.has(store)) SAVED.set(store, new Map());
+		/** @type {Map<string, string>} */ (SAVED.get(store)).set(
+			JSON.stringify(rec.id),
+			CatalogRecords.ownText(store, rec),
+		);
 	});
 }
 
@@ -553,58 +691,82 @@ async function takeInNamesTyped(){
  * nothing is saved. Pages need not wait for it; it says on the status line when a save fails.
  * @returns {Promise<void>}
  */
-export function persist(){
-	CATALOG.assignIds();   // a book or name just added has its id before the page draws it again
+export function persist() {
+	CATALOG.assignIds(); // a book or name just added has its id before the page draws it again
 	SAVING = SAVING.then(saveNow);
 	updateNav();
 	return SAVING;
 }
 
-async function saveNow(){
-	if(!DATABASE){ showIoStatus(SAVE_REFUSED, true); return; }
+async function saveNow() {
+	if (!DATABASE) {
+		showIoStatus(SAVE_REFUSED, true);
+		return;
+	}
 	const unstorable = CatalogRecords.unstorable(CATALOG);
-	if(unstorable.length){
-		showIoStatus(spell(`Not saved: these values can't be kept, as they aren't what their field holds: ${Text.firstThree(unstorable, '; ')}. ` +
-			'Export a backup, fix them there (Check lists them) and Restore it.'), true);
+	if (unstorable.length) {
+		showIoStatus(
+			spell(
+				`Not saved: these values can't be kept, as they aren't what their field holds: ${Text.firstThree(unstorable, '; ')}. ` +
+					'Export a backup, fix them there (Check lists them) and Restore it.',
+			),
+			true,
+		);
 		return;
 	}
 	// another tab may save again while this page takes in its last save, so this page tries a few times
-	for(let tries = 1; ; tries++){
-		try{
+	for (let tries = 1; ; tries++) {
+		try {
 			await takeInNamesTyped();
-		}catch{
-			showIoStatus(spell('Not saved: the catalog kept in this browser could not be read. Reload the page.'), true);
+		} catch {
+			showIoStatus(
+				spell('Not saved: the catalog kept in this browser could not be read. Reload the page.'),
+				true,
+			);
 			return;
 		}
 		const records = recordsNow();
 		const changes = CatalogRecords.changes(SAVED, records);
-		if(!changes.count && SEEN_REVISION !== null) return;
-		try{
+		if (!changes.count && SEEN_REVISION !== null) return;
+		try {
 			const first = SEEN_REVISION === null;
 			const saved = await DATABASE.save(changes, SEEN_REVISION);
 			SEEN_REVISION = saved.revision;
 			SAVED = changes.snapshot;
 			// the books added have their place among all of them now
-			for(const rec of records.books){
+			for (const rec of records.books) {
 				const position = saved.positions.get(rec.id);
-				if(position === undefined) continue;
+				if (position === undefined) continue;
 				POSITIONS.set(rec.id, position);
-				/** @type {Map<string, string>} */ (SAVED.get('books')).set(JSON.stringify(rec.id), CatalogRecords.ownText('books', {...rec, position}));
+				/** @type {Map<string, string>} */ (SAVED.get('books')).set(
+					JSON.stringify(rec.id),
+					CatalogRecords.ownText('books', {...rec, position}),
+				);
 			}
-			if(first) setAsideOldCatalog();
-			if(WHOLE) await DATABASE.keepDuplicateCount(saved.revision, duplicateCount(CATALOG)).catch(() => {});
+			if (first) setAsideOldCatalog();
+			if (WHOLE) await DATABASE.keepDuplicateCount(saved.revision, duplicateCount(CATALOG)).catch(() => {});
 			return;
-		}catch(e){
-			if(!(e instanceof CatalogConflict)){
+		} catch (e) {
+			if (!(e instanceof CatalogConflict)) {
 				// nothing else holds this catalog, so say so instead of losing the edit quietly
-				showIoStatus(spell('Not saved: this browser refused to store the catalog (is its storage full?). Export a backup.'), true);
+				showIoStatus(
+					spell(
+						'Not saved: this browser refused to store the catalog (is its storage full?). Export a backup.',
+					),
+					true,
+				);
 				return;
 			}
 			const both = tries < 3 ? await catchUp() : [];
-			if(both){
-				showIoStatus(spell(both.length
-					? `Not saved: ${Text.firstThree(both)} changed in another tab too. Reload this page to see that, then make this change again.`
-					: 'The catalog was changed in another tab. Reload this page to see that; this change was not saved.'), true);
+			if (both) {
+				showIoStatus(
+					spell(
+						both.length
+							? `Not saved: ${Text.firstThree(both)} changed in another tab too. Reload this page to see that, then make this change again.`
+							: 'The catalog was changed in another tab. Reload this page to see that; this change was not saved.',
+					),
+					true,
+				);
 				return;
 			}
 		}
@@ -618,39 +780,51 @@ async function saveNow(){
  * then CATALOG is as it was.
  * @returns {Promise<string[] | null>}
  */
-async function catchUp(){
+async function catchUp() {
 	// a page that never read a stored catalog (its first save moves the one localStorage kept) has nothing to go by
-	if(!DATABASE || SEEN_REVISION === null) return [];
+	if (!DATABASE || SEEN_REVISION === null) return [];
 	/** @type {Book[]} */
 	let before;
-	try{
+	try {
 		// a page that holds only some of the catalog reads only what it holds, as it is stored now
 		/** @type {(store: StoreName) => string[]} */
 		const keys = store => [...(SAVED.get(store) || new Map()).keys()].map(key => JSON.parse(key));
 		const db = DATABASE;
-		const stored = WHOLE ? await db.load()
-			: await db.read(r => readWanted(r, {books: keys('books'), series: keys('series'), contributors: keys('contributors')}, () => false))
-				.then(({result, revision}) => revision === null ? null : {records: result, revision});
-		if(!stored) return [];
+		const stored = WHOLE
+			? await db.load()
+			: await db
+					.read(r =>
+						readWanted(
+							r,
+							{books: keys('books'), series: keys('series'), contributors: keys('contributors')},
+							() => false,
+						),
+					)
+					.then(({result, revision}) => (revision === null ? null : {records: result, revision}));
+		if (!stored) return [];
 		const {records, conflicts} = CatalogRecords.merge(SAVED, recordsNow(), stored.records, WHOLE);
-		if(conflicts.length) return conflicts;
+		if (conflicts.length) return conflicts;
 		before = CATALOG.books;
 		CATALOG.replaceWith(CatalogRecords.toCatalog(records));
 		CATALOG.assignIds();
 		SAVED = CatalogRecords.snapshot(stored.records);
 		SEEN_REVISION = stored.revision;
-		if(!WHOLE) for(const b of stored.records.books) POSITIONS.set(b.id, b.position);
-	}catch{
+		if (!WHOLE) for (const b of stored.records.books) POSITIONS.set(b.id, b.position);
+	} catch {
 		return [];
 	}
-	if(redrawPage) redrawPage(before);
+	if (redrawPage) redrawPage(before);
 	updateNav();
 	return null;
 }
 
 // Ask the browser not to clear this site's storage when space runs low; on a phone it may otherwise.
-function askToKeepStorage(){
-	try{ navigator.storage.persist().catch(()=>{}); }catch{ /* asking is all a page can do */ }
+function askToKeepStorage() {
+	try {
+		navigator.storage.persist().catch(() => {});
+	} catch {
+		/* asking is all a page can do */
+	}
 }
 
 // Load the catalog kept in this browser (all of it with `whole`; otherwise the page loads what it shows
@@ -659,11 +833,13 @@ function askToKeepStorage(){
 // localStorage kept before is moved over; records from an older version of the app are saved again in
 // the current shape (a series' site moved to its author or publisher).
 /** @param {boolean} whole */
-async function loadCatalog(whole){
-	try{
+async function loadCatalog(whole) {
+	try {
 		DATABASE = await CatalogDatabase.open(indexedDB);
-	}catch{
-		SAVE_REFUSED = spell("Not saved: this browser won't keep the catalog for this page (it has no IndexedDB here). Export a backup before you leave.");
+	} catch {
+		SAVE_REFUSED = spell(
+			"Not saved: this browser won't keep the catalog for this page (it has no IndexedDB here). Export a backup before you leave.",
+		);
 		STARTUP_NOTICE = SAVE_REFUSED;
 		WHOLE = true;
 		readOldCatalog();
@@ -671,43 +847,50 @@ async function loadCatalog(whole){
 	}
 	/** @type {{records: RecordSet, revision: number} | null} */
 	let stored = null;
-	try{
+	try {
 		const revision = await DATABASE.revision();
-		if(revision === null){
+		if (revision === null) {
 			// a catalog from before it lived in IndexedDB is saved there at once (and is in the current format then)
 			WHOLE = true;
-			if(readOldCatalog()) await persist();
+			if (readOldCatalog()) await persist();
 			// one that can't be saved (persist() said why) stays shown as it is
-			if(!whole && await DATABASE.revision() !== null) holdNothing();
+			if (!whole && (await DATABASE.revision()) !== null) holdNothing();
 			return;
 		}
 		const reshape = await DATABASE.needsReshape();
-		if(!whole && !reshape){ SEEN_REVISION = revision; return; }
+		if (!whole && !reshape) {
+			SEEN_REVISION = revision;
+			return;
+		}
 		stored = await DATABASE.load();
-		if(!stored) return;
+		if (!stored) return;
 		CATALOG.replaceWith(CatalogRecords.toCatalog(stored.records));
 		SEEN_REVISION = stored.revision;
 		SAVED = CatalogRecords.snapshot(stored.records);
 		WHOLE = true;
 		CATALOG.moveSeriesSites();
-		if(reshape || CatalogRecords.outdated(stored.records)) await saveAll();
-		if(!whole) holdNothing();
-	}catch(e){
-		try{
+		if (reshape || CatalogRecords.outdated(stored.records)) await saveAll();
+		if (!whole) holdNothing();
+	} catch (e) {
+		try {
 			SEEN_REVISION = await DATABASE.setAside(stored ? stored.records : Text.errorText(e));
 			SAVED = new Map();
-		}catch{
+		} catch {
 			DATABASE = null;
-			SAVE_REFUSED = spell("Not saved: the catalog kept in this browser can't be read or set aside. Export a backup.");
+			SAVE_REFUSED = spell(
+				"Not saved: the catalog kept in this browser can't be read or set aside. Export a backup.",
+			);
 		}
 		CATALOG.replaceWith(new Catalog());
 		WHOLE = whole || !DATABASE;
-		STARTUP_NOTICE = spell("Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.");
+		STARTUP_NOTICE = spell(
+			"Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.",
+		);
 	}
 }
 
 // Save every record again, so each has the derived fields this version of the app reads (the page holds them all).
-async function saveAll(){
+async function saveAll() {
 	const db = /** @type {CatalogDatabase} */ (DATABASE);
 	await SAVING;
 	const changes = CatalogRecords.changes(new Map(), recordsNow());
@@ -717,7 +900,7 @@ async function saveAll(){
 }
 
 // After a page that loads only what it shows moved or reshaped the catalog: it holds nothing yet.
-function holdNothing(){
+function holdNothing() {
 	CATALOG.replaceWith(new Catalog());
 	SAVED = new Map();
 	POSITIONS = new Map();
@@ -736,35 +919,50 @@ const MOVED_SUFFIX = '.moved-to-indexeddb';
  * is set aside (under CATALOG_KEY + '.unreadable'), and the catalog starts empty.
  * @returns {boolean}
  */
-function readOldCatalog(){
+function readOldCatalog() {
 	/** @type {(key: string) => string | null} */
-	const item = key => { try{ return localStorage.getItem(key); }catch{ return null; } };
-	try{
+	const item = key => {
+		try {
+			return localStorage.getItem(key);
+		} catch {
+			return null;
+		}
+	};
+	try {
 		const raw = item(CATALOG_KEY);
-		if(!raw) return false;
+		if (!raw) return false;
 		/** @type {Unchecked} */
 		const saved = JSON.parse(raw);
 		const catalog = Catalog.fromJSON(saved);
 		const marks = JSON.parse(item(NOT_DUP_KEY) || '[]');
-		if(Array.isArray(marks)) catalog.addMarkTexts(marks.filter(x=> typeof x === 'string'));
+		if (Array.isArray(marks)) catalog.addMarkTexts(marks.filter(x => typeof x === 'string'));
 		CATALOG.replaceWith(catalog);
 		return true;
-	}catch{
-		try{ localStorage.setItem(CATALOG_KEY + '.unreadable', item(CATALOG_KEY) || ''); localStorage.removeItem(CATALOG_KEY); }catch{ /* the notice below still tells what happened */ }
-		STARTUP_NOTICE = spell("Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.");
+	} catch {
+		try {
+			localStorage.setItem(CATALOG_KEY + '.unreadable', item(CATALOG_KEY) || '');
+			localStorage.removeItem(CATALOG_KEY);
+		} catch {
+			/* the notice below still tells what happened */
+		}
+		STARTUP_NOTICE = spell(
+			"Couldn't read the catalog kept in this browser; it was set aside and the catalog starts empty. Restore a backup.",
+		);
 		return false;
 	}
 }
 
 // Once IndexedDB holds the catalog, what localStorage kept is renamed, so it is never read again but not lost.
-function setAsideOldCatalog(){
-	for(const key of [CATALOG_KEY, NOT_DUP_KEY]){
-		try{
+function setAsideOldCatalog() {
+	for (const key of [CATALOG_KEY, NOT_DUP_KEY]) {
+		try {
 			const value = localStorage.getItem(key);
-			if(value === null) continue;
+			if (value === null) continue;
 			localStorage.setItem(key + MOVED_SUFFIX, value);
 			localStorage.removeItem(key);
-		}catch{ /* left as it was, and moved on the next load */ }
+		} catch {
+			/* left as it was, and moved on the next load */
+		}
 	}
 }
 
@@ -781,10 +979,31 @@ export const STATUS_TIME = 5000;
  * @param {boolean} [isErr]
  * @param {() => void} [undo]
  */
-export function showIoStatus(msg, isErr, undo){
+export function showIoStatus(msg, isErr, undo) {
 	const el = byId('ioStatus');
-	const clear = ()=>{ clearTimeout(ioStatusTimer); fillElement(el); };
-	fillElement(el, msg, undo && [' ', buildElement('button', {type: 'button', class: 'undo', onclick: ()=>{ clear(); undo(); }}, 'Undo')]);
+	const clear = () => {
+		clearTimeout(ioStatusTimer);
+		fillElement(el);
+	};
+	fillElement(
+		el,
+		msg,
+		undo && [
+			' ',
+			buildElement(
+				'button',
+				{
+					type: 'button',
+					class: 'undo',
+					onclick: () => {
+						clear();
+						undo();
+					},
+				},
+				'Undo',
+			),
+		],
+	);
 	el.classList.toggle('err', !!isErr);
 	clearTimeout(ioStatusTimer);
 	ioStatusTimer = setTimeout(clear, STATUS_TIME);
@@ -795,9 +1014,9 @@ export function showIoStatus(msg, isErr, undo){
  * @param {string} id
  * @returns {HTMLElement}
  */
-export function byId(id){
+export function byId(id) {
 	const el = document.getElementById(id);
-	if(!el) throw new Error(`the page has no #${id}`);
+	if (!el) throw new Error(`the page has no #${id}`);
 	return el;
 }
 
@@ -808,7 +1027,7 @@ export function byId(id){
  * @param {string} id
  * @returns {FormField}
  */
-export function fieldById(id){
+export function fieldById(id) {
 	return /** @type {FormField} */ (byId(id));
 }
 
@@ -824,17 +1043,42 @@ export function fieldById(id){
  * @param {string[]} [except]
  * @returns {HTMLDivElement[]}
  */
-export function externalFields(prefix, kind, except = []){
-	return ExternalCatalog.groupsFor(kind).filter(g=> !except.includes(g.key)).map(g=>{
-		const sites = ExternalCatalog.forKind(kind).filter(def=> def.group === g.key);
-		const example = sites.length > 1 ? g.default : /** @type {string} */ ((ExternalCatalog.url(sites[0].key, kind, 'x') || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0]);
-		// Hardcover's address of a series or person is looked up for its number as soon as the field is left
-		const lookup = g.key === 'hardcover' && kind !== 'book' && kind !== 'edition'
-			? {onchange: async ()=> { const found = await lookupHardcoverField(prefix, kind); if(found && found.note) showIoStatus(found.note); }} : {};
-		return buildElement('div', {}, buildElement('label', {for: prefix + g.key}, g.name),
-			buildElement('input', {id: prefix + g.key, 'data-group': g.key, placeholder: `id, or its address on ${example}`, ...lookup,
-				onfocusout: ()=> externalFieldToId(prefix, kind, g.key)}));
-	});
+export function externalFields(prefix, kind, except = []) {
+	return ExternalCatalog.groupsFor(kind)
+		.filter(g => !except.includes(g.key))
+		.map(g => {
+			const sites = ExternalCatalog.forKind(kind).filter(def => def.group === g.key);
+			const example =
+				sites.length > 1
+					? g.default
+					: /** @type {string} */ (
+							(ExternalCatalog.url(sites[0].key, kind, 'x') || '')
+								.replace(/^https?:\/\/(www\.)?/, '')
+								.split('/')[0]
+						);
+			// Hardcover's address of a series or person is looked up for its number as soon as the field is left
+			const lookup =
+				g.key === 'hardcover' && kind !== 'book' && kind !== 'edition'
+					? {
+							onchange: async () => {
+								const found = await lookupHardcoverField(prefix, kind);
+								if (found && found.note) showIoStatus(found.note);
+							},
+						}
+					: {};
+			return buildElement(
+				'div',
+				{},
+				buildElement('label', {for: prefix + g.key}, g.name),
+				buildElement('input', {
+					id: prefix + g.key,
+					'data-group': g.key,
+					placeholder: `id, or its address on ${example}`,
+					...lookup,
+					onfocusout: () => externalFieldToId(prefix, kind, g.key),
+				}),
+			);
+		});
 }
 
 /**
@@ -847,22 +1091,29 @@ export function externalFields(prefix, kind, except = []){
  * @param {ExternalKind} kind
  * @param {string} group
  */
-function externalFieldToId(prefix, kind, group){
+function externalFieldToId(prefix, kind, group) {
 	const field = /** @type {HTMLInputElement | null} */ (document.getElementById(prefix + group));
 	const text = field ? Text.tidy(field.value) : '';
-	if(!field || !text) return;
+	if (!field || !text) return;
 	/** @param {ExternalId} found @param {string} into the group of the field it goes in */
-	const shown = (found, into)=> {
+	const shown = (found, into) => {
 		const bare = ExternalCatalog.readId(found.id, kind, into);
-		return bare && bare.catalog === found.catalog ? found.id : ExternalCatalog.url(found.catalog, kind, found.id) || text;
+		return bare && bare.catalog === found.catalog
+			? found.id
+			: ExternalCatalog.url(found.catalog, kind, found.id) || text;
 	};
 	const found = ExternalCatalog.readId(text, kind, group);
-	if(found){ field.value = shown(found, group); return; }
-	const elsewhere = ExternalCatalog.fromAddress(text, kind), g = elsewhere && ExternalCatalog.groupOf(elsewhere.catalog);
+	if (found) {
+		field.value = shown(found, group);
+		return;
+	}
+	const elsewhere = ExternalCatalog.fromAddress(text, kind),
+		g = elsewhere && ExternalCatalog.groupOf(elsewhere.catalog);
 	const other = g ? /** @type {HTMLInputElement | null} */ (document.getElementById(prefix + g.key)) : null;
-	if(!elsewhere || !g || !other) return;
-	const value = shown(elsewhere, g.key), there = Text.tidy(other.value);
-	if(there && there !== value) return;
+	if (!elsewhere || !g || !other) return;
+	const value = shown(elsewhere, g.key),
+		there = Text.tidy(other.value);
+	if (there && there !== value) return;
 	other.value = value;
 	field.value = '';
 }
@@ -873,10 +1124,10 @@ function externalFieldToId(prefix, kind, group){
  * @param {ExternalKind} kind
  * @param {Record<string, string>} ids
  */
-export function fillExternalFields(prefix, kind, ids){
-	for(const g of ExternalCatalog.groupsFor(kind)){
+export function fillExternalFields(prefix, kind, ids) {
+	for (const g of ExternalCatalog.groupsFor(kind)) {
 		const field = document.getElementById(prefix + g.key);
-		if(field) /** @type {HTMLInputElement} */ (field).value = ExternalCatalog.fieldText(ids, kind, g.key);
+		if (field) /** @type {HTMLInputElement} */ (field).value = ExternalCatalog.fieldText(ids, kind, g.key);
 	}
 }
 
@@ -888,18 +1139,24 @@ export function fillExternalFields(prefix, kind, ids){
  * @param {Record<string, string>} [had] the entry's ids before
  * @returns {{ids: Record<string, string>, bad: string[]}}
  */
-export function readExternalFields(prefix, kind, had = {}){
-	const groups = ExternalCatalog.groupsFor(kind).filter(g=> document.getElementById(prefix + g.key));
-	const shown = new Set(groups.map(g=> g.key));
+export function readExternalFields(prefix, kind, had = {}) {
+	const groups = ExternalCatalog.groupsFor(kind).filter(g => document.getElementById(prefix + g.key));
+	const shown = new Set(groups.map(g => g.key));
 	/** @type {Record<string, string>} */
-	const ids = Object.fromEntries(Object.entries(had).filter(([key])=> { const g = ExternalCatalog.groupOf(key); return !g || !shown.has(g.key); }));
+	const ids = Object.fromEntries(
+		Object.entries(had).filter(([key]) => {
+			const g = ExternalCatalog.groupOf(key);
+			return !g || !shown.has(g.key);
+		}),
+	);
 	/** @type {string[]} */
 	const bad = [];
-	for(const g of groups){
+	for (const g of groups) {
 		const text = Text.tidy(fieldById(prefix + g.key).value);
-		if(!text) continue;
+		if (!text) continue;
 		const found = ExternalCatalog.readId(text, kind, g.key);
-		if(found) ids[found.catalog] = found.id; else bad.push(`${g.name}: ${text}`);
+		if (found) ids[found.catalog] = found.id;
+		else bad.push(`${g.name}: ${text}`);
 	}
 	return {ids, bad};
 }
@@ -912,10 +1169,11 @@ export function readExternalFields(prefix, kind, had = {}){
  * @param {string} [cls] the links' class
  * @returns {HTMLAnchorElement[]}
  */
-export function externalLinks(ids, kind, cls = 'authorlink'){
-	return Object.entries(ExternalCatalog.order(ids) || {}).flatMap(([key, id])=>{
-		const url = ExternalCatalog.url(key, kind, id), g = ExternalCatalog.groupOf(key);
-		if(!url) return [];
+export function externalLinks(ids, kind, cls = 'authorlink') {
+	return Object.entries(ExternalCatalog.order(ids) || {}).flatMap(([key, id]) => {
+		const url = ExternalCatalog.url(key, kind, id),
+			g = ExternalCatalog.groupOf(key);
+		if (!url) return [];
 		const name = g ? (g.default === key ? g.name : `${g.name} (${key})`) : ExternalCatalog.name(key);
 		return [buildElement('a', {class: cls, href: url, target: '_blank', rel: 'noopener'}, `${name} \u2197`)];
 	});
@@ -933,8 +1191,12 @@ export function externalLinks(ids, kind, cls = 'authorlink'){
  * @param {typeof CatalogClient} Client
  * @returns {string}
  */
-export function savedKey(Client){
-	try{ return Client.cleanKey(localStorage.getItem(Client.KEY_STORAGE)); }catch{ return ''; }
+export function savedKey(Client) {
+	try {
+		return Client.cleanKey(localStorage.getItem(Client.KEY_STORAGE));
+	} catch {
+		return '';
+	}
 }
 
 /**
@@ -943,9 +1205,9 @@ export function savedKey(Client){
  * @param {typeof CatalogClient} Client
  * @param {string} key
  */
-export function saveKey(Client, key){
+export function saveKey(Client, key) {
 	const clean = Client.cleanKey(key);
-	if(clean) localStorage.setItem(Client.KEY_STORAGE, clean);
+	if (clean) localStorage.setItem(Client.KEY_STORAGE, clean);
 	else localStorage.removeItem(Client.KEY_STORAGE);
 }
 
@@ -954,10 +1216,16 @@ export function saveKey(Client, key){
  * @param {string} label the catalog's name
  * @returns {CatalogFetch}
  */
-function fetchDirect(label){
+function fetchDirect(label) {
 	return async (url, opts) => {
-		try{ return await fetch(url, opts); }
-		catch(e){ throw new Error(`this browser could not reach ${label} (offline, or ${label} refused a request from a web page)`, {cause: e}); }
+		try {
+			return await fetch(url, opts);
+		} catch (e) {
+			throw new Error(
+				`this browser could not reach ${label} (offline, or ${label} refused a request from a web page)`,
+				{cause: e},
+			);
+		}
 	};
 }
 
@@ -969,7 +1237,7 @@ function fetchDirect(label){
  * @param {string} [key]
  * @returns {C}
  */
-export function catalogClient(Client, key = savedKey(Client)){
+export function catalogClient(Client, key = savedKey(Client)) {
 	const pause = (/** @type {number} */ ms) => new Promise(done => setTimeout(done, ms));
 	const proxy = browserProxy();
 	/** @type {CatalogFetch} */
@@ -978,8 +1246,8 @@ export function catalogClient(Client, key = savedKey(Client)){
 }
 
 /** @returns {CatalogClient[]} a client of each catalog whose key is saved in this browser */
-export function keyedClients(){
-	return CatalogConnectors.CLIENTS.filter(Client=> savedKey(Client)).map(Client=> catalogClient(Client));
+export function keyedClients() {
+	return CatalogConnectors.CLIENTS.filter(Client => savedKey(Client)).map(Client => catalogClient(Client));
 }
 
 // ------------------------------------------------------------ Hardcover from the page
@@ -990,11 +1258,12 @@ export function keyedClients(){
  * @param {string} text
  * @returns {Promise<{id: string, title?: string}>}
  */
-export async function lookupHardcoverBook(text){
+export async function lookupHardcoverBook(text) {
 	const url = HardcoverClient.parseUrl(text);
-	if(!url || url.book) return HardcoverClient.bookId(null, text);
+	if (!url || url.book) return HardcoverClient.bookId(null, text);
 	const token = savedKey(HardcoverClient);
-	if(!token) throw new Error('to look it up on Hardcover, save your Hardcover API token on the Import & export page first');
+	if (!token)
+		throw new Error('to look it up on Hardcover, save your Hardcover API token on the Import & export page first');
 	return HardcoverClient.bookId(catalogClient(HardcoverClient, token), text);
 }
 
@@ -1015,33 +1284,41 @@ const HARDCOVER_FIELD_LOOKUPS = new WeakMap();
  * @param {'series' | 'author' | 'narrator' | 'publisher'} kind
  * @returns {Promise<HardcoverFieldLookup> | null}
  */
-export function lookupHardcoverField(prefix, kind){
+export function lookupHardcoverField(prefix, kind) {
 	const field = document.getElementById(prefix + 'hardcover');
 	const text = field ? Text.tidy(/** @type {HTMLInputElement} */ (field).value) : '';
 	const found = text ? ExternalCatalog.readId(text, kind, 'hardcover') : null;
-	if(!field || !found || !ExternalCatalog.isFallbackId('hardcover', kind, found.id)) return null;
+	if (!field || !found || !ExternalCatalog.isFallbackId('hardcover', kind, found.id)) return null;
 	const onItsWay = HARDCOVER_FIELD_LOOKUPS.get(field);
 	const slug = found.id;
 	// the same name, as an address or alone (leaving the field turns its address into the name)
-	if(onItsWay && onItsWay.slug === slug) return onItsWay;
+	if (onItsWay && onItsWay.slug === slug) return onItsWay;
 	const address = ExternalCatalog.url('hardcover', kind, slug);
-	const kept = (/** @type {string} */ why)=> ({error: '', note: `Kept Hardcover's ${kind} by the name in its address, as ${why}.`});
+	const kept = (/** @type {string} */ why) => ({
+		error: '',
+		note: `Kept Hardcover's ${kind} by the name in its address, as ${why}.`,
+	});
 	/** @type {HardcoverFieldLookupOnItsWay} */
-	const lookup = (async ()=>{
+	const lookup = (async () => {
 		const token = savedKey(HardcoverClient);
-		if(!token) return kept('no Hardcover API token is saved on the Import & export page to look up its number');
+		if (!token) return kept('no Hardcover API token is saved on the Import & export page to look up its number');
 		/** @type {{id: string, name: string} | null} */
 		let row;
-		try{ row = await HardcoverClient.idBySlug(catalogClient(HardcoverClient, token), kind, slug); }
-		catch(err){ return kept(`Hardcover couldn't be asked for its number (${Text.errorText(err)})`); }
-		if(!row) return {error: `Hardcover has no ${kind} at ${address}.`, note: ''};
+		try {
+			row = await HardcoverClient.idBySlug(catalogClient(HardcoverClient, token), kind, slug);
+		} catch (err) {
+			return kept(`Hardcover couldn't be asked for its number (${Text.errorText(err)})`);
+		}
+		if (!row) return {error: `Hardcover has no ${kind} at ${address}.`, note: ''};
 		const now = ExternalCatalog.readId(/** @type {HTMLInputElement} */ (field).value, kind, 'hardcover');
-		if(now && now.id === slug) /** @type {HTMLInputElement} */ (field).value = row.id;
+		if (now && now.id === slug) /** @type {HTMLInputElement} */ (field).value = row.id;
 		return {error: '', note: `Found on Hardcover: ${row.name || slug} (${kind} ${row.id}).`};
 	})();
 	lookup.slug = slug;
 	HARDCOVER_FIELD_LOOKUPS.set(field, lookup);
-	lookup.finally(()=>{ if(HARDCOVER_FIELD_LOOKUPS.get(field) === lookup) HARDCOVER_FIELD_LOOKUPS.delete(field); });
+	lookup.finally(() => {
+		if (HARDCOVER_FIELD_LOOKUPS.get(field) === lookup) HARDCOVER_FIELD_LOOKUPS.delete(field);
+	});
 	return lookup;
 }
 
@@ -1052,17 +1329,19 @@ export function lookupHardcoverField(prefix, kind){
 // are not asked. Hardcover is never asked through it, so the token never leaves for anywhere but Hardcover.
 export const PROXY_STORAGE_KEY = 'audiobook-catalog-proxy';
 const PROXY_KEY_HEADER = 'X-Proxy-Key';
-const CATALOG_KEY_HEADER = 'X-Catalog-Key';   // your key for a catalog, which the proxy passes on only where it is needed
+const CATALOG_KEY_HEADER = 'X-Catalog-Key'; // your key for a catalog, which the proxy passes on only where it is needed
 
 /** @typedef {{url: string, key: string}} ProxySettings the proxy's address (no slash at the end) and its key */
 
 /** @returns {ProxySettings | null} the catalog proxy saved in this browser, or null */
-export function browserProxy(){
-	try{
+export function browserProxy() {
+	try {
 		const v = /** @type {Unchecked} */ (JSON.parse(localStorage.getItem(PROXY_STORAGE_KEY) || 'null'));
 		const url = v && typeof v.url === 'string' ? proxyAddress(v.url) : '';
 		return url && typeof v.key === 'string' && v.key ? {url, key: v.key} : null;
-	}catch{ return null; }
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -1071,12 +1350,16 @@ export function browserProxy(){
  * @param {string} text
  * @returns {string}
  */
-export function proxyAddress(text){
+export function proxyAddress(text) {
 	let url;
-	try{ url = new URL(text.trim()); }catch{ return ''; }
+	try {
+		url = new URL(text.trim());
+	} catch {
+		return '';
+	}
 	const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-	if(url.protocol !== 'https:' && !(local && url.protocol === 'http:')) return '';
-	if(url.search || url.hash || url.username || url.password) return '';
+	if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) return '';
+	if (url.search || url.hash || url.username || url.password) return '';
 	return (url.origin + url.pathname).replace(/\/+$/, '');
 }
 
@@ -1090,45 +1373,79 @@ export function proxyAddress(text){
  * @param {{method?: string, body?: string, key?: string}} [init]
  * @returns {Promise<Response>}
  */
-export async function fetchViaProxy(route, proxy = browserProxy(), init = {}){
-	if(!proxy) throw new Error('save a catalog proxy on the Import & export page');
+export async function fetchViaProxy(route, proxy = browserProxy(), init = {}) {
+	if (!proxy) throw new Error('save a catalog proxy on the Import & export page');
 	/** @type {Record<string, string>} */
 	const headers = {[PROXY_KEY_HEADER]: proxy.key};
-	if(init.key) headers[CATALOG_KEY_HEADER] = init.key;
-	if(init.body !== undefined) headers['Content-Type'] = 'application/json';
+	if (init.key) headers[CATALOG_KEY_HEADER] = init.key;
+	if (init.body !== undefined) headers['Content-Type'] = 'application/json';
 	const ask = init.body !== undefined ? {method: 'POST', body: init.body, headers} : {headers};
-	try{ return await fetch(`${proxy.url}/${route.replace(/^\/+/, '')}`, ask); }
-	catch(e){ throw new Error('this browser could not reach the catalog proxy (check its address, and that it allows this page in ALLOWED_ORIGINS)', {cause: e}); }
+	try {
+		return await fetch(`${proxy.url}/${route.replace(/^\/+/, '')}`, ask);
+	} catch (e) {
+		throw new Error(
+			'this browser could not reach the catalog proxy (check its address, and that it allows this page in ALLOWED_ORIGINS)',
+			{cause: e},
+		);
+	}
 }
 
 // ------------------------------------------------------------ runs on a catalog's shelves
 // Comparing with a catalog's shelves (Hardcover, AudiobookDB), or sending to it, can take minutes, a request or two a second. The
 // page running it shows it on top while it goes (#bgTask), and hands each update to the page's onCatalogJob.
 /** @type {Record<CatalogJob['mode'], (catalog: string) => string>} */
-const JOB_VERBS = {compare: catalog => `Comparing with ${catalog}`, send: catalog => `Updating your ${catalog} shelves`};
+const JOB_VERBS = {
+	compare: catalog => `Comparing with ${catalog}`,
+	send: catalog => `Updating your ${catalog} shelves`,
+};
 
 /** @type {(ms: number) => string} */
-export const minutes = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+export const minutes = ms => {
+	const s = Math.max(0, Math.round(ms / 1000));
+	return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
 /**
  * Show a Hardcover or AudiobookDB run in the banner on top (#bgTask), and hand it to the page's own onCatalogJob.
  * @param {CatalogJob | null} job
  */
-export function showCatalogJob(job){
+export function showCatalogJob(job) {
 	const el = document.getElementById('bgTask');
-	if(el){
+	if (el) {
 		el.classList.toggle('show', Boolean(job && job.running));
-		if(!job || !job.running) fillElement(el);
+		if (!job || !job.running) fillElement(el);
 		else {
 			const counted = typeof job.total === 'number' && Number.isInteger(job.total) && job.total > 0;
-			fillElement(el, buildElement('span', {class: 'spinner', 'aria-hidden': 'true'}), buildElement('div', {class: 'bgTaskText'},
-				buildElement('strong', {}, JOB_VERBS[job.mode](job.catalog)),
-				' ', buildElement('span', {class: 'bgTaskTime'}, minutes(job.elapsed)), buildElement('br'), job.step || '',
-				counted && [`: ${job.done} of ${job.total} `, buildElement('progress', {max: job.total, value: job.done})],
-				!job.dryRun && [buildElement('br'), buildElement('small', {}, spell('Please don\'t edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.'))]));
+			fillElement(
+				el,
+				buildElement('span', {class: 'spinner', 'aria-hidden': 'true'}),
+				buildElement(
+					'div',
+					{class: 'bgTaskText'},
+					buildElement('strong', {}, JOB_VERBS[job.mode](job.catalog)),
+					' ',
+					buildElement('span', {class: 'bgTaskTime'}, minutes(job.elapsed)),
+					buildElement('br'),
+					job.step || '',
+					counted && [
+						`: ${job.done} of ${job.total} `,
+						buildElement('progress', {max: job.total, value: job.done}),
+					],
+					!job.dryRun && [
+						buildElement('br'),
+						buildElement(
+							'small',
+							{},
+							spell(
+								"Please don't edit the catalog until it is done: an edit saved meanwhile stops it before anything is written.",
+							),
+						),
+					],
+				),
+			);
 		}
 	}
-	if(onCatalogJob) onCatalogJob(job);
+	if (onCatalogJob) onCatalogJob(job);
 }
 
 /**
@@ -1140,15 +1457,19 @@ export function showCatalogJob(job){
  * @param {() => void | Promise<void>} init
  * @param {{whole?: boolean, refresh?: (before: Book[]) => void, onCatalogJob?: (job: CatalogJob | null) => void}} [page]
  */
-export async function startPage(init, page = {}){
+export async function startPage(init, page = {}) {
 	({onCatalogJob = null, refresh: redrawPage = null} = page);
 	await loadCatalog(!!page.whole);
-	CATALOG.assignIds();   // the page knows every entry by its id (a catalog that can't be saved has none yet)
+	CATALOG.assignIds(); // the page knows every entry by its id (a catalog that can't be saved has none yet)
 	askToKeepStorage();
 	await init();
 	updateNav();
-	if(STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
+	if (STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
 }
 
 // Installable as an app (on a phone, say), and usable offline once it is: see sw.js.
-try{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch{ /* no offline use in this browser */ }
+try {
+	navigator.serviceWorker.register('sw.js').catch(() => {});
+} catch {
+	/* no offline use in this browser */
+}

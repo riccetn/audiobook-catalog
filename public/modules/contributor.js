@@ -36,7 +36,7 @@ export class Contributor {
 	 * @param {string} name
 	 * @param {ContributorInit} [info]
 	 */
-	constructor(name, {bio, url, external = {}, links = []} = {}){
+	constructor(name, {bio, url, external = {}, links = []} = {}) {
 		this.name = name;
 		/** @type {string | undefined} a few paragraphs, one per line */
 		this.bio = bio;
@@ -58,13 +58,14 @@ export class Contributor {
 	 * @param {Unchecked} json
 	 * @returns {Contributor}
 	 */
-	static fromJSON(name, json){
-		if(!Text.isObject(json)) throw new Error(`the info of ${Text.repr(name)} is not an object`);
+	static fromJSON(name, json) {
+		if (!Text.isObject(json)) throw new Error(`the info of ${Text.repr(name)} is not an object`);
 		const info = new Contributor(name);
-		for(const [k, v] of Object.entries(json)){
-			if((k === 'bio' || k === 'url') && typeof v === 'string') info[k] = v;
-			else if(k === 'ext' && ExternalCatalog.isIds(v)) info.external = {...v};
-			else if(k === 'links' && Array.isArray(v) && v.length && v.every(x => typeof x === 'string' && x.trim())) info.links = [...v];
+		for (const [k, v] of Object.entries(json)) {
+			if ((k === 'bio' || k === 'url') && typeof v === 'string') info[k] = v;
+			else if (k === 'ext' && ExternalCatalog.isIds(v)) info.external = {...v};
+			else if (k === 'links' && Array.isArray(v) && v.length && v.every(x => typeof x === 'string' && x.trim()))
+				info.links = [...v];
 			else info.extra[k] = v;
 		}
 		return info;
@@ -75,9 +76,9 @@ export class Contributor {
 	 * @param {ContributorKey} key
 	 * @returns {unknown}
 	 */
-	value(key){
-		if(key === 'ext') return ExternalCatalog.order(this.external) || undefined;
-		if(key === 'links') return this.links.length ? [...this.links] : undefined;
+	value(key) {
+		if (key === 'ext') return ExternalCatalog.order(this.external) || undefined;
+		if (key === 'links') return this.links.length ? [...this.links] : undefined;
 		return this[key];
 	}
 
@@ -88,23 +89,23 @@ export class Contributor {
 	 * @param {string} site
 	 * @returns {boolean}
 	 */
-	addSite(site){
-		if('url' in this.extra || 'links' in this.extra) return false;
-		if(!this.url) this.url = site;
-		else if(this.url !== site && !this.links.includes(site)) this.links.push(site);
+	addSite(site) {
+		if ('url' in this.extra || 'links' in this.extra) return false;
+		if (!this.url) this.url = site;
+		else if (this.url !== site && !this.links.includes(site)) this.links.push(site);
 		return true;
 	}
 
 	/** @returns {Record<string, unknown>} the entry as the stored info keeps it */
-	toJSON(){
+	toJSON() {
 		/** @type {Record<string, unknown>} */
 		const out = {};
-		for(const k of Contributor.KEYS){
+		for (const k of Contributor.KEYS) {
 			const v = this.value(k);
-			if(v !== undefined) out[k] = v;
-			else if(k in this.extra) out[k] = this.extra[k];
+			if (v !== undefined) out[k] = v;
+			else if (k in this.extra) out[k] = this.extra[k];
 		}
-		for(const [k, v] of Object.entries(this.extra)) if(!(k in out)) out[k] = v;
+		for (const [k, v] of Object.entries(this.extra)) if (!(k in out)) out[k] = v;
 		return out;
 	}
 
@@ -115,16 +116,29 @@ export class Contributor {
 	 * @param {Unchecked} entry the entry as typed or stored
 	 * @returns {Contributor | null}
 	 */
-	static tidy(name, entry){
-		if(!Text.isObject(entry)) return null;
+	static tidy(name, entry) {
+		if (!Text.isObject(entry)) return null;
 		const info = new Contributor(name);
-		if(typeof entry.bio === 'string') info.bio = entry.bio.split(/\r\n|\r|\n/).map(Text.tidy).join('\n').replace(/\n{3,}/g, '\n\n').trim() || undefined;
-		if(typeof entry.url === 'string') info.url = entry.url.trim() || undefined;
-		if(Text.isObject(entry.ext)){
+		if (typeof entry.bio === 'string')
+			info.bio =
+				entry.bio
+					.split(/\r\n|\r|\n/)
+					.map(Text.tidy)
+					.join('\n')
+					.replace(/\n{3,}/g, '\n\n')
+					.trim() || undefined;
+		if (typeof entry.url === 'string') info.url = entry.url.trim() || undefined;
+		if (Text.isObject(entry.ext)) {
 			const ext = ExternalCatalog.tidy(entry.ext);
-			info.external = /** @type {Record<string, string>} */ (Object.fromEntries(Object.entries(ext).filter(([, v]) => typeof v === 'string' && v)));
+			info.external = /** @type {Record<string, string>} */ (
+				Object.fromEntries(Object.entries(ext).filter(([, v]) => typeof v === 'string' && v))
+			);
 		}
-		if(Array.isArray(entry.links)) info.links = entry.links.filter(x => typeof x === 'string').map(x => x.trim()).filter(Boolean);
+		if (Array.isArray(entry.links))
+			info.links = entry.links
+				.filter(x => typeof x === 'string')
+				.map(x => x.trim())
+				.filter(Boolean);
 		return info.bio || info.url || Object.keys(info.external).length || info.links.length ? info : null;
 	}
 
@@ -137,26 +151,51 @@ export class Contributor {
 	 * @param {ContributorKind} kind
 	 * @returns {Unchecked}
 	 */
-	static fixLinks(entry, kind){
-		if(!Text.isObject(entry) || !Object.keys(OLD_LINKS).some(k => k in entry)) return entry;
-		if((entry.ext !== undefined && !Text.isObject(entry.ext)) || (entry.links !== undefined && !Array.isArray(entry.links))) return entry;
+	static fixLinks(entry, kind) {
+		if (!Text.isObject(entry) || !Object.keys(OLD_LINKS).some(k => k in entry)) return entry;
+		if (
+			(entry.ext !== undefined && !Text.isObject(entry.ext)) ||
+			(entry.links !== undefined && !Array.isArray(entry.links))
+		)
+			return entry;
 		/** @type {Record<string, any>} */
 		const out = {};
 		/** @type {Record<string, unknown>} */
 		const ext = {...(entry.ext || {})};
 		/** @type {unknown[]} */
 		const links = [...(entry.links || [])];
-		for(const [k, v] of Object.entries(entry)){
-			if(!(k in OLD_LINKS)){ if(k !== 'ext' && k !== 'links') out[k] = v; continue; }
-			if(typeof v !== 'string'){ out[k] = v; continue; }
-			if(!v.trim()) continue;
+		for (const [k, v] of Object.entries(entry)) {
+			if (!(k in OLD_LINKS)) {
+				if (k !== 'ext' && k !== 'links') out[k] = v;
+				continue;
+			}
+			if (typeof v !== 'string') {
+				out[k] = v;
+				continue;
+			}
+			if (!v.trim()) continue;
 			const found = ExternalCatalog.fromAddress(v, Contributor.ONE[kind], ExternalCatalog.keysOf(OLD_LINKS[k]));
-			if(found && (ext[found.catalog] === undefined || ext[found.catalog] === found.id)) ext[found.catalog] = found.id;
-			else if(!links.includes(v.trim())) links.push(v.trim());
+			if (found && (ext[found.catalog] === undefined || ext[found.catalog] === found.id))
+				ext[found.catalog] = found.id;
+			else if (!links.includes(v.trim())) links.push(v.trim());
 		}
 		const ordered = ExternalCatalog.order(ext);
 		// in the usual order: bio, url, ext, links, then anything else for the Check
-		return Object.fromEntries([...Contributor.KEYS.flatMap(k => k === 'ext' ? (ordered ? [[k, ordered]] : []) : k === 'links' ? (links.length ? [[k, links]] : [])
-			: k in out ? [[k, out[k]]] : []), ...Object.entries(out).filter(([k]) => !(/** @type {string[]} */ (Contributor.KEYS)).includes(k))]);
+		return Object.fromEntries([
+			...Contributor.KEYS.flatMap(k =>
+				k === 'ext'
+					? ordered
+						? [[k, ordered]]
+						: []
+					: k === 'links'
+						? links.length
+							? [[k, links]]
+							: []
+						: k in out
+							? [[k, out[k]]]
+							: [],
+			),
+			...Object.entries(out).filter(([k]) => !(/** @type {string[]} */ (Contributor.KEYS).includes(k))),
+		]);
 	}
 }

@@ -11,19 +11,19 @@ const HARDCOVER_ENTRY = /^hardcover(?:\s+id)?:?\s*(\d+)$/i;
 
 /** Books that imports must never re-add (because you removed them on purpose). */
 export class Exclusions {
-	constructor(){
+	constructor() {
 		/** @type {Set<string>} */
 		this.ids = new Set();
 		/** @type {Set<string>} */
-		this.titles = new Set();   // key(norm(title), first author)
+		this.titles = new Set(); // key(norm(title), first author)
 		/** @type {Set<string>} */
-		this.isbns = new Set();    // 13-digit ISBNs
+		this.isbns = new Set(); // 13-digit ISBNs
 		/** @type {Set<string>} */
-		this.grs = new Set();      // Goodreads book ids
+		this.grs = new Set(); // Goodreads book ids
 		/** @type {Set<string>} */
-		this.hcs = new Set();      // Hardcover edition ids
+		this.hcs = new Set(); // Hardcover edition ids
 		/** @type {Map<string, string>} */
-		this.lines = new Map();   // key -> the entry as written in the exclusions list
+		this.lines = new Map(); // key -> the entry as written in the exclusions list
 	}
 
 	/**
@@ -32,9 +32,9 @@ export class Exclusions {
 	 * @param {string | null | undefined} text
 	 * @returns {Exclusions}
 	 */
-	static parse(text){
+	static parse(text) {
 		const ex = new Exclusions();
-		for(const line of (text || '').split(/\r\n|\r|\n/)) ex.add(line);
+		for (const line of (text || '').split(/\r\n|\r|\n/)) ex.add(line);
 		return ex;
 	}
 
@@ -47,46 +47,47 @@ export class Exclusions {
 	 * @param {unknown} entry
 	 * @returns {string | null}
 	 */
-	add(entry){
+	add(entry) {
 		let line = Text.tidy(String(entry).split('#')[0]);
-		if(!line) return null;
+		if (!line) return null;
 		const bar = line.indexOf('|');
-		if(bar < 0){
+		if (bar < 0) {
 			const gr = GOODREADS_ENTRY.exec(line);
-			if(gr){
-				if(this.grs.has(gr[1])) return null;
+			if (gr) {
+				if (this.grs.has(gr[1])) return null;
 				this.grs.add(gr[1]);
-				this.lines.set(Text.key('gr', gr[1]), line = `Goodreads ${gr[1]}`);
+				this.lines.set(Text.key('gr', gr[1]), (line = `Goodreads ${gr[1]}`));
 				return line;
 			}
 			const hc = HARDCOVER_ENTRY.exec(line);
-			if(hc){
-				if(this.hcs.has(hc[1])) return null;
+			if (hc) {
+				if (this.hcs.has(hc[1])) return null;
 				this.hcs.add(hc[1]);
-				this.lines.set(Text.key('hc', hc[1]), line = `Hardcover ${hc[1]}`);
+				this.lines.set(Text.key('hc', hc[1]), (line = `Hardcover ${hc[1]}`));
 				return line;
 			}
 			const isbn = Isbn.parse(line);
-			if(isbn && (/^isbn/i.test(line) || !/^[\dX]{10}$/i.test(line))){
-				if(this.isbns.has(isbn)) return null;
+			if (isbn && (/^isbn/i.test(line) || !/^[\dX]{10}$/i.test(line))) {
+				if (this.isbns.has(isbn)) return null;
 				this.isbns.add(isbn);
-				this.lines.set(Text.key('isbn', isbn), line = `ISBN ${isbn}`);
+				this.lines.set(Text.key('isbn', isbn), (line = `ISBN ${isbn}`));
 				return line;
 			}
-			if(this.ids.has(line) && (!isbn || this.isbns.has(isbn))) return null;
+			if (this.ids.has(line) && (!isbn || this.isbns.has(isbn))) return null;
 			this.ids.add(line);
-			if(isbn) this.isbns.add(isbn);
+			if (isbn) this.isbns.add(isbn);
 			this.lines.set(Text.key('id', line), line);
 			return line;
 		}
-		const title = line.slice(0, bar).trim(), author = line.slice(bar + 1).trim();
+		const title = line.slice(0, bar).trim(),
+			author = line.slice(bar + 1).trim();
 		const k = Text.key(Text.norm(title), Book.firstAuthor(author));
-		if(this.titles.has(k)) return null;
+		if (this.titles.has(k)) return null;
 		this.titles.add(k);
 		// an entry written before series were split off titles still keeps out the book under its short title
 		const split = Series.splitTitle(title);
-		if(split && split[0]) this.titles.add(Text.key(Text.norm(split[0]), Book.firstAuthor(author)));
-		this.lines.set(k, line = `${title} | ${author}`);
+		if (split && split[0]) this.titles.add(Text.key(Text.norm(split[0]), Book.firstAuthor(author)));
+		this.lines.set(k, (line = `${title} | ${author}`));
 		return line;
 	}
 
@@ -95,23 +96,35 @@ export class Exclusions {
 	 * @param {string[]} entries
 	 * @returns {number}
 	 */
-	addAll(entries){ return entries.map(e => this.add(e)).filter(Boolean).length; }
+	addAll(entries) {
+		return entries.map(e => this.add(e)).filter(Boolean).length;
+	}
 
 	/**
 	 * Whether the list keeps `book` out.
 	 * @param {Book} book
 	 * @returns {boolean}
 	 */
-	covers(book){
-		return book.ids('asin').some(id => this.ids.has(id)) || book.ids('goodreads').some(gr => this.grs.has(gr)) ||
+	covers(book) {
+		return (
+			book.ids('asin').some(id => this.ids.has(id)) ||
+			book.ids('goodreads').some(gr => this.grs.has(gr)) ||
 			book.ids('hardcover').some(hc => this.hcs.has(hc)) ||
-			(Text.norm(book.title) !== '' && this.titles.has(Text.key(Text.norm(book.title), book.authorKey()))) || book.isbns().some(isbn => this.isbns.has(isbn));
+			(Text.norm(book.title) !== '' && this.titles.has(Text.key(Text.norm(book.title), book.authorKey()))) ||
+			book.isbns().some(isbn => this.isbns.has(isbn))
+		);
 	}
 
 	/** @returns {Exclusions} a copy */
-	clone(){ return Exclusions.parse(this.entries.join('\n')); }
+	clone() {
+		return Exclusions.parse(this.entries.join('\n'));
+	}
 
 	/** The entries, one per line as in the exclusions list, without comments. */
-	get entries(){ return [...this.lines.values()]; }
-	get size(){ return this.lines.size; }
+	get entries() {
+		return [...this.lines.values()];
+	}
+	get size() {
+		return this.lines.size;
+	}
 }

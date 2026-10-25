@@ -16,14 +16,14 @@ lists its books with a tickbox, and **Tick all** and **Tick none** for the group
   fills in what your book lacks (see below).
 - **Different in both**: where both have a value and they differ (the title, authors, series, number in
   the series, dates read, or an edition's narrators, publisher, release date or length), one tickbox per
-  value, *unticked*: tick one to put the other catalog's value in place of yours (an edition's value from
+  value, _unticked_: tick one to put the other catalog's value in place of yours (an edition's value from
   Goodreads or Hardcover is that of the edition picked there, which may not be yours). This is the only way an
   import changes a value you have, and only the values you tick. A series your book lacks is offered
   here too, as an import doesn't add one. The long form of an Audible title (`A Crown of Embers 5: A Spark
-  of Dawn`) is the same title, a series spelled another way (`Ember Coast Series`) the same series, and a
+of Dawn`) is the same title, a series spelled another way (`Ember Coast Series`) the same series, and a
   length a minute off the same length, so none of them is listed.
 - **Only in this catalog** (for a file): your books the file doesn't have, to look through. For Hardcover,
-  see [Hardcover](hardcover.md): your books not on your *Read* shelf there, and reads it lacks, can be ticked
+  see [Hardcover](hardcover.md): your books not on your _Read_ shelf there, and reads it lacks, can be ticked
   to be put on Hardcover.
 - Books on the exclusion list are counted and listed, and never added.
 
@@ -32,7 +32,7 @@ longer differs is left alone), checks the result first and changes nothing when 
 
 ## Matching
 
-An import only ever *adds* books, and fills in what a book you have lacks; it changes a value you have only
+An import only ever _adds_ books, and fills in what a book you have lacks; it changes a value you have only
 where you ticked it in the comparison. An incoming book counts as already present if any of these match,
 strongest first:
 
@@ -46,6 +46,7 @@ Titles, authors and series are compared ignoring case, punctuation and accents (
 script: two books in Cyrillic or Japanese are told apart by their titles like any others.
 
 The imported edition then goes into the match without replacing anything:
+
 - if one of the match's editions has the same ASIN, Goodreads id or ISBN, that edition gets whatever it is
   missing (ASIN, Goodreads id, ISBN, publisher, release date, length), and so do its copies on a box set's other titles;
 - otherwise, if the match has a single edition of its own that does not have a different ASIN (on the same site), Goodreads id or ISBN,
@@ -53,7 +54,7 @@ The imported edition then goes into the match without replacing anything:
 - otherwise it is added as another edition of the book.
 
 Dates read are filled in when the match has none, and so is the Hardcover book id. So later imports keep matching even after more edits.
-ISBNs are *not* used to decide that two books are the same, because one ISBN can belong to several books (a boxed set):
+ISBNs are _not_ used to decide that two books are the same, because one ISBN can belong to several books (a boxed set):
 an incoming book whose ISBN is already on another book is still added if nothing else matches. New books get the series spelling already in use. If Audible lists a book under
 several series, a parent series wins over its sub-series (`Thornmere` over `Thornmere: Wardens`);
 otherwise the first is used and the book is flagged in the import output.
@@ -82,7 +83,7 @@ say which titles it holds), or when it has no ASIN, Goodreads id or ISBN to tie 
 In a series, a box set (any book whose number is a range) is listed after the titles, and the series
 counts its titles, not the set: "3 owned + 1 box set".
 
-**Box sets already in your catalog**: **Box sets** on the *Import & export* page brings the box sets you
+**Box sets already in your catalog**: **Box sets** on the _Import & export_ page brings the box sets you
 imported before this up to date: a set kept as one book (a range and an
 ASIN, Goodreads id, Hardcover id or ISBN) gains its titles as an import would add them, and titles that
 share an edition and are numbers in a row of one series gain the set as its own book, named by the

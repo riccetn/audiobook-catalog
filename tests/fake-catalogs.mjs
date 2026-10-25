@@ -8,57 +8,87 @@
  */
 export function fakeCatalogs(state = openCatalogState()) {
 	const sent = [];
-	const json = (status, body) => ({ ok: status < 400, status, json: async () => body });
+	const json = (status, body) => ({ok: status < 400, status, json: async () => body});
 	const fetch = async url => {
 		sent.push(url);
 		const u = new URL(url);
 		if (u.hostname === 'openlibrary.org') {
 			const m = /^\/(works|books|authors|isbn)\/([^/]+)\.json$/.exec(u.pathname);
-			const page = m && (m[1] === 'isbn' ? state.openLibrary.books[state.openLibrary.isbn[m[2]]] : state.openLibrary[m[1]][m[2]]);
-			return page ? json(200, page) : json(404, { error: 'notfound' });
+			const page =
+				m &&
+				(m[1] === 'isbn'
+					? state.openLibrary.books[state.openLibrary.isbn[m[2]]]
+					: state.openLibrary[m[1]][m[2]]);
+			return page ? json(200, page) : json(404, {error: 'notfound'});
 		}
 		if (u.hostname === 'www.wikidata.org' && u.pathname === '/w/api.php') {
-			const entities = Object.fromEntries(u.searchParams.get('ids').split('|').map(id => {
-				const item = state.wikidata[id];
-				if (!item) return [id, { id, missing: '' }];
-				return [id, u.searchParams.get('props').includes('claims') ? item : { id, labels: item.labels }];
-			}));
-			return json(200, { entities, success: 1 });
+			const entities = Object.fromEntries(
+				u.searchParams
+					.get('ids')
+					.split('|')
+					.map(id => {
+						const item = state.wikidata[id];
+						if (!item) return [id, {id, missing: ''}];
+						return [id, u.searchParams.get('props').includes('claims') ? item : {id, labels: item.labels}];
+					}),
+			);
+			return json(200, {entities, success: 1});
 		}
 		throw new Error(`the page fetched ${url}`);
 	};
-	return { fetch, sent };
+	return {fetch, sent};
 }
 
-const item = id => ({ type: 'wikibase-entityid', value: { 'entity-type': 'item', id } });
-const claim = (datavalue, qualifiers) => ({ mainsnak: { snaktype: 'value', datavalue }, rank: 'normal', ...(qualifiers ? { qualifiers } : {}) });
+const item = id => ({type: 'wikibase-entityid', value: {'entity-type': 'item', id}});
+const claim = (datavalue, qualifiers) => ({
+	mainsnak: {snaktype: 'value', datavalue},
+	rank: 'normal',
+	...(qualifiers ? {qualifiers} : {}),
+});
 
 /** An invented book in both: "The Lantern Keeper" by Ann Vale, book 2 of Gull Isle. */
 export const openCatalogState = () => ({
 	openLibrary: {
 		works: {
-			OL900W: { key: '/works/OL900W', title: 'The Lantern Keeper', authors: [{ author: { key: '/authors/OL70A' }, type: { key: '/type/author_role' } }], subjects: ['Fiction'] },
+			OL900W: {
+				key: '/works/OL900W',
+				title: 'The Lantern Keeper',
+				authors: [{author: {key: '/authors/OL70A'}, type: {key: '/type/author_role'}}],
+				subjects: ['Fiction'],
+			},
 		},
 		books: {
-			OL901M: { key: '/books/OL901M', title: 'The lantern keeper', works: [{ key: '/works/OL900W' }], publishers: ['Gullwing Audio'], publish_date: 'March 4, 2021',
-				isbn_13: ['9780000000019'], series: ['Gull Isle (2)'], identifiers: { goodreads: ['5151'], amazon: ['B0LANTERN2'] },
-				contributors: [{ role: 'Narrator', name: 'Hollis Marr' }] },
+			OL901M: {
+				key: '/books/OL901M',
+				title: 'The lantern keeper',
+				works: [{key: '/works/OL900W'}],
+				publishers: ['Gullwing Audio'],
+				publish_date: 'March 4, 2021',
+				isbn_13: ['9780000000019'],
+				series: ['Gull Isle (2)'],
+				identifiers: {goodreads: ['5151'], amazon: ['B0LANTERN2']},
+				contributors: [{role: 'Narrator', name: 'Hollis Marr'}],
+			},
 		},
-		authors: { OL70A: { key: '/authors/OL70A', name: 'Ann Vale' } },
-		isbn: { '9780000000019': 'OL901M' },
+		authors: {OL70A: {key: '/authors/OL70A', name: 'Ann Vale'}},
+		isbn: {9780000000019: 'OL901M'},
 	},
 	wikidata: {
-		Q9001: { id: 'Q9001', labels: { en: { language: 'en', value: 'The Lantern Keeper' } }, claims: {
-			P1476: [claim({ type: 'monolingualtext', value: { text: 'The Lantern Keeper', language: 'en' } })],
-			P50: [claim(item('Q9002'))],
-			P179: [claim(item('Q9003'), { P1545: [{ snaktype: 'value', datavalue: { type: 'string', value: '2' } }] })],
-			P136: [claim(item('Q9004'))],
-			P648: [claim({ type: 'string', value: 'OL900W' })],
-			P8383: [claim({ type: 'string', value: '7171' })],
-		} },
-		Q9002: { id: 'Q9002', labels: { en: { language: 'en', value: 'Ann Vale' } }, claims: {} },
-		Q9003: { id: 'Q9003', labels: { en: { language: 'en', value: 'Gull Isle' } }, claims: {} },
-		Q9004: { id: 'Q9004', labels: { en: { language: 'en', value: 'fantasy' } }, claims: {} },
+		Q9001: {
+			id: 'Q9001',
+			labels: {en: {language: 'en', value: 'The Lantern Keeper'}},
+			claims: {
+				P1476: [claim({type: 'monolingualtext', value: {text: 'The Lantern Keeper', language: 'en'}})],
+				P50: [claim(item('Q9002'))],
+				P179: [claim(item('Q9003'), {P1545: [{snaktype: 'value', datavalue: {type: 'string', value: '2'}}]})],
+				P136: [claim(item('Q9004'))],
+				P648: [claim({type: 'string', value: 'OL900W'})],
+				P8383: [claim({type: 'string', value: '7171'})],
+			},
+		},
+		Q9002: {id: 'Q9002', labels: {en: {language: 'en', value: 'Ann Vale'}}, claims: {}},
+		Q9003: {id: 'Q9003', labels: {en: {language: 'en', value: 'Gull Isle'}}, claims: {}},
+		Q9004: {id: 'Q9004', labels: {en: {language: 'en', value: 'fantasy'}}, claims: {}},
 	},
 });
 
@@ -70,56 +100,143 @@ export const openCatalogState = () => ({
  */
 export function fakeProxyCatalogs() {
 	const sent = [];
-	const json = (status, body) => ({ ok: status < 400, status, json: async () => body });
-	const ladder = (...names) => ({ root: 'Genres', ladder: names.map((name, i) => ({ id: String(1000 + i), name })) });
+	const json = (status, body) => ({ok: status < 400, status, json: async () => body});
+	const ladder = (...names) => ({root: 'Genres', ladder: names.map((name, i) => ({id: String(1000 + i), name}))});
 	const audible = {
-		'audible.com/B0LANTERN2': { asin: 'B0LANTERN2', title: 'The Lantern Keeper', subtitle: 'Gull Isle, Book 2',
-			authors: [{ asin: 'B0AUTHOR01', name: 'Ann Vale' }], narrators: [{ name: 'Hollis Marr' }, { name: 'Dana Fenwick' }],
-			series: [{ asin: 'B0SERIES01', sequence: '', title: 'The Tidewater Cycle' }, { asin: 'B0SERIES02', sequence: '2', title: 'Gull Isle' }],
-			publisher_name: 'Gullwing Audio', release_date: '2021-03-04', runtime_length_min: 612, isbn: '9780000000019', format_type: 'unabridged',
+		'audible.com/B0LANTERN2': {
+			asin: 'B0LANTERN2',
+			title: 'The Lantern Keeper',
+			subtitle: 'Gull Isle, Book 2',
+			authors: [{asin: 'B0AUTHOR01', name: 'Ann Vale'}],
+			narrators: [{name: 'Hollis Marr'}, {name: 'Dana Fenwick'}],
+			series: [
+				{asin: 'B0SERIES01', sequence: '', title: 'The Tidewater Cycle'},
+				{asin: 'B0SERIES02', sequence: '2', title: 'Gull Isle'},
+			],
+			publisher_name: 'Gullwing Audio',
+			release_date: '2021-03-04',
+			runtime_length_min: 612,
+			isbn: '9780000000019',
+			format_type: 'unabridged',
 			publisher_summary: '<p><b>The second Gull Isle book.</b></p>',
-			category_ladders: [ladder('Science Fiction & Fantasy', 'Fantasy', 'Epic'), ladder('Science Fiction &amp; Fantasy', 'Fantasy', 'Coming of Age'), ladder('Literature & Fiction', 'Literary Fiction')] },
-		'audible.co.uk/B0LANTERNU': { asin: 'B0LANTERNU', title: 'The Lantern Keeper', authors: [{ name: 'Ann Vale' }], narrators: [{ name: 'Hollis Marr' }],
-			series: [{ sequence: '2', title: 'Gull Isle' }], publisher_name: 'Gullwing Audio UK', release_date: '2021-05-01', runtime_length_min: 611 },
+			category_ladders: [
+				ladder('Science Fiction & Fantasy', 'Fantasy', 'Epic'),
+				ladder('Science Fiction &amp; Fantasy', 'Fantasy', 'Coming of Age'),
+				ladder('Literature & Fiction', 'Literary Fiction'),
+			],
+		},
+		'audible.co.uk/B0LANTERNU': {
+			asin: 'B0LANTERNU',
+			title: 'The Lantern Keeper',
+			authors: [{name: 'Ann Vale'}],
+			narrators: [{name: 'Hollis Marr'}],
+			series: [{sequence: '2', title: 'Gull Isle'}],
+			publisher_name: 'Gullwing Audio UK',
+			release_date: '2021-05-01',
+			runtime_length_min: 611,
+		},
 	};
-	const people = (role, ...names) => names.map((name, i) => ({ role: { name: role }, person: { id: `Prsn${role.slice(0, 4)}${i}00000`.slice(0, 12), name } }));
-	const releaseUs = { id: 'RlsLntrnUS01', title: 'The Lantern Keeper', releaseDate: '2021-03-04T00:00:00Z', duration: '10:12:20', disambiguation: 'unabridged',
-		publisher: { id: 'PblshrGullw1', name: 'Gullwing Audio' }, people: people('Narrator', 'Hollis Marr', 'Dana Fenwick'), images: [abdbImage('ImgLntrnUS01', 'c1'.repeat(32))] };
-	const releaseUk = { id: 'RlsLntrnUK01', title: 'The Lantern Keeper', releaseDate: '2021-05-01T00:00:00Z', duration: '10:11:00',
-		publisher: { id: 'PblshrGullw2', name: 'Gullwing Audio UK' }, people: people('Narrator', 'Hollis Marr') };
-	const book = { id: 'LnTrnKpr2xYz', title: 'The Lantern Keeper', subtitle: 'Gull Isle, Book 2', copyright: 2021, type: 'fiction',
-		genres: [{ id: 'GnrFantasy01', title: 'Fantasy' }], tags: [{ id: 'TgCozy000001', title: 'Cozy' }], people: people('Author', 'Ann Vale'),
+	const people = (role, ...names) =>
+		names.map((name, i) => ({
+			role: {name: role},
+			person: {id: `Prsn${role.slice(0, 4)}${i}00000`.slice(0, 12), name},
+		}));
+	const releaseUs = {
+		id: 'RlsLntrnUS01',
+		title: 'The Lantern Keeper',
+		releaseDate: '2021-03-04T00:00:00Z',
+		duration: '10:12:20',
+		disambiguation: 'unabridged',
+		publisher: {id: 'PblshrGullw1', name: 'Gullwing Audio'},
+		people: people('Narrator', 'Hollis Marr', 'Dana Fenwick'),
+		images: [abdbImage('ImgLntrnUS01', 'c1'.repeat(32))],
+	};
+	const releaseUk = {
+		id: 'RlsLntrnUK01',
+		title: 'The Lantern Keeper',
+		releaseDate: '2021-05-01T00:00:00Z',
+		duration: '10:11:00',
+		publisher: {id: 'PblshrGullw2', name: 'Gullwing Audio UK'},
+		people: people('Narrator', 'Hollis Marr'),
+	};
+	const book = {
+		id: 'LnTrnKpr2xYz',
+		title: 'The Lantern Keeper',
+		subtitle: 'Gull Isle, Book 2',
+		copyright: 2021,
+		type: 'fiction',
+		genres: [{id: 'GnrFantasy01', title: 'Fantasy'}],
+		tags: [{id: 'TgCozy000001', title: 'Cozy'}],
+		people: people('Author', 'Ann Vale'),
 		images: [abdbImage('ImgLntrnKpr1', 'b0'.repeat(32))],
-		series: [{ ordinal: '0', series: { id: 'SrsTidewater', title: 'The Tidewater Cycle', bookCount: 4 } }, { ordinal: '2', series: { id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3 } }],
-		releases: [releaseUs, releaseUk] };
-	const releases = {
-		RlsLntrnUS01: { ...releaseUs, isbn: '9780000000019', runtimeLengthSec: 36740, book: { id: book.id, title: book.title },
-			external: [{ id: 'ExtLntrnUS01', itemId: 'B0LANTERN2', category: { title: 'Audible', url: 'https://www.audible.com' } }] },
+		series: [
+			{ordinal: '0', series: {id: 'SrsTidewater', title: 'The Tidewater Cycle', bookCount: 4}},
+			{ordinal: '2', series: {id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3}},
+		],
+		releases: [releaseUs, releaseUk],
 	};
-	const notFound = detail => json(404, { errors: [{ status: '404', title: 'Not Found', detail }] });
+	const releases = {
+		RlsLntrnUS01: {
+			...releaseUs,
+			isbn: '9780000000019',
+			runtimeLengthSec: 36740,
+			book: {id: book.id, title: book.title},
+			external: [
+				{
+					id: 'ExtLntrnUS01',
+					itemId: 'B0LANTERN2',
+					category: {title: 'Audible', url: 'https://www.audible.com'},
+				},
+			],
+		},
+	};
+	const notFound = detail => json(404, {errors: [{status: '404', title: 'Not Found', detail}]});
 	const route = async path => {
 		sent.push(path);
 		const u = new URL(path, 'https://proxy.invalid/');
 		let m = /^\/audible\/([^/]+)\/catalog\/products\/([^/]+)$/.exec(u.pathname);
 		if (m) {
 			assert(u.searchParams.get('response_groups').includes('series'), 'Audible is asked for the series');
-			return json(200, { product: audible[`${m[1]}/${m[2]}`] || { asin: m[2], asset_details: [] }, response_groups: ['always-returned'] });
+			return json(200, {
+				product: audible[`${m[1]}/${m[2]}`] || {asin: m[2], asset_details: []},
+				response_groups: ['always-returned'],
+			});
 		}
 		if (u.pathname === '/audiobookdb/books') {
 			// a title search: list items, with up to 3 authors; another author's book of the same title too
 			const q = u.searchParams.get('q').toLowerCase();
-			const items = [{ id: book.id, title: book.title, authors: [{ id: 'PrsnAuth0000', name: 'Ann Vale' }], releaseCount: 2 },
-				{ id: 'LnTrnKprBoR1', title: 'The Lantern Keeper', authors: [{ id: 'PrsnBoReed01', name: 'Bo Reed' }], releaseCount: 1 },
-				{ id: 'LnTrnKprsGd1', title: 'The Lantern Keeper\'s Guide', authors: [{ id: 'PrsnAuth0000', name: 'Ann Vale' }], releaseCount: 1 }];
-			return json(200, items.filter(i => i.title.toLowerCase().includes(q)));
+			const items = [
+				{id: book.id, title: book.title, authors: [{id: 'PrsnAuth0000', name: 'Ann Vale'}], releaseCount: 2},
+				{
+					id: 'LnTrnKprBoR1',
+					title: 'The Lantern Keeper',
+					authors: [{id: 'PrsnBoReed01', name: 'Bo Reed'}],
+					releaseCount: 1,
+				},
+				{
+					id: 'LnTrnKprsGd1',
+					title: "The Lantern Keeper's Guide",
+					authors: [{id: 'PrsnAuth0000', name: 'Ann Vale'}],
+					releaseCount: 1,
+				},
+			];
+			return json(
+				200,
+				items.filter(i => i.title.toLowerCase().includes(q)),
+			);
 		}
 		m = /^\/audiobookdb\/(audiobooks\/external\/audible|books|releases)\/([^/]+)$/.exec(u.pathname);
-		if (m && m[1] === 'audiobooks/external/audible') return m[2] === 'B0LANTERN2' ? json(200, { ...book, matchedReleaseId: 'RlsLntrnUS01' }) : notFound(`audiobook with id audible/${m[2]} not found`);
-		if (m && m[1] === 'books') return m[2] === book.id ? json(200, book) : notFound(`book with id ${m[2]} not found`);
-		if (m && m[1] === 'releases') return releases[m[2]] ? json(200, releases[m[2]]) : notFound(`release with id ${m[2]} not found`);
+		if (m && m[1] === 'audiobooks/external/audible')
+			return m[2] === 'B0LANTERN2'
+				? json(200, {...book, matchedReleaseId: 'RlsLntrnUS01'})
+				: notFound(`audiobook with id audible/${m[2]} not found`);
+		if (m && m[1] === 'books')
+			return m[2] === book.id ? json(200, book) : notFound(`book with id ${m[2]} not found`);
+		if (m && m[1] === 'releases')
+			return releases[m[2]] ? json(200, releases[m[2]]) : notFound(`release with id ${m[2]} not found`);
 		throw new Error(`the proxy was asked for ${path}`);
 	};
-	return { route, sent };
+	return {route, sent};
 }
 
 /**
@@ -129,10 +246,19 @@ export function fakeProxyCatalogs() {
  */
 function abdbImage(id, hash) {
 	const url = `https://cdn.audiobookdb.org/${hash}`;
-	return { id, url, sourceUrl: `${url}/source.jpg:book`, width: 2400, height: 2400, blurdata: 'U00000fQfQfQfQfQfQfQfQfQfQfQ' };
+	return {
+		id,
+		url,
+		sourceUrl: `${url}/source.jpg:book`,
+		width: 2400,
+		height: 2400,
+		blurdata: 'U00000fQfQfQfQfQfQfQfQfQfQfQ',
+	};
 }
 
-function assert(ok, message) { if (!ok) throw new Error(message); }
+function assert(ok, message) {
+	if (!ok) throw new Error(message);
+}
 
 /**
  * Your account and AudiobookDB's catalog for fakeAudiobookdb(), every book invented: your key and username,
@@ -142,34 +268,124 @@ function assert(ok, message) { if (!ok) throw new Error(message); }
  * (1.0.0) and its answers (checked on 2026-10-22 and 2026-10-23).
  */
 export function audiobookdbState() {
-	const person = (role, id, name) => ({ role: { name: role }, person: { id, name } });
-	const audible = asin => ({ id: `Ext${asin.slice(2, 11)}`, itemId: asin, category: { title: 'Audible', url: 'https://www.audible.com' } });
-	const release = (id, title, asin, extra = {}) => ({ id, title, releaseDate: '2020-02-02T00:00:00Z', duration: '8:00:00',
-		publisher: { id: 'PblshrGullw1', name: 'Gullwing Audio' }, external: asin ? [audible(asin)] : [], ...extra });
+	const person = (role, id, name) => ({role: {name: role}, person: {id, name}});
+	const audible = asin => ({
+		id: `Ext${asin.slice(2, 11)}`,
+		itemId: asin,
+		category: {title: 'Audible', url: 'https://www.audible.com'},
+	});
+	const release = (id, title, asin, extra = {}) => ({
+		id,
+		title,
+		releaseDate: '2020-02-02T00:00:00Z',
+		duration: '8:00:00',
+		publisher: {id: 'PblshrGullw1', name: 'Gullwing Audio'},
+		external: asin ? [audible(asin)] : [],
+		...extra,
+	});
 	const vale = person('Author', 'PrsnVale0001', 'Ann Vale');
 	// Lantern Hours has a cover only on its book, Tidewater on its release, Brine Tide none
-	const gullIsle = n => ({ ordinal: n, position: { value: n, label: n }, series: { id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3 } });
+	const gullIsle = n => ({
+		ordinal: n,
+		position: {value: n, label: n},
+		series: {id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3},
+	});
 	const books = {
-		LntrnHours01: { id: 'LntrnHours01', title: 'Lantern Hours', people: [person('Author', 'PrsnHale0001', 'R. T. Hale')], series: [], images: [abdbImage('ImgLntrnHrs1', 'a1'.repeat(32))],
-			releases: [release('RlsLntrnHrs1', 'Lantern Hours', 'B0LANTERN1', { people: [person('Narrator', 'PrsnMarr0001', 'Hollis Marr')] })] },
-		Tidewater001: { id: 'Tidewater001', title: 'Tidewater', people: [vale], series: [gullIsle('1')],
-			releases: [release('RlsTidewatr1', 'Tidewater', 'B0TIDEWAT1', { duration: '9:30:00', images: [abdbImage('ImgTidewatr1', 'd2'.repeat(32))], people: [person('Narrator', 'PrsnFnwk0001', 'Dana Fenwick')] })] },
-		BrineTide001: { id: 'BrineTide001', title: 'Brine Tide', people: [vale], series: [gullIsle('2')],
-			releases: [release('RlsBrineUS01', 'Brine Tide', 'B0BRINETD1'), release('RlsBrineUK01', 'Brine Tide', 'B0BRINEUK1')] },
-		PaperFen0001: { id: 'PaperFen0001', title: 'The Paper Fen', people: [vale], series: [],
-			releases: [release('RlsPaperUS01', 'The Paper Fen', null), release('RlsPaperUK01', 'The Paper Fen', null)] },
-		GullSong0001: { id: 'GullSong0001', title: 'Gull Song', people: [vale], series: [gullIsle('3')], releases: [release('RlsGullSng01', 'Gull Song', null)] },
+		LntrnHours01: {
+			id: 'LntrnHours01',
+			title: 'Lantern Hours',
+			people: [person('Author', 'PrsnHale0001', 'R. T. Hale')],
+			series: [],
+			images: [abdbImage('ImgLntrnHrs1', 'a1'.repeat(32))],
+			releases: [
+				release('RlsLntrnHrs1', 'Lantern Hours', 'B0LANTERN1', {
+					people: [person('Narrator', 'PrsnMarr0001', 'Hollis Marr')],
+				}),
+			],
+		},
+		Tidewater001: {
+			id: 'Tidewater001',
+			title: 'Tidewater',
+			people: [vale],
+			series: [gullIsle('1')],
+			releases: [
+				release('RlsTidewatr1', 'Tidewater', 'B0TIDEWAT1', {
+					duration: '9:30:00',
+					images: [abdbImage('ImgTidewatr1', 'd2'.repeat(32))],
+					people: [person('Narrator', 'PrsnFnwk0001', 'Dana Fenwick')],
+				}),
+			],
+		},
+		BrineTide001: {
+			id: 'BrineTide001',
+			title: 'Brine Tide',
+			people: [vale],
+			series: [gullIsle('2')],
+			releases: [
+				release('RlsBrineUS01', 'Brine Tide', 'B0BRINETD1'),
+				release('RlsBrineUK01', 'Brine Tide', 'B0BRINEUK1'),
+			],
+		},
+		PaperFen0001: {
+			id: 'PaperFen0001',
+			title: 'The Paper Fen',
+			people: [vale],
+			series: [],
+			releases: [release('RlsPaperUS01', 'The Paper Fen', null), release('RlsPaperUK01', 'The Paper Fen', null)],
+		},
+		GullSong0001: {
+			id: 'GullSong0001',
+			title: 'Gull Song',
+			people: [vale],
+			series: [gullIsle('3')],
+			releases: [release('RlsGullSng01', 'Gull Song', null)],
+		},
 	};
-	const onShelf = id => ({ id, title: books[id].title, people: books[id].people, addedAt: '2026-01-01T00:00:00Z' });
-	const shelf = (slug, name, isExclusive, ids) => ({ id: `Shlf${slug.replace(/-/g, '').slice(0, 8).padEnd(8, '0')}`, slug, name, description: '', isDefault: true,
-		isExclusive, position: 0, ...ids.length ? { books: ids.map(onShelf) } : {}, bookCount: ids.length, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+	const onShelf = id => ({id, title: books[id].title, people: books[id].people, addedAt: '2026-01-01T00:00:00Z'});
+	const shelf = (slug, name, isExclusive, ids) => ({
+		id: `Shlf${slug.replace(/-/g, '').slice(0, 8).padEnd(8, '0')}`,
+		slug,
+		name,
+		description: '',
+		isDefault: true,
+		isExclusive,
+		position: 0,
+		...(ids.length ? {books: ids.map(onShelf)} : {}),
+		bookCount: ids.length,
+		createdAt: '2026-01-01T00:00:00Z',
+		updatedAt: '2026-01-01T00:00:00Z',
+	});
 	return {
-		key: 'abdb-key-1', username: 'reader', books,
-		shelves: [shelf('to-listen', 'To Listen', true, []), shelf('currently-listening', 'Currently Listening', true, ['BrineTide001']),
-			shelf('listened', 'Listened', true, ['Tidewater001', 'PaperFen0001']), shelf('favorites', 'Favorites', false, ['LntrnHours01'])],
-		series: { SrsGullIsle1: { id: 'SrsGullIsle1', title: 'Gull Isle', books: ['Tidewater001', 'BrineTide001', 'GullSong0001'].map((id, i) => ({ ordinal: String(i + 1), book: { id, title: books[id].title } })) } },
-		people: { PrsnVale0001: { id: 'PrsnVale0001', name: 'Ann Vale', roles: ['Tidewater001', 'BrineTide001', 'PaperFen0001', 'GullSong0001'].map(id => ({ role: { name: 'Author' }, book: { id, title: books[id].title } })) } },
-		onAdd: null,   // called with each book put on a shelf, before it is
+		key: 'abdb-key-1',
+		username: 'reader',
+		books,
+		shelves: [
+			shelf('to-listen', 'To Listen', true, []),
+			shelf('currently-listening', 'Currently Listening', true, ['BrineTide001']),
+			shelf('listened', 'Listened', true, ['Tidewater001', 'PaperFen0001']),
+			shelf('favorites', 'Favorites', false, ['LntrnHours01']),
+		],
+		series: {
+			SrsGullIsle1: {
+				id: 'SrsGullIsle1',
+				title: 'Gull Isle',
+				books: ['Tidewater001', 'BrineTide001', 'GullSong0001'].map((id, i) => ({
+					ordinal: String(i + 1),
+					book: {id, title: books[id].title},
+				})),
+			},
+		},
+		people: {
+			PrsnVale0001: {
+				id: 'PrsnVale0001',
+				name: 'Ann Vale',
+				roles: ['Tidewater001', 'BrineTide001', 'PaperFen0001', 'GullSong0001'].map(id => ({
+					role: {name: 'Author'},
+					book: {id, title: books[id].title},
+				})),
+			},
+		},
+		onAdd: null, // called with each book put on a shelf, before it is
 	};
 }
 
@@ -182,18 +398,25 @@ export function audiobookdbState() {
  */
 export function fakeAudiobookdb(state = audiobookdbState()) {
 	const sent = [];
-	const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-	const error = (status, title) => json(status, { errors: [{ status: String(status), title }] });
+	const json = (status, body) =>
+		new Response(JSON.stringify(body), {status, headers: {'Content-Type': 'application/json'}});
+	const error = (status, title) => json(status, {errors: [{status: String(status), title}]});
 	const fetch = async request => {
 		const u = new URL(request.url);
-		assert(u.origin === 'https://audiobookdb.org' && u.pathname.startsWith('/api/'), `AudiobookDB was asked for ${request.url}`);
+		assert(
+			u.origin === 'https://audiobookdb.org' && u.pathname.startsWith('/api/'),
+			`AudiobookDB was asked for ${request.url}`,
+		);
 		const path = u.pathname.slice('/api/'.length);
 		const key = request.headers.get('x-api-key');
 		const body = request.method === 'POST' ? JSON.parse(await request.text()) : null;
-		sent.push({ method: request.method, path: path + u.search, key });
+		sent.push({method: request.method, path: path + u.search, key});
 		const mine = key === state.key;
 		let m;
-		if (path === 'auth/session') return mine ? json(200, { id: 'user-1', username: state.username, role: 'user' }) : error(401, 'Unauthorized');
+		if (path === 'auth/session')
+			return mine
+				? json(200, {id: 'user-1', username: state.username, role: 'user'})
+				: error(401, 'Unauthorized');
 		if ((m = /^users\/username\/([^/]+)\/shelves(?:\/([^/]+)(\/books)?)?$/.exec(path))) {
 			if (m[1] !== state.username) return error(404, 'Not Found');
 			if (!mine) return error(key ? 401 : 403, key ? 'Unauthorized' : 'shelves are private');
@@ -205,7 +428,13 @@ export function fakeAudiobookdb(state = audiobookdbState()) {
 				if (!book) return error(404, 'Not Found');
 				if (state.onAdd) state.onAdd(body.bookId);
 				if (!shelf.books) shelf.books = [];
-				if (!shelf.books.some(b => b.id === body.bookId)) shelf.books.push({ id: book.id, title: book.title, people: book.people, addedAt: '2026-10-23T00:00:00Z' });
+				if (!shelf.books.some(b => b.id === body.bookId))
+					shelf.books.push({
+						id: book.id,
+						title: book.title,
+						people: book.people,
+						addedAt: '2026-10-23T00:00:00Z',
+					});
 				shelf.bookCount = shelf.books.length;
 				return json(200, shelf);
 			}
@@ -213,13 +442,23 @@ export function fakeAudiobookdb(state = audiobookdbState()) {
 		}
 		assert(request.method === 'GET', `AudiobookDB was sent a ${request.method} to ${path}`);
 		if ((m = /^audiobooks\/external\/audible\/([^/]+)$/.exec(path))) {
-			const book = Object.values(state.books).find(b => b.releases.some(r => r.external.some(x => x.itemId === m[1])));
-			return book ? json(200, { ...book, matchedReleaseId: book.releases.find(r => r.external.some(x => x.itemId === m[1])).id }) : error(404, 'Not Found');
+			const book = Object.values(state.books).find(b =>
+				b.releases.some(r => r.external.some(x => x.itemId === m[1])),
+			);
+			return book
+				? json(200, {
+						...book,
+						matchedReleaseId: book.releases.find(r => r.external.some(x => x.itemId === m[1])).id,
+					})
+				: error(404, 'Not Found');
 		}
-		if ((m = /^books\/([^/]+)$/.exec(path))) return state.books[m[1]] ? json(200, state.books[m[1]]) : error(404, 'Not Found');
-		if ((m = /^series\/([^/]+)$/.exec(path))) return state.series[m[1]] ? json(200, state.series[m[1]]) : error(404, 'Not Found');
-		if ((m = /^people\/([^/]+)$/.exec(path))) return state.people[m[1]] ? json(200, state.people[m[1]]) : error(404, 'Not Found');
+		if ((m = /^books\/([^/]+)$/.exec(path)))
+			return state.books[m[1]] ? json(200, state.books[m[1]]) : error(404, 'Not Found');
+		if ((m = /^series\/([^/]+)$/.exec(path)))
+			return state.series[m[1]] ? json(200, state.series[m[1]]) : error(404, 'Not Found');
+		if ((m = /^people\/([^/]+)$/.exec(path)))
+			return state.people[m[1]] ? json(200, state.people[m[1]]) : error(404, 'Not Found');
 		throw new Error(`AudiobookDB was asked for ${path}`);
 	};
-	return { fetch, sent };
+	return {fetch, sent};
 }

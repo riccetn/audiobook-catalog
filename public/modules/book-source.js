@@ -31,7 +31,20 @@ import {CatalogClient} from './catalog-client.js';
  * @typedef {'own' | 'also' | 'fallback' | null} Answers
  */
 
-const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const MONTHS = [
+	'january',
+	'february',
+	'march',
+	'april',
+	'may',
+	'june',
+	'july',
+	'august',
+	'september',
+	'october',
+	'november',
+	'december',
+];
 
 /** One external catalog that books can be looked up in; a subclass says which and how. */
 export class BookSource {
@@ -51,29 +64,33 @@ export class BookSource {
 	static SEARCHES = false;
 
 	/** @param {LookupContext} context */
-	constructor(context){
+	constructor(context) {
 		this.context = context;
 	}
 
 	/** @returns {typeof BookSource} the source's class, with what it says of its catalog */
-	get kind(){ return /** @type {typeof BookSource} */ (this.constructor); }
+	get kind() {
+		return /** @type {typeof BookSource} */ (this.constructor);
+	}
 
 	/** @returns {string} its catalog's name, as the page says it */
-	get label(){ return this.kind.LABEL; }
+	get label() {
+		return this.kind.LABEL;
+	}
 
 	/** @returns {CatalogClient | null} the client of its catalog, when its key is saved */
-	get client(){
+	get client() {
 		return this.context.clients.find(c => c instanceof this.kind.CLIENT) || null;
 	}
 
 	/** @returns {boolean} whether it can be asked: what it needs is saved */
-	get available(){
+	get available() {
 		const needs = this.kind.NEEDS;
 		return needs === 'proxy' ? Boolean(this.context.proxy) : needs === 'key' ? Boolean(this.client) : true;
 	}
 
 	/** @returns {string} what to save to ask it ('save a catalog proxy') */
-	get needsText(){
+	get needsText() {
 		return BookSource.needing(this.kind);
 	}
 
@@ -82,8 +99,12 @@ export class BookSource {
 	 * @param {typeof BookSource} kind
 	 * @returns {string}
 	 */
-	static needing(kind){
-		return kind.NEEDS === 'proxy' ? 'save a catalog proxy' : kind.NEEDS === 'key' ? `save your ${kind.LABEL} ${kind.CLIENT.KEY_NAME}` : '';
+	static needing(kind) {
+		return kind.NEEDS === 'proxy'
+			? 'save a catalog proxy'
+			: kind.NEEDS === 'key'
+				? `save your ${kind.LABEL} ${kind.CLIENT.KEY_NAME}`
+				: '';
 	}
 
 	/**
@@ -92,7 +113,7 @@ export class BookSource {
 	 * @param {string} _value tidied
 	 * @returns {Pasted | null}
 	 */
-	static read(_value){
+	static read(_value) {
 		return null;
 	}
 
@@ -101,7 +122,7 @@ export class BookSource {
 	 * @param {Pasted} pasted
 	 * @returns {Answers}
 	 */
-	answers(pasted){
+	answers(pasted) {
 		return pasted.catalog === this.kind.CATALOG ? 'own' : null;
 	}
 
@@ -112,7 +133,7 @@ export class BookSource {
 	 * @param {Found} _found notes what it couldn't fill in
 	 * @returns {Promise<Book | null>}
 	 */
-	async lookup(_pasted, _found){
+	async lookup(_pasted, _found) {
 		throw new Error(`${this.label}: lookup is not written`);
 	}
 
@@ -123,7 +144,7 @@ export class BookSource {
 	 * @param {string[]} _authors
 	 * @returns {Promise<string>}
 	 */
-	async search(_title, _authors){
+	async search(_title, _authors) {
 		throw new Error(`${this.label} can't be searched by title`);
 	}
 
@@ -133,10 +154,13 @@ export class BookSource {
 	 * @param {string} url
 	 * @returns {Promise<Unchecked | null>} the answer, null for a 404; throws with a short reason otherwise
 	 */
-	async json(url){
+	async json(url) {
 		let res;
-		try{ res = await this.context.get(url); }
-		catch(e){ throw new Error(`this browser could not reach ${this.label} (offline?)`, {cause: e}); }
+		try {
+			res = await this.context.get(url);
+		} catch (e) {
+			throw new Error(`this browser could not reach ${this.label} (offline?)`, {cause: e});
+		}
 		return BookSource.answer(this.label, res);
 	}
 
@@ -146,13 +170,23 @@ export class BookSource {
 	 * @param {boolean} [list] a list is wanted (a search's), not a book
 	 * @returns {Promise<Unchecked | null>}
 	 */
-	async proxied(route, list = false){
+	async proxied(route, list = false) {
 		const proxy = this.context.proxy;
-		if(!proxy) throw new Error(`${this.label} can't be read from a web page; ${this.needsText} on the Import & export page`);
+		if (!proxy)
+			throw new Error(
+				`${this.label} can't be read from a web page; ${this.needsText} on the Import & export page`,
+			);
 		let res;
-		try{ res = await proxy(route); }
-		catch(e){ throw new Error('this browser could not reach the catalog proxy (offline, or check it on the Import & export page)', {cause: e}); }
-		if(res.status === 401) throw new Error('the catalog proxy refused its key (check it on the Import & export page)');
+		try {
+			res = await proxy(route);
+		} catch (e) {
+			throw new Error(
+				'this browser could not reach the catalog proxy (offline, or check it on the Import & export page)',
+				{cause: e},
+			);
+		}
+		if (res.status === 401)
+			throw new Error('the catalog proxy refused its key (check it on the Import & export page)');
 		return BookSource.answer(this.label, res, list);
 	}
 
@@ -162,11 +196,12 @@ export class BookSource {
 	 * @param {boolean} [list] a list is wanted (a search's), not a book
 	 * @returns {Promise<Unchecked | null>} what `res` holds, null for a 404; throws with a short reason otherwise
 	 */
-	static async answer(source, res, list = false){
-		if(res.status === 404) return null;
-		if(!res.ok) throw new Error(`${source} answered ${res.status}`);
+	static async answer(source, res, list = false) {
+		if (res.status === 404) return null;
+		if (!res.ok) throw new Error(`${source} answered ${res.status}`);
 		const json = await res.json().catch(() => null);
-		if(list ? !Array.isArray(json) : !Text.isObject(json)) throw new Error(`${source} sent something that isn't ${list ? 'a list of books' : 'a book'}`);
+		if (list ? !Array.isArray(json) : !Text.isObject(json))
+			throw new Error(`${source} sent something that isn't ${list ? 'a list of books' : 'a book'}`);
 		return json;
 	}
 
@@ -176,7 +211,7 @@ export class BookSource {
 	 * @param {unknown} x
 	 * @returns {string}
 	 */
-	static text(x){
+	static text(x) {
 		return typeof x === 'string' ? Text.tidy(x) : '';
 	}
 
@@ -186,19 +221,25 @@ export class BookSource {
 	 * @param {unknown} text
 	 * @returns {string | null}
 	 */
-	static date(text){
-		const value = Text.tidy(String(text || '')).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+	static date(text) {
+		const value = Text.tidy(String(text || ''))
+			.replace(/[.,]/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim();
 		const iso = Text.parseDate(value.replace(/T.*$/, ''));
-		if(iso) return iso;
-		const month = (/** @type {string} */ name) => { const i = MONTHS.findIndex(m => name.length >= 3 && m.startsWith(name.toLowerCase())); return i < 0 ? null : i + 1; };
+		if (iso) return iso;
+		const month = (/** @type {string} */ name) => {
+			const i = MONTHS.findIndex(m => name.length >= 3 && m.startsWith(name.toLowerCase()));
+			return i < 0 ? null : i + 1;
+		};
 		/** @type {(y: string, mo: number | null, d?: string) => string | null} */
-		const make = (y, mo, d) => mo ? Text.parseDate(d ? `${y}-${mo}-${d}` : `${y}-${mo}`) : null;
+		const make = (y, mo, d) => (mo ? Text.parseDate(d ? `${y}-${mo}-${d}` : `${y}-${mo}`) : null);
 		let m = /^([a-z]+) (\d{1,2}) (\d{4})$/i.exec(value);
-		if(m && month(m[1])) return make(m[3], month(m[1]), m[2]);
+		if (m && month(m[1])) return make(m[3], month(m[1]), m[2]);
 		m = /^(\d{1,2}) ([a-z]+) (\d{4})$/i.exec(value);
-		if(m && month(m[2])) return make(m[3], month(m[2]), m[1]);
+		if (m && month(m[2])) return make(m[3], month(m[2]), m[1]);
 		m = /^([a-z]+) (\d{4})$/i.exec(value);
-		if(m && month(m[1])) return make(m[2], month(m[1]));
+		if (m && month(m[1])) return make(m[2], month(m[1]));
 		// a season, or words around the year
 		m = /^(?:[a-z]+ )*(\d{4})$/i.exec(value);
 		return m ? m[1] : null;

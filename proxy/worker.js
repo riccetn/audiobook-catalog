@@ -31,21 +31,39 @@
  */
 /** @typedef {{href: string, rest: string, route: Route}} Upstream the catalog's address a request asks for, its path in the API, and its route */
 
-const AUDIBLE_SITES = ['audible.com', 'audible.co.uk', 'audible.de', 'audible.fr', 'audible.it', 'audible.es',
-	'audible.ca', 'audible.com.au', 'audible.in', 'audible.co.jp'];
+const AUDIBLE_SITES = [
+	'audible.com',
+	'audible.co.uk',
+	'audible.de',
+	'audible.fr',
+	'audible.it',
+	'audible.es',
+	'audible.ca',
+	'audible.com.au',
+	'audible.in',
+	'audible.co.jp',
+];
 
 /** @type {Record<string, Route>} */
 export const CATALOGS = {
 	// AudiobookDB's public API (audiobookdb.org/docs): /audiobookdb/audiobooks/external/audible/<ASIN>
 	// With your API key (X-API-Key) for who you are, your shelves, and putting a book on one; nothing else
 	// gets the key, and nothing else may be sent.
-	audiobookdb: {base: () => 'https://audiobookdb.org/api/', keyHeader: 'X-API-Key', keyed: [
-		{method: 'GET', path: /^auth\/session$/},
-		{method: 'GET', path: /^users\/username\/[^/]+\/shelves(\/[^/]+)?$/},
-		{method: 'POST', path: /^users\/username\/[^/]+\/shelves\/[^/]+\/books$/},
-	]},
+	audiobookdb: {
+		base: () => 'https://audiobookdb.org/api/',
+		keyHeader: 'X-API-Key',
+		keyed: [
+			{method: 'GET', path: /^auth\/session$/},
+			{method: 'GET', path: /^users\/username\/[^/]+\/shelves(\/[^/]+)?$/},
+			{method: 'POST', path: /^users\/username\/[^/]+\/shelves\/[^/]+\/books$/},
+		],
+	},
 	// Audible's catalog API, which needs no account: /audible/audible.co.uk/catalog/products/<ASIN>?response_groups=...
-	audible: {base: site => AUDIBLE_SITES.includes(site) ? `https://api.${site}/1.0/` : null, sites: true, paths: /^catalog\//},
+	audible: {
+		base: site => (AUDIBLE_SITES.includes(site) ? `https://api.${site}/1.0/` : null),
+		sites: true,
+		paths: /^catalog\//,
+	},
 	// BookBrainz's API: /bookbrainz/edition/<bbid>
 	bookbrainz: {base: () => 'https://api.bookbrainz.org/1/'},
 	// ISFDB's REST API (cgi-bin/rest): /isfdb/getpub.cgi?<ISBN>
@@ -68,8 +86,11 @@ const PASSED_HEADERS = ['accept', 'accept-language'];
  * @param {Env} env
  * @returns {string[]}
  */
-export function allowedOrigins(env){
-	const listed = (env.ALLOWED_ORIGINS || '').split(/[\s,]+/).map(o => o.replace(/\/+$/, '')).filter(Boolean);
+export function allowedOrigins(env) {
+	const listed = (env.ALLOWED_ORIGINS || '')
+		.split(/[\s,]+/)
+		.map(o => o.replace(/\/+$/, ''))
+		.filter(Boolean);
 	return listed.length ? listed : DEFAULT_ORIGINS;
 }
 
@@ -79,9 +100,9 @@ export function allowedOrigins(env){
  * @param {string} key
  * @returns {boolean}
  */
-function sameKey(given, key){
+function sameKey(given, key) {
 	let diff = given.length ^ key.length;
-	for(let i = 0; i < key.length; i++) diff |= key.charCodeAt(i) ^ given.charCodeAt(i % (given.length || 1));
+	for (let i = 0; i < key.length; i++) diff |= key.charCodeAt(i) ^ given.charCodeAt(i % (given.length || 1));
 	return diff === 0;
 }
 
@@ -91,7 +112,7 @@ function sameKey(given, key){
  * @param {URL} url the request's address
  * @returns {string | null}
  */
-export function upstreamUrl(url){
+export function upstreamUrl(url) {
 	return upstream(url)?.href ?? null;
 }
 
@@ -101,7 +122,7 @@ export function upstreamUrl(url){
  * @param {string} method
  * @returns {KeyedPath | null}
  */
-export function keyedPath(up, method){
+export function keyedPath(up, method) {
 	return (up.route.keyed || []).find(k => k.method === method && k.path.test(up.rest)) || null;
 }
 
@@ -109,14 +130,14 @@ export function keyedPath(up, method){
  * @param {URL} url
  * @returns {Upstream | null}
  */
-function upstream(url){
+function upstream(url) {
 	const parts = url.pathname.split('/').slice(1);
 	const route = Object.hasOwn(CATALOGS, parts[0]) ? CATALOGS[parts[0]] : null;
-	if(!route) return null;
+	if (!route) return null;
 	const base = route.base(route.sites ? parts[1] || '' : '');
 	const rest = parts.slice(route.sites ? 2 : 1).join('/');
-	if(!base || !rest || rest.split('/').some(p => !p || /^(\.|%2e){1,2}$/i.test(p))) return null;
-	if(route.paths && !route.paths.test(rest)) return null;
+	if (!base || !rest || rest.split('/').some(p => !p || /^(\.|%2e){1,2}$/i.test(p))) return null;
+	if (route.paths && !route.paths.test(rest)) return null;
 	const target = new URL(rest + url.search, base);
 	return target.href.startsWith(base) ? {href: target.href, rest, route} : null;
 }
@@ -126,8 +147,10 @@ function upstream(url){
  * @param {string | null} origin
  * @returns {Record<string, string>}
  */
-function corsHeaders(origin){
-	return origin ? {'Access-Control-Allow-Origin': origin, 'Access-Control-Expose-Headers': 'Retry-After', 'Vary': 'Origin'} : {'Vary': 'Origin'};
+function corsHeaders(origin) {
+	return origin
+		? {'Access-Control-Allow-Origin': origin, 'Access-Control-Expose-Headers': 'Retry-After', Vary: 'Origin'}
+		: {Vary: 'Origin'};
 }
 
 /**
@@ -136,8 +159,11 @@ function corsHeaders(origin){
  * @param {Record<string, string>} headers
  * @returns {Response}
  */
-function json(status, body, headers){
-	return new Response(JSON.stringify(body), {status, headers: {...headers, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'}});
+function json(status, body, headers) {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: {...headers, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'},
+	});
 }
 
 /**
@@ -147,60 +173,88 @@ function json(status, body, headers){
  * @param {Deps} deps
  * @returns {Promise<Response>}
  */
-export async function handle(request, env, deps){
+export async function handle(request, env, deps) {
 	const origin = request.headers.get('Origin');
-	if(origin && !allowedOrigins(env).includes(origin)) return json(403, {error: 'This origin may not use the proxy.'}, {'Vary': 'Origin'});
+	if (origin && !allowedOrigins(env).includes(origin))
+		return json(403, {error: 'This origin may not use the proxy.'}, {Vary: 'Origin'});
 	const cors = corsHeaders(origin);
-	if(request.method === 'OPTIONS'){
-		return new Response(null, {status: 204, headers: {...cors, 'Access-Control-Allow-Methods': 'GET, POST',
-			'Access-Control-Allow-Headers': `${KEY_HEADER}, ${CATALOG_KEY_HEADER}, Content-Type`, 'Access-Control-Max-Age': '86400'}});
+	if (request.method === 'OPTIONS') {
+		return new Response(null, {
+			status: 204,
+			headers: {
+				...cors,
+				'Access-Control-Allow-Methods': 'GET, POST',
+				'Access-Control-Allow-Headers': `${KEY_HEADER}, ${CATALOG_KEY_HEADER}, Content-Type`,
+				'Access-Control-Max-Age': '86400',
+			},
+		});
 	}
-	if(request.method !== 'GET' && request.method !== 'POST') return json(405, {error: 'Only GET and POST are allowed.'}, {...cors, 'Allow': 'GET, POST, OPTIONS'});
-	if(!env.PROXY_KEY) return json(500, {error: 'The proxy has no key: set the PROXY_KEY secret.'}, cors);
-	if(!sameKey(request.headers.get(KEY_HEADER) || '', env.PROXY_KEY)) return json(401, {error: 'Wrong or missing proxy key.'}, cors);
+	if (request.method !== 'GET' && request.method !== 'POST')
+		return json(405, {error: 'Only GET and POST are allowed.'}, {...cors, Allow: 'GET, POST, OPTIONS'});
+	if (!env.PROXY_KEY) return json(500, {error: 'The proxy has no key: set the PROXY_KEY secret.'}, cors);
+	if (!sameKey(request.headers.get(KEY_HEADER) || '', env.PROXY_KEY))
+		return json(401, {error: 'Wrong or missing proxy key.'}, cors);
 
 	const url = new URL(request.url);
-	if(url.pathname === '/' || url.pathname === '/ping') return json(200, {ok: true, catalogs: Object.keys(CATALOGS)}, cors);
+	if (url.pathname === '/' || url.pathname === '/ping')
+		return json(200, {ok: true, catalogs: Object.keys(CATALOGS)}, cors);
 	const up = upstream(url);
-	if(!up) return json(404, {error: 'Not a catalog this proxy asks.'}, cors);
+	if (!up) return json(404, {error: 'Not a catalog this proxy asks.'}, cors);
 	const keyed = keyedPath(up, request.method);
 	const accountKey = request.headers.get(CATALOG_KEY_HEADER);
-	if(request.method === 'POST' && !keyed) return json(405, {error: 'Only GET is allowed here.'}, {...cors, 'Allow': 'GET, OPTIONS'});
+	if (request.method === 'POST' && !keyed)
+		return json(405, {error: 'Only GET is allowed here.'}, {...cors, Allow: 'GET, OPTIONS'});
 	// Your key goes only where the catalog needs it: sent anywhere else, the request is refused, not sent without it.
-	if(accountKey && !keyed) return json(400, {error: 'This path takes no catalog key.'}, cors);
-	if(request.method === 'POST' && !accountKey) return json(401, {error: 'Sending needs your catalog key.'}, cors);
+	if (accountKey && !keyed) return json(400, {error: 'This path takes no catalog key.'}, cors);
+	if (request.method === 'POST' && !accountKey) return json(401, {error: 'Sending needs your catalog key.'}, cors);
 
 	/** @type {Record<string, string>} */
-	const headers = {'User-Agent': USER_AGENT,
-		...Object.fromEntries(PASSED_HEADERS.flatMap(h => request.headers.has(h) ? [[h, /** @type {string} */ (request.headers.get(h))]] : []))};
-	if(keyed && accountKey && up.route.keyHeader) headers[up.route.keyHeader] = accountKey;
+	const headers = {
+		'User-Agent': USER_AGENT,
+		...Object.fromEntries(
+			PASSED_HEADERS.flatMap(h =>
+				request.headers.has(h) ? [[h, /** @type {string} */ (request.headers.get(h))]] : [],
+			),
+		),
+	};
+	if (keyed && accountKey && up.route.keyHeader) headers[up.route.keyHeader] = accountKey;
 	/** @type {string | undefined} */
 	let body;
-	if(request.method === 'POST'){
+	if (request.method === 'POST') {
 		body = await request.text();
-		if(body.length > MAX_BODY) return json(413, {error: 'Too much to send.'}, cors);
+		if (body.length > MAX_BODY) return json(413, {error: 'Too much to send.'}, cors);
 		headers['Content-Type'] = 'application/json';
 	}
 	const ask = new Request(up.href, {method: request.method, headers, body});
 	// What a keyed path answers is yours, and changes when you send: never kept, never taken from the cache.
 	const cache = keyed ? null : deps.cache || null;
 	let answer = cache ? await cache.match(ask) : undefined;
-	if(!answer){
+	if (!answer) {
 		let got;
-		try{ got = await deps.fetch(ask); }
-		catch{ return json(502, {error: 'The catalog could not be reached.'}, cors); }
+		try {
+			got = await deps.fetch(ask);
+		} catch {
+			return json(502, {error: 'The catalog could not be reached.'}, cors);
+		}
 		// Only the body, status and type go back: no cookies or other headers from the catalog,
 		// and, when the catalog asks to slow down, how long to wait.
 		const retry = got.status === 429 ? got.headers.get('Retry-After') : null;
-		answer = new Response(got.body, {status: got.status, headers: {'Content-Type': got.headers.get('Content-Type') || 'application/octet-stream',
-			'Cache-Control': got.ok && !keyed ? `public, max-age=${CACHE_SECONDS}` : 'no-store', ...(retry ? {'Retry-After': retry} : {})}});
-		if(cache && got.ok){
+		answer = new Response(got.body, {
+			status: got.status,
+			headers: {
+				'Content-Type': got.headers.get('Content-Type') || 'application/octet-stream',
+				'Cache-Control': got.ok && !keyed ? `public, max-age=${CACHE_SECONDS}` : 'no-store',
+				...(retry ? {'Retry-After': retry} : {}),
+			},
+		});
+		if (cache && got.ok) {
 			const put = cache.put(ask, answer.clone());
-			if(deps.later) deps.later(put); else await put;
+			if (deps.later) deps.later(put);
+			else await put;
 		}
 	}
 	const back = new Headers(answer.headers);
-	for(const [name, value] of Object.entries(cors)) back.set(name, value);
+	for (const [name, value] of Object.entries(cors)) back.set(name, value);
 	return new Response(answer.body, {status: answer.status, headers: back});
 }
 
@@ -212,7 +266,7 @@ export default {
 	 * @param {{waitUntil: (task: Promise<unknown>) => void}} ctx
 	 * @returns {Promise<Response>}
 	 */
-	fetch(request, env, ctx){
+	fetch(request, env, ctx) {
 		// Cloudflare's own cache; a browser's CacheStorage has no `default`
 		const cache = /** @type {{default?: Cache}} */ (/** @type {unknown} */ (globalThis.caches))?.default || null;
 		return handle(request, env, {fetch: r => fetch(r), cache, later: task => ctx.waitUntil(task)});

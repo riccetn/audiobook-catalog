@@ -52,10 +52,11 @@ export class HardcoverSync extends ShelfSync {
 	static SENDS_READS = true;
 	// a request Hardcover refuses (the token, its rate limit) refuses the next one too
 	static STOP_AFTER = 1;
-	static NOT_FOUND = 'No ASIN, ISBN or Goodreads id Hardcover knows: give the book a "Hardcover <edition id>" in its edit form.';
+	static NOT_FOUND =
+		'No ASIN, ISBN or Goodreads id Hardcover knows: give the book a "Hardcover <edition id>" in its edit form.';
 
 	/** @param {HardcoverClient} client */
-	constructor(client){
+	constructor(client) {
 		super(client);
 		this.client = client;
 	}
@@ -74,8 +75,8 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {ShelfPart} [part]
 	 * @returns {Promise<HardcoverComparison>}
 	 */
-	async compare(catalog, step, part){
-		if(part) return this.comparePart(catalog, step, part);
+	async compare(catalog, step, part) {
+		if (part) return this.comparePart(catalog, step, part);
 		const client = this.client;
 		step('Reading your Hardcover shelves');
 		const shelf = await client.shelf(step);
@@ -86,7 +87,18 @@ export class HardcoverSync extends ShelfSync {
 		const ids = await client.find(HardcoverSync.lookups(books), step);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		const plan = await this.planFor(books, shelf, step);
-		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, infoIds: [], plan, missing: []};
+		return {
+			comparison,
+			incoming,
+			opts,
+			warnings: result.warnings,
+			otherShelves: result.otherShelves,
+			found: ids,
+			idsFound,
+			infoIds: [],
+			plan,
+			missing: [],
+		};
 	}
 
 	/**
@@ -100,20 +112,33 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {ShelfPart} part
 	 * @returns {Promise<HardcoverComparison>}
 	 */
-	async comparePart(catalog, step, part){
+	async comparePart(catalog, step, part) {
 		const client = this.client;
 		const scope = Comparison.scope(part.kind, part.name);
 		const mine = catalog.books.filter(scope).map(b => b.clone());
 		const ids = await client.find(HardcoverSync.lookups(mine), step);
 		HardcoverSync.addIds(mine, ids);
-		const theirs = [...new Set(mine.map(b => b.idOn('hardcover')).filter(id => id && HardcoverClient.ID.test(id)).map(Number))];
+		const theirs = [
+			...new Set(
+				mine
+					.map(b => b.idOn('hardcover'))
+					.filter(id => id && HardcoverClient.ID.test(id))
+					.map(Number),
+			),
+		];
 		step(`Finding ${part.kind === 'series' ? 'the series' : 'the author'} ${part.name} on Hardcover`);
 		const partIds = await this.partIds(part, theirs, step);
 		step(`Reading your Hardcover shelves: ${part.kind === 'series' ? 'the series' : 'the books by'} ${part.name}`);
 		const shelf = [];
 		const seen = new Set();
-		for(const ub of [...await client.shelfOf(part.kind, partIds, step), ...await client.shelfOfBooks(theirs, step)]){
-			if(Text.isObject(ub) && !seen.has(ub.id)){ seen.add(ub.id); shelf.push(ub); }
+		for (const ub of [
+			...(await client.shelfOf(part.kind, partIds, step)),
+			...(await client.shelfOfBooks(theirs, step)),
+		]) {
+			if (Text.isObject(ub) && !seen.has(ub.id)) {
+				seen.add(ub.id);
+				shelf.push(ub);
+			}
 		}
 		const {result, opts} = await this.readShelfBooks(shelf, step);
 		// a book Hardcover has under another name of the series or author is in it when it is one of yours
@@ -122,14 +147,25 @@ export class HardcoverSync extends ShelfSync {
 		const books = comparison.merged.books.filter(scope);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		const plan = await this.planFor(books, shelf, step);
-		return {comparison, incoming, opts, warnings: result.warnings, otherShelves: result.otherShelves, found: ids, idsFound, infoIds: [], plan, missing: []};
+		return {
+			comparison,
+			incoming,
+			opts,
+			warnings: result.warnings,
+			otherShelves: result.otherShelves,
+			found: ids,
+			idsFound,
+			infoIds: [],
+			plan,
+			missing: [],
+		};
 	}
 
 	/**
 	 * @param {number} count
 	 * @returns {string}
 	 */
-	static notAdded(count){
+	static notAdded(count) {
 		return `Not added, as Hardcover has no audiobook edition picked for them: ${count}`;
 	}
 
@@ -140,9 +176,13 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {{kind: 'series' | 'author', name: string, label: string} | null} scope
 	 * @returns {string}
 	 */
-	summary(result, catalog, scope){
-		if(scope) return `Only ${scope.label}: ${Text.plural(ShelfSync.inScope(catalog, scope).length, 'book')} in this catalog, ${result.incoming.length} on your Hardcover Read shelf`;
-		return `${Text.plural(result.incoming.length, 'book')} on your Hardcover Read shelf` + (result.otherShelves ? `, ${result.otherShelves} on other shelves` : '');
+	summary(result, catalog, scope) {
+		if (scope)
+			return `Only ${scope.label}: ${Text.plural(ShelfSync.inScope(catalog, scope).length, 'book')} in this catalog, ${result.incoming.length} on your Hardcover Read shelf`;
+		return (
+			`${Text.plural(result.incoming.length, 'book')} on your Hardcover Read shelf` +
+			(result.otherShelves ? `, ${result.otherShelves} on other shelves` : '')
+		);
 	}
 
 	/**
@@ -153,10 +193,14 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Step} step
 	 * @returns {Promise<{result: HardcoverShelf, opts: MergeOptions}>}
 	 */
-	async readShelfBooks(shelf, step){
+	async readShelfBooks(shelf, step) {
 		const read = shelf.filter(ub => ub && ub.status_id === READ);
 		const found = await this.client.rows('books', [...new Set(read.map(ub => ub.book_id))], step);
-		const editions = await this.client.rows('editions', [...new Set(read.map(ub => ub.edition_id).filter(Boolean))], step);
+		const editions = await this.client.rows(
+			'editions',
+			[...new Set(read.map(ub => ub.edition_id).filter(Boolean))],
+			step,
+		);
 		const result = HardcoverSync.read(shelf, found, editions);
 		const audio = result.audio;
 		return {result, opts: {allDates: true, addable: book => audio.has(book)}};
@@ -170,11 +214,16 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Step} step
 	 * @returns {Promise<HardcoverPlan>}
 	 */
-	async planFor(books, shelf, step){
+	async planFor(books, shelf, step) {
 		/** @type {Map<string, string>} */
 		const editionBooks = new Map();
-		const rows = await this.client.rows('editions', HardcoverSync.exportEditions(books), step, 'Checking your editions on Hardcover');
-		for(const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
+		const rows = await this.client.rows(
+			'editions',
+			HardcoverSync.exportEditions(books),
+			step,
+			'Checking your editions on Hardcover',
+		);
+		for (const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
 		return HardcoverSync.planExport(books, shelf, editionBooks);
 	}
 
@@ -186,17 +235,25 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Step} step
 	 * @returns {Promise<number[]>}
 	 */
-	async partIds(part, books, step){
+	async partIds(part, books, step) {
 		// whether a Hardcover series or author of that name is the one asked for
 		const same = ShelfSync.sameName(part);
 		/** @type {Set<number>} */
 		const ids = new Set();
-		if(part.id && HardcoverClient.ID.test(part.id)) ids.add(Number(part.id));
-		for(const row of await this.client.named(part.kind, [part.name])) if(Number.isInteger(row.id)) ids.add(row.id);
-		for(const book of await this.client.bookParts(books, step)){
-			const rows = part.kind === 'series' ? (Array.isArray(book.book_series) ? book.book_series : []).map((/** @type {any} */ x) => x && x.series)
-				: (Array.isArray(book.contributions) ? book.contributions : []).map((/** @type {any} */ x) => x && x.author);
-			for(const row of rows) if(Text.isObject(row) && Number.isInteger(row.id) && same(row.name)) ids.add(row.id);
+		if (part.id && HardcoverClient.ID.test(part.id)) ids.add(Number(part.id));
+		for (const row of await this.client.named(part.kind, [part.name]))
+			if (Number.isInteger(row.id)) ids.add(row.id);
+		for (const book of await this.client.bookParts(books, step)) {
+			const rows =
+				part.kind === 'series'
+					? (Array.isArray(book.book_series) ? book.book_series : []).map(
+							(/** @type {any} */ x) => x && x.series,
+						)
+					: (Array.isArray(book.contributions) ? book.contributions : []).map(
+							(/** @type {any} */ x) => x && x.author,
+						);
+			for (const row of rows)
+				if (Text.isObject(row) && Number.isInteger(row.id) && same(row.name)) ids.add(row.id);
 		}
 		return [...ids];
 	}
@@ -209,25 +266,36 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {PlanGroup} group
 	 * @returns {Promise<Sent>}
 	 */
-	async send(entry, _plan, group){
-		const client = this.client, QUERIES = HardcoverClient.QUERIES;
+	async send(entry, _plan, group) {
+		const client = this.client,
+			QUERIES = HardcoverClient.QUERIES;
 		/** @type {Sent} */
 		const sent = {shelved: 0, reads: 0, problems: []};
 		const a = /** @type {HardcoverPlan['add'][number] & HardcoverPlan['reads'][number]} */ (entry);
 		/** @type {(userBook: number, date: string) => Promise<void>} */
 		const addRead = async (userBook, date) => {
-			const r = (await client.ask(QUERIES.addRead, {id: userBook, read: {finished_at: date, ...(a.edition ? {edition_id: a.edition} : {})}})).insert_user_book_read;
-			if(!r || r.error) sent.problems.push(`${a.books[0].title}: read ${date} not added (${r && r.error || 'no answer'})`); else sent.reads++;
+			const r = (
+				await client.ask(QUERIES.addRead, {
+					id: userBook,
+					read: {finished_at: date, ...(a.edition ? {edition_id: a.edition} : {})},
+				})
+			).insert_user_book_read;
+			if (!r || r.error)
+				sent.problems.push(`${a.books[0].title}: read ${date} not added (${(r && r.error) || 'no answer'})`);
+			else sent.reads++;
 		};
-		if(group === 'reads'){
-			for(const d of a.dates) await addRead(a.userBook, d);
+		if (group === 'reads') {
+			for (const d of a.dates) await addRead(a.userBook, d);
 			return sent;
 		}
 		const object = {book_id: a.book, status_id: READ, ...(a.edition ? {edition_id: a.edition} : {})};
 		const r = (await client.ask(QUERIES.addBook, {object})).insert_user_book;
-		if(!r || r.error || !r.id){ sent.problems.push(`${a.books[0].title}: not added (${r && r.error || 'no answer'})`); return sent; }
+		if (!r || r.error || !r.id) {
+			sent.problems.push(`${a.books[0].title}: not added (${(r && r.error) || 'no answer'})`);
+			return sent;
+		}
 		sent.shelved++;
-		for(const d of a.dates) await addRead(r.id, d);
+		for (const d of a.dates) await addRead(r.id, d);
 		return sent;
 	}
 
@@ -238,10 +306,15 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {string} [role]
 	 * @returns {string[]}
 	 */
-	static people(contributions, role){
-		const names = (Array.isArray(contributions) ? contributions : []).filter(c => Text.isObject(c) &&
-			(role ? c.contribution === role : !c.contribution || c.contribution === 'Author'))
-			.map(c => Text.isObject(c.author) && typeof c.author.name === 'string' ? Text.tidy(c.author.name) : '').filter(Boolean);
+	static people(contributions, role) {
+		const names = (Array.isArray(contributions) ? contributions : [])
+			.filter(
+				c =>
+					Text.isObject(c) &&
+					(role ? c.contribution === role : !c.contribution || c.contribution === 'Author'),
+			)
+			.map(c => (Text.isObject(c.author) && typeof c.author.name === 'string' ? Text.tidy(c.author.name) : ''))
+			.filter(Boolean);
 		return [...new Set(names)];
 	}
 
@@ -250,18 +323,27 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Unchecked} edition a row of Hardcover's editions
 	 * @returns {Edition}
 	 */
-	static edition(edition){
+	static edition(edition) {
 		// Hardcover's ASIN is amazon.com's
-		const asin = typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim()) ? edition.asin.trim() : null;
-		const ed = new Edition({external: {...asin ? {[ExternalCatalog.AMAZON_SITE]: asin} : {}, hardcover: String(edition.id)}});
+		const asin =
+			typeof edition.asin === 'string' && /^[A-Z0-9]{10}$/.test(edition.asin.trim()) ? edition.asin.trim() : null;
+		const ed = new Edition({
+			external: {...(asin ? {[ExternalCatalog.AMAZON_SITE]: asin} : {}), hardcover: String(edition.id)},
+		});
 		// the ISBN-10 and ISBN-13 of an edition are one ISBN; should they differ, the ISBN-13 wins
 		const isbn = [edition.isbn_13, edition.isbn_10].map(Isbn.parse).find(Boolean);
-		if(isbn) ed.isbn = isbn;
+		if (isbn) ed.isbn = isbn;
 		ed.narrators = HardcoverSync.people(edition.contributions, 'Narrator');
-		if(Text.isObject(edition.publisher) && typeof edition.publisher.name === 'string' && Text.tidy(edition.publisher.name)) ed.publisher = Text.tidy(edition.publisher.name);
+		if (
+			Text.isObject(edition.publisher) &&
+			typeof edition.publisher.name === 'string' &&
+			Text.tidy(edition.publisher.name)
+		)
+			ed.publisher = Text.tidy(edition.publisher.name);
 		const released = Text.parseDate(edition.release_date);
-		if(released) ed.released = released;
-		if(Number.isInteger(edition.audio_seconds) && edition.audio_seconds >= 60) ed.minutes = Math.round(edition.audio_seconds / 60);
+		if (released) ed.released = released;
+		if (Number.isInteger(edition.audio_seconds) && edition.audio_seconds >= 60)
+			ed.minutes = Math.round(edition.audio_seconds / 60);
 		return ed;
 	}
 
@@ -270,14 +352,19 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Unchecked} book one with a title
 	 * @returns {Record<string, any>}
 	 */
-	static bookRecord(book){
+	static bookRecord(book) {
 		/** @type {Record<string, any>} */
 		const rec = {t: Text.tidy(book.title), a: HardcoverSync.people(book.contributions)};
 		const series = Text.isObject(book.featured_book_series) ? book.featured_book_series : null;
-		if(series && Text.isObject(series.series) && typeof series.series.name === 'string' && Text.tidy(series.series.name)){
+		if (
+			series &&
+			Text.isObject(series.series) &&
+			typeof series.series.name === 'string' &&
+			Text.tidy(series.series.name)
+		) {
 			rec.s = Text.tidy(series.series.name);
 			const number = HardcoverSync.position(series.position);
-			if(number) rec.sn = number;
+			if (number) rec.sn = number;
 		}
 		return rec;
 	}
@@ -287,7 +374,7 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {unknown} position
 	 * @returns {string | null}
 	 */
-	static position(position){
+	static position(position) {
 		return typeof position === 'number' && position >= 0 ? String(position) : null;
 	}
 
@@ -301,31 +388,40 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Map<unknown, Unchecked>} editions
 	 * @returns {HardcoverShelf}
 	 */
-	static read(userBooks, books, editions){
+	static read(userBooks, books, editions) {
 		/** @type {HardcoverShelf} */
 		const result = {books: [], audio: new Set(), otherShelves: 0, warnings: []};
-		for(const ub of userBooks){
-			if(!Text.isObject(ub)) continue;
-			if(ub.status_id !== READ){ result.otherShelves++; continue; }
+		for (const ub of userBooks) {
+			if (!Text.isObject(ub)) continue;
+			if (ub.status_id !== READ) {
+				result.otherShelves++;
+				continue;
+			}
 			const book = books.get(ub.book_id);
-			if(!book || typeof book.title !== 'string' || !Text.tidy(book.title)){
+			if (!book || typeof book.title !== 'string' || !Text.tidy(book.title)) {
 				result.warnings.push(`Hardcover book ${ub.book_id}: not found, skipped`);
 				continue;
 			}
 			const edition = ub.edition_id ? editions.get(ub.edition_id) : null;
 			const rec = HardcoverSync.bookRecord(book);
-			if(!rec.a.length){
+			if (!rec.a.length) {
 				result.warnings.push(`${Text.repr(rec.t)}: no author on Hardcover, skipped`);
 				continue;
 			}
 			const reads = Array.isArray(ub.user_book_reads) ? ub.user_book_reads : [];
-			const dates = [...new Set(reads.map((/** @type {unknown} */ r) => Text.isObject(r) && Text.parseDate(r.finished_at)).filter(d => typeof d === 'string'))].sort();
-			if(dates.length) rec.r = dates;
+			const dates = [
+				...new Set(
+					reads
+						.map((/** @type {unknown} */ r) => Text.isObject(r) && Text.parseDate(r.finished_at))
+						.filter(d => typeof d === 'string'),
+				),
+			].sort();
+			if (dates.length) rec.r = dates;
 			rec.ext = {hardcover: String(ub.book_id)};
-			if(Text.isObject(edition)) rec.e = [HardcoverSync.edition(edition).toJSON()];
+			if (Text.isObject(edition)) rec.e = [HardcoverSync.edition(edition).toJSON()];
 			const read = Book.fromRecord(Book.fixSeriesTitle(rec));
 			result.books.push(read);
-			if(edition && edition.reading_format_id === HardcoverClient.AUDIO) result.audio.add(read);
+			if (edition && edition.reading_format_id === HardcoverClient.AUDIO) result.audio.add(read);
 		}
 		return result;
 	}
@@ -336,8 +432,11 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Book[]} books
 	 * @returns {number[]}
 	 */
-	static exportEditions(books){
-		const ids = books.filter(b => b.idOn('hardcover')).flatMap(b => b.editions).map(ed => ed.idOn('hardcover'))
+	static exportEditions(books) {
+		const ids = books
+			.filter(b => b.idOn('hardcover'))
+			.flatMap(b => b.editions)
+			.map(ed => ed.idOn('hardcover'))
 			.filter(hc => typeof hc === 'string' && HardcoverClient.ID.test(hc));
 		return [...new Set(ids)].map(Number);
 	}
@@ -347,14 +446,15 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Book[]} books
 	 * @returns {HardcoverLookups}
 	 */
-	static lookups(books){
+	static lookups(books) {
 		const ids = {hc: new Set(), asin: new Set(), isbn: new Set(), gr: new Set()};
-		for(const ed of books.filter(b => !b.idOn('hardcover')).flatMap(b => b.editions)){
-			const hc = ed.idOn('hardcover'), gr = ed.idOn('goodreads');
-			if(hc && HardcoverClient.ID.test(hc)) ids.hc.add(Number(hc));
+		for (const ed of books.filter(b => !b.idOn('hardcover')).flatMap(b => b.editions)) {
+			const hc = ed.idOn('hardcover'),
+				gr = ed.idOn('goodreads');
+			if (hc && HardcoverClient.ID.test(hc)) ids.hc.add(Number(hc));
 			ed.ids('asin').forEach(asin => ids.asin.add(asin));
 			ed.isbns().forEach(isbn => ids.isbn.add(isbn));
-			if(gr) ids.gr.add(gr);
+			if (gr) ids.gr.add(gr);
 		}
 		return Object.fromEntries(Object.entries(ids).map(([k, v]) => [k, [...v]]));
 	}
@@ -369,20 +469,37 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {HardcoverFound} found
 	 * @returns {Book[]}
 	 */
-	static addIds(books, found){
-		const filled = [], shared = Book.sharedEditionTest(books);
-		for(const b of books){
-			if(b.idOn('hardcover')) continue;
+	static addIds(books, found) {
+		const filled = [],
+			shared = Book.sharedEditionTest(books);
+		for (const b of books) {
+			if (b.idOn('hardcover')) continue;
 			let gained = false;
-			for(const ed of [...b.editions.filter(x => !shared(x)), ...b.editions.filter(shared)]){
-				const hc = ed.idOn('hardcover'), gr = ed.idOn('goodreads');
-				const hit = (hc && found.hc.get(hc)) || ed.ids('asin').map(asin => found.asin.get(asin)).find(Boolean) ||
-					ed.isbns().map(isbn => found.isbn.get(isbn)).find(Boolean) || (gr && found.gr.get(gr));
-				if(!hit) continue;
-				if(hit.hc && !ed.idOn('hardcover')){ ed.external = {...ed.external, hardcover: hit.hc}; gained = true; }
-				if(!b.idOn('hardcover')){ b.external = {...b.external, hardcover: hit.hcb}; gained = true; }
+			for (const ed of [...b.editions.filter(x => !shared(x)), ...b.editions.filter(shared)]) {
+				const hc = ed.idOn('hardcover'),
+					gr = ed.idOn('goodreads');
+				const hit =
+					(hc && found.hc.get(hc)) ||
+					ed
+						.ids('asin')
+						.map(asin => found.asin.get(asin))
+						.find(Boolean) ||
+					ed
+						.isbns()
+						.map(isbn => found.isbn.get(isbn))
+						.find(Boolean) ||
+					(gr && found.gr.get(gr));
+				if (!hit) continue;
+				if (hit.hc && !ed.idOn('hardcover')) {
+					ed.external = {...ed.external, hardcover: hit.hc};
+					gained = true;
+				}
+				if (!b.idOn('hardcover')) {
+					b.external = {...b.external, hardcover: hit.hcb};
+					gained = true;
+				}
 			}
-			if(gained) filled.push(b);
+			if (gained) filled.push(b);
 		}
 		return filled;
 	}
@@ -406,44 +523,59 @@ export class HardcoverSync extends ShelfSync {
 	 * @param {Map<string, string>} [editionBooks]
 	 * @returns {HardcoverPlan}
 	 */
-	static planExport(books, shelf, editionBooks){
+	static planExport(books, shelf, editionBooks) {
 		/** @type {HardcoverPlan} */
 		const plan = {name: 'Read', add: [], reads: [], otherShelf: [], unknown: [], inexact: []};
 		const onShelf = new Map();
-		for(const ub of shelf) if(Text.isObject(ub) && !onShelf.has(ub.book_id)) onShelf.set(ub.book_id, ub);
+		for (const ub of shelf) if (Text.isObject(ub) && !onShelf.has(ub.book_id)) onShelf.set(ub.book_id, ub);
 		/** @type {Map<string, number>} */
-		const owners = new Map();   // Hardcover book id -> how many of your books are it
-		for(const b of books){ const hcb = b.idOn('hardcover'); if(hcb) owners.set(hcb, (owners.get(hcb) || 0) + 1); }
+		const owners = new Map(); // Hardcover book id -> how many of your books are it
+		for (const b of books) {
+			const hcb = b.idOn('hardcover');
+			if (hcb) owners.set(hcb, (owners.get(hcb) || 0) + 1);
+		}
 		const shared = Book.sharedEditionTest(books);
 		/** @type {Map<string, {edition: string | null, dates: Set<string>, books: Book[]}>} */
-		const wanted = new Map();   // Hardcover book id -> {edition, dates, books}
-		for(const b of books){
+		const wanted = new Map(); // Hardcover book id -> {edition, dates, books}
+		for (const b of books) {
 			const hcb = b.idOn('hardcover');
-			if(!hcb){ plan.unknown.push(b); continue; }
+			if (!hcb) {
+				plan.unknown.push(b);
+				continue;
+			}
 			const editions = b.editions.filter(ed => ed.idOn('hardcover'));
-			const ed = editionBooks ? editions.find(x => editionBooks.get(x.idOn('hardcover') || '') === hcb)
-				: editions.find(x => !shared(x)) || ((owners.get(hcb) || 0) > 1 || b.isCollection() ? editions[0] : null);
+			const ed = editionBooks
+				? editions.find(x => editionBooks.get(x.idOn('hardcover') || '') === hcb)
+				: editions.find(x => !shared(x)) ||
+					((owners.get(hcb) || 0) > 1 || b.isCollection() ? editions[0] : null);
 			const exact = b.read.filter(d => /^\d{4}-\d\d-\d\d$/.test(d));
-			for(const d of b.read) if(!exact.includes(d)) plan.inexact.push([b, d]);
+			for (const d of b.read) if (!exact.includes(d)) plan.inexact.push([b, d]);
 			const w = wanted.get(hcb) || {edition: null, dates: new Set(), books: []};
-			if(!w.edition && ed && ed.idOn('hardcover')) w.edition = ed.idOn('hardcover');
+			if (!w.edition && ed && ed.idOn('hardcover')) w.edition = ed.idOn('hardcover');
 			exact.forEach(d => w.dates.add(d));
 			w.books.push(b);
 			wanted.set(hcb, w);
 		}
-		for(const [hcb, w] of wanted){
-			const book = Number(hcb), edition = w.edition ? Number(w.edition) : null, dates = [...w.dates].sort();
+		for (const [hcb, w] of wanted) {
+			const book = Number(hcb),
+				edition = w.edition ? Number(w.edition) : null,
+				dates = [...w.dates].sort();
 			const ub = onShelf.get(book);
-			if(!ub){ plan.add.push({book, edition, dates, books: w.books}); continue; }
-			if(ub.status_id !== READ){
-				/** @type {Record<number, string>} */
-				const statuses = HardcoverClient.STATUSES;
-				for(const b of w.books) plan.otherShelf.push([b, statuses[ub.status_id] || `status ${ub.status_id}`]);
+			if (!ub) {
+				plan.add.push({book, edition, dates, books: w.books});
 				continue;
 			}
-			const have = (Array.isArray(ub.user_book_reads) ? ub.user_book_reads : []).map((/** @type {unknown} */ r) => Text.isObject(r) && r.finished_at).filter(Boolean);
+			if (ub.status_id !== READ) {
+				/** @type {Record<number, string>} */
+				const statuses = HardcoverClient.STATUSES;
+				for (const b of w.books) plan.otherShelf.push([b, statuses[ub.status_id] || `status ${ub.status_id}`]);
+				continue;
+			}
+			const have = (Array.isArray(ub.user_book_reads) ? ub.user_book_reads : [])
+				.map((/** @type {unknown} */ r) => Text.isObject(r) && r.finished_at)
+				.filter(Boolean);
 			const missing = dates.filter(d => !have.includes(d));
-			if(missing.length) plan.reads.push({userBook: ub.id, edition, dates: missing, books: w.books});
+			if (missing.length) plan.reads.push({userBook: ub.id, edition, dates: missing, books: w.books});
 		}
 		return plan;
 	}

@@ -27,7 +27,7 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {Pasted} pasted
 	 * @returns {Answers}
 	 */
-	answers(pasted){
+	answers(pasted) {
 		return ExternalCatalog.family(pasted.catalog) === 'asin' ? 'also' : super.answers(pasted);
 	}
 
@@ -36,8 +36,8 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {Found} found
 	 * @returns {Promise<Book | null>}
 	 */
-	async lookup(pasted, found){
-		if(pasted.catalog !== AudiobookdbSource.CATALOG) return this.byAsin(pasted.id);
+	async lookup(pasted, found) {
+		if (pasted.catalog !== AudiobookdbSource.CATALOG) return this.byAsin(pasted.id);
 		return pasted.kind === 'edition' ? this.release(pasted.id) : this.work(pasted.id, found);
 	}
 
@@ -46,10 +46,12 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {string} asin
 	 * @returns {Promise<Book | null>}
 	 */
-	async byAsin(asin){
+	async byAsin(asin) {
 		const book = await this.proxied(`audiobookdb/audiobooks/external/audible/${encodeURIComponent(asin)}`);
-		if(!book) return null;
-		const release = (Array.isArray(book.releases) ? book.releases : []).find((/** @type {unknown} */ r) => Text.isObject(r) && r.id === book.matchedReleaseId);
+		if (!book) return null;
+		const release = (Array.isArray(book.releases) ? book.releases : []).find(
+			(/** @type {unknown} */ r) => Text.isObject(r) && r.id === book.matchedReleaseId,
+		);
 		return AudiobookdbSource.book(book, release || null);
 	}
 
@@ -60,17 +62,39 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {string[]} authors
 	 * @returns {Promise<string>} its id
 	 */
-	async search(title, authors){
+	async search(title, authors) {
 		const answer = await this.proxied(`audiobookdb/books?q=${encodeURIComponent(title)}&take=50`, true);
-		const books = Array.isArray(answer) ? answer.filter(b => Text.isObject(b) && typeof b.id === 'string' && Text.norm(tidyText(b.title)) === Text.norm(title)) : [];
+		const books = Array.isArray(answer)
+			? answer.filter(
+					b =>
+						Text.isObject(b) &&
+						typeof b.id === 'string' &&
+						Text.norm(tidyText(b.title)) === Text.norm(title),
+				)
+			: [];
 		/** @type {(b: Unchecked) => string[]} */
-		const names = b => Array.isArray(b.authors) ? b.authors.map((/** @type {unknown} */ a) => Text.isObject(a) ? tidyText(a.name) : '').filter(Boolean) : [];
+		const names = b =>
+			Array.isArray(b.authors)
+				? b.authors
+						.map((/** @type {unknown} */ a) => (Text.isObject(a) ? tidyText(a.name) : ''))
+						.filter(Boolean)
+				: [];
 		const wanted = new Set(authors.map(Text.norm).filter(Boolean));
 		const hits = wanted.size ? books.filter(b => names(b).some(n => wanted.has(Text.norm(n)))) : books;
-		if(hits.length === 1) return hits[0].id;
-		if(!hits.length) throw new Error(`AudiobookDB has no book titled ${title}${wanted.size ? ` by ${authors.join(', ')}` : ''}; paste its address instead`);
-		const some = hits.slice(0, 3).map(b => `${tidyText(b.title)} by ${names(b).join(', ') || 'no author'} (${ExternalCatalog.url('audiobookdb', 'book', b.id)})`);
-		throw new Error(`AudiobookDB has ${hits.length} books titled ${title}: ${some.join('; ')}${hits.length > 3 ? '…' : ''}; type the author first, or paste the address of the one you mean`);
+		if (hits.length === 1) return hits[0].id;
+		if (!hits.length)
+			throw new Error(
+				`AudiobookDB has no book titled ${title}${wanted.size ? ` by ${authors.join(', ')}` : ''}; paste its address instead`,
+			);
+		const some = hits
+			.slice(0, 3)
+			.map(
+				b =>
+					`${tidyText(b.title)} by ${names(b).join(', ') || 'no author'} (${ExternalCatalog.url('audiobookdb', 'book', b.id)})`,
+			);
+		throw new Error(
+			`AudiobookDB has ${hits.length} books titled ${title}: ${some.join('; ')}${hits.length > 3 ? '…' : ''}; type the author first, or paste the address of the one you mean`,
+		);
 	}
 
 	/**
@@ -78,9 +102,9 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {string} id
 	 * @returns {Promise<Book>}
 	 */
-	async release(id){
+	async release(id) {
 		const release = await this.proxied(`audiobookdb/releases/${encodeURIComponent(id)}`);
-		if(!release) throw new Error(`AudiobookDB has no release ${id}`);
+		if (!release) throw new Error(`AudiobookDB has no release ${id}`);
 		const bookId = Text.isObject(release.book) && typeof release.book.id === 'string' ? release.book.id : '';
 		const book = bookId ? await this.proxied(`audiobookdb/books/${encodeURIComponent(bookId)}`) : null;
 		return AudiobookdbSource.book(book || (Text.isObject(release.book) ? release.book : {}), release);
@@ -93,11 +117,16 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {Found} found
 	 * @returns {Promise<Book>}
 	 */
-	async work(id, found){
+	async work(id, found) {
 		const book = await this.proxied(`audiobookdb/books/${encodeURIComponent(id)}`);
-		if(!book) throw new Error(`AudiobookDB has no book ${id}`);
-		const releases = (Array.isArray(book.releases) ? book.releases : []).filter((/** @type {unknown} */ r) => Text.isObject(r));
-		if(releases.length > 1) found.notes.push(`AudiobookDB has ${releases.length} releases of it; paste your release's address to fill in its edition`);
+		if (!book) throw new Error(`AudiobookDB has no book ${id}`);
+		const releases = (Array.isArray(book.releases) ? book.releases : []).filter((/** @type {unknown} */ r) =>
+			Text.isObject(r),
+		);
+		if (releases.length > 1)
+			found.notes.push(
+				`AudiobookDB has ${releases.length} releases of it; paste your release's address to fill in its edition`,
+			);
 		return AudiobookdbSource.book(book, releases.length === 1 ? releases[0] : null);
 	}
 
@@ -109,38 +138,64 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {Unchecked | null} release
 	 * @returns {Book}
 	 */
-	static book(book, release){
+	static book(book, release) {
 		/** @type {(x: unknown, role: string) => string[]} */
-		const people = (x, role) => Array.isArray(x) ? [...new Set(x.filter(p => Text.isObject(p) && Text.isObject(p.role) && p.role.name === role && Text.isObject(p.person))
-			.map(p => tidyText(p.person.name)).filter(Boolean))] : [];
+		const people = (x, role) =>
+			Array.isArray(x)
+				? [
+						...new Set(
+							x
+								.filter(
+									p =>
+										Text.isObject(p) &&
+										Text.isObject(p.role) &&
+										p.role.name === role &&
+										Text.isObject(p.person),
+								)
+								.map(p => tidyText(p.person.name))
+								.filter(Boolean),
+						),
+					]
+				: [];
 		/** @type {Record<string, any>} */
-		const rec = {t: tidyText(book.title) || (release ? tidyText(release.title) : ''), a: people(book.people, 'Author')};
-		if(typeof book.id === 'string' && book.id) rec.ext = {audiobookdb: book.id};
-		const series = (Array.isArray(book.series) ? book.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && Text.isObject(s.series) && tidyText(s.series.title));
-		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?$/.test(tidyText(s.ordinal)) && Number(tidyText(s.ordinal)) > 0);
+		const rec = {
+			t: tidyText(book.title) || (release ? tidyText(release.title) : ''),
+			a: people(book.people, 'Author'),
+		};
+		if (typeof book.id === 'string' && book.id) rec.ext = {audiobookdb: book.id};
+		const series = (Array.isArray(book.series) ? book.series : []).filter(
+			(/** @type {unknown} */ s) => Text.isObject(s) && Text.isObject(s.series) && tidyText(s.series.title),
+		);
+		const numbered = series.find(
+			(/** @type {Unchecked} */ s) =>
+				/^\d+(?:\.\d+)?$/.test(tidyText(s.ordinal)) && Number(tidyText(s.ordinal)) > 0,
+		);
 		const inSeries = numbered || (series.length === 1 ? series[0] : null);
-		if(inSeries){
+		if (inSeries) {
 			rec.s = tidyText(inSeries.series.title);
-			if(inSeries === numbered) rec.sn = tidyText(inSeries.ordinal);
+			if (inSeries === numbered) rec.sn = tidyText(inSeries.ordinal);
 		}
-		const genres = Array.isArray(book.genres) ? book.genres.map((/** @type {unknown} */ g) => Text.isObject(g) ? tidyText(g.title) : '').filter(Boolean) : [];
-		if(genres.length) rec.g = [...new Set(genres)].slice(0, 5);
-		if(release){
+		const genres = Array.isArray(book.genres)
+			? book.genres.map((/** @type {unknown} */ g) => (Text.isObject(g) ? tidyText(g.title) : '')).filter(Boolean)
+			: [];
+		if (genres.length) rec.g = [...new Set(genres)].slice(0, 5);
+		if (release) {
 			/** @type {Record<string, any>} */
 			const ed = {};
-			if(typeof release.id === 'string' && release.id) ed.ext = {audiobookdb: release.id};
+			if (typeof release.id === 'string' && release.id) ed.ext = {audiobookdb: release.id};
 			const isbn = Isbn.parse(release.isbn);
-			if(isbn) ed.isbn = isbn;
+			if (isbn) ed.isbn = isbn;
 			const narrators = people(release.people, 'Narrator');
-			if(narrators.length) ed.n = narrators;
-			if(Text.isObject(release.publisher) && tidyText(release.publisher.name)) ed.p = tidyText(release.publisher.name);
+			if (narrators.length) ed.n = narrators;
+			if (Text.isObject(release.publisher) && tidyText(release.publisher.name))
+				ed.p = tidyText(release.publisher.name);
 			const released = BookSource.date(release.releaseDate);
-			if(released) ed.d = released;
+			if (released) ed.d = released;
 			const minutes = AudiobookdbSource.minutes(release);
-			if(minutes) ed.len = minutes;
+			if (minutes) ed.len = minutes;
 			const cover = Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(book.images);
-			if(Object.keys(ed).length && cover) ed.img = {audiobookdb: cover};
-			if(Object.keys(ed).length) rec.e = [ed];
+			if (Object.keys(ed).length && cover) ed.img = {audiobookdb: cover};
+			if (Object.keys(ed).length) rec.e = [ed];
 		}
 		return Book.fromRecord(Book.fixSeriesTitle(rec));
 	}
@@ -150,10 +205,11 @@ export class AudiobookdbSource extends BookSource {
 	 * @param {Unchecked} release
 	 * @returns {number | null}
 	 */
-	static minutes(release){
+	static minutes(release) {
 		let seconds = Number.isFinite(release.runtimeLengthSec) ? Number(release.runtimeLengthSec) : NaN;
-		const m = typeof release.duration === 'string' ? /^(\d+):([0-5]\d):([0-5]\d)$/.exec(release.duration.trim()) : null;
-		if(!(seconds > 0) && m) seconds = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+		const m =
+			typeof release.duration === 'string' ? /^(\d+):([0-5]\d):([0-5]\d)$/.exec(release.duration.trim()) : null;
+		if (!(seconds > 0) && m) seconds = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
 		return seconds >= 60 ? Math.round(seconds / 60) : null;
 	}
 }

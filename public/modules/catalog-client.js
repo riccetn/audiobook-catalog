@@ -43,7 +43,7 @@ export class CatalogClient {
 	 * @param {unknown} key
 	 * @returns {string}
 	 */
-	static cleanKey(key){
+	static cleanKey(key) {
 		return Text.tidy(String(key || ''));
 	}
 
@@ -54,7 +54,7 @@ export class CatalogClient {
 	 * @param {Pause} pause
 	 * @param {number} [gap] milliseconds between requests; the class's PAUSE_MS when left out
 	 */
-	constructor(get, key, pause, gap){
+	constructor(get, key, pause, gap) {
 		const of = this.kind;
 		this.get = get;
 		this.key = of.cleanKey(key);
@@ -64,14 +64,18 @@ export class CatalogClient {
 	}
 
 	/** @returns {typeof CatalogClient} the client's class, with what it says of its catalog */
-	get kind(){ return /** @type {typeof CatalogClient} */ (this.constructor); }
+	get kind() {
+		return /** @type {typeof CatalogClient} */ (this.constructor);
+	}
 
 	/** @returns {string} its catalog's name, as the page says it */
-	get label(){ return this.kind.LABEL; }
+	get label() {
+		return this.kind.LABEL;
+	}
 
 	/** Wait between one request and the next (not before the first). */
-	async waitTurn(){
-		if(this.asked++) await this.pause(this.gap);
+	async waitTurn() {
+		if (this.asked++) await this.pause(this.gap);
 	}
 
 	/**
@@ -83,10 +87,10 @@ export class CatalogClient {
 	 * @param {(item: T) => Promise<U>} ask
 	 * @returns {Promise<U[]>}
 	 */
-	static async each(items, text, step, ask){
+	static async each(items, text, step, ask) {
 		/** @type {U[]} */
 		const out = [];
-		for(let i = 0; i < items.length; i++){
+		for (let i = 0; i < items.length; i++) {
 			step(text, i, items.length);
 			out.push(await ask(items[i]));
 		}

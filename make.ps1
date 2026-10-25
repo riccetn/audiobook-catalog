@@ -1,7 +1,7 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, docs, serve or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, format, format-check, docs, serve or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'docs', 'serve')]
+	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'format', 'format-check', 'docs', 'serve')]
 	[string]$Command = 'help',
 	[int]$Port = 8000,
 	[string]$Out = 'api-docs/out'
@@ -16,20 +16,31 @@ function Invoke-Native([string]$exe, [string[]]$arguments){
 	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
+function Invoke-Prettier([string]$mode){
+	$prettier = 'node_modules/prettier/bin/prettier.cjs'
+	if (-not (Test-Path $prettier)) {
+		Write-Host 'Prettier is not installed: run npm install first'
+		exit 1
+	}
+	Invoke-Native 'node' @($prettier, $mode, '.')
+}
+
 switch ($Command) {
 	'help' {
-		'help      - list the available commands'
-		'check     - run everything CI runs: the tests, the type check and lint'
-		'pages     - write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)'
-		'test      - run the tests: the catalog classes and the browser smoke test'
-		'typecheck - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
-		'lint      - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
-		'docs      - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
-		'serve     - open the app at http://localhost:8000/ (serves public/; -Port for another port)'
+		'help         - list the available commands'
+		'check        - run everything CI runs: the tests, the type check, lint and the format check'
+		'pages        - write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)'
+		'test         - run the tests: the catalog classes and the browser smoke test'
+		'typecheck    - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
+		'lint         - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
+		'format       - format the code, JSON, Markdown and YAML with Prettier (the pre-commit hook does this to what you commit)'
+		'format-check - check that everything is formatted as Prettier would (format fixes it)'
+		'docs         - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
+		'serve        - open the app at http://localhost:8000/ (serves public/; -Port for another port)'
 	}
 	'check' {
 		# Each step runs this script again, and the first that fails stops the rest, as make does.
-		foreach ($step in @('test', 'typecheck', 'lint')) {
+		foreach ($step in @('test', 'typecheck', 'lint', 'format-check')) {
 			& $PSCommandPath $step
 			if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 		}
@@ -65,6 +76,12 @@ switch ($Command) {
 			exit 1
 		}
 		Invoke-Native 'node' @($eslint, '.')
+	}
+	'format' {
+		Invoke-Prettier '--write'
+	}
+	'format-check' {
+		Invoke-Prettier '--check'
 	}
 	'docs' {
 		$typedoc = 'api-docs/node_modules/typedoc/bin/typedoc'
