@@ -544,8 +544,7 @@ button:focus {
 .author-actions {
 	margin: 0 0 1.4rem;
 }
-.hardcoverCompare,
-.audiobookdbCompare {
+.catalogCompare {
 	font-size: 0.8rem;
 	color: var(--moss);
 }
@@ -1348,14 +1347,12 @@ button:focus {
 .book .title a:hover {
 	color: var(--moss);
 }
-.series-title a.hardcoverCompare,
-.series-title a.audiobookdbCompare {
+.series-title a.catalogCompare {
 	color: var(--moss);
 	font-family: system-ui, sans-serif;
 	font-weight: normal;
 }
-.series-title a.hardcoverCompare:hover,
-.series-title a.audiobookdbCompare:hover {
+.series-title a.catalogCompare:hover {
 	color: var(--moss-dark);
 }
 .filtersBtn {

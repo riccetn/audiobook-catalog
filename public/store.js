@@ -218,7 +218,7 @@ export function shelfCompareLinks(kind, id, words) {
 		CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind)).map(({CLIENT: Client}) =>
 			buildElement(
 				'a',
-				{class: `${Client.CATALOG}Compare`, href: shelfCompareHref(Client.CATALOG, kind, id)},
+				{class: 'catalogCompare', href: shelfCompareHref(Client.CATALOG, kind, id)},
 				words(Client.LABEL),
 			),
 		),
