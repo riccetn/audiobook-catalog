@@ -8,12 +8,11 @@ import {BookSource} from './book-source.js';
 /** @import {Unchecked} from './text.js' */
 /** @import {Pasted, Answers} from './book-source.js' */
 
-// What Audible's catalog API is asked for: the people, series, edition details and genres
-const AUDIBLE_GROUPS =
-	'contributors,media,product_attrs,product_desc,product_details,product_extended_attrs,series,category_ladders';
-
 /** Looks books up in Audible's catalog, through the catalog proxy. */
 export class AudibleSource extends BookSource {
+	/** What Audible's catalog API is asked for a book: the people, series, edition details and genres. */
+	static GROUPS =
+		'contributors,media,product_attrs,product_desc,product_details,product_extended_attrs,series,category_ladders';
 	static CATALOG = ExternalCatalog.AUDIBLE_SITE;
 	static LABEL = 'Audible';
 	static NAMES = ['Audible', 'Amazon'];
@@ -69,7 +68,7 @@ export class AudibleSource extends BookSource {
 	 */
 	async product(site, asin) {
 		const answer = await this.proxied(
-			`audible/${site}/catalog/products/${encodeURIComponent(asin)}?response_groups=${AUDIBLE_GROUPS}`,
+			`audible/${site}/catalog/products/${encodeURIComponent(asin)}?response_groups=${AudibleSource.GROUPS}`,
 		);
 		const product = answer && Text.isObject(answer.product) ? answer.product : null;
 		return product && typeof product.title === 'string' && Text.tidy(product.title)
@@ -79,13 +78,14 @@ export class AudibleSource extends BookSource {
 
 	/**
 	 * A book made of an Audible product: title, authors, its numbered series (not an umbrella one without a
-	 * number), genres (the second step of each of its genre ladders: "Fantasy" under "Science Fiction & Fantasy"),
+	 * number; with `seriesAsin`, that series and its number there, when the product lists it), genres (the second step of each of its genre ladders: "Fantasy" under "Science Fiction & Fantasy"),
 	 * and the edition: its ASIN on `site`, ISBN, narrators, publisher, release date and length.
 	 * @param {Unchecked} product
 	 * @param {string} site
+	 * @param {string} [seriesAsin]
 	 * @returns {Book}
 	 */
-	static book(product, site) {
+	static book(product, site, seriesAsin = '') {
 		/** @type {(x: unknown) => string} */
 		const text = x => (typeof x === 'string' ? Text.tidy(x.replace(/&amp;/g, '&')) : '');
 		/** @type {(x: unknown) => string[]} */
@@ -99,10 +99,11 @@ export class AudibleSource extends BookSource {
 		const numbered = series.find((/** @type {Unchecked} */ s) =>
 			/^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(s.sequence)),
 		);
-		const inSeries = numbered || (series.length === 1 ? series[0] : null);
+		const asked = seriesAsin ? series.find((/** @type {Unchecked} */ s) => s.asin === seriesAsin) : undefined;
+		const inSeries = asked || numbered || (series.length === 1 ? series[0] : null);
 		if (inSeries) {
 			rec.s = text(inSeries.title);
-			if (inSeries === numbered) rec.sn = text(inSeries.sequence);
+			if (/^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(inSeries.sequence))) rec.sn = text(inSeries.sequence);
 		}
 		const genres = (Array.isArray(product.category_ladders) ? product.category_ladders : [])
 			.filter((/** @type {unknown} */ l) => Text.isObject(l) && l.root === 'Genres' && Array.isArray(l.ladder))

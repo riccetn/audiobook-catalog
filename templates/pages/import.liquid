@@ -64,6 +64,12 @@
 			<p class="ioNote">Shows the finished books in an Audible Library Extractor CSV beside this catalog's, to pick what to take.
 				Pick the Audible site the export is from first: its ASINs are that site's. (Audible can't import a list of books, so there is no export.)</p>
 		</div>
+		{%- capture audible_note -%}
+			Shows a series' books on Audible beside yours, to pick what to take from Audible: narrators, publisher, release date,
+					length and ISBN your books' editions lack, and the series' Audible id and count of books. Read on the Audible site of your books' ASINs,
+					through your catalog proxy (below). Nothing is sent to Audible.
+		{%- endcapture %}
+		{% render 'shelf-compare', catalog: 'audible', title: 'Compare a series with Audible', note: audible_note, every: false %}
 	</section>
 
 	<section class="panel" id="goodreadsPanel">

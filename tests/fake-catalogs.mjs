@@ -102,6 +102,17 @@ export function fakeProxyCatalogs() {
 	const sent = [];
 	const json = (status, body) => ({ok: status < 400, status, json: async () => body});
 	const ladder = (...names) => ({root: 'Genres', ladder: names.map((name, i) => ({id: String(1000 + i), name}))});
+	const gullIsle = (asin, title, sequence, more = {}) => ({
+		asin,
+		title,
+		authors: [{name: 'Ann Vale'}],
+		series: [{asin: 'B0SERIES02', sequence, title: 'Gull Isle'}],
+		publisher_name: 'Gullwing Audio',
+		release_date: '2020-01-01',
+		format_type: 'unabridged',
+		category_ladders: [ladder('Science Fiction & Fantasy', 'Fantasy')],
+		...more,
+	});
 	const audible = {
 		'audible.com/B0LANTERN2': {
 			asin: 'B0LANTERN2',
@@ -125,6 +136,62 @@ export function fakeProxyCatalogs() {
 				ladder('Literature & Fiction', 'Literary Fiction'),
 			],
 		},
+		// the series Gull Isle as Audible answers it: every edition it sells of its books, unordered, numbered
+		// by `sequence` (text) and placed by `sort`, with a placeholder, a box set, a companion without a number,
+		// one the site doesn't sell and a sub-series (checked against the real API on 2026-10-25)
+		'audible.com/B0SERIES02': {
+			asin: 'B0SERIES02',
+			title: 'Gull Isle',
+			content_delivery_type: 'BookSeries',
+			release_date: '2200-01-01',
+			relationships: [
+				['B0BRINETD4', '4', 6],
+				['B0SALTRDAB', '1', 3],
+				['B0LANTERN2', '2', 4],
+				['B0BOXSET13', '1-3', 1],
+				['B0SALTRD01', '1', 2],
+				['B0GULLSNG3', '3', 5],
+				['B0PLACEHL5', '5', 7],
+				['B0STORIES0', '', 8],
+				['B0NOTSOLD1', '6', 9],
+			]
+				.map(([asin, sequence, sort]) => ({
+					asin,
+					relationship_to_product: 'child',
+					relationship_type: 'series',
+					sequence,
+					sort: String(sort),
+					sku: `SKU${asin}`,
+				}))
+				.concat([
+					{
+						asin: 'B0SUBSER01',
+						relationship_to_product: 'child',
+						relationship_type: 'merchant_title_authority',
+						sort: '1',
+					},
+				]),
+		},
+		'audible.com/B0SALTRD01': gullIsle('B0SALTRD01', 'Salt Road', '1', {
+			narrators: [{name: 'Hollis Marr'}],
+			runtime_length_min: 540,
+		}),
+		'audible.com/B0SALTRDAB': gullIsle('B0SALTRDAB', 'Salt Road', '1', {
+			format_type: 'abridged',
+			publisher_name: 'Short Reads Audio',
+			runtime_length_min: 200,
+		}),
+		'audible.com/B0GULLSNG3': gullIsle('B0GULLSNG3', 'Gull Song', '3'),
+		'audible.com/B0BRINETD4': gullIsle('B0BRINETD4', 'Brine Tide', '4', {
+			narrators: [{name: 'Dana Fenwick'}],
+			runtime_length_min: 480,
+			release_date: '2023-09-12',
+		}),
+		'audible.com/B0PLACEHL5': gullIsle('B0PLACEHL5', 'Gull Isle Book 5', '5', {
+			publisher_name: 'ZZZ - Series Advisor Placeholder',
+		}),
+		'audible.com/B0BOXSET13': gullIsle('B0BOXSET13', 'Gull Isle: Books 1-3', '1-3'),
+		'audible.com/B0STORIES0': gullIsle('B0STORIES0', 'Gull Isle Stories', ''),
 		'audible.co.uk/B0LANTERNU': {
 			asin: 'B0LANTERNU',
 			title: 'The Lantern Keeper',
@@ -194,13 +261,25 @@ export function fakeProxyCatalogs() {
 	const route = async path => {
 		sent.push(path);
 		const u = new URL(path, 'https://proxy.invalid/');
+		const stub = asin => ({asin, asset_details: [], is_vvab: false}); // what a site that doesn't sell it answers
 		let m = /^\/audible\/([^/]+)\/catalog\/products\/([^/]+)$/.exec(u.pathname);
 		if (m) {
-			assert(u.searchParams.get('response_groups').includes('series'), 'Audible is asked for the series');
-			return json(200, {
-				product: audible[`${m[1]}/${m[2]}`] || {asin: m[2], asset_details: []},
-				response_groups: ['always-returned'],
-			});
+			const groups = u.searchParams.get('response_groups');
+			assert(
+				groups.includes(m[2] === 'B0SERIES02' ? 'relationships' : 'series'),
+				'Audible is asked for the series',
+			);
+			return json(200, {product: audible[`${m[1]}/${m[2]}`] || stub(m[2]), response_groups: ['always-returned']});
+		}
+		m = /^\/audible\/([^/]+)\/catalog\/products$/.exec(u.pathname);
+		if (m) {
+			const asins = u.searchParams.get('asins').split(',');
+			if (asins.length > 50)
+				return json(400, {
+					message: `Number of requested asins ${asins.length} is greater than maximum allowed asins 50`,
+				});
+			const products = asins.map(a => audible[`${m[1]}/${a}`] || stub(a));
+			return json(200, {products, response_groups: ['always-returned'], total_results: products.length});
 		}
 		if (u.pathname === '/audiobookdb/books') {
 			// a title search: list items, with up to 3 authors; another author's book of the same title too

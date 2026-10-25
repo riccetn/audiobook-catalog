@@ -40,6 +40,8 @@ import {FileExporter} from '../public/modules/file-exporter.js';
 import {BookSource} from '../public/modules/book-source.js';
 import {OpenLibrarySource} from '../public/modules/open-library-source.js';
 import {AudibleSource} from '../public/modules/audible-source.js';
+import {AudibleClient} from '../public/modules/audible-client.js';
+import {AudibleSync} from '../public/modules/audible-sync.js';
 import {AudiobookdbSource} from '../public/modules/audiobookdb-source.js';
 import {CatalogDatabase, CatalogConflict} from '../public/modules/catalog-database.js';
 import {fakeCatalogs, fakeProxyCatalogs, fakeAudiobookdb, audiobookdbState} from './fake-catalogs.mjs';
@@ -5228,8 +5230,16 @@ test('CatalogConnectors lists each catalog once, with what the pages need of it'
 	for (const Source of CatalogConnectors.SOURCES) assert.ok(Source.prototype instanceof BookSource);
 	assert.deepEqual(
 		CatalogConnectors.CLIENTS.map(Client => Client.CATALOG),
-		CatalogConnectors.SYNCS.map(Sync => Sync.CLIENT.CATALOG),
+		['hardcover', 'audiobookdb'],
+		'the clients that take a key (Audible takes none)',
 	);
+	const syncs = CatalogConnectors.SYNCS;
+	assert.equal(new Set(syncs.map(Sync => Sync.CLIENT.CATALOG)).size, syncs.length);
+	for (const Sync of syncs) {
+		assert.ok(Sync.prototype instanceof ShelfSync && Sync.CLIENT.prototype instanceof CatalogClient);
+		assert.ok(Sync.PARTS.length && Sync.PARTS.every(p => p === 'series' || p === 'author'));
+	}
+	assert.deepEqual(AudibleSync.PARTS, ['series'], 'Audible compares a series only');
 	for (const Client of CatalogConnectors.CLIENTS) {
 		assert.ok(Client.prototype instanceof CatalogClient);
 		assert.ok(ExternalCatalog.get(Client.CATALOG), `${Client.LABEL} is an external catalog`);
@@ -5251,4 +5261,122 @@ test('CatalogConnectors lists each catalog once, with what the pages need of it'
 		],
 	);
 	assert.throws(() => new FileExporter().write([]), /write is not written/);
+});
+
+// An Audible client asking the fake catalogs behind the proxy, and the routes it asked.
+const audibleClient = () => {
+	const behind = fakeProxyCatalogs();
+	return {
+		client: new AudibleClient(
+			route => behind.route(route),
+			'',
+			async () => {},
+		),
+		sent: behind.sent,
+	};
+};
+
+test("AudibleSync compares a series' books with Audible's: the edition that is yours, else the one of its number", async () => {
+	const catalog = Catalog.fromJSON({
+		books: [
+			{t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ext: {goodreads: '7001'}}]},
+			{
+				t: 'The Lantern Keeper',
+				a: ['Ann Vale'],
+				s: 'Gull Isle',
+				sn: '2',
+				e: [{ext: {'audible.com': 'B0LANTERN2'}}],
+			},
+			{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '04', e: [{p: 'Gullwing Audio'}]},
+			{t: 'Elsewhere', a: ['Bo Reed'], e: [{ext: {'audible.com': 'B0ELSEWHR1'}}]},
+		],
+	});
+	const before = JSON.stringify(catalog);
+	const {client, sent} = audibleClient();
+	const sync = new AudibleSync(client);
+	const result = await sync.compare(catalog, () => {}, AudibleSync.part(catalog, 'series', 'Gull Isle'));
+	assert.equal(JSON.stringify(catalog), before, 'comparing changes nothing');
+	assert.deepEqual(sent, [
+		'audible/audible.com/catalog/products?asins=B0LANTERN2&response_groups=series',
+		'audible/audible.com/catalog/products/B0SERIES02?response_groups=relationships,product_attrs',
+		`audible/audible.com/catalog/products?asins=B0BRINETD4,B0SALTRDAB,B0LANTERN2,B0BOXSET13,B0SALTRD01,B0GULLSNG3,B0PLACEHL5,B0STORIES0,B0NOTSOLD1&response_groups=${AudibleSource.GROUPS}`,
+	]);
+	// Salt Road has two editions there and neither is yours: only what the book has
+	assert.deepEqual(
+		json(result.incoming).map(b => [b.t, b.sn, (b.e || []).map(ed => ed.ext && ed.ext['audible.com'])]),
+		[
+			['Salt Road', '1', []],
+			['The Lantern Keeper', '2', ['B0LANTERN2']],
+			['Brine Tide', '04', ['B0BRINETD4']],
+		],
+	);
+	assert.deepEqual(
+		result.comparison.books.map(c => [c.theirs.title, c.kind, c.books.map(b => b.title)]),
+		[
+			['Salt Road', 'same', ['Salt Road']],
+			['The Lantern Keeper', 'gains', ['The Lantern Keeper']],
+			['Brine Tide', 'gains', ['Brine Tide']],
+		],
+	);
+	const [, lantern, brine] = result.comparison.books;
+	assert.deepEqual(lantern.editionGains, ['ISBN, narrators, publisher, release date, length']);
+	assert.deepEqual(
+		brine.editionGains,
+		['audible.com id, narrators, release date, length'],
+		'its one edition fills in yours',
+	);
+	assert.deepEqual(brine.differences, [], 'book 04 is book 4');
+	assert.deepEqual(result.warnings, [
+		'Salt Road: audible.com has 2 editions of book 1 and none has an ASIN of yours; give yours its ASIN to fill it in',
+	]);
+	assert.deepEqual(result.missing, ['3. Gull Song'], 'not the placeholder, the box set or the companion');
+	assert.equal(
+		sync.summary(result, catalog, {kind: 'series', name: 'Gull Isle', label: 'the series “Gull Isle”'}),
+		'Only the series “Gull Isle”: 3 books in this catalog, 4 books in the series on audible.com',
+	);
+	assert.deepEqual(result.infoIds, [
+		{kind: 'series', name: 'Gull Isle', id: 'B0SERIES02', catalog: 'audible.com', total: 4},
+	]);
+	assert.equal(result.plan, null, 'nothing to send');
+
+	// Apply keeps the series' id and count of books, and with them saved, the series is read by its id
+	assert.equal(AudibleSync.setInfoIds(catalog, result.infoIds), 1);
+	const info = catalog.series.get(catalog.nameIds.series.get('Gull Isle'));
+	assert.deepEqual([info.external, info.total], [{'audible.com': 'B0SERIES02'}, 4]);
+	assert.equal(AudibleSync.setInfoIds(catalog, result.infoIds), 0, 'only where it has none');
+	const again = audibleClient();
+	const second = await new AudibleSync(again.client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
+	assert.match(again.sent[0], /^audible\/audible\.com\/catalog\/products\/B0SERIES02\?/);
+	assert.deepEqual(second.infoIds, []);
+});
+
+test('AudibleSync reads a series on the site of its books, and says when Audible lists none of them', async () => {
+	const on = (...exts) => exts.map(ext => B({t: 'X', a: ['Ann Vale'], e: [{ext}]}));
+	assert.equal(
+		AudibleSync.siteOf(
+			on({'amazon.co.uk': 'B0UK000001'}, {'audible.co.uk': 'B0UK000002'}, {'audible.com': 'B0US000001'}),
+			undefined,
+		),
+		'audible.co.uk',
+	);
+	assert.equal(AudibleSync.siteOf(on({'amazon.de': 'B0DE000001'}), undefined), 'audible.de');
+	assert.equal(
+		AudibleSync.siteOf([], new Series('S', {external: {goodreads: '1', 'audible.fr': 'B0FR000001'}})),
+		'audible.fr',
+	);
+	assert.equal(AudibleSync.siteOf([], undefined), 'audible.com');
+	assert.deepEqual(['02', '2.0', '1-03', '', 'one'].map(AudibleSync.numberKey), ['2', '2', '1-3', '', '']);
+
+	const catalog = Catalog.fromJSON({
+		books: [{t: 'Elsewhere', a: ['Bo Reed'], s: 'Far Shore', sn: '1', e: [{ext: {'audible.com': 'B0ELSEWHR1'}}]}],
+	});
+	const {client} = audibleClient();
+	await assert.rejects(
+		new AudibleSync(client).compare(catalog, () => {}, {kind: 'series', name: 'Far Shore'}),
+		/audible\.com lists none of your books in the series Far Shore; paste the series' address on audible\.com in its form/,
+	);
+	await assert.rejects(
+		new AudibleSync(client).compare(catalog, () => {}),
+		/one series at a time/,
+	);
 });

@@ -8,6 +8,7 @@ import {GoodreadsImporter} from './goodreads-importer.js';
 import {GoodreadsExporter} from './goodreads-exporter.js';
 import {HardcoverSync} from './hardcover-sync.js';
 import {AudiobookdbSync} from './audiobookdb-sync.js';
+import {AudibleSync} from './audible-sync.js';
 import {AudibleSource} from './audible-source.js';
 import {AudiobookdbSource} from './audiobookdb-source.js';
 import {HardcoverSource} from './hardcover-source.js';
@@ -21,13 +22,16 @@ export class CatalogConnectors {
 	static IMPORTERS = [AudibleImporter, GoodreadsImporter];
 	/** The files written for another catalog's import. */
 	static EXPORTERS = [GoodreadsExporter];
-	/** The catalogs whose shelves are compared with the catalog, and sent to. */
-	static SYNCS = [HardcoverSync, AudiobookdbSync];
 	/**
-	 * The client classes of those catalogs: their keys, which Import & export saves.
+	 * The catalogs whose shelves are compared with the catalog, and sent to; and Audible, whose series are
+	 * compared (it has no shelves of yours, so nothing is sent).
+	 */
+	static SYNCS = [HardcoverSync, AudiobookdbSync, AudibleSync];
+	/**
+	 * The client classes of those catalogs that take your key, which Import & export saves.
 	 * @type {ClientClass[]}
 	 */
-	static CLIENTS = CatalogConnectors.SYNCS.map(sync => sync.CLIENT);
+	static CLIENTS = CatalogConnectors.SYNCS.map(sync => sync.CLIENT).filter(Client => Client.KEY_STORAGE);
 	/**
 	 * The catalogs the book form looks books up in, in the order they are asked: the store's own catalog first
 	 * for an ASIN (Audible, then AudiobookDB, then Hardcover only when neither has it), Hardcover before Open

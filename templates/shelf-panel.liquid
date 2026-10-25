@@ -4,23 +4,10 @@
 	name, `via` how it is asked, `note` what Compare does, `key_label` the row's label, `key_name` what the
 	catalog calls the key ('API token') and `key_word` the buttons' word for it ('token').
 {%- endcomment %}
+{%- capture compare_title %}Compare your {{ label }} shelves with this catalog{% endcapture %}
 	<section class="panel" id="{{ catalog }}Panel">
 		<h2>{{ label }} <span class="via">{{ via }}</span></h2>
-		<div class="ioRow">
-			<span class="ioLabel">Compare</span>
-			<div class="rowbtns">
-				<button class="iconbtn2" id="{{ catalog }}CompareBtn" title="Compare your {{ label }} shelves with this catalog">Compare</button>
-				<label>for
-					<select id="{{ catalog }}Scope" title="Compare every book, or only a series' or an author's">
-						<option value="">every book</option>
-						<option value="series">a series</option>
-						<option value="author">an author</option>
-					</select></label>
-				<input type="text" id="{{ catalog }}ScopeName" list="{{ catalog }}ScopeNames" placeholder="Name" autocomplete="off" style="display:none">
-				<datalist id="{{ catalog }}ScopeNames"></datalist>
-			</div>
-			<p class="ioNote">{{ note }}</p>
-		</div>
+		{% render 'shelf-compare', catalog: catalog, title: compare_title, note: note, every: true %}
 		<div class="ioRow">
 			<span class="ioLabel">{{ key_label }}</span>
 			<div class="rowbtns">

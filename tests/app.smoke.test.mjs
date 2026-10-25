@@ -4195,6 +4195,86 @@ test("an AudiobookDB comparison can be only a series' or an author's books, and 
 	assert.doesNotMatch(byHale, /Tidewater|Brine Tide/);
 });
 
+test("a series is compared with Audible through the proxy, and Apply fills in its books' editions and the series' id", async () => {
+	const home = await boot({hash: '#series=The+Lantern+Coast'});
+	await idle();
+	assert.match(
+		home.readable(home.els.results.innerHTML),
+		/<a class="audibleCompare" href="import\.html#audible-series=[^"]+">Compare with Audible<\/a>/,
+	);
+	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
+	assert.doesNotMatch(author.els.creditBody.innerHTML, /audibleCompare/, 'Audible compares a series only');
+
+	const mine = [
+		{t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0LANTERN2'}}]},
+		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '4', e: [{p: 'Gullwing Audio'}]},
+	];
+	// the real Worker in front of Audible's catalog
+	const behind = fakeProxyCatalogs();
+	const audible = async url => {
+		const u = new URL(url);
+		const site = u.hostname.replace(/^api\./, '');
+		return behind.route(`audible/${site}${u.pathname.replace(/^\/1\.0/, '')}${u.search}`);
+	};
+	const proxy = async (url, init = {}) =>
+		handleProxy(new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}}), PROXY_ENV, {
+			fetch: async upstream => {
+				const res = await audible(String(upstream.url || upstream));
+				return new Response(JSON.stringify(await res.json()), {status: res.status});
+			},
+		});
+	const storage = new Map([PROXY_SAVED]);
+	const {els, get, readable} = await boot({
+		page: 'import.html',
+		hash: '#audible-series=Gull+Isle',
+		files: {'books.json': JSON.stringify(mine)},
+		proxy,
+		storage,
+		setTimeout: (fn, ms) => {
+			if (ms === 250) Promise.resolve().then(fn);
+			return 0;
+		},
+	});
+	await idle();
+	assert.deepEqual([els.audibleScope.value, els.audibleScopeName.value], ['series', 'Gull Isle']);
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(
+		html,
+		/^<p>Only the series “Gull Isle”: 2 books in this catalog, 4 books in the series on audible\.com/,
+	);
+	assert.match(html, /The Lantern Keeper/);
+	assert.match(html, /Save the Audible ids and book counts found for 1 series/);
+	assert.match(
+		html,
+		/In the series on Audible, not in this catalog: 2<\/summary><ul><li>1\. Salt Road<\/li><li>3\. Gull Song<\/li>/,
+	);
+	assert.doesNotMatch(html, /Save your Audible|shelf/, 'no key and no shelves');
+	assert.ok(behind.sent.every(r => r.startsWith('audible/audible.com/catalog/')));
+	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
+
+	// the edition found by its ASIN is yours, so it is ticked; Brine Tide's is the one of its number, to tick
+	const edition = n => els.importPreviewBody.querySelector(`input[data-pick="editions:${n}"]`);
+	assert.match(html, /data-pick="editions:0" checked="">/);
+	assert.match(html, /data-pick="editions:1">/);
+	edition(1).checked = true;
+	edition(1).dispatch('change');
+	await els.importConfirm.listeners.click[0]();
+	await idle();
+	const saved = await kept(storage);
+	assert.deepEqual(
+		saved.books.map(b => [b.t, b.e.map(e => [e.ext, e.n, e.len])]),
+		[
+			['The Lantern Keeper', [[{'audible.com': 'B0LANTERN2'}, ['Hollis Marr', 'Dana Fenwick'], 612]]],
+			['Brine Tide', [[{'audible.com': 'B0BRINETD4'}, ['Dana Fenwick'], 480]]],
+		],
+	);
+	assert.deepEqual(
+		[saved.seriesInfo['Gull Isle'].ext, saved.seriesInfo['Gull Isle'].total],
+		[{'audible.com': 'B0SERIES02'}, 4],
+	);
+	assert.match(els.ioStatus.textContent, /Audible ids and book counts found for 1 series/);
+});
+
 test('AudiobookDB needs the proxy, says when the proxy is out of date, and says when it refuses the key', async () => {
 	const mine = [{t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]}];
 	const none = await boot({page: 'import.html', files: {'books.json': JSON.stringify(mine)}});

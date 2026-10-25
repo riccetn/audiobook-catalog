@@ -206,7 +206,7 @@ export const standalonePageHref = () => pageHref('index.html', '#standalone');
 export const shelfCompareHref = (catalog, kind, id) => `import.html#${catalog}-${kind}=` + hashValue(id);
 
 /**
- * Links that compare a series' or an author's books with each catalog's shelves (CatalogConnectors.SYNCS),
+ * Links that compare a series' or an author's books with each catalog's shelves (CatalogConnectors.SYNCS, those that compare them),
  * with a space between them; `words(label)` is each link's text.
  * @param {'series' | 'author'} kind
  * @param {string} id
@@ -215,7 +215,7 @@ export const shelfCompareHref = (catalog, kind, id) => `import.html#${catalog}-$
  */
 export function shelfCompareLinks(kind, id, words) {
 	return joined(
-		CatalogConnectors.CLIENTS.map(Client =>
+		CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind)).map(({CLIENT: Client}) =>
 			buildElement(
 				'a',
 				{class: `${Client.CATALOG}Compare`, href: shelfCompareHref(Client.CATALOG, kind, id)},

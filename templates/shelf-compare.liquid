@@ -1,0 +1,26 @@
+{%- comment -%}
+	The Compare row of a catalog's panel on Import & export (ShelfSync in import.js): its button, and what to
+	compare: every book (`every`) or a series' or an author's, or only a series'. `catalog` is the panel's prefix
+	(its client's CATALOG), `title` the button's, `note` what Compare does.
+{%- endcomment %}
+		<div class="ioRow">
+			<span class="ioLabel">Compare</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="{{ catalog }}CompareBtn" title="{{ title }}">Compare</button>
+				<label>for
+					{%- if every %}
+					<select id="{{ catalog }}Scope" title="Compare every book, or only a series' or an author's">
+						<option value="">every book</option>
+						<option value="series">a series</option>
+						<option value="author">an author</option>
+					</select></label>
+					{%- else %}
+					<select id="{{ catalog }}Scope" title="The series to compare">
+						<option value="series">a series</option>
+					</select></label>
+					{%- endif %}
+				<input type="text" id="{{ catalog }}ScopeName" list="{{ catalog }}ScopeNames" placeholder="Name" autocomplete="off" style="display:none">
+				<datalist id="{{ catalog }}ScopeNames"></datalist>
+			</div>
+			<p class="ioNote">{{ note }}</p>
+		</div>
