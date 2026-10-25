@@ -1,10 +1,17 @@
 #!/bin/sh
-# Formats the staged files with Prettier and stages the result (npm install points git here, with the prepare script).
+# Formats the staged files with Prettier, stages the result, then lints the staged JavaScript with ESLint and stops the
+# commit on an error (npm install points git here, with the prepare script).
 # A file only partly staged is staged whole once formatted.
 prettier=node_modules/prettier/bin/prettier.cjs
-if [ ! -f "$prettier" ]; then
-	echo 'Prettier is not installed: run npm install first'
+eslint=node_modules/eslint/bin/eslint.js
+if [ ! -f "$prettier" ] || [ ! -f "$eslint" ]; then
+	echo 'Prettier or ESLint is not installed: run npm install first'
 	exit 1
 fi
-git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 -r node "$prettier" --write --ignore-unknown --no-error-on-unmatched-pattern || exit 1
+git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 -r node "$prettier" --write --ignore-unknown --no-error-on-unmatched-pattern --log-level warn || exit 1
 git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 -r git add --
+# Warnings are shown but let the commit through, as make lint does.
+git diff --cached --name-only --diff-filter=ACMR -z -- '*.js' '*.mjs' '*.cjs' | xargs -0 -r node "$eslint" --no-warn-ignored || {
+	echo 'ESLint found errors: fix them, or commit with --no-verify to skip the hook'
+	exit 1
+}
