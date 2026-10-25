@@ -49,11 +49,30 @@ import {ExternalCatalog} from './external-catalog.js';
  */
 
 /** @type {[BookField, string][]} */
-const BOOK_FIELDS = [['t', 'Title'], ['a', 'Authors'], ['s', 'Series'], ['sn', 'Number in series'], ['r', 'Dates read']];
+const BOOK_FIELDS = [
+	['t', 'Title'],
+	['a', 'Authors'],
+	['s', 'Series'],
+	['sn', 'Number in series'],
+	['r', 'Dates read'],
+];
 /** @type {[EditionField, string][]} */
-const EDITION_FIELDS = [['n', 'Narrators'], ['p', 'Publisher'], ['d', 'Released'], ['len', 'Length']];
+const EDITION_FIELDS = [
+	['n', 'Narrators'],
+	['p', 'Publisher'],
+	['d', 'Released'],
+	['len', 'Length'],
+];
 /** @type {Record<string, string>} what an edition's key is called in what an import fills in */
-const EDITION_LABELS = {isbn: 'ISBN', n: 'narrators', p: 'publisher', d: 'release date', len: 'length', desc: 'description', img: 'cover'};
+const EDITION_LABELS = {
+	isbn: 'ISBN',
+	n: 'narrators',
+	p: 'publisher',
+	d: 'release date',
+	len: 'length',
+	desc: 'description',
+	img: 'cover',
+};
 
 /** Compares the catalog with another source's books, and takes what was picked from them. */
 export class Comparison {
@@ -65,10 +84,11 @@ export class Comparison {
 	 * @param {MergeOptions} [opts]
 	 * @returns {ComparisonResult}
 	 */
-	static compare(catalog, incoming, opts){
+	static compare(catalog, incoming, opts) {
 		const merged = catalog.clone();
 		const report = merged.merge(incoming, opts);
-		const mine = catalog.books, count = mine.length;
+		const mine = catalog.books,
+			count = mine.length;
 		/** @type {Map<Book, number>} */
 		const places = new Map(merged.books.map((b, i) => [b, i]));
 		const seen = new Set();
@@ -76,13 +96,44 @@ export class Comparison {
 		const books = report.matches.map((m, at) => {
 			const found = m.books.map(b => /** @type {number} */ (places.get(b))).filter(i => i < count);
 			found.forEach(i => seen.add(i));
-			const gained = found.map(i => Comparison.gains(mine[i], merged.books[i], found.length > 1 ? merged.books[i].title : ''));
-			const gains = gained.flatMap(g => g.book), editionGains = gained.flatMap(g => g.editions);
-			const differences = m.boxSet || !found.length ? [] : Comparison.differences(at, found[0], mine[found[0]], m.incoming, spellings, !!(opts && opts.allDates));
+			const gained = found.map(i =>
+				Comparison.gains(mine[i], merged.books[i], found.length > 1 ? merged.books[i].title : ''),
+			);
+			const gains = gained.flatMap(g => g.book),
+				editionGains = gained.flatMap(g => g.editions);
+			const differences =
+				m.boxSet || !found.length
+					? []
+					: Comparison.differences(
+							at,
+							found[0],
+							mine[found[0]],
+							m.incoming,
+							spellings,
+							!!(opts && opts.allDates),
+						);
 			/** @type {ComparedBook['kind']} */
-			const kind = m.excluded && !found.length ? 'excluded' : m.notAdded && !found.length ? 'notAdded'
-				: !found.length ? 'new' : gains.length || editionGains.length || m.added.length ? 'gains' : 'same';
-			return {at, theirs: m.incoming, kind, books: found.map(i => mine[i]), added: m.added, gains, editionGains, differences, boxSet: m.boxSet};
+			const kind =
+				m.excluded && !found.length
+					? 'excluded'
+					: m.notAdded && !found.length
+						? 'notAdded'
+						: !found.length
+							? 'new'
+							: gains.length || editionGains.length || m.added.length
+								? 'gains'
+								: 'same';
+			return {
+				at,
+				theirs: m.incoming,
+				kind,
+				books: found.map(i => mine[i]),
+				added: m.added,
+				gains,
+				editionGains,
+				differences,
+				boxSet: m.boxSet,
+			};
 		});
 		return {books, onlyHere: mine.filter((b, i) => !seen.has(i)), merged, report};
 	}
@@ -96,27 +147,34 @@ export class Comparison {
 	 * @param {string} title
 	 * @returns {{book: string[], editions: string[]}}
 	 */
-	static gains(before, after, title){
+	static gains(before, after, title) {
 		/** @type {string[]} */
 		const lines = [];
 		/** @type {string[]} */
 		const editions = [];
 		const dates = after.read.filter(d => !before.read.includes(d));
-		if(dates.length) lines.push(`read ${dates.join(', ')}`);
-		for(const [key] of Object.entries(after.external)) if(!before.idOn(key)) lines.push(`${ExternalCatalog.name(key)} id`);
+		if (dates.length) lines.push(`read ${dates.join(', ')}`);
+		for (const [key] of Object.entries(after.external))
+			if (!before.idOn(key)) lines.push(`${ExternalCatalog.name(key)} id`);
 		after.editions.forEach((ed, i) => {
 			const was = before.editions[i];
-			if(!was){ editions.push(`${before.editions.length ? 'another edition' : 'an edition'} (${ed.format() || 'no details'})`); return; }
+			if (!was) {
+				editions.push(
+					`${before.editions.length ? 'another edition' : 'an edition'} (${ed.format() || 'no details'})`,
+				);
+				return;
+			}
 			/** @type {string[]} */
 			const filled = [];
-			for(const [key] of ed.externalList()) if(!was.idOn(key)) filled.push(`${ExternalCatalog.name(key)} id`);
-			for(const k of /** @type {(keyof typeof EDITION_LABELS)[]} */ (Object.keys(EDITION_LABELS))){
-				if(was.value(k) === undefined && ed.value(k) !== undefined) filled.push(EDITION_LABELS[k]);
+			for (const [key] of ed.externalList()) if (!was.idOn(key)) filled.push(`${ExternalCatalog.name(key)} id`);
+			for (const k of /** @type {(keyof typeof EDITION_LABELS)[]} */ (Object.keys(EDITION_LABELS))) {
+				if (was.value(k) === undefined && ed.value(k) !== undefined) filled.push(EDITION_LABELS[k]);
 			}
-			if(filled.length) editions.push((before.editions.length > 1 ? `edition ${i + 1}: ` : '') + filled.join(', '));
+			if (filled.length)
+				editions.push((before.editions.length > 1 ? `edition ${i + 1}: ` : '') + filled.join(', '));
 		});
 		/** @type {(list: string[]) => string[]} */
-		const named = list => title ? list.map(l => `${title}: ${l}`) : list;
+		const named = list => (title ? list.map(l => `${title}: ${l}`) : list);
 		return {book: named(lines), editions: named(editions)};
 	}
 
@@ -125,10 +183,11 @@ export class Comparison {
 	 * @param {Book[]} books
 	 * @returns {Map<string, string>}
 	 */
-	static seriesSpellings(books){
+	static seriesSpellings(books) {
 		/** @type {Map<string, string>} */
 		const out = new Map();
-		for(const b of books) if(b.series && !out.has(Series.norm(b.series))) out.set(Series.norm(b.series), b.series);
+		for (const b of books)
+			if (b.series && !out.has(Series.norm(b.series))) out.set(Series.norm(b.series), b.series);
 		return out;
 	}
 
@@ -146,37 +205,56 @@ export class Comparison {
 	 * @param {boolean} [allDates]
 	 * @returns {Difference[]}
 	 */
-	static differences(at, place, book, theirs, spellings, allDates = false){
+	static differences(at, place, book, theirs, spellings, allDates = false) {
 		/** @type {Difference[]} */
 		const out = [];
 		/** @type {(field: BookField | EditionField, label: string, edition: number | null, here: string, there: string, value: string | string[] | number) => void} */
 		const add = (field, label, edition, here, there, value) =>
-			out.push({key: `${at}:${field}${edition === null ? '' : ':' + edition}`, field, label, book: place, edition, here, there, value});
+			out.push({
+				key: `${at}:${field}${edition === null ? '' : ':' + edition}`,
+				field,
+				label,
+				book: place,
+				edition,
+				here,
+				there,
+				value,
+			});
 		const theirSeries = theirs.series ? spellings.get(Series.norm(theirs.series)) || theirs.series : undefined;
 		// Audible's long form of a title ("A Crown of Embers 5: A Spark of Dawn") is the same title, as imports read it
 		const sameTitle = theirs.lookupKeys().includes(Text.key('title', Text.norm(book.title), theirs.authorKey()));
-		for(const [field, label] of BOOK_FIELDS){
-			if(field === 't' && !sameTitle) add(field, label, null, book.title, theirs.title, theirs.title);
-			if(field === 'a' && theirs.authors.length && theirs.authors.map(Text.norm).join('|') !== book.authors.map(Text.norm).join('|')){
-				add(field, label, null, Text.namesText(book.authors), Text.namesText(theirs.authors), [...theirs.authors]);
+		for (const [field, label] of BOOK_FIELDS) {
+			if (field === 't' && !sameTitle) add(field, label, null, book.title, theirs.title, theirs.title);
+			if (
+				field === 'a' &&
+				theirs.authors.length &&
+				theirs.authors.map(Text.norm).join('|') !== book.authors.map(Text.norm).join('|')
+			) {
+				add(field, label, null, Text.namesText(book.authors), Text.namesText(theirs.authors), [
+					...theirs.authors,
+				]);
 			}
-			if(field === 's' && theirSeries && Series.norm(book.series || '') !== Series.norm(theirSeries)) add(field, label, null, book.series || '', theirSeries, theirSeries);
-			if(field === 'sn' && theirs.number && String(book.number || '').trim() !== theirs.number.trim()) add(field, label, null, book.number || '', theirs.number, theirs.number);
+			if (field === 's' && theirSeries && Series.norm(book.series || '') !== Series.norm(theirSeries))
+				add(field, label, null, book.series || '', theirSeries, theirSeries);
+			if (field === 'sn' && theirs.number && String(book.number || '').trim() !== theirs.number.trim())
+				add(field, label, null, book.number || '', theirs.number, theirs.number);
 			// a book without dates read gains them on importing
-			if(field === 'r' && !allDates && book.read.length && theirs.read.some(d => !book.hasReadDate(d))){
+			if (field === 'r' && !allDates && book.read.length && theirs.read.some(d => !book.hasReadDate(d))) {
 				add(field, label, null, book.read.join(', '), theirs.read.join(', '), [...theirs.read]);
 			}
 		}
-		for(const ed of theirs.editions){
+		for (const ed of theirs.editions) {
 			let i = book.editions.findIndex(x => x.sameAs(ed));
-			if(i < 0 && book.editions.length === 1 && !book.editions[0].conflictsWith(ed)) i = 0;
-			if(i < 0) continue;
+			if (i < 0 && book.editions.length === 1 && !book.editions[0].conflictsWith(ed)) i = 0;
+			if (i < 0) continue;
 			const mine = book.editions[i];
-			for(const [field, label] of EDITION_FIELDS){
-				const v = Comparison.editionValue(mine, field), w = Comparison.editionValue(ed, field);
-				if(v === null || w === null || v.text === w.text) continue;
-				if(field === 'len' && Math.abs(/** @type {number} */ (v.value) - /** @type {number} */ (w.value)) <= 1) continue;   // rounding
-				if(field !== 'len' && field !== 'd' && Text.norm(v.text) === Text.norm(w.text)) continue;
+			for (const [field, label] of EDITION_FIELDS) {
+				const v = Comparison.editionValue(mine, field),
+					w = Comparison.editionValue(ed, field);
+				if (v === null || w === null || v.text === w.text) continue;
+				if (field === 'len' && Math.abs(/** @type {number} */ (v.value) - /** @type {number} */ (w.value)) <= 1)
+					continue; // rounding
+				if (field !== 'len' && field !== 'd' && Text.norm(v.text) === Text.norm(w.text)) continue;
 				add(field, label, i, v.text, w.text, w.value);
 			}
 		}
@@ -189,9 +267,13 @@ export class Comparison {
 	 * @param {EditionField} field
 	 * @returns {{text: string, value: string | string[] | number} | null}
 	 */
-	static editionValue(ed, field){
-		if(field === 'n') return ed.narrators.length ? {text: Text.namesText(ed.narrators), value: [...ed.narrators]} : null;
-		if(field === 'len') return typeof ed.minutes === 'number' && Number.isInteger(ed.minutes) ? {text: Text.formatLength(ed.minutes), value: ed.minutes} : null;
+	static editionValue(ed, field) {
+		if (field === 'n')
+			return ed.narrators.length ? {text: Text.namesText(ed.narrators), value: [...ed.narrators]} : null;
+		if (field === 'len')
+			return typeof ed.minutes === 'number' && Number.isInteger(ed.minutes)
+				? {text: Text.formatLength(ed.minutes), value: ed.minutes}
+				: null;
 		const v = field === 'p' ? ed.publisher : ed.released;
 		return v ? {text: v, value: v} : null;
 	}
@@ -209,13 +291,18 @@ export class Comparison {
 	 * @param {MergeOptions} [opts]
 	 * @returns {{report: MergeReport, patched: number}}
 	 */
-	static apply(catalog, incoming, picks, opts){
-		const differences = Comparison.compare(catalog, incoming, opts).books.flatMap(b => b.differences).filter(d => picks.patch.has(d.key));
+	static apply(catalog, incoming, picks, opts) {
+		const differences = Comparison.compare(catalog, incoming, opts)
+			.books.flatMap(b => b.differences)
+			.filter(d => picks.patch.has(d.key));
 		const editions = picks.editions;
 		const withEditions = editions ? (/** @type {Book} */ b) => editions.has(incoming.indexOf(b)) : undefined;
-		const report = catalog.merge(incoming.filter((b, i) => picks.take.has(i)), {...opts, withEditions});
+		const report = catalog.merge(
+			incoming.filter((b, i) => picks.take.has(i)),
+			{...opts, withEditions},
+		);
 		// the catalog's own books keep their places, as an import only adds books after them
-		for(const d of differences) Comparison.patch(catalog.books, d);
+		for (const d of differences) Comparison.patch(catalog.books, d);
 		return {report, patched: differences.length};
 	}
 
@@ -225,20 +312,20 @@ export class Comparison {
 	 * @param {Book[]} books
 	 * @param {Difference} d
 	 */
-	static patch(books, d){
+	static patch(books, d) {
 		const book = books[d.book];
-		if(d.edition === null){
+		if (d.edition === null) {
 			const v = d.value;
-			if(d.field === 't' && typeof v === 'string') book.title = v;
-			if(d.field === 'a' && Array.isArray(v)) book.authors = [...v];
-			if(d.field === 's' && typeof v === 'string') book.series = v;
-			if(d.field === 'sn' && typeof v === 'string') book.number = v;
-			if(d.field === 'r' && Array.isArray(v)) book.read = [...v];
+			if (d.field === 't' && typeof v === 'string') book.title = v;
+			if (d.field === 'a' && Array.isArray(v)) book.authors = [...v];
+			if (d.field === 's' && typeof v === 'string') book.series = v;
+			if (d.field === 'sn' && typeof v === 'string') book.number = v;
+			if (d.field === 'r' && Array.isArray(v)) book.read = [...v];
 			return;
 		}
 		const ed = book.editions[d.edition];
 		const copies = books.flatMap(b => b.editions.filter(x => x !== ed && x.sameAs(ed)));
-		for(const x of [ed, ...copies]) x.set(d.field, Array.isArray(d.value) ? [...d.value] : d.value);
+		for (const x of [ed, ...copies]) x.set(d.field, Array.isArray(d.value) ? [...d.value] : d.value);
 	}
 
 	/**
@@ -248,8 +335,8 @@ export class Comparison {
 	 * @param {string} name
 	 * @returns {(book: Book) => boolean}
 	 */
-	static scope(kind, name){
-		if(kind === 'series'){
+	static scope(kind, name) {
+		if (kind === 'series') {
 			const series = Series.norm(name);
 			return book => Boolean(book.series) && Series.norm(/** @type {string} */ (book.series)) === series;
 		}
@@ -262,7 +349,7 @@ export class Comparison {
 	 * @param {Book} b
 	 * @returns {string}
 	 */
-	static bookLine(b){
+	static bookLine(b) {
 		const series = b.series ? `  [${b.series}${b.number ? ' #' + b.number : ''}]` : '';
 		return `${b.title} — ${Text.namesText(b.authors)}${series}`;
 	}

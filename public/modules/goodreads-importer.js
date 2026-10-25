@@ -22,19 +22,25 @@ export class GoodreadsImporter extends FileImporter {
 	 * @param {CsvRow} row
 	 * @param {ReadResult} result
 	 */
-	readRow(row, result){
-		if(!AUDIO_BINDINGS.has(cell(row, 'Binding'))) return;
-		if(cell(row, 'Exclusive Shelf') !== 'read'){ result.skippedUnfinished++; return; }
+	readRow(row, result) {
+		if (!AUDIO_BINDINGS.has(cell(row, 'Binding'))) return;
+		if (cell(row, 'Exclusive Shelf') !== 'read') {
+			result.skippedUnfinished++;
+			return;
+		}
 		const [title, series, number] = GoodreadsImporter.readTitle(row.Title || '');
 		// the book as stored, with its edition's ISBNs as a list until Book.tidyJSON() makes one edition per ISBN
 		/** @type {Record<string, any>} */
 		const rec = {t: title, a: Text.splitNames(cell(row, 'Author'))};
-		if(series){
+		if (series) {
 			rec.s = series;
-			if(number) rec.sn = number;
+			if (number) rec.sn = number;
 		}
-		const shelves = (row.Bookshelves || '').split(',').map(s => s.trim()).filter(Boolean);
-		if(shelves.length) rec.g = shelves;
+		const shelves = (row.Bookshelves || '')
+			.split(',')
+			.map(s => s.trim())
+			.filter(Boolean);
+		if (shelves.length) rec.g = shelves;
 		/** @type {Record<string, any>} */
 		const edition = {};
 		// Goodreads' own id for the edition; spreadsheet programs sometimes save it as ="12345".
@@ -42,22 +48,25 @@ export class GoodreadsImporter extends FileImporter {
 		const ext = {};
 		const gr = cell(row, 'Book Id').replace(/[="\s]/g, '');
 		// Goodreads' own export has no ASIN, but a CSV made like it may; an ASIN Goodreads knows is amazon.com's
-		const asin = cell(row, 'ASIN').replace(/[="\s]/g, '').toUpperCase();
-		if(/^[A-Z0-9]{10}$/.test(asin)) ext[ExternalCatalog.AMAZON_SITE] = asin;
-		if(ExternalCatalog.isId('goodreads', 'edition', gr)) ext.goodreads = gr;
-		if(Object.keys(ext).length) edition.ext = ext;
+		const asin = cell(row, 'ASIN')
+			.replace(/[="\s]/g, '')
+			.toUpperCase();
+		if (/^[A-Z0-9]{10}$/.test(asin)) ext[ExternalCatalog.AMAZON_SITE] = asin;
+		if (ExternalCatalog.isId('goodreads', 'edition', gr)) ext.goodreads = gr;
+		if (Object.keys(ext).length) edition.ext = ext;
 		// Goodreads files narrators under "Additional Authors"; treat that as a best guess.
-		if(Text.splitNames(cell(row, 'Additional Authors')).length) edition.n = Text.splitNames(cell(row, 'Additional Authors'));
+		if (Text.splitNames(cell(row, 'Additional Authors')).length)
+			edition.n = Text.splitNames(cell(row, 'Additional Authors'));
 		const isbns = Csv.rowIsbns(row);
-		if(isbns.length) edition.isbn = isbns;
-		if(cell(row, 'Publisher')) edition.p = cell(row, 'Publisher');
-		const year = Text.parseDate(cell(row, 'Year Published'));   // this edition's; "Original Publication Year" is the book's
-		if(year) edition.d = year;
-		if(Object.keys(edition).length) rec.e = [edition];
-		const read = Text.parseDate(cell(row, 'Date Read'));   // Goodreads keeps only the latest read
-		if(read) rec.r = [read];
+		if (isbns.length) edition.isbn = isbns;
+		if (cell(row, 'Publisher')) edition.p = cell(row, 'Publisher');
+		const year = Text.parseDate(cell(row, 'Year Published')); // this edition's; "Original Publication Year" is the book's
+		if (year) edition.d = year;
+		if (Object.keys(edition).length) rec.e = [edition];
+		const read = Text.parseDate(cell(row, 'Date Read')); // Goodreads keeps only the latest read
+		if (read) rec.r = [read];
 		const book = Book.fromRecord(rec);
-		if(book.authors.length && book.title) result.books.push(book);
+		if (book.authors.length && book.title) result.books.push(book);
 	}
 
 	/**
@@ -66,11 +75,13 @@ export class GoodreadsImporter extends FileImporter {
 	 * @param {string} raw
 	 * @returns {[string, string | null, string | null]}
 	 */
-	static readTitle(raw){
+	static readTitle(raw) {
 		const [title, series, number] = Series.parseTitle(raw);
 		const colon = Series.parseColonTitle(title);
-		if(!colon) return [title, series, number];
-		if(!series) return colon;
-		return Series.norm(colon[1]) === Series.norm(series) ? [colon[0], series, number || colon[2]] : [title, series, number];
+		if (!colon) return [title, series, number];
+		if (!series) return colon;
+		return Series.norm(colon[1]) === Series.norm(series)
+			? [colon[0], series, number || colon[2]]
+			: [title, series, number];
 	}
 }

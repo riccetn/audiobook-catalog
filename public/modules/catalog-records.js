@@ -144,7 +144,7 @@ const CONTRIBUTOR_KIND = {author: 'authors', narrator: 'narrators', publisher: '
 /** @type {(ids: Record<string, string>) => string[]} external ids as an index finds them: "hardcover 77" */
 const externalKeys = ids => Object.entries(ExternalCatalog.order(ids) || {}).map(([catalog, id]) => catalog + ' ' + id);
 /** @type {(list: string[]) => string | undefined} */
-const latest = list => list.length ? [...list].sort()[list.length - 1] : undefined;
+const latest = list => (list.length ? [...list].sort()[list.length - 1] : undefined);
 
 /** Turns a catalog into records and back; every method is static. */
 export class CatalogRecords {
@@ -152,49 +152,60 @@ export class CatalogRecords {
 	// record's key, so records that sort alike still have an order a page can continue from.
 	/** @type {Record<StoreName, StoreSpec>} */
 	static STORES = {
-		books: {keyPath: 'id', indexes: [
-			['byTitle', ['sortTitle', 'id']],
-			['bySeries', ['seriesId', 'isCollection', 'numberKey', 'numberEnd', 'sortTitle', 'id']],
-			['byLastRead', ['lastRead', 'id']],
-			['byAuthorTitle', ['firstAuthorKey', 'titleKey']],
-			['byAuthorSeries', ['firstAuthorKey', 'seriesKey', 'number']],
-			['genres', 'genres', {multiEntry: true}],
-			['words', 'words', {multiEntry: true}],
-			['externalKeys', 'externalKeys', {multiEntry: true}],
-			['byPosition', ['position', 'id']],
-			['editionIds', 'editionIds', {multiEntry: true}],
-			['readYears', 'readYears', {multiEntry: true}],
-			['search', 'search'],
-			['standalone', ['standalone', 'sortTitle', 'id']],
-		]},
-		editions: {keyPath: 'id', indexes: [
-			['bookIds', 'bookIds', {multiEntry: true}],
-			['idKeys', 'idKeys', {multiEntry: true}],
-			['narratorIds', 'narratorIds', {multiEntry: true}],
-			['publisherId', 'publisherId'],
-		]},
-		series: {keyPath: 'id', indexes: [
-			['name', 'name', {unique: true}],
-			['byName', ['sortName', 'id']],
-			['byStatus', ['status', 'sortName', 'id']],
-			['externalKeys', 'externalKeys', {multiEntry: true}],
-		]},
-		contributors: {keyPath: 'id', indexes: [
-			['kindName', ['kind', 'name'], {unique: true}],
-			['byName', ['kind', 'sortName', 'id']],
-			['externalKeys', 'externalKeys', {multiEntry: true}],
-		]},
-		credits: {keyPath: ['contributorId', 'bookId'], indexes: [
-			['byTitle', ['contributorId', 'sortTitle', 'bookId']],
-			['bySeries', ['contributorId', 'seriesId', 'numberKey', 'bookId']],
-			['bookId', 'bookId'],
-		]},
-		marks: {keyPath: 'id', indexes: [
-			['bookIds', 'bookIds', {multiEntry: true}],
-		]},
-		exclusions: {keyPath: 'entry', indexes: [
-			['byPosition', ['position', 'entry']],
-		]},
+		books: {
+			keyPath: 'id',
+			indexes: [
+				['byTitle', ['sortTitle', 'id']],
+				['bySeries', ['seriesId', 'isCollection', 'numberKey', 'numberEnd', 'sortTitle', 'id']],
+				['byLastRead', ['lastRead', 'id']],
+				['byAuthorTitle', ['firstAuthorKey', 'titleKey']],
+				['byAuthorSeries', ['firstAuthorKey', 'seriesKey', 'number']],
+				['genres', 'genres', {multiEntry: true}],
+				['words', 'words', {multiEntry: true}],
+				['externalKeys', 'externalKeys', {multiEntry: true}],
+				['byPosition', ['position', 'id']],
+				['editionIds', 'editionIds', {multiEntry: true}],
+				['readYears', 'readYears', {multiEntry: true}],
+				['search', 'search'],
+				['standalone', ['standalone', 'sortTitle', 'id']],
+			],
+		},
+		editions: {
+			keyPath: 'id',
+			indexes: [
+				['bookIds', 'bookIds', {multiEntry: true}],
+				['idKeys', 'idKeys', {multiEntry: true}],
+				['narratorIds', 'narratorIds', {multiEntry: true}],
+				['publisherId', 'publisherId'],
+			],
+		},
+		series: {
+			keyPath: 'id',
+			indexes: [
+				['name', 'name', {unique: true}],
+				['byName', ['sortName', 'id']],
+				['byStatus', ['status', 'sortName', 'id']],
+				['externalKeys', 'externalKeys', {multiEntry: true}],
+			],
+		},
+		contributors: {
+			keyPath: 'id',
+			indexes: [
+				['kindName', ['kind', 'name'], {unique: true}],
+				['byName', ['kind', 'sortName', 'id']],
+				['externalKeys', 'externalKeys', {multiEntry: true}],
+			],
+		},
+		credits: {
+			keyPath: ['contributorId', 'bookId'],
+			indexes: [
+				['byTitle', ['contributorId', 'sortTitle', 'bookId']],
+				['bySeries', ['contributorId', 'seriesId', 'numberKey', 'bookId']],
+				['bookId', 'bookId'],
+			],
+		},
+		marks: {keyPath: 'id', indexes: [['bookIds', 'bookIds', {multiEntry: true}]]},
+		exclusions: {keyPath: 'entry', indexes: [['byPosition', ['position', 'entry']]]},
 	};
 	/** @type {StoreName[]} */
 	static STORE_NAMES = ['books', 'editions', 'series', 'contributors', 'credits', 'marks', 'exclusions'];
@@ -203,8 +214,22 @@ export class CatalogRecords {
 	// record's other fields.
 	/** @type {Record<StoreName, string[] | null>} */
 	static DERIVED = {
-		books: ['position', 'sortTitle', 'titleKey', 'firstAuthorKey', 'words', 'externalKeys', 'seriesKey', 'isCollection', 'numberKey', 'numberEnd', 'lastRead',
-			'readYears', 'search', 'standalone'],
+		books: [
+			'position',
+			'sortTitle',
+			'titleKey',
+			'firstAuthorKey',
+			'words',
+			'externalKeys',
+			'seriesKey',
+			'isCollection',
+			'numberKey',
+			'numberEnd',
+			'lastRead',
+			'readYears',
+			'search',
+			'standalone',
+		],
 		editions: ['bookIds', 'idKeys'],
 		series: ['sortName', 'bookCount', 'owned', 'missing', 'lastRead', 'externalKeys', 'authorIds'],
 		contributors: ['sortName', 'bookCount', 'seriesCount', 'externalKeys', 'topAuthorIds', 'authorCount'],
@@ -223,14 +248,18 @@ export class CatalogRecords {
 	static INFO = {series: ['total', 'status', 'note', 'external'], contributors: ['bio', 'url', 'external', 'links']};
 
 	/** @returns {string} a new id */
-	static newId(){ return crypto.randomUUID(); }
+	static newId() {
+		return crypto.randomUUID();
+	}
 
 	/**
 	 * A text as lists sort it: Text.norm(), without a leading "the", "a" or "an".
 	 * @param {unknown} text
 	 * @returns {string}
 	 */
-	static sortKey(text){ return Text.norm(text).replace(/^(the|an?) (?=.)/, ''); }
+	static sortKey(text) {
+		return Text.norm(text).replace(/^(the|an?) (?=.)/, '');
+	}
 
 	/**
 	 * What in the catalog a record has no place for: values the classes kept aside (`extra`) because they
@@ -239,18 +268,22 @@ export class CatalogRecords {
 	 * @param {Catalog} catalog
 	 * @returns {string[]}
 	 */
-	static unstorable(catalog){
+	static unstorable(catalog) {
 		/** @type {string[]} */
 		const out = [];
 		/** @type {(label: string, extra: Record<string, unknown>) => void} */
-		const note = (label, extra) => { const keys = Object.keys(extra); if(keys.length) out.push(`${label}: ${keys.map(k => Text.repr(k)).join(', ')}`); };
+		const note = (label, extra) => {
+			const keys = Object.keys(extra);
+			if (keys.length) out.push(`${label}: ${keys.map(k => Text.repr(k)).join(', ')}`);
+		};
 		catalog.books.forEach((b, i) => {
 			const label = `book #${i} (${Text.repr(b.title || '?')})`;
 			note(label, b.extra);
 			b.editions.forEach((ed, j) => note(`${label} edition #${j + 1}`, ed.extra));
 		});
-		for(const s of catalog.series.values()) note(`series info ${Text.repr(s.name)}`, s.extra);
-		for(const kind of Contributor.KINDS) for(const c of catalog[kind].values()) note(`${kind} ${Text.repr(c.name)}`, c.extra);
+		for (const s of catalog.series.values()) note(`series info ${Text.repr(s.name)}`, s.extra);
+		for (const kind of Contributor.KINDS)
+			for (const c of catalog[kind].values()) note(`${kind} ${Text.repr(c.name)}`, c.extra);
 		return out;
 	}
 
@@ -259,7 +292,9 @@ export class CatalogRecords {
 	 * @param {Catalog} catalog
 	 * @param {() => string} [newId]
 	 */
-	static assignIds(catalog, newId = CatalogRecords.newId){ catalog.assignIds(newId); }
+	static assignIds(catalog, newId = CatalogRecords.newId) {
+		catalog.assignIds(newId);
+	}
 
 	/**
 	 * The records of a catalog. Gives ids first (assignIds), so the catalog keeps them for the next save.
@@ -271,20 +306,25 @@ export class CatalogRecords {
 	 * @param {(b: Book, index: number) => number} [positionOf]
 	 * @returns {RecordSet}
 	 */
-	static fromCatalog(catalog, newId = CatalogRecords.newId, positionOf){
+	static fromCatalog(catalog, newId = CatalogRecords.newId, positionOf) {
 		CatalogRecords.assignIds(catalog, newId);
 		const ids = catalog.nameIds;
 		/** @type {IdOf} */
 		const idOf = (kind, name) => /** @type {string} */ (ids[kind].get(name));
 
-		const books = catalog.books.map((b, i) => CatalogRecords.bookRecord(b, idOf, positionOf ? positionOf(b, i) : i));
+		const books = catalog.books.map((b, i) =>
+			CatalogRecords.bookRecord(b, idOf, positionOf ? positionOf(b, i) : i),
+		);
 
 		/** @type {Map<string, EditionRecord>} */
 		const editions = new Map();
 		catalog.books.forEach((b, i) => {
-			for(const ed of b.editions){
+			for (const ed of b.editions) {
 				const had = editions.get(/** @type {string} */ (ed.id));
-				if(had){ if(!had.bookIds.includes(books[i].id)) had.bookIds.push(books[i].id); continue; }
+				if (had) {
+					if (!had.bookIds.includes(books[i].id)) had.bookIds.push(books[i].id);
+					continue;
+				}
 				editions.set(/** @type {string} */ (ed.id), CatalogRecords.editionRecord(ed, [books[i].id], idOf));
 			}
 		});
@@ -293,21 +333,45 @@ export class CatalogRecords {
 
 		/** @type {Map<string, BookRecord[]>} */
 		const seriesBooks = new Map();
-		for(const rec of books) if(rec.seriesId) seriesBooks.set(rec.seriesId, [...(seriesBooks.get(rec.seriesId) || []), rec]);
-		const series = [...ids.series].map(([name, id]) => CatalogRecords.seriesRecord(id, name, catalog.series.get(id), seriesBooks.get(id) || []));
+		for (const rec of books)
+			if (rec.seriesId) seriesBooks.set(rec.seriesId, [...(seriesBooks.get(rec.seriesId) || []), rec]);
+		const series = [...ids.series].map(([name, id]) =>
+			CatalogRecords.seriesRecord(id, name, catalog.series.get(id), seriesBooks.get(id) || []),
+		);
 
 		const credits = books.flatMap(rec => CatalogRecords.creditsOf(rec, editionsOf(rec)));
 		/** @type {Map<string, BookRecord[]>} */
 		const creditedBooks = new Map();
 		const byId = new Map(books.map(rec => [rec.id, rec]));
-		for(const c of credits) creditedBooks.set(c.contributorId, [...(creditedBooks.get(c.contributorId) || []), /** @type {BookRecord} */ (byId.get(c.bookId))]);
+		for (const c of credits)
+			creditedBooks.set(c.contributorId, [
+				...(creditedBooks.get(c.contributorId) || []),
+				/** @type {BookRecord} */ (byId.get(c.bookId)),
+			]);
 		/** @type {Map<string, string>} */
 		const authorNames = new Map([...ids.authors].map(([name, id]) => [id, name]));
-		const contributors = Contributor.KINDS.flatMap(kind => [...ids[kind]].map(([name, id]) =>
-			CatalogRecords.contributorRecord(Contributor.ONE[kind], id, name, catalog[kind].get(id), creditedBooks.get(id) || [], x => authorNames.get(x) || '')));
+		const contributors = Contributor.KINDS.flatMap(kind =>
+			[...ids[kind]].map(([name, id]) =>
+				CatalogRecords.contributorRecord(
+					Contributor.ONE[kind],
+					id,
+					name,
+					catalog[kind].get(id),
+					creditedBooks.get(id) || [],
+					x => authorNames.get(x) || '',
+				),
+			),
+		);
 
-		return {books, editions: [...editions.values()], series, contributors, credits, marks: [...catalog.marks.values()].map(m => ({...m})),
-			exclusions: catalog.exclusions.entries.map((entry, position) => ({entry, position}))};
+		return {
+			books,
+			editions: [...editions.values()],
+			series,
+			contributors,
+			credits,
+			marks: [...catalog.marks.values()].map(m => ({...m})),
+			exclusions: catalog.exclusions.entries.map((entry, position) => ({entry, position})),
+		};
 	}
 
 	/**
@@ -317,10 +381,24 @@ export class CatalogRecords {
 	 * @param {Book} b
 	 * @returns {string}
 	 */
-	static searchText(b){
-		const hay = [b.title, ...b.authors, b.series, ...b.genres, ...b.editions.flatMap(ed => [...ed.externalList().map(([, id]) => id),
-			Text.namesText(ed.narrators), ed.publisher, ed.description, ed.isbn]), ...Object.values(b.external)]
-			.filter(x => typeof x === 'string').join(' ').toLowerCase();
+	static searchText(b) {
+		const hay = [
+			b.title,
+			...b.authors,
+			b.series,
+			...b.genres,
+			...b.editions.flatMap(ed => [
+				...ed.externalList().map(([, id]) => id),
+				Text.namesText(ed.narrators),
+				ed.publisher,
+				ed.description,
+				ed.isbn,
+			]),
+			...Object.values(b.external),
+		]
+			.filter(x => typeof x === 'string')
+			.join(' ')
+			.toLowerCase();
 		return hay + '\u0001' + b.isbns().join(' ');
 	}
 
@@ -330,10 +408,11 @@ export class CatalogRecords {
 	 * @param {string} q what was typed, trimmed
 	 * @returns {boolean}
 	 */
-	static searchMatches(text, q){
+	static searchMatches(text, q) {
 		const at = text.indexOf('\u0001');
-		const hay = at < 0 ? text : text.slice(0, at), isbns = at < 0 ? '' : text.slice(at + 1);
-		if(hay.includes(q.toLowerCase())) return true;
+		const hay = at < 0 ? text : text.slice(0, at),
+			isbns = at < 0 ? '' : text.slice(at + 1);
+		if (hay.includes(q.toLowerCase())) return true;
 		const isbn = Isbn.parse(q);
 		return !!isbn && isbns.split(' ').includes(isbn);
 	}
@@ -345,27 +424,45 @@ export class CatalogRecords {
 	 * @param {number} position
 	 * @returns {BookRecord}
 	 */
-	static bookRecord(b, idOf, position){
+	static bookRecord(b, idOf, position) {
 		const years = [...new Set(b.read.map(d => d.slice(0, 4)))];
 		/** @type {BookRecord} */
-		const rec = {id: /** @type {string} */ (b.id), title: b.title, authorIds: [...new Set(b.authors)].map(name => idOf('authors', name)),
-			genres: [...b.genres], read: [...b.read], editionIds: b.editions.map(ed => /** @type {string} */ (ed.id)), position,
-			sortTitle: CatalogRecords.sortKey(b.title), titleKey: Text.norm(b.title), firstAuthorKey: b.authorKey(),
-			words: [...new Set(Text.norm([b.title, ...b.authors].join(' ')).split(' ').filter(Boolean))], externalKeys: externalKeys(b.external),
-			readYears: years.length ? years : [CatalogRecords.UNDATED], search: CatalogRecords.searchText(b)};
-		if(b.series){
+		const rec = {
+			id: /** @type {string} */ (b.id),
+			title: b.title,
+			authorIds: [...new Set(b.authors)].map(name => idOf('authors', name)),
+			genres: [...b.genres],
+			read: [...b.read],
+			editionIds: b.editions.map(ed => /** @type {string} */ (ed.id)),
+			position,
+			sortTitle: CatalogRecords.sortKey(b.title),
+			titleKey: Text.norm(b.title),
+			firstAuthorKey: b.authorKey(),
+			words: [
+				...new Set(
+					Text.norm([b.title, ...b.authors].join(' '))
+						.split(' ')
+						.filter(Boolean),
+				),
+			],
+			externalKeys: externalKeys(b.external),
+			readYears: years.length ? years : [CatalogRecords.UNDATED],
+			search: CatalogRecords.searchText(b),
+		};
+		if (b.series) {
 			rec.seriesId = idOf('series', b.series);
 			rec.seriesKey = Series.norm(b.series);
-			const range = Series.range(b.number), first = parseFloat(b.number || '');
+			const range = Series.range(b.number),
+				first = parseFloat(b.number || '');
 			rec.isCollection = b.isCollection() ? 1 : 0;
 			rec.numberKey = range ? range[0] : Number.isFinite(first) ? first : CatalogRecords.UNNUMBERED;
 			rec.numberEnd = range ? range[1] : rec.numberKey;
-		}
-		else rec.standalone = 1;
-		if(b.number) rec.number = b.number;
-		if(Object.keys(b.external).length) rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(b.external));
+		} else rec.standalone = 1;
+		if (b.number) rec.number = b.number;
+		if (Object.keys(b.external).length)
+			rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(b.external));
 		const lastRead = latest(b.read);
-		if(lastRead) rec.lastRead = lastRead;
+		if (lastRead) rec.lastRead = lastRead;
 		return rec;
 	}
 
@@ -376,16 +473,21 @@ export class CatalogRecords {
 	 * @param {IdOf} idOf
 	 * @returns {EditionRecord}
 	 */
-	static editionRecord(ed, bookIds, idOf){
+	static editionRecord(ed, bookIds, idOf) {
 		/** @type {EditionRecord} */
-		const rec = {id: /** @type {string} */ (ed.id), bookIds, external: /** @type {Record<string, string>} */ (ExternalCatalog.order(ed.external) || {}),
-			narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)), idKeys: ed.idAndIsbnKeys()};
-		if(ed.isbn) rec.isbn = ed.isbn;
-		if(ed.publisher) rec.publisherId = idOf('publishers', ed.publisher);
-		if(ed.released) rec.released = ed.released;
-		if(ed.minutes !== undefined) rec.minutes = ed.minutes;
-		if(ed.description) rec.description = ed.description;
-		if(Object.keys(ed.covers).length) rec.covers = {...ed.covers};
+		const rec = {
+			id: /** @type {string} */ (ed.id),
+			bookIds,
+			external: /** @type {Record<string, string>} */ (ExternalCatalog.order(ed.external) || {}),
+			narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)),
+			idKeys: ed.idAndIsbnKeys(),
+		};
+		if (ed.isbn) rec.isbn = ed.isbn;
+		if (ed.publisher) rec.publisherId = idOf('publishers', ed.publisher);
+		if (ed.released) rec.released = ed.released;
+		if (ed.minutes !== undefined) rec.minutes = ed.minutes;
+		if (ed.description) rec.description = ed.description;
+		if (Object.keys(ed.covers).length) rec.covers = {...ed.covers};
 		return rec;
 	}
 
@@ -397,22 +499,30 @@ export class CatalogRecords {
 	 * @param {BookRecord[]} books the books in it
 	 * @returns {SeriesRecord}
 	 */
-	static seriesRecord(id, name, info, books){
+	static seriesRecord(id, name, info, books) {
 		// what Series counts by: the books' numbers (a range for a box set)
 		const own = books.map(rec => new Book({title: rec.title, series: name, number: rec.number}));
 		/** @type {SeriesRecord} */
-		const rec = {id, name, sortName: CatalogRecords.sortKey(name), bookCount: books.length, owned: Series.owned(own), externalKeys: externalKeys(info ? info.external : {}),
-			authorIds: [...new Set(books.flatMap(b => b.authorIds))]};
-		if(info){
-			if(info.total !== undefined) rec.total = info.total;
-			if(info.status !== undefined) rec.status = info.status;
-			if(info.note !== undefined) rec.note = info.note;
-			if(Object.keys(info.external).length) rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(info.external));
+		const rec = {
+			id,
+			name,
+			sortName: CatalogRecords.sortKey(name),
+			bookCount: books.length,
+			owned: Series.owned(own),
+			externalKeys: externalKeys(info ? info.external : {}),
+			authorIds: [...new Set(books.flatMap(b => b.authorIds))],
+		};
+		if (info) {
+			if (info.total !== undefined) rec.total = info.total;
+			if (info.status !== undefined) rec.status = info.status;
+			if (info.note !== undefined) rec.note = info.note;
+			if (Object.keys(info.external).length)
+				rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(info.external));
 		}
 		const missing = Series.missingNumbers(own, rec.total);
-		if(missing) rec.missing = missing;
+		if (missing) rec.missing = missing;
 		const lastRead = latest(books.flatMap(b => b.read));
-		if(lastRead) rec.lastRead = lastRead;
+		if (lastRead) rec.lastRead = lastRead;
 		return rec;
 	}
 
@@ -422,9 +532,19 @@ export class CatalogRecords {
 	 * @param {BookRecord[]} books
 	 * @returns {SeriesRecord}
 	 */
-	static rederiveSeries(rec, books){
-		const info = new Series(rec.name, {total: rec.total, status: rec.status, note: rec.note, external: rec.external});
-		return CatalogRecords.seriesRecord(rec.id, rec.name, CatalogRecords.hasInfo('series', rec) ? info : undefined, books);
+	static rederiveSeries(rec, books) {
+		const info = new Series(rec.name, {
+			total: rec.total,
+			status: rec.status,
+			note: rec.note,
+			external: rec.external,
+		});
+		return CatalogRecords.seriesRecord(
+			rec.id,
+			rec.name,
+			CatalogRecords.hasInfo('series', rec) ? info : undefined,
+			books,
+		);
 	}
 
 	/**
@@ -433,7 +553,9 @@ export class CatalogRecords {
 	 * @param {Record<string, any>} rec
 	 * @returns {boolean}
 	 */
-	static hasInfo(store, rec){ return CatalogRecords.INFO[store].some(k => rec[k] !== undefined); }
+	static hasInfo(store, rec) {
+		return CatalogRecords.INFO[store].some(k => rec[k] !== undefined);
+	}
 
 	/**
 	 * An author's, narrator's or publisher's record, with what is derived from the books they are credited on.
@@ -445,22 +567,33 @@ export class CatalogRecords {
 	 * @param {(authorId: string) => string} authorName the name of an author, to put authors with as many books in order
 	 * @returns {ContributorRecord}
 	 */
-	static contributorRecord(kind, id, name, info, books, authorName){
+	static contributorRecord(kind, id, name, info, books, authorName) {
 		/** @type {ContributorRecord} */
-		const rec = {id, kind, name, sortName: CatalogRecords.sortKey(name), bookCount: books.length,
-			seriesCount: new Set(books.map(b => b.seriesId).filter(Boolean)).size, externalKeys: externalKeys(info ? info.external : {})};
-		if(kind !== 'author'){
+		const rec = {
+			id,
+			kind,
+			name,
+			sortName: CatalogRecords.sortKey(name),
+			bookCount: books.length,
+			seriesCount: new Set(books.map(b => b.seriesId).filter(Boolean)).size,
+			externalKeys: externalKeys(info ? info.external : {}),
+		};
+		if (kind !== 'author') {
 			/** @type {Map<string, number>} */
 			const count = new Map();
-			for(const b of books) for(const a of b.authorIds) count.set(a, (count.get(a) || 0) + 1);
-			rec.topAuthorIds = [...count].sort((x, y) => y[1] - x[1] || authorName(x[0]).localeCompare(authorName(y[0]))).slice(0, 3).map(([a]) => a);
+			for (const b of books) for (const a of b.authorIds) count.set(a, (count.get(a) || 0) + 1);
+			rec.topAuthorIds = [...count]
+				.sort((x, y) => y[1] - x[1] || authorName(x[0]).localeCompare(authorName(y[0])))
+				.slice(0, 3)
+				.map(([a]) => a);
 			rec.authorCount = count.size;
 		}
-		if(info){
-			if(info.bio !== undefined) rec.bio = info.bio;
-			if(info.url !== undefined) rec.url = info.url;
-			if(Object.keys(info.external).length) rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(info.external));
-			if(info.links.length) rec.links = [...info.links];
+		if (info) {
+			if (info.bio !== undefined) rec.bio = info.bio;
+			if (info.url !== undefined) rec.url = info.url;
+			if (Object.keys(info.external).length)
+				rec.external = /** @type {Record<string, string>} */ (ExternalCatalog.order(info.external));
+			if (info.links.length) rec.links = [...info.links];
 		}
 		return rec;
 	}
@@ -472,9 +605,16 @@ export class CatalogRecords {
 	 * @param {(authorId: string) => string} authorName
 	 * @returns {ContributorRecord}
 	 */
-	static rederiveContributor(rec, books, authorName){
+	static rederiveContributor(rec, books, authorName) {
 		const info = CatalogRecords.hasInfo('contributors', rec)
-			? Contributor.fromJSON(rec.name, Object.fromEntries(Object.entries({bio: rec.bio, url: rec.url, ext: rec.external, links: rec.links}).filter(([, v]) => v !== undefined)))
+			? Contributor.fromJSON(
+					rec.name,
+					Object.fromEntries(
+						Object.entries({bio: rec.bio, url: rec.url, ext: rec.external, links: rec.links}).filter(
+							([, v]) => v !== undefined,
+						),
+					),
+				)
 			: undefined;
 		return CatalogRecords.contributorRecord(rec.kind, rec.id, rec.name, info, books, authorName);
 	}
@@ -485,16 +625,24 @@ export class CatalogRecords {
 	 * @param {EditionRecord[]} editions its editions
 	 * @returns {CreditRecord[]}
 	 */
-	static creditsOf(rec, editions){
+	static creditsOf(rec, editions) {
 		/** @type {[CreditKind, string[]][]} */
-		const kinds = [['author', rec.authorIds], ['narrator', editions.flatMap(ed => ed.narratorIds)],
-			['publisher', /** @type {string[]} */ (editions.map(ed => ed.publisherId).filter(Boolean))]];
-		return kinds.flatMap(([kind, ids]) => [...new Set(ids)].map(contributorId => {
-			/** @type {CreditRecord} */
-			const credit = {contributorId, bookId: rec.id, kind, sortTitle: rec.sortTitle};
-			if(rec.seriesId){ credit.seriesId = rec.seriesId; credit.numberKey = rec.numberKey; }
-			return credit;
-		}));
+		const kinds = [
+			['author', rec.authorIds],
+			['narrator', editions.flatMap(ed => ed.narratorIds)],
+			['publisher', /** @type {string[]} */ (editions.map(ed => ed.publisherId).filter(Boolean))],
+		];
+		return kinds.flatMap(([kind, ids]) =>
+			[...new Set(ids)].map(contributorId => {
+				/** @type {CreditRecord} */
+				const credit = {contributorId, bookId: rec.id, kind, sortTitle: rec.sortTitle};
+				if (rec.seriesId) {
+					credit.seriesId = rec.seriesId;
+					credit.numberKey = rec.numberKey;
+				}
+				return credit;
+			}),
+		);
 	}
 
 	/**
@@ -504,19 +652,32 @@ export class CatalogRecords {
 	 * @param {(id: string, what: string) => string} nameOf throws when it knows no name for the id
 	 * @returns {Book}
 	 */
-	static bookOf(rec, editions, nameOf){
+	static bookOf(rec, editions, nameOf) {
+		// a record from before ids were kept by external catalog has `hardcoverId`
+		const hardcoverId = /** @type {{hardcoverId?: string}} */ (rec).hardcoverId;
 		return new Book({
-			id: rec.id, title: rec.title, authors: rec.authorIds.map(id => nameOf(id, 'author')),
-			series: rec.seriesId === undefined ? undefined : nameOf(rec.seriesId, 'series'), number: rec.number,
-			genres: rec.genres, read: rec.read,
-			// a record from before ids were kept by external catalog has `hardcoverId`
-			external: rec.external || (/** @type {{hardcoverId?: string}} */ (rec).hardcoverId ? {hardcover: /** @type {string} */ (/** @type {{hardcoverId?: string}} */ (rec).hardcoverId)} : {}),
+			id: rec.id,
+			title: rec.title,
+			authors: rec.authorIds.map(id => nameOf(id, 'author')),
+			series: rec.seriesId === undefined ? undefined : nameOf(rec.seriesId, 'series'),
+			number: rec.number,
+			genres: rec.genres,
+			read: rec.read,
+			external: rec.external || (hardcoverId ? {hardcover: hardcoverId} : {}),
 			editions: rec.editionIds.map(id => {
 				const ed = editions.get(id);
-				if(!ed) throw new Error(`no edition is stored under ${id}`);
-				return new Edition({id: ed.id, external: CatalogRecords.editionExternal(ed), isbn: ed.isbn,
-					narrators: ed.narratorIds.map(n => nameOf(n, 'narrator')), publisher: ed.publisherId === undefined ? undefined : nameOf(ed.publisherId, 'publisher'),
-					released: ed.released, minutes: ed.minutes, description: ed.description, covers: ed.covers});
+				if (!ed) throw new Error(`no edition is stored under ${id}`);
+				return new Edition({
+					id: ed.id,
+					external: CatalogRecords.editionExternal(ed),
+					isbn: ed.isbn,
+					narrators: ed.narratorIds.map(n => nameOf(n, 'narrator')),
+					publisher: ed.publisherId === undefined ? undefined : nameOf(ed.publisherId, 'publisher'),
+					released: ed.released,
+					minutes: ed.minutes,
+					description: ed.description,
+					covers: ed.covers,
+				});
 			}),
 		});
 	}
@@ -527,43 +688,55 @@ export class CatalogRecords {
 	 * @param {RecordSet} records
 	 * @returns {Catalog}
 	 */
-	static toCatalog(records){
+	static toCatalog(records) {
 		const catalog = new Catalog();
 		/** @type {Map<string, string>} id -> name, of series and people */
 		const names = new Map();
 		/** @type {<T extends {name: string}>(list: T[]) => T[]} the info by name, as a backup lists it */
-		const byName = list => [...list].sort((x, y) => x.name < y.name ? -1 : x.name > y.name ? 1 : 0);
-		for(const s of byName(records.series)){
+		const byName = list => [...list].sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+		for (const s of byName(records.series)) {
 			names.set(s.id, s.name);
 			catalog.nameIds.series.set(s.name, s.id);
 			// a record from before authors and publishers kept their own site has the series' (Catalog.moveSeriesSites)
 			const {url} = /** @type {SeriesRecord & {url?: string}} */ (s);
-			if(CatalogRecords.hasInfo('series', s) || url !== undefined){
+			if (CatalogRecords.hasInfo('series', s) || url !== undefined) {
 				const info = new Series(s.name, {total: s.total, status: s.status, note: s.note, external: s.external});
-				if(url !== undefined) info.extra.url = url;
+				if (url !== undefined) info.extra.url = url;
 				catalog.series.set(s.id, info);
 			}
 		}
-		for(const c of byName(records.contributors)){
+		for (const c of byName(records.contributors)) {
 			const kind = CONTRIBUTOR_KIND[c.kind];
 			names.set(c.id, c.name);
 			catalog.nameIds[kind].set(c.name, c.id);
 			// a record from before ids were kept by external catalog has its pages' addresses (fixLinks)
-			const {bio, url, external, links, audible, goodreads, hardcover} = /** @type {ContributorRecord & {audible?: string, goodreads?: string, hardcover?: string}} */ (c);
-			const stored = Object.fromEntries(Object.entries({bio, url, ext: external, links, audible, goodreads, hardcover}).filter(([, v]) => v !== undefined));
+			const {bio, url, external, links, audible, goodreads, hardcover} =
+				/** @type {ContributorRecord & {audible?: string, goodreads?: string, hardcover?: string}} */ (c);
+			const stored = Object.fromEntries(
+				Object.entries({bio, url, ext: external, links, audible, goodreads, hardcover}).filter(
+					([, v]) => v !== undefined,
+				),
+			);
 			const entry = Contributor.fromJSON(c.name, Contributor.fixLinks(stored, kind));
-			if(Object.keys(entry.toJSON()).length) catalog[kind].set(c.id, entry);
+			if (Object.keys(entry.toJSON()).length) catalog[kind].set(c.id, entry);
 		}
 		/** @type {(id: string, what: string) => string} */
 		const nameOf = (id, what) => {
 			const name = names.get(id);
-			if(name === undefined) throw new Error(`no ${what} is stored under ${id}`);
+			if (name === undefined) throw new Error(`no ${what} is stored under ${id}`);
 			return name;
 		};
 		const editions = new Map(records.editions.map(ed => [ed.id, ed]));
-		catalog.books = [...records.books].sort((x, y) => x.position - y.position).map(rec => CatalogRecords.bookOf(rec, editions, nameOf));
-		catalog.exclusions = Exclusions.parse([...records.exclusions].sort((x, y) => x.position - y.position).map(x => x.entry).join('\n'));
-		for(const m of records.marks) catalog.marks.set(m.id, {...m});
+		catalog.books = [...records.books]
+			.sort((x, y) => x.position - y.position)
+			.map(rec => CatalogRecords.bookOf(rec, editions, nameOf));
+		catalog.exclusions = Exclusions.parse(
+			[...records.exclusions]
+				.sort((x, y) => x.position - y.position)
+				.map(x => x.entry)
+				.join('\n'),
+		);
+		for (const m of records.marks) catalog.marks.set(m.id, {...m});
 		// a mark whose book is gone, or has other editions now, is put right
 		catalog.resolveMarks();
 		return catalog;
@@ -575,9 +748,14 @@ export class CatalogRecords {
 	 * @param {RecordSet} records
 	 * @returns {boolean}
 	 */
-	static outdated(records){
-		return [...records.books, ...records.series, ...records.contributors].some(rec => !Array.isArray(rec.externalKeys)) ||
-			records.editions.some(ed => !ed.external) || records.series.some(rec => 'url' in rec);
+	static outdated(records) {
+		return (
+			[...records.books, ...records.series, ...records.contributors].some(
+				rec => !Array.isArray(rec.externalKeys),
+			) ||
+			records.editions.some(ed => !ed.external) ||
+			records.series.some(rec => 'url' in rec)
+		);
 	}
 
 	/**
@@ -586,9 +764,13 @@ export class CatalogRecords {
 	 * @param {EditionRecord & {asins?: Record<string, string>, goodreadsId?: string, hardcoverId?: string}} ed
 	 * @returns {Record<string, string>}
 	 */
-	static editionExternal(ed){
-		if(ed.external) return ed.external;
-		return {...ed.asins || {}, ...ed.goodreadsId ? {goodreads: ed.goodreadsId} : {}, ...ed.hardcoverId ? {hardcover: ed.hardcoverId} : {}};
+	static editionExternal(ed) {
+		if (ed.external) return ed.external;
+		return {
+			...(ed.asins || {}),
+			...(ed.goodreadsId ? {goodreads: ed.goodreadsId} : {}),
+			...(ed.hardcoverId ? {hardcover: ed.hardcoverId} : {}),
+		};
 	}
 
 	/**
@@ -597,7 +779,7 @@ export class CatalogRecords {
 	 * @param {Record<string, any>} rec
 	 * @returns {IDBValidKey}
 	 */
-	static keyOf(store, rec){
+	static keyOf(store, rec) {
 		const path = CatalogRecords.STORES[store].keyPath;
 		return Array.isArray(path) ? path.map(k => rec[k]) : rec[path];
 	}
@@ -608,12 +790,20 @@ export class CatalogRecords {
 	 * @param {RecordSet} records
 	 * @returns {Snapshot}
 	 */
-	static snapshot(records){
+	static snapshot(records) {
 		/** @type {Snapshot} */
 		const out = new Map();
-		for(const store of CatalogRecords.STORE_NAMES){
-			if(!CatalogRecords.DERIVED[store]) continue;
-			out.set(store, new Map(/** @type {Record<string, any>[]} */ (records[store]).map(rec => [JSON.stringify(CatalogRecords.keyOf(store, rec)), CatalogRecords.ownText(store, rec)])));
+		for (const store of CatalogRecords.STORE_NAMES) {
+			if (!CatalogRecords.DERIVED[store]) continue;
+			out.set(
+				store,
+				new Map(
+					/** @type {Record<string, any>[]} */ (records[store]).map(rec => [
+						JSON.stringify(CatalogRecords.keyOf(store, rec)),
+						CatalogRecords.ownText(store, rec),
+					]),
+				),
+			);
 		}
 		return out;
 	}
@@ -624,9 +814,13 @@ export class CatalogRecords {
 	 * @param {Record<string, any>} rec
 	 * @returns {string}
 	 */
-	static ownText(store, rec){
+	static ownText(store, rec) {
 		const own = CatalogRecords.ownFields(store, rec);
-		return JSON.stringify(Object.keys(own).sort().map(k => [k, own[k]]));
+		return JSON.stringify(
+			Object.keys(own)
+				.sort()
+				.map(k => [k, own[k]]),
+		);
 	}
 
 	/**
@@ -636,9 +830,11 @@ export class CatalogRecords {
 	 * @param {T} rec
 	 * @returns {Partial<T>}
 	 */
-	static ownFields(store, rec){
+	static ownFields(store, rec) {
 		const derived = (CatalogRecords.DERIVED[store] || []).filter(k => k !== 'position');
-		return /** @type {Partial<T>} */ (Object.fromEntries(Object.entries(rec).filter(([k]) => !derived.includes(k))));
+		return /** @type {Partial<T>} */ (
+			Object.fromEntries(Object.entries(rec).filter(([k]) => !derived.includes(k)))
+		);
 	}
 
 	/**
@@ -655,7 +851,7 @@ export class CatalogRecords {
 	 * @param {boolean} [whole]
 	 * @returns {{records: RecordSet, conflicts: string[]}}
 	 */
-	static merge(base, mine, theirs, whole = true){
+	static merge(base, mine, theirs, whole = true) {
 		/** @type {string[]} */
 		const conflicts = [];
 		/** @type {Record<string, any>} */
@@ -666,39 +862,68 @@ export class CatalogRecords {
 			return rec ? `"${rec.title}"` : 'a book';
 		};
 		/** @type {(store: StoreName, rec: Record<string, any>) => string} */
-		const label = (store, rec) => store === 'books' ? `"${rec.title}"` : store === 'editions' ? `an edition of ${titleOf(rec.bookIds)}`
-			: store === 'series' ? `the series ${rec.name}` : store === 'contributors' ? rec.name
-			: store === 'marks' ? `a mark on ${titleOf(rec.bookIds)}` : rec.entry;
-		for(const store of CatalogRecords.STORE_NAMES){
+		const label = (store, rec) =>
+			store === 'books'
+				? `"${rec.title}"`
+				: store === 'editions'
+					? `an edition of ${titleOf(rec.bookIds)}`
+					: store === 'series'
+						? `the series ${rec.name}`
+						: store === 'contributors'
+							? rec.name
+							: store === 'marks'
+								? `a mark on ${titleOf(rec.bookIds)}`
+								: rec.entry;
+		for (const store of CatalogRecords.STORE_NAMES) {
 			const derived = CatalogRecords.DERIVED[store];
-			if(!derived) continue;
+			if (!derived) continue;
 			/** @type {(rec: Record<string, any> | undefined) => string | undefined} a record's own values, as text */
-			const own = rec => rec && JSON.stringify(Object.entries(rec).filter(([k]) => !derived.includes(k)).sort(([x], [y]) => x < y ? -1 : x > y ? 1 : 0));
+			const own = rec =>
+				rec &&
+				JSON.stringify(
+					Object.entries(rec)
+						.filter(([k]) => !derived.includes(k))
+						.sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)),
+				);
 			/** @type {(list: Record<string, any>[]) => Map<string, Record<string, any>>} */
 			const byKey = list => new Map(list.map(rec => [JSON.stringify(CatalogRecords.keyOf(store, rec)), rec]));
 			const was = base.get(store) || new Map();
-			const my = byKey(/** @type {Record<string, any>[]} */ (mine[store])), their = byKey(/** @type {Record<string, any>[]} */ (theirs[store]));
+			const my = byKey(/** @type {Record<string, any>[]} */ (mine[store])),
+				their = byKey(/** @type {Record<string, any>[]} */ (theirs[store]));
 			/** @type {Record<string, any>[]} */
 			const out = [];
-			for(const key of new Set([...my.keys(), ...their.keys(), ...was.keys()])){
-				const before = was.has(key) ? JSON.stringify(/** @type {[string, unknown][]} */ (JSON.parse(/** @type {string} */ (was.get(key)))).filter(([k]) => k !== 'position')) : undefined;
-				const m = own(my.get(key)), t = own(their.get(key));
+			for (const key of new Set([...my.keys(), ...their.keys(), ...was.keys()])) {
+				const before = was.has(key)
+					? JSON.stringify(
+							/** @type {[string, unknown][]} */ (
+								JSON.parse(/** @type {string} */ (was.get(key)))
+							).filter(([k]) => k !== 'position'),
+						)
+					: undefined;
+				const m = own(my.get(key)),
+					t = own(their.get(key));
 				let pick = their.get(key);
-				if(m !== before && t !== m){
-					if(t === before) pick = my.get(key);
-					else conflicts.push(label(store, /** @type {Record<string, any>} */ (my.get(key) || their.get(key))));
+				if (m !== before && t !== m) {
+					if (t === before) pick = my.get(key);
+					else
+						conflicts.push(
+							label(store, /** @type {Record<string, any>} */ (my.get(key) || their.get(key))),
+						);
 				}
-				if(pick) out.push(pick);
+				if (pick) out.push(pick);
 			}
-			if(derived.includes('position') && whole){
-				const rank = /** @type {(rec: Record<string, any>) => number} */ (rec => {
-					const key = JSON.stringify(CatalogRecords.keyOf(store, rec)), m = my.get(key), t = their.get(key);
-					return m ? m.position : my.size + (t ? t.position : 0);
-				});
+			if (derived.includes('position') && whole) {
+				const rank = /** @type {(rec: Record<string, any>) => number} */ (
+					rec => {
+						const key = JSON.stringify(CatalogRecords.keyOf(store, rec)),
+							m = my.get(key),
+							t = their.get(key);
+						return m ? m.position : my.size + (t ? t.position : 0);
+					}
+				);
 				out.sort((x, y) => rank(x) - rank(y));
 				records[store] = out.map((rec, position) => ({...rec, position}));
-			}
-			else records[store] = out;
+			} else records[store] = out;
 		}
 		return {records: /** @type {RecordSet} */ (records), conflicts};
 	}
@@ -710,20 +935,23 @@ export class CatalogRecords {
 	 * @param {RecordSet} records
 	 * @returns {Changes}
 	 */
-	static changes(before, records){
+	static changes(before, records) {
 		const after = CatalogRecords.snapshot(records);
 		/** @type {Changes} */
 		const out = {put: {}, delete: {}, count: 0, snapshot: after};
-		for(const store of CatalogRecords.STORE_NAMES){
-			if(!CatalogRecords.DERIVED[store]) continue;
-			const was = before.get(store) || new Map(), now = /** @type {Map<string, string>} */ (after.get(store));
+		for (const store of CatalogRecords.STORE_NAMES) {
+			if (!CatalogRecords.DERIVED[store]) continue;
+			const was = before.get(store) || new Map(),
+				now = /** @type {Map<string, string>} */ (after.get(store));
 			const put = /** @type {Record<string, any>[]} */ (records[store]).filter(rec => {
 				const key = JSON.stringify(CatalogRecords.keyOf(store, rec));
 				return was.get(key) !== now.get(key);
 			});
-			const gone = [...was.keys()].filter(key => !now.has(key)).map(key => /** @type {IDBValidKey} */ (JSON.parse(key)));
-			if(put.length) out.put[store] = put;
-			if(gone.length) out.delete[store] = gone;
+			const gone = [...was.keys()]
+				.filter(key => !now.has(key))
+				.map(key => /** @type {IDBValidKey} */ (JSON.parse(key)));
+			if (put.length) out.put[store] = put;
+			if (gone.length) out.delete[store] = gone;
 			out.count += put.length + gone.length;
 		}
 		return out;

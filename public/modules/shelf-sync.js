@@ -63,15 +63,19 @@ export class ShelfSync {
 	static FOUND = 'ids';
 
 	/** @param {CatalogClient} client */
-	constructor(client){
+	constructor(client) {
 		this.client = client;
 	}
 
 	/** @returns {typeof ShelfSync} the sync's class, with what it says of its catalog */
-	get kind(){ return /** @type {typeof ShelfSync} */ (this.constructor); }
+	get kind() {
+		return /** @type {typeof ShelfSync} */ (this.constructor);
+	}
 
 	/** @returns {string} its catalog's name, as the page says it */
-	get label(){ return this.kind.CLIENT.LABEL; }
+	get label() {
+		return this.kind.CLIENT.LABEL;
+	}
 
 	/**
 	 * A series or an author of `catalog` to compare, with the id its info has on this catalog (when it is one
@@ -81,12 +85,12 @@ export class ShelfSync {
 	 * @param {string} name
 	 * @returns {ShelfPart}
 	 */
-	static part(catalog, kind, name){
+	static part(catalog, kind, name) {
 		const key = kind === 'series' ? 'series' : 'authors';
 		const id = catalog.nameIds[key].get(name);
 		const info = id === undefined ? undefined : catalog.infoMap(key).get(id);
 		const there = info && info.external[this.CLIENT.CATALOG];
-		return {kind, name, ...there && this.CLIENT.ID.test(there) ? {id: there} : {}};
+		return {kind, name, ...(there && this.CLIENT.ID.test(there) ? {id: there} : {})};
 	}
 
 	/**
@@ -97,7 +101,7 @@ export class ShelfSync {
 	 * @param {ShelfPart} [_part]
 	 * @returns {Promise<ShelfComparison>}
 	 */
-	async compare(_catalog, _step, _part){
+	async compare(_catalog, _step, _part) {
 		throw new Error(`${this.label}: compare is not written`);
 	}
 
@@ -109,7 +113,7 @@ export class ShelfSync {
 	 * @param {{kind: 'series' | 'author', name: string, label: string} | null} _scope
 	 * @returns {string}
 	 */
-	summary(_result, _catalog, _scope){
+	summary(_result, _catalog, _scope) {
 		throw new Error(`${this.label}: summary is not written`);
 	}
 
@@ -121,7 +125,7 @@ export class ShelfSync {
 	 * @param {PlanGroup} _group
 	 * @returns {Promise<Sent>}
 	 */
-	async send(_entry, _plan, _group){
+	async send(_entry, _plan, _group) {
 		throw new Error(`${this.label}: send is not written`);
 	}
 
@@ -130,7 +134,7 @@ export class ShelfSync {
 	 * @param {number} count
 	 * @returns {string}
 	 */
-	static notAdded(count){
+	static notAdded(count) {
 		return `Not added, as ${this.CLIENT.LABEL} can't tell which edition is yours: ${count}`;
 	}
 
@@ -141,7 +145,7 @@ export class ShelfSync {
 	 * @param {unknown} _found
 	 * @returns {Book[]}
 	 */
-	static addIds(_books, _found){
+	static addIds(_books, _found) {
 		throw new Error(`${this.CLIENT.LABEL}: addIds is not written`);
 	}
 
@@ -151,7 +155,7 @@ export class ShelfSync {
 	 * @param {InfoId[]} _found
 	 * @returns {number} how many gained one
 	 */
-	static setInfoIds(_catalog, _found){
+	static setInfoIds(_catalog, _found) {
 		return 0;
 	}
 
@@ -164,36 +168,45 @@ export class ShelfSync {
 	 * @param {Step} step
 	 * @returns {Promise<number>}
 	 */
-	async push(plan, out, err, step){
-		const label = this.label, reads = this.kind.SENDS_READS;
+	async push(plan, out, err, step) {
+		const label = this.label,
+			reads = this.kind.SENDS_READS;
 		const done = {shelved: 0, reads: 0};
 		/** @type {string[]} */
 		const problems = [];
 		/** @type {[PlanGroup, string][]} */
-		const groups = [['add', `Putting books on your ${label} ${plan.name} shelf`], ['reads', `Adding reads to books on your ${plan.name} shelf`]];
+		const groups = [
+			['add', `Putting books on your ${label} ${plan.name} shelf`],
+			['reads', `Adding reads to books on your ${plan.name} shelf`],
+		];
 		const total = plan.add.length + plan.reads.length;
-		let at = 0, failed = 0;
-		for(const [group, doing] of groups){
-			for(const entry of plan[group]){
+		let at = 0,
+			failed = 0;
+		for (const [group, doing] of groups) {
+			for (const entry of plan[group]) {
 				step(doing, at++, total);
-				try{
+				try {
 					const sent = await this.send(entry, plan, group);
 					done.shelved += sent.shelved;
 					done.reads += sent.reads;
 					problems.push(...sent.problems);
 					failed = 0;
-				}catch(exc){
+				} catch (exc) {
 					problems.push(`${entry.books[0].title}: not added (${Text.errorText(exc)})`);
-					if(++failed >= this.kind.STOP_AFTER){
-						err(`error: ${Text.errorText(exc)}; stopped after putting ${done.shelved} book(s) on ${label}${reads ? ` and adding ${done.reads} read(s)` : ''}. ` +
-							'Run it again to carry on: what is already there is not added twice.');
+					if (++failed >= this.kind.STOP_AFTER) {
+						err(
+							`error: ${Text.errorText(exc)}; stopped after putting ${done.shelved} book(s) on ${label}${reads ? ` and adding ${done.reads} read(s)` : ''}. ` +
+								'Run it again to carry on: what is already there is not added twice.',
+						);
 						return 1;
 					}
 				}
 			}
 		}
-		out(`put ${done.shelved} book(s) on your ${label} ${plan.name} shelf${reads ? ` and added ${done.reads} read(s)` : ''}`);
-		for(const p of problems.slice(0, 15)) out('    ! ' + p);
+		out(
+			`put ${done.shelved} book(s) on your ${label} ${plan.name} shelf${reads ? ` and added ${done.reads} read(s)` : ''}`,
+		);
+		for (const p of problems.slice(0, 15)) out('    ! ' + p);
 		return problems.length ? 1 : 0;
 	}
 
@@ -203,7 +216,7 @@ export class ShelfSync {
 	 * @param {{kind: 'series' | 'author', name: string} | null} scope
 	 * @returns {Book[]}
 	 */
-	static inScope(catalog, scope){
+	static inScope(catalog, scope) {
 		return scope ? catalog.books.filter(Comparison.scope(scope.kind, scope.name)) : catalog.books;
 	}
 
@@ -213,8 +226,9 @@ export class ShelfSync {
 	 * @param {ShelfPart} part
 	 * @returns {(name: unknown) => boolean}
 	 */
-	static sameName(part){
-		const norm = part.kind === 'series' ? Series.norm : Text.norm, wanted = norm(part.name);
+	static sameName(part) {
+		const norm = part.kind === 'series' ? Series.norm : Text.norm,
+			wanted = norm(part.name);
 		return name => typeof name === 'string' && Boolean(Text.tidy(name)) && norm(Text.tidy(name)) === wanted;
 	}
 }

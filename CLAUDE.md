@@ -103,7 +103,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     the browser's `indexedDB` is passed in). `MemoryReader` answers a `CatalogReader`'s questions from records in memory.
   - The external catalogs, which the pages and `CatalogLookup` reach only through four base classes and the lists of them in
     `CatalogConnectors` (`IMPORTERS`, `EXPORTERS`, `SYNCS`, their `CLIENTS`, `SOURCES`, in the order they are asked), so a catalog is added by writing a class per
-    role and listing it there (`docs/development.md`, *External catalogs*); a class says what it is in statics (`CATALOG`, its ExternalCatalog key and its
+    role and listing it there (`docs/development.md`, _External catalogs_); a class says what it is in statics (`CATALOG`, its ExternalCatalog key and its
     panel's prefix on Import & export; `LABEL`), and the pages read them, never a catalog's name:
     - `FileImporter` (reads an export file a row at a time into books, `readRow`; `EDITIONS_YOURS`; a site picked by the panel's `<CATALOG>ImportSite`) with
       `AudibleImporter` and `GoodreadsImporter`; `FileExporter` (`write` gives `{text, books, notes}`; `FORMAT`, `FILE_NAME`, `TYPE`) with `GoodreadsExporter`.
@@ -121,7 +121,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
       (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids), `planExport` (every book on Read, as everything in the catalog counts as
       read; a book on another exclusive shelf, To Listen or Currently Listening, is left alone; Read is the Listened shelf); add-only: never takes a book off a
       shelf, makes a shelf or edits AudiobookDB's catalog). Comparing only reads the catalog; sending only adds.
-    - `BookSource` (a catalog the book form's *Fill in from another catalog* asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
+    - `BookSource` (a catalog the book form's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
       (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the
       proxy, by any Audible or Amazon site's ASIN on its site, `site`; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
@@ -134,8 +134,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
     Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`).
-  Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
-  others bring them in with `/** @import {MergeReport} from './merger.js' */`.
+    Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
+    others bring them in with `/** @import {MergeReport} from './merger.js' */`.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
   loading (`startPage(init, page)`: a page holds **only what it shows**: `CATALOG` starts empty, `loadRecords(want)` brings in books
   (and what they need) by id, series or edition key, `queryCatalog(ask)` asks the database with a `CatalogReader`, and
@@ -165,7 +165,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
 - `book-list.js`: what the series, books and book pages share: a book's card (`bookCard`, only its title, number, authors,
-  narrators and dates read) and cover (`coverImage`, an `<img>` that tries each of `Cover.addresses` in turn, unless *Covers* is off,
+  narrators and dates read) and cover (`coverImage`, an `<img>` that tries each of `Cover.addresses` in turn, unless _Covers_ is off,
   `coversShown`/`watchCoversBox`, localStorage `audiobook-catalog-covers`), `BookList` (the ids listed, `PAGE_SIZE` = 50 loaded at a
   time, `more`), `readOrdered` (series order from the indexes alone), `bookGroups` (books grouped by series with their headings, or
   `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, `nameLinks` (and `authorLinks`/`narratorLinks`), `statusTag`, `watchSearchAndFilters` (the series and books pages' search box and Filters button),
@@ -175,14 +175,14 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   picked with a click or the arrow keys and Enter, and a note below it naming what is new (`newNames`, `refreshNewNotes`). The book form's
   authors and series (`#f_aList`/`#f_aNew`, `#f_sList`/`#f_sNew` in the template) and each edition's narrators and
   publisher use it, over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` and the series' `name` index, when the form opens).
-- `series.js` (`index.html`, *Series*): every series (from the series records alone, `#q=...&missing`), and a series' page
+- `series.js` (`index.html`, _Series_): every series (from the series records alone, `#q=...&missing`), and a series' page
   (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and its form with Remove series, `openSeriesForm`); `SERIES_FILTER`, `openSeries`.
   Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`
   (`movedAddress`, with `location.replace`).
-- `books.js` (`books.html`, *Books*): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
+- `books.js` (`books.html`, _Books_): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
 - `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`; `bookDetails`, with the other books of its box set
   loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
-  and the book form (`openEditForm`; Remove book is in it; *Fill in from another catalog*, `fillFromCatalog`, fills its empty fields), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
+  and the book form (`openEditForm`; Remove book is in it; _Fill in from another catalog_, `fillFromCatalog`, fills its empty fields), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
@@ -269,6 +269,7 @@ Duplicates page) is add-only too. Restore also reads the old `data/` files (`boo
 `excluded.txt`, `not-duplicates.txt`) picked together (`Backup.readFiles`).
 
 Invariants the code relies on:
+
 - Imports only add books, and never overwrite a value except one the user ticked in the comparison (`Comparison.apply`). Matching order: any edition's external id (an ASIN on any site), then the book's Hardcover id, then first author + series + number
   (spelling-insensitive), then author + title (forgiving Audible's long titles, never mistaking a
   boxed set for book 1). A box set with a range and an id is kept as its own book and gives its edition to each title (`Merger`). A match may gain dates read and editions: an incoming edition fills in the
@@ -283,13 +284,14 @@ Invariants the code relies on:
 ## Privacy (hard rule)
 
 The repo is public; the user's library is not.
+
 - The catalog lives in the browser.
 - Only `sample/` (the tests' demo data; the page never loads it) is committed, and it and every example in tests and docs must be **invented**
   (fictional titles, authors, series). Never use real books from the user's data in tests or docs.
 
 ## Conventions
 
-- Prettier's layout (above): tabs, also in JSON, semicolons, single quotes; leave the layout to it. Comments explain *why* in plain sentences; JSDoc on
+- Prettier's layout (above): tabs, also in JSON, semicolons, single quotes; leave the layout to it. Comments explain _why_ in plain sentences; JSDoc on
   non-obvious functions.
 - Status messages and errors are short, plain English; anything that changes many books shows a preview first.
 - Pages draw with the DOM API, never HTML strings: `buildElement(tag, attrs, ...children)` from `store.js` makes an element

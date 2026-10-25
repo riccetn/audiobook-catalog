@@ -3,7 +3,7 @@
 ## Add new Audible purchases
 
 1. Export your library with the Audible Library Extractor.
-2. On the *Import & export* page, press **Import CSV** in the **Audible** panel and pick the export. For an export from another
+2. On the _Import & export_ page, press **Import CSV** in the **Audible** panel and pick the export. For an export from another
    site than audible.com, pick the site beside the button first, so its ASINs are kept as that site's.
 3. The page shows the export's books beside yours ([the comparison](imports.md#the-comparison)): what is
    new, what it would fill in on books you have, the values that differ, and what needs a look (for example

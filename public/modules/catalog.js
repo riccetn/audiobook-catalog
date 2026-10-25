@@ -51,11 +51,21 @@ export class Catalog {
 	static NAMED_KINDS = ['series', ...Contributor.KINDS];
 
 	/** @returns {string} a new id */
-	static newId(){ return crypto.randomUUID(); }
+	static newId() {
+		return crypto.randomUUID();
+	}
 
 	/** @param {CatalogInit} [init] */
-	constructor({books = [], series = new Map(), authors = new Map(), narrators = new Map(), publishers = new Map(), exclusions = new Exclusions(), notDuplicates = [],
-		nameIds = Catalog.emptyNameIds()} = {}){
+	constructor({
+		books = [],
+		series = new Map(),
+		authors = new Map(),
+		narrators = new Map(),
+		publishers = new Map(),
+		exclusions = new Exclusions(),
+		notDuplicates = [],
+		nameIds = Catalog.emptyNameIds(),
+	} = {}) {
 		this.books = books;
 		this.nameIds = Catalog.copyNameIds(nameIds);
 		/** @type {Map<string, Series>} series info, by the id of the series */
@@ -66,18 +76,27 @@ export class Catalog {
 		this.narrators = new Map();
 		/** @type {Map<string, Contributor>} publisher info, by the publisher's id */
 		this.publishers = new Map();
-		for(const [name, info] of series) this.series.set(this.idFor('series', name), info);
-		for(const [kind, byName] of /** @type {[ContributorKind, Map<string, Contributor>][]} */ ([['authors', authors], ['narrators', narrators], ['publishers', publishers]])){
-			for(const [name, info] of byName) this[kind].set(this.idFor(kind, name), info);
+		for (const [name, info] of series) this.series.set(this.idFor('series', name), info);
+		for (const [kind, byName] of /** @type {[ContributorKind, Map<string, Contributor>][]} */ ([
+			['authors', authors],
+			['narrators', narrators],
+			['publishers', publishers],
+		])) {
+			for (const [name, info] of byName) this[kind].set(this.idFor(kind, name), info);
 		}
 		this.exclusions = exclusions;
 		/** @type {Map<string, Mark>} the duplicates page's marks, by their id */
 		this.marks = new Map();
-		for(const text of notDuplicates){ const mark = Duplicates.textMark(text); this.marks.set(mark.id, mark); }
+		for (const text of notDuplicates) {
+			const mark = Duplicates.textMark(text);
+			this.marks.set(mark.id, mark);
+		}
 	}
 
 	/** @returns {NameIds} no ids yet */
-	static emptyNameIds(){ return {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()}; }
+	static emptyNameIds() {
+		return {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()};
+	}
 
 	/**
 	 * A catalog from the way it is stored, or a backup (Backup.read() says what it takes). Throws when it is
@@ -85,20 +104,31 @@ export class Catalog {
 	 * @param {Unchecked} data
 	 * @returns {Catalog}
 	 */
-	static fromJSON(data){ return Catalog.fromBackup(Backup.read(data)); }
+	static fromJSON(data) {
+		return Catalog.fromBackup(Backup.read(data));
+	}
 
 	/**
 	 * A catalog made of a backup; what the backup lacks is empty.
 	 * @param {Backup} backup
 	 * @returns {Catalog}
 	 */
-	static fromBackup(backup){
-		const catalog = new Catalog({books: backup.books, series: backup.series || new Map(), authors: backup.authors || new Map(),
-			narrators: backup.narrators || new Map(), publishers: backup.publishers || new Map(),
-			exclusions: Exclusions.parse((backup.excluded || []).join('\n')), notDuplicates: backup.marks ? [] : backup.notDuplicates || [],
-			nameIds: backup.nameIds || Catalog.emptyNameIds()});
+	static fromBackup(backup) {
+		const catalog = new Catalog({
+			books: backup.books,
+			series: backup.series || new Map(),
+			authors: backup.authors || new Map(),
+			narrators: backup.narrators || new Map(),
+			publishers: backup.publishers || new Map(),
+			exclusions: Exclusions.parse((backup.excluded || []).join('\n')),
+			notDuplicates: backup.marks ? [] : backup.notDuplicates || [],
+			nameIds: backup.nameIds || Catalog.emptyNameIds(),
+		});
 		// a version 2 backup's marks point at its books by id, as the catalog's do
-		if(backup.marks){ catalog.addMarks(backup.marks.map(m => ({...m}))); catalog.resolveMarks(); }
+		if (backup.marks) {
+			catalog.addMarks(backup.marks.map(m => ({...m})));
+			catalog.resolveMarks();
+		}
 		return catalog;
 	}
 
@@ -107,23 +137,36 @@ export class Catalog {
 	 * @returns {{books: Book[], seriesInfo: Record<string, Series>, authors: Record<string, Contributor>, narrators: Record<string, Contributor>,
 	 *   publishers: Record<string, Contributor>, excluded: string[], notDuplicates: string[], ids?: Record<NamedKind, Record<string, string>>}}
 	 */
-	toJSON(){
-		const json = {books: this.books, seriesInfo: Object.fromEntries(this.infoByName('series')), authors: Object.fromEntries(this.infoByName('authors')),
-			narrators: Object.fromEntries(this.infoByName('narrators')), publishers: Object.fromEntries(this.infoByName('publishers')),
-			excluded: this.exclusions.entries, notDuplicates: this.markTexts()};
-		if(!Catalog.NAMED_KINDS.some(kind => this.nameIds[kind].size)) return json;
-		const ids = /** @type {Record<NamedKind, Record<string, string>>} */ (Object.fromEntries(Catalog.NAMED_KINDS.map(kind => [kind, Object.fromEntries(this.nameIds[kind])])));
+	toJSON() {
+		const json = {
+			books: this.books,
+			seriesInfo: Object.fromEntries(this.infoByName('series')),
+			authors: Object.fromEntries(this.infoByName('authors')),
+			narrators: Object.fromEntries(this.infoByName('narrators')),
+			publishers: Object.fromEntries(this.infoByName('publishers')),
+			excluded: this.exclusions.entries,
+			notDuplicates: this.markTexts(),
+		};
+		if (!Catalog.NAMED_KINDS.some(kind => this.nameIds[kind].size)) return json;
+		const ids = /** @type {Record<NamedKind, Record<string, string>>} */ (
+			Object.fromEntries(Catalog.NAMED_KINDS.map(kind => [kind, Object.fromEntries(this.nameIds[kind])]))
+		);
 		return {...json, ids};
 	}
 
 	/** @returns {Catalog} a copy, sharing nothing with this one */
-	clone(){
+	clone() {
 		/** @type {(x: unknown) => unknown} */
 		const copy = x => JSON.parse(JSON.stringify(x));
-		const out = new Catalog({books: this.books.map(b => b.clone()), exclusions: this.exclusions.clone(), nameIds: this.nameIds});
-		for(const [id, s] of this.series) out.series.set(id, Series.fromJSON(s.name, copy(s)));
-		for(const kind of Contributor.KINDS) for(const [id, c] of this[kind]) out[kind].set(id, Contributor.fromJSON(c.name, copy(c)));
-		for(const [id, mark] of this.marks) out.marks.set(id, /** @type {Mark} */ (copy(mark)));
+		const out = new Catalog({
+			books: this.books.map(b => b.clone()),
+			exclusions: this.exclusions.clone(),
+			nameIds: this.nameIds,
+		});
+		for (const [id, s] of this.series) out.series.set(id, Series.fromJSON(s.name, copy(s)));
+		for (const kind of Contributor.KINDS)
+			for (const [id, c] of this[kind]) out[kind].set(id, Contributor.fromJSON(c.name, copy(c)));
+		for (const [id, mark] of this.marks) out.marks.set(id, /** @type {Mark} */ (copy(mark)));
 		return out;
 	}
 
@@ -131,9 +174,9 @@ export class Catalog {
 	 * @param {NameIds} ids
 	 * @returns {NameIds} a copy
 	 */
-	static copyNameIds(ids){
+	static copyNameIds(ids) {
 		const out = Catalog.emptyNameIds();
-		for(const kind of Catalog.NAMED_KINDS) out[kind] = new Map(ids[kind]);
+		for (const kind of Catalog.NAMED_KINDS) out[kind] = new Map(ids[kind]);
 		return out;
 	}
 
@@ -141,7 +184,7 @@ export class Catalog {
 	 * Take every part of `other` (Restore, a merge applied).
 	 * @param {Catalog} other
 	 */
-	replaceWith(other){
+	replaceWith(other) {
 		this.books = other.books;
 		this.series = other.series;
 		this.authors = other.authors;
@@ -161,47 +204,55 @@ export class Catalog {
 	 * entries of their own, until removeEntry). The marks then point at the books they are about (resolveMarks).
 	 * @param {() => string} [newId]
 	 */
-	assignIds(newId = Catalog.newId){
+	assignIds(newId = Catalog.newId) {
 		const bookIds = new Set();
-		for(const b of this.books){
-			if(!b.id || bookIds.has(b.id)) b.id = newId();
+		for (const b of this.books) {
+			if (!b.id || bookIds.has(b.id)) b.id = newId();
 			bookIds.add(b.id);
 		}
 		/** @type {Map<string, string>} edition id -> the values of the first edition seen with it */
 		const valuesOf = new Map();
 		/** @type {Map<string, string>} values of an edition with an identifier -> its id, to find a copy's */
 		const idOf = new Map();
-		for(const b of this.books){
+		for (const b of this.books) {
 			const own = new Set();
-			for(const ed of b.editions){
-				const values = editionValues(ed), shareable = ed.idAndIsbnKeys().length > 0;
+			for (const ed of b.editions) {
+				const values = editionValues(ed),
+					shareable = ed.idAndIsbnKeys().length > 0;
 				let id = ed.id;
-				if(id && (own.has(id) || (valuesOf.has(id) && valuesOf.get(id) !== values))) id = undefined;
-				if(!id && shareable) id = idOf.get(values);
-				if(!id || own.has(id)) id = newId();
+				if (id && (own.has(id) || (valuesOf.has(id) && valuesOf.get(id) !== values))) id = undefined;
+				if (!id && shareable) id = idOf.get(values);
+				if (!id || own.has(id)) id = newId();
 				ed.id = id;
 				own.add(id);
-				if(!valuesOf.has(id)) valuesOf.set(id, values);
-				if(shareable && !idOf.has(values)) idOf.set(values, id);
+				if (!valuesOf.has(id)) valuesOf.set(id, values);
+				if (shareable && !idOf.has(values)) idOf.set(values, id);
 			}
 		}
-		for(const kind of Catalog.NAMED_KINDS){
-			const ids = this.nameIds[kind], info = this.infoMap(kind);
+		for (const kind of Catalog.NAMED_KINDS) {
+			const ids = this.nameIds[kind],
+				info = this.infoMap(kind);
 			const names = this.namesOf(kind);
 			// info is kept by id, so its name keeps that id whatever the books do
-			for(const [id, entry] of [...info]){
+			for (const [id, entry] of [...info]) {
 				const named = ids.get(entry.name);
-				if(named === undefined) ids.set(entry.name, id);
-				else if(named !== id && !info.has(named)){ info.delete(id); info.set(named, entry); }
+				if (named === undefined) ids.set(entry.name, id);
+				else if (named !== id && !info.has(named)) {
+					info.delete(id);
+					info.set(named, entry);
+				}
 			}
 			const seen = new Set();
-			for(const name of names){
+			for (const name of names) {
 				let id = ids.get(name);
-				if(!id || seen.has(id)){
+				if (!id || seen.has(id)) {
 					const had = id;
-					ids.set(name, id = newId());
+					ids.set(name, (id = newId()));
 					const entry = had === undefined ? undefined : info.get(had);
-					if(entry && entry.name === name){ info.delete(/** @type {string} */ (had)); info.set(id, entry); }
+					if (entry && entry.name === name) {
+						info.delete(/** @type {string} */ (had));
+						info.set(id, entry);
+					}
 				}
 				seen.add(id);
 			}
@@ -214,7 +265,7 @@ export class Catalog {
 	 * Only for a whole catalog, as it goes by every book of a series. Returns whether any series had one.
 	 * @returns {boolean}
 	 */
-	moveSeriesSites(){
+	moveSeriesSites() {
 		return Series.moveSites(this.series, this.books, this, (kind, name) => this.idFor(kind, name));
 	}
 
@@ -223,7 +274,7 @@ export class Catalog {
 	 * @param {NamedKind} kind
 	 * @returns {Set<string>}
 	 */
-	namesOf(kind){
+	namesOf(kind) {
 		const onBook = Catalog.namesOn(kind);
 		return new Set([...this.books.flatMap(onBook), ...[...this.infoMap(kind).values()].map(x => x.name)]);
 	}
@@ -233,7 +284,9 @@ export class Catalog {
 	 * @param {NamedKind} kind
 	 * @returns {Map<string, Series | Contributor>}
 	 */
-	infoMap(kind){ return /** @type {Map<string, Series | Contributor>} */ (this[kind]); }
+	infoMap(kind) {
+		return /** @type {Map<string, Series | Contributor>} */ (this[kind]);
+	}
 
 	/**
 	 * The id `name` is stored under, giving it one when it has none yet (a series or person just typed in).
@@ -241,10 +294,10 @@ export class Catalog {
 	 * @param {string} name
 	 * @returns {string}
 	 */
-	idFor(kind, name){
+	idFor(kind, name) {
 		const ids = this.nameIds[kind];
 		let id = ids.get(name);
-		if(id === undefined) ids.set(name, id = Catalog.newId());
+		if (id === undefined) ids.set(name, (id = Catalog.newId()));
 		return id;
 	}
 
@@ -254,8 +307,8 @@ export class Catalog {
 	 * @param {string} id
 	 * @returns {string | undefined}
 	 */
-	nameOf(kind, id){
-		for(const [name, x] of this.nameIds[kind]) if(x === id) return name;
+	nameOf(kind, id) {
+		for (const [name, x] of this.nameIds[kind]) if (x === id) return name;
 		return undefined;
 	}
 
@@ -264,7 +317,7 @@ export class Catalog {
 	 * @param {string} name
 	 * @returns {Series | undefined}
 	 */
-	seriesInfo(name){
+	seriesInfo(name) {
 		const id = this.nameIds.series.get(name);
 		return id === undefined ? undefined : this.series.get(id);
 	}
@@ -275,9 +328,13 @@ export class Catalog {
 	 * @param {K} kind
 	 * @returns {Map<string, K extends 'series' ? Series : Contributor>}
 	 */
-	infoByName(kind){
-		return new Map([...this.infoMap(kind)].map(([id, info]) => [this.nameOf(kind, id) ?? info.name,
-			/** @type {K extends 'series' ? Series : Contributor} */ (info)]));
+	infoByName(kind) {
+		return new Map(
+			[...this.infoMap(kind)].map(([id, info]) => [
+				this.nameOf(kind, id) ?? info.name,
+				/** @type {K extends 'series' ? Series : Contributor} */ (info),
+			]),
+		);
 	}
 
 	/**
@@ -285,10 +342,10 @@ export class Catalog {
 	 * @param {NamedKind} kind
 	 * @param {Map<string, Series | Contributor>} byName
 	 */
-	replaceInfo(kind, byName){
+	replaceInfo(kind, byName) {
 		const info = this.infoMap(kind);
 		info.clear();
-		for(const [name, entry] of byName) info.set(this.idFor(kind, name), entry);
+		for (const [name, entry] of byName) info.set(this.idFor(kind, name), entry);
 	}
 
 	// ------------------------------------------------------------------ the Check
@@ -298,11 +355,11 @@ export class Catalog {
 	 * @param {{contributors?: boolean}} [opts]
 	 * @returns {Problems}
 	 */
-	validate({contributors = false} = {}){
+	validate({contributors = false} = {}) {
 		const json = JSON.parse(JSON.stringify(this));
 		const problems = Validator.validate(json.books, json.seriesInfo);
-		if(contributors){
-			for(const kind of Contributor.KINDS){
+		if (contributors) {
+			for (const kind of Contributor.KINDS) {
 				const found = Validator.validateContributors(json.books, kind, json[kind]);
 				problems.errors.push(...found.errors);
 				problems.warnings.push(...found.warnings);
@@ -316,7 +373,9 @@ export class Catalog {
 	 * info is not their doing (a series renamed in the page).
 	 * @returns {string[]}
 	 */
-	bookErrors(){ return this.validate().errors.filter(e => !e.startsWith('series-info')); }
+	bookErrors() {
+		return this.validate().errors.filter(e => !e.startsWith('series-info'));
+	}
 
 	// ------------------------------------------------------------------ books
 	/**
@@ -328,33 +387,37 @@ export class Catalog {
 	 * @param {Book} book
 	 * @returns {number}
 	 */
-	saveBook(id, book){
+	saveBook(id, book) {
 		const books = this.books;
 		const index = id === null ? -1 : books.findIndex(b => b.id === id);
-		if(id !== null && index < 0) throw new Error(`no book is stored under ${id}`);
-		if(id === null && book.id === undefined) book.id = Catalog.newId();
+		if (id !== null && index < 0) throw new Error(`no book is stored under ${id}`);
+		if (id === null && book.id === undefined) book.id = Catalog.newId();
 		const old = index < 0 ? [] : books[index].editions;
 		const neu = book.editions;
 		const others = books.map((b, k) => k).filter(k => k !== index);
 		/** @type {(x: Edition, ed: Edition) => boolean} */
 		const linked = (x, ed) => x.sharesId(ed) && !x.conflictsWith(ed);
-		const befores = neu.map((ed, j) => old.find(x => x.sameAs(ed)) || (old.length === neu.length ? old[j] : undefined));
+		const befores = neu.map(
+			(ed, j) => old.find(x => x.sameAs(ed)) || (old.length === neu.length ? old[j] : undefined),
+		);
 		/** @type {(x: Edition, y: Edition | undefined) => boolean} */
 		const same = (x, y) => y !== undefined && JSON.stringify(x) === JSON.stringify(y);
 		neu.forEach((ed, j) => {
-			for(const k of others) for(const x of books[k].editions) if(!same(x, befores[j]) && linked(x, ed)) ed.fillFrom(x);
+			for (const k of others)
+				for (const x of books[k].editions) if (!same(x, befores[j]) && linked(x, ed)) ed.fillFrom(x);
 		});
 		const changed = new Set();
 		neu.forEach((ed, j) => {
-			for(const k of others){
+			for (const k of others) {
 				books[k].editions = books[k].editions.map(x => {
-					if(!(same(x, befores[j]) || linked(x, ed)) || same(x, ed)) return x;
+					if (!(same(x, befores[j]) || linked(x, ed)) || same(x, ed)) return x;
 					changed.add(k);
 					return ed.clone();
 				});
 			}
 		});
-		if(index < 0) books.push(book); else books[index] = book;
+		if (index < 0) books.push(book);
+		else books[index] = book;
 		return changed.size;
 	}
 
@@ -363,7 +426,9 @@ export class Catalog {
 	 * @param {string | null | undefined} id
 	 * @returns {Book | undefined}
 	 */
-	book(id){ return id === null || id === undefined ? undefined : this.books.find(b => b.id === id); }
+	book(id) {
+		return id === null || id === undefined ? undefined : this.books.find(b => b.id === id);
+	}
 
 	/**
 	 * Add books the way imports do (see Merger.merge), never adding one the exclusions list covers.
@@ -371,30 +436,38 @@ export class Catalog {
 	 * @param {MergeOptions} [opts]
 	 * @returns {MergeReport}
 	 */
-	merge(incoming, opts){ return new Merger(this.books, this.exclusions, opts).merge(incoming); }
+	merge(incoming, opts) {
+		return new Merger(this.books, this.exclusions, opts).merge(incoming);
+	}
 
 	/**
 	 * Keep each box set both as its own book and as its titles (see Merger.boxSets).
 	 * @returns {MergeReport}
 	 */
-	addBoxSets(){ return Merger.boxSets(this.books, this.exclusions); }
+	addBoxSets() {
+		return Merger.boxSets(this.books, this.exclusions);
+	}
 
 	/** @returns {Duplicates} the duplicates among the books, but for those marked "Not duplicates" */
-	duplicates(){ return new Duplicates(this.books, this.marks); }
+	duplicates() {
+		return new Duplicates(this.books, this.marks);
+	}
 
 	/**
 	 * Add entries to the exclusions list (an ASIN, "ISBN 978...", "Goodreads 12345" or "Title | Author"); returns how many were new.
 	 * @param {string[]} entries
 	 * @returns {number}
 	 */
-	addExclusions(entries){ return this.exclusions.addAll(entries); }
+	addExclusions(entries) {
+		return this.exclusions.addAll(entries);
+	}
 
 	/**
 	 * Mark each two of `books` as different books ("Not duplicates"); returns how many marks were new.
 	 * @param {Book[]} books
 	 * @returns {number}
 	 */
-	markNotDuplicates(books){
+	markNotDuplicates(books) {
 		return this.addMarks(books.flatMap((x, k) => books.slice(k + 1).map(y => Duplicates.pairMark(x, y))));
 	}
 
@@ -403,7 +476,9 @@ export class Catalog {
 	 * @param {Book} book
 	 * @returns {number}
 	 */
-	markKeepSeparate(book){ return this.addMarks([Duplicates.keepMark(book)]); }
+	markKeepSeparate(book) {
+		return this.addMarks([Duplicates.keepMark(book)]);
+	}
 
 	/**
 	 * Add marks as a backup writes them (Duplicates.pairKey(), editionsKey()), pointing them at the books
@@ -411,7 +486,7 @@ export class Catalog {
 	 * @param {string[]} texts
 	 * @returns {number}
 	 */
-	addMarkTexts(texts){
+	addMarkTexts(texts) {
 		const had = new Set(this.markTexts());
 		const count = this.addMarks(texts.filter(t => !had.has(t)).map(Duplicates.textMark));
 		this.resolveMarks();
@@ -422,9 +497,9 @@ export class Catalog {
 	 * @param {Mark[]} marks
 	 * @returns {number} how many were new
 	 */
-	addMarks(marks){
+	addMarks(marks) {
 		const before = this.marks.size;
-		for(const mark of marks) if(!this.marks.has(mark.id)) this.marks.set(mark.id, mark);
+		for (const mark of marks) if (!this.marks.has(mark.id)) this.marks.set(mark.id, mark);
 		return this.marks.size - before;
 	}
 
@@ -433,19 +508,19 @@ export class Catalog {
 	 * book's editions by their ids in external catalogs (Duplicates.editionsKey()), so they hold in another catalog too.
 	 * @returns {string[]}
 	 */
-	markTexts(){
+	markTexts() {
 		const byId = new Map(this.books.map(b => [b.id, b]));
 		/** @type {Set<string>} */
 		const out = new Set();
-		for(const m of this.marks.values()){
+		for (const m of this.marks.values()) {
 			const [x, y] = (m.bookIds || []).map(id => byId.get(id));
-			if(m.kind === 'notDuplicates'){ if(x && y) out.add(Duplicates.pairKey(x, y)); }
-			else if(m.kind === 'keepSeparate'){
+			if (m.kind === 'notDuplicates') {
+				if (x && y) out.add(Duplicates.pairKey(x, y));
+			} else if (m.kind === 'keepSeparate') {
 				// the book's editions now, if they are still the ones marked; else the mark as it was
 				const key = x && Duplicates.keepMark(x).id === m.id ? Duplicates.editionsKey(x) : m.key;
-				if(key) out.add(key);
-			}
-			else if(m.key) out.add(m.key);
+				if (key) out.add(key);
+			} else if (m.key) out.add(m.key);
 		}
 		return [...out];
 	}
@@ -456,46 +531,47 @@ export class Catalog {
 	 * their ids. A "Keep separate" mark whose book has other editions now goes back to its text, and a pair
 	 * mark of a book that is gone goes.
 	 */
-	resolveMarks(){
+	resolveMarks() {
 		/** @type {Map<string, string[]>} */
 		const byHalf = new Map();
 		/** @type {Map<string, Book[]>} */
 		const byEditions = new Map();
 		const known = new Set();
-		for(const b of this.books){
-			if(b.id === undefined) continue;
+		for (const b of this.books) {
+			if (b.id === undefined) continue;
 			known.add(b.id);
-			for(const key of new Set([Duplicates.bookKey(b), Duplicates.bookKey(b, Text.asciiNorm)])) byHalf.set(key, [...(byHalf.get(key) || []), b.id]);
+			for (const key of new Set([Duplicates.bookKey(b), Duplicates.bookKey(b, Text.asciiNorm)]))
+				byHalf.set(key, [...(byHalf.get(key) || []), b.id]);
 			const key = Duplicates.editionsKey(b);
 			byEditions.set(key, [...(byEditions.get(key) || []), b]);
 		}
 		/** @type {Map<string, Mark>} */
 		const out = new Map();
 		/** @type {(mark: Mark) => void} */
-		const put = mark => { if(!out.has(mark.id)) out.set(mark.id, mark); };
-		for(const m of this.marks.values()){
-			if(m.kind === 'notDuplicates'){
-				if((m.bookIds || []).every(id => known.has(id))) put(m);
+		const put = mark => {
+			if (!out.has(mark.id)) out.set(mark.id, mark);
+		};
+		for (const m of this.marks.values()) {
+			if (m.kind === 'notDuplicates') {
+				if ((m.bookIds || []).every(id => known.has(id))) put(m);
 				continue;
 			}
-			if(m.kind === 'keepSeparate'){
+			if (m.kind === 'keepSeparate') {
 				const b = this.book((m.bookIds || [])[0]);
-				if(b && Duplicates.keepMark(b).id === m.id) put(m);
-				else if(m.key) put(Duplicates.textMark(m.key));
+				if (b && Duplicates.keepMark(b).id === m.id) put(m);
+				else if (m.key) put(Duplicates.textMark(m.key));
 				continue;
 			}
 			const text = m.key || '';
 			const halves = Duplicates.pairHalves(text);
 			const [x, y] = halves ? halves.map(h => byHalf.get(h) || []) : [[], []];
 			const owners = byEditions.get(text) || [];
-			if(x.length === 1 && y.length === 1 && x[0] !== y[0]){
+			if (x.length === 1 && y.length === 1 && x[0] !== y[0]) {
 				const bookIds = [x[0], y[0]].sort();
 				put({id: `pair ${bookIds.join(' ')}`, kind: 'notDuplicates', bookIds});
-			}
-			else if(owners.length === 1 && Duplicates.keepMark(owners[0]).kind === 'keepSeparate'){
+			} else if (owners.length === 1 && Duplicates.keepMark(owners[0]).kind === 'keepSeparate') {
 				put({...Duplicates.keepMark(owners[0]), key: text});
-			}
-			else put(m);
+			} else put(m);
 		}
 		this.marks = out;
 	}
@@ -506,14 +582,16 @@ export class Catalog {
 	 * @param {string} name
 	 * @returns {Book[]}
 	 */
-	seriesBooks(name){ return this.books.filter(b => b.series === name); }
+	seriesBooks(name) {
+		return this.books.filter(b => b.series === name);
+	}
 
 	/**
 	 * The series numbers you don't own yet, from the series info's released total; null when that is unknown.
 	 * @param {string} name
 	 * @returns {number[] | null}
 	 */
-	missing(name){
+	missing(name) {
 		const info = this.seriesInfo(name);
 		return info ? info.missing(this.seriesBooks(name)) : null;
 	}
@@ -527,27 +605,42 @@ export class Catalog {
 	 * @param {string} newName
 	 * @returns {number}
 	 */
-	renameEntry(kind, name, newName){
+	renameEntry(kind, name, newName) {
 		/** @type {(names: string[]) => string[]} */
-		const swap = names => [...new Set(names.map(x => x === name ? newName : x))];
+		const swap = names => [...new Set(names.map(x => (x === name ? newName : x)))];
 		let count = 0;
-		for(const b of this.books){
+		for (const b of this.books) {
 			let hit = false;
-			if(kind === 'series' && b.series === name){ b.series = newName; hit = true; }
-			if(kind === 'authors' && b.authors.includes(name)){ b.authors = swap(b.authors); hit = true; }
-			for(const ed of b.editions){
-				if(kind === 'narrators' && ed.narrators.includes(name)){ ed.narrators = swap(ed.narrators); hit = true; }
-				if(kind === 'publishers' && ed.publisher === name){ ed.publisher = newName; hit = true; }
+			if (kind === 'series' && b.series === name) {
+				b.series = newName;
+				hit = true;
 			}
-			if(hit) count++;
+			if (kind === 'authors' && b.authors.includes(name)) {
+				b.authors = swap(b.authors);
+				hit = true;
+			}
+			for (const ed of b.editions) {
+				if (kind === 'narrators' && ed.narrators.includes(name)) {
+					ed.narrators = swap(ed.narrators);
+					hit = true;
+				}
+				if (kind === 'publishers' && ed.publisher === name) {
+					ed.publisher = newName;
+					hit = true;
+				}
+			}
+			if (hit) count++;
 		}
-		const ids = this.nameIds[kind], infos = this.infoMap(kind), id = ids.get(name), joined = ids.get(newName);
+		const ids = this.nameIds[kind],
+			infos = this.infoMap(kind),
+			id = ids.get(name),
+			joined = ids.get(newName);
 		ids.delete(name);
 		const info = id === undefined ? undefined : infos.get(id);
-		if(id !== undefined) infos.delete(id);
+		if (id !== undefined) infos.delete(id);
 		const target = joined ?? id;
-		if(joined === undefined && id !== undefined) ids.set(newName, id);
-		if(info && target !== undefined){
+		if (joined === undefined && id !== undefined) ids.set(newName, id);
+		if (info && target !== undefined) {
 			info.name = newName;
 			infos.set(target, info);
 		}
@@ -563,22 +656,35 @@ export class Catalog {
 	 * @param {string} id
 	 * @returns {Book[]}
 	 */
-	removeEntry(kind, id){
+	removeEntry(kind, id) {
 		const problem = this.removeProblem(kind, id);
-		if(problem) throw new Error(problem);
+		if (problem) throw new Error(problem);
 		const name = this.nameOf(kind, id);
 		/** @type {Book[]} */
 		const changed = [];
-		if(name !== undefined){
-			for(const b of this.books){
+		if (name !== undefined) {
+			for (const b of this.books) {
 				let hit = false;
-				if(kind === 'series' && b.series === name){ b.series = undefined; b.number = undefined; hit = true; }
-				if(kind === 'authors' && b.authors.includes(name)){ b.authors = b.authors.filter(a => a !== name); hit = true; }
-				for(const ed of b.editions){
-					if(kind === 'narrators' && ed.narrators.includes(name)){ ed.narrators = ed.narrators.filter(n => n !== name); hit = true; }
-					if(kind === 'publishers' && ed.publisher === name){ ed.publisher = undefined; hit = true; }
+				if (kind === 'series' && b.series === name) {
+					b.series = undefined;
+					b.number = undefined;
+					hit = true;
 				}
-				if(hit) changed.push(b);
+				if (kind === 'authors' && b.authors.includes(name)) {
+					b.authors = b.authors.filter(a => a !== name);
+					hit = true;
+				}
+				for (const ed of b.editions) {
+					if (kind === 'narrators' && ed.narrators.includes(name)) {
+						ed.narrators = ed.narrators.filter(n => n !== name);
+						hit = true;
+					}
+					if (kind === 'publishers' && ed.publisher === name) {
+						ed.publisher = undefined;
+						hit = true;
+					}
+				}
+				if (hit) changed.push(b);
 			}
 			this.nameIds[kind].delete(name);
 		}
@@ -592,11 +698,11 @@ export class Catalog {
 	 * @param {string} id
 	 * @returns {string}
 	 */
-	removeProblem(kind, id){
+	removeProblem(kind, id) {
 		const name = this.nameOf(kind, id);
-		if(kind !== 'authors' || name === undefined) return '';
+		if (kind !== 'authors' || name === undefined) return '';
 		const alone = this.books.filter(b => b.authors.length === 1 && b.authors[0] === name);
-		if(!alone.length) return '';
+		if (!alone.length) return '';
 		const titles = Text.firstThree(alone.map(b => b.title));
 		return `${name} is the only author of ${Text.plural(alone.length, 'book')} (${titles}): give ${alone.length > 1 ? 'them' : 'it'} another author first, or remove ${alone.length > 1 ? 'them' : 'it'}.`;
 	}
@@ -607,9 +713,9 @@ export class Catalog {
 	 * @param {string} id
 	 * @returns {Book[]}
 	 */
-	booksOf(kind, id){
+	booksOf(kind, id) {
 		const name = this.nameOf(kind, id);
-		if(name === undefined) return [];
+		if (name === undefined) return [];
 		const onBook = Catalog.namesOn(kind);
 		return this.books.filter(b => onBook(b).includes(name));
 	}
@@ -622,17 +728,20 @@ export class Catalog {
 	 * @param {string} name
 	 * @returns {{series: {name: string, books: Book[]}[], titles: Book[]}}
 	 */
-	works(kind, name){
+	works(kind, name) {
 		const namesOf = Catalog.namesOn(kind);
 		const own = this.books.filter(b => namesOf(b).includes(name));
 		/** @type {Map<string, Book[]>} */
 		const bySeries = new Map();
-		for(const b of own){
-			if(!b.series) continue;
+		for (const b of own) {
+			if (!b.series) continue;
 			const list = bySeries.get(b.series);
-			if(list) list.push(b); else bySeries.set(b.series, [b]);
+			if (list) list.push(b);
+			else bySeries.set(b.series, [b]);
 		}
-		const series = [...bySeries].sort((x, y) => x[0].localeCompare(y[0])).map(([s, list]) => ({name: s, books: list.sort(Book.bySeriesNumber)}));
+		const series = [...bySeries]
+			.sort((x, y) => x[0].localeCompare(y[0]))
+			.map(([s, list]) => ({name: s, books: list.sort(Book.bySeriesNumber)}));
 		const titles = own.filter(b => !b.series).sort((x, y) => x.title.localeCompare(y.title));
 		return {series, titles};
 	}
@@ -642,14 +751,25 @@ export class Catalog {
 	 * @param {NamedKind} kind
 	 * @returns {(b: Book) => string[]}
 	 */
-	static namesOn(kind){
-		return kind === 'series' ? b => b.series ? [b.series] : [] : kind === 'authors' ? Catalog.authorsOf
-			: kind === 'narrators' ? Catalog.narratorsOf : Catalog.publishersOf;
+	static namesOn(kind) {
+		return kind === 'series'
+			? b => (b.series ? [b.series] : [])
+			: kind === 'authors'
+				? Catalog.authorsOf
+				: kind === 'narrators'
+					? Catalog.narratorsOf
+					: Catalog.publishersOf;
 	}
 	/** @param {Book} b @returns {string[]} its authors */
-	static authorsOf(b){ return b.authors; }
+	static authorsOf(b) {
+		return b.authors;
+	}
 	/** @param {Book} b @returns {string[]} the narrators of all its editions, each once */
-	static narratorsOf(b){ return [...new Set(b.editions.flatMap(ed => ed.narrators))]; }
+	static narratorsOf(b) {
+		return [...new Set(b.editions.flatMap(ed => ed.narrators))];
+	}
 	/** @param {Book} b @returns {string[]} the publishers of all its editions, each once */
-	static publishersOf(b){ return [...new Set(b.editions.map(ed => ed.publisher || '').filter(Boolean))]; }
+	static publishersOf(b) {
+		return [...new Set(b.editions.map(ed => ed.publisher || '').filter(Boolean))];
+	}
 }

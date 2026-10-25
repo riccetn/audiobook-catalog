@@ -28,19 +28,26 @@ import {Cover} from './cover.js';
 // (an edition's id), "Hardcover book 77" (the book's).
 const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => def.family !== 'asin');
 const CATALOG_LABEL = `(?:${OTHER_CATALOGS.map(def => Text.escapeRegExp(def.name).replace(/ /g, '\\s+')).join('|')})(?:\\s+(?:book|edition))?(?:\\s+id)?`;
-const EDITION_PART = new RegExp(`^(asin|${CATALOG_LABEL}|gr|isbns?|publisher|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`, 'i');
+const EDITION_PART = new RegExp(
+	`^(asin|${CATALOG_LABEL}|gr|isbns?|publisher|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`,
+	'i',
+);
 
 // A list of names, as the narrators are kept.
 /**
  * @param {unknown} v
  * @returns {v is string[]}
  */
-function nameList(v){ return Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string' && x.trim() !== ''); }
+function nameList(v) {
+	return Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string' && x.trim() !== '');
+}
 /**
  * @param {unknown} v
  * @returns {v is string}
  */
-function nonEmpty(v){ return typeof v === 'string' && v.trim() !== ''; }
+function nonEmpty(v) {
+	return typeof v === 'string' && v.trim() !== '';
+}
 /** @type {(key: string) => boolean} whether a catalog's ids are ASINs */
 const isAsinSite = key => ExternalCatalog.family(key) === 'asin';
 
@@ -55,12 +62,27 @@ export class Edition {
 	// 'ext' stands for the external ids, a field for each catalog (fieldLabel()).
 	/** @type {[EditionKey, string, string][]} */
 	static FIELDS = [
-		['desc', 'Description', 'Description'], ['n', 'Narrated by', 'Narrators'], ['ext', '', 'ASINs'],
-		['isbn', 'ISBN', 'ISBN'], ['p', 'Publisher', 'Publisher'], ['d', 'Released', 'Released'], ['len', 'Length', 'Length'],
+		['desc', 'Description', 'Description'],
+		['n', 'Narrated by', 'Narrators'],
+		['ext', '', 'ASINs'],
+		['isbn', 'ISBN', 'ISBN'],
+		['p', 'Publisher', 'Publisher'],
+		['d', 'Released', 'Released'],
+		['len', 'Length', 'Length'],
 	];
 
 	/** @param {EditionInit} [init] */
-	constructor({external = {}, isbn, narrators = [], publisher, released, minutes, description, covers = {}, id} = {}){
+	constructor({
+		external = {},
+		isbn,
+		narrators = [],
+		publisher,
+		released,
+		minutes,
+		description,
+		covers = {},
+		id,
+	} = {}) {
 		/** @type {string | undefined} the id it is stored under (CatalogRecords gives one to an edition that has none) */
 		this.id = id;
 		/** @type {Record<string, string>} its ids by external catalog */
@@ -90,10 +112,10 @@ export class Edition {
 	 * @param {Unchecked} json
 	 * @returns {Edition}
 	 */
-	static fromJSON(json){
-		if(!Text.isObject(json)) throw new Error('an edition is not an object');
+	static fromJSON(json) {
+		if (!Text.isObject(json)) throw new Error('an edition is not an object');
 		const ed = new Edition();
-		for(const [k, v] of Object.entries(json)) ed.set(k, v);
+		for (const [k, v] of Object.entries(json)) ed.set(k, v);
 		return ed;
 	}
 
@@ -102,40 +124,34 @@ export class Edition {
 	 * @param {string} key
 	 * @param {unknown} v
 	 */
-	set(key, v){
+	set(key, v) {
 		delete this.extra[key];
-		if(key === Edition.ID_KEY){
+		if (key === Edition.ID_KEY) {
 			this.id = undefined;
-			if(nonEmpty(v)) this.id = v;
-			else if(v !== undefined) this.extra[key] = v;
-		}
-		else if(key === 'ext'){
+			if (nonEmpty(v)) this.id = v;
+			else if (v !== undefined) this.extra[key] = v;
+		} else if (key === 'ext') {
 			this.external = {};
-			if(ExternalCatalog.isIds(v)) this.external = {...v};
-			else if(v !== undefined) this.extra[key] = v;
-		}
-		else if(key === 'n'){
+			if (ExternalCatalog.isIds(v)) this.external = {...v};
+			else if (v !== undefined) this.extra[key] = v;
+		} else if (key === 'n') {
 			this.narrators = [];
-			if(nameList(v)) this.narrators = [...v];
-			else if(v !== undefined) this.extra[key] = v;
-		}
-		else if(key === 'img'){
+			if (nameList(v)) this.narrators = [...v];
+			else if (v !== undefined) this.extra[key] = v;
+		} else if (key === 'img') {
 			this.covers = {};
-			if(Cover.isKeys(v)) this.covers = {...v};
-			else if(v !== undefined) this.extra[key] = v;
-		}
-		else if(key === 'len'){
+			if (Cover.isKeys(v)) this.covers = {...v};
+			else if (v !== undefined) this.extra[key] = v;
+		} else if (key === 'len') {
 			this.minutes = undefined;
-			if(typeof v === 'number') this.minutes = v;
-			else if(v !== undefined) this.extra[key] = v;
-		}
-		else if(Object.hasOwn(TEXT_FIELDS, key)){
+			if (typeof v === 'number') this.minutes = v;
+			else if (v !== undefined) this.extra[key] = v;
+		} else if (Object.hasOwn(TEXT_FIELDS, key)) {
 			const field = TEXT_FIELDS[key];
 			this[field] = undefined;
-			if(nonEmpty(v)) this[field] = v;
-			else if(v !== undefined) this.extra[key] = v;
-		}
-		else if(v !== undefined) this.extra[key] = v;
+			if (nonEmpty(v)) this[field] = v;
+			else if (v !== undefined) this.extra[key] = v;
+		} else if (v !== undefined) this.extra[key] = v;
 	}
 
 	/**
@@ -143,36 +159,41 @@ export class Edition {
 	 * @param {string} key
 	 * @returns {unknown}
 	 */
-	value(key){
+	value(key) {
 		/** @type {unknown} */
 		let v;
-		if(key === Edition.ID_KEY) v = this.id;
-		else if(key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
-		else if(key === 'n') v = this.narrators.length ? [...this.narrators] : undefined;
-		else if(key === 'len') v = this.minutes;
-		else if(key === 'img') v = Object.keys(this.covers).length ? {...this.covers} : undefined;
-		else if(Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
+		if (key === Edition.ID_KEY) v = this.id;
+		else if (key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
+		else if (key === 'n') v = this.narrators.length ? [...this.narrators] : undefined;
+		else if (key === 'len') v = this.minutes;
+		else if (key === 'img') v = Object.keys(this.covers).length ? {...this.covers} : undefined;
+		else if (Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
 		return v === undefined ? this.extra[key] : v;
 	}
 
 	/** @returns {Record<string, unknown>} the edition as it is stored, its keys in the usual order */
-	toJSON(){
+	toJSON() {
 		/** @type {Record<string, unknown>} */
 		const out = {};
-		for(const k of [Edition.ID_KEY, ...Edition.KEYS]){ const v = this.value(k); if(v !== undefined) out[k] = v; }
-		for(const [k, v] of Object.entries(this.extra)) if(!(k in out)) out[k] = v;
+		for (const k of [Edition.ID_KEY, ...Edition.KEYS]) {
+			const v = this.value(k);
+			if (v !== undefined) out[k] = v;
+		}
+		for (const [k, v] of Object.entries(this.extra)) if (!(k in out)) out[k] = v;
 		return out;
 	}
 
 	/** @returns {Edition} a copy, sharing nothing with this one */
-	clone(){ return Edition.fromJSON(JSON.parse(JSON.stringify(this))); }
+	clone() {
+		return Edition.fromJSON(JSON.parse(JSON.stringify(this)));
+	}
 
 	// ------------------------------------------------------------------ ids
 	/**
 	 * Its external ids as [catalog, id] pairs in the usual order, e.g. [["audible.com", "B0X"], ["goodreads", "4242"]].
 	 * @returns {[string, string][]}
 	 */
-	externalList(){
+	externalList() {
 		return /** @type {[string, string][]} */ (Object.entries(ExternalCatalog.order(this.external) || {}));
 	}
 
@@ -181,7 +202,7 @@ export class Edition {
 	 * @param {string} catalog
 	 * @returns {string | null}
 	 */
-	idOn(catalog){
+	idOn(catalog) {
 		const v = Object.hasOwn(this.external, catalog) ? this.external[catalog] : null;
 		return typeof v === 'string' && v ? v : null;
 	}
@@ -190,30 +211,44 @@ export class Edition {
 	 * The ASINs as [site, ASIN] pairs, Audible's sites first, e.g. [["audible.com", "B0X"], ["amazon.com", "B0Y"]].
 	 * @returns {[string, string][]}
 	 */
-	asinList(){ return this.externalList().filter(([key]) => isAsinSite(key)); }
+	asinList() {
+		return this.externalList().filter(([key]) => isAsinSite(key));
+	}
 
 	/**
 	 * Its ids of one family (ExternalCatalog.family), each once: 'asin' gives the ASINs of every site.
 	 * @param {string} family
 	 * @returns {string[]}
 	 */
-	ids(family){ return [...new Set(this.externalList().filter(([key]) => ExternalCatalog.family(key) === family).map(([, v]) => v))]; }
+	ids(family) {
+		return [
+			...new Set(
+				this.externalList()
+					.filter(([key]) => ExternalCatalog.family(key) === family)
+					.map(([, v]) => v),
+			),
+		];
+	}
 
 	/**
 	 * Its external ids as matching compares them, each once: "asin B0X" (whichever site), "goodreads 4242".
 	 * @returns {string[]}
 	 */
-	idKeys(){ return [...new Set(this.externalList().map(([key, v]) => ExternalCatalog.family(key) + ' ' + v))]; }
+	idKeys() {
+		return [...new Set(this.externalList().map(([key, v]) => ExternalCatalog.family(key) + ' ' + v))];
+	}
 
 	/**
 	 * idKeys() and its ISBN as "isbn 978…": what the editions index finds it by, and what tells a box set's
 	 * copies of it on other books.
 	 * @returns {string[]}
 	 */
-	idAndIsbnKeys(){ return [...this.idKeys(), ...this.isbns().map(x => 'isbn ' + x)]; }
+	idAndIsbnKeys() {
+		return [...this.idKeys(), ...this.isbns().map(x => 'isbn ' + x)];
+	}
 
 	/** @returns {string[]} the ISBN, 13-digit, in a list; [] when there is none (or not a valid one) */
-	isbns(){
+	isbns() {
 		const isbn = this.isbn ? Isbn.parse(this.isbn) : null;
 		return isbn ? [isbn] : [];
 	}
@@ -223,7 +258,7 @@ export class Edition {
 	 * @param {Edition} other
 	 * @returns {boolean}
 	 */
-	sharesId(other){
+	sharesId(other) {
 		const theirs = other.idKeys();
 		return this.idKeys().some(k => theirs.includes(k));
 	}
@@ -234,9 +269,10 @@ export class Edition {
 	 * @param {Edition} other
 	 * @returns {boolean}
 	 */
-	conflictsWith(other){
-		if(this.externalList().some(([key, v]) => other.idOn(key) !== null && other.idOn(key) !== v)) return true;
-		const a = this.isbns(), b = other.isbns();
+	conflictsWith(other) {
+		if (this.externalList().some(([key, v]) => other.idOn(key) !== null && other.idOn(key) !== v)) return true;
+		const a = this.isbns(),
+			b = other.isbns();
 		return a.length > 0 && b.length > 0 && a[0] !== b[0];
 	}
 
@@ -246,9 +282,9 @@ export class Edition {
 	 * @param {Edition} other
 	 * @returns {boolean}
 	 */
-	sameAs(other){
-		if(this.conflictsWith(other)) return false;
-		if(this.sharesId(other)) return true;
+	sameAs(other) {
+		if (this.conflictsWith(other)) return false;
+		if (this.sharesId(other)) return true;
 		const isbns = other.isbns();
 		return this.isbns().some(isbn => isbns.includes(isbn));
 	}
@@ -259,21 +295,21 @@ export class Edition {
 	 * @param {Edition} from
 	 * @returns {string[]}
 	 */
-	fillFrom(from){
+	fillFrom(from) {
 		/** @type {string[]} */
 		const gained = [];
-		for(const k of Edition.KEYS){
-			if(k === 'ext'){
-				for(const [key, v] of from.externalList()){
-					if(this.idOn(key) !== null || (this.value('ext') === undefined && 'ext' in this.extra)) continue;
+		for (const k of Edition.KEYS) {
+			if (k === 'ext') {
+				for (const [key, v] of from.externalList()) {
+					if (this.idOn(key) !== null || (this.value('ext') === undefined && 'ext' in this.extra)) continue;
 					this.external = {...this.external, [key]: v};
 					gained.push('ext:' + key);
 				}
 				continue;
 			}
 			const theirs = from.value(k);
-			if(theirs === undefined) continue;
-			if(this.value(k) === undefined){
+			if (theirs === undefined) continue;
+			if (this.value(k) === undefined) {
 				this.set(k, JSON.parse(JSON.stringify(theirs)));
 				gained.push(k);
 			}
@@ -287,7 +323,7 @@ export class Edition {
 	 * @param {Edition[]} editions
 	 * @returns {boolean}
 	 */
-	static joinable(editions){
+	static joinable(editions) {
 		return editions.length > 1 && editions.every((x, i) => editions.slice(i + 1).every(y => !x.conflictsWith(y)));
 	}
 
@@ -296,9 +332,9 @@ export class Edition {
 	 * @param {Edition[]} editions
 	 * @returns {Edition}
 	 */
-	static join(editions){
+	static join(editions) {
 		const out = editions[0].clone();
-		for(const ed of editions.slice(1)) out.fillFrom(ed);
+		for (const ed of editions.slice(1)) out.fillFrom(ed);
 		return out;
 	}
 
@@ -309,17 +345,19 @@ export class Edition {
 	 * the page can turn them into links.
 	 * @returns {[string, string, string][]}
 	 */
-	parts(){
+	parts() {
 		/** @type {[string, string, string][]} */
 		const parts = [];
-		if(this.description) parts.push(['desc', '', this.description]);
-		if(this.narrators.length) parts.push(['n', 'Narrated by', Text.namesText(this.narrators)]);
-		if(this.asinList().length) parts.push(['asin', 'ASIN', this.asinsText()]);
-		for(const [key, v] of this.externalList()) if(!isAsinSite(key)) parts.push(['ext:' + key, ExternalCatalog.name(key), v]);
-		if(this.isbn) parts.push(['isbn', 'ISBN', this.isbn]);
-		if(this.publisher) parts.push(['p', 'Publisher', this.publisher]);
-		if(this.released) parts.push(['d', 'Released', this.released]);
-		if(this.minutes !== undefined && Number.isInteger(this.minutes)) parts.push(['len', 'Length', Text.formatLength(this.minutes)]);
+		if (this.description) parts.push(['desc', '', this.description]);
+		if (this.narrators.length) parts.push(['n', 'Narrated by', Text.namesText(this.narrators)]);
+		if (this.asinList().length) parts.push(['asin', 'ASIN', this.asinsText()]);
+		for (const [key, v] of this.externalList())
+			if (!isAsinSite(key)) parts.push(['ext:' + key, ExternalCatalog.name(key), v]);
+		if (this.isbn) parts.push(['isbn', 'ISBN', this.isbn]);
+		if (this.publisher) parts.push(['p', 'Publisher', this.publisher]);
+		if (this.released) parts.push(['d', 'Released', this.released]);
+		if (this.minutes !== undefined && Number.isInteger(this.minutes))
+			parts.push(['len', 'Length', Text.formatLength(this.minutes)]);
 		return parts;
 	}
 
@@ -329,13 +367,17 @@ export class Edition {
 	 * Length 10h 42m" (what parse() reads).
 	 * @returns {string}
 	 */
-	format(){
-		return this.parts().map(([, label, value]) => label ? `${label} ${value}` : value).join('; ');
+	format() {
+		return this.parts()
+			.map(([, label, value]) => (label ? `${label} ${value}` : value))
+			.join('; ');
 	}
 
 	/** @returns {string} the ASINs as text, each after its site: "audible.com B0X, amazon.com B0Y" (what parseAsins() reads) */
-	asinsText(){
-		return this.asinList().map(([site, v]) => `${site} ${v}`).join(', ');
+	asinsText() {
+		return this.asinList()
+			.map(([site, v]) => `${site} ${v}`)
+			.join(', ');
 	}
 
 	/**
@@ -345,11 +387,15 @@ export class Edition {
 	 * keeps them).
 	 * @returns {Record<string, string>}
 	 */
-	fields(){
+	fields() {
 		/** @type {Record<string, string>} */
-		const fields = Object.fromEntries(this.parts().filter(([k]) => k !== 'asin' && !k.startsWith('ext:')).map(([k, , value]) => [k, value]));
-		for(const [key, v] of this.externalList()) fields['ext:' + key] = v;
-		for(const [catalog, v] of Object.entries(this.covers)) fields['img:' + catalog] = v;
+		const fields = Object.fromEntries(
+			this.parts()
+				.filter(([k]) => k !== 'asin' && !k.startsWith('ext:'))
+				.map(([k, , value]) => [k, value]),
+		);
+		for (const [key, v] of this.externalList()) fields['ext:' + key] = v;
+		for (const [catalog, v] of Object.entries(this.covers)) fields['img:' + catalog] = v;
 		return fields;
 	}
 
@@ -359,7 +405,9 @@ export class Edition {
 	 * @param {string} catalog
 	 * @returns {string}
 	 */
-	static fieldLabel(catalog){ return isAsinSite(catalog) ? catalog : `${ExternalCatalog.name(catalog)} edition`; }
+	static fieldLabel(catalog) {
+		return isAsinSite(catalog) ? catalog : `${ExternalCatalog.name(catalog)} edition`;
+	}
 
 	/**
 	 * Read ASINs written as asinsText() writes them, "audible.com B0X, amazon.com B0Y": each ASIN after (or
@@ -370,30 +418,39 @@ export class Edition {
 	 * @param {string} [site]
 	 * @returns {{asins: Record<string, string> | null, bad: string[]}}
 	 */
-	static parseAsins(text, site){
+	static parseAsins(text, site) {
 		/** @type {[string | null, string][]} */
-		const found = [];   // [site or null, ASIN]
+		const found = []; // [site or null, ASIN]
 		/** @type {string[]} */
 		const bad = [];
-		const tokens = String(text || '').split(/[\s,;]+/).map(x => x.replace(/^[([]+|[)\]:]+$/g, '')).filter(Boolean);
-		const siteOf = (/** @type {string} */ t) => { const s = t.toLowerCase().replace(/^www\./, ''); return ExternalCatalog.ASIN_SITE.test(s) ? s : null; };
+		const tokens = String(text || '')
+			.split(/[\s,;]+/)
+			.map(x => x.replace(/^[([]+|[)\]:]+$/g, ''))
+			.filter(Boolean);
+		const siteOf = (/** @type {string} */ t) => {
+			const s = t.toLowerCase().replace(/^www\./, '');
+			return ExternalCatalog.ASIN_SITE.test(s) ? s : null;
+		};
 		// an ASIN is ten letters and digits; a shorter one, from a hand-made catalog, is taken as it is
 		const isAsin = (/** @type {string} */ t) => /^[A-Za-z0-9]+$/.test(t);
-		for(let i = 0; i < tokens.length; i++){
-			const t = tokens[i], s = siteOf(t);
+		for (let i = 0; i < tokens.length; i++) {
+			const t = tokens[i],
+				s = siteOf(t);
 			const url = ExternalCatalog.fromAddress(t, 'edition', ExternalCatalog.ASIN_SITES);
-			if(url) found.push([url.catalog, url.id]);
-			else if(/^(?:https?:\/\/)?(?:www\.)?(?:audible|amazon)\.[a-z.]+\//i.test(t)) bad.push(t);
-			else if(s && i + 1 < tokens.length && isAsin(tokens[i + 1])) found.push([s, tokens[++i].toUpperCase()]);
-			else if(s && found.length && found[found.length - 1][0] === null && isAsin(tokens[i - 1])) found[found.length - 1][0] = s;
-			else if(isAsin(t)) found.push([null, t.toUpperCase()]);
+			if (url) found.push([url.catalog, url.id]);
+			else if (/^(?:https?:\/\/)?(?:www\.)?(?:audible|amazon)\.[a-z.]+\//i.test(t)) bad.push(t);
+			else if (s && i + 1 < tokens.length && isAsin(tokens[i + 1])) found.push([s, tokens[++i].toUpperCase()]);
+			else if (s && found.length && found[found.length - 1][0] === null && isAsin(tokens[i - 1]))
+				found[found.length - 1][0] = s;
+			else if (isAsin(t)) found.push([null, t.toUpperCase()]);
 			else bad.push(t);
 		}
 		/** @type {Record<string, string>} */
 		const asins = {};
-		for(const [s, v] of found){
+		for (const [s, v] of found) {
 			const at = s || site || ExternalCatalog.AUDIBLE_SITE;
-			if(asins[at] && asins[at] !== v) bad.push(`${at} ${v}`); else asins[at] = v;
+			if (asins[at] && asins[at] !== v) bad.push(`${at} ${v}`);
+			else asins[at] = v;
 		}
 		return {asins: /** @type {Record<string, string> | null} */ (ExternalCatalog.order(asins)), bad};
 	}
@@ -407,7 +464,7 @@ export class Edition {
 	 * @param {unknown} text
 	 * @returns {{field: string, id: string} | null}
 	 */
-	static idFromAddress(text){
+	static idFromAddress(text) {
 		const found = ExternalCatalog.fromAddress(text, 'edition');
 		return found ? {field: 'ext:' + found.catalog, id: found.id} : null;
 	}
@@ -423,7 +480,7 @@ export class Edition {
 	 * @param {unknown} text
 	 * @returns {{editions: Edition[], bad: string[], book: Record<string, string>}}
 	 */
-	static parse(text){
+	static parse(text) {
 		/** @type {Edition[]} */
 		const editions = [];
 		/** @type {string[]} */
@@ -431,59 +488,97 @@ export class Edition {
 		/** @type {Record<string, string>} */
 		const book = {};
 		/** @type {(found: {catalog: string, id: string}, ext: Record<string, string>, part: string) => void} */
-		const put = ({catalog, id}, ext, part) => { if(ext[catalog] && ext[catalog] !== id) bad.push(part); else ext[catalog] = id; };
-		for(const line of String(text || '').split(/\r\n|\r|\n/)){
+		const put = ({catalog, id}, ext, part) => {
+			if (ext[catalog] && ext[catalog] !== id) bad.push(part);
+			else ext[catalog] = id;
+		};
+		for (const line of String(text || '').split(/\r\n|\r|\n/)) {
 			// a stored edition once splitIsbns() has made one per ISBN: until then `isbn` is a list
 			/** @type {Record<string, any>} */
 			const ed = {};
 			/** @type {Record<string, string>} */
 			const ext = {};
-			for(const part of line.split(';').map(x => Text.tidy(x)).filter(Boolean)){
+			for (const part of line
+				.split(';')
+				.map(x => Text.tidy(x))
+				.filter(Boolean)) {
 				// an edition's address names the edition, a book's address the book
 				const edition = ExternalCatalog.fromAddress(part, 'edition');
 				const ofBook = edition ? null : ExternalCatalog.fromAddress(part, 'book');
-				if(edition){ put(edition, ext, part); continue; }
-				if(ofBook){ if(!book[ofBook.catalog]) book[ofBook.catalog] = ofBook.id; continue; }
+				if (edition) {
+					put(edition, ext, part);
+					continue;
+				}
+				if (ofBook) {
+					if (!book[ofBook.catalog]) book[ofBook.catalog] = ofBook.id;
+					continue;
+				}
 				// another page there (a book's by its name, say) names nothing the edition keeps
-				if(ExternalCatalog.siteOf(part)){ bad.push(part); continue; }
+				if (ExternalCatalog.siteOf(part)) {
+					bad.push(part);
+					continue;
+				}
 				const m = EDITION_PART.exec(part);
-				const label = m ? m[1].toLowerCase().replace(/\s+id$/, '') : '', value = m ? m[2].trim() : part;
-				const isbns = Isbn.parseList(value), date = Text.parseDate(value), minutes = Text.parseLength(value);
+				const label = m ? m[1].toLowerCase().replace(/\s+id$/, '') : '',
+					value = m ? m[2].trim() : part;
+				const isbns = Isbn.parseList(value),
+					date = Text.parseDate(value),
+					minutes = Text.parseLength(value);
 				const allIsbns = isbns.isbns.length > 0 && !isbns.bad.length;
 				/** @type {string | null} */
 				let field = null;
 				/** @type {any} */
 				let v = null;
-				if(label === 'asin'){
+				if (label === 'asin') {
 					const read = Edition.parseAsins(value);
-					if(read.bad.length || !read.asins || Object.entries(read.asins).some(([site, x]) => ext[site] && ext[site] !== x)){ bad.push(part); continue; }
+					if (
+						read.bad.length ||
+						!read.asins ||
+						Object.entries(read.asins).some(([site, x]) => ext[site] && ext[site] !== x)
+					) {
+						bad.push(part);
+						continue;
+					}
 					Object.assign(ext, read.asins);
 					continue;
 				}
-				const named = label === 'gr' ? ExternalCatalog.get('goodreads') : OTHER_CATALOGS.find(def => label.replace(/\s+/g, ' ').startsWith(def.name.toLowerCase()));
-				if(named){
-					const catalog = named.key, kind = /\sbook$/.test(label) ? 'book' : 'edition';
+				const named =
+					label === 'gr'
+						? ExternalCatalog.get('goodreads')
+						: OTHER_CATALOGS.find(def => label.replace(/\s+/g, ' ').startsWith(def.name.toLowerCase()));
+				if (named) {
+					const catalog = named.key,
+						kind = /\sbook$/.test(label) ? 'book' : 'edition';
 					const found = ExternalCatalog.readId(value, kind, catalog);
-					if(!found){ bad.push(part); continue; }
-					if(kind === 'book'){ if(!book[catalog]) book[catalog] = found.id; }
-					else put(found, ext, part);
+					if (!found) {
+						bad.push(part);
+						continue;
+					}
+					if (kind === 'book') {
+						if (!book[catalog]) book[catalog] = found.id;
+					} else put(found, ext, part);
 					continue;
 				}
-				if(label === 'publisher') [field, v] = ['p', value];
-				else if(label.startsWith('narrat')) [field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
-				else if(label === 'description') [field, v] = ['desc', ed.desc ? null : value];
-				else if(label.startsWith('releas')) [field, v] = ['d', date];
-				else if(label === 'length') [field, v] = ['len', minutes];
-				else if(label.startsWith('isbn') || (!label && allIsbns)) [field, v] = ['isbn', allIsbns ? isbns.isbns : null];
-				else if(!label && date) [field, v] = ['d', date];
-				else if(!label && minutes) [field, v] = ['len', minutes];
-				else if(!label && !ed.desc) [field, v] = ['desc', value];
-				if(!v){ bad.push(part); continue; }
-				if(field === 'isbn') ed.isbn = [...new Set([...(ed.isbn || []), ...v])];
-				else if(field) ed[field] = v;
+				if (label === 'publisher') [field, v] = ['p', value];
+				else if (label.startsWith('narrat'))
+					[field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
+				else if (label === 'description') [field, v] = ['desc', ed.desc ? null : value];
+				else if (label.startsWith('releas')) [field, v] = ['d', date];
+				else if (label === 'length') [field, v] = ['len', minutes];
+				else if (label.startsWith('isbn') || (!label && allIsbns))
+					[field, v] = ['isbn', allIsbns ? isbns.isbns : null];
+				else if (!label && date) [field, v] = ['d', date];
+				else if (!label && minutes) [field, v] = ['len', minutes];
+				else if (!label && !ed.desc) [field, v] = ['desc', value];
+				if (!v) {
+					bad.push(part);
+					continue;
+				}
+				if (field === 'isbn') ed.isbn = [...new Set([...(ed.isbn || []), ...v])];
+				else if (field) ed[field] = v;
 			}
-			if(Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
-			if(Object.keys(ed).length) editions.push(...Edition.splitIsbns(Edition.order(ed)).map(Edition.fromJSON));
+			if (Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
+			if (Object.keys(ed).length) editions.push(...Edition.splitIsbns(Edition.order(ed)).map(Edition.fromJSON));
 		}
 		return {editions, bad, book};
 	}
@@ -498,7 +593,7 @@ export class Edition {
 	 * @param {Record<string, string | undefined>} fields
 	 * @returns {{editions: Edition[], bad: string[], book: Record<string, string>}}
 	 */
-	static fromFields(fields){
+	static fromFields(fields) {
 		// a stored edition once splitIsbns() has made one per ISBN: until then `isbn` is a list
 		/** @type {Record<string, any>} */
 		const ed = {};
@@ -510,38 +605,63 @@ export class Edition {
 		const book = {};
 		/** @type {Record<string, string>} */
 		const img = {};
-		for(const [k, text] of Object.entries(fields)){
-			const catalog = k.startsWith('img:') ? k.slice(4) : null, value = Text.tidy(String(text || ''));
-			if(catalog && value && Cover.isKey(catalog, value)) img[catalog] = value;
+		for (const [k, text] of Object.entries(fields)) {
+			const catalog = k.startsWith('img:') ? k.slice(4) : null,
+				value = Text.tidy(String(text || ''));
+			if (catalog && value && Cover.isKey(catalog, value)) img[catalog] = value;
 		}
-		for(const [k, text] of Object.entries(fields)){
-			const catalog = k.startsWith('ext:') ? k.slice(4) : null, value = Text.tidy(String(text || ''));
-			if(!catalog || !value) continue;
+		for (const [k, text] of Object.entries(fields)) {
+			const catalog = k.startsWith('ext:') ? k.slice(4) : null,
+				value = Text.tidy(String(text || ''));
+			if (!catalog || !value) continue;
 			const label = isAsinSite(catalog) ? `ASIN ${catalog}` : Edition.fieldLabel(catalog);
 			// the id, or an address: of the edition on this catalog, or (for an ASIN) on another site, or of the book
-			const found = ExternalCatalog.readId(value, 'edition', catalog)
-				|| [ExternalCatalog.fromAddress(value, 'edition')].find(x => x && ExternalCatalog.family(x.catalog) === ExternalCatalog.family(catalog)) || null;
+			const found =
+				ExternalCatalog.readId(value, 'edition', catalog) ||
+				[ExternalCatalog.fromAddress(value, 'edition')].find(
+					x => x && ExternalCatalog.family(x.catalog) === ExternalCatalog.family(catalog),
+				) ||
+				null;
 			const ofBook = found ? null : ExternalCatalog.fromAddress(value, 'book', [catalog]);
-			if(ofBook){ if(!book[catalog]) book[catalog] = ofBook.id; continue; }
-			if(!found || (ext[found.catalog] && ext[found.catalog] !== found.id)){ bad.push(`${label} ${value}`); continue; }
+			if (ofBook) {
+				if (!book[catalog]) book[catalog] = ofBook.id;
+				continue;
+			}
+			if (!found || (ext[found.catalog] && ext[found.catalog] !== found.id)) {
+				bad.push(`${label} ${value}`);
+				continue;
+			}
 			ext[found.catalog] = found.id;
 		}
-		for(const [k, label, shown] of Edition.FIELDS){
+		for (const [k, label, shown] of Edition.FIELDS) {
 			const value = Text.tidy(String(fields[k] || ''));
-			if(!value || k === 'ext') continue;
-			if(k === 'desc'){ ed.desc = value; continue; }
-			if(k === 'n'){ ed.n = Text.splitNames(value); if(!ed.n.length) delete ed.n; continue; }
+			if (!value || k === 'ext') continue;
+			if (k === 'desc') {
+				ed.desc = value;
+				continue;
+			}
+			if (k === 'n') {
+				ed.n = Text.splitNames(value);
+				if (!ed.n.length) delete ed.n;
+				continue;
+			}
 			const read = Edition.parse(`${label} ${value.replace(/;/g, ',')}`);
 			// each field's own values: ISBNs, a list of narrators, a text
 			/** @type {any[]} */
-			const got = read.editions.flatMap(x => k === 'isbn' ? x.isbns() : x.value(k) !== undefined ? [x.value(k)] : []);
-			if(read.bad.length || !got.length) bad.push(`${shown} ${value}`);
+			const got = read.editions.flatMap(x =>
+				k === 'isbn' ? x.isbns() : x.value(k) !== undefined ? [x.value(k)] : [],
+			);
+			if (read.bad.length || !got.length) bad.push(`${shown} ${value}`);
 			else ed[k] = k === 'isbn' ? got : got[0];
 		}
-		if(Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
+		if (Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
 		// a cover alone is no edition
-		if(Object.keys(ed).length && Object.keys(img).length) ed.img = img;
-		return {editions: Object.keys(ed).length ? Edition.splitIsbns(Edition.order(ed)).map(Edition.fromJSON) : [], bad, book};
+		if (Object.keys(ed).length && Object.keys(img).length) ed.img = img;
+		return {
+			editions: Object.keys(ed).length ? Edition.splitIsbns(Edition.order(ed)).map(Edition.fromJSON) : [],
+			bad,
+			book,
+		};
 	}
 
 	// ------------------------------------------------------------------ as stored
@@ -554,12 +674,12 @@ export class Edition {
 	 * @param {T} ed
 	 * @returns {T}
 	 */
-	static order(ed){
+	static order(ed) {
 		const from = /** @type {Record<string, any>} */ (ed);
 		/** @type {Record<string, any>} */
 		const out = {};
-		for(const k of [Edition.ID_KEY, ...Edition.KEYS]) if(from[k] !== undefined) out[k] = from[k];
-		for(const k of Object.keys(from)) if(!(k in out)) out[k] = from[k];
+		for (const k of [Edition.ID_KEY, ...Edition.KEYS]) if (from[k] !== undefined) out[k] = from[k];
+		for (const k of Object.keys(from)) if (!(k in out)) out[k] = from[k];
 		return /** @type {T} */ (out);
 	}
 
@@ -571,19 +691,23 @@ export class Edition {
 	 * @param {Unchecked} ed
 	 * @returns {Unchecked[]}
 	 */
-	static splitIsbns(ed){
-		if(!Text.isObject(ed) || !('isbn' in ed) || (typeof ed.isbn !== 'string' && !Array.isArray(ed.isbn))) return [ed];
+	static splitIsbns(ed) {
+		if (!Text.isObject(ed) || !('isbn' in ed) || (typeof ed.isbn !== 'string' && !Array.isArray(ed.isbn)))
+			return [ed];
 		const {isbn, ...rest} = ed;
 		/** @type {unknown[]} */
 		const parts = [];
-		for(const x of Array.isArray(isbn) ? isbn : [isbn]){
-			if(typeof x !== 'string'){ parts.push(x); continue; }
-			if(!x.trim()) continue;
+		for (const x of Array.isArray(isbn) ? isbn : [isbn]) {
+			if (typeof x !== 'string') {
+				parts.push(x);
+				continue;
+			}
+			if (!x.trim()) continue;
 			const {isbns, bad} = Isbn.parseList(x);
 			parts.push(...(bad.length ? [Text.tidy(x)] : isbns));
 		}
 		const unique = parts.filter((x, i) => typeof x !== 'string' || parts.indexOf(x) === i);
-		if(!unique.length) return Object.keys(rest).length ? [rest] : [];
+		if (!unique.length) return Object.keys(rest).length ? [rest] : [];
 		return [Edition.order({...rest, isbn: unique[0]}), ...unique.slice(1).map(x => ({isbn: x}))];
 	}
 
@@ -592,17 +716,17 @@ export class Edition {
 	 * @param {Unchecked} ed
 	 * @returns {Unchecked}
 	 */
-	static tidyJSON(ed){
-		if(!Text.isObject(ed)) return ed;
+	static tidyJSON(ed) {
+		if (!Text.isObject(ed)) return ed;
 		/** @type {Record<string, any>} */
 		const out = {...ed};
-		for(const key of ['p', 'd', 'desc']){
-			if(typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
+		for (const key of ['p', 'd', 'desc']) {
+			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
-		if(Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
-		if(Array.isArray(out.n)) out.n = Text.tidyNames(out.n);
+		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
+		if (Array.isArray(out.n)) out.n = Text.tidyNames(out.n);
 		// the 13-digit form; anything that is not an ISBN is kept (tidied) for the Check to report
-		if(typeof out.isbn === 'string') out.isbn = Isbn.parse(out.isbn) || Text.tidy(out.isbn);
+		if (typeof out.isbn === 'string') out.isbn = Isbn.parse(out.isbn) || Text.tidy(out.isbn);
 		return out;
 	}
 }

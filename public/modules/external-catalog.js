@@ -35,7 +35,8 @@ import {Text} from './text.js';
 // Patterns: an address is written as the page would link it, and reading one is forgiving: http or https,
 // "www." or "m." or neither, and whatever follows the id (a "?ref=…", a "#…") may be there or not.
 // In a pattern, "*" is any text within one part of the path and "**/" any number of parts.
-const ASIN = '[A-Za-z0-9]{10}', ANY_ASIN = '[A-Za-z0-9]+';
+const ASIN = '[A-Za-z0-9]{10}',
+	ANY_ASIN = '[A-Za-z0-9]+';
 const NUMBER = '\\d+';
 const SLUG = '[A-Za-z0-9][A-Za-z0-9-]*';
 const NAME = '.+';
@@ -45,44 +46,92 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 /** @type {(letter: string) => string} an Open Library id: OL, a number and the letter of its kind (W, M or A) */
 const OPEN_LIBRARY = letter => `OL\\d+${letter}`;
 /** @type {KindPattern} a Wikidata item, whatever it is */
-const WIKIDATA_ITEM = {id: 'Q\\d+', upper: true, url: 'https://www.wikidata.org/wiki/{id}', also: ['https://www.wikidata.org/entity/{id}']};
+const WIKIDATA_ITEM = {
+	id: 'Q\\d+',
+	upper: true,
+	url: 'https://www.wikidata.org/wiki/{id}',
+	also: ['https://www.wikidata.org/entity/{id}'],
+};
 
 // Audible's stores and their sites; an Amazon site per store, and a few without one.
 /** @type {Record<string, string>} */
-const AUDIBLE_STORES = {us: 'audible.com', uk: 'audible.co.uk', de: 'audible.de', fr: 'audible.fr', it: 'audible.it',
-	es: 'audible.es', ca: 'audible.ca', au: 'audible.com.au', in: 'audible.in', jp: 'audible.co.jp'};
-const AMAZON_SITES = [...Object.values(AUDIBLE_STORES).map(site => site.replace(/^audible\./, 'amazon.')),
-	'amazon.se', 'amazon.nl', 'amazon.pl', 'amazon.com.br', 'amazon.com.mx'];
+const AUDIBLE_STORES = {
+	us: 'audible.com',
+	uk: 'audible.co.uk',
+	de: 'audible.de',
+	fr: 'audible.fr',
+	it: 'audible.it',
+	es: 'audible.es',
+	ca: 'audible.ca',
+	au: 'audible.com.au',
+	in: 'audible.in',
+	jp: 'audible.co.jp',
+};
+const AMAZON_SITES = [
+	...Object.values(AUDIBLE_STORES).map(site => site.replace(/^audible\./, 'amazon.')),
+	'amazon.se',
+	'amazon.nl',
+	'amazon.pl',
+	'amazon.com.br',
+	'amazon.com.mx',
+];
 
 /**
  * @param {string} site
  * @returns {CatalogDefinition}
  */
-function audible(site){
+function audible(site) {
 	const at = `https://www.${site}`;
-	return {key: site, name: site, group: 'audible', family: 'asin',
+	return {
+		key: site,
+		name: site,
+		group: 'audible',
+		family: 'asin',
 		description: `Audible's store at ${site}: an edition's, series' or author's ASIN; narrators and publishers by name (Audible searches for them)`,
 		kinds: {
-			edition: {id: ASIN, upper: true, stored: ANY_ASIN, url: `${at}/pd/{id}`, also: [`${at}/**/pd/**/{id}`, `${at}/**/dp/**/{id}`, `${at}/**/product/**/{id}`]},
+			edition: {
+				id: ASIN,
+				upper: true,
+				stored: ANY_ASIN,
+				url: `${at}/pd/{id}`,
+				also: [`${at}/**/pd/**/{id}`, `${at}/**/dp/**/{id}`, `${at}/**/product/**/{id}`],
+			},
 			series: {id: ASIN, upper: true, url: `${at}/series/{id}`, also: [`${at}/series/*/{id}`]},
 			author: {id: ASIN, upper: true, url: `${at}/author/{id}`, also: [`${at}/author/*/{id}`]},
 			narrator: {id: NAME, url: `${at}/search?searchNarrator={id}`},
 			publisher: {id: NAME, url: `${at}/search?searchProvider={id}`},
-		}};
+		},
+	};
 }
 
 /**
  * @param {string} site
  * @returns {CatalogDefinition}
  */
-function amazon(site){
+function amazon(site) {
 	const at = `https://www.${site}`;
-	return {key: site, name: site, group: 'amazon', family: 'asin',
+	return {
+		key: site,
+		name: site,
+		group: 'amazon',
+		family: 'asin',
 		description: `Amazon's store at ${site}: an edition's or author's ASIN`,
 		kinds: {
-			edition: {id: ASIN, upper: true, stored: ANY_ASIN, url: `${at}/dp/{id}`, also: [`${at}/**/dp/**/{id}`, `${at}/**/product/**/{id}`]},
-			author: {id: ASIN, upper: true, url: `${at}/stores/author/{id}`, also: [`${at}/stores/*/author/{id}`, `${at}/**/e/{id}`]},
-		}};
+			edition: {
+				id: ASIN,
+				upper: true,
+				stored: ANY_ASIN,
+				url: `${at}/dp/{id}`,
+				also: [`${at}/**/dp/**/{id}`, `${at}/**/product/**/{id}`],
+			},
+			author: {
+				id: ASIN,
+				upper: true,
+				url: `${at}/stores/author/{id}`,
+				also: [`${at}/stores/*/author/{id}`, `${at}/**/e/{id}`],
+			},
+		},
+	};
 }
 
 /**
@@ -92,37 +141,93 @@ function amazon(site){
  * @param {string} path the start of its page's address
  * @returns {KindPattern}
  */
-function hardcoverById(model, path){
-	return {id: NUMBER, url: `https://hardcover.app/id/${model}/{id}`, also: [`https://hardcover.app/id/${model.replace(/s?$/, 's')}/{id}`],
-		fallback: {id: SLUG, url: `https://hardcover.app/${path}/{id}`}};
+function hardcoverById(model, path) {
+	return {
+		id: NUMBER,
+		url: `https://hardcover.app/id/${model}/{id}`,
+		also: [`https://hardcover.app/id/${model.replace(/s?$/, 's')}/{id}`],
+		fallback: {id: SLUG, url: `https://hardcover.app/${path}/{id}`},
+	};
 }
 
 /** @type {CatalogDefinition[]} */
 const DEFINITIONS = [
 	...Object.values(AUDIBLE_STORES).map(audible),
 	...AMAZON_SITES.map(amazon),
-	{key: 'goodreads', name: 'Goodreads', group: 'goodreads', family: 'goodreads',
-		description: 'Goodreads: a book (its work, all its editions), an edition (what Goodreads calls a book), a series, an author (narrators are listed as authors)',
+	{
+		key: 'goodreads',
+		name: 'Goodreads',
+		group: 'goodreads',
+		family: 'goodreads',
+		description:
+			'Goodreads: a book (its work, all its editions), an edition (what Goodreads calls a book), a series, an author (narrators are listed as authors)',
 		kinds: {
-			book: {id: NUMBER, url: 'https://www.goodreads.com/work/editions/{id}', also: ['https://www.goodreads.com/work/editions/{id}-*', 'https://www.goodreads.com/work/editions/{id}.*']},
-			edition: {id: NUMBER, url: 'https://www.goodreads.com/book/show/{id}', also: ['https://www.goodreads.com/book/show/{id}-*', 'https://www.goodreads.com/book/show/{id}.*']},
-			series: {id: NUMBER, url: 'https://www.goodreads.com/series/{id}', also: ['https://www.goodreads.com/series/{id}-*', 'https://www.goodreads.com/series/show/{id}', 'https://www.goodreads.com/series/show/{id}-*']},
-			author: {id: NUMBER, url: 'https://www.goodreads.com/author/show/{id}', also: ['https://www.goodreads.com/author/show/{id}-*', 'https://www.goodreads.com/author/show/{id}.*']},
-			narrator: {id: NUMBER, url: 'https://www.goodreads.com/author/show/{id}', also: ['https://www.goodreads.com/author/show/{id}-*', 'https://www.goodreads.com/author/show/{id}.*']},
-		}},
-	{key: 'hardcover', name: 'Hardcover', group: 'hardcover', family: 'hardcover',
-		description: 'Hardcover: a book, edition, series, author, narrator or publisher by its number (its address by id keeps working when it is renamed); a series or person by the name in its address while Hardcover can\'t be asked for the number',
+			book: {
+				id: NUMBER,
+				url: 'https://www.goodreads.com/work/editions/{id}',
+				also: [
+					'https://www.goodreads.com/work/editions/{id}-*',
+					'https://www.goodreads.com/work/editions/{id}.*',
+				],
+			},
+			edition: {
+				id: NUMBER,
+				url: 'https://www.goodreads.com/book/show/{id}',
+				also: ['https://www.goodreads.com/book/show/{id}-*', 'https://www.goodreads.com/book/show/{id}.*'],
+			},
+			series: {
+				id: NUMBER,
+				url: 'https://www.goodreads.com/series/{id}',
+				also: [
+					'https://www.goodreads.com/series/{id}-*',
+					'https://www.goodreads.com/series/show/{id}',
+					'https://www.goodreads.com/series/show/{id}-*',
+				],
+			},
+			author: {
+				id: NUMBER,
+				url: 'https://www.goodreads.com/author/show/{id}',
+				also: ['https://www.goodreads.com/author/show/{id}-*', 'https://www.goodreads.com/author/show/{id}.*'],
+			},
+			narrator: {
+				id: NUMBER,
+				url: 'https://www.goodreads.com/author/show/{id}',
+				also: ['https://www.goodreads.com/author/show/{id}-*', 'https://www.goodreads.com/author/show/{id}.*'],
+			},
+		},
+	},
+	{
+		key: 'hardcover',
+		name: 'Hardcover',
+		group: 'hardcover',
+		family: 'hardcover',
+		description:
+			"Hardcover: a book, edition, series, author, narrator or publisher by its number (its address by id keeps working when it is renamed); a series or person by the name in its address while Hardcover can't be asked for the number",
 		kinds: {
-			book: {id: NUMBER, url: 'https://hardcover.app/id/book/{id}', also: ['https://hardcover.app/id/books/{id}']},
-			edition: {id: NUMBER, url: 'https://hardcover.app/id/edition/{id}', also: ['https://hardcover.app/id/editions/{id}', 'https://hardcover.app/books/*/editions/{id}']},
+			book: {
+				id: NUMBER,
+				url: 'https://hardcover.app/id/book/{id}',
+				also: ['https://hardcover.app/id/books/{id}'],
+			},
+			edition: {
+				id: NUMBER,
+				url: 'https://hardcover.app/id/edition/{id}',
+				also: ['https://hardcover.app/id/editions/{id}', 'https://hardcover.app/books/*/editions/{id}'],
+			},
 			series: hardcoverById('series', 'series'),
 			author: hardcoverById('author', 'authors'),
 			narrator: hardcoverById('author', 'authors'),
 			publisher: hardcoverById('publisher', 'publishers'),
-		}},
+		},
+	},
 	// AudiobookDB's API sends no CORS headers, so a page can only link to it.
-	{key: 'audiobookdb', name: 'AudiobookDB', group: 'audiobookdb', family: 'audiobookdb',
-		description: 'AudiobookDB, a community catalog of audiobooks: a book, an edition (what AudiobookDB calls a release), a series, an author or narrator (both are people there), a publisher, each by its id',
+	{
+		key: 'audiobookdb',
+		name: 'AudiobookDB',
+		group: 'audiobookdb',
+		family: 'audiobookdb',
+		description:
+			'AudiobookDB, a community catalog of audiobooks: a book, an edition (what AudiobookDB calls a release), a series, an author or narrator (both are people there), a publisher, each by its id',
 		kinds: {
 			book: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/books/{id}'},
 			edition: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/releases/{id}'},
@@ -130,26 +235,44 @@ const DEFINITIONS = [
 			author: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/people/{id}'},
 			narrator: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/people/{id}'},
 			publisher: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/publishers/{id}'},
-		}},
+		},
+	},
 	// The open catalogs: their data is free to use, and they have APIs a later lookup could use.
-	{key: 'openlibrary', name: 'Open Library', group: 'openlibrary', family: 'openlibrary',
-		description: "Open Library, the Internet Archive's open catalog: a book's work (OL…W), an edition (OL…M), an author (OL…A)",
+	{
+		key: 'openlibrary',
+		name: 'Open Library',
+		group: 'openlibrary',
+		family: 'openlibrary',
+		description:
+			"Open Library, the Internet Archive's open catalog: a book's work (OL…W), an edition (OL…M), an author (OL…A)",
 		kinds: {
 			book: {id: OPEN_LIBRARY('W'), upper: true, url: 'https://openlibrary.org/works/{id}'},
 			edition: {id: OPEN_LIBRARY('M'), upper: true, url: 'https://openlibrary.org/books/{id}'},
 			author: {id: OPEN_LIBRARY('A'), upper: true, url: 'https://openlibrary.org/authors/{id}'},
-		}},
-	{key: 'isfdb', name: 'ISFDB', group: 'isfdb', family: 'isfdb',
-		description: 'The Internet Speculative Fiction Database: a book (a title), an edition (a publication), a series, an author, a publisher, each by its number',
+		},
+	},
+	{
+		key: 'isfdb',
+		name: 'ISFDB',
+		group: 'isfdb',
+		family: 'isfdb',
+		description:
+			'The Internet Speculative Fiction Database: a book (a title), an edition (a publication), a series, an author, a publisher, each by its number',
 		kinds: {
 			book: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/title.cgi?{id}'},
 			edition: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/pl.cgi?{id}'},
 			series: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/pe.cgi?{id}'},
 			author: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/ea.cgi?{id}'},
 			publisher: {id: NUMBER, url: 'https://www.isfdb.org/cgi-bin/publisher.cgi?{id}'},
-		}},
-	{key: 'bookbrainz', name: 'BookBrainz', group: 'bookbrainz', family: 'bookbrainz',
-		description: "BookBrainz, MetaBrainz's open book database: a book (a work), an edition, a series, an author or narrator, a publisher, each by its id (a UUID)",
+		},
+	},
+	{
+		key: 'bookbrainz',
+		name: 'BookBrainz',
+		group: 'bookbrainz',
+		family: 'bookbrainz',
+		description:
+			"BookBrainz, MetaBrainz's open book database: a book (a work), an edition, a series, an author or narrator, a publisher, each by its id (a UUID)",
 		kinds: {
 			book: {id: UUID, url: 'https://bookbrainz.org/work/{id}'},
 			edition: {id: UUID, url: 'https://bookbrainz.org/edition/{id}'},
@@ -157,12 +280,24 @@ const DEFINITIONS = [
 			author: {id: UUID, url: 'https://bookbrainz.org/author/{id}'},
 			narrator: {id: UUID, url: 'https://bookbrainz.org/author/{id}'},
 			publisher: {id: UUID, url: 'https://bookbrainz.org/publisher/{id}'},
-		}},
+		},
+	},
 	// Wikidata's items don't say what they are in their address, and few audiobook editions have one, so
 	// it gives no edition ids: an item pasted in an edition's field would be taken for the book's.
-	{key: 'wikidata', name: 'Wikidata', group: 'wikidata', family: 'wikidata',
+	{
+		key: 'wikidata',
+		name: 'Wikidata',
+		group: 'wikidata',
+		family: 'wikidata',
 		description: 'Wikidata: the item (Q…) of a book, a series, an author, a narrator or a publisher',
-		kinds: {book: WIKIDATA_ITEM, series: WIKIDATA_ITEM, author: WIKIDATA_ITEM, narrator: WIKIDATA_ITEM, publisher: WIKIDATA_ITEM}},
+		kinds: {
+			book: WIKIDATA_ITEM,
+			series: WIKIDATA_ITEM,
+			author: WIKIDATA_ITEM,
+			narrator: WIKIDATA_ITEM,
+			publisher: WIKIDATA_ITEM,
+		},
+	},
 ];
 
 /** @type {CatalogGroup[]} */
@@ -189,17 +324,22 @@ const ASIN_SITE = /^(?:audible|amazon)\.(?:[a-z]{2,3}|com?\.[a-z]{2})$/;
  * @param {string} id the id's own pattern
  * @returns {{re: RegExp, query: boolean}}
  */
-function compile(pattern, id){
+function compile(pattern, id) {
 	const m = /^https?:\/\/(?:www\.)?([^/?#]+)(\/[^?#]*)?(?:\?(.*))?$/.exec(pattern);
-	if(!m) throw new Error(`not an address pattern: ${pattern}`);
+	if (!m) throw new Error(`not an address pattern: ${pattern}`);
 	const [, host, path = '', query] = m;
 	/** @type {(part: string) => string} */
-	const pathRe = part => part.split(/(\*\*\/|\*|\{id\})/).map(t =>
-		t === '**/' ? '(?:[^/?#]+/)*' : t === '*' ? '[^/?#]*' : t === '{id}' ? `(${id})` : Text.escapeRegExp(t)).join('');
+	const pathRe = part =>
+		part
+			.split(/(\*\*\/|\*|\{id\})/)
+			.map(t =>
+				t === '**/' ? '(?:[^/?#]+/)*' : t === '*' ? '[^/?#]*' : t === '{id}' ? `(${id})` : Text.escapeRegExp(t),
+			)
+			.join('');
 	let re = '^(?:https?://)?(?:www\\.|m\\.)?' + Text.escapeRegExp(host) + pathRe(path);
-	if(query === undefined) re += '(?=[/?#]|$)';
+	if (query === undefined) re += '(?=[/?#]|$)';
 	// the whole query is the id (ISFDB's "title.cgi?194342", often written with a "=" after it)
-	else if(query === '{id}') return {re: new RegExp(re + `\\?(${id})=?(?:[&#].*)?$`, 'i'), query: false};
+	else if (query === '{id}') return {re: new RegExp(re + `\\?(${id})=?(?:[&#].*)?$`, 'i'), query: false};
 	else {
 		// a search's id is one of its parameters, wherever it is among them
 		const [name] = query.split('=');
@@ -214,9 +354,9 @@ function compile(pattern, id){
  * @param {string} id
  * @returns {KindPattern | null}
  */
-function patternOf(pattern, id){
-	for(const of of [pattern, pattern.fallback]){
-		if(of && new RegExp(`^(?:${of.stored || of.id})$`, of.upper ? 'i' : '').test(id)) return of;
+function patternOf(pattern, id) {
+	for (const of of [pattern, pattern.fallback]) {
+		if (of && new RegExp(`^(?:${of.stored || of.id})$`, of.upper ? 'i' : '').test(id)) return of;
 	}
 	return null;
 }
@@ -238,20 +378,30 @@ export class ExternalCatalog {
 	// The sites an edition may have an ASIN field for (each Audible store's, and Amazon's).
 	// The sites the book form offers an ASIN field for: each Audible store's site and its Amazon twin, then
 	// the Amazon sites without an Audible store.
-	static ASIN_SITES = [...new Set([...Object.values(AUDIBLE_STORES).flatMap(site => [site, site.replace(/^audible\./, 'amazon.')]), ...AMAZON_SITES])];
+	static ASIN_SITES = [
+		...new Set([
+			...Object.values(AUDIBLE_STORES).flatMap(site => [site, site.replace(/^audible\./, 'amazon.')]),
+			...AMAZON_SITES,
+		]),
+	];
 
 	/**
 	 * @param {string} key
 	 * @returns {CatalogDefinition | null}
 	 */
-	static get(key){ return BY_KEY.get(key) || null; }
+	static get(key) {
+		return BY_KEY.get(key) || null;
+	}
 
 	/**
 	 * The catalog's name as the page shows it; the key itself for one this app doesn't know.
 	 * @param {string} key
 	 * @returns {string}
 	 */
-	static name(key){ const def = BY_KEY.get(key); return def ? def.name : key; }
+	static name(key) {
+		const def = BY_KEY.get(key);
+		return def ? def.name : key;
+	}
 
 	/**
 	 * The family of a catalog's ids: an ASIN is "asin" on every Audible and Amazon site (also one not
@@ -259,7 +409,7 @@ export class ExternalCatalog {
 	 * @param {string} key
 	 * @returns {string}
 	 */
-	static family(key){
+	static family(key) {
 		const def = BY_KEY.get(key);
 		return def ? def.family : ASIN_SITE.test(key) ? 'asin' : key;
 	}
@@ -268,8 +418,9 @@ export class ExternalCatalog {
 	 * @param {string} key
 	 * @returns {CatalogGroup | null} the form field the catalog's ids go in
 	 */
-	static groupOf(key){
-		const def = BY_KEY.get(key), group = def ? def.group : ASIN_SITE.test(key) ? key.split('.')[0] : null;
+	static groupOf(key) {
+		const def = BY_KEY.get(key),
+			group = def ? def.group : ASIN_SITE.test(key) ? key.split('.')[0] : null;
 		return GROUPS.find(g => g.key === group) || null;
 	}
 
@@ -278,21 +429,27 @@ export class ExternalCatalog {
 	 * @param {string} group
 	 * @returns {string[]}
 	 */
-	static keysOf(group){ return DEFINITIONS.filter(def => def.group === group).map(def => def.key); }
+	static keysOf(group) {
+		return DEFINITIONS.filter(def => def.group === group).map(def => def.key);
+	}
 
 	/**
 	 * The catalogs that have pages for a kind of thing, in the usual order.
 	 * @param {ExternalKind} kind
 	 * @returns {CatalogDefinition[]}
 	 */
-	static forKind(kind){ return DEFINITIONS.filter(def => def.kinds[kind]); }
+	static forKind(kind) {
+		return DEFINITIONS.filter(def => def.kinds[kind]);
+	}
 
 	/**
 	 * The groups with a catalog that has pages for a kind of thing (a form's fields for it).
 	 * @param {ExternalKind} kind
 	 * @returns {CatalogGroup[]}
 	 */
-	static groupsFor(kind){ return GROUPS.filter(g => DEFINITIONS.some(def => def.group === g.key && def.kinds[kind])); }
+	static groupsFor(kind) {
+		return GROUPS.filter(g => DEFINITIONS.some(def => def.group === g.key && def.kinds[kind]));
+	}
 
 	/**
 	 * Whether an id is one the catalog can have for this kind of thing.
@@ -301,9 +458,16 @@ export class ExternalCatalog {
 	 * @param {unknown} id
 	 * @returns {boolean}
 	 */
-	static isId(key, kind, id){
-		const def = BY_KEY.get(key), pattern = def && def.kinds[kind];
-		if(!pattern) return ASIN_SITE.test(key) && kind === 'edition' && typeof id === 'string' && new RegExp(`^${ANY_ASIN}$`).test(id);
+	static isId(key, kind, id) {
+		const def = BY_KEY.get(key),
+			pattern = def && def.kinds[kind];
+		if (!pattern)
+			return (
+				ASIN_SITE.test(key) &&
+				kind === 'edition' &&
+				typeof id === 'string' &&
+				new RegExp(`^${ANY_ASIN}$`).test(id)
+			);
 		return typeof id === 'string' && patternOf(pattern, id) !== null;
 	}
 
@@ -315,8 +479,9 @@ export class ExternalCatalog {
 	 * @param {unknown} id
 	 * @returns {boolean}
 	 */
-	static isFallbackId(key, kind, id){
-		const def = BY_KEY.get(key), pattern = def && def.kinds[kind];
+	static isFallbackId(key, kind, id) {
+		const def = BY_KEY.get(key),
+			pattern = def && def.kinds[kind];
 		return !!pattern && typeof id === 'string' && patternOf(pattern, id) === pattern.fallback;
 	}
 
@@ -327,9 +492,10 @@ export class ExternalCatalog {
 	 * @param {string} id
 	 * @returns {string | null}
 	 */
-	static url(key, kind, id){
-		const def = BY_KEY.get(key), pattern = def && def.kinds[kind];
-		if(!pattern || !id) return null;
+	static url(key, kind, id) {
+		const def = BY_KEY.get(key),
+			pattern = def && def.kinds[kind];
+		if (!pattern || !id) return null;
 		// a fallback id's page is its own (Hardcover's by name); anything else is put in the usual address
 		return (patternOf(pattern, id) || pattern).url.replace('{id}', encodeURIComponent(id));
 	}
@@ -340,13 +506,16 @@ export class ExternalCatalog {
 	 * @param {unknown} text
 	 * @returns {string | null}
 	 */
-	static siteOf(text){
-		const m = /^(?:https?:\/\/)?(?:www\.|m\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:[/?#]|$)/i.exec(String(text || '').trim());
-		if(!m) return null;
+	static siteOf(text) {
+		const m = /^(?:https?:\/\/)?(?:www\.|m\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:[/?#]|$)/i.exec(
+			String(text || '').trim(),
+		);
+		if (!m) return null;
 		const host = m[1].toLowerCase();
-		for(const def of DEFINITIONS){
-			const urls = Object.values(def.kinds).flatMap(p => p ? [p.url] : []);
-			if(urls.some(u => new URL(u.replace(/\{id\}/g, 'x')).hostname.replace(/^www\./, '') === host)) return def.group;
+		for (const def of DEFINITIONS) {
+			const urls = Object.values(def.kinds).flatMap(p => (p ? [p.url] : []));
+			if (urls.some(u => new URL(u.replace(/\{id\}/g, 'x')).hostname.replace(/^www\./, '') === host))
+				return def.group;
 		}
 		return null;
 	}
@@ -360,27 +529,36 @@ export class ExternalCatalog {
 	 * @param {string[]} [keys]
 	 * @returns {ExternalId | null}
 	 */
-	static fromAddress(text, kind, keys){
+	static fromAddress(text, kind, keys) {
 		const value = String(text || '').trim();
-		if(!/^(?:https?:\/\/)?(?:www\.|m\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+[/?]/i.test(value)) return null;
-		for(const def of DEFINITIONS){
+		if (!/^(?:https?:\/\/)?(?:www\.|m\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+[/?]/i.test(value)) return null;
+		for (const def of DEFINITIONS) {
 			const pattern = def.kinds[kind];
-			if(!pattern || (keys && !keys.includes(def.key))) continue;
+			if (!pattern || (keys && !keys.includes(def.key))) continue;
 			const cacheKey = def.key + ' ' + kind;
 			let compiled = COMPILED.get(cacheKey);
 			// the usual id's addresses first, then the fallback's
-			if(!compiled) COMPILED.set(cacheKey, compiled = [pattern, ...(pattern.fallback ? [pattern.fallback] : [])]
-				.flatMap(of => [...(of.also || []), of.url].map(p => compile(p, of.id))));
-			for(const {re, query} of compiled){
+			if (!compiled)
+				COMPILED.set(
+					cacheKey,
+					(compiled = [pattern, ...(pattern.fallback ? [pattern.fallback] : [])].flatMap(of =>
+						[...(of.also || []), of.url].map(p => compile(p, of.id)),
+					)),
+				);
+			for (const {re, query} of compiled) {
 				const m = re.exec(value);
-				if(!m) continue;
+				if (!m) continue;
 				let id = m[1];
-				if(query){
-					try{ id = decodeURIComponent(id.replace(/\+/g, ' ')); }catch{ continue; }
+				if (query) {
+					try {
+						id = decodeURIComponent(id.replace(/\+/g, ' '));
+					} catch {
+						continue;
+					}
 					id = Text.tidy(id);
 				}
-				if(pattern.upper) id = id.toUpperCase();
-				if(id && ExternalCatalog.isId(def.key, kind, id)) return {catalog: def.key, id};
+				if (pattern.upper) id = id.toUpperCase();
+				if (id && ExternalCatalog.isId(def.key, kind, id)) return {catalog: def.key, id};
 			}
 		}
 		return null;
@@ -395,15 +573,17 @@ export class ExternalCatalog {
 	 * @param {string} group the group's key ("audible"), or a catalog's key for that catalog alone
 	 * @returns {ExternalId | null}
 	 */
-	static readId(text, kind, group){
+	static readId(text, kind, group) {
 		const value = Text.tidy(String(text || ''));
 		const g = GROUPS.find(x => x.key === group);
 		const keys = g ? ExternalCatalog.keysOf(g.key) : [group];
 		const found = ExternalCatalog.fromAddress(value, kind, keys);
-		if(found) return found;
+		if (found) return found;
 		// an address the patterns can't read is not an id, even where a name is (an Audible narrator's)
-		if(/^(?:https?:\/\/|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\/)/i.test(value)) return null;
-		const key = g ? g.default : group, def = BY_KEY.get(key), pattern = def && def.kinds[kind];
+		if (/^(?:https?:\/\/|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\/)/i.test(value)) return null;
+		const key = g ? g.default : group,
+			def = BY_KEY.get(key),
+			pattern = def && def.kinds[kind];
 		const id = pattern && pattern.upper ? value.toUpperCase() : value;
 		return ExternalCatalog.isId(key, kind, id) ? {catalog: key, id} : null;
 	}
@@ -416,11 +596,14 @@ export class ExternalCatalog {
 	 * @param {string} group
 	 * @returns {string}
 	 */
-	static fieldText(ids, kind, group){
+	static fieldText(ids, kind, group) {
 		const g = GROUPS.find(x => x.key === group);
-		if(!g) return ids[group] || '';
-		if(ids[g.default]) return ids[g.default];
-		const key = Object.keys(ids).find(k => { const of = ExternalCatalog.groupOf(k); return of && of.key === g.key; });
+		if (!g) return ids[group] || '';
+		if (ids[g.default]) return ids[g.default];
+		const key = Object.keys(ids).find(k => {
+			const of = ExternalCatalog.groupOf(k);
+			return of && of.key === g.key;
+		});
 		return key ? ExternalCatalog.url(key, kind, ids[key]) || ids[key] : '';
 	}
 
@@ -430,9 +613,12 @@ export class ExternalCatalog {
 	 * @param {Record<string, unknown>} ids
 	 * @returns {Record<string, any> | null}
 	 */
-	static order(ids){
+	static order(ids) {
 		const keys = Object.keys(ids).filter(k => k && ids[k] !== undefined);
-		const at = (/** @type {string} */ k) => { const i = DEFINITIONS.findIndex(def => def.key === k); return i < 0 ? DEFINITIONS.length : i; };
+		const at = (/** @type {string} */ k) => {
+			const i = DEFINITIONS.findIndex(def => def.key === k);
+			return i < 0 ? DEFINITIONS.length : i;
+		};
 		keys.sort((x, y) => at(x) - at(y) || (x < y ? -1 : x > y ? 1 : 0));
 		return keys.length ? Object.fromEntries(keys.map(k => [k, ids[k]])) : null;
 	}
@@ -442,8 +628,12 @@ export class ExternalCatalog {
 	 * @param {unknown} v
 	 * @returns {v is Record<string, string>}
 	 */
-	static isIds(v){
-		return Text.isObject(v) && Object.keys(v).length > 0 && Object.entries(v).every(([k, x]) => k && typeof x === 'string' && x.trim() !== '');
+	static isIds(v) {
+		return (
+			Text.isObject(v) &&
+			Object.keys(v).length > 0 &&
+			Object.entries(v).every(([k, x]) => k && typeof x === 'string' && x.trim() !== '')
+		);
 	}
 
 	/**
@@ -451,10 +641,10 @@ export class ExternalCatalog {
 	 * @param {Record<string, unknown>} ids
 	 * @returns {Record<string, unknown>}
 	 */
-	static tidy(ids){
+	static tidy(ids) {
 		/** @type {Record<string, unknown>} */
 		const out = {};
-		for(const [k, v] of Object.entries(ids)){
+		for (const [k, v] of Object.entries(ids)) {
 			const key = Text.tidy(k).toLowerCase();
 			out[key] = typeof v === 'string' ? Text.tidy(v) : v;
 		}
@@ -468,21 +658,28 @@ export class ExternalCatalog {
 	 * @param {ExternalKind} kind
 	 * @returns {{errors: string[], warnings: string[]}}
 	 */
-	static problems(ids, kind){
+	static problems(ids, kind) {
 		/** @type {string[]} */
 		const errors = [];
 		/** @type {string[]} */
 		const warnings = [];
-		if(!Text.isObject(ids) || !Object.keys(ids).length){
+		if (!Text.isObject(ids) || !Object.keys(ids).length) {
 			errors.push(`'ext' must map external catalogs to ids, e.g. {"audible.com": "B0...", "goodreads": "4242"}`);
 			return {errors, warnings};
 		}
-		for(const [k, v] of Object.entries(ids)){
-			if(typeof v !== 'string' || !v.trim()){ errors.push(`the id on ${Text.repr(k)} must be a non-empty string`); continue; }
+		for (const [k, v] of Object.entries(ids)) {
+			if (typeof v !== 'string' || !v.trim()) {
+				errors.push(`the id on ${Text.repr(k)} must be a non-empty string`);
+				continue;
+			}
 			const def = BY_KEY.get(k);
-			if(!def && !(ASIN_SITE.test(k) && kind === 'edition')) warnings.push(`${Text.repr(k)} is not an external catalog this app knows`);
-			else if(def && !def.kinds[kind]) errors.push(`${def.name} has no ${kind} pages, so no ${kind} id`);
-			else if(!ExternalCatalog.isId(k, kind, v.trim())) errors.push(`${Text.repr(v)} is not ${ExternalCatalog.name(k)}'s id of ${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`);
+			if (!def && !(ASIN_SITE.test(k) && kind === 'edition'))
+				warnings.push(`${Text.repr(k)} is not an external catalog this app knows`);
+			else if (def && !def.kinds[kind]) errors.push(`${def.name} has no ${kind} pages, so no ${kind} id`);
+			else if (!ExternalCatalog.isId(k, kind, v.trim()))
+				errors.push(
+					`${Text.repr(v)} is not ${ExternalCatalog.name(k)}'s id of ${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`,
+				);
 		}
 		return {errors, warnings};
 	}

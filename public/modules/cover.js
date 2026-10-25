@@ -25,9 +25,15 @@ export class Cover {
 	 * @param {unknown} v
 	 * @returns {v is Record<string, string>}
 	 */
-	static isKeys(v){
-		return Text.isObject(v) && Object.keys(v).length > 0
-			&& Object.entries(v).every(([catalog, key]) => Cover.CATALOGS.includes(catalog) && typeof key === 'string' && Cover.isKey(catalog, key));
+	static isKeys(v) {
+		return (
+			Text.isObject(v) &&
+			Object.keys(v).length > 0 &&
+			Object.entries(v).every(
+				([catalog, key]) =>
+					Cover.CATALOGS.includes(catalog) && typeof key === 'string' && Cover.isKey(catalog, key),
+			)
+		);
 	}
 
 	/**
@@ -36,7 +42,9 @@ export class Cover {
 	 * @param {string} key
 	 * @returns {boolean}
 	 */
-	static isKey(catalog, key){ return catalog === 'audiobookdb' && AUDIOBOOKDB_KEY.test(key); }
+	static isKey(catalog, key) {
+		return catalog === 'audiobookdb' && AUDIOBOOKDB_KEY.test(key);
+	}
 
 	/**
 	 * The key of the first cover in an AudiobookDB answer's `images` ({url: "https://cdn.audiobookdb.org/<key>", ...}),
@@ -44,11 +52,13 @@ export class Cover {
 	 * @param {unknown} images
 	 * @returns {string | null}
 	 */
-	static audiobookdbKey(images){
-		for(const image of Array.isArray(images) ? images : []){
+	static audiobookdbKey(images) {
+		for (const image of Array.isArray(images) ? images : []) {
 			const url = Text.isObject(image) && typeof image.url === 'string' ? image.url.trim() : '';
-			const key = url.startsWith(AUDIOBOOKDB_IMAGES) ? url.slice(AUDIOBOOKDB_IMAGES.length).replace(/\/$/, '') : '';
-			if(AUDIOBOOKDB_KEY.test(key)) return key;
+			const key = url.startsWith(AUDIOBOOKDB_IMAGES)
+				? url.slice(AUDIOBOOKDB_IMAGES.length).replace(/\/$/, '')
+				: '';
+			if (AUDIOBOOKDB_KEY.test(key)) return key;
 		}
 		return null;
 	}
@@ -61,24 +71,31 @@ export class Cover {
 	 * @param {CoverSize} [size] 'small' for a card, 'large' for the book's details
 	 * @returns {string[]}
 	 */
-	static addresses(book, size = 'small'){
+	static addresses(book, size = 'small') {
 		// Amazon's M and L are 160 and 500 pixels tall, Open Library's M and L 180 and 500, AudiobookDB's small and large
 		// 192 and 768: a card's cover sharp on a phone's screen, and the details' at its larger size.
-		const amazon = size === 'small' ? 'MZZZZZZZ' : 'LZZZZZZZ', openLibrary = size === 'small' ? 'M' : 'L';
+		const amazon = size === 'small' ? 'MZZZZZZZ' : 'LZZZZZZZ',
+			openLibrary = size === 'small' ? 'M' : 'L';
 		/** @type {string[]} */
 		const found = [];
-		for(const ed of book.editions){
+		for (const ed of book.editions) {
 			const key = ed.covers.audiobookdb;
-			if(key && AUDIOBOOKDB_KEY.test(key)) found.push(`${AUDIOBOOKDB_IMAGES}${key}/${size}.jpg`);
+			if (key && AUDIOBOOKDB_KEY.test(key)) found.push(`${AUDIOBOOKDB_IMAGES}${key}/${size}.jpg`);
 		}
-		for(const ed of book.editions)
-			for(const [site, asin] of ed.externalList())
-				if(ExternalCatalog.family(site) === 'asin' && ExternalCatalog.isId(site, 'edition', asin)) found.push(`${AMAZON_IMAGES}${encodeURIComponent(asin)}.01.${amazon}.jpg`);
-		for(const ed of book.editions){
+		for (const ed of book.editions)
+			for (const [site, asin] of ed.externalList())
+				if (ExternalCatalog.family(site) === 'asin' && ExternalCatalog.isId(site, 'edition', asin))
+					found.push(`${AMAZON_IMAGES}${encodeURIComponent(asin)}.01.${amazon}.jpg`);
+		for (const ed of book.editions) {
 			const olid = ed.idOn('openlibrary');
-			if(olid && ExternalCatalog.isId('openlibrary', 'edition', olid))
-				found.push(`https://covers.openlibrary.org/b/olid/${encodeURIComponent(olid)}-${openLibrary}.jpg?default=false`);
-			if(ed.isbn) found.push(`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(ed.isbn)}-${openLibrary}.jpg?default=false`);
+			if (olid && ExternalCatalog.isId('openlibrary', 'edition', olid))
+				found.push(
+					`https://covers.openlibrary.org/b/olid/${encodeURIComponent(olid)}-${openLibrary}.jpg?default=false`,
+				);
+			if (ed.isbn)
+				found.push(
+					`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(ed.isbn)}-${openLibrary}.jpg?default=false`,
+				);
 		}
 		return [...new Set(found)];
 	}
@@ -89,5 +106,7 @@ export class Cover {
 	 * @param {number} height
 	 * @returns {boolean}
 	 */
-	static isCover(width, height){ return width > 1 && height > 1; }
+	static isCover(width, height) {
+		return width > 1 && height > 1;
+	}
 }

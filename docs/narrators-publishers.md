@@ -1,6 +1,6 @@
 # Narrators and publishers
 
-The *Narrators* and *Publishers* pages work like the [Authors](authors.md) page, for the narrators and
+The _Narrators_ and _Publishers_ pages work like the [Authors](authors.md) page, for the narrators and
 publishers named on the books' editions. Each lists everyone in the catalog with how many of their books
 and series you have, and the first line of their bio, or when there is none the authors whose books they
 narrate or publish (the three with the most books, "Mostly ..." when there are more); the search box
@@ -23,7 +23,7 @@ with a US and a UK edition read by different narrators is on both narrators' pag
 
 **Add or edit the bio and links**: press **Edit** at the end of their page, as on an author's page. Audible has
 no narrator or publisher pages, so its field keeps the name Audible searches for: type it, or paste the address
-of an Audible search (search for the name and pick *Narrator* or *Publisher* in the filters), for example
+of an Audible search (search for the name and pick _Narrator_ or _Publisher_ in the filters), for example
 `https://www.audible.com/search?searchNarrator=...`, and the link goes to that search. Hardcover lists
 narrators as authors (`https://hardcover.app/authors/...`) and has publisher pages
 (`https://hardcover.app/publishers/...`), and is asked for the number of either (see [Hardcover](hardcover.md)); Goodreads lists narrators as authors too, and has no publisher

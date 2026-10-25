@@ -59,12 +59,12 @@ The pages and the book form's lookup know the external catalogs only through fou
 the lists of them in `CatalogConnectors` (`catalog-connectors.js`), so a catalog is added by writing a class for each
 thing it does and listing it there:
 
-| Base class | What it is | Today | A subclass writes |
-| --- | --- | --- | --- |
-| `FileImporter` | an export file to import (a CSV) | `AudibleImporter`, `GoodreadsImporter` | `CATALOG`, `LABEL`, `readRow` |
-| `FileExporter` | a file for another catalog's import | `GoodreadsExporter` | `CATALOG`, `LABEL`, `FILE_NAME`, `write` |
-| `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync` | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
-| `BookSource` | a catalog the book form's *Fill in* asks | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
+| Base class                           | What it is                                            | Today                                                                                          | A subclass writes                                |
+| ------------------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `FileImporter`                       | an export file to import (a CSV)                      | `AudibleImporter`, `GoodreadsImporter`                                                         | `CATALOG`, `LABEL`, `readRow`                    |
+| `FileExporter`                       | a file for another catalog's import                   | `GoodreadsExporter`                                                                            | `CATALOG`, `LABEL`, `FILE_NAME`, `write`         |
+| `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync`                                                             | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
+| `BookSource`                         | a catalog the book form's _Fill in_ asks              | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
 
 A `CatalogClient` subclass asks the catalog's API and says what your key for it is: `KEY_NAME` (Hardcover calls its
 key a token), `KEY_STORAGE` (where this browser keeps it), `KEY_HELP`, whether nothing works without it (`KEY_NEEDED`),
@@ -141,6 +141,7 @@ make docs     # write api-docs/out/ (make docs API_DOCS=<folder> for another one
 `make lint` runs ESLint with its recommended rules (`eslint.config.js`) over `public/` and `tests/`. It looks
 for likely mistakes, such as unused variables, needless escapes and invisible characters typed into the
 source; it doesn't format, which is Prettier's job (below). The rules are ESLint's own, so:
+
 - a catch that doesn't use the error leaves it out, `catch{ return null; }`, and one that does nothing says
   why, `catch{ /* the address just stays as it was */ }`;
 - a parameter only named to document what an override gets starts with `_` (`FileImporter.readRow(_row, _result)`);

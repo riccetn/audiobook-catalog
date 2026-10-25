@@ -24,11 +24,11 @@ export class HardcoverSource extends BookSource {
 	 * @param {string} value
 	 * @returns {Pasted | null}
 	 */
-	static read(value){
+	static read(value) {
 		const url = HardcoverClient.parseUrl(value);
-		if(!url) return null;
-		if(url.edition) return {catalog: 'hardcover', kind: 'edition', id: url.edition};
-		if(url.book) return {catalog: 'hardcover', kind: 'book', id: url.book};
+		if (!url) return null;
+		if (url.edition) return {catalog: 'hardcover', kind: 'edition', id: url.edition};
+		if (url.book) return {catalog: 'hardcover', kind: 'book', id: url.book};
 		return {catalog: 'hardcover', kind: 'book', id: '', slug: url.slug};
 	}
 
@@ -38,34 +38,39 @@ export class HardcoverSource extends BookSource {
 	 * @param {Pasted} pasted
 	 * @returns {Answers}
 	 */
-	answers(pasted){
-		if(pasted.kind === 'isbn' || pasted.catalog === 'goodreads') return 'also';
-		if(ExternalCatalog.family(pasted.catalog) === 'asin') return 'fallback';
+	answers(pasted) {
+		if (pasted.kind === 'isbn' || pasted.catalog === 'goodreads') return 'also';
+		if (ExternalCatalog.family(pasted.catalog) === 'asin') return 'fallback';
 		return super.answers(pasted);
 	}
 
 	/** @returns {HardcoverClient} its client (lookup() is only asked when it has one) */
-	get hardcover(){ return /** @type {HardcoverClient} */ (this.client); }
+	get hardcover() {
+		return /** @type {HardcoverClient} */ (this.client);
+	}
 
 	/**
 	 * @param {Pasted} pasted
 	 * @returns {Promise<Book | null>}
 	 */
-	async lookup(pasted){
-		if(pasted.kind === 'isbn') return this.by('isbn', pasted.id);
-		if(pasted.catalog === 'goodreads'){
-			if(pasted.kind === 'book') throw new Error('Hardcover knows Goodreads editions (goodreads.com/book/show/…), not their works; paste the edition\'s address');
+	async lookup(pasted) {
+		if (pasted.kind === 'isbn') return this.by('isbn', pasted.id);
+		if (pasted.catalog === 'goodreads') {
+			if (pasted.kind === 'book')
+				throw new Error(
+					"Hardcover knows Goodreads editions (goodreads.com/book/show/…), not their works; paste the edition's address",
+				);
 			return this.by('gr', pasted.id);
 		}
-		if(pasted.catalog !== HardcoverSource.CATALOG) return this.by('asin', pasted.id);
-		if(pasted.kind === 'edition'){
+		if (pasted.catalog !== HardcoverSource.CATALOG) return this.by('asin', pasted.id);
+		if (pasted.kind === 'edition') {
 			const book = await this.book(null, pasted.id);
-			if(!book) throw new Error(`Hardcover has no edition ${pasted.id}`);
+			if (!book) throw new Error(`Hardcover has no edition ${pasted.id}`);
 			return book;
 		}
 		const id = pasted.id || (await HardcoverClient.bookId(this.hardcover, `hardcover.app/books/${pasted.slug}`)).id;
 		const book = await this.book(id, null);
-		if(!book) throw new Error(`Hardcover has no book ${id}`);
+		if (!book) throw new Error(`Hardcover has no book ${id}`);
 		return book;
 	}
 
@@ -75,7 +80,7 @@ export class HardcoverSource extends BookSource {
 	 * @param {string} id
 	 * @returns {Promise<Book | null>}
 	 */
-	async by(kind, id){
+	async by(kind, id) {
 		const hit = (await this.hardcover.find({[kind]: [id]}, () => {}))[kind].get(id);
 		return hit ? this.book(hit.hcb, hit.hc) : null;
 	}
@@ -87,26 +92,28 @@ export class HardcoverSource extends BookSource {
 	 * @param {string | null} editionId
 	 * @returns {Promise<Book | null>}
 	 */
-	async book(bookId, editionId){
+	async book(bookId, editionId) {
 		const client = this.hardcover;
 		/** @type {Unchecked | null} */
 		let edition = null;
-		if(editionId){
-			const [row] = (await client.ask(HardcoverClient.QUERIES.editions, {ids: [Number(editionId)]})).editions || [];
-			if(!Text.isObject(row)) return null;
+		if (editionId) {
+			const [row] =
+				(await client.ask(HardcoverClient.QUERIES.editions, {ids: [Number(editionId)]})).editions || [];
+			if (!Text.isObject(row)) return null;
 			edition = row;
-			if(!bookId && Number.isInteger(row.book_id)) bookId = String(row.book_id);
+			if (!bookId && Number.isInteger(row.book_id)) bookId = String(row.book_id);
 		}
-		if(!bookId) return null;
+		if (!bookId) return null;
 		const [book] = (await client.ask(HardcoverClient.QUERIES.books, {ids: [Number(bookId)]})).books || [];
-		if(!Text.isObject(book) || typeof book.title !== 'string') return null;
-		if(!edition){
-			const [audio] = (await client.ask(HardcoverClient.QUERIES.audioEditions, {book: Number(bookId)})).editions || [];
-			if(Text.isObject(audio)) edition = audio;
+		if (!Text.isObject(book) || typeof book.title !== 'string') return null;
+		if (!edition) {
+			const [audio] =
+				(await client.ask(HardcoverClient.QUERIES.audioEditions, {book: Number(bookId)})).editions || [];
+			if (Text.isObject(audio)) edition = audio;
 		}
 		const rec = HardcoverSync.bookRecord(book);
 		rec.ext = {hardcover: bookId};
-		if(edition) rec.e = [HardcoverSync.edition(edition).toJSON()];
+		if (edition) rec.e = [HardcoverSync.edition(edition).toJSON()];
 		return Book.fromRecord(Book.fixSeriesTitle(rec));
 	}
 }

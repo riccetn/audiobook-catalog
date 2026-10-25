@@ -5,7 +5,8 @@ import {Text} from './text.js';
 /** @type {(s: string) => boolean} */
 const isbn10Ok = s => [...s].reduce((sum, c, i) => sum + (10 - i) * (c === 'X' ? 10 : Number(c)), 0) % 11 === 0;
 /** @type {(s: string) => string} */
-const isbn13Check = s => String((10 - [...s.slice(0, 12)].reduce((sum, c, i) => sum + Number(c) * (i % 2 ? 3 : 1), 0) % 10) % 10);
+const isbn13Check = s =>
+	String((10 - ([...s.slice(0, 12)].reduce((sum, c, i) => sum + Number(c) * (i % 2 ? 3 : 1), 0) % 10)) % 10);
 
 /** Reading and writing ISBNs; every method is static. */
 export class Isbn {
@@ -15,14 +16,17 @@ export class Isbn {
 	 * @param {unknown} text
 	 * @returns {string | null}
 	 */
-	static parse(text){
-		const s = String(text || '').toUpperCase().replace(/ISBN(?:-?1[03])?:?/g, '').replace(/[\s\-="']/g, '');
-		if(/^\d{9}[\dX]$/.test(s)){
-			if(!isbn10Ok(s)) return null;
+	static parse(text) {
+		const s = String(text || '')
+			.toUpperCase()
+			.replace(/ISBN(?:-?1[03])?:?/g, '')
+			.replace(/[\s\-="']/g, '');
+		if (/^\d{9}[\dX]$/.test(s)) {
+			if (!isbn10Ok(s)) return null;
 			const twelve = '978' + s.slice(0, 9);
 			return twelve + isbn13Check(twelve);
 		}
-		if(/^97[89]\d{10}$/.test(s)) return isbn13Check(s) === s[12] ? s : null;
+		if (/^97[89]\d{10}$/.test(s)) return isbn13Check(s) === s[12] ? s : null;
 		return null;
 	}
 
@@ -32,17 +36,24 @@ export class Isbn {
 	 * @param {unknown} text
 	 * @returns {{isbns: string[], bad: string[]}}
 	 */
-	static parseList(text){
+	static parseList(text) {
 		/** @type {string[]} */
-		const isbns = [], bad = [];
-		for(const part of String(text || '').split(/[,;]/).map(x => Text.tidy(x)).filter(Boolean)){
+		const isbns = [],
+			bad = [];
+		for (const part of String(text || '')
+			.split(/[,;]/)
+			.map(x => Text.tidy(x))
+			.filter(Boolean)) {
 			let found = [Isbn.parse(part)];
-			if(!found[0] && part.includes(' ')){
+			if (!found[0] && part.includes(' ')) {
 				const words = part.split(' ').map(Isbn.parse);
-				if(words.every(Boolean)) found = words;
+				if (words.every(Boolean)) found = words;
 			}
-			if(!found[0]){ bad.push(part); continue; }
-			for(const isbn of found) if(isbn && !isbns.includes(isbn)) isbns.push(isbn);
+			if (!found[0]) {
+				bad.push(part);
+				continue;
+			}
+			for (const isbn of found) if (isbn && !isbns.includes(isbn)) isbns.push(isbn);
 		}
 		return {isbns, bad};
 	}
@@ -52,10 +63,10 @@ export class Isbn {
 	 * @param {string} isbn13
 	 * @returns {string}
 	 */
-	static isbn10Of(isbn13){
-		if(!isbn13.startsWith('978')) return '';
+	static isbn10Of(isbn13) {
+		if (!isbn13.startsWith('978')) return '';
 		const nine = isbn13.slice(3, 12);
-		const check = (11 - [...nine].reduce((sum, c, i) => sum + (10 - i) * Number(c), 0) % 11) % 11;
+		const check = (11 - ([...nine].reduce((sum, c, i) => sum + (10 - i) * Number(c), 0) % 11)) % 11;
 		return nine + (check === 10 ? 'X' : String(check));
 	}
 }

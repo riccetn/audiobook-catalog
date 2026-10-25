@@ -1,5 +1,5 @@
 // What differs between the authors, narrators and publishers: their lists (credits.js) and their pages (credit.js).
-import { authorPageHref, narratorPageHref, publisherPageHref } from './store.js';
+import {authorPageHref, narratorPageHref, publisherPageHref} from './store.js';
 /** @import {ContributorKind} from './modules/contributor.js' */
 
 /**
@@ -19,13 +19,40 @@ import { authorPageHref, narratorPageHref, publisherPageHref } from './store.js'
 
 /** @type {Record<'author' | 'narrator' | 'publisher', CreditKind>} */
 export const CREDIT_KINDS = {
-	author: {infoKey: 'authors', hashKey: 'a', one: 'author', many: 'authors', title: 'Authors', list: 'authors.html', page: 'author.html',
-		none: 'No books by this author in the catalog.', site: ['Personal website', 'https://'],
-		href: authorPageHref},
-	narrator: {infoKey: 'narrators', hashKey: 'n', one: 'narrator', many: 'narrators', title: 'Narrators', list: 'narrators.html', page: 'narrator.html',
-		none: 'No books narrated by them in the catalog.', site: ['Personal website', 'https://'],
-		href: narratorPageHref},
-	publisher: {infoKey: 'publishers', hashKey: 'p', one: 'publisher', many: 'publishers', title: 'Publishers', list: 'publishers.html', page: 'publisher.html',
-		none: 'No books from this publisher in the catalog.', site: ['Website', 'https://'],
-		href: publisherPageHref},
+	author: {
+		infoKey: 'authors',
+		hashKey: 'a',
+		one: 'author',
+		many: 'authors',
+		title: 'Authors',
+		list: 'authors.html',
+		page: 'author.html',
+		none: 'No books by this author in the catalog.',
+		site: ['Personal website', 'https://'],
+		href: authorPageHref,
+	},
+	narrator: {
+		infoKey: 'narrators',
+		hashKey: 'n',
+		one: 'narrator',
+		many: 'narrators',
+		title: 'Narrators',
+		list: 'narrators.html',
+		page: 'narrator.html',
+		none: 'No books narrated by them in the catalog.',
+		site: ['Personal website', 'https://'],
+		href: narratorPageHref,
+	},
+	publisher: {
+		infoKey: 'publishers',
+		hashKey: 'p',
+		one: 'publisher',
+		many: 'publishers',
+		title: 'Publishers',
+		list: 'publishers.html',
+		page: 'publisher.html',
+		none: 'No books from this publisher in the catalog.',
+		site: ['Website', 'https://'],
+		href: publisherPageHref,
+	},
 };

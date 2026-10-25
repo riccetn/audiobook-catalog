@@ -27,9 +27,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: npm ci             # Liquid, which writes the pages, and TypeDoc, which writes the docs
+      - run: npm ci # Liquid, which writes the pages, and TypeDoc, which writes the docs
       - run: make pages
-      - run: make docs API_DOCS=public/api   # served at <site>/api/
+      - run: make docs API_DOCS=public/api # served at <site>/api/
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

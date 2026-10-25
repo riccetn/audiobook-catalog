@@ -1,6 +1,6 @@
 # Authors
 
-The *Authors* page lists every author in the catalog, with how many of their books and series you
+The _Authors_ page lists every author in the catalog, with how many of their books and series you
 have; the search box narrows the list by name. Click an author (or an author's name on a book in the
 catalog) to open their page (`author.html`). Its address names the author by the id the catalog keeps for them, which stays the
 same when you correct the name; an address with the name, `author.html#a=Marisol+Quenby`, opens the same page,
@@ -10,7 +10,7 @@ and so do the addresses from when the list showed each author too (`authors.html
 - links to their own website and their author pages on Audible, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB,
   BookBrainz and Wikidata, if you added them;
 - their series, each with how many books you own (of the released total, when the series has release
-  info), the numbers none of their books has (*missing #5–6*), and its books in order;
+  info), the numbers none of their books has (_missing #5–6_), and its books in order;
 - their books outside a series.
 
 The series and titles come from the books: a book is listed for each of its authors, so a book
@@ -30,7 +30,7 @@ form refuses what is neither an id nor an address there (a Hardcover address in 
 Clearing every field keeps nothing about them; the author stays. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
 
 An author is an entry of their own, under the name exactly as the books write it: they stay in the catalog,
-and on *Authors* ("no books yet"), when no book names them any more, until you remove them. The book form
+and on _Authors_ ("no books yet"), when no book names them any more, until you remove them. The book form
 says when a name you type is new (see [Everyday workflows](workflows.md#editing)).
 
 **Rename an author**: change the **Name** in the form and save; every book that credits them gets the new

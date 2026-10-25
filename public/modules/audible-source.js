@@ -9,7 +9,8 @@ import {BookSource} from './book-source.js';
 /** @import {Pasted, Answers} from './book-source.js' */
 
 // What Audible's catalog API is asked for: the people, series, edition details and genres
-const AUDIBLE_GROUPS = 'contributors,media,product_attrs,product_desc,product_details,product_extended_attrs,series,category_ladders';
+const AUDIBLE_GROUPS =
+	'contributors,media,product_attrs,product_desc,product_details,product_extended_attrs,series,category_ladders';
 
 /** Looks books up in Audible's catalog, through the catalog proxy. */
 export class AudibleSource extends BookSource {
@@ -24,8 +25,10 @@ export class AudibleSource extends BookSource {
 	 * @param {string} value
 	 * @returns {Pasted | null}
 	 */
-	static read(value){
-		return /^B0[A-Z0-9]{8}$/i.test(value) ? {catalog: ExternalCatalog.AUDIBLE_SITE, kind: 'edition', id: value.toUpperCase()} : null;
+	static read(value) {
+		return /^B0[A-Z0-9]{8}$/i.test(value)
+			? {catalog: ExternalCatalog.AUDIBLE_SITE, kind: 'edition', id: value.toUpperCase()}
+			: null;
 	}
 
 	/**
@@ -33,7 +36,7 @@ export class AudibleSource extends BookSource {
 	 * @param {Pasted} pasted
 	 * @returns {Answers}
 	 */
-	answers(pasted){
+	answers(pasted) {
 		return ExternalCatalog.family(pasted.catalog) === 'asin' ? 'own' : null;
 	}
 
@@ -42,7 +45,7 @@ export class AudibleSource extends BookSource {
 	 * @param {Pasted} pasted
 	 * @returns {Promise<Book | null>}
 	 */
-	async lookup(pasted){
+	async lookup(pasted) {
 		return this.product(AudibleSource.site(pasted.catalog), pasted.id);
 	}
 
@@ -52,7 +55,7 @@ export class AudibleSource extends BookSource {
 	 * @param {string} key
 	 * @returns {string}
 	 */
-	static site(key){
+	static site(key) {
 		const site = key.replace(/^amazon\./, 'audible.');
 		return ExternalCatalog.get(site)?.group === 'audible' ? site : ExternalCatalog.AUDIBLE_SITE;
 	}
@@ -64,10 +67,14 @@ export class AudibleSource extends BookSource {
 	 * @param {string} asin
 	 * @returns {Promise<Book | null>}
 	 */
-	async product(site, asin){
-		const answer = await this.proxied(`audible/${site}/catalog/products/${encodeURIComponent(asin)}?response_groups=${AUDIBLE_GROUPS}`);
+	async product(site, asin) {
+		const answer = await this.proxied(
+			`audible/${site}/catalog/products/${encodeURIComponent(asin)}?response_groups=${AUDIBLE_GROUPS}`,
+		);
 		const product = answer && Text.isObject(answer.product) ? answer.product : null;
-		return product && typeof product.title === 'string' && Text.tidy(product.title) ? AudibleSource.book(product, site) : null;
+		return product && typeof product.title === 'string' && Text.tidy(product.title)
+			? AudibleSource.book(product, site)
+			: null;
 	}
 
 	/**
@@ -78,34 +85,44 @@ export class AudibleSource extends BookSource {
 	 * @param {string} site
 	 * @returns {Book}
 	 */
-	static book(product, site){
+	static book(product, site) {
 		/** @type {(x: unknown) => string} */
-		const text = x => typeof x === 'string' ? Text.tidy(x.replace(/&amp;/g, '&')) : '';
+		const text = x => (typeof x === 'string' ? Text.tidy(x.replace(/&amp;/g, '&')) : '');
 		/** @type {(x: unknown) => string[]} */
-		const names = x => Array.isArray(x) ? [...new Set(x.map(p => Text.isObject(p) ? text(p.name) : '').filter(Boolean))] : [];
+		const names = x =>
+			Array.isArray(x) ? [...new Set(x.map(p => (Text.isObject(p) ? text(p.name) : '')).filter(Boolean))] : [];
 		/** @type {Record<string, any>} */
 		const rec = {t: text(product.title), a: names(product.authors)};
-		const series = (Array.isArray(product.series) ? product.series : []).filter((/** @type {unknown} */ s) => Text.isObject(s) && text(s.title));
-		const numbered = series.find((/** @type {Unchecked} */ s) => /^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(s.sequence)));
+		const series = (Array.isArray(product.series) ? product.series : []).filter(
+			(/** @type {unknown} */ s) => Text.isObject(s) && text(s.title),
+		);
+		const numbered = series.find((/** @type {Unchecked} */ s) =>
+			/^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(s.sequence)),
+		);
 		const inSeries = numbered || (series.length === 1 ? series[0] : null);
-		if(inSeries){
+		if (inSeries) {
 			rec.s = text(inSeries.title);
-			if(inSeries === numbered) rec.sn = text(inSeries.sequence);
+			if (inSeries === numbered) rec.sn = text(inSeries.sequence);
 		}
 		const genres = (Array.isArray(product.category_ladders) ? product.category_ladders : [])
 			.filter((/** @type {unknown} */ l) => Text.isObject(l) && l.root === 'Genres' && Array.isArray(l.ladder))
-			.map((/** @type {Unchecked} */ l) => { const step = l.ladder[1] || l.ladder[0]; return Text.isObject(step) ? text(step.name) : ''; }).filter(Boolean);
-		if(genres.length) rec.g = [...new Set(genres)].slice(0, 3);
+			.map((/** @type {Unchecked} */ l) => {
+				const step = l.ladder[1] || l.ladder[0];
+				return Text.isObject(step) ? text(step.name) : '';
+			})
+			.filter(Boolean);
+		if (genres.length) rec.g = [...new Set(genres)].slice(0, 3);
 		/** @type {Record<string, any>} */
 		const ed = {ext: {[site]: text(product.asin).toUpperCase()}};
 		const isbn = Isbn.parse(product.isbn);
-		if(isbn) ed.isbn = isbn;
+		if (isbn) ed.isbn = isbn;
 		const narrators = names(product.narrators);
-		if(narrators.length) ed.n = narrators;
-		if(text(product.publisher_name)) ed.p = text(product.publisher_name);
+		if (narrators.length) ed.n = narrators;
+		if (text(product.publisher_name)) ed.p = text(product.publisher_name);
 		const released = BookSource.date(product.release_date);
-		if(released) ed.d = released;
-		if(Number.isInteger(product.runtime_length_min) && product.runtime_length_min > 0) ed.len = product.runtime_length_min;
+		if (released) ed.d = released;
+		if (Number.isInteger(product.runtime_length_min) && product.runtime_length_min > 0)
+			ed.len = product.runtime_length_min;
 		rec.e = [ed];
 		return Book.fromRecord(Book.fixSeriesTitle(rec));
 	}

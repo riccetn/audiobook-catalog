@@ -1,8 +1,8 @@
 # Audiobook catalog
 
 A personal audiobook library, merged from Audible, Goodreads and Hardcover exports, grouped by series
-and searchable by title, author, series and genre. The app is four plain pages (the catalog, *Authors*,
-*Import & export* and *Duplicates*) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
+and searchable by title, author, series and genre. The app is four plain pages (the catalog, _Authors_,
+_Import & export_ and _Duplicates_) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
 and the catalog is kept in the browser's IndexedDB. There is no server code, and the only build step writes the
 pages' HTML from [Liquid](https://liquidjs.com/) templates (`make pages`), so they share their head and nav bar.
 
@@ -26,19 +26,19 @@ On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `l
 
 ## Start your own catalog
 
-The first time the app opens in a browser, the catalog is empty. Fill it from *Import & export*:
+The first time the app opens in a browser, the catalog is empty. Fill it from _Import & export_:
 import an [Audible](docs/audible.md), [Goodreads](docs/goodreads.md), [Hardcover](docs/hardcover.md) or
 [AudiobookDB](docs/audiobookdb.md) library, restore a backup, or add books by hand with **+ Add a book**, whose form can fill itself in from a book's
 page on Open Library, Wikidata or Hardcover, or its ISBN.
 
 ## Using it
 
-- *Series* lists every series and opens each one's books (and edits or removes it); *Books* lists every book, searched,
+- _Series_ lists every series and opens each one's books (and edits or removes it); _Books_ lists every book, searched,
   filtered and sorted; a book's title opens its own page, with everything about it and its **Edit** and **Merge**.
-  *Import & export* imports CSVs, runs Hardcover and AudiobookDB, checks the catalog, makes backups and merges them; *Duplicates*
+  _Import & export_ imports CSVs, runs Hardcover and AudiobookDB, checks the catalog, makes backups and merges them; _Duplicates_
   merges books entered twice.
-- *Authors* gives each author a page with a short bio, links to their website and their Audible, Goodreads
-  and Hardcover pages, and their series and titles ([Authors](docs/authors.md)). *Narrators* and *Publishers*
+- _Authors_ gives each author a page with a short bio, links to their website and their Audible, Goodreads
+  and Hardcover pages, and their series and titles ([Authors](docs/authors.md)). _Narrators_ and _Publishers_
   do the same for everyone named on the editions ([Narrators and publishers](docs/narrators-publishers.md)).
 - Every edit is saved in the browser as you make it. Each browser (and each phone) keeps its own
   catalog, so **Export** a backup now and then: it is the only copy outside the browser.
@@ -69,7 +69,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 This repository is meant to be public, and your catalog never enters it: it lives in your browser.
 
 - The demo data in `sample/` (used by the tests) and every example in the tests and docs are invented.
-- Book covers are loaded from Amazon and Open Library by the books' ASINs and ISBNs; untick *Covers* to
+- Book covers are loaded from Amazon and Open Library by the books' ASINs and ISBNs; untick _Covers_ to
   ask neither.
 - **Nothing backs up your catalog but you.** Clearing the site's data in the browser deletes it, so keep
   the backups you **Export** somewhere safe.

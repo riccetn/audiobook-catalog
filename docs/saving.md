@@ -19,9 +19,9 @@ kept (the tab shows the other's changes from then on). When both tabs changed th
 edition, a series, a person), the tab that saves second saves nothing, names the entry and asks you to
 reload it and make the change again, rather than overwriting the other.
 
-Since the catalog is only in this browser, keep a backup: **Export** on the *Import & export* page (its
+Since the catalog is only in this browser, keep a backup: **Export** on the _Import & export_ page (its
 **Backups** panel comes first there) downloads one. The panel says when this browser last downloaded or
-restored a backup and how many changes were saved since, and the *Series* and *Books* pages show a reminder when changes
+restored a backup and how many changes were saved since, and the _Series_ and _Books_ pages show a reminder when changes
 were saved and the last backup is two weeks old, or 50 changes old (10 when there is none yet). This browser
 keeps that date in localStorage (`audiobook-catalog-last-backup`).
 
@@ -44,7 +44,7 @@ A page reads only what it shows, so a large catalog opens as fast as a small one
 The Duplicates link's count takes every book too: it is kept with the catalog, and a page that changed
 the catalog counts again in the background after it saved.
 
- tied to the address the app is served from: `localhost:8000` and
+tied to the address the app is served from: `localhost:8000` and
 your GitHub Pages site are two catalogs, and so are two browsers on one PC. Move a catalog with a
 backup (below), and combine two that both changed with **Merge** ([Merge a backup from another device](backups.md)).
 
@@ -65,7 +65,7 @@ the values the message names, and Restore it.
 
 ## Backups
 
-**Export** on *Import & export* downloads a backup: the books, series, author, narrator and publisher info, the list of books
+**Export** on _Import & export_ downloads a backup: the books, series, author, narrator and publisher info, the list of books
 imports skip and the "Not duplicates" marks, as one JSON file (its format is in [Data format](data-format.md#backups)). It is the only copy of your catalog
 outside the browser, so export now and then and keep the files somewhere safe.
 

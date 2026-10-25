@@ -4,7 +4,7 @@ The catalog can compare itself with your shelves on [Hardcover](https://hardcove
 values from them, and put your books and dates read on them, through Hardcover's API. Make a token on Hardcover (**Settings → Hardcover API**, `hardcover.app/account/api`)
 with the scopes `read:me`, `read:catalog`, `read:library` and, for exports, `write:library`.
 
-The *Import & export* page has a **Hardcover** panel, and the page asks Hardcover itself. Paste the token
+The _Import & export_ page has a **Hardcover** panel, and the page asks Hardcover itself. Paste the token
 and press **Save token**: it is kept in this browser only, never put in a backup or sent anywhere but to
 Hardcover, and **Remove token** forgets it. Only save it on a device that is yours. Any other page on the
 same site can read it too: on GitHub Pages every project site of an account (`<name>.github.io/...`)
@@ -12,24 +12,24 @@ shares one site, so host the app on its own (sub)domain if you publish other pag
 
 **Compare** reads your Hardcover shelves (it changes nothing, here or on Hardcover) and shows them beside the
 catalog, the way an import does ([the comparison](imports.md#the-comparison)). To work through the catalog a part
-at a time, pick *a series* or *an author* beside the button and type its name (the field offers the names in the
-catalog): only the books of that series, or by that author, here and on your Hardcover *Read* shelf, are compared
+at a time, pick _a series_ or _an author_ beside the button and type its name (the field offers the names in the
+catalog): only the books of that series, or by that author, here and on your Hardcover _Read_ shelf, are compared
 and offered to put on Hardcover (a series spelled another way on Hardcover, `Gull Isle Series`, is the same series).
 Only that part of your shelves is read from Hardcover, so it is quicker: the books there of the series or author,
 and the Hardcover books your books of it are found to be (so a book Hardcover files under another spelling still
 counts). Hardcover finds a series or author by its number, which comes from the Hardcover id in its info form, from
 a series or author there named exactly as you typed, or from your books of it that Hardcover knows.
-**Compare with Hardcover** on a series' page (on *Series*) or on an author's page opens the
-*Import & export* page and compares that series or author at once. The comparison has more groups for Hardcover:
+**Compare with Hardcover** on a series' page (on _Series_) or on an author's page opens the
+_Import & export_ page and compares that series or author at once. The comparison has more groups for Hardcover:
 
 - **Not on your Hardcover Read shelf**: your books Hardcover knows (by an id, ASIN, ISBN or Goodreads id) that
-  aren't on your shelves there, with their dates read. Unticked: tick a book to put it on your *Read* shelf.
-- **Reads Hardcover lacks**: books on your *Read* shelf there without some of your dates read. Unticked:
+  aren't on your shelves there, with their dates read. Unticked: tick a book to put it on your _Read_ shelf.
+- **Reads Hardcover lacks**: books on your _Read_ shelf there without some of your dates read. Unticked:
   tick a book to add those reads on Hardcover.
 - **Save the Hardcover ids found**: ticked, it keeps the Hardcover book and edition ids found for your books,
   so later comparisons and edits find them at once.
 - **On another Hardcover shelf, left alone** and **Not found on Hardcover** list the books that can't be put on
-  your *Read* shelf, and how many dates read have no day (a Hardcover read needs one).
+  your _Read_ shelf, and how many dates read have no day (a Hardcover read needs one).
 
 **Apply** first takes what you ticked into the catalog and saves it, then sends what you ticked to Hardcover;
 nothing is sent unless you ticked it. If another tab saved an edit since you compared, nothing is changed or
@@ -41,11 +41,11 @@ Hardcover, and comparing again shows what is still missing, since nothing alread
 browser can't reach Hardcover at all (offline, or Hardcover refusing a request from a web page), it says so.
 
 **A book's Hardcover id from its address.** The Hardcover app doesn't show ids. In a book's edit form,
-paste the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages into the *Hardcover book* field (under *The book in other catalogs* in the book form), and the page asks Hardcover for the
+paste the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages into the _Hardcover book_ field (under _The book in other catalogs_ in the book form), and the page asks Hardcover for the
 book's id with the same token. An edition's
-address in an edition's *Hardcover edition* field needs no lookup: it holds the edition's id.
+address in an edition's _Hardcover edition_ field needs no lookup: it holds the edition's id.
 
-**Filling in a new book.** The book form's *Fill in from another catalog* takes a book's or edition's page on
+**Filling in a new book.** The book form's _Fill in from another catalog_ takes a book's or edition's page on
 hardcover.app, an Audible or Amazon page, a Goodreads edition's page or an ISBN, and fills in the form from
 Hardcover with the same token: the title, authors, series and number, and an edition (the one named, or the
 book's audiobook edition) with its narrators, ASIN, ISBN, publisher, release date and length. See
@@ -61,7 +61,7 @@ address until Hardcover renames it. Saving the form again later, with Hardcover 
 number. A name Hardcover has no page for is refused. Entries saved before Hardcover ids were numbers keep their
 names until their form is saved.
 
-- **From Hardcover**: the books on your Hardcover *Read* shelf are compared like any import (see [How imports avoid clobbering your edits](imports.md)).
+- **From Hardcover**: the books on your Hardcover _Read_ shelf are compared like any import (see [How imports avoid clobbering your edits](imports.md)).
   A book read as an audiobook edition on Hardcover is added if it is new; a book you read in another
   format, or without an edition picked, only fills in a book you already have. Each gets Hardcover's book
   id (`ext.hardcover` on the book) and an edition with Hardcover's edition id (`ext.hardcover` on the edition), the ASIN (as amazon.com's, the site Hardcover uses), ISBN, narrator, publisher, release
@@ -72,15 +72,15 @@ names until their form is saved.
   when they are numbers in a row of one series ([Box sets](imports.md#box-sets)).
 - **To Hardcover**: the comparison finds each of your books without a Hardcover book id by its editions' Hardcover id, ASIN, ISBN
   or Goodreads id, saves the book's id on the book and the edition's on the edition (an ISBN or
-  Goodreads id only gives the book's id, since it is often the print edition), and the books you tick that aren't on your Hardcover shelves yet go on *Read*, with
-  each dated read as a Hardcover read. A book already on *Read* that you tick gains the reads it lacks. A box set is one
+  Goodreads id only gives the book's id, since it is often the print edition), and the books you tick that aren't on your Hardcover shelves yet go on _Read_, with
+  each dated read as a Hardcover read. A book already on _Read_ that you tick gains the reads it lacks. A box set is one
   Hardcover book, so titles that share its id go on Hardcover once; a title with its own Hardcover book
   id goes on as that book. An edition is only sent with a book when Hardcover says it is an edition of
-  that book, so a box set's edition on a title with its own book id is left out. A book with no date read goes on *Read* without a
+  that book, so a box set's edition on a title with its own book id is left out. A book with no date read goes on _Read_ without a
   read. Dates without a day (`2024-03`) can't be sent and are counted; books Hardcover can't be found by
   are listed: give them a `Hardcover <edition id>` in the edit form (the number in the edition's address).
 
-Nothing is ever changed or removed on either side: a book on another Hardcover shelf (*Want to Read*,
-*Did Not Finish*, ...) is listed and left alone, and ratings and reviews are not touched. Running it again
+Nothing is ever changed or removed on either side: a book on another Hardcover shelf (_Want to Read_,
+_Did Not Finish_, ...) is listed and left alone, and ratings and reviews are not touched. Running it again
 only does what is still missing. Hardcover allows 60 requests a minute, so the page asks once a second;
 a first export of a large catalog takes a few minutes.
