@@ -5297,8 +5297,8 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 	const result = await sync.compare(catalog, () => {}, AudibleSync.part(catalog, 'series', 'Gull Isle'));
 	assert.equal(JSON.stringify(catalog), before, 'comparing changes nothing');
 	assert.deepEqual(sent, [
-		'audible/audible.com/catalog/products?asins=B0LANTERN2&response_groups=series',
-		'audible/audible.com/catalog/products/B0SERIES02?response_groups=relationships,product_attrs',
+		'audible/audible.com/catalog/products?asins=B0LANTERN2&response_groups=series,product_desc',
+		'audible/audible.com/catalog/products/B0SERIES02?response_groups=relationships,product_desc',
 		`audible/audible.com/catalog/products?asins=B0BRINETD4,B0SALTRDAB,B0LANTERN2,B0BOXSET13,B0SALTRD01,B0GULLSNG3,B0PLACEHL5,B0STORIES0,B0NOTSOLD1&response_groups=${AudibleSource.GROUPS}`,
 	]);
 	// Salt Road has two editions there and neither is yours: only what the book has
@@ -5348,6 +5348,46 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 	const second = await new AudibleSync(again.client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
 	assert.match(again.sent[0], /^audible\/audible\.com\/catalog\/products\/B0SERIES02\?/);
 	assert.deepEqual(second.infoIds, []);
+});
+
+test("AudibleSync reads a series by its books when Audible's answer for it has no title", async () => {
+	const catalog = Catalog.fromJSON({
+		books: [
+			{
+				t: 'The Lantern Keeper',
+				a: ['Ann Vale'],
+				s: 'Gull Isle',
+				sn: '2',
+				e: [{ext: {'audible.com': 'B0LANTERN2'}}],
+			},
+		],
+	});
+	const behind = fakeProxyCatalogs();
+	// as Audible may answer a series: its books, and no title
+	const untitled = async route => {
+		const res = await behind.route(route);
+		if (!/products\/B0SERIES02\?/.test(route)) return res;
+		const {product, ...rest} = await res.json();
+		const bare = {...product};
+		delete bare.title;
+		return {ok: true, status: 200, json: async () => ({...rest, product: bare})};
+	};
+	const client = new AudibleClient(untitled, '', async () => {});
+	const result = await new AudibleSync(client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
+	assert.deepEqual(result.missing, ['1. Salt Road', '3. Gull Song', '4. Brine Tide']);
+	assert.equal(result.numbers, 4);
+	// a series the site doesn't have is still none
+	const stub = async route =>
+		/products\/B0SERIES02\?/.test(route)
+			? {ok: true, status: 200, json: async () => ({product: {asin: 'B0SERIES02', asset_details: []}})}
+			: behind.route(route);
+	await assert.rejects(
+		new AudibleSync(new AudibleClient(stub, '', async () => {})).compare(catalog, () => {}, {
+			kind: 'series',
+			name: 'Gull Isle',
+		}),
+		/audible\.com has no series B0SERIES02/,
+	);
 });
 
 test('AudibleSync reads a series on the site of its books, and says when Audible lists none of them', async () => {
