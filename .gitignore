@@ -9,6 +9,7 @@ node_modules/
 
 # written by make pages from templates/
 public/*.html
+public/sw-version.js
 
 # written by make docs
 api-docs/out/

@@ -1,6 +1,8 @@
 // Writes the pages into public/ from the Liquid templates in templates/ (make pages): each page in templates/pages/
 // fills in templates/layout.liquid, which holds what every page shares (the <head>, the title and the nav bar).
-// The pages it writes are not committed (.gitignore), so build before serving or testing.
+// The pages it writes are not committed (.gitignore), so build before serving or testing. Then it writes
+// public/sw-version.js, the version the service worker names its cache by (sw.js).
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -23,3 +25,20 @@ for (const file of fs
 	const html = await engine.renderFile(path.join('pages', file), {page, title: ''});
 	fs.writeFileSync(path.join(site, page), html);
 }
+
+// The version is a hash of every file served (but itself, and the API docs make docs may have put in api/), so
+// a deploy that changes any of them changes sw-version.js, which tells the browser to fetch the app again.
+const VERSION_FILE = 'sw-version.js';
+const hash = crypto.createHash('sha256');
+for (const file of fs
+	.readdirSync(site, {recursive: true, encoding: 'utf8'})
+	.map(f => f.split(path.sep).join('/'))
+	.filter(f => f !== VERSION_FILE && !f.startsWith('api/') && fs.statSync(path.join(site, f)).isFile())
+	.sort()) {
+	hash.update(`${file}\0`);
+	hash.update(fs.readFileSync(path.join(site, file)));
+}
+fs.writeFileSync(
+	path.join(site, VERSION_FILE),
+	`// Written by make pages (build.mjs): a hash of the app's files, which sw.js names its cache by.\nself.APP_VERSION = '${hash.digest('hex').slice(0, 16)}';\n`,
+);

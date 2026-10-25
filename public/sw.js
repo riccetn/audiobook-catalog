@@ -1,7 +1,16 @@
 // The service worker that makes the catalog installable as an app (on a phone, say) and usable offline.
-// Every request goes to the network first, so a new version of the app shows up at once; the cached copy
-// is only used when the network fails. The catalog itself lives in IndexedDB (store.js), not in files.
-const CACHE = 'audiobook-catalog-v12';
+// The app's files are answered from the cache, without asking the network. sw-version.js, which make pages
+// writes, holds a hash of everything served, so a deploy changes it; the browser checks it at each start,
+// and a new version is fetched whole into a cache of its own in the background and shown from the next start
+// on (one version at a time, so a page never mixes an old module with a new one). On this computer (make serve)
+// the network goes first instead, so an edit shows at once. The catalog itself lives in IndexedDB (store.js), not in files.
+importScripts('sw-version.js');
+
+// `self`, as what it is in a service worker (the type checker only knows it as a worker's), with the version
+// sw-version.js set.
+const sw = /** @type {ServiceWorkerGlobalScope & {APP_VERSION: string}} */ (/** @type {unknown} */ (self));
+
+const CACHE = `audiobook-catalog-${sw.APP_VERSION}`;
 const APP = [
 	'./',
 	'index.html',
@@ -77,14 +86,15 @@ const APP = [
 	'modules/audiobookdb-sync.js',
 ];
 
-// `self`, as what it is in a service worker (the type checker only knows it as a worker's).
-const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
+// Served from this computer (make serve), where the files change without a deploy.
+const LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
 
 sw.addEventListener('install', e => {
 	e.waitUntil(
 		caches
 			.open(CACHE)
-			.then(c => c.addAll(APP))
+			// Past the browser's own cache, which may still hold the version before.
+			.then(c => c.addAll(APP.map(file => new Request(file, {cache: 'reload'}))))
 			.then(() => sw.skipWaiting()),
 	);
 });
@@ -108,18 +118,36 @@ function cacheable(req) {
 	return req.method === 'GET' && new URL(req.url).origin === location.origin;
 }
 
+/**
+ * Fetches a request and keeps a copy in the cache when it was answered.
+ * @param {Request} req
+ * @returns {Promise<Response>}
+ */
+function fetchAndKeep(req) {
+	return fetch(req).then(res => {
+		if (res.ok) {
+			const copy = res.clone();
+			caches.open(CACHE).then(c => c.put(req, copy));
+		}
+		return res;
+	});
+}
+
+/**
+ * The cached copy of a request (the app's files are cached without their query), if any.
+ * @param {Request} req
+ * @returns {Promise<Response | undefined>}
+ */
+function cached(req) {
+	return caches.open(CACHE).then(c => c.match(req, {ignoreSearch: true}));
+}
+
 sw.addEventListener('fetch', e => {
 	const req = e.request;
 	if (!cacheable(req)) return;
 	e.respondWith(
-		fetch(req)
-			.then(res => {
-				if (res.ok) {
-					const copy = res.clone();
-					caches.open(CACHE).then(c => c.put(req, copy));
-				}
-				return res;
-			})
-			.catch(() => caches.match(req, {ignoreSearch: true}).then(hit => hit || Response.error())),
+		LOCAL
+			? fetchAndKeep(req).catch(() => cached(req).then(hit => hit || Response.error()))
+			: cached(req).then(hit => hit || fetchAndKeep(req)),
 	);
 });

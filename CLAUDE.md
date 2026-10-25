@@ -161,8 +161,9 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   addresses (`index.html#series=<id>`, `book.html#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are `CATALOG.marks` by book (and edition) ids, so they
   survive a retitle; backups carry them as text (`markTexts`/`addMarkTexts`), and a text that matches no book stays a text mark.
-- `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
-  the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
+- `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is cache-first (network-first on localhost) and caches
+  the app's own files in a cache named by `sw-version.js` (`APP_VERSION`, a hash of `public/` but `api/`, written by `build.mjs`, git-ignored),
+  so a deploy installs a whole new cache in the background; add new files in `public/` to its `APP` list (the smoke test checks every module a
   page imports, and fails on any file in `public/` the list lacks).
 - `book-list.js`: what the series, books and book pages share: a book's card (`bookCard`, only its title, number, authors,
   narrators and dates read) and cover (`coverImage`, an `<img>` that tries each of `Cover.addresses` in turn, unless _Covers_ is off,
@@ -213,6 +214,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   through it. Type checked with the pages (`jsconfig.json`), linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
+  - `service-worker.test.mjs`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-version.js`'s hash.
   - `proxy.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses).
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read

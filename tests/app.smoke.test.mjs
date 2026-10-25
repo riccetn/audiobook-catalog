@@ -3500,7 +3500,7 @@ test("the app can be installed: the manifest's icons and everything the service 
 		.map(f => f.split(path.sep).join('/'));
 	for (const file of served)
 		assert.ok(
-			file === 'sw.js' || cached.includes(file),
+			['sw.js', 'sw-version.js'].includes(file) || cached.includes(file),
 			`public/${file} is part of the app (add it to sw.js's APP list)`,
 		);
 });

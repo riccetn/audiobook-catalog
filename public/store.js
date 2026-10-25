@@ -1469,7 +1469,7 @@ export async function startPage(init, page = {}) {
 
 // Installable as an app (on a phone, say), and usable offline once it is: see sw.js.
 try {
-	navigator.serviceWorker.register('sw.js').catch(() => {});
+	navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).catch(() => {});
 } catch {
 	/* no offline use in this browser */
 }

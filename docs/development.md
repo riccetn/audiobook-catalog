@@ -37,7 +37,10 @@ tests/                node:test suites (*.test.mjs), including the browser smoke
 The pages' HTML is written from Liquid templates (`liquidjs`, a development dependency with one dependency of its
 own), so the `<head>` and the nav bar are written once. `make pages` (`node build.mjs`) renders each
 `templates/pages/<name>.liquid` into `public/<name>.html`; `make test` and `make serve` run it first, and so do
-both workflows. The written pages are in `.gitignore`: edit the template, never `public/*.html`.
+both workflows. The written pages are in `.gitignore`: edit the template, never `public/*.html`. Last it writes
+`public/sw-version.js` (git-ignored too), a hash of every file served, which the service worker names its cache by:
+it serves the app from that cache, so a deploy is picked up because this file changes. On `localhost` it goes to the
+network first, so an edit shows on reload.
 
 A page's template starts by naming the layout and what it fills in, then holds the page's own HTML:
 
@@ -80,7 +83,7 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
 
 ## Tests
 
-- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`), the catalog proxy (`proxy.test.mjs`),
+- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`), the catalog proxy (`proxy.test.mjs`), the service worker (`service-worker.test.mjs`),
   and the browser smoke test (`app.smoke.test.mjs`), which executes each page's real modules against a small fake DOM built from
   its HTML, with a fake `localStorage` holding the demo data, which the page moves into a fake IndexedDB
   (`tests/fake-indexeddb.mjs`) as a browser would (running ES modules in `node:vm` is what needs the flag;

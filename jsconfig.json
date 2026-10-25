@@ -11,5 +11,5 @@
 		"types": []
 	},
 	"include": ["public/**/*.js", "proxy/**/*.js"],
-	"exclude": ["public/sw.js"]
+	"exclude": ["public/sw.js", "public/sw-version.js"]
 }
