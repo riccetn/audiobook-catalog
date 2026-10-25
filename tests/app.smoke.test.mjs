@@ -3476,33 +3476,26 @@ test('merging keeps editions apart when asked, and books merged that way can be 
 	assert.equal(again.els.dupCount.textContent, '');
 });
 
-test("the app can be installed: the manifest's icons and everything the service worker caches exist", () => {
+test("the app can be installed: the manifest's icons exist, and the service worker caches every page and module, and nothing else", () => {
 	const manifest = JSON.parse(read('manifest.webmanifest'));
 	for (const icon of manifest.icons) assert.ok(fs.existsSync(path.join(site, icon.src)), icon.src);
 	assert.ok(manifest.icons.some(i => i.sizes === '512x512') && manifest.icons.some(i => i.sizes === '192x192'));
-	const cached = JSON.parse(
-		read('sw.js')
-			.match(/const APP = (\[[^\]]*\])/)[1]
-			.replace(/'/g, '"')
-			// Prettier ends the list with a comma, which JSON doesn't allow.
-			.replace(/,\s*\]$/, ']'),
-	);
+	// make pages writes the list sw.js caches (sw-app.js) from what public/ holds.
+	const cached = JSON.parse(read('sw-app.js').match(/self\.APP_FILES = (\[.*\]);/)[1]);
 	for (const file of cached.filter(f => f !== './')) assert.ok(fs.existsSync(path.join(site, file)), file);
-	for (const page of PAGES) {
-		assert.ok(cached.includes(page), `sw.js caches ${page}`);
-		assert.ok(read(page).includes('<link rel="manifest" href="manifest.webmanifest">'), page);
-		for (const file of modulesOf(entryOf(page)[0])) assert.ok(cached.includes(file), `sw.js caches ${file}`);
+	/** What the pages use: themselves, the modules they import, and what their <head> and the manifest name. */
+	const used = new Set(['manifest.webmanifest', ...manifest.icons.map(i => i.src)]);
+	for (const page of ALL_PAGES) {
+		const html = read(page);
+		assert.ok(html.includes('<link rel="manifest" href="manifest.webmanifest">'), page);
+		used.add(page);
+		for (const [, href] of html.matchAll(/<link [^>]*href="([^":]+)"/g)) used.add(href);
+		for (const file of modulesOf(entryOf(page)[0])) used.add(file);
 	}
+	for (const file of used) assert.ok(cached.includes(file), `sw.js caches ${file}`);
 	// public/ is what gets served, so it holds the app and nothing else (no catalog files, no notes).
-	const served = fs
-		.readdirSync(site, {recursive: true})
-		.filter(f => fs.statSync(path.join(site, f)).isFile())
-		.map(f => f.split(path.sep).join('/'));
-	for (const file of served)
-		assert.ok(
-			file === 'sw.js' || cached.includes(file),
-			`public/${file} is part of the app (add it to sw.js's APP list)`,
-		);
+	for (const file of cached.filter(f => f !== './'))
+		assert.ok(used.has(file), `public/${file} is served and cached, but no page uses it`);
 });
 
 test('every page is written from its template, with the shared nav bar marking where it is', () => {

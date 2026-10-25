@@ -57,7 +57,7 @@ with two spaces, as `.editorconfig` says; `sample/` and `package-lock.json` are 
 `.githooks/` (the `prepare` script), whose `pre-commit` formats and restages the staged files; `make format-check` fails on anything unformatted.
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `make check` and `make docs` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`, with `make docs API_DOCS=public/api` first, so the API documentation is served at `/api/`.
-The docs are written into `public/` only there: locally they stay in `api-docs/out/` (the smoke test fails on files in `public/` that `sw.js` doesn't list).
+The docs are written into `public/` only there: locally they stay in `api-docs/out/` (`sw-app.js` would list them, and the smoke test fails on files in `public/` no page uses).
 
 TypeDoc (`api-docs/typedoc.json`: `public/*.js` but `sw.js`, and `public/modules/*.js`, with `jsconfig.json`) needs TypeScript's JS API, which
 TypeScript 7 lacks, so `api-docs/` is an npm workspace (root `package.json` `workspaces`) with its own TypeScript 6 in `api-docs/node_modules/`,
@@ -92,8 +92,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     `Backup` (`write` (version 2), `read` (any version), `readRecords`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`, which matches series and people by uid too: `renamed`; `NewerBackup`),
     `BackupV1` (everything about backups before version 2, which `Backup.read` hands anything without a `version`: `read` (the catalog by name, a plain list of books, or several
     files) gives a `BackupInit`, `readIds`, `fromFiles` (the old `data/` files picked together), and the migrations of old book and edition shapes: `fixBooks`, `fixReadDates`,
-    `fixEditions`, `fixBookIds`, `fixEditionIds`, `fixPeople`/`fixNames`). Nothing else imports it: dropping version 1 is deleting `backup-v1.js` and that one line in `Backup.read`
-    (and its `sw.js` entry). Keep anything only the old format needs there, not in `Backup`, `Book`, `Edition` or `Text`. (`Contributor.fixLinks` and `Series.moveSites` stay
+    `fixEditions`, `fixBookIds`, `fixEditionIds`, `fixPeople`/`fixNames`). Nothing else imports it: dropping version 1 is deleting `backup-v1.js` and that one line in `Backup.read`.
+    Keep anything only the old format needs there, not in `Backup`, `Book`, `Edition` or `Text`. (`Contributor.fixLinks` and `Series.moveSites` stay
     where they are: IndexedDB's older records need them too.)
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save; `bookRecord`/`seriesRecord`/`contributorRecord`/`creditsOf`, which a save
@@ -161,9 +161,10 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   addresses (`index.html#series=<id>`, `book.html#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are `CATALOG.marks` by book (and edition) ids, so they
   survive a retitle; backups carry them as text (`markTexts`/`addMarkTexts`), and a text that matches no book stays a text mark.
-- `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is network-first and caches
-  the app's own files; add new files in `public/` to its `APP` list (the smoke test checks every module a
-  page imports, and fails on any file in `public/` the list lacks).
+- `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is cache-first (network-first on localhost) and caches
+  the app's own files: `sw-app.js`, written by `build.mjs` (git-ignored), lists them (`APP_FILES`, every file in `public/` but `sw.js` and `api/`)
+  and names the cache (`APP_VERSION`, their hash), so a deploy installs a whole new cache in the background and no list is kept by hand (the smoke
+  test checks that every page and module a page imports is listed, and fails on a file in `public/` no page uses).
 - `book-list.js`: what the series, books and book pages share: a book's card (`bookCard`, only its title, number, authors,
   narrators and dates read) and cover (`coverImage`, an `<img>` that tries each of `Cover.addresses` in turn, unless _Covers_ is off,
   `coversShown`/`watchCoversBox`, localStorage `audiobook-catalog-covers`), `BookList` (the ids listed, `PAGE_SIZE` = 50 loaded at a
@@ -213,6 +214,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   through it. Type checked with the pages (`jsconfig.json`), linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
+  - `service-worker.test.mjs`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-app.js`'s files and hash.
   - `proxy.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses).
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
