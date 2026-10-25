@@ -140,14 +140,23 @@ make docs     # write api-docs/out/ (make docs API_DOCS=<folder> for another one
 
 `make lint` runs ESLint with its recommended rules (`eslint.config.js`) over `public/` and `tests/`. It looks
 for likely mistakes, such as unused variables, needless escapes and invisible characters typed into the
-source; it doesn't format, which is left to `.editorconfig`. The rules are ESLint's own, so:
+source; it doesn't format, which is Prettier's job (below). The rules are ESLint's own, so:
 - a catch that doesn't use the error leaves it out, `catch{ return null; }`, and one that does nothing says
   why, `catch{ /* the address just stays as it was */ }`;
 - a parameter only named to document what an override gets starts with `_` (`FileImporter.readRow(_row, _result)`);
 - where a rule is wrong for one line, say why beside it:
   `// eslint-disable-next-line no-control-regex -- the separator controls are what it matches`.
 
-`make check` runs all three of test, typecheck and lint, and stops at the first that fails; CI runs it on
+## Format
+
+Prettier lays out the code, JSON, Markdown and YAML (`.prettierrc.json`): tabs, single quotes and 120 columns,
+except Markdown and YAML, which take two spaces. `sample/` (kept in the old data files' compact shape) and
+`package-lock.json` (npm writes it) are left alone (`.prettierignore`), and so is everything `.gitignore` lists.
+`npm install` points git at `.githooks/`, whose `pre-commit` hook formats the files you commit and stages the
+result (a file only partly staged is then staged whole). `make format` formats everything, and `make format-check`
+fails on a file that isn't formatted.
+
+`make check` runs test, typecheck, lint and format-check, and stops at the first that fails; CI runs it on
 every pull request, so running it first catches what CI would.
 
 ## Spelling

@@ -25,7 +25,7 @@ unknown variable or filter fails it). `make test` and `make serve` build first, 
 
 - Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests**. `package.json` says
   `"type": "module"` and its devDependencies are tools only, never served or imported by the app or tests:
-  Liquid (`liquidjs`, `make pages`), TypeScript (`make typecheck`) and ESLint with `@eslint/js` and `globals` (`make lint`),
+  Liquid (`liquidjs`, `make pages`), TypeScript (`make typecheck`), ESLint with `@eslint/js` and `globals` (`make lint`) and Prettier (`make format`),
   plus TypeDoc (`make docs`) in the `api-docs/` workspace; don't add others, use Node built-ins in tests.
 - Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
@@ -39,7 +39,9 @@ make pages      # node build.mjs: write public/*.html from templates/ (needs `np
 make test       # make pages, then node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
 make typecheck  # tsc -p jsconfig.json and -p jsconfig.sw.json (sw.js, with the worker's globals); needs `npm install` once
 make lint       # eslint . with the recommended rules (eslint.config.js); needs `npm install` once
-make check      # test, typecheck and lint, what CI runs; run it before a PR
+make format     # prettier --write . (.prettierrc.json, .prettierignore); needs `npm install` once
+make format-check  # prettier --check ., what make check runs
+make check      # test, typecheck, lint and format-check, what CI runs; run it before a PR
 make docs       # TypeDoc: the API documentation from the JSDoc, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
 make serve      # make pages, then python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/catalog.test.mjs            # one suite (the smoke test reads the pages, so make pages after editing a template) (the smoke test needs --experimental-vm-modules too)
@@ -50,8 +52,9 @@ On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, 
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
-`catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. There is no formatter; `.editorconfig` sets tab
-indentation for code, and otherwise match the surrounding style (see Conventions).
+`catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. Prettier formats (`.prettierrc.json`: tabs, single quotes, 120 columns, no spaces inside braces; Markdown and YAML
+with two spaces, as `.editorconfig` says; `sample/` and `package-lock.json` are left alone, `.prettierignore`). `npm install` points git at
+`.githooks/` (the `prepare` script), whose `pre-commit` formats and restages the staged files; `make format-check` fails on anything unformatted.
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `make check` and `make docs` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`, with `make docs API_DOCS=public/api` first, so the API documentation is served at `/api/`.
 The docs are written into `public/` only there: locally they stay in `api-docs/out/` (the smoke test fails on files in `public/` that `sw.js` doesn't list).
@@ -286,8 +289,7 @@ The repo is public; the user's library is not.
 
 ## Conventions
 
-- Indent with one tab (see `.editorconfig`), semicolons, single quotes, `function name(){` with no space before `{`,
-  compact one-line helpers are fine. Comments explain *why* in plain sentences; JSDoc on
+- Prettier's layout (above): tabs, also in JSON, semicolons, single quotes; leave the layout to it. Comments explain *why* in plain sentences; JSDoc on
   non-obvious functions.
 - Status messages and errors are short, plain English; anything that changes many books shows a preview first.
 - Pages draw with the DOM API, never HTML strings: `buildElement(tag, attrs, ...children)` from `store.js` makes an element

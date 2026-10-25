@@ -16,7 +16,7 @@ make pages    # write the pages into public/ from templates/ (test and serve do 
 make test     # all tests, including a browser smoke test
 make typecheck   # check the code against its types (TypeScript)
 make lint     # look for likely mistakes (ESLint)
-make check    # everything CI runs: test, typecheck and lint
+make check    # everything CI runs: test, typecheck, lint and the format check
 make docs     # the API documentation (TypeDoc) in api-docs/out/; published at <site>/api/ beside the app
 make serve    # serves public/ at http://localhost:8000/ (any static server, or GitHub Pages, works too)
 make help

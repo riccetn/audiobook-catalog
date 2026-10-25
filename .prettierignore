@@ -1,0 +1,7 @@
+# Prettier also skips what .gitignore lists (node_modules/, the written pages, api-docs/out/).
+# npm writes the lock file.
+package-lock.json
+# The tests' demo data, kept in the compact shape of the old data/ files.
+sample/
+# Local API answers kept for reference, never committed.
+.api-samples/

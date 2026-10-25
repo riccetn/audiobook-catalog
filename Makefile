@@ -2,15 +2,16 @@ NODE ?= node
 PORT ?= 8000
 TSC ?= node_modules/.bin/tsc
 ESLINT ?= node_modules/.bin/eslint
+PRETTIER ?= node_modules/.bin/prettier
 TYPEDOC ?= api-docs/node_modules/.bin/typedoc
 API_DOCS ?= api-docs/out
 
-.PHONY: help check pages test typecheck lint docs serve
+.PHONY: help check pages test typecheck lint format format-check docs serve
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
 
-check: test typecheck lint   ## run everything CI runs: the tests, the type check and lint
+check: test typecheck lint format-check   ## run everything CI runs: the tests, the type check, lint and the format check
 
 pages:           ## write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)
 	@test -d node_modules/liquidjs || { echo 'Liquid is not installed: run npm install first'; exit 1; }
@@ -27,6 +28,14 @@ typecheck:       ## check the JavaScript against its JSDoc types with TypeScript
 lint:            ## check the JavaScript for likely mistakes with ESLint (run `npm install` once first)
 	@test -x $(ESLINT) || { echo 'ESLint is not installed: run npm install first'; exit 1; }
 	$(ESLINT) .
+
+format:          ## format the code, JSON, Markdown and YAML with Prettier (the pre-commit hook does this to what you commit)
+	@test -x $(PRETTIER) || { echo 'Prettier is not installed: run npm install first'; exit 1; }
+	$(PRETTIER) --write .
+
+format-check:    ## check that everything is formatted as Prettier would (run `make format` to fix it)
+	@test -x $(PRETTIER) || { echo 'Prettier is not installed: run npm install first'; exit 1; }
+	$(PRETTIER) --check .
 
 docs:            ## write the API documentation from the code's JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first)
 	@test -x $(TYPEDOC) || { echo 'TypeDoc is not installed: run npm install first'; exit 1; }
