@@ -1,7 +1,7 @@
 // Writes the pages into public/ from the Liquid templates in templates/ (make pages): each page in templates/pages/
 // fills in templates/layout.liquid, which holds what every page shares (the <head>, the title and the nav bar).
 // The pages it writes are not committed (.gitignore), so build before serving or testing. Then it writes
-// public/sw-version.js, the version the service worker names its cache by (sw.js).
+// public/sw-app.js, the files the service worker caches and the version it names its cache by (sw.js).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,19 +26,29 @@ for (const file of fs
 	fs.writeFileSync(path.join(site, page), html);
 }
 
-// The version is a hash of every file served (but itself, and the API docs make docs may have put in api/), so
-// a deploy that changes any of them changes sw-version.js, which tells the browser to fetch the app again.
-const VERSION_FILE = 'sw-version.js';
-const hash = crypto.createHash('sha256');
-for (const file of fs
+// What the service worker caches: every file served but itself, what this writes, hidden files and the API docs
+// make docs may have put in api/, so a file added to public/ or taken out of it needs nothing more. The version is a
+// hash of them all, so a deploy that changes any of them changes sw-app.js, which tells the browser to fetch the app again.
+const APP_FILE = 'sw-app.js';
+const files = fs
 	.readdirSync(site, {recursive: true, encoding: 'utf8'})
 	.map(f => f.split(path.sep).join('/'))
-	.filter(f => f !== VERSION_FILE && !f.startsWith('api/') && fs.statSync(path.join(site, f)).isFile())
-	.sort()) {
-	hash.update(`${file}\0`);
-	hash.update(fs.readFileSync(path.join(site, file)));
-}
+	.filter(
+		f =>
+			![APP_FILE, 'sw.js'].includes(f) &&
+			!f.startsWith('api/') &&
+			!f.split('/').some(part => part.startsWith('.')) &&
+			fs.statSync(path.join(site, f)).isFile(),
+	)
+	.sort();
+const hash = crypto.createHash('sha256');
+for (const file of files) hash.update(`${file}\0`).update(fs.readFileSync(path.join(site, file)));
 fs.writeFileSync(
-	path.join(site, VERSION_FILE),
-	`// Written by make pages (build.mjs): a hash of the app's files, which sw.js names its cache by.\nself.APP_VERSION = '${hash.digest('hex').slice(0, 16)}';\n`,
+	path.join(site, APP_FILE),
+	[
+		"// Written by make pages (build.mjs): the app's files, which sw.js caches, and their hash, which it names its cache by.",
+		`self.APP_VERSION = '${hash.digest('hex').slice(0, 16)}';`,
+		`self.APP_FILES = ${JSON.stringify(['./', ...files])};`,
+		'',
+	].join('\n'),
 );

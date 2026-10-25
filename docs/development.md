@@ -38,8 +38,9 @@ The pages' HTML is written from Liquid templates (`liquidjs`, a development depe
 own), so the `<head>` and the nav bar are written once. `make pages` (`node build.mjs`) renders each
 `templates/pages/<name>.liquid` into `public/<name>.html`; `make test` and `make serve` run it first, and so do
 both workflows. The written pages are in `.gitignore`: edit the template, never `public/*.html`. Last it writes
-`public/sw-version.js` (git-ignored too), a hash of every file served, which the service worker names its cache by:
-it serves the app from that cache, so a deploy is picked up because this file changes. On `localhost` it goes to the
+`public/sw-app.js` (git-ignored too): every file in `public/` (but `sw.js` and the API docs), which the service worker
+caches, and a hash of them, which it names its cache by. A file added to `public/` or taken out needs nothing more. It
+serves the app from that cache, so a deploy is picked up because this file changes. On `localhost` it goes to the
 network first, so an edit shows on reload.
 
 A page's template starts by naming the layout and what it fills in, then holds the page's own HTML:
@@ -52,7 +53,7 @@ A page's template starts by naming the layout and what it fills in, then holds t
 
 `title` goes before "· Audiobook Catalog" in the tab (left out on the Series page), `nav` is the nav bar link
 marked current (a book's page marks Books), and `script` is the page's module. The nav bar's links are in
-`layout.liquid`; a new page in it is a line there, a template in `pages/`, and its file in `sw.js`'s `APP` list.
+`layout.liquid`; a new page in it is a line there, and a template in `pages/`.
 The build is strict, so a misspelled variable fails it. Nothing is rendered in the browser: Liquid never reaches
 `public/`.
 
@@ -76,8 +77,7 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
 
 - its ids and addresses go in `ExternalCatalog` (as before), and a proxied API's route in `proxy/worker.js`;
 - an export file's or a shelf sync's panel goes in `templates/pages/import.liquid`, its ids starting with the class's
-  `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`; a shelf sync's panel is `{% render 'shelf-panel', ... %}`);
-- each new module goes in `sw.js`'s `APP` list.
+  `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`; a shelf sync's panel is `{% render 'shelf-panel', ... %}`).
 
 `tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone.
 
@@ -89,7 +89,8 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
   (`tests/fake-indexeddb.mjs`) as a browser would (running ES modules in `node:vm` is what needs the flag;
   Node prints an ExperimentalWarning for it).
 - `.github/workflows/ci.yml` runs the same on GitHub Actions. The smoke test also fails when `public/`
-  holds a file the service worker doesn't cache, so nothing ends up served by accident.
+  holds a file no page uses (a page, a module one imports, or what their `<head>` or the manifest names), as the
+  service worker caches all of it, so nothing ends up served by accident.
 - `.github/workflows/pages.yml` publishes `public/` to GitHub Pages on pushes to `main`.
 
 ## Types

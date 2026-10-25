@@ -3,7 +3,7 @@
 	"name": "Audiobook Catalog",
 	// The pages' modules and the classes they import; the service worker and its version are no API.
 	"entryPoints": ["../public/*.js", "../public/modules/*.js"],
-	"exclude": ["../public/sw.js", "../public/sw-version.js"],
+	"exclude": ["../public/sw.js", "../public/sw-app.js"],
 	"tsconfig": "../jsconfig.json",
 	// TypeDoc reads the code with TypeScript 6, which has the API TypeScript 7 (make typecheck) lacks and disagrees
 	// with it on a few types; the type check is make typecheck's, so this only documents.

@@ -63,8 +63,9 @@ function start({origin = 'https://example.github.io', version = 'v1', stores = n
 		Response,
 		URL,
 		importScripts: file => {
-			assert.equal(file, 'sw-version.js');
+			assert.equal(file, 'sw-app.js');
 			self.APP_VERSION = version;
+			self.APP_FILES = ['./', 'index.html', 'store.js', 'modules/book.js'];
 		},
 	});
 	vm.runInContext(fs.readFileSync(path.join(site, 'sw.js'), 'utf8'), context);
@@ -95,7 +96,10 @@ test("the app's files come from the cache, past the browser's own cache when ins
 	await sw.install();
 	await sw.activate();
 	assert.deepEqual([...sw.stores.keys()], ['audiobook-catalog-v1']);
-	assert.ok(sw.asked.length > 10 && sw.asked.every(a => a.cache === 'reload'));
+	assert.deepEqual(
+		sw.asked.map(a => [new URL(a.url).pathname, a.cache]),
+		['/app/', '/app/index.html', '/app/store.js', '/app/modules/book.js'].map(file => [file, 'reload']),
+	);
 	const fetched = sw.asked.length;
 	assert.equal(await sw.get('store.js'), 'fresh /app/store.js');
 	assert.equal(await sw.get('index.html?x=1'), 'fresh /app/index.html');
@@ -132,14 +136,21 @@ test('on this computer the network goes first, and the cache answers offline', a
 	assert.equal(await sw.get('store.js'), 'fresh /app/store.js');
 });
 
-test('make pages writes the version: a hash of every file served but the API docs', () => {
-	const version = fs.readFileSync(path.join(site, 'sw-version.js'), 'utf8').match(/APP_VERSION = '(\w+)'/)[1];
-	const hash = crypto.createHash('sha256');
-	for (const file of fs
+test('make pages writes the files to cache, every file served but the API docs, and the version, a hash of them', () => {
+	const written = fs.readFileSync(path.join(site, 'sw-app.js'), 'utf8');
+	const files = fs
 		.readdirSync(site, {recursive: true, encoding: 'utf8'})
 		.map(f => f.split(path.sep).join('/'))
-		.filter(f => f !== 'sw-version.js' && !f.startsWith('api/') && fs.statSync(path.join(site, f)).isFile())
-		.sort())
-		hash.update(`${file}\0`).update(fs.readFileSync(path.join(site, file)));
-	assert.equal(version, hash.digest('hex').slice(0, 16));
+		.filter(
+			f =>
+				!['sw.js', 'sw-app.js'].includes(f) &&
+				!f.startsWith('api/') &&
+				fs.statSync(path.join(site, f)).isFile(),
+		)
+		.sort();
+	assert.ok(files.includes('index.html') && files.includes('modules/book.js'));
+	assert.deepEqual(JSON.parse(written.match(/APP_FILES = (\[.*\]);/)[1]), ['./', ...files]);
+	const hash = crypto.createHash('sha256');
+	for (const file of files) hash.update(`${file}\0`).update(fs.readFileSync(path.join(site, file)));
+	assert.equal(written.match(/APP_VERSION = '(\w+)'/)[1], hash.digest('hex').slice(0, 16));
 });
