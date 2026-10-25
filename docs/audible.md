@@ -14,5 +14,26 @@ Only finished books are imported, and books on the exclusion list are skipped. E
 edition: the ASIN, the ISBNs, the narrators, the publisher, the release date and the length, as far as the
 export has them.
 
-Audible's catalog doesn't let a web page ask it about books, so the app can't look up series on Audible.
-Fill in a missing series in the book's edit form, and a series' released total in its series info form.
+## Fill in a series' books from Audible
+
+Audible's catalog doesn't let a web page ask it about books, so it is asked through your
+[catalog proxy](catalog-proxy.md); without one, set up on the _Import & export_ page, there is nothing to compare.
+No Audible account is needed, and nothing is sent to Audible.
+
+1. Press **Compare with Audible** on a series' page (on _Series_), or on the _Import & export_ page type the
+   series beside **Compare** in the **Audible** panel and press it.
+2. The series is read on the Audible site most of its books' ASINs are from (an amazon.de ASIN reads audible.de),
+   as each site has its own ASINs. It is found by the ASIN in the series' Audible field, else from what
+   Audible says of your books in it.
+3. The page shows the series' books on Audible beside yours ([the comparison](imports.md#the-comparison)):
+   what their editions there would fill in on yours (narrators, publisher, release date, length, ISBN), the
+   values that differ, and the series' books on Audible that aren't in the catalog. Box sets, placeholders for
+   books to come and companions without a number aren't listed.
+4. Audible lists every edition it sells of each book (other publishers, abridged ones). A book of yours takes
+   the edition with one of its ASINs, which is ticked; else, when Audible has one edition of its number, that
+   one, which you tick if it is yours. With several and none of yours, the comparison says so: give the book
+   its ASIN in its edit form, and compare again.
+5. **Apply** takes in what you ticked, and keeps the series' Audible id and its count of books (whole numbers)
+   where the series has none yet.
+
+Only series are compared with Audible, not authors.

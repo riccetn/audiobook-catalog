@@ -15,7 +15,11 @@ import {CatalogClient} from './catalog-client.js';
 /** @import {Step} from './catalog-client.js' */
 
 /** @typedef {{kind: 'series' | 'author', name: string, id?: string}} ShelfPart a series or an author, and its id on the other catalog when it has one */
-/** @typedef {{kind: NamedKind, name: string, id: string}} InfoId an id found on the other catalog for a series or person of yours */
+/**
+ * An id found on the other catalog for a series or person of yours: under `catalog` (the key in ExternalCatalog;
+ * the client's CATALOG when left out), and for a series its count of books there (`total`), when it says.
+ * @typedef {{kind: NamedKind, name: string, id: string, catalog?: string, total?: number}} InfoId
+ */
 /**
  * One entry of a plan: your books that are one book there (a box set's titles may be), with the dates read
  * to send (on a catalog that takes them).
@@ -45,6 +49,7 @@ import {CatalogClient} from './catalog-client.js';
  * @property {InfoId[]} infoIds the series and people that gain an id there
  * @property {SyncPlan | null} plan what putting your books there would do; null when it can't be known (no key)
  * @property {string[]} missing the series' books there that aren't in the catalog (a series only)
+ * @property {Book[]} [yours] the incoming books whose edition is yours there (found by its id), ticked at first
  */
 /** @typedef {{shelved: number, reads: number, problems: string[]}} Sent what sending one entry of a plan did */
 /** @typedef {'add' | 'reads'} PlanGroup */
@@ -61,6 +66,8 @@ export class ShelfSync {
 	static NOT_FOUND = '';
 	/** What Compare finds on your books besides the books themselves, which Apply saves when ticked: "ids", "ids and covers". */
 	static FOUND = 'ids';
+	/** What it compares besides every book: a series' books, an author's (their pages link to Compare). */
+	static PARTS = /** @type {readonly ('series' | 'author')[]} */ (['series', 'author']);
 
 	/** @param {CatalogClient} client */
 	constructor(client) {

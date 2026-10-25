@@ -282,7 +282,11 @@ function pendingCompare(compare) {
 			.filter(b => b.kind === 'new' || (b.kind === 'gains' && (b.gains.length || b.added.length)))
 			.map(b => b.at),
 	);
-	const editions = new Set(compare.editionsYours ? books.filter(b => b.editionGains.length).map(b => b.at) : []);
+	// an export's editions are yours, and so are those a catalog found by an id of yours (ShelfComparison.yours)
+	const yours = new Set((compare.online && compare.online.result.yours) || []);
+	const editions = new Set(
+		books.filter(b => b.editionGains.length && (compare.editionsYours || yours.has(b.theirs))).map(b => b.at),
+	);
 	return {...compare, picks: {take, editions, patch: new Set(), add: new Set(), reads: new Set(), ids: true}};
 }
 
@@ -635,7 +639,7 @@ function shelfSections(compare, sync, result) {
 				`Tick a book to add these reads to it on ${label}.`,
 			),
 		);
-	} else
+	} else if (sync.kind.CLIENT.KEY_STORAGE)
 		out.push(
 			para(
 				`Save your ${label} ${sync.kind.CLIENT.KEY_NAME} (below the buttons) to compare your shelves too, and to put books on them.`,
@@ -1060,8 +1064,8 @@ function applyTidy() {
 
 // ------------------------------------------------------------ the catalogs' shelves, and your keys for them
 // Each catalog in CatalogConnectors.SYNCS has a panel (its prefix is its client's CATALOG), with its Compare
-// button and your key for it (Hardcover's token, AudiobookDB's API key), kept in this browser only (never in a
-// backup). Comparing only reads the catalog; applying saves the catalog first, then sends what was ticked,
+// button and, for a catalog that takes one, your key for it (Hardcover's token, AudiobookDB's API key), kept in
+// this browser only (never in a backup). Comparing only reads the catalog; applying saves the catalog first, then sends what was ticked,
 // and that stops if you leave the page, so the browser asks first.
 /** @type {CatalogJob | null} */
 let PAGE_RUN = null; // a run going on in this page (showCatalogJob)
@@ -1470,6 +1474,7 @@ for (const Sync of CatalogConnectors.SYNCS) {
 		prefix = Client.CATALOG;
 	byId(`${prefix}CompareBtn`).addEventListener('click', () => compareShelfSync(Sync));
 	byId(`${prefix}Scope`).addEventListener('change', () => showScope(prefix));
+	if (!Client.KEY_STORAGE) continue; // asked without a key (Audible)
 	byId(`${prefix}KeySave`).addEventListener('click', () => saveKeyOf(Client, false));
 	byId(`${prefix}KeyRemove`).addEventListener('click', () => saveKeyOf(Client, true));
 }
@@ -1510,10 +1515,8 @@ onFilesPicked('importFile', importBackup);
 export const READY = startPage(
 	() => {
 		refreshPage();
-		for (const Sync of CatalogConnectors.SYNCS) {
-			showKey(Sync.CLIENT);
-			showScope(Sync.CLIENT.CATALOG);
-		}
+		for (const Client of CatalogConnectors.CLIENTS) showKey(Client);
+		for (const Sync of CatalogConnectors.SYNCS) showScope(Sync.CLIENT.CATALOG);
 		showProxy();
 		compareFromAddress();
 	},

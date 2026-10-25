@@ -120,7 +120,12 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
       incoming books (`incoming`: the release that is yours, else a lone one; none of several, so not `addable`); for a series or an author only that part
       (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids), `planExport` (every book on Read, as everything in the catalog counts as
       read; a book on another exclusive shelf, To Listen or Currently Listening, is left alone; Read is the Listened shelf); add-only: never takes a book off a
-      shelf, makes a shelf or edits AudiobookDB's catalog). Comparing only reads the catalog; sending only adds.
+      shelf, makes a shelf or edits AudiobookDB's catalog), and `AudibleSync` (a series only, `PARTS`: no shelves or key, so `plan` is null and
+      nothing is sent; reads the series on its books' Audible site (`siteOf`), by the series' ASIN there or `findSeries`, its `relationships`
+      children, then their products `AudibleClient.BATCH` (50) at a time; every edition Audible sells is listed, so a book takes the one with its
+      ASIN (`yours`, ticked at first), else its number's only one; placeholders, box sets and unnumbered ones aren't missing books; `setInfoIds`
+      keeps the series' ASIN under the site and its `total`). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
+      `products`). Comparing only reads the catalog; sending only adds.
     - `BookSource` (a catalog the book form's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
       (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the

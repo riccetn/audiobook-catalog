@@ -67,7 +67,7 @@ thing it does and listing it there:
 | ------------------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | `FileImporter`                       | an export file to import (a CSV)                      | `AudibleImporter`, `GoodreadsImporter`                                                         | `CATALOG`, `LABEL`, `readRow`                    |
 | `FileExporter`                       | a file for another catalog's import                   | `GoodreadsExporter`                                                                            | `CATALOG`, `LABEL`, `FILE_NAME`, `write`         |
-| `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync`                                                             | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
+| `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync`, `AudibleSync`                                              | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
 | `BookSource`                         | a catalog the book form's _Fill in_ asks              | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
 
 A `CatalogClient` subclass asks the catalog's API and says what your key for it is: `KEY_NAME` (Hardcover calls its
@@ -78,6 +78,10 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
 - its ids and addresses go in `ExternalCatalog` (as before), and a proxied API's route in `proxy/worker.js`;
 - an export file's or a shelf sync's panel goes in `templates/pages/import.liquid`, its ids starting with the class's
   `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`; a shelf sync's panel is `{% render 'shelf-panel', ... %}`).
+- a catalog without shelves of yours can still compare a series: `AudibleSync` plans nothing (`plan` is null), its
+  client has no `KEY_STORAGE` (so `CatalogConnectors.CLIENTS` leaves it out), `PARTS` says it compares only
+  series (the pages link only those to it), and its Compare row in the Audible panel is
+  `{% render 'shelf-compare', ..., every: false %}`.
 
 `tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone.
 
