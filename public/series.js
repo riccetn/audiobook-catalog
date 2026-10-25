@@ -27,7 +27,7 @@ import {
 	externalFields,
 	lookupHardcoverField,
 	idFromAddress,
-	shelfCompareLinks,
+	shelfCompareButtons,
 	seriesPageHref,
 	standalonePageHref,
 } from './store.js';
@@ -200,9 +200,8 @@ export function render() {
 			? bookGroups(books, {
 					more: LIST.rest,
 					onMore: () => showMore(),
-					// it can be compared with the catalogs' shelves, and edited, after its books
-					heading: id => [' ', shelfCompareLinks('series', id, label => `Compare with ${label}`)],
-					after: id => seriesEditButton(id),
+					// it can be edited, and compared with the catalogs, after its books
+					after: id => seriesEditButton(id, true),
 				})
 			: [
 					buildElement(
@@ -426,11 +425,13 @@ watchCoversBox(() => render());
 // about it (released total, status, note, author site). Like book edits, it is kept in this browser (see
 // persist). Remove series takes it off its books and removes it.
 /**
- * The Edit button at the end of a series' own page, which opens its form.
+ * The Edit button at the end of a series' own page, which opens its form, and with `compare` (it has books)
+ * the buttons that compare it with the catalogs.
  * @param {string} id the series'
+ * @param {boolean} [compare]
  * @returns {HTMLDivElement}
  */
-function seriesEditButton(id) {
+function seriesEditButton(id, compare = false) {
 	return buildElement(
 		'div',
 		{class: 'page-actions'},
@@ -439,6 +440,7 @@ function seriesEditButton(id) {
 			{type: 'button', class: 'sedit', 'data-series': id, onclick: () => openSeriesForm(id)},
 			'Edit',
 		),
+		...(compare ? shelfCompareButtons('series', id, label => `Compare with ${label}`) : []),
 	);
 }
 

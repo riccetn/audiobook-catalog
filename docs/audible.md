@@ -20,7 +20,7 @@ Audible's catalog doesn't let a web page ask it about books, so it is asked thro
 [catalog proxy](catalog-proxy.md); without one, set up on the _Import & export_ page, there is nothing to compare.
 No Audible account is needed, and nothing is sent to Audible.
 
-1. Press **Compare with Audible** on a series' page (on _Series_), or on the _Import & export_ page type the
+1. Press **Compare with Audible** beside **Edit** at the end of a series' page (on _Series_), or on the _Import & export_ page type the
    series beside **Compare** in the **Audible** panel and press it.
 2. The series is read on the Audible site most of its books' ASINs are from (an amazon.de ASIN reads audible.de),
    as each site has its own ASINs. It is found by the ASIN in the series' Audible field, else from what

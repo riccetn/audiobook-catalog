@@ -36,6 +36,7 @@ import {
 	spell,
 	valueFromPageHash,
 	idFromAddress,
+	takeShelfCompare,
 	buildElement,
 	fillElement,
 	noteBackup,
@@ -1240,27 +1241,36 @@ function showScope(online) {
 }
 
 /**
- * A series' or an author's page links here to compare their books with a catalog's shelves
- * (#hardcover-series=<id>, #audiobookdb-author=<id>): pick them beside that Compare button, and compare.
+ * A Compare button on a series' or an author's page opens this page to compare their books with a catalog
+ * (takeShelfCompare; older links name it in the address, #hardcover-series=<id>, #audiobookdb-author=<id>):
+ * pick them beside that Compare button, and compare.
  */
 async function compareFromAddress() {
-	const Sync = CatalogConnectors.SYNCS.find(S => location.hash.startsWith(`#${S.CLIENT.CATALOG}-`));
-	if (!Sync || !(await holdWholeCatalog())) return; // the names are the catalog's
-	const online = Sync.CLIENT.CATALOG;
-	for (const [kind, key] of /** @type {const} */ ([
-		['series', 'series'],
-		['author', 'authors'],
-	])) {
-		const id = idFromAddress(key, valueFromPageHash(location.hash, `${online}-${kind}`));
-		const name = id === null ? undefined : CATALOG.nameOf(key, id);
-		if (name === undefined) continue;
-		fieldById(`${online}Scope`).value = kind;
-		fieldById(`${online}ScopeName`).value = name;
-		showScope(online);
-		byId(`${online}Panel`).scrollIntoView({block: 'start'});
-		await compareShelfSync(Sync);
-		return;
-	}
+	const handed = takeShelfCompare();
+	/** @type {(Sync: SyncClass) => {kind: 'series' | 'author', id: string | null} | null} */
+	const asked = Sync => {
+		const online = Sync.CLIENT.CATALOG;
+		if (handed) return handed.catalog === online ? {kind: handed.kind, id: handed.id} : null;
+		if (!location.hash.startsWith(`#${online}-`)) return null;
+		for (const kind of /** @type {const} */ (['series', 'author'])) {
+			const value = valueFromPageHash(location.hash, `${online}-${kind}`);
+			if (value !== null) return {kind, id: value};
+		}
+		return null;
+	};
+	const Sync = CatalogConnectors.SYNCS.find(asked);
+	const request = Sync && asked(Sync);
+	if (!Sync || !request || !(await holdWholeCatalog())) return; // the names are the catalog's
+	const online = Sync.CLIENT.CATALOG,
+		key = request.kind === 'series' ? 'series' : 'authors';
+	const id = idFromAddress(key, request.id);
+	const name = id === null ? undefined : CATALOG.nameOf(key, id);
+	if (name === undefined) return;
+	fieldById(`${online}Scope`).value = request.kind;
+	fieldById(`${online}ScopeName`).value = name;
+	showScope(online);
+	byId(`${online}Panel`).scrollIntoView({block: 'start'});
+	await compareShelfSync(Sync);
 }
 
 /**

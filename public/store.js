@@ -197,7 +197,7 @@ export const seriesPageHref = id => pageHref('index.html', '#series=' + hashValu
 export const standalonePageHref = () => pageHref('index.html', '#standalone');
 /**
  * The address that compares a series' or an author's books with a catalog's shelves on the Import & export page
- * (`import.html#hardcover-series=<id>`).
+ * (`import.html#hardcover-series=<id>`): what a Compare button opens where this tab keeps nothing, and older links.
  * @param {string} catalog the catalog's key, as its client class says it (CatalogClient.CATALOG)
  * @param {'series' | 'author'} kind
  * @param {string} id the series' or the author's
@@ -206,24 +206,72 @@ export const standalonePageHref = () => pageHref('index.html', '#standalone');
 export const shelfCompareHref = (catalog, kind, id) => `import.html#${catalog}-${kind}=` + hashValue(id);
 
 /**
- * Links that compare a series' or an author's books with each catalog's shelves (CatalogConnectors.SYNCS, those that compare them),
- * with a space between them; `words(label)` is each link's text.
+ * What a Compare button asks the Import & export page to compare: a series' or an author's books (by id) with
+ * a catalog's (its client's CATALOG).
+ * @typedef {{catalog: string, kind: 'series' | 'author', id: string}} CompareRequest
+ */
+/** Where a Compare button leaves its CompareRequest for the Import & export page: this tab only, read once. */
+export const COMPARE_STORAGE_KEY = 'audiobook-catalog-compare';
+
+/**
+ * Buttons that compare a series' or an author's books with each catalog that compares them
+ * (CatalogConnectors.SYNCS, by PARTS); `words(label)` is each button's text.
  * @param {'series' | 'author'} kind
  * @param {string} id
  * @param {(label: string) => string} words
- * @returns {Child[]}
+ * @returns {HTMLButtonElement[]}
  */
-export function shelfCompareLinks(kind, id, words) {
-	return joined(
-		CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind)).map(({CLIENT: Client}) =>
-			buildElement(
-				'a',
-				{class: 'catalogCompare', href: shelfCompareHref(Client.CATALOG, kind, id)},
-				words(Client.LABEL),
-			),
+export function shelfCompareButtons(kind, id, words) {
+	return CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind)).map(({CLIENT: Client}) =>
+		buildElement(
+			'button',
+			{
+				type: 'button',
+				class: 'catalogCompare',
+				'data-compare': Client.CATALOG,
+				onclick: () => openShelfCompare({catalog: Client.CATALOG, kind, id}),
+			},
+			words(Client.LABEL),
 		),
-		' ',
 	);
+}
+
+/**
+ * Open the Import & export page to compare `request`, handed over in this tab's sessionStorage, so the address
+ * stays the page's own and a reload or Back doesn't compare again; a browser that keeps nothing there gets
+ * the comparison's address (shelfCompareHref).
+ * @param {CompareRequest} request
+ */
+export function openShelfCompare(request) {
+	let address = 'import.html';
+	try {
+		sessionStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(request));
+	} catch {
+		address = shelfCompareHref(request.catalog, request.kind, request.id);
+	}
+	location.assign(address);
+}
+
+/**
+ * The comparison a Compare button handed over (openShelfCompare), taken so it is done once; null for none.
+ * @returns {CompareRequest | null}
+ */
+export function takeShelfCompare() {
+	try {
+		const raw = sessionStorage.getItem(COMPARE_STORAGE_KEY);
+		if (raw === null) return null;
+		sessionStorage.removeItem(COMPARE_STORAGE_KEY);
+		/** @type {unknown} */
+		const request = JSON.parse(raw);
+		return Text.isObject(request) &&
+			typeof request.catalog === 'string' &&
+			(request.kind === 'series' || request.kind === 'author') &&
+			typeof request.id === 'string'
+			? {catalog: request.catalog, kind: request.kind, id: request.id}
+			: null;
+	} catch {
+		return null; // nothing kept, or not what a button keeps
+	}
 }
 
 /**

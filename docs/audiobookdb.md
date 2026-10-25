@@ -50,8 +50,8 @@ AudiobookDB doesn't keep dates read, ratings or reviews, so none are compared or
 the names in the catalog): only the books of that series, or by that author, are looked up, compared and offered
 to put on AudiobookDB. The series or author is found on AudiobookDB by the AudiobookDB id in its info form, else
 from your books of it there. For a series, the books AudiobookDB lists in it that aren't in the catalog are
-listed too, to look through. **Compare with AudiobookDB** on a series' page (on _Series_) or on an author's
-page opens the _Import & export_ page and compares that series or author at once.
+listed too, to look through. The **Compare with AudiobookDB** button beside **Edit**, at the end of a series' page (on _Series_) or an author's
+page, opens the _Import & export_ page and compares that series or author at once.
 
 ## Apply
 

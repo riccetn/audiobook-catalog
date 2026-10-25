@@ -541,13 +541,6 @@ button:focus {
 .author-links .authorlink {
 	font-size: 0.82rem;
 }
-.author-actions {
-	margin: 0 0 1.4rem;
-}
-.catalogCompare {
-	font-size: 0.8rem;
-	color: var(--moss);
-}
 .author-books {
 	list-style: none;
 	margin: 0;
@@ -682,6 +675,7 @@ button:focus {
 }
 .page-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 0.5rem;
 	margin: 0.9rem 0 0;
 }
@@ -1346,14 +1340,6 @@ button:focus {
 .series-title a:hover,
 .book .title a:hover {
 	color: var(--moss);
-}
-.series-title a.catalogCompare {
-	color: var(--moss);
-	font-family: system-ui, sans-serif;
-	font-weight: normal;
-}
-.series-title a.catalogCompare:hover {
-	color: var(--moss-dark);
 }
 .filtersBtn {
 	display: none;
