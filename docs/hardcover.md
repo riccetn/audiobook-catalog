@@ -19,7 +19,7 @@ Only that part of your shelves is read from Hardcover, so it is quicker: the boo
 and the Hardcover books your books of it are found to be (so a book Hardcover files under another spelling still
 counts). Hardcover finds a series or author by its number, which comes from the Hardcover id in its info form, from
 a series or author there named exactly as you typed, or from your books of it that Hardcover knows.
-**Compare with Hardcover** on a series' page (on _Series_) or on an author's page opens the
+The **Compare with Hardcover** button beside **Edit**, at the end of a series' page (on _Series_) or an author's page, opens the
 _Import & export_ page and compares that series or author at once. The comparison has more groups for Hardcover:
 
 - **Not on your Hardcover Read shelf**: your books Hardcover knows (by an id, ASIN, ISBN or Goodreads id) that

@@ -193,7 +193,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
   `<CATALOG>Key`/`KeySave`/`KeyRemove`/`KeyState`, `showKey`/`saveKeyOf`). The comparison an export file's import (`compareExport`), or a shelf sync's Compare
-  (`compareShelfSync(Sync)`; for a series or an author, which their pages link to with `shelfCompareLinks`/`shelfCompareHref`, `#hardcover-series=<id>`/`#audiobookdb-author=<id>`;
+  (`compareShelfSync(Sync)`; for a series or an author, which their pages' buttons beside Edit open with `shelfCompareButtons`/`openShelfCompare`: a `CompareRequest` handed over in sessionStorage (`COMPARE_STORAGE_KEY`, read once by `takeShelfCompare`), else, and from older links, the address `shelfCompareHref`, `#hardcover-series=<id>`/`#audiobookdb-author=<id>`;
   `scopeOf`/`showScope` by the panel's prefix), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
   `picks`; `drawCompare`, `shelfSections`; Apply runs `Comparison.apply` on a copy, then for a shelf sync saves and `push`es the ticked part of the plan, `applyShelfSync`),
   file exports (`exportFile`), Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.

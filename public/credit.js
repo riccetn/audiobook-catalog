@@ -30,7 +30,7 @@ import {
 	readExternalFields,
 	externalLinks,
 	lookupHardcoverField,
-	shelfCompareLinks,
+	shelfCompareButtons,
 	bookPageHref,
 	seriesPageHref,
 } from './store.js';
@@ -200,13 +200,6 @@ function renderCreditPage(id) {
 		!info.bio &&
 			!links.length &&
 			buildElement('p', {class: 'hint'}, 'No bio or links yet: add them with Edit, at the end of the page.'),
-		KIND === CREDIT_KINDS.author &&
-			count > 0 &&
-			buildElement(
-				'p',
-				{class: 'author-actions'},
-				shelfCompareLinks('author', id, label => `Compare their books with ${label}`),
-			),
 	];
 	series.forEach(s =>
 		out.push(
@@ -249,6 +242,9 @@ function renderCreditPage(id) {
 			'div',
 			{class: 'page-actions'},
 			buildElement('button', {type: 'button', class: 'aedit', onclick: () => openCreditForm(id)}, 'Edit'),
+			...(KIND === CREDIT_KINDS.author && count > 0
+				? shelfCompareButtons('author', id, label => `Compare their books with ${label}`)
+				: []),
 		),
 	);
 	fillElement(byId('creditBody'), out);

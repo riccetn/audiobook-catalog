@@ -420,6 +420,7 @@ async function boot({
 	catalogs = null,
 	proxy = null,
 	languages = ['en-US', 'en'],
+	session = new Map(),
 } = {}) {
 	await settled(storage); // a page loaded after another saved reads what it saved
 	if (files && !storage.has(CATALOG_KEY)) storage.set(CATALOG_KEY, stored(files));
@@ -443,6 +444,12 @@ async function boot({
 		getItem: k => (storage.has(k) ? storage.get(k) : null),
 		setItem: (k, v) => storage.set(k, String(v)),
 		removeItem: k => storage.delete(k),
+	};
+	// this tab's sessionStorage: a Map too, which a page opened from this one is booted with
+	const sessionStorage = {
+		getItem: k => (session.has(k) ? session.get(k) : null),
+		setItem: (k, v) => session.set(k, String(v)),
+		removeItem: k => session.delete(k),
 	};
 	// The page asks nothing of the server it came from; only Hardcover, Open Library, Wikidata and the
 	// catalog proxy (a workers.dev address), when a test gives a fake of them.
@@ -468,14 +475,18 @@ async function boot({
 		}
 	}
 	// The session history: `entries` of {hash, state}, `at` the current one; back() and forward() fire popstate.
-	// a page sent elsewhere (location.replace) says where in `replaced`
+	// a page sent elsewhere (location.replace) says where in `replaced`, one it opens (location.assign) in `assigned`
 	const location = {
 		href: page,
 		hash,
 		pathname: '/' + page,
 		replaced: null,
+		assigned: null,
 		replace(url) {
 			this.replaced = url;
+		},
+		assign(url) {
+			this.assigned = url;
 		},
 	};
 	const windowListeners = {};
@@ -524,6 +535,7 @@ async function boot({
 		Node,
 		navigator,
 		localStorage,
+		sessionStorage,
 		indexedDB: database,
 		IDBKeyRange: FakeKeyRange,
 		structuredClone,
@@ -2999,7 +3011,7 @@ test('a series can be edited in the page, and removed from its books', async () 
 	await idle();
 	assert.match(
 		els.results.innerHTML,
-		/<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button><\/div><\/div>$/,
+		/<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare with \w+<\/button>)+<\/div><\/div>$/,
 		'at the end of the page of the series',
 	);
 	const books = await boot({page: 'books.html', storage});
@@ -3915,15 +3927,25 @@ test("the Hardcover comparison can be only a series' or an author's books", asyn
 test("a series' or an author's page links to comparing their books with Hardcover, which starts it", async () => {
 	const home = await boot({hash: '#series=The+Lantern+Coast'});
 	await idle();
+	// at the end of the page, beside Edit
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<a class="catalogCompare" href="import\.html#hardcover-series=[^"]+">Compare with Hardcover<\/a>/,
+		/<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button><button type="button" class="catalogCompare" data-compare="hardcover">Compare with Hardcover<\/button>/,
 	);
-	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
+	const session = new Map();
+	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby', session});
 	assert.match(
 		author.readable(author.els.creditBody.innerHTML),
-		/<a class="catalogCompare" href="import\.html#hardcover-author=[^"]+">Compare their books with Hardcover<\/a>/,
+		/<div class="page-actions"><button type="button" class="aedit">Edit<\/button><button type="button" class="catalogCompare" data-compare="hardcover">Compare their books with Hardcover<\/button>/,
 	);
+	// the button hands the comparison over in this tab's sessionStorage, and opens Import & export as it is
+	author.els.creditBody.querySelector('button[data-compare="hardcover"]').listeners.click[0]();
+	assert.equal(author.ctx.location.assigned, 'import.html');
+	assert.deepEqual(JSON.parse(session.get('audiobook-catalog-compare')), {
+		catalog: 'hardcover',
+		kind: 'author',
+		id: author.get('CATALOG.nameIds.authors.get("Marisol Quenby")'),
+	});
 
 	const mine = [
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
@@ -3935,13 +3957,15 @@ test("a series' or an author's page links to comparing their books with Hardcove
 		return 0;
 	};
 	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	// the catalog Import & export reads is this one, where Ann Vale is known by a name, as from an older link
+	session.set('audiobook-catalog-compare', JSON.stringify({catalog: 'hardcover', kind: 'author', id: 'Ann Vale'}));
 	const {els, get, readable} = await boot({
 		page: 'import.html',
-		hash: '#hardcover-author=Ann+Vale',
 		files: {'books.json': JSON.stringify(mine)},
 		hardcover: hc.fetch,
 		setTimeout,
 		storage,
+		session,
 	});
 	await idle();
 	assert.deepEqual([els.hardcoverScope.value, els.hardcoverScopeName.value], ['author', 'Ann Vale']);
@@ -4140,12 +4164,12 @@ test("an AudiobookDB comparison can be only a series' or an author's books, and 
 	await idle();
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<a class="catalogCompare" href="import\.html#audiobookdb-series=[^"]+">Compare with AudiobookDB<\/a>/,
+		/<button type="button" class="catalogCompare" data-compare="audiobookdb">Compare with AudiobookDB<\/button>/,
 	);
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
 	assert.match(
 		author.readable(author.els.creditBody.innerHTML),
-		/<a class="catalogCompare" href="import\.html#audiobookdb-author=[^"]+">Compare their books with AudiobookDB<\/a>/,
+		/<button type="button" class="catalogCompare" data-compare="audiobookdb">Compare their books with AudiobookDB<\/button>/,
 	);
 
 	const mine = [
@@ -4200,10 +4224,10 @@ test("a series is compared with Audible through the proxy, and Apply fills in it
 	await idle();
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<a class="catalogCompare" href="import\.html#audible-series=[^"]+">Compare with Audible<\/a>/,
+		/<button type="button" class="catalogCompare" data-compare="audible">Compare with Audible<\/button>/,
 	);
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
-	assert.doesNotMatch(author.els.creditBody.innerHTML, /#audible-author/, 'Audible compares a series only');
+	assert.doesNotMatch(author.els.creditBody.innerHTML, /data-compare="audible"/, 'Audible compares a series only');
 
 	const mine = [
 		{t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0LANTERN2'}}]},
@@ -4540,7 +4564,7 @@ test("author info can be added, edited and removed on the author's page, and lin
 	);
 	assert.match(
 		els.creditBody.innerHTML,
-		/<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button><\/div>$/,
+		/<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare their books with \w+<\/button>)+<\/div>$/,
 	);
 	editClick();
 	assert.ok(els.creditForm.classList.contains('open'));
