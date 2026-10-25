@@ -154,8 +154,8 @@ Prettier lays out the code, JSON, Markdown and YAML (`.prettierrc.json`): tabs, 
 except Markdown and YAML, which take two spaces. `sample/` (kept in the old data files' compact shape) and
 `package-lock.json` (npm writes it) are left alone (`.prettierignore`), and so is everything `.gitignore` lists.
 `npm install` points git at `.githooks/`, whose `pre-commit` hook formats the files you commit and stages the
-result (a file only partly staged is then staged whole), then lints the JavaScript you commit with ESLint and stops
-the commit on an error (a warning is shown but lets it through; `git commit --no-verify` skips the hook).
+result (a file only partly staged is then staged whole), then lints the JavaScript you commit with ESLint and type
+checks the project with TypeScript, stopping the commit on an error (a warning is shown but lets it through; `git commit --no-verify` skips the hook).
 `make format` formats everything, and `make format-check` fails on a file that isn't formatted.
 
 `make check` runs test, typecheck, lint and format-check, and stops at the first that fails; CI runs it on
