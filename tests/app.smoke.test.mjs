@@ -3917,12 +3917,12 @@ test("a series' or an author's page links to comparing their books with Hardcove
 	await idle();
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<a class="hardcoverCompare" href="import\.html#hardcover-series=[^"]+">Compare with Hardcover<\/a>/,
+		/<a class="catalogCompare" href="import\.html#hardcover-series=[^"]+">Compare with Hardcover<\/a>/,
 	);
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
 	assert.match(
 		author.readable(author.els.creditBody.innerHTML),
-		/<a class="hardcoverCompare" href="import\.html#hardcover-author=[^"]+">Compare their books with Hardcover<\/a>/,
+		/<a class="catalogCompare" href="import\.html#hardcover-author=[^"]+">Compare their books with Hardcover<\/a>/,
 	);
 
 	const mine = [
@@ -4140,12 +4140,12 @@ test("an AudiobookDB comparison can be only a series' or an author's books, and 
 	await idle();
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<a class="audiobookdbCompare" href="import\.html#audiobookdb-series=[^"]+">Compare with AudiobookDB<\/a>/,
+		/<a class="catalogCompare" href="import\.html#audiobookdb-series=[^"]+">Compare with AudiobookDB<\/a>/,
 	);
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
 	assert.match(
 		author.readable(author.els.creditBody.innerHTML),
-		/<a class="audiobookdbCompare" href="import\.html#audiobookdb-author=[^"]+">Compare their books with AudiobookDB<\/a>/,
+		/<a class="catalogCompare" href="import\.html#audiobookdb-author=[^"]+">Compare their books with AudiobookDB<\/a>/,
 	);
 
 	const mine = [
@@ -4200,10 +4200,10 @@ test("a series is compared with Audible through the proxy, and Apply fills in it
 	await idle();
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<a class="audibleCompare" href="import\.html#audible-series=[^"]+">Compare with Audible<\/a>/,
+		/<a class="catalogCompare" href="import\.html#audible-series=[^"]+">Compare with Audible<\/a>/,
 	);
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
-	assert.doesNotMatch(author.els.creditBody.innerHTML, /audibleCompare/, 'Audible compares a series only');
+	assert.doesNotMatch(author.els.creditBody.innerHTML, /#audible-author/, 'Audible compares a series only');
 
 	const mine = [
 		{t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0LANTERN2'}}]},
