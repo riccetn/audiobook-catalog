@@ -8,7 +8,7 @@ import {Comparison} from './comparison.js';
 /** @import {Book} from './book.js' */
 /** @import {Catalog} from './catalog.js' */
 /** @import {MergeOptions, MergeReport} from './merger.js' */
-/** @import {ComparedBook, Difference} from './comparison.js' */
+/** @import {ComparedBook, Difference, SeriesRename} from './comparison.js' */
 /** @import {ShelfComparison} from './shelf-sync.js' */
 
 /**
@@ -180,12 +180,13 @@ export class MultiComparison {
 	 * Take into `catalog` (changed in place) what `picks` pick of `result` (compare() with these sources): each
 	 * source's new books and gains picked, as importing them would (their editions only where picked), then
 	 * the values picked. The differences are looked for again in the catalog as it is now, so a value that no
-	 * longer differs is left alone. Ids found are kept by the page, as each catalog keeps its own.
+	 * longer differs is left alone; a series picked that renames the series (Comparison.seriesRenames, by
+	 * every source) renames it on all its books. Ids found are kept by the page, as each catalog keeps its own.
 	 * @param {Catalog} catalog
 	 * @param {{incoming: Book[], opts?: MergeOptions}[]} sources
 	 * @param {MultiResult} result
 	 * @param {MultiPicks} picks
-	 * @returns {{reports: MergeReport[], patched: number}}
+	 * @returns {{reports: MergeReport[], patched: number, renamed: SeriesRename[]}}
 	 */
 	static apply(catalog, sources, result, picks) {
 		/** @type {Set<string>} "<source>:<key>" of the differences picked */
@@ -206,14 +207,22 @@ export class MultiComparison {
 		const differences = MultiComparison.differences(catalog, now).filter(([source, d]) =>
 			wanted.has(`${source}:${d.key}`),
 		);
+		// worked out before the imports, whose new books may be in the series by its new name
+		const renames = Comparison.seriesRenames(
+			catalog,
+			now.flatMap(s => s.comparison.books),
+		);
 		const reports = sources.map((s, source) => {
 			const picked = (/** @type {Set<string>} */ set) => (/** @type {Book} */ b) =>
 				set.has(`${source}:${s.incoming.indexOf(b)}`);
 			// a book of yours gains its edition only where that is picked (a new book comes with its own)
 			return catalog.merge(s.incoming.filter(picked(take)), {...s.opts, withEditions: picked(picks.editions)});
 		});
-		// the catalog's own books keep their places, as an import only adds books after them
-		for (const [, d] of differences) Comparison.patch(catalog.books, d);
-		return {reports, patched: differences.length};
+		const renamed = Comparison.patchAll(
+			catalog,
+			differences.map(([, d]) => d),
+			renames,
+		);
+		return {reports, patched: differences.length, renamed};
 	}
 }

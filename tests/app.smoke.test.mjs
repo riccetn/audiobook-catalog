@@ -2392,6 +2392,53 @@ test('a comparison takes only what is ticked: a value of the other source in pla
 	assert.doesNotMatch(els.importPreviewBody.innerHTML, /Different in both/);
 });
 
+test("a series' name ticked in a comparison renames the series, on all its books, keeping its id and details", async () => {
+	const storage = new Map();
+	const mine = JSON.stringify([
+		{t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isles', sn: '1', e: [{ext: {'audible.com': 'B1'}}]},
+		{t: 'Paper Fen', a: ['Ann Vale'], s: 'Gull Isles', sn: '2', e: [{ext: {'audible.com': 'B2'}}]},
+	]);
+	const info = JSON.stringify({'Gull Isles': {total: 5, status: 'ongoing', note: 'Read in order.'}});
+	const {els, readable} = await boot({
+		page: 'import.html',
+		storage,
+		files: {'books.json': mine, 'series-info.json': info},
+	});
+	await settled(storage);
+	const [{uid: id}] = databaseOf(storage).records('series');
+	els.audibleImportBtn.listeners.click[0]();
+	await idle();
+	const csv =
+		'Title,Title Short,Series,Authors,Narrators,Progress,ASIN\n' +
+		'x,Salt Road,The Gull Isle Saga,Ann Vale,,Finished,B1\n';
+	els.importCsvFile.listeners.change[0]({target: {files: [{name: 'library.csv', text: csv}], value: ''}});
+	await idle();
+	assert.match(
+		readable(els.importPreviewBody.innerHTML),
+		/Series: <span class="cmpHere">Gull Isles<\/span> here, <span class="cmpThere">The Gull Isle Saga<\/span> on Audible \(renames the series, on 2 books\)/,
+	);
+	const box = els.importPreviewBody.querySelector('input[data-pick="patch:0:s"]');
+	box.checked = true;
+	box.dispatch('change');
+	els.importConfirm.listeners.click[0]();
+	await idle();
+	const after = await kept(storage);
+	assert.deepEqual(
+		after.books.map(b => [b.t, b.s]),
+		[
+			['Salt Road', 'The Gull Isle Saga'],
+			['Paper Fen', 'The Gull Isle Saga'],
+		],
+	);
+	assert.deepEqual(
+		databaseOf(storage)
+			.records('series')
+			.map(r => [r.uid, r.name]),
+		[[id, 'The Gull Isle Saga']],
+	);
+	assert.deepEqual(after.seriesInfo, {'The Gull Isle Saga': {total: 5, status: 'ongoing', note: 'Read in order.'}});
+});
+
 test("Goodreads CSV downloads every book for Goodreads' import", async () => {
 	const {ctx, els, get} = await boot({page: 'import.html'});
 	const blobs = [];

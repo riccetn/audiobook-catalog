@@ -54,7 +54,7 @@ import {
 /** @import {ClientClass} from './modules/catalog-client.js' */
 /** @import {CatalogJob} from './store.js' */
 /** @import {MergeOptions, MergeReport} from './modules/merger.js' */
-/** @import {ComparisonResult, ComparedBook, Difference} from './modules/comparison.js' */
+/** @import {ComparisonResult, ComparedBook, Difference, SeriesRename} from './modules/comparison.js' */
 /** @import {Step} from './modules/catalog-client.js' */
 /** @import {MultiResult, MultiPicks} from './modules/multi-comparison.js' */
 
@@ -456,12 +456,14 @@ function compareGroup(heading, rows, group, keys, note) {
 }
 
 /**
- * One difference, to tick: "Narrators: Ann Vale here, Bo Reed on Goodreads".
+ * One difference, to tick: "Narrators: Ann Vale here, Bo Reed on Goodreads". A series' name that renames
+ * the series (`renames`, Comparison.seriesRenames) says so.
  * @param {Difference} d
  * @param {string} name
+ * @param {Map<string, string>} renames
  * @returns {HTMLLIElement}
  */
-function differenceRow(d, name) {
+function differenceRow(d, name, renames) {
 	return buildElement(
 		'li',
 		{},
@@ -471,8 +473,18 @@ function differenceRow(d, name) {
 			spell(' here, '),
 			buildElement('span', {class: 'cmpThere'}, d.there),
 			` on ${name}`,
+			d.field === 's' && renames.has(d.here) ? renameNote(d.here) : '',
 		]),
 	);
+}
+
+/**
+ * What picking a series' new name does: " (renames the series, on its 4 books)".
+ * @param {string} series
+ * @returns {string}
+ */
+function renameNote(series) {
+	return ` (renames the series, on ${Text.plural(CATALOG.seriesBooks(series).length, 'book')})`;
 }
 
 /** Draw the comparison open (PENDING_COMPARE) in the preview. */
@@ -480,6 +492,7 @@ function drawCompare() {
 	const compare = /** @type {PendingCompare} */ (PENDING_COMPARE);
 	const {name, comparison, online} = compare;
 	const books = comparison.books;
+	const renames = Comparison.seriesRenames(CATALOG, books);
 	const of = (/** @type {ComparedBook['kind']} */ kind) => books.filter(b => b.kind === kind);
 	const fresh = of('new'),
 		gains = of('gains');
@@ -548,7 +561,7 @@ function drawCompare() {
 				buildElement(
 					'ul',
 					{},
-					b.differences.map(d => differenceRow(d, name)),
+					b.differences.map(d => differenceRow(d, name, renames)),
 				),
 			]),
 			'patch',
@@ -786,13 +799,24 @@ function compareExport(Importer, text, fileName) {
 }
 
 /**
+ * Take the books of `copy` (the catalog with a comparison applied) into the catalog, with the series it
+ * renamed, which keep their id and info.
+ * @param {Catalog} copy
+ * @param {SeriesRename[]} renamed
+ */
+function takeBooks(copy, renamed) {
+	for (const {from, to} of renamed) CATALOG.renameEntry('series', from, to);
+	CATALOG.books = copy.books;
+}
+
+/**
  * The catalog with what is ticked in `compare` taken in, in a copy, with what blocks it.
  * @param {PendingCompare} compare
  */
 function applyIntoCopy(compare) {
 	const copy = CATALOG.clone();
 	const {take, editions} = compare.picks;
-	const {report, patched} = Comparison.apply(
+	const {report, patched, renamed} = Comparison.apply(
 		copy,
 		compare.incoming,
 		{...compare.picks, take: new Set([...take, ...editions])},
@@ -802,7 +826,7 @@ function applyIntoCopy(compare) {
 	const idsFound = picks.ids && online ? online.sync.kind.addIds(copy.books, online.result.found).length : 0;
 	const infoIds = picks.ids && online ? online.sync.kind.setInfoIds(copy, online.result.infoIds) : 0;
 	const errors = copy.bookErrors();
-	return {copy, report, patched, idsFound, infoIds, errors};
+	return {copy, report, patched, renamed, idsFound, infoIds, errors};
 }
 
 /**
@@ -848,12 +872,12 @@ function applyCompare() {
 	if (compare.online) return applyShelfSync(compare);
 	closeImportPreview();
 	// applied to the catalog as it is now, in case books were edited while the comparison was open
-	const {copy, report, patched, errors} = applyIntoCopy(compare);
+	const {copy, report, patched, renamed, errors} = applyIntoCopy(compare);
 	if (errors.length) {
 		showIoStatus(spell('The catalog changed and the import no longer validates; nothing was changed.'), true);
 		return;
 	}
-	CATALOG.books = copy.books;
+	takeBooks(copy, renamed);
 	refreshPage();
 	persist();
 	showIoStatus(appliedText(report, patched) + '.');
@@ -1422,7 +1446,7 @@ async function applyShelfSync(compare) {
 		);
 		return;
 	}
-	const {copy, report, patched, idsFound, infoIds, errors} = applyIntoCopy(compare);
+	const {copy, report, patched, renamed, idsFound, infoIds, errors} = applyIntoCopy(compare);
 	if (errors.length) {
 		showIoStatus(
 			spell(
@@ -1434,7 +1458,7 @@ async function applyShelfSync(compare) {
 	}
 	const here = appliedText(report, patched, idsFound, `${label} ${sync.kind.FOUND}`, infoIds);
 	if (JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books) || infoIds) {
-		CATALOG.books = copy.books;
+		takeBooks(copy, renamed);
 		if (picks.ids) sync.kind.setInfoIds(CATALOG, result.infoIds);
 		await persist(); // kept before anything is sent, so the ids found stay even if the catalog stops answering
 		refreshPage();
@@ -1641,6 +1665,10 @@ function drawMulti() {
 	const {sources, result, picks} = multi;
 	const labelOf = (/** @type {number} */ source) => sources[source].sync.label;
 	const named = (/** @type {{source: number}[]} */ from) => namesSaid(from.map(f => labelOf(f.source)));
+	const renames = Comparison.seriesRenames(
+		CATALOG,
+		sources.flatMap(s => s.result.comparison.books),
+	);
 	/** @type {Child[]} */
 	const out = multi.notes.map(n => para(n));
 	out.push(
@@ -1681,6 +1709,7 @@ function drawMulti() {
 									[buildElement('span', {class: 'cmpThere'}, c.text), ` on ${named(c.from)}`],
 								),
 							]),
+							f.id.endsWith(':s') && renames.has(f.here) ? renameNote(f.here) : '',
 						),
 					),
 				),
@@ -1810,7 +1839,7 @@ async function applyMulti() {
 	}
 	const {sources, picks} = multi;
 	const copy = CATALOG.clone();
-	const {reports, patched} = MultiComparison.apply(
+	const {reports, patched, renamed} = MultiComparison.apply(
 		copy,
 		sources.map(s => s.result),
 		multi.result,
@@ -1832,7 +1861,7 @@ async function applyMulti() {
 		showIoStatus(spell('The catalog changed and what was picked no longer validates; nothing was changed.'), true);
 		return;
 	}
-	CATALOG.books = copy.books;
+	takeBooks(copy, renamed);
 	sources.forEach(({sync, result}, source) => {
 		if (picks.ids.has(source)) sync.kind.setInfoIds(CATALOG, result.infoIds);
 	});

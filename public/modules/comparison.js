@@ -27,6 +27,11 @@ import {ExternalCatalog} from './external-catalog.js';
  */
 
 /**
+ * A series renamed by applying a comparison: its name was `from`, and is `to`.
+ * @typedef {{from: string, to: string}} SeriesRename
+ */
+
+/**
  * One book of the other source, beside what it is in this catalog.
  * @typedef {object} ComparedBook
  * @property {number} at its place among the incoming books
@@ -293,27 +298,81 @@ export class Comparison {
 	 * with the same `opts`): the incoming books whose places are in `take` are imported (the editions of
 	 * those that find a book here only when their places are in `editions`, when it is given), and the
 	 * differences whose keys are in `patch` get the other source's value. A difference is looked for again
-	 * in the catalog as it is now, so one that no longer differs is left alone. Returns the import's report
-	 * and how many values were changed.
+	 * in the catalog as it is now, so one that no longer differs is left alone. A series picked that renames
+	 * the series (seriesRenames) is renamed on all its books, keeping its id and info. Returns the import's
+	 * report, how many values were changed and the series renamed (from, to).
 	 * @param {Catalog} catalog
 	 * @param {Book[]} incoming
 	 * @param {{take: Set<number>, patch: Set<string>, editions?: Set<number>}} picks
 	 * @param {MergeOptions} [opts]
-	 * @returns {{report: MergeReport, patched: number}}
+	 * @returns {{report: MergeReport, patched: number, renamed: SeriesRename[]}}
 	 */
 	static apply(catalog, incoming, picks, opts) {
-		const differences = Comparison.compare(catalog, incoming, opts)
-			.books.flatMap(b => b.differences)
-			.filter(d => picks.patch.has(d.key));
+		const compared = Comparison.compare(catalog, incoming, opts).books;
+		const differences = compared.flatMap(b => b.differences).filter(d => picks.patch.has(d.key));
+		// worked out before the import, whose new books may be in the series by its new name
+		const renames = Comparison.seriesRenames(catalog, compared);
 		const editions = picks.editions;
 		const withEditions = editions ? (/** @type {Book} */ b) => editions.has(incoming.indexOf(b)) : undefined;
 		const report = catalog.merge(
 			incoming.filter((b, i) => picks.take.has(i)),
 			{...opts, withEditions},
 		);
+		const renamed = Comparison.patchAll(catalog, differences, renames);
+		return {report, patched: differences.length, renamed};
+	}
+
+	/**
+	 * The series a picked series value renames, from this catalog's name to the other source's: those whose
+	 * books the other source puts in one series only, by another name that no series here has. Otherwise
+	 * (some of its books are in another series there, or the name is that of a series here) the value
+	 * moves only its own book.
+	 * @param {Catalog} catalog
+	 * @param {ComparedBook[]} compared of one or more comparisons with the catalog as it is
+	 * @returns {Map<string, string>} the series' name here to its name there
+	 */
+	static seriesRenames(catalog, compared) {
+		const names = catalog.namesOf('series');
+		/** @type {Map<string, string | null>} null: its books are in several series there */
+		const there = new Map();
+		for (const c of compared) {
+			const theirs = c.theirs.series;
+			if (!theirs) continue;
+			for (const b of c.books) {
+				if (!b.series) continue;
+				const was = there.get(b.series);
+				if (was === undefined) there.set(b.series, theirs);
+				else if (was !== null && Series.norm(was) !== Series.norm(theirs)) there.set(b.series, null);
+			}
+		}
+		/** @type {Map<string, string>} */
+		const out = new Map();
+		for (const [name, theirs] of there)
+			if (theirs !== null && ![...names].some(n => Series.norm(n) === Series.norm(theirs))) out.set(name, theirs);
+		return out;
+	}
+
+	/**
+	 * Put the differences' values in place of the catalog's: a series value that renames the series
+	 * (`renames`, seriesRenames) renames it on all its books, keeping its id and info; the others are patched
+	 * on their own book. Returns the series renamed.
+	 * @param {Catalog} catalog changed in place
+	 * @param {Difference[]} differences
+	 * @param {Map<string, string>} renames
+	 * @returns {SeriesRename[]}
+	 */
+	static patchAll(catalog, differences, renames) {
+		/** @type {SeriesRename[]} */
+		const renamed = [];
+		for (const d of differences) {
+			if (d.field !== 's' || !renames.has(d.here) || typeof d.value !== 'string') continue;
+			if (!renamed.some(r => r.from === d.here)) renamed.push({from: d.here, to: d.value});
+		}
 		// the catalog's own books keep their places, as an import only adds books after them
-		for (const d of differences) Comparison.patch(catalog.books, d);
-		return {report, patched: differences.length};
+		for (const d of differences)
+			if (!(d.field === 's' && renamed.some(r => r.from === d.here))) Comparison.patch(catalog.books, d);
+		for (const {from, to} of renamed) catalog.renameEntry('series', from, to);
+		return renamed;
 	}
 
 	/**
