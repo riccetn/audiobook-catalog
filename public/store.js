@@ -215,26 +215,35 @@ export const COMPARE_STORAGE_KEY = 'audiobook-catalog-compare';
 
 /**
  * Buttons that compare a series' or an author's books with each catalog that compares them
- * (CatalogConnectors.SYNCS, by PARTS); `words(label)` is each button's text.
+ * (CatalogConnectors.SYNCS, by PARTS), and with all of them at once when there are several; `words(label)` is
+ * each button's text.
  * @param {'series' | 'author'} kind
  * @param {string} id
  * @param {(label: string) => string} words
  * @returns {HTMLButtonElement[]}
  */
 export function shelfCompareButtons(kind, id, words) {
-	return CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind)).map(({CLIENT: Client}) =>
+	const syncs = CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind));
+	/** @type {(catalog: string, label: string) => HTMLButtonElement} */
+	const button = (catalog, label) =>
 		buildElement(
 			'button',
 			{
 				type: 'button',
 				class: 'catalogCompare',
-				'data-compare': Client.CATALOG,
-				onclick: () => openShelfCompare({catalog: Client.CATALOG, kind, id}),
+				'data-compare': catalog,
+				onclick: () => openShelfCompare({catalog, kind, id}),
 			},
-			words(Client.LABEL),
-		),
-	);
+			words(label),
+		);
+	return [
+		...syncs.map(({CLIENT: Client}) => button(Client.CATALOG, Client.LABEL)),
+		...(syncs.length > 1 ? [button(ALL_CATALOGS, 'all catalogs')] : []),
+	];
 }
+
+/** The CompareRequest's catalog that compares with every catalog at once (the All catalogs panel's prefix). */
+export const ALL_CATALOGS = 'all';
 
 /**
  * Open the Import & export page to compare `request`, handed over in this tab's sessionStorage, so the address

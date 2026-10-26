@@ -196,16 +196,18 @@ export class Comparison {
 	 * authors, series and number, and the narrators, publisher, release date and length of an edition they
 	 * both have (as merge pairs them), and the dates read when the other source has some the book lacks
 	 * (unless `allDates`, as importing then adds them). Only a value the other source has counts; an
-	 * edition's value this catalog lacks is no difference, as importing fills it in, but a series is not.
+	 * edition's value this catalog lacks (or the dates read of a book without any) is no difference, as
+	 * importing fills it in, but a series is not; with `gaps` they are differences too (`here` is '').
 	 * @param {number} at
 	 * @param {number} place
 	 * @param {Book} book
 	 * @param {Book} theirs
 	 * @param {Map<string, string>} spellings
 	 * @param {boolean} [allDates]
+	 * @param {boolean} [gaps]
 	 * @returns {Difference[]}
 	 */
-	static differences(at, place, book, theirs, spellings, allDates = false) {
+	static differences(at, place, book, theirs, spellings, allDates = false, gaps = false) {
 		/** @type {Difference[]} */
 		const out = [];
 		/** @type {(field: BookField | EditionField, label: string, edition: number | null, here: string, there: string, value: string | string[] | number) => void} */
@@ -239,7 +241,11 @@ export class Comparison {
 			if (field === 'sn' && theirs.number && String(book.number || '').trim() !== theirs.number.trim())
 				add(field, label, null, book.number || '', theirs.number, theirs.number);
 			// a book without dates read gains them on importing
-			if (field === 'r' && !allDates && book.read.length && theirs.read.some(d => !book.hasReadDate(d))) {
+			if (
+				field === 'r' &&
+				(gaps || (!allDates && book.read.length)) &&
+				theirs.read.some(d => !book.hasReadDate(d))
+			) {
 				add(field, label, null, book.read.join(', '), theirs.read.join(', '), [...theirs.read]);
 			}
 		}
@@ -251,7 +257,11 @@ export class Comparison {
 			for (const [field, label] of EDITION_FIELDS) {
 				const v = Comparison.editionValue(mine, field),
 					w = Comparison.editionValue(ed, field);
-				if (v === null || w === null || v.text === w.text) continue;
+				if (w === null || (v === null && !gaps) || (v && v.text === w.text)) continue;
+				if (v === null) {
+					add(field, label, i, '', w.text, w.value);
+					continue;
+				}
 				if (field === 'len' && Math.abs(/** @type {number} */ (v.value) - /** @type {number} */ (w.value)) <= 1)
 					continue; // rounding
 				if (field !== 'len' && field !== 'd' && Text.norm(v.text) === Text.norm(w.text)) continue;
