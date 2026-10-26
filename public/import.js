@@ -44,12 +44,13 @@ import {
 	noteBackup,
 	backupAge,
 	backupAgeText,
+	bookPageHref,
 } from './store.js';
 /** @import {Child} from './store.js' */
 /** @import {Book} from './modules/book.js' */
 /** @import {FileImporter} from './modules/file-importer.js' */
 /** @import {FileExporter} from './modules/file-exporter.js' */
-/** @import {ShelfSync, ShelfComparison, SyncPlan} from './modules/shelf-sync.js' */
+/** @import {ShelfSync, ShelfComparison, SyncPlan, NotAudio} from './modules/shelf-sync.js' */
 /** @import {ClientClass} from './modules/catalog-client.js' */
 /** @import {CatalogJob} from './store.js' */
 /** @import {MergeOptions, MergeReport} from './modules/merger.js' */
@@ -688,6 +689,7 @@ function shelfSections(compare, sync, result) {
 		if (plan.inexact.length)
 			out.push(para(`Dates read without a day, which ${label} can't take: ${plan.inexact.length}`));
 	}
+	out.push(...notAudioSections(result.notAudio, label));
 	if (result.missing.length) {
 		out.push(
 			buildElement(
@@ -703,6 +705,50 @@ function shelfSections(compare, sync, result) {
 		);
 	}
 	return out;
+}
+
+/**
+ * The books a catalog says may not be audiobooks, which may be data problems: your editions it has as
+ * something else, and the books on your shelves there read as something else. Nothing to tick: they are
+ * put right in the book's form here, or on the catalog.
+ * @param {NotAudio[]} notAudio
+ * @param {string} label
+ * @returns {Child[]}
+ */
+function notAudioSections(notAudio, label) {
+	/** @type {(n: NotAudio) => Child} */
+	const row = n => [
+		n.yours && n.book.id
+			? buildElement('a', {href: bookPageHref(n.book.id)}, Comparison.bookLine(n.book))
+			: Comparison.bookLine(n.book),
+		n.yours ? `: ${n.edition} is ${n.said}${n.maybe ? '' : ` on ${label}`}` : `: read as ${n.said} (${n.edition})`,
+		n.url && [
+			' ',
+			buildElement(
+				'a',
+				{href: n.url, target: '_blank', rel: 'noopener'},
+				`${new URL(n.url).hostname.replace(/^www\./, '')} \u2197`,
+			),
+		],
+	];
+	return [
+		compareGroup(
+			'Maybe not audiobooks, in this catalog',
+			notAudio.filter(n => n.yours).map(row),
+			null,
+			[],
+			spell(
+				`By what ${label} says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form.`,
+			),
+		),
+		compareGroup(
+			`Maybe not audiobooks, on your ${label} shelves`,
+			notAudio.filter(n => !n.yours).map(row),
+			null,
+			[],
+			spell(`You read these on ${label} as something else: pick the audiobook edition there.`),
+		),
+	];
 }
 
 /**
@@ -1736,6 +1782,7 @@ function drawMulti() {
 					messageList(r.missing, 100),
 				),
 			);
+		out.push(...notAudioSections(r.notAudio, sync.label));
 		if (r.warnings.length)
 			out.push(para(`${sync.label} needs a look (${r.warnings.length}):`, 'warn'), messageList(r.warnings));
 	}

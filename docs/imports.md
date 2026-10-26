@@ -26,6 +26,10 @@ of Dawn`) is the same title, a series spelled another way (`Ember Coast Series`)
   see [Hardcover](hardcover.md): your books not on your _Read_ shelf there, and reads it lacks, can be ticked
   to be put on Hardcover.
 - Books on the exclusion list are counted and listed, and never added.
+- **Maybe not audiobooks** (comparing with Hardcover or a series with Audible): your editions the other catalog
+  has as a print book or an ebook (or, on Audible, doesn't sell), and books on your shelves there read in
+  another format, as they may be data problems. Nothing to tick: see [Hardcover](hardcover.md) and
+  [Audible](audible.md).
 
 **Apply** (with **Cancel**, kept at the bottom of the screen while you scroll the comparison) says how many changes are ticked. It takes them into the catalog as it is then (a value that no
 longer differs is left alone), checks the result first and changes nothing when it has errors, then saves.
@@ -47,6 +51,8 @@ and Audible`), beside yours (`none here`), which is picked. Pick a catalog's val
 - **More to give**: what each catalog's book would fill in on yours (its ids, dates read, and what its edition
   brings), to tick. It only fills gaps, and a value picked above wins.
 - **Ids found**: the ids each catalog found for your books, series and people, to tick.
+- **Maybe not audiobooks**: each catalog's list, as in its own comparison (nothing to pick). A print or ebook
+  edition on Hardcover gives no values above.
 
 Nothing is sent to any catalog: putting books on your shelves stays with each catalog's own **Compare**.
 

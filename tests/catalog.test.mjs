@@ -3191,8 +3191,13 @@ test('HardcoverSync.read: the Read shelf as books, with every finished date and 
 				},
 			],
 		},
-		{t: 'The Paper Fen', a: ['R. T. Hale', 'Bo Reed'], ext: {hardcover: '78'}, e: [{ext: {hardcover: '601'}}]},
+		{t: 'The Paper Fen', a: ['R. T. Hale', 'Bo Reed'], ext: {hardcover: '78'}},
 	]);
+	assert.deepEqual(
+		result.notAudio.map(n => [n.book.title, n.yours, n.edition, n.said, n.url]),
+		[['The Paper Fen', false, 'Hardcover edition 601', 'a print book', 'https://hardcover.app/id/edition/601']],
+		'a print edition read is listed, and fills nothing in',
+	);
 	assert.deepEqual(
 		[...result.audio].map(b => b.title),
 		['Tidewater'],
@@ -3216,8 +3221,51 @@ test('HardcoverClient.findQuery asks only for the ids there are, and matches rea
 		byGoodreads: [{book_id: 79, external_id: '4242'}],
 	});
 	assert.deepEqual(found.asin.get('B0TIDEWAT1'), {hc: '501', hcb: '77'});
-	assert.deepEqual(found.isbn.get('9780000000019'), {hc: null, hcb: '78'}, 'a print edition only names the book');
+	assert.deepEqual(
+		found.isbn.get('9780000000019'),
+		{hc: null, hcb: '78', other: {id: '601', said: 'a print book'}},
+		'a print edition only names the book',
+	);
+	const kindle = HardcoverClient.matches({
+		byAsin: [{id: 701, book_id: 79, asin: 'B0KINDLE01', reading_format_id: 4}],
+	});
+	assert.deepEqual(
+		kindle.asin.get('B0KINDLE01'),
+		{hc: null, hcb: '79', other: {id: '701', said: 'an ebook'}},
+		"an ebook's ASIN only names the book",
+	);
 	assert.deepEqual(found.gr.get('4242'), {hc: null, hcb: '79'});
+});
+
+test('HardcoverSync.yourNotAudio lists your editions Hardcover has as print books or ebooks', () => {
+	const books = Bs([
+		book('Tidewater', 'Ann Vale', {
+			ext: {hardcover: '77'},
+			...ed({ext: {hardcover: '601'}}, {ext: {hardcover: '501'}}),
+		}),
+		book('Fen', 'Ann Vale', {
+			ext: {hardcover: '78'},
+			...ed({isbn: '9780000000019', ext: {'amazon.com': 'B0FENAUDIO'}}),
+		}),
+	]);
+	// a book with a Hardcover id still has its editions without one looked up, by ASIN and ISBN
+	assert.deepEqual(HardcoverSync.lookups(books), {hc: [], asin: ['B0FENAUDIO'], isbn: ['9780000000019'], gr: []});
+	const found = HardcoverClient.matches({
+		byAsin: [{id: 502, book_id: 78, asin: 'B0FENAUDIO', reading_format_id: 2}],
+		byIsbn: [{id: 602, book_id: 78, isbn_13: '9780000000019', reading_format_id: 1}],
+	});
+	assert.deepEqual(
+		HardcoverSync.yourNotAudio(books, found, new Map([['601', 'an ebook']])).map(n => [
+			n.book.title,
+			n.edition,
+			n.said,
+			n.url,
+		]),
+		[
+			['Tidewater', 'Hardcover edition 601', 'an ebook', 'https://hardcover.app/id/edition/601'],
+			['Fen', 'ISBN 9780000000019', 'a print book', 'https://hardcover.app/id/edition/602'],
+		],
+	);
 });
 
 test('HardcoverSync.addIds fills in the ids found (box set copies alike), never changing one you have', () => {
@@ -5468,6 +5516,44 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 	const second = await new AudibleSync(again.client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
 	assert.match(again.sent[0], /^audible\/audible\.com\/catalog\/products\/B0SERIES02\?/);
 	assert.deepEqual(second.infoIds, []);
+});
+
+test("AudibleSync says which of your ASINs Audible doesn't sell: maybe not audiobooks", async () => {
+	const catalog = Catalog.fromJSON({
+		books: [
+			{
+				t: 'The Lantern Keeper',
+				a: ['Ann Vale'],
+				s: 'Gull Isle',
+				sn: '2',
+				e: [{ext: {'audible.com': 'B0LANTERN2'}}],
+			},
+			// an Amazon ASIN from an import, which may be a Kindle edition's; another site's isn't asked
+			{
+				t: 'Gull Song',
+				a: ['Ann Vale'],
+				s: 'Gull Isle',
+				sn: '3',
+				e: [{ext: {'amazon.com': 'B0KINDLE03'}}, {ext: {'audible.de': 'B0GULLDE03'}}],
+			},
+		],
+	});
+	const {client, sent} = audibleClient();
+	const result = await new AudibleSync(client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
+	assert.equal(sent.at(-1), 'audible/audible.com/catalog/products?asins=B0KINDLE03&response_groups=product_desc');
+	assert.deepEqual(
+		result.notAudio.map(n => [n.book.title, n.yours, n.edition, n.said, n.url, n.maybe]),
+		[
+			[
+				'Gull Song',
+				true,
+				'ASIN B0KINDLE03',
+				"not sold on audible.com: maybe a Kindle or print edition's ASIN",
+				'https://www.amazon.com/dp/B0KINDLE03',
+				true,
+			],
+		],
+	);
 });
 
 test("AudibleSync reads a series by its books when Audible's answer for it has no title", async () => {

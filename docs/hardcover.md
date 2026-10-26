@@ -80,6 +80,18 @@ names until their form is saved.
   read. Dates without a day (`2024-03`) can't be sent and are counted; books Hardcover can't be found by
   are listed: give them a `Hardcover <edition id>` in the edit form (the number in the edition's address).
 
+**Maybe not audiobooks.** Hardcover says of each edition whether it is an audiobook, a print book or an
+ebook, so the comparison lists what may be a data problem:
+
+- _in this catalog_: your editions whose Hardcover edition id, ASIN or ISBN is a print book's or an ebook's
+  there (an ASIN may be a Kindle edition's, an ISBN the paperback's). Correct the edition in the book's form,
+  or give it the audiobook edition's Hardcover id. Such an edition is never sent to Hardcover, nor saved as
+  an edition's Hardcover id: the book goes on _Read_ without it.
+- _on your Hardcover shelves_: books on your _Read_ shelf with a print or ebook edition picked. Their edition
+  fills in nothing here; pick the audiobook edition on Hardcover.
+
+Each links to the edition on Hardcover. Nothing in either list is ticked or changed.
+
 Nothing is ever changed or removed on either side: a book on another Hardcover shelf (_Want to Read_,
 _Did Not Finish_, ...) is listed and left alone, and ratings and reviews are not touched. Running it again
 only does what is still missing. Hardcover allows 60 requests a minute, so the page asks once a second;

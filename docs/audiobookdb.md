@@ -46,6 +46,9 @@ the way an import does ([the comparison](imports.md#the-comparison)):
 
 AudiobookDB doesn't keep dates read, ratings or reviews, so none are compared or sent.
 
+AudiobookDB lists only audiobooks, so unlike Hardcover and Audible its comparison has no _Maybe not audiobooks_
+lists.
+
 **A series or an author.** Pick _a series_ or _an author_ beside the button and type its name (the field offers
 the names in the catalog): only the books of that series, or by that author, are looked up, compared and offered
 to put on AudiobookDB. The series or author is found on AudiobookDB by the AudiobookDB id in its info form, else

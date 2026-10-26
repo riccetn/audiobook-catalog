@@ -36,4 +36,9 @@ No Audible account is needed, and nothing is sent to Audible.
 5. **Apply** takes in what you ticked, and keeps the series' Audible id and its count of books (whole numbers)
    where the series has none yet.
 
+Your editions whose ASIN on that site (or its Amazon's) Audible doesn't sell are listed under _Maybe not
+audiobooks, in this catalog_: an Amazon ASIN from a Goodreads or Hardcover import is often a Kindle or print
+edition's. It is only a guess, as Audible also stops selling some audiobooks; follow the link to see what the
+ASIN is, and correct the edition in the book's form if it isn't the audiobook.
+
 Only series are compared with Audible, not authors.

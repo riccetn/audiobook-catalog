@@ -16,7 +16,7 @@ import {AudibleSource} from './audible-source.js';
 /** @import {Catalog} from './catalog.js' */
 /** @import {MergeOptions} from './merger.js' */
 /** @import {Step} from './catalog-client.js' */
-/** @import {ShelfPart, ShelfComparison, InfoId} from './shelf-sync.js' */
+/** @import {ShelfPart, ShelfComparison, InfoId, NotAudio} from './shelf-sync.js' */
 
 /**
  * A comparison with a series on Audible: the site asked, and how many books the series has there (whole numbers).
@@ -143,6 +143,7 @@ export class AudibleSync extends ShelfSync {
 			)
 				missing.push(`${number}. ${Text.tidy(best.title)}`);
 		}
+		const notAudio = await this.unsold(mine, site, products, step);
 		/** @type {MergeOptions} */
 		const opts = {addable: () => false};
 		const comparison = Comparison.compare(catalog, incoming, opts);
@@ -165,9 +166,49 @@ export class AudibleSync extends ShelfSync {
 			infoIds,
 			plan: null,
 			missing,
+			notAudio,
 			site,
 			numbers,
 		};
+	}
+
+	/**
+	 * The editions of `books` whose ASIN on `site` (or its Amazon's) Audible doesn't sell there: maybe not
+	 * audiobooks, as an Amazon ASIN may be a Kindle or print edition's (from a Goodreads or Hardcover import),
+	 * though Audible also stops selling some. `sold` holds the products already read; the others are asked.
+	 * @param {Book[]} books
+	 * @param {string} site
+	 * @param {Map<string, Unchecked>} sold
+	 * @param {Step} step
+	 * @returns {Promise<NotAudio[]>}
+	 */
+	async unsold(books, site, sold, step) {
+		/** @type {[Book, string, string][]} */
+		const asins = [];
+		for (const book of books)
+			for (const ed of book.editions)
+				for (const [key, id] of Object.entries(ed.external))
+					if (ExternalCatalog.family(key) === 'asin' && AudibleSource.site(key) === site && !sold.has(id))
+						asins.push([book, id, key]);
+		if (!asins.length) return [];
+		const found = await this.client.products(
+			site,
+			[...new Set(asins.map(([, a]) => a))],
+			'product_desc',
+			step,
+			'Checking your ASINs on Audible',
+		);
+		return asins
+			.filter(([, a]) => !found.has(a))
+			.map(([book, a, key]) => ({
+				book,
+				yours: true,
+				edition: `ASIN ${a}`,
+				said: `not sold on ${site}: maybe a Kindle or print edition's ASIN`,
+				// its page where it came from: an Amazon one shows what it is
+				url: ExternalCatalog.url(key, 'edition', a),
+				maybe: true,
+			}));
 	}
 
 	/**

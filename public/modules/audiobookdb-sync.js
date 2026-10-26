@@ -52,6 +52,7 @@ import {Catalog} from './catalog.js';
  * @property {AudiobookdbPlan | null} plan what putting your books on AudiobookDB would do; null without your key
  * @property {number | null} onShelf how many books your Read shelf has (in the scope asked for); null without your key
  * @property {string[]} missing the series' books on AudiobookDB that aren't in the catalog (a series only)
+ * @property {never[]} notAudio none: AudiobookDB lists only audiobooks
  */
 
 /** @type {(x: unknown) => string} */
@@ -172,6 +173,7 @@ export class AudiobookdbSync extends ShelfSync {
 			plan,
 			onShelf: read ? wanted.length : null,
 			missing,
+			notAudio: [],
 		};
 	}
 
