@@ -30,6 +30,26 @@ of Dawn`) is the same title, a series spelled another way (`Ember Coast Series`)
 **Apply** (with **Cancel**, kept at the bottom of the screen while you scroll the comparison) says how many changes are ticked. It takes them into the catalog as it is then (a value that no
 longer differs is left alone), checks the result first and changes nothing when it has errors, then saves.
 
+## Several catalogs at once
+
+**Compare with all catalogs**, on a series' page and an author's (beside their other Compare buttons), and in the
+_All catalogs_ panel on _Import & export_, compares that series' or author's books with Hardcover, AudiobookDB and
+Audible together (Audible only for a series), each as its own **Compare** would. A catalog that can't be asked (no
+token or proxy saved) is named at the top and left out; one that fails is named with why, and the others still show.
+Nothing is picked when it opens, so **Apply** stays hidden until you pick something, and changes only what you picked:
+
+- **Different in the catalogs**: for each of your books, every field where a catalog has another value than yours, or
+  has one where yours has none (the title, authors, series, number, dates read, or an edition's narrators,
+  publisher, release date or length). Each value is listed once, with the catalogs that have it (`8h on AudiobookDB
+and Audible`), beside yours (`none here`), which is picked. Pick a catalog's value to use it instead.
+- **New books**: the books none of yours are, each once however many catalogs have it, _not added_ unless you
+  pick the catalog to add it from.
+- **More to give**: what each catalog's book would fill in on yours (its ids, dates read, and what its edition
+  brings), to tick. It only fills gaps, and a value picked above wins.
+- **Ids found**: the ids each catalog found for your books, series and people, to tick.
+
+Nothing is sent to any catalog: putting books on your shelves stays with each catalog's own **Compare**.
+
 ## Matching
 
 An import only ever _adds_ books, and fills in what a book you have lacks; it changes a value you have only

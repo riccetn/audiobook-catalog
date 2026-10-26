@@ -3011,7 +3011,7 @@ test('a series can be edited in the page, and removed from its books', async () 
 	await idle();
 	assert.match(
 		els.results.innerHTML,
-		/<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare with \w+<\/button>)+<\/div><\/div>$/,
+		/<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare with [\w ]+<\/button>)+<\/div><\/div>$/,
 		'at the end of the page of the series',
 	);
 	const books = await boot({page: 'books.html', storage});
@@ -4299,6 +4299,121 @@ test("a series is compared with Audible through the proxy, and Apply fills in it
 	assert.match(els.ioStatus.textContent, /Audible ids and book counts found for 1 series/);
 });
 
+test('a series is compared with every catalog at once, and Apply takes only the values picked', async () => {
+	const home = await boot({hash: '#series=The+Lantern+Coast'});
+	await idle();
+	assert.match(
+		home.readable(home.els.results.innerHTML),
+		/<button type="button" class="catalogCompare" data-compare="all">Compare with all catalogs<\/button>/,
+	);
+
+	const mine = [
+		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '4', e: [{ext: {'amazon.com': 'B0BRINETD1'}}]},
+	];
+	// Brine Tide on your AudiobookDB Read shelf (Listened), not Currently Listening
+	const state = audiobookdbState();
+	state.shelves[2].books.push(...state.shelves[1].books.splice(0));
+	const abdb = fakeAudiobookdb(state);
+	// the real Worker in front of AudiobookDB and of Audible's catalog
+	const behind = fakeProxyCatalogs();
+	const proxy = async (url, init = {}) =>
+		handleProxy(
+			new Request(url, {
+				method: init.method,
+				body: init.body,
+				headers: {...init.headers, Origin: 'https://example.github.io'},
+			}),
+			PROXY_ENV,
+			{
+				fetch: async (upstream, opts) => {
+					const u = new URL(String(upstream.url || upstream));
+					if (!/audible\./.test(u.hostname)) return abdb.fetch(upstream, opts);
+					const site = u.hostname.replace(/^api\./, '');
+					const res = await behind.route(`audible/${site}${u.pathname.replace(/^\/1\.0/, '')}${u.search}`);
+					return new Response(JSON.stringify(await res.json()), {status: res.status});
+				},
+			},
+		);
+	const storage = new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
+	const {els, get, readable} = await boot({
+		page: 'import.html',
+		hash: '#all-series=Gull+Isle',
+		files: {
+			'books.json': JSON.stringify(mine),
+			'series-info.json': JSON.stringify({'Gull Isle': {ext: {'audible.com': 'B0SERIES02'}}}),
+		},
+		proxy,
+		storage,
+		setTimeout: (fn, ms) => {
+			if (ms === 250 || ms === 500) Promise.resolve().then(fn);
+			return 0;
+		},
+	});
+	await idle();
+	assert.deepEqual([els.allScope.value, els.allScopeName.value], ['series', 'Gull Isle']);
+	assert.equal(els.importPreview.place, 'after allPanel');
+	assert.equal(els.importPreviewTitle.textContent, 'Compare the series “Gull Isle” with AudiobookDB and Audible');
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(html, /<p>Hardcover: not asked, as it needs your Hardcover API token \(below\)\.<\/p>/);
+	assert.match(html, /<p>Audible: 1 book in this catalog, 4 books in the series on audible\.com<\/p>/);
+	// where they differ: every value, once, with the catalogs that have it, and this catalog's picked
+	assert.match(
+		html,
+		/Released: <label class="cmpPick cmpChoice"><input type="radio" name="v:0:d:0" data-pick="value:0:d:0:here" checked=""> <span class="cmpHere">none<\/span> here<\/label> <label[^>]*><input type="radio" name="v:0:d:0" data-pick="value:0:d:0:0"> <span class="cmpThere">2020-02-02<\/span> on AudiobookDB<\/label> <label[^>]*><input type="radio" name="v:0:d:0" data-pick="value:0:d:0:1"> <span class="cmpThere">2023-09-12<\/span> on Audible<\/label>/,
+	);
+	assert.match(html, /<span class="cmpThere">8h<\/span> on AudiobookDB and Audible/);
+	assert.match(
+		html,
+		/Number in series: .*<span class="cmpHere">4<\/span> here.*<span class="cmpThere">2<\/span> on AudiobookDB/,
+	);
+	assert.match(
+		html,
+		/New books \(1\)<\/h4>.*data-pick="fresh:0:none" checked=""> not added<\/label> <label[^>]*><input type="radio" name="f:0" data-pick="fresh:0:0"> from AudiobookDB: <span class="cmpThere">Tidewater — Ann Vale/,
+	);
+	assert.match(html, /data-pick="editions:1:0"> the Audible edition: audible\.com id, narrators/);
+	assert.match(html, /In the series on Audible, not in this catalog: 3<\/summary>/);
+	assert.doesNotMatch(html, /checked=""><\/?[^h]|type="checkbox"[^>]*checked/, 'no tickbox is ticked');
+	assert.equal(els.importConfirm.style.display, 'none', 'nothing is picked at first');
+
+	const pick = name => {
+		const input = els.importPreviewBody.querySelector(`input[data-pick="${name}"]`);
+		input.checked = true;
+		input.dispatch('change');
+	};
+	pick('value:0:d:0:1');
+	pick('value:0:n:0:0');
+	pick('value:0:sn:0');
+	pick('value:0:sn:here'); // changed back: the number stays
+	pick('fresh:0:0');
+	pick('ids:1');
+	assert.equal(els.importConfirm.textContent, 'Apply 4 changes');
+	await els.importConfirm.listeners.click[0]();
+	await idle();
+	const saved = await kept(storage);
+	assert.deepEqual(
+		saved.books.map(b => [b.t, b.sn, b.e.map(e => [e.ext, e.n, e.d, e.p, e.len])]),
+		[
+			['Brine Tide', '4', [[{'amazon.com': 'B0BRINETD1'}, ['Dana Fenwick'], '2023-09-12', undefined, undefined]]],
+			[
+				'Tidewater',
+				'1',
+				[[{audiobookdb: 'RlsTidewatr1'}, ['Dana Fenwick'], '2020-02-02', 'Gullwing Audio', 570]],
+			],
+		],
+	);
+	assert.deepEqual(
+		[saved.seriesInfo['Gull Isle'].ext, saved.seriesInfo['Gull Isle'].total],
+		[{'audible.com': 'B0SERIES02'}, 4],
+	);
+	assert.equal(saved.authors['Ann Vale'], undefined, "AudiobookDB's ids found weren't picked");
+	assert.ok(!abdb.sent.some(s => s.method === 'POST'), 'nothing is sent');
+	assert.equal(get('CATALOG.books.length'), 2);
+	assert.match(
+		els.ioStatus.textContent,
+		/AudiobookDB: Added 1 book.*Audible: saved Audible ids and book counts found for 1 series or person; changed 2 values\./,
+	);
+});
+
 test('AudiobookDB needs the proxy, says when the proxy is out of date, and says when it refuses the key', async () => {
 	const mine = [{t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]}];
 	const none = await boot({page: 'import.html', files: {'books.json': JSON.stringify(mine)}});
@@ -4564,7 +4679,7 @@ test("author info can be added, edited and removed on the author's page, and lin
 	);
 	assert.match(
 		els.creditBody.innerHTML,
-		/<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare their books with \w+<\/button>)+<\/div>$/,
+		/<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare their books with [\w ]+<\/button>)+<\/div>$/,
 	);
 	editClick();
 	assert.ok(els.creditForm.classList.contains('open'));

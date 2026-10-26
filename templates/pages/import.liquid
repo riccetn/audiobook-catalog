@@ -41,6 +41,27 @@
 	<p class="hint">Each import shows the other catalog's books beside yours first, and takes only what you tick: new books, what it has that
 		yours lack, and, where both have a value that differs, the values you pick. Nothing is ever removed.</p>
 
+	<section class="panel" id="allPanel">
+		<h2>All catalogs <span class="via">Side by side</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Compare</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="allCompareBtn" title="Compare a series' or an author's books with every catalog at once">Compare</button>
+				<label>for
+					<select id="allScope" title="Compare a series' or an author's books">
+						<option value="series">a series</option>
+						<option value="author">an author</option>
+					</select></label>
+				<input type="text" id="allScopeName" list="allScopeNames" placeholder="Name" autocomplete="off" style="display:none">
+				<datalist id="allScopeNames"></datalist>
+			</div>
+			<p class="ioNote">Compares a series' or an author's books with Hardcover, AudiobookDB and Audible at once (each that can be asked:
+				Audible only for a series), and shows, where they differ from this catalog or from each other, every value with the catalogs
+				that have it, to pick the one to keep. Nothing is picked at first, so Apply changes only what you pick. Nothing is sent to
+				any catalog: each one's own Compare (below) puts books on your shelves there.</p>
+		</div>
+	</section>
+
 	<section class="panel" id="audiblePanel">
 		<h2>Audible <span class="via">CSV file</span></h2>
 		<div class="ioRow">

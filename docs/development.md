@@ -82,6 +82,8 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
   client has no `KEY_STORAGE` (so `CatalogConnectors.CLIENTS` leaves it out), `PARTS` says it compares only
   series (the pages link only those to it), and its Compare row in the Audible panel is
   `{% render 'shelf-compare', ..., every: false %}`.
+- a shelf sync listed in `SYNCS` is also asked by _Compare with all catalogs_ for each kind in its `PARTS` (`MultiComparison`), with nothing more
+  to write.
 
 `tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone.
 

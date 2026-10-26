@@ -841,6 +841,10 @@ button:focus {
 	margin: 0 0.2rem 0 0;
 	accent-color: var(--moss);
 }
+.importPreview .cmpChoice {
+	display: inline-block;
+	margin-right: 0.8rem;
+}
 .importPreview .cmpIds {
 	display: block;
 	margin: 0.6rem 0 0;

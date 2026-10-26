@@ -59,7 +59,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 - [AudiobookDB](docs/audiobookdb.md): finding your books on AudiobookDB, comparing with your shelves there, and putting books on them
 - [Catalog proxy](docs/catalog-proxy.md): an optional Cloudflare Worker of your own for the catalogs that don't answer web pages
 - [Merge a backup from another device](docs/backups.md): combining two catalogs that both changed
-- [How imports avoid clobbering your edits](docs/imports.md): the comparison an import shows, and how imported books are matched and merged
+- [How imports avoid clobbering your edits](docs/imports.md): the comparison an import shows, comparing a series or an author with several catalogs at once, and how imported books are matched and merged
 - [Running the app and keeping your catalog](docs/saving.md): serving the pages, browser storage, backups
 - [On your phone](docs/phone.md): installing the app
 - [Development](docs/development.md): file layout, tests, type checking and the API documentation
