@@ -51,6 +51,8 @@ and Audible`), beside yours (`none here`), which is picked. Pick a catalog's val
 - **More to give**: what each catalog's book would fill in on yours (its ids, dates read, and what its edition
   brings), to tick. It only fills gaps, and a value picked above wins.
 - **Ids found**: the ids each catalog found for your books, series and people, to tick.
+- **Maybe not audiobooks**: each catalog's list, as in its own comparison (nothing to pick). A print or ebook
+  edition on Hardcover gives no values above.
 
 Nothing is sent to any catalog: putting books on your shelves stays with each catalog's own **Compare**.
 
