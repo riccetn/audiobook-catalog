@@ -138,7 +138,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
       `fill` (gaps only), `editionIds`).
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
-    Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`).
+    Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`; a series' name picked renames the series on all its books when the other
+    catalog agrees on them, `seriesRenames`/`patchAll`, returned as `renamed` for the page to rename on `CATALOG` too).
     `MultiComparison` (several shelf syncs' `ShelfComparison`s side by side, for _Compare with all catalogs_: `compare` gives `differing` (per book, each
     field's values once with the sources that have them, `Comparison.differences` with `gaps` so a value the catalog lacks counts too), `fresh` (new books
     once, matched across sources by merging them in turn) and `gains`; `noPicks` (nothing picked, so Apply changes nothing), `pickedCount`, `apply`

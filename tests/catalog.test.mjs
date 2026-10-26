@@ -4466,6 +4466,94 @@ test('applying a comparison imports only the books picked, and replaces only the
 	);
 });
 
+test("picking another catalog's name for a series renames the series, on all its books, keeping its id and info", () => {
+	const series = () => {
+		const catalog = Catalog.fromJSON({
+			books: [
+				{t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isles', sn: '1', e: [{ext: {'audible.com': 'B1'}}]},
+				{t: 'Paper Fen', a: ['Ann Vale'], s: 'Gull Isles', sn: '2', e: [{ext: {'audible.com': 'B2'}}]},
+				{t: 'Tide Mark', a: ['Ann Vale'], s: 'Gull Isles', sn: '3'},
+			],
+			seriesInfo: {'Gull Isles': {total: 4, status: 'ongoing', note: 'Read in order.'}},
+		});
+		return catalog;
+	};
+	// only one of its books is on the other catalog's shelf, by the series' other name
+	const shelf = Bs([
+		{t: 'Salt Road', a: ['Ann Vale'], s: 'The Gull Isle Saga', sn: '1', e: [{ext: {'audible.com': 'B1'}}]},
+		{t: 'Gull Song', a: ['Ann Vale'], s: 'The Gull Isle Saga', sn: '4', e: [{ext: {'audible.com': 'B4'}}]},
+	]);
+	const catalog = series();
+	const id = catalog.nameIds.series.get('Gull Isles');
+	const [d] = Comparison.compare(catalog, shelf).books[0].differences;
+	assert.deepEqual([d.key, d.here, d.there], ['0:s', 'Gull Isles', 'The Gull Isle Saga']);
+	assert.deepEqual(
+		[...Comparison.seriesRenames(catalog, Comparison.compare(catalog, shelf).books)],
+		[['Gull Isles', 'The Gull Isle Saga']],
+	);
+	const {patched, renamed} = Comparison.apply(catalog, shelf, {take: new Set([1]), patch: new Set(['0:s'])});
+	assert.equal(patched, 1);
+	assert.deepEqual(renamed, [{from: 'Gull Isles', to: 'The Gull Isle Saga'}]);
+	assert.deepEqual(
+		catalog.books.map(b => [b.title, b.series]),
+		[
+			['Salt Road', 'The Gull Isle Saga'],
+			['Paper Fen', 'The Gull Isle Saga'],
+			['Tide Mark', 'The Gull Isle Saga'],
+			['Gull Song', 'The Gull Isle Saga'],
+		],
+		'the book added from there is in it too',
+	);
+	assert.deepEqual([...catalog.namesOf('series')], ['The Gull Isle Saga']);
+	assert.equal(catalog.nameIds.series.get('The Gull Isle Saga'), id);
+	assert.deepEqual(json(catalog.series.get(/** @type {string} */ (id))), {
+		total: 4,
+		status: 'ongoing',
+		note: 'Read in order.',
+	});
+
+	// with several catalogs, as they agree
+	const multi = series();
+	const multiId = multi.nameIds.series.get('Gull Isles');
+	const sources = [shelf, shelf.slice(0, 1)].map((incoming, i) => ({
+		label: `Catalog ${i}`,
+		result: {incoming, comparison: Comparison.compare(multi, incoming)},
+	}));
+	const result = MultiComparison.compare(multi, sources);
+	const picks = MultiComparison.noPicks();
+	picks.values.set('0:s', 0);
+	assert.deepEqual(
+		MultiComparison.apply(
+			multi,
+			sources.map(s => s.result),
+			result,
+			picks,
+		).renamed,
+		[{from: 'Gull Isles', to: 'The Gull Isle Saga'}],
+	);
+	assert.deepEqual(
+		multi.books.map(b => b.series),
+		['The Gull Isle Saga', 'The Gull Isle Saga', 'The Gull Isle Saga'],
+	);
+	assert.equal(multi.nameIds.series.get('The Gull Isle Saga'), multiId);
+
+	// a series whose books are in two series there, or whose name there is another series here: only the book moves
+	const split = series();
+	const two = [
+		...shelf,
+		...Bs([{t: 'Paper Fen', a: ['Ann Vale'], s: 'Fen Tales', sn: '1', e: [{ext: {'audible.com': 'B2'}}]}]),
+	];
+	assert.equal(Comparison.seriesRenames(split, Comparison.compare(split, two).books).size, 0);
+	assert.deepEqual(Comparison.apply(split, two, {take: new Set(), patch: new Set(['0:s'])}).renamed, []);
+	assert.deepEqual(
+		split.books.map(b => b.series),
+		['The Gull Isle Saga', 'Gull Isles', 'Gull Isles'],
+	);
+	const taken = series();
+	taken.books.push(B({t: 'Far Shore', a: ['Ann Vale'], s: 'The Gull Isle Saga', sn: '9'}));
+	assert.equal(Comparison.seriesRenames(taken, Comparison.compare(taken, shelf).books).size, 0);
+});
+
 test('several catalogs side by side: each value once with the catalogs that have it, each new book once, nothing picked', () => {
 	const catalog = COMPARED();
 	const other = Bs([

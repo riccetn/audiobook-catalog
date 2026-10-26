@@ -19,7 +19,9 @@ lists its books with a tickbox, and **Tick all** and **Tick none** for the group
   value, _unticked_: tick one to put the other catalog's value in place of yours (an edition's value from
   Goodreads or Hardcover is that of the edition picked there, which may not be yours). This is the only way an
   import changes a value you have, and only the values you tick. A series your book lacks is offered
-  here too, as an import doesn't add one. The long form of an Audible title (`A Crown of Embers 5: A Spark
+  here too, as an import doesn't add one. A series' name renames the series, on all its books, keeping its
+  details (the row says `renames the series, on 4 books`), when the other catalog puts every one of its books
+  it has in that one series and no series here has that name; otherwise it moves only that book. The long form of an Audible title (`A Crown of Embers 5: A Spark
 of Dawn`) is the same title, a series spelled another way (`Ember Coast Series`) the same series, and a
   length a minute off the same length, so none of them is listed.
 - **Only in this catalog** (for a file): your books the file doesn't have, to look through. For Hardcover,
@@ -45,7 +47,8 @@ Nothing is picked when it opens, so **Apply** stays hidden until you pick someth
 - **Different in the catalogs**: for each of your books, every field where a catalog has another value than yours, or
   has one where yours has none (the title, authors, series, number, dates read, or an edition's narrators,
   publisher, release date or length). Each value is listed once, with the catalogs that have it (`8h on AudiobookDB
-and Audible`), beside yours (`none here`), which is picked. Pick a catalog's value to use it instead.
+and Audible`), beside yours (`none here`), which is picked. Pick a catalog's value to use it instead; a series' name renames
+  the series as in a single catalog's comparison, when the catalogs agree on its books.
 - **New books**: the books none of yours are, each once however many catalogs have it, _not added_ unless you
   pick the catalog to add it from.
 - **More to give**: what each catalog's book would fill in on yours (its ids, dates read, and what its edition
