@@ -3778,7 +3778,7 @@ test('a Hardcover comparison flags print books and ebooks, yours and on your she
 	const html = readable(els.importPreviewBody.innerHTML);
 	assert.match(
 		html,
-		/Maybe not audiobooks, in this catalog \(2\)<\/h4><p class="cmpNote">Hardcover has these editions of yours as something else: give the book its audiobook edition in its form\.<\/p><ul class="cmpRows"><li><a href="book\.html#book=[^"]+">Brine Songs — Ann Vale<\/a>: Hardcover edition 811 is a print book on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/811" target="_blank" rel="noopener">hardcover.app ↗<\/a><\/li><li><a href="book\.html#book=[^"]+">Lantern Hours — R\. T\. Hale<\/a>: ASIN B0LANTERNK is an ebook on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/821"/,
+		/Maybe not audiobooks, in this catalog \(2\)<\/h4><p class="cmpNote">By what Hardcover says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form\.<\/p><ul class="cmpRows"><li><a href="book\.html#book=[^"]+">Brine Songs — Ann Vale<\/a>: Hardcover edition 811 is a print book on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/811" target="_blank" rel="noopener">hardcover.app ↗<\/a><\/li><li><a href="book\.html#book=[^"]+">Lantern Hours — R\. T\. Hale<\/a>: ASIN B0LANTERNK is an ebook on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/821"/,
 	);
 	assert.match(
 		html,

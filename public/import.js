@@ -735,7 +735,7 @@ function notAudioSections(notAudio, label) {
 			null,
 			[],
 			spell(
-				`${label} has these editions of yours as something else: give the book its audiobook edition in its form.`,
+				`By what ${label} says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form.`,
 			),
 		),
 		compareGroup(
