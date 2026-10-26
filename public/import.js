@@ -1782,6 +1782,7 @@ function drawMulti() {
 					messageList(r.missing, 100),
 				),
 			);
+		out.push(...notAudioSections(r.notAudio, sync.label));
 		if (r.warnings.length)
 			out.push(para(`${sync.label} needs a look (${r.warnings.length}):`, 'warn'), messageList(r.warnings));
 	}

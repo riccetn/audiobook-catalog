@@ -4419,6 +4419,11 @@ test('a series is compared with every catalog at once, and Apply takes only the 
 	);
 	assert.match(html, /data-pick="editions:1:0"> the Audible edition: audible\.com id, narrators/);
 	assert.match(html, /In the series on Audible, not in this catalog: 3<\/summary>/);
+	// each catalog's books that may not be audiobooks, as in its own comparison
+	assert.match(
+		html,
+		/Maybe not audiobooks, in this catalog \(1\)<\/h4>.*<a href="book\.html#book=[^"]+">Brine Tide — Ann Vale {2}\[Gull Isle #4\]<\/a>: ASIN B0BRINETD1 is not sold on audible\.com: maybe a Kindle or print edition's ASIN <a href="https:\/\/www\.amazon\.com\/dp\/B0BRINETD1"/,
+	);
 	assert.doesNotMatch(html, /checked=""><\/?[^h]|type="checkbox"[^>]*checked/, 'no tickbox is ticked');
 	assert.equal(els.importConfirm.style.display, 'none', 'nothing is picked at first');
 
