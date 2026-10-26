@@ -139,6 +139,10 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
     Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`).
+    `MultiComparison` (several shelf syncs' `ShelfComparison`s side by side, for _Compare with all catalogs_: `compare` gives `differing` (per book, each
+    field's values once with the sources that have them, `Comparison.differences` with `gaps` so a value the catalog lacks counts too), `fresh` (new books
+    once, matched across sources by merging them in turn) and `gains`; `noPicks` (nothing picked, so Apply changes nothing), `pickedCount`, `apply`
+    (each source's picked books merged in turn, then the picked values patched; ids found are kept by the page)).
     Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
     others bring them in with `/** @import {MergeReport} from './merger.js' */`.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
@@ -194,7 +198,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
   `<CATALOG>Key`/`KeySave`/`KeyRemove`/`KeyState`, `showKey`/`saveKeyOf`). The comparison an export file's import (`compareExport`), or a shelf sync's Compare
   (`compareShelfSync(Sync)`; for a series or an author, which their pages' buttons beside Edit open with `shelfCompareButtons`/`openShelfCompare`: a `CompareRequest` handed over in sessionStorage (`COMPARE_STORAGE_KEY`, read once by `takeShelfCompare`), else, and from older links, the address `shelfCompareHref`, `#hardcover-series=<id>`/`#audiobookdb-author=<id>`;
-  `scopeOf`/`showScope` by the panel's prefix), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
+  `scopeOf`/`showScope` by the panel's prefix; _All catalogs_ (`allPanel`, prefix `all`, `ALL_CATALOGS` in a `CompareRequest`): `compareAll` runs every sync whose `PARTS` has the kind
+  and can be asked (`cantAsk`) in turn, `drawMulti`/`applyMulti` with `PENDING_MULTI` (radio choices, nothing picked at first, nothing sent)), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
   `picks`; `drawCompare`, `shelfSections`; Apply runs `Comparison.apply` on a copy, then for a shelf sync saves and `push`es the ticked part of the plan, `applyShelfSync`),
   file exports (`exportFile`), Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).

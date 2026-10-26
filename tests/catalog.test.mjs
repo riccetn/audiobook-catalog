@@ -21,6 +21,7 @@ import {Backup, NewerBackup} from '../public/modules/backup.js';
 import {BackupV1} from '../public/modules/backup-v1.js';
 import {Catalog} from '../public/modules/catalog.js';
 import {Comparison} from '../public/modules/comparison.js';
+import {MultiComparison} from '../public/modules/multi-comparison.js';
 import {Csv} from '../public/modules/csv.js';
 import {Cover} from '../public/modules/cover.js';
 import {AudibleImporter} from '../public/modules/audible-importer.js';
@@ -4462,6 +4463,125 @@ test('applying a comparison imports only the books picked, and replaces only the
 	assert.deepEqual(
 		sets.books.map(b => b.editions[0].publisher),
 		['Kestrel Row Audio', 'Kestrel Row Audio'],
+	);
+});
+
+test('several catalogs side by side: each value once with the catalogs that have it, each new book once, nothing picked', () => {
+	const catalog = COMPARED();
+	const other = Bs([
+		{
+			t: 'Salt Road',
+			a: ['Ann Vale'],
+			s: 'Gull Isle',
+			sn: '1',
+			e: [
+				{
+					ext: {'audible.com': 'B1'},
+					n: ['Hollis Marr', 'Ida Quell'],
+					p: 'Gullwing Audio',
+					d: '2019-05-05',
+					len: 540,
+				},
+			],
+		},
+		{t: 'Lantern Hours', a: ['R. T. Hale']},
+		{t: 'Gull Song', a: ['Ann Vale']},
+	]);
+	const source = (label, incoming) => ({
+		label,
+		incoming,
+		result: {incoming, comparison: Comparison.compare(catalog, incoming)},
+	});
+	const sources = [source('One', INCOMING()), source('Two', other)];
+	const before = JSON.stringify(catalog);
+	const result = MultiComparison.compare(catalog, sources);
+	assert.equal(JSON.stringify(catalog), before, 'comparing changes nothing');
+	assert.deepEqual(
+		result.differing.map(b => [
+			b.book.title,
+			b.fields.map(f => [f.id, f.here, f.choices.map(c => [c.text, c.from.map(x => x.source)])]),
+		]),
+		[
+			[
+				'Salt Road',
+				[
+					['0:r', '2020', [['2023-01-05', [0]]]],
+					// both have the same narrators: one choice
+					['0:n:0', 'Hollis Marr', [['Hollis Marr, Ida Quell', [0, 1]]]],
+					// a value this catalog lacks, where the catalogs differ
+					[
+						'0:p:0',
+						'',
+						[
+							['Kestrel Row Audio', [0]],
+							['Gullwing Audio', [1]],
+						],
+					],
+					['0:d:0', '', [['2019-05-05', [1]]]],
+					['0:len:0', '10h', [['9h', [1]]]],
+				],
+			],
+		],
+	);
+	// Lantern Hours is new in both: listed once
+	assert.deepEqual(
+		result.fresh.map(b => b.from.map(f => [f.source, f.at, f.line])),
+		[
+			[
+				[0, 2, 'Lantern Hours — R. T. Hale'],
+				[1, 1, 'Lantern Hours — R. T. Hale'],
+			],
+			[[1, 2, 'Gull Song — Ann Vale']],
+		],
+	);
+	assert.deepEqual(
+		result.gains.map(g => [g.source, g.at, g.gains, g.edition]),
+		[
+			[0, 0, [], ['publisher']],
+			[1, 0, [], ['publisher, release date']],
+		],
+	);
+
+	// nothing picked changes nothing
+	const picks = MultiComparison.noPicks();
+	assert.equal(MultiComparison.pickedCount(picks), 0);
+	const untouched = catalog.clone();
+	MultiComparison.apply(
+		untouched,
+		sources.map(s => s.result),
+		result,
+		picks,
+	);
+	assert.equal(JSON.stringify(untouched), before);
+
+	// each value from the catalog picked, a new book from the second
+	picks.values.set('0:p:0', 1);
+	picks.values.set('0:len:0', 0);
+	picks.fresh.set(0, 1);
+	assert.equal(MultiComparison.pickedCount(picks), 3);
+	const {reports, patched} = MultiComparison.apply(
+		catalog,
+		sources.map(s => s.result),
+		result,
+		picks,
+	);
+	assert.equal(patched, 2);
+	assert.deepEqual(
+		reports.map(r => r.added.map(b => b.title)),
+		[[], ['Lantern Hours']],
+	);
+	assert.deepEqual(
+		catalog.books.map(b => [
+			b.title,
+			b.read,
+			b.editions.map(e => [e.narrators, e.publisher, e.released, e.minutes]),
+		]),
+		[
+			['Salt Road', ['2020'], [[['Hollis Marr'], 'Gullwing Audio', undefined, 540]]],
+			['Paper Fen', [], []],
+			['Only Mine', [], []],
+			['Lantern Hours', [], []],
+		],
 	);
 });
 
