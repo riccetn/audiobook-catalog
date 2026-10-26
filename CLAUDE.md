@@ -54,7 +54,7 @@ keep `make.ps1` in step with the `Makefile` when a command changes.
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
 `catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. Prettier formats (`.prettierrc.json`: tabs, single quotes, 120 columns, no spaces inside braces; Markdown and YAML
 with two spaces, as `.editorconfig` says; `sample/` and `package-lock.json` are left alone, `.prettierignore`). `npm install` points git at
-`.githooks/` (the `prepare` script), whose `pre-commit` formats and restages the staged files; `make format-check` fails on anything unformatted.
+`.githooks/` (the `prepare` script), whose `pre-commit` formats and restages the staged files, then runs ESLint on the staged JavaScript and, when there is any, the type check, and stops the commit on an error; `make format-check` fails on anything unformatted.
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `make check` and `make docs` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`, with `make docs API_DOCS=public/api` first, so the API documentation is served at `/api/`.
 The docs are written into `public/` only there: locally they stay in `api-docs/out/` (`sw-app.js` would list them, and the smoke test fails on files in `public/` no page uses).

@@ -1,10 +1,72 @@
 #!/bin/sh
-# Formats the staged files with Prettier and stages the result (npm install points git here, with the prepare script).
-# A file only partly staged is staged whole once formatted.
+# Formats the staged files with Prettier, stages the result, then lints the staged JavaScript with ESLint and, when any
+# is staged, type checks it with TypeScript, stopping the commit on an error (npm install points git here, with the
+# prepare script).
+# A file only partly staged has its staged version formatted and linted on its own, and its working copy formatted
+# apart, so what stays unstaged is just the unstaged edits. File names with a line break in them aren't handled.
 prettier=node_modules/prettier/bin/prettier.cjs
-if [ ! -f "$prettier" ]; then
-	echo 'Prettier is not installed: run npm install first'
+eslint=node_modules/eslint/bin/eslint.js
+tsc=node_modules/typescript/bin/tsc
+if [ ! -f "$prettier" ] || [ ! -f "$eslint" ] || [ ! -f "$tsc" ]; then
+	echo 'Prettier, ESLint or TypeScript is not installed: run npm install first'
 	exit 1
 fi
-git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 -r node "$prettier" --write --ignore-unknown --no-error-on-unmatched-pattern || exit 1
-git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 -r git add --
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+# Files with edits that aren't staged (or that are gone from the working tree).
+unstaged=$(git diff --name-only)
+is_partial(){ printf '%s\n' "$unstaged" | grep -Fxq -- "$1"; }
+is_js(){ case "$1" in *.js|*.mjs|*.cjs) return 0;; esac; return 1; }
+
+whole=''
+partial=''
+while IFS= read -r file; do
+	if is_partial "$file"; then partial="$partial$file
+"; else whole="$whole$file
+"; fi
+done <<EOF
+$staged
+EOF
+
+# Wholly staged files: formatted where they are, and staged again.
+if [ -n "$whole" ]; then
+	printf '%s' "$whole" | tr '\n' '\0' | xargs -0 node "$prettier" --write --ignore-unknown --log-level warn || exit 1
+	printf '%s' "$whole" | tr '\n' '\0' | xargs -0 git add --
+fi
+
+failed=0
+formatted=$(mktemp)
+trap 'rm -f "$formatted"' EXIT
+# Partly staged files: the staged version is formatted and put back in the index without touching the working copy.
+while IFS= read -r file; do
+	[ -n "$file" ] || continue
+	if node "$prettier" --file-info "$file" | grep -q '"inferredParser": null'; then continue; fi
+	mode=$(git ls-files -s -- "$file" | cut -d' ' -f1)
+	# Through a file, so a version Prettier can't read stops the commit rather than staging nothing.
+	git show ":$file" | node "$prettier" --stdin-filepath "$file" > "$formatted" || exit 1
+	hash=$(git hash-object -w -- "$formatted") || exit 1
+	git update-index --cacheinfo "$mode,$hash,$file" || exit 1
+	[ -f "$file" ] && { node "$prettier" --write --log-level warn "$file" || exit 1; }
+	if is_js "$file"; then git show ":$file" | node "$eslint" --stdin --stdin-filename "$file" --no-warn-ignored || failed=1; fi
+done <<EOF
+$partial
+EOF
+
+# Warnings are shown but let the commit through, as make lint does.
+js=$(printf '%s' "$whole" | grep -E '\.(js|mjs|cjs)$')
+if [ -n "$js" ]; then
+	printf '%s\n' "$js" | tr '\n' '\0' | xargs -0 node "$eslint" --no-warn-ignored || failed=1
+fi
+if [ "$failed" = 1 ]; then
+	echo 'ESLint found errors: fix them, or commit with --no-verify to skip the hook'
+	exit 1
+fi
+
+# Types cross files, so this checks the whole project as it is on disk, as make typecheck does.
+if printf '%s\n' "$staged" | grep -Eq '\.(js|mjs|cjs)$'; then
+	{ node "$tsc" -p jsconfig.json && node "$tsc" -p jsconfig.sw.json; } || {
+		echo 'TypeScript found errors: fix them, or commit with --no-verify to skip the hook'
+		exit 1
+	}
+fi
