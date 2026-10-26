@@ -38,6 +38,13 @@ import {CatalogClient} from './catalog-client.js';
  * @property {[Book, string][]} inexact
  */
 /**
+ * A book that may not be an audiobook, as the other catalog says, which may be a data problem: an edition of
+ * yours (`yours`), or the one on your shelf there. `edition` names it ("ASIN B0…", "ISBN 978…", "Hardcover
+ * edition 601"), `said` is what the catalog has it as ("a print book"), `url` its page there; `maybe` when
+ * it is only a guess (Audible not selling it).
+ * @typedef {{book: Book, yours: boolean, edition: string, said: string, url?: string | null, maybe?: boolean}} NotAudio
+ */
+/**
  * Your shelves on a catalog beside the catalog (compare()).
  * @typedef {object} ShelfComparison
  * @property {ComparisonResult} comparison the books on your Read shelf beside the catalog's
@@ -49,6 +56,7 @@ import {CatalogClient} from './catalog-client.js';
  * @property {InfoId[]} infoIds the series and people that gain an id there
  * @property {SyncPlan | null} plan what putting your books there would do; null when it can't be known (no key)
  * @property {string[]} missing the series' books there that aren't in the catalog (a series only)
+ * @property {NotAudio[]} notAudio the editions of yours and on your shelves there that may not be audiobooks
  * @property {Book[]} [yours] the incoming books whose edition is yours there (found by its id), ticked at first
  */
 /** @typedef {{shelved: number, reads: number, problems: string[]}} Sent what sending one entry of a plan did */

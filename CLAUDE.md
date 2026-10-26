@@ -113,9 +113,9 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
       `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release).
     - `ShelfSync` (your shelves on a catalog: `CLIENT`, `compare(catalog, step, part)` gives a `ShelfComparison` with a `SyncPlan` (`name`, `add`, `reads`,
       `otherShelf`, `unknown`, `inexact`), `summary`, `push` (the plan's entries in turn, each by the subclass's `send`; stops after `STOP_AFTER` failures in a row), `FOUND` (what Apply saves besides books: AudiobookDB's "ids and covers"),
-      `part` (a series' or author's id there), `addIds`/`setInfoIds`, `notAdded`, `NOT_FOUND`, `SENDS_READS`, `inScope`, `sameName`) with `HardcoverSync`
+      `part` (a series' or author's id there), `addIds`/`setInfoIds`, `notAdded`, `NOT_FOUND`, `SENDS_READS`, `inScope`, `sameName`; the comparison's `notAudio`, editions yours or on your shelves there the catalog has as something else, shown as _Maybe not audiobooks_) with `HardcoverSync`
       (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`;
-      both read the shelf's books with `readShelfBooks` and plan with `planFor`; `bookRecord`, which `HardcoverSource` uses too, `read`, `lookups`/`addIds`, `planExport`)
+      both read the shelf's books with `readShelfBooks` and plan with `planFor`, which never sends an edition `HardcoverClient.notAudio` (`reading_format_id`) calls a print book or an ebook and lists yours with `yourNotAudio`; `bookRecord`, which `HardcoverSource` uses too, `read`, `lookups`/`addIds`, `planExport`)
       and `AudiobookdbSync` (finds your books (`find`: by their AudiobookDB id, else their own editions' ASINs), then with the key your Read shelf (`readShelf`) as
       incoming books (`incoming`: the release that is yours, else a lone one; none of several, so not `addable`); for a series or an author only that part
       (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids), `planExport` (every book on Read, as everything in the catalog counts as
@@ -124,7 +124,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
       nothing is sent; reads the series on its books' Audible site (`siteOf`), by the series' ASIN there or `findSeries`, its `relationships`
       children, then their products `AudibleClient.BATCH` (50) at a time; every edition Audible sells is listed, so a book takes the one with its
       ASIN (`yours`, ticked at first), else its number's only one; placeholders, box sets and unnumbered ones aren't missing books; `setInfoIds`
-      keeps the series' ASIN under the site and its `total`). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
+      keeps the series' ASIN under the site and its `total`; `unsold`: your ASINs on that site Audible doesn't sell, as maybe not audiobooks). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
       `products`). Comparing only reads the catalog; sending only adds.
     - `BookSource` (a catalog the book form's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`

@@ -3753,6 +3753,53 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 	);
 });
 
+test('a Hardcover comparison flags print books and ebooks, yours and on your shelf, and never sends their edition', async () => {
+	const mine = [
+		{t: 'Brine Songs', a: ['Ann Vale'], r: ['2024-06-01'], ext: {hardcover: '81'}, e: [{ext: {hardcover: '811'}}]},
+		{t: 'Lantern Hours', a: ['R. T. Hale'], ext: {hardcover: '80'}, e: [{ext: {'amazon.com': 'B0LANTERNK'}}]},
+	];
+	const state = hardcoverState();
+	state.editions[821] = {id: 821, book_id: 80, asin: 'B0LANTERNK', reading_format_id: 4, contributions: []};
+	const hc = fakeHardcover(state);
+	const setTimeout = (fn, ms) => {
+		if (ms === 1000) Promise.resolve().then(fn);
+		return 0;
+	};
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const {els, readable} = await boot({
+		page: 'import.html',
+		files: {'books.json': JSON.stringify(mine)},
+		hardcover: hc.fetch,
+		setTimeout,
+		storage,
+	});
+	await els.hardcoverCompareBtn.listeners.click[0]();
+	await idle();
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(
+		html,
+		/Maybe not audiobooks, in this catalog \(2\)<\/h4><p class="cmpNote">Hardcover has these editions of yours as something else: give the book its audiobook edition in its form\.<\/p><ul class="cmpRows"><li><a href="book\.html#book=[^"]+">Brine Songs — Ann Vale<\/a>: Hardcover edition 811 is a print book on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/811" target="_blank" rel="noopener">hardcover.app ↗<\/a><\/li><li><a href="book\.html#book=[^"]+">Lantern Hours — R\. T\. Hale<\/a>: ASIN B0LANTERNK is an ebook on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/821"/,
+	);
+	assert.match(
+		html,
+		/Maybe not audiobooks, on your Hardcover shelves \(1\)<\/h4>.*<li>The Paper Fen — Ann Vale: read as a print book \(Hardcover edition 601\) <a href="https:\/\/hardcover\.app\/id\/edition\/601"/,
+	);
+	assert.doesNotMatch(html, /Editions to add|edition:0/, "the print edition read isn't offered as one of yours");
+	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]');
+	assert.match(readable(add.parentNode.innerHTML ?? ''), /Brine Songs/);
+	add.checked = true;
+	add.dispatch('change');
+	await els.importConfirm.listeners.click[0]();
+	await idle();
+	const sent = state.shelf.at(-1);
+	assert.equal(sent.book_id, 81);
+	assert.ok(!sent.edition_id, 'the print edition is not sent');
+	assert.deepEqual(
+		sent.user_book_reads.map(r => r.finished_at),
+		['2024-06-01'],
+	);
+});
+
 test('the catalog proxy is kept in this browser, checked when saved, and only ever sent its own key', async () => {
 	// the real Worker (proxy/worker.js) behind the page, with no catalog behind it
 	const env = {PROXY_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};

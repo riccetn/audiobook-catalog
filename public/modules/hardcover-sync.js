@@ -11,9 +11,9 @@ import {ShelfSync} from './shelf-sync.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Comparison} from './comparison.js';
 /** @import {Unchecked} from './text.js' */
-/** @import {HardcoverLookups, HardcoverFound} from './hardcover-client.js' */
+/** @import {HardcoverLookups, HardcoverFound, HardcoverHit} from './hardcover-client.js' */
 /** @import {Step} from './catalog-client.js' */
-/** @import {ShelfPart, PlanEntry, Sent, PlanGroup, InfoId} from './shelf-sync.js' */
+/** @import {ShelfPart, PlanEntry, Sent, PlanGroup, InfoId, NotAudio} from './shelf-sync.js' */
 /** @import {Catalog} from './catalog.js' */
 /** @import {MergeOptions} from './merger.js' */
 /** @import {ComparisonResult} from './comparison.js' */
@@ -41,8 +41,12 @@ import {Comparison} from './comparison.js';
  * @property {InfoId[]} infoIds none: Hardcover's series and people ids are found in their forms
  * @property {HardcoverPlan} plan what putting your books on Hardcover would do
  * @property {string[]} missing none
+ * @property {NotAudio[]} notAudio your editions Hardcover has as print books or ebooks, and the books on your Read shelf read as one
  */
-/** @typedef {{books: Book[], audio: Set<Book>, otherShelves: number, warnings: string[]}} HardcoverShelf your Read shelf as books (HardcoverSync.read()) */
+/**
+ * Your Read shelf as books (HardcoverSync.read()), and those read as a print book or an ebook (`notAudio`).
+ * @typedef {{books: Book[], audio: Set<Book>, otherShelves: number, warnings: string[], notAudio: NotAudio[]}} HardcoverShelf
+ */
 
 const READ = HardcoverClient.READ;
 
@@ -86,7 +90,7 @@ export class HardcoverSync extends ShelfSync {
 		const books = comparison.merged.books;
 		const ids = await client.find(HardcoverSync.lookups(books), step);
 		const idsFound = HardcoverSync.addIds(books, ids);
-		const plan = await this.planFor(books, shelf, step);
+		const {plan, notAudio} = await this.planFor(books, shelf, step, ids);
 		return {
 			comparison,
 			incoming,
@@ -98,6 +102,7 @@ export class HardcoverSync extends ShelfSync {
 			infoIds: [],
 			plan,
 			missing: [],
+			notAudio: [...notAudio, ...result.notAudio],
 		};
 	}
 
@@ -146,7 +151,8 @@ export class HardcoverSync extends ShelfSync {
 		const comparison = Comparison.compare(catalog, incoming, opts);
 		const books = comparison.merged.books.filter(scope);
 		const idsFound = HardcoverSync.addIds(books, ids);
-		const plan = await this.planFor(books, shelf, step);
+		const {plan, notAudio} = await this.planFor(books, shelf, step, ids);
+		const shelved = new Set(incoming);
 		return {
 			comparison,
 			incoming,
@@ -158,6 +164,7 @@ export class HardcoverSync extends ShelfSync {
 			infoIds: [],
 			plan,
 			missing: [],
+			notAudio: [...notAudio, ...result.notAudio.filter(n => shelved.has(n.book))],
 		};
 	}
 
@@ -208,23 +215,72 @@ export class HardcoverSync extends ShelfSync {
 
 	/**
 	 * What putting `books` on Hardcover would do, beside `shelf` (planExport), once it is known which
-	 * Hardcover book each of their editions belongs to, so a box set's edition is never sent as a title's.
+	 * Hardcover book each of their editions belongs to, so a box set's edition is never sent as a title's;
+	 * one Hardcover has as a print book or an ebook is never sent, and is with those `found` names so
+	 * (HardcoverClient.find()) in `notAudio` (yourNotAudio()).
 	 * @param {Book[]} books
 	 * @param {Unchecked[]} shelf
 	 * @param {Step} step
-	 * @returns {Promise<HardcoverPlan>}
+	 * @param {HardcoverFound} found
+	 * @returns {Promise<{plan: HardcoverPlan, notAudio: NotAudio[]}>}
 	 */
-	async planFor(books, shelf, step) {
+	async planFor(books, shelf, step, found) {
 		/** @type {Map<string, string>} */
 		const editionBooks = new Map();
+		/** @type {Map<string, string>} */
+		const notAudio = new Map();
 		const rows = await this.client.rows(
 			'editions',
 			HardcoverSync.exportEditions(books),
 			step,
 			'Checking your editions on Hardcover',
 		);
-		for (const [id, row] of rows) editionBooks.set(String(id), String(row.book_id));
-		return HardcoverSync.planExport(books, shelf, editionBooks);
+		for (const [id, row] of rows) {
+			const said = HardcoverClient.notAudio(row);
+			if (said) notAudio.set(String(id), said);
+			else editionBooks.set(String(id), String(row.book_id));
+		}
+		return {
+			plan: HardcoverSync.planExport(books, shelf, editionBooks),
+			notAudio: HardcoverSync.yourNotAudio(books, found, notAudio),
+		};
+	}
+
+	/**
+	 * The editions of `books` Hardcover has as print books or ebooks: by their Hardcover edition id
+	 * (`formats`: what its edition is, by id, else `found.hc`), else by their ASIN or ISBN (`found`), one
+	 * entry per edition of a book.
+	 * @param {Book[]} books
+	 * @param {HardcoverFound} found
+	 * @param {Map<string, string>} formats
+	 * @returns {NotAudio[]}
+	 */
+	static yourNotAudio(books, found, formats) {
+		/** @type {NotAudio[]} */
+		const out = [];
+		const url = (/** @type {string} */ id) => ExternalCatalog.url('hardcover', 'edition', id);
+		for (const book of books)
+			for (const ed of book.editions) {
+				const hc = ed.idOn('hardcover');
+				const byId = hc ? formats.get(hc) || found.hc.get(hc)?.other?.said : undefined;
+				if (hc && byId) {
+					out.push({book, yours: true, edition: `Hardcover edition ${hc}`, said: byId, url: url(hc)});
+					continue;
+				}
+				/** @type {[string, HardcoverHit | undefined][]} */
+				const hits = [
+					...ed
+						.ids('asin')
+						.map(a => /** @type {[string, HardcoverHit | undefined]} */ ([`ASIN ${a}`, found.asin.get(a)])),
+					...ed
+						.isbns()
+						.map(i => /** @type {[string, HardcoverHit | undefined]} */ ([`ISBN ${i}`, found.isbn.get(i)])),
+				];
+				const hit = hits.find(([, h]) => h && h.other);
+				const other = hit && hit[1] && hit[1].other;
+				if (hit && other) out.push({book, yours: true, edition: hit[0], said: other.said, url: url(other.id)});
+			}
+		return out;
 	}
 
 	/**
@@ -381,8 +437,9 @@ export class HardcoverSync extends ShelfSync {
 	/**
 	 * Your books from your Hardcover shelf: `userBooks` (user_books rows), with `books` and `editions` as
 	 * Maps of id -> the rows the books and editions queries answered. Only books on the Read shelf are kept,
-	 * each with its finished dates (no date stays unknown, as in the catalog). Returns {books, audio
-	 * (the books whose edition is an audiobook), otherShelves (how many are on other shelves), warnings}.
+	 * each with its finished dates (no date stays unknown, as in the catalog); an edition Hardcover has as a
+	 * print book or an ebook is left out of the book, and listed in `notAudio`. Returns {books, audio
+	 * (the books whose edition is an audiobook), otherShelves (how many are on other shelves), warnings, notAudio}.
 	 * @param {Unchecked[]} userBooks
 	 * @param {Map<unknown, Unchecked>} books
 	 * @param {Map<unknown, Unchecked>} editions
@@ -390,7 +447,7 @@ export class HardcoverSync extends ShelfSync {
 	 */
 	static read(userBooks, books, editions) {
 		/** @type {HardcoverShelf} */
-		const result = {books: [], audio: new Set(), otherShelves: 0, warnings: []};
+		const result = {books: [], audio: new Set(), otherShelves: 0, warnings: [], notAudio: []};
 		for (const ub of userBooks) {
 			if (!Text.isObject(ub)) continue;
 			if (ub.status_id !== READ) {
@@ -418,10 +475,20 @@ export class HardcoverSync extends ShelfSync {
 			].sort();
 			if (dates.length) rec.r = dates;
 			rec.ext = {hardcover: String(ub.book_id)};
-			if (Text.isObject(edition)) rec.e = [HardcoverSync.edition(edition).toJSON()];
+			// a print book's or an ebook's edition is not one to fill in yours with
+			const said = HardcoverClient.notAudio(edition);
+			if (Text.isObject(edition) && !said) rec.e = [HardcoverSync.edition(edition).toJSON()];
 			const read = Book.fromRecord(Book.fixSeriesTitle(rec));
 			result.books.push(read);
 			if (edition && edition.reading_format_id === HardcoverClient.AUDIO) result.audio.add(read);
+			if (said)
+				result.notAudio.push({
+					book: read,
+					yours: false,
+					edition: `Hardcover edition ${ub.edition_id}`,
+					said,
+					url: ExternalCatalog.url('hardcover', 'edition', String(ub.edition_id)),
+				});
 		}
 		return result;
 	}
@@ -442,20 +509,25 @@ export class HardcoverSync extends ShelfSync {
 	}
 
 	/**
-	 * The ids that HardcoverClient.find() should look up: those of the editions of books without a Hardcover book id.
+	 * The ids that HardcoverClient.find() should look up: those of the editions of books without a Hardcover
+	 * book id, and the ASINs and ISBNs of the other editions without a Hardcover edition id (to tell whether
+	 * Hardcover has them as print books or ebooks).
 	 * @param {Book[]} books
 	 * @returns {HardcoverLookups}
 	 */
 	static lookups(books) {
 		const ids = {hc: new Set(), asin: new Set(), isbn: new Set(), gr: new Set()};
-		for (const ed of books.filter(b => !b.idOn('hardcover')).flatMap(b => b.editions)) {
-			const hc = ed.idOn('hardcover'),
-				gr = ed.idOn('goodreads');
-			if (hc && HardcoverClient.ID.test(hc)) ids.hc.add(Number(hc));
-			ed.ids('asin').forEach(asin => ids.asin.add(asin));
-			ed.isbns().forEach(isbn => ids.isbn.add(isbn));
-			if (gr) ids.gr.add(gr);
-		}
+		for (const b of books)
+			for (const ed of b.editions) {
+				const hc = ed.idOn('hardcover'),
+					gr = ed.idOn('goodreads');
+				if (b.idOn('hardcover') && hc) continue;
+				ed.ids('asin').forEach(asin => ids.asin.add(asin));
+				ed.isbns().forEach(isbn => ids.isbn.add(isbn));
+				if (b.idOn('hardcover')) continue;
+				if (hc && HardcoverClient.ID.test(hc)) ids.hc.add(Number(hc));
+				if (gr) ids.gr.add(gr);
+			}
 		return Object.fromEntries(Object.entries(ids).map(([k, v]) => [k, [...v]]));
 	}
 

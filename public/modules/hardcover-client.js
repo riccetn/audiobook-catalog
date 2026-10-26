@@ -7,7 +7,11 @@ import {CatalogClient} from './catalog-client.js';
 /** @import {Unchecked} from './text.js' */
 /** @import {Step, CatalogFetch, Pause} from './catalog-client.js' */
 /** @typedef {{hc?: unknown[], asin?: unknown[], isbn?: unknown[], gr?: unknown[]}} HardcoverLookups your ids to find on Hardcover */
-/** @typedef {{hc: string | null, hcb: string}} HardcoverHit a Hardcover edition id (or null) and book id */
+/**
+ * A Hardcover edition id (or null) and book id, and for an edition Hardcover has as a print book or an ebook,
+ * its id and what it is (`other`: {id, said}, see HardcoverClient.notAudio()).
+ * @typedef {{hc: string | null, hcb: string, other?: {id: string, said: string}}} HardcoverHit
+ */
 /**
  * Your ids (Hardcover edition ids, ASINs, ISBNs, Goodreads ids) -> what Hardcover has for them.
  * @typedef {{hc: Map<string, HardcoverHit>, asin: Map<string, HardcoverHit>, isbn: Map<string, HardcoverHit>, gr: Map<string, HardcoverHit>}} HardcoverFound
@@ -41,6 +45,9 @@ export class HardcoverClient extends CatalogClient {
 	};
 	static READ = 3;
 	static AUDIO = 2; // editions.reading_format_id of an audiobook
+	// the other reading formats (3, "both", is left alone, as it may be an audiobook)
+	/** @type {Record<number, string>} */
+	static NOT_AUDIO = {1: 'a print book', 4: 'an ebook'};
 	static PAGE = PAGE;
 	static BATCH = BATCH;
 	static QUERIES = {
@@ -354,8 +361,10 @@ export class HardcoverClient extends CatalogClient {
 
 	/**
 	 * What a Find query answered, as the Hardcover ids of each of your ids: {hc, asin, isbn, gr}, Maps of
-	 * your id -> {hc (null when only the book is known, or the edition is not an audiobook), hcb}. An ISBN or
-	 * Goodreads id names a book, but its edition is often the print one, so only an audiobook edition counts.
+	 * your id -> {hc (null when only the book is known, or the edition is not an audiobook), hcb, other (the
+	 * edition, when Hardcover has it as a print book or an ebook)}. An ISBN or Goodreads id names a book, but
+	 * its edition is often the print one, so only an audiobook edition counts, and an ASIN's only when it isn't
+	 * a print book's or an ebook's.
 	 * @param {Unchecked} data
 	 * @returns {HardcoverFound}
 	 */
@@ -365,19 +374,36 @@ export class HardcoverClient extends CatalogClient {
 		/** @type {(name: string) => Record<string, any>[]} */
 		const list = name => (data && Array.isArray(data[name]) ? data[name].filter(Text.isObject) : []);
 		const audio = (/** @type {Record<string, any>} */ ed) => ed.reading_format_id === HardcoverClient.AUDIO;
+		/** @type {(ed: Record<string, any>, hc: string | null) => HardcoverHit} */
+		const hit = (ed, hc) => {
+			const said = HardcoverClient.notAudio(ed);
+			return {hc, hcb: String(ed.book_id), ...(said ? {other: {id: String(ed.id), said}} : {})};
+		};
 		/** @type {(map: Map<string, HardcoverHit>, k: string, v: HardcoverHit) => void} */
 		const put = (map, k, v) => {
 			const had = map.get(k);
-			if (!had || (!had.hc && v.hc)) map.set(k, v);
+			if (!had || (!had.hc && v.hc) || (had.other && !v.other)) map.set(k, v);
 		};
-		for (const ed of list('byId')) put(out.hc, String(ed.id), {hc: String(ed.id), hcb: String(ed.book_id)});
+		for (const ed of list('byId')) put(out.hc, String(ed.id), hit(ed, String(ed.id)));
+		// an ASIN can be a Kindle edition's, so a print book's or an ebook's only names the book, as an ISBN does
 		for (const ed of list('byAsin'))
-			if (ed.asin) put(out.asin, ed.asin, {hc: String(ed.id), hcb: String(ed.book_id)});
+			if (ed.asin) put(out.asin, ed.asin, hit(ed, HardcoverClient.notAudio(ed) ? null : String(ed.id)));
 		for (const ed of list('byIsbn'))
-			if (ed.isbn_13) put(out.isbn, ed.isbn_13, {hc: audio(ed) ? String(ed.id) : null, hcb: String(ed.book_id)});
+			if (ed.isbn_13) put(out.isbn, ed.isbn_13, hit(ed, audio(ed) ? String(ed.id) : null));
 		for (const m of list('byGoodreads'))
 			if (m.external_id) put(out.gr, String(m.external_id), {hc: null, hcb: String(m.book_id)});
 		return out;
+	}
+
+	/**
+	 * What a Hardcover edition is when it isn't an audiobook: "a print book" or "an ebook"; null for an
+	 * audiobook, or when Hardcover doesn't say.
+	 * @param {unknown} edition a row of Hardcover's editions
+	 * @returns {string | null}
+	 */
+	static notAudio(edition) {
+		const format = Text.isObject(edition) ? edition.reading_format_id : null;
+		return (typeof format === 'number' && HardcoverClient.NOT_AUDIO[format]) || null;
 	}
 
 	// ------------------------------------------------------------------ tokens and addresses
