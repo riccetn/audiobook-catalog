@@ -212,7 +212,12 @@ export function render() {
 	fillElement(
 		byId('results'),
 		books.length
-			? bookGroups(books, {sorted: !!fieldById('sortBy').value, more, onMore: () => showMore()})
+			? bookGroups(books, {
+					sorted: !!fieldById('sortBy').value,
+					more,
+					onMore: () => showMore(),
+					q: fieldById('q').value.trim(),
+				})
 			: buildElement('p', {class: 'empty'}, 'No books match. Try clearing a filter.'),
 	);
 }

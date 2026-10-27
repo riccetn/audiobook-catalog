@@ -16,6 +16,11 @@ export class FileImporter {
 	static LABEL = 'CSV';
 	/** Whether its editions are yours (an export of your own library's), so a comparison ticks them at first. */
 	static EDITIONS_YOURS = false;
+	/**
+	 * Whether its titles are its editions' (an Audible site's, a Goodreads edition's), not the work's, so a
+	 * comparison may offer one the catalog lacks as the title that edition was released under.
+	 */
+	static EDITION_TITLES = false;
 
 	/**
 	 * @param {string} [site] the site of the catalog the export is from, for a catalog with several (Audible's);

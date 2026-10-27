@@ -1003,6 +1003,32 @@ button:focus {
 .editionFields > .ef-n {
 	grid-column: span 3;
 }
+/* the title it was released under, and the button that makes it the book's */
+.editionFields > .ef-t {
+	grid-column: 1 / -1;
+}
+.ef-titleRow {
+	display: flex;
+	gap: 0.5rem;
+	align-items: center;
+}
+.ef-titleRow input {
+	flex: 1;
+	min-width: 0;
+}
+.useTitle {
+	padding: 0.3rem 0.7rem;
+	border-radius: 6px;
+	border: 1px solid var(--line);
+	cursor: pointer;
+	font-size: 0.8rem;
+	background: var(--paper);
+	color: var(--ink);
+	white-space: nowrap;
+}
+.useTitle:hover {
+	border-color: var(--moss);
+}
 .editionFields > .ef-asin {
 	grid-column: 1 / -1;
 }
@@ -1063,6 +1089,7 @@ button:focus {
 	.editionFields > .ef-len {
 		grid-column: span 1;
 	}
+	.editionFields > .ef-t,
 	.editionFields > .ef-desc,
 	.editionFields > .ef-n,
 	.editionFields > .ef-asin {
@@ -1473,4 +1500,13 @@ button:focus {
 .book-details .readToday:hover {
 	background: var(--moss);
 	color: #fff;
+}
+
+/* the titles a book's editions were released under besides its own */
+.alsoTitled {
+	font-size: 0.85rem;
+	color: var(--ink-soft);
+}
+.alsoTitled cite {
+	font-style: italic;
 }

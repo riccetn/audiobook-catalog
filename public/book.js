@@ -46,6 +46,7 @@ import {
 	hashText,
 	hashOf,
 	setAddress,
+	alsoPublishedAs,
 } from './book-list.js';
 import {comboBox, comboField, newNames, refreshNewNotes} from './combo-box.js';
 
@@ -447,6 +448,7 @@ function bookDetails(b) {
 			'div',
 			{class: 'head'},
 			buildElement('h2', {class: 'title'}, b.title),
+			alsoPublishedAs(b.alternativeTitles(ed => SHARED.has(ed))),
 			buildElement(
 				'div',
 				{class: 'meta'},
@@ -554,8 +556,10 @@ export function finishRemoving() {
 	REMOVING = null;
 	const i = CATALOG.books.findIndex(b => b.id === id);
 	if (i < 0) return;
+	// a box set's edition is on its titles too, and its title is the set's (Book.alternativeTitles)
+	const shared = Book.sharedEditionTest(CATALOG.books);
 	const [removed] = CATALOG.books.splice(i, 1);
-	CATALOG.addExclusions(removed.exclusionEntries()); // so the next import does not bring it back
+	CATALOG.addExclusions(removed.exclusionEntries(shared)); // so the next import does not bring it back
 	render();
 	persist();
 	refreshView();
@@ -769,6 +773,7 @@ function setFormEditions(editions, id) {
 
 /** @type {Record<string, string>} */
 const EDITION_HINTS = {
+	t: "when not the book's, e.g. the US title",
 	desc: 'e.g. UK edition',
 	n: 'e.g. Ann Vale, Bo Reed',
 	asin: 'B0… or its address',
@@ -911,22 +916,43 @@ function renderFormEditions() {
 					'div',
 					{class: 'editionFields'},
 					Edition.FIELDS.map(([k, , label]) =>
-						k === 'ext'
-							? [
+						k === 't'
+							? buildElement(
+									'div',
+									{class: 'ef-t'},
+									buildElement('label', {for: `f_e${i}_t`}, label),
 									buildElement(
 										'div',
-										{class: 'ef-asin', role: 'group', 'aria-label': label},
-										buildElement('label', {}, label),
-										buildElement('div', {class: 'asinSites'}, asinFields(fields, i)),
+										{class: 'ef-titleRow'},
+										editionField(fields, i, k),
+										buildElement(
+											'button',
+											{
+												type: 'button',
+												class: 'useTitle',
+												'data-use-title': i,
+												title: "Make the title this edition was released under the book's, keeping the book's on the other editions",
+											},
+											"Use as the book's title",
+										),
 									),
-									otherCatalogFields(fields, i),
-								]
-							: buildElement(
-									'div',
-									{class: `ef-${k}`},
-									buildElement('label', {for: `f_e${i}_${k}`}, label),
-									editionField(fields, i, k),
-								),
+								)
+							: k === 'ext'
+								? [
+										buildElement(
+											'div',
+											{class: 'ef-asin', role: 'group', 'aria-label': label},
+											buildElement('label', {}, label),
+											buildElement('div', {class: 'asinSites'}, asinFields(fields, i)),
+										),
+										otherCatalogFields(fields, i),
+									]
+								: buildElement(
+										'div',
+										{class: `ef-${k}`},
+										buildElement('label', {for: `f_e${i}_${k}`}, label),
+										editionField(fields, i, k),
+									),
 					),
 				),
 			),
@@ -1036,6 +1062,12 @@ editionsEditor.addEventListener('focusout', e => {
 });
 editionsEditor.addEventListener('click', e => {
 	const target = /** @type {Element | null} */ (e.target);
+	const useTitle =
+		target && target.closest ? /** @type {HTMLElement | null} */ (target.closest('[data-use-title]')) : null;
+	if (useTitle) {
+		useEditionTitle(Number(useTitle.dataset.useTitle));
+		return;
+	}
 	// only the edition cards' Remove buttons have data-remove
 	const btn = target && target.closest ? /** @type {HTMLElement | null} */ (target.closest('[data-remove]')) : null;
 	if (!btn) return;
@@ -1043,6 +1075,33 @@ editionsEditor.addEventListener('click', e => {
 	if (!FORM_EDITIONS.length) FORM_EDITIONS.push({fields: {}, also: []});
 	renderFormEditions();
 });
+/**
+ * Make the title edition card `i` was released under the book's title (Book.useTitle, in the form): that card's
+ * Title is emptied, and the other cards that have something in them but no title of their own get the book's
+ * title before, as that is the title they were released under. A box set's edition (on other books too) keeps
+ * its title, the set's.
+ * @param {number} i
+ */
+function useEditionTitle(i) {
+	const card = FORM_EDITIONS[i];
+	const title = card ? Text.tidy(card.fields.t || '') : '';
+	if (!title) {
+		byId('formError').textContent = 'This edition has no title of its own; fill in its Title first.';
+		return;
+	}
+	const field = fieldById('f_t'),
+		was = Text.tidy(field.value);
+	field.value = title;
+	for (const c of FORM_EDITIONS) {
+		if (c.also.length) continue;
+		const own = Text.tidy(c.fields.t || '');
+		if (Text.norm(own) === Text.norm(title)) c.fields.t = '';
+		else if (!own && was && Object.values(c.fields).some(v => Text.tidy(v || ''))) c.fields.t = was;
+	}
+	byId('formError').textContent = '';
+	renderFormEditions();
+}
+
 byId('addEditionBtn').addEventListener('click', () => {
 	FORM_EDITIONS.push({fields: {}, also: []});
 	renderFormEditions();
@@ -1241,6 +1300,8 @@ function fillFormEdition(ed) {
 		card = {fields: {}, also: []};
 		FORM_EDITIONS.push(card);
 	}
+	// the title it was released under is no title of its own when it is the book's
+	if (fields.t && Book.sameTitle(fields.t, fieldById('f_t').value)) delete fields.t;
 	let gained = false;
 	for (const [k, v] of Object.entries(fields)) {
 		if (v && !has(card.fields, k)) {
@@ -1287,7 +1348,14 @@ byId('addForm').addEventListener('submit', async e => {
 		return;
 	}
 	b.read = dates;
-	const {editions, bad: badParts, book: fromEditions} = readFormEditions();
+	const read = readFormEditions();
+	const {bad: badParts, book: fromEditions} = read;
+	// an edition's title is the one it was released under when that is not the book's (a subtitle aside),
+	// and an edition left with nothing else goes
+	for (const ed of read.editions) if (ed.title && Book.sameTitle(ed.title, b.title)) ed.title = undefined;
+	const editions = read.editions.filter(ed =>
+		Object.keys(ed.toJSON()).some(k => k !== Edition.ID_KEY && k !== 'img'),
+	);
 	const hardcover = fieldById('f_hcb').value.trim() || fromEditions.hardcover;
 	if (hardcover && !ExternalCatalog.isId('hardcover', 'book', hardcover)) {
 		/** @type {HTMLDetailsElement} */ (byId('f_ids')).open = true;

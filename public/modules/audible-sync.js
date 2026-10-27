@@ -145,7 +145,8 @@ export class AudibleSync extends ShelfSync {
 		}
 		const notAudio = await this.unsold(mine, site, products, step);
 		/** @type {MergeOptions} */
-		const opts = {addable: () => false};
+		// a product's title is its site's, the title it was released under there
+		const opts = {addable: () => false, editionTitles: true};
 		const comparison = Comparison.compare(catalog, incoming, opts);
 		const numbers = [...byNumber.keys()].filter(k => /^\d+$/.test(k)).length;
 		const needsId = !info || !info.external[site];

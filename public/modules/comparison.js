@@ -5,13 +5,21 @@
 import {Text} from './text.js';
 import {Series} from './series.js';
 import {ExternalCatalog} from './external-catalog.js';
-/** @import {Book} from './book.js' */
+import {Book} from './book.js';
 /** @import {Catalog} from './catalog.js' */
 /** @import {Edition} from './edition.js' */
 /** @import {MergeOptions, MergeReport} from './merger.js' */
 
 /** @typedef {'t' | 'a' | 's' | 'sn' | 'r'} BookField */
-/** @typedef {'n' | 'p' | 'd' | 'len'} EditionField */
+/** @typedef {'t' | 'n' | 'p' | 'd' | 'len'} EditionField 't' is the title an edition was released under */
+
+/**
+ * How differences() compares a book: `allDates` (an import adds every date read), `gaps` (a value the catalog
+ * lacks is a difference too), `editionTitles` (the other source's titles are its editions', so a title the
+ * book lacks may be the one an edition of it was released under) and `shared` (Book.sharedEditionTest() of
+ * the catalog's books: a box set's edition has the set's title, not its titles').
+ * @typedef {{allDates?: boolean, gaps?: boolean, editionTitles?: boolean, shared?: (ed: Edition) => boolean}} DifferenceOptions
+ */
 
 /**
  * A value both have, or only the other source has where an import doesn't fill it in, that differs.
@@ -75,6 +83,7 @@ const EDITION_LABELS = {
 	p: 'publisher',
 	d: 'release date',
 	len: 'length',
+	t: 'title',
 	desc: 'description',
 	img: 'cover',
 };
@@ -98,6 +107,7 @@ export class Comparison {
 		const places = new Map(merged.books.map((b, i) => [b, i]));
 		const seen = new Set();
 		const spellings = Comparison.seriesSpellings(mine);
+		const shared = Book.sharedEditionTest(mine);
 		const books = report.matches.map((m, at) => {
 			const found = m.books.map(b => /** @type {number} */ (places.get(b))).filter(i => i < count);
 			found.forEach(i => seen.add(i));
@@ -109,14 +119,11 @@ export class Comparison {
 			const differences =
 				m.boxSet || !found.length
 					? []
-					: Comparison.differences(
-							at,
-							found[0],
-							mine[found[0]],
-							m.incoming,
-							spellings,
-							!!(opts && opts.allDates),
-						);
+					: Comparison.differences(at, found[0], mine[found[0]], m.incoming, spellings, {
+							allDates: !!(opts && opts.allDates),
+							editionTitles: !!(opts && opts.editionTitles),
+							shared,
+						});
 			/** @type {ComparedBook['kind']} */
 			const kind =
 				m.excluded && !found.length
@@ -197,22 +204,25 @@ export class Comparison {
 	}
 
 	/**
-	 * Where `theirs` (incoming book `at`) and `book` (the catalog's book at `place`) differ: the title,
-	 * authors, series and number, and the narrators, publisher, release date and length of an edition they
-	 * both have (as merge pairs them), and the dates read when the other source has some the book lacks
-	 * (unless `allDates`, as importing then adds them). Only a value the other source has counts; an
-	 * edition's value this catalog lacks (or the dates read of a book without any) is no difference, as
-	 * importing fills it in, but a series is not; with `gaps` they are differences too (`here` is '').
+	 * Where `theirs` (incoming book `at`) and `book` (the catalog's book at `place`) differ: the title (one
+	 * that is any of the book's titles, Book.hasTitle(), is no difference), authors, series and number, and
+	 * the narrators, publisher, release date and length of an edition they both have (as merge pairs them),
+	 * and the dates read when the other source has some the book lacks (unless `allDates`, as importing then
+	 * adds them). Only a value the other source has counts; an edition's value this catalog lacks (or the
+	 * dates read of a book without any) is no difference, as importing fills it in, but a series is not; with
+	 * `gaps` they are differences too (`here` is ''). With `editionTitles`, a title the book lacks is also
+	 * offered as the title of the edition it found the book by (one with the same id, not a box set's):
+	 * "Released as", beside renaming the book.
 	 * @param {number} at
 	 * @param {number} place
 	 * @param {Book} book
 	 * @param {Book} theirs
 	 * @param {Map<string, string>} spellings
-	 * @param {boolean} [allDates]
-	 * @param {boolean} [gaps]
+	 * @param {DifferenceOptions} [options]
 	 * @returns {Difference[]}
 	 */
-	static differences(at, place, book, theirs, spellings, allDates = false, gaps = false) {
+	static differences(at, place, book, theirs, spellings, options = {}) {
+		const {allDates = false, gaps = false, editionTitles = false, shared = () => false} = options;
 		/** @type {Difference[]} */
 		const out = [];
 		/** @type {(field: BookField | EditionField, label: string, edition: number | null, here: string, there: string, value: string | string[] | number) => void} */
@@ -228,8 +238,9 @@ export class Comparison {
 				value,
 			});
 		const theirSeries = theirs.series ? spellings.get(Series.norm(theirs.series)) || theirs.series : undefined;
-		// Audible's long form of a title ("A Crown of Embers 5: A Spark of Dawn") is the same title, as imports read it
-		const sameTitle = theirs.lookupKeys().includes(Text.key('title', Text.norm(book.title), theirs.authorKey()));
+		// Audible's long form of a title ("A Crown of Embers 5: A Spark of Dawn") is the same title, as imports
+		// read it, and so is one with a subtitle, or the title an edition of it was released under
+		const sameTitle = !Text.norm(theirs.title) || book.hasTitle(theirs.title, shared);
 		for (const [field, label] of BOOK_FIELDS) {
 			if (field === 't' && !sameTitle) add(field, label, null, book.title, theirs.title, theirs.title);
 			if (
@@ -259,6 +270,14 @@ export class Comparison {
 			if (i < 0 && book.editions.length === 1 && !book.editions[0].conflictsWith(ed)) i = 0;
 			if (i < 0) continue;
 			const mine = book.editions[i];
+			if (
+				editionTitles &&
+				!sameTitle &&
+				mine.sameAs(ed) &&
+				(book.isCollection() || !shared(mine)) &&
+				Text.norm(mine.title || '') !== Text.norm(theirs.title)
+			)
+				add('t', 'Released as', i, mine.title || '', theirs.title, theirs.title);
 			for (const [field, label] of EDITION_FIELDS) {
 				const v = Comparison.editionValue(mine, field),
 					w = Comparison.editionValue(ed, field);
@@ -385,7 +404,7 @@ export class Comparison {
 		const book = books[d.book];
 		if (d.edition === null) {
 			const v = d.value;
-			if (d.field === 't' && typeof v === 'string') book.title = v;
+			if (d.field === 't' && typeof v === 'string') book.useTitle(v, Book.sharedEditionTest(books));
 			if (d.field === 'a' && Array.isArray(v)) book.authors = [...v];
 			if (d.field === 's' && typeof v === 'string') book.series = v;
 			if (d.field === 'sn' && typeof v === 'string') book.number = v;
@@ -394,7 +413,12 @@ export class Comparison {
 		}
 		const ed = book.editions[d.edition];
 		const copies = books.flatMap(b => b.editions.filter(x => x !== ed && x.sameAs(ed)));
-		for (const x of [ed, ...copies]) x.set(d.field, Array.isArray(d.value) ? [...d.value] : d.value);
+		// the book renamed to the title an edition was released under: the edition has the book's title again
+		const value =
+			d.field === 't' && typeof d.value === 'string' && Text.norm(d.value) === Text.norm(book.title)
+				? undefined
+				: d.value;
+		for (const x of [ed, ...copies]) x.set(d.field, Array.isArray(value) ? [...value] : value);
 	}
 
 	/**

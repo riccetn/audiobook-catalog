@@ -75,7 +75,8 @@ export class GoodreadsExporter extends FileExporter {
 			/** @type {Record<string, string>} */
 			const row = {
 				'Book Id': ed.idOn('goodreads') || '',
-				Title: book.title + series,
+				// the title of the edition Goodreads finds it by, which may have been published under another
+				Title: (ed.title || book.title) + series,
 				Author: book.authors[0],
 				'Additional Authors': book.authors.slice(1).join(', '),
 				ISBN: Isbn.isbn10Of(isbn),

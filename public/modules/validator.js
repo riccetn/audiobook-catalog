@@ -152,6 +152,8 @@ export class Validator {
 				if (typeof n === 'string' && Text.normalizeName(n) !== n)
 					untidy.set(Text.key('narrator', n), ['narrator', n, Text.normalizeName(n)]);
 			}
+			if (typeof ed.t === 'string' && Text.tidy(ed.t) !== ed.t)
+				untidy.set(Text.key('edition title', ed.t), ['edition title', ed.t, Text.tidy(ed.t)]);
 			if (typeof ed.desc === 'string' && Text.tidy(ed.desc) !== ed.desc)
 				untidy.set(Text.key('description', ed.desc), ['description', ed.desc, Text.tidy(ed.desc)]);
 		}
@@ -226,7 +228,7 @@ export class Validator {
 		}
 		if (Edition.ID_KEY in ed && !nonEmpty(ed[Edition.ID_KEY]))
 			errors.push(`${label}: ${repr(Edition.ID_KEY)} must be a non-empty string when present`);
-		for (const k of ['p', 'd', 'desc']) {
+		for (const k of ['t', 'p', 'd', 'desc']) {
 			if (k in ed && !nonEmpty(ed[k]))
 				errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
 		}

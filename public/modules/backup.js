@@ -1,5 +1,5 @@
-// A backup of the catalog. Export writes version 2 (write()): the records IndexedDB keeps, by store and uid,
-// without their derived fields. Version 1, which has no `version`, is the catalog by name ({books, seriesInfo,
+// A backup of the catalog. Export writes version 3 (write()): the records IndexedDB keeps, by store and uid,
+// without their derived fields (version 2 is the same without editions' titles, so it reads as it is). Version 1, which has no `version`, is the catalog by name ({books, seriesInfo,
 // authors, narrators, publishers, excluded, notDuplicates, ids}, as Catalog.toJSON() writes it), which
 // BackupV1 reads (also the old data/ files picked together, and backups from before some parts existed).
 // Reading either, and merging one made on another device into this catalog.
@@ -62,11 +62,11 @@ import {Catalog} from './catalog.js';
  * @property {Map<string, Contributor> | null} [publishers]
  * @property {string[] | null} [excluded] the exclusions list's entries
  * @property {string[] | null} [notDuplicates] the "Not duplicates" marks, as text
- * @property {Mark[] | null} [marks] the marks as the catalog keeps them, by the ids of their books, from a version 2 backup
+ * @property {Mark[] | null} [marks] the marks as the catalog keeps them, by the ids of their books, from a version 2 or 3 backup
  * @property {NameIds | null} [nameIds] the ids of series and people by name (`ids`), from a backup that has them
  */
 /**
- * A version 2 backup, as write() gives it: a field per store, each the store's records by their uid, without
+ * A version 3 backup, as write() gives it: a field per store, each the store's records by their uid, without
  * the uid; the exclusions, which have none, are a sorted list of their entries.
  * @typedef {{version: number, exclusions: string[]} & Record<BackupStore, Record<string, Record<string, unknown>>>} BackupJSON
  */
@@ -76,7 +76,7 @@ import {Catalog} from './catalog.js';
 const isText = v => typeof v === 'string' && !!v.trim();
 /** @type {(v: unknown) => boolean} */
 const isTextList = v => Array.isArray(v) && v.every(isText);
-// What each field of a version 2 backup's records must be, and what to call it when it isn't. The records
+// What each field of a version 2 or 3 backup's records must be, and what to call it when it isn't. The records
 // are stored as they are, so a value that is none of these is refused rather than kept aside.
 /** @type {Record<string, [(v: unknown) => boolean, string]>} */
 const SHAPES = {
@@ -112,7 +112,7 @@ const KINDS = {contributors: ['author', 'narrator', 'publisher'], marks: ['notDu
 /** @type {Partial<Record<BackupStore, string[]>>} */
 const LISTS = {books: ['authorIds', 'genres', 'read', 'editionIds'], editions: ['narratorIds']};
 
-/** A version 2 backup that isn't one: its message says what is wrong, for Restore and Merge to show. */
+/** A version 2 or 3 backup that isn't one: its message says what is wrong, for Restore and Merge to show. */
 export class UnreadableBackup extends Error {}
 
 /** A backup the page can't read because a newer version of it wrote it. */
@@ -128,17 +128,29 @@ export class NewerBackup extends Error {
 
 /** A backup of the catalog. */
 export class Backup {
-	// The version write() writes. A backup without `version` is version 1, the catalog by name; a version
-	// after 2 adds a step that brings a version 2 backup up to it, so every older one still reads.
-	static VERSION = 2;
-	// What a version 2 backup keeps of each store's records, in this order, beside the uid the record is
+	// The version write() writes. A backup without `version` is version 1, the catalog by name. Version 3
+	// added an edition's title, which a page reading version 2 refuses as a field no backup has, so it says
+	// the backup is newer instead (NewerBackup); version 2 needs no step, as it is version 3 without titles.
+	// A later version adds a step that brings an older backup up to it, so every older one still reads.
+	static VERSION = 3;
+	// What a backup keeps of each store's records, in this order, beside the uid the record is
 	// under. The rest of a record is derived (CatalogRecords.DERIVED) and is worked out again when it is
 	// saved; a book's position is its place in the backup. The exclusions are a list of their entries, sorted.
 	// Credits are derived as a whole, and meta is this browser's own (its revision, the Duplicates count).
 	/** @type {Record<BackupStore, string[]>} */
 	static FIELDS = {
 		books: ['title', 'authorIds', 'seriesId', 'number', 'genres', 'read', 'external', 'editionIds'],
-		editions: ['external', 'isbn', 'narratorIds', 'publisherId', 'released', 'minutes', 'description', 'covers'],
+		editions: [
+			'title',
+			'external',
+			'isbn',
+			'narratorIds',
+			'publisherId',
+			'released',
+			'minutes',
+			'description',
+			'covers',
+		],
 		series: ['name', 'total', 'status', 'note', 'external'],
 		contributors: ['kind', 'name', 'bio', 'url', 'external', 'links'],
 		marks: ['kind', 'bookIds', 'editionIds', 'key'],
@@ -170,7 +182,7 @@ export class Backup {
 	}
 
 	/**
-	 * The catalog as Export writes it: version 2, the records IndexedDB keeps (CatalogRecords.fromCatalog),
+	 * The catalog as Export writes it: version 3, the records IndexedDB keeps (CatalogRecords.fromCatalog),
 	 * each store's by its key, with only the fields in FIELDS. Gives an id to whatever in the catalog has none.
 	 * @param {Catalog} catalog
 	 * @returns {BackupJSON}
@@ -192,7 +204,7 @@ export class Backup {
 	}
 
 	/**
-	 * Read a backup exported from the page: version 2 (write(), readRecords()), or one without a `version`,
+	 * Read a backup exported from the page: version 2 or 3 (write(), readRecords()), or one without a `version`,
 	 * from before (BackupV1.read() says what it takes; what a backup predates is null, so callers leave theirs
 	 * alone). A backup of a version after this page's throws NewerBackup. Throws when it is none of these, or
 	 * a part of it is not what it should be.
@@ -213,7 +225,7 @@ export class Backup {
 	}
 
 	/**
-	 * Read a version 2 backup (write()): its records are put together as the stored ones are (CatalogRecords.toCatalog).
+	 * Read a version 2 or 3 backup (write()): its records are put together as the stored ones are (CatalogRecords.toCatalog).
 	 * Throws when a record is not an object, has a field FIELDS doesn't list or one that is not what SHAPES says,
 	 * or when they don't fit together (a book lists an edition, author or series the backup has no record of, two series have one name).
 	 * @param {Record<string, unknown>} data
@@ -389,8 +401,11 @@ export class Backup {
 		// Each key leads to every book that has it: a box set's titles share their edition's ASIN.
 		/** @type {Map<string, number[]>} */
 		const index = new Map();
+		// a box set's edition is on each of its titles, and its title is the set's (Book.alternativeTitles)
+		const shared = Book.sharedEditionTest(out);
+		const theirsShared = Book.sharedEditionTest(theirBooks);
 		const indexBook = (/** @type {number} */ i) =>
-			out[i].keys().forEach(k => {
+			out[i].keys(shared).forEach(k => {
 				const list = index.get(k);
 				if (!list) index.set(k, [i]);
 				else if (!list.includes(i)) list.push(i);
@@ -408,7 +423,7 @@ export class Backup {
 			if (same !== undefined && !matched.has(same)) return same;
 			const rank = (/** @type {string} */ k) =>
 				k.startsWith('["title"') ? 0 : k.startsWith('["series"') ? 1 : 2;
-			for (const k of book.lookupKeys().sort((x, y) => rank(x) - rank(y))) {
+			for (const k of book.lookupKeys(theirsShared).sort((x, y) => rank(x) - rank(y))) {
 				const i = (index.get(k) || []).find(x => !matched.has(x));
 				if (i !== undefined) return i;
 			}

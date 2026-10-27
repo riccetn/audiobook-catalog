@@ -2,7 +2,8 @@
 // (book.html, book.js) share: the book cards and covers, the lists of books grouped by series, the links
 // on them, and the reminder of the last backup.
 import {Text} from './modules/text.js';
-/** @import {Book} from './modules/book.js' */
+import {Book} from './modules/book.js';
+/** @import {Edition} from './modules/edition.js' */
 import {Series} from './modules/series.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {Cover} from './modules/cover.js';
@@ -168,14 +169,44 @@ export function coverImage(b, size) {
 }
 
 /**
+ * "Also published as The Keeper of Lanterns, Lanterns in the Dark": the titles a book's editions were
+ * released under besides its own (Book.alternativeTitles), or nothing when there are none.
+ * @param {string[]} titles
+ * @returns {HTMLDivElement | false}
+ */
+export function alsoPublishedAs(titles) {
+	return (
+		titles.length > 0 &&
+		buildElement(
+			'div',
+			{class: 'alsoTitled'},
+			'Also published as ',
+			joined(
+				titles.map(t => buildElement('cite', {}, t)),
+				', ',
+			),
+		)
+	);
+}
+
+/**
  * A book in a list: only what tells it apart (its title, authors, narrators and when it was read); its
- * title links to its page. `withSeries` names its series too, in a list not grouped by series.
+ * title links to its page. `withSeries` names its series too, in a list not grouped by series. When the
+ * search `q` finds it by a title one of its editions was released under, that title is shown too.
  * @param {Book} b
  * @param {boolean} [withSeries]
+ * @param {string} [q] what was searched for
+ * @param {(ed: Edition) => boolean} [shared] Book.sharedEditionTest() of the books listed
  * @returns {HTMLDivElement}
  */
-function bookCard(b, withSeries = false) {
+function bookCard(b, withSeries = false, q = '', shared = () => false) {
 	const id = /** @type {string} */ (b.id);
+	const wanted = q.trim().toLowerCase();
+	const foundBy = wanted
+		? b
+				.alternativeTitles(shared)
+				.filter(t => t.toLowerCase().includes(wanted) && !b.title.toLowerCase().includes(wanted))
+		: [];
 	return buildElement(
 		'div',
 		{class: 'book', 'data-id': id},
@@ -185,6 +216,7 @@ function bookCard(b, withSeries = false) {
 			'div',
 			{class: 'info'},
 			buildElement('div', {class: 'title'}, buildElement('a', {href: bookPageHref(id)}, b.title)),
+			alsoPublishedAs(foundBy),
 			withSeries &&
 				b.series &&
 				buildElement(
@@ -311,18 +343,22 @@ export class BookList {
 /**
  * Books as a list draws them: grouped by series, each under its heading (its info, and `heading(id)` after
  * it) and followed by `after(id)`, then the books in no series; or, `sorted`, one list with each book's series.
- * Then a Show more button that calls `onMore`, when `more` books are not shown yet.
+ * Then a Show more button that calls `onMore`, when `more` books are not shown yet. A book the search `q`
+ * found by a title one of its editions was released under shows that title.
  * @param {Book[]} books
- * @param {{sorted?: boolean, more?: number, onMore?: () => void, heading?: (id: string) => Child, after?: (id: string) => Child}} [options]
+ * @param {{sorted?: boolean, more?: number, onMore?: () => void, heading?: (id: string) => Child, after?: (id: string) => Child, q?: string}} [options]
  * @returns {Child[]}
  */
 export function bookGroups(
 	books,
-	{sorted = false, more = 0, onMore = () => {}, heading = () => null, after = () => null} = {},
+	{sorted = false, more = 0, onMore = () => {}, heading = () => null, after = () => null, q = ''} = {},
 ) {
 	/** @type {Child[]} */
 	const out = [];
-	if (sorted) out.push(...books.map(b => bookCard(b, true)));
+	const shared = q ? Book.sharedEditionTest(CATALOG.books) : () => false;
+	/** @type {(b: Book, withSeries?: boolean) => HTMLDivElement} */
+	const card = (b, withSeries = false) => bookCard(b, withSeries, q, shared);
+	if (sorted) out.push(...books.map(b => card(b, true)));
 	else {
 		/** @type {Map<string, Book[]>} */
 		const groups = new Map();
@@ -365,7 +401,7 @@ export function bookGroups(
 							heading(id),
 						),
 						note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' — ')),
-						group.map(b => bookCard(b)),
+						group.map(b => card(b)),
 						after(id),
 					),
 				);
@@ -382,7 +418,7 @@ export function bookGroups(
 						'Standalone ',
 						buildElement('span', {class: 'n'}, Text.plural(standalone.length, 'book')),
 					),
-					standalone.map(b => bookCard(b)),
+					standalone.map(b => card(b)),
 				),
 			);
 		}

@@ -1,4 +1,4 @@
-// An edition of a book: its ids in external catalogs (an ASIN per Audible and Amazon site, Goodreads,
+// An edition of a book: the title it was released under when that is not the book's (a UK edition's, say), its ids in external catalogs (an ASIN per Audible and Amazon site, Goodreads,
 // Hardcover, Open Library, ...; see ExternalCatalog), its ISBN, narrators, publisher, release date, length and your own
 // description of it ("UK edition"), and the key of its cover in a catalog that keeps one (Cover). A box set is one edition on each of its titles, linked by the ids the
 // copies share (sameAs).
@@ -8,11 +8,12 @@ import {ExternalCatalog} from './external-catalog.js';
 import {Cover} from './cover.js';
 /** @import {Unchecked} from './text.js' */
 
-/** @typedef {'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc' | 'img'} EditionKey the keys of an edition as it is stored */
+/** @typedef {'t' | 'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc' | 'img'} EditionKey the keys of an edition as it is stored */
 
 /**
  * What a new Edition is made of; every part is optional.
  * @typedef {object} EditionInit
+ * @property {string} [title] the title it was released under, when that is not the book's (a box set's edition: the set's)
  * @property {Record<string, string>} [external] its ids by external catalog: {"audible.com": "B0…", "goodreads": "4242", "hardcover": "501"}
  * @property {string} [isbn] one ISBN, the 13-digit form (another ISBN is another edition)
  * @property {string[]} [narrators]
@@ -29,7 +30,7 @@ import {Cover} from './cover.js';
 const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => def.family !== 'asin');
 const CATALOG_LABEL = `(?:${OTHER_CATALOGS.map(def => Text.escapeRegExp(def.name).replace(/ /g, '\\s+')).join('|')})(?:\\s+(?:book|edition))?(?:\\s+id)?`;
 const EDITION_PART = new RegExp(
-	`^(asin|${CATALOG_LABEL}|gr|isbns?|publisher|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`,
+	`^(title|asin|${CATALOG_LABEL}|gr|isbns?|publisher|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`,
 	'i',
 );
 
@@ -54,7 +55,7 @@ const isAsinSite = key => ExternalCatalog.family(key) === 'asin';
 /** An edition of a book. */
 export class Edition {
 	/** @type {EditionKey[]} the keys of a stored edition, in order */
-	static KEYS = ['ext', 'isbn', 'n', 'p', 'd', 'len', 'desc', 'img'];
+	static KEYS = ['t', 'ext', 'isbn', 'n', 'p', 'd', 'len', 'desc', 'img'];
 	// The key a backup keeps the edition's id under, before the others; like Book.ID_KEY it is not one of KEYS.
 	// ("id" was an edition's ASIN before ASINs were kept by site; see fixIds.)
 	static ID_KEY = 'uid';
@@ -62,6 +63,7 @@ export class Edition {
 	// 'ext' stands for the external ids, a field for each catalog (fieldLabel()).
 	/** @type {[EditionKey, string, string][]} */
 	static FIELDS = [
+		['t', 'Title', 'Title'],
 		['desc', 'Description', 'Description'],
 		['n', 'Narrated by', 'Narrators'],
 		['ext', '', 'ASINs'],
@@ -73,6 +75,7 @@ export class Edition {
 
 	/** @param {EditionInit} [init] */
 	constructor({
+		title,
 		external = {},
 		isbn,
 		narrators = [],
@@ -85,6 +88,8 @@ export class Edition {
 	} = {}) {
 		/** @type {string | undefined} the id it is stored under (CatalogRecords gives one to an edition that has none) */
 		this.id = id;
+		/** @type {string | undefined} the title it was released under, when that is not the book's */
+		this.title = title;
 		/** @type {Record<string, string>} its ids by external catalog */
 		this.external = {...external};
 		/** @type {string | undefined} */
@@ -106,7 +111,7 @@ export class Edition {
 	}
 
 	/**
-	 * An edition from the way it is stored (`{ext, isbn, n, p, d, len, desc, img}`), in the current format. A
+	 * An edition from the way it is stored (`{t, ext, isbn, n, p, d, len, desc, img}`), in the current format. A
 	 * value that is not what its key holds, and a key an edition has not, is kept aside as it is and written
 	 * back by toJSON(), so the Check still reports it. Throws when it is not an object.
 	 * @param {Unchecked} json
@@ -348,6 +353,7 @@ export class Edition {
 	parts() {
 		/** @type {[string, string, string][]} */
 		const parts = [];
+		if (this.title) parts.push(['t', 'Title', this.title]);
 		if (this.description) parts.push(['desc', '', this.description]);
 		if (this.narrators.length) parts.push(['n', 'Narrated by', Text.namesText(this.narrators)]);
 		if (this.asinList().length) parts.push(['asin', 'ASIN', this.asinsText()]);
@@ -362,7 +368,7 @@ export class Edition {
 	}
 
 	/**
-	 * The edition as one line of text, the way the page shows it: "UK edition; Narrated by Ann Vale; ASIN
+	 * The edition as one line of text, the way the page shows it: "Title The Keeper of Lanterns; UK edition; Narrated by Ann Vale; ASIN
 	 * audible.com B0X, amazon.com B0Y; Goodreads 4242; ISBN 9780000000002; Publisher Gull Audio; Released 2021-05;
 	 * Length 10h 42m" (what parse() reads).
 	 * @returns {string}
@@ -559,7 +565,8 @@ export class Edition {
 					} else put(found, ext, part);
 					continue;
 				}
-				if (label === 'publisher') [field, v] = ['p', value];
+				if (label === 'title') [field, v] = ['t', ed.t ? null : value];
+				else if (label === 'publisher') [field, v] = ['p', value];
 				else if (label.startsWith('narrat'))
 					[field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
 				else if (label === 'description') [field, v] = ['desc', ed.desc ? null : value];
@@ -636,8 +643,9 @@ export class Edition {
 		for (const [k, label, shown] of Edition.FIELDS) {
 			const value = Text.tidy(String(fields[k] || ''));
 			if (!value || k === 'ext') continue;
-			if (k === 'desc') {
-				ed.desc = value;
+			// a title or description is read as it is, a ';' and all
+			if (k === 't' || k === 'desc') {
+				ed[k] = value;
 				continue;
 			}
 			if (k === 'n') {
@@ -720,7 +728,7 @@ export class Edition {
 		if (!Text.isObject(ed)) return ed;
 		/** @type {Record<string, any>} */
 		const out = {...ed};
-		for (const key of ['p', 'd', 'desc']) {
+		for (const key of ['t', 'p', 'd', 'desc']) {
 			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
 		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
@@ -732,5 +740,5 @@ export class Edition {
 }
 
 // The stored keys that hold a text, and the field each is kept in.
-/** @type {Record<string, 'isbn' | 'publisher' | 'released' | 'description'>} */
-const TEXT_FIELDS = {isbn: 'isbn', p: 'publisher', d: 'released', desc: 'description'};
+/** @type {Record<string, 'title' | 'isbn' | 'publisher' | 'released' | 'description'>} */
+const TEXT_FIELDS = {t: 'title', isbn: 'isbn', p: 'publisher', d: 'released', desc: 'description'};
