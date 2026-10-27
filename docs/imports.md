@@ -23,7 +23,12 @@ lists its books with a tickbox, and **Tick all** and **Tick none** for the group
   details (the row says `renames the series, on 4 books`), when the other catalog puts every one of its books
   it has in that one series and no series here has that name; otherwise it moves only that book. The long form of an Audible title (`A Crown of Embers 5: A Spark
 of Dawn`) is the same title, a series spelled another way (`Ember Coast Series`) the same series, and a
-  length a minute off the same length, so none of them is listed.
+  length a minute off the same length, so none of them is listed; nor is a title with a subtitle (`The Salt Road: A
+Novel`), or one an edition of the book was released under. An Audible export or **Compare** and a Goodreads
+  export have the title each edition was released under (on that site, or that Goodreads edition), so a title your
+  book lacks is offered there twice, _unticked_: as **Title** (renaming the book) and as **Released as**, the title of the
+  edition it found the book by (`Released as: none here, The Keeper of Lanterns on Audible`). Hardcover and
+  AudiobookDB have the work's title, so theirs is only ever a Title.
 - **Only in this catalog** (for a file): your books the file doesn't have, to look through. For Hardcover,
   see [Hardcover](hardcover.md): your books not on your _Read_ shelf there, and reads it lacks, can be ticked
   to be put on Hardcover.
@@ -69,7 +74,9 @@ strongest first:
    book id (another edition of the same book on Hardcover)
 2. same first author + same series (spelling-insensitive: `Ember Coast` = `Ember Coast Series`) + same number
 3. same author and title, also forgiving of the long Audible form: `A Crown of Embers 5: A Spark of Dawn`
-   finds your `A Spark of Dawn`, and `X, Book 1` finds `X`. A boxed set is never mistaken for its first book.
+   finds your `A Spark of Dawn`, `X, Book 1` finds `X`, and `X: A Novel` finds `X`; any title an edition of
+   yours was released under counts as the book's (but a box set's edition's title is the set's, not its books').
+   A boxed set is never mistaken for its first book (`X: Books 1-3` never finds `X`).
 
 Titles, authors and series are compared ignoring case, punctuation and accents (`Café` = `Cafe`), in any
 script: two books in Cyrillic or Japanese are told apart by their titles like any others.

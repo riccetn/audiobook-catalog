@@ -2560,7 +2560,7 @@ test('a version 2 backup that is not one is refused, saying why', () => {
 		spoil(b);
 		assert.throws(() => Backup.read(b), error);
 	}
-	assert.throws(() => Backup.read({...backup(), version: 3}), NewerBackup);
+	assert.throws(() => Backup.read({...backup(), version: 4}), NewerBackup);
 	// a value that isn't what its field holds has no place in a record, so it is refused too
 	const odd = backup();
 	odd.books[id(odd)].number = 5;
@@ -5221,6 +5221,8 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 		ext: {audiobookdb: 'LnTrnKpr2xYz'},
 		e: [
 			{
+				// the title Audible's site sold it under, which the form keeps when the book has another
+				t: 'The Lantern Keeper',
 				ext: {'audible.com': 'B0LANTERN2', audiobookdb: 'RlsLntrnUS01'},
 				isbn: '9780000000019',
 				n: ['Hollis Marr', 'Dana Fenwick'],
@@ -5751,4 +5753,235 @@ test('AudibleSync reads a series on the site of its books, and says when Audible
 		new AudibleSync(client).compare(catalog, () => {}),
 		/one series at a time/,
 	);
+});
+
+// ------------------------------------------------------------------ editions' own titles
+// A book released under two titles: The Lantern Keeper in the UK, The Keeper of Lanterns in the US.
+const TWO_TITLES = () =>
+	B({
+		t: 'The Lantern Keeper',
+		a: ['Ann Vale'],
+		e: [
+			{ext: {'audible.co.uk': 'B0UKLAMP01'}, n: ['Hollis Marr']},
+			{t: 'The Keeper of Lanterns', ext: {'audible.com': 'B0USLAMP01'}, n: ['Dana Fenwick']},
+		],
+	});
+
+test("an edition's own title is kept, written and read back, in the stored form, as text and in the form's fields", () => {
+	const ed = E({t: '  The Keeper  of Lanterns ', ext: {'audible.com': 'B0USLAMP01'}});
+	assert.equal(ed.title, '  The Keeper  of Lanterns ');
+	assert.deepEqual(json(E(Edition.tidyJSON(json(ed)))), {
+		t: 'The Keeper of Lanterns',
+		ext: {'audible.com': 'B0USLAMP01'},
+	});
+	assert.deepEqual(json(E({t: 'The Keeper of Lanterns', p: 'Gullwing Audio'}).clone()), {
+		t: 'The Keeper of Lanterns',
+		p: 'Gullwing Audio',
+	});
+	const us = TWO_TITLES().editions[1];
+	assert.equal(us.format(), 'Title The Keeper of Lanterns; Narrated by Dana Fenwick; ASIN audible.com B0USLAMP01');
+	assert.deepEqual(json(Edition.parse(us.format()).editions), [json(us)]);
+	// the form's field is read as typed, a ';' and all
+	assert.deepEqual(
+		json(Edition.fromFields({t: 'Lanterns; or, The Keeper', 'ext:audible.com': 'B0USLAMP01'}).editions),
+		[{t: 'Lanterns; or, The Keeper', ext: {'audible.com': 'B0USLAMP01'}}],
+	);
+	// the Check: an empty title is an error, an untidy one a warning
+	const checked = Validator.validate([{t: 'X', a: ['Ann Vale'], e: [{t: '', isbn: '9780306406157'}, {t: 'Y  Z'}]}]);
+	assert.ok(checked.errors.some(e => /'t' must be a non-empty string/.test(e)));
+	assert.ok(checked.warnings.some(w => /edition title 'Y {2}Z'/.test(w)));
+});
+
+test("a book's titles: its own, then its editions', but a box set's edition has the set's title, not its titles'", () => {
+	const book = TWO_TITLES();
+	assert.deepEqual(book.alternativeTitles(), ['The Keeper of Lanterns']);
+	// the book's own title, or one already listed, is no other title
+	book.editions.push(E({t: 'the lantern keeper', isbn: '9780306406157'}), E({t: 'The Keeper of Lanterns'}));
+	assert.deepEqual(book.alternativeTitles(), ['The Keeper of Lanterns']);
+	assert.ok(book.hasTitle('The Keeper of Lanterns'));
+	assert.ok(book.hasTitle('The Lantern Keeper: A Novel'), 'a subtitle aside');
+	assert.ok(!book.hasTitle('Lanterns at Sea'));
+
+	// a box set's edition is on its titles too; its title is the set's, so only the set has it
+	const set = {t: 'Gull Isle Books 1-2', isbn: '9780000000019', ext: {'audible.com': 'B0GULLSET1'}};
+	const books = Bs([
+		{t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [set]},
+		{t: 'Beacons', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [set]},
+		{t: 'The Gull Isle Duet', a: ['Ann Vale'], s: 'Gull Isle', sn: '1-2', e: [set]},
+	]);
+	const shared = Book.sharedEditionTest(books);
+	assert.deepEqual(
+		books.map(b => b.alternativeTitles(shared)),
+		[[], [], ['Gull Isle Books 1-2']],
+	);
+	assert.deepEqual(books[0].exclusionEntries(shared), ['B0GULLSET1', 'Salt Road | Ann Vale']);
+	assert.deepEqual(book.exclusionEntries(), [
+		'B0UKLAMP01',
+		'B0USLAMP01',
+		'The Lantern Keeper | Ann Vale',
+		'The Keeper of Lanterns | Ann Vale',
+	]);
+});
+
+test('titles: a subtitle names the same book, but a box set\'s "Books 1-3" does not', () => {
+	assert.deepEqual(Book.titleForms('The Lantern Keeper: A Novel'), [
+		'the lantern keeper a novel',
+		'a novel',
+		'the lantern keeper',
+	]);
+	assert.deepEqual(Book.titleForms('Lanterns: Books 1-3'), ['lanterns books 1 3', 'books 1 3']);
+	assert.deepEqual(Book.titleForms('Lanterns: The Complete Trilogy'), [
+		'lanterns the complete trilogy',
+		'the complete trilogy',
+	]);
+	assert.ok(Book.sameTitle('The Lantern Keeper', 'The Lantern Keeper: A Novel'));
+	assert.ok(Book.sameTitle('The Lantern Keeper: A Novel', 'The Lantern Keeper'));
+	assert.ok(!Book.sameTitle('Lanterns', 'Lanterns: Books 1-3'));
+	assert.ok(!Book.sameTitle('Lanterns: Ember', 'Lanterns: Ash'));
+	// an import's long title finds the book by its short one
+	const merged = new Catalog({books: Bs([book('The Lantern Keeper', 'Ann Vale')])});
+	merged.merge(Bs([{t: 'The Lantern Keeper: A Novel', a: ['Ann Vale'], r: ['2024']}]));
+	assert.deepEqual(json(merged.books), [{t: 'The Lantern Keeper', a: ['Ann Vale'], r: ['2024']}]);
+});
+
+test("imports and Duplicates find a book by the title an edition of it was released under, never by a box set's", () => {
+	const catalog = new Catalog({books: [TWO_TITLES()]});
+	const report = catalog.merge(Bs([{t: 'The Keeper of Lanterns', a: ['Ann Vale'], r: ['2024-05-01']}]));
+	assert.equal(report.added.length, 0);
+	assert.deepEqual(catalog.books[0].read, ['2024-05-01']);
+
+	// entered twice, once by each title: the two are paired on the Duplicates page
+	const twice = Bs([book('The Lantern Keeper', 'Ann Vale'), {...json(TWO_TITLES()), t: 'Lanterns at Sea'}]);
+	twice[1].editions[1].title = 'The Lantern Keeper';
+	assert.deepEqual(new Duplicates(twice).groups(), [[0, 1]]);
+
+	// the box set's own book has the set's other title; its titles don't, so neither import nor Duplicates
+	// takes the first title for the set
+	const set = {t: 'The Gull Isle Duet', ext: {'audible.com': 'B0GULLSET1'}};
+	const books = Bs([
+		{t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [set]},
+		{t: 'Beacons', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [set]},
+		{t: 'Gull Isle Books 1-2', a: ['Ann Vale'], s: 'Gull Isle', sn: '1-2', e: [set]},
+	]);
+	assert.deepEqual(new Duplicates(books).groups(), []);
+	const sets = new Catalog({books});
+	sets.merge(Bs([{t: 'The Gull Isle Duet', a: ['Ann Vale'], r: ['2023']}]));
+	assert.deepEqual(
+		sets.books.map(b => [b.title, b.read]),
+		[
+			['Salt Road', []],
+			['Beacons', []],
+			['Gull Isle Books 1-2', ['2023']],
+		],
+	);
+});
+
+test('Compare: a title an edition was released under is no difference, and an edition-level source may offer one as "Released as"', () => {
+	const catalog = () =>
+		new Catalog({
+			books: [TWO_TITLES(), B({t: 'Salt Road', a: ['Ann Vale'], e: [{ext: {'audible.co.uk': 'B0SALTUK01'}}]})],
+		});
+	const incoming = () =>
+		Bs([
+			{t: 'The Keeper of Lanterns', a: ['Ann Vale'], e: [{ext: {'audible.com': 'B0USLAMP01'}}]},
+			{t: 'Salt Road: A Novel', a: ['Ann Vale'], e: [{ext: {'audible.co.uk': 'B0SALTUK01'}}]},
+			{t: 'Brine Road', a: ['Ann Vale'], e: [{ext: {'audible.co.uk': 'B0SALTUK01'}}]},
+		]);
+	const differences = opts =>
+		Comparison.compare(catalog(), incoming(), opts).books.map(b =>
+			b.differences.map(d => [d.key, d.label, d.here, d.there]),
+		);
+	// one of its titles, and one with a subtitle, are the same; a title a work-level catalog has only renames
+	assert.deepEqual(differences(), [[], [], [['2:t', 'Title', 'Salt Road', 'Brine Road']]]);
+	// Audible's sites and Goodreads' editions have the titles editions were released under; AudiobookDB,
+	// Hardcover and Open Library have the work's
+	assert.deepEqual(
+		[AudibleImporter, GoodreadsImporter, FileImporter].map(x => x.EDITION_TITLES),
+		[true, true, false],
+	);
+	// a source whose titles are its editions' offers it as the title of the edition it found the book by too
+	assert.deepEqual(differences({editionTitles: true}), [
+		[],
+		[],
+		[
+			['2:t', 'Title', 'Salt Road', 'Brine Road'],
+			['2:t:0', 'Released as', '', 'Brine Road'],
+		],
+	]);
+	const picked = patch => {
+		const c = catalog();
+		Comparison.apply(c, incoming(), {take: new Set(), patch: new Set(patch)}, {editionTitles: true});
+		return json(c.books[1]);
+	};
+	assert.deepEqual(picked(['2:t:0']), {
+		t: 'Salt Road',
+		a: ['Ann Vale'],
+		e: [{t: 'Brine Road', ext: {'audible.co.uk': 'B0SALTUK01'}}],
+	});
+	// both picked: the book is renamed, and its edition has the book's title again
+	assert.deepEqual(picked(['2:t', '2:t:0']), {
+		t: 'Brine Road',
+		a: ['Ann Vale'],
+		e: [{ext: {'audible.co.uk': 'B0SALTUK01'}}],
+	});
+	// several catalogs side by side: the US title is no difference either
+	const multi = MultiComparison.compare(catalog(), [
+		{result: {incoming: incoming().slice(0, 1), comparison: Comparison.compare(catalog(), incoming().slice(0, 1))}},
+	]);
+	assert.deepEqual(multi.differing, []);
+});
+
+test("a book takes the title an edition was released under, and that edition's title goes to the others", () => {
+	const book = TWO_TITLES();
+	book.editions.push(E({isbn: '9780306406157'}));
+	book.useTitle('The Keeper of Lanterns');
+	assert.deepEqual(json(book), {
+		t: 'The Keeper of Lanterns',
+		a: ['Ann Vale'],
+		e: [
+			{t: 'The Lantern Keeper', ext: {'audible.co.uk': 'B0UKLAMP01'}, n: ['Hollis Marr']},
+			{ext: {'audible.com': 'B0USLAMP01'}, n: ['Dana Fenwick']},
+			{t: 'The Lantern Keeper', isbn: '9780306406157'},
+		],
+	});
+	// a new title that no edition has is a rename: the editions are left alone
+	book.useTitle('Keeper of the Lanterns');
+	assert.deepEqual(
+		book.editions.map(ed => ed.title),
+		['The Lantern Keeper', undefined, 'The Lantern Keeper'],
+	);
+});
+
+test("editions' titles: stored and backed up (version 3), searched, and exported to Goodreads", () => {
+	const catalog = new Catalog({books: [TWO_TITLES()]});
+	const records = CatalogRecords.fromCatalog(catalog);
+	assert.deepEqual(
+		records.editions.map(ed => ed.title),
+		[undefined, 'The Keeper of Lanterns'],
+	);
+	assert.ok(CatalogRecords.searchMatches(records.books[0].search, 'keeper of lanterns'));
+	assert.deepEqual(json(CatalogRecords.toCatalog(records).books[0].editions[1]).t, 'The Keeper of Lanterns');
+	const backup = Backup.write(catalog);
+	assert.equal(backup.version, 3);
+	assert.deepEqual(
+		Object.values(backup.editions).map(ed => ed.title),
+		[undefined, 'The Keeper of Lanterns'],
+	);
+	assert.deepEqual(
+		Backup.read(backup).books[0].editions.map(ed => ed.title),
+		[undefined, 'The Keeper of Lanterns'],
+	);
+	// a version 2 backup has no titles, and reads as it is
+	const older = JSON.parse(JSON.stringify({...backup, version: 2}));
+	for (const ed of Object.values(older.editions)) delete ed.title;
+	assert.deepEqual(json(Backup.read(older).books[0]).t, 'The Lantern Keeper');
+
+	// Goodreads finds the US edition by its id, under the title it was published under
+	const us = B({
+		t: 'The Lantern Keeper',
+		a: ['Ann Vale'],
+		e: [{t: 'The Keeper of Lanterns', ext: {goodreads: '4242'}}],
+	});
+	const out = new GoodreadsExporter().write([us]);
+	assert.match(out.text, /\n4242,The Keeper of Lanterns,Ann Vale,/);
 });

@@ -45,7 +45,11 @@ export class AudibleSource extends BookSource {
 	 * @returns {Promise<Book | null>}
 	 */
 	async lookup(pasted) {
-		return this.product(AudibleSource.site(pasted.catalog), pasted.id);
+		const book = await this.product(AudibleSource.site(pasted.catalog), pasted.id);
+		// the title is the site's, the one this edition was released under there: the book form keeps it on the
+		// edition when the book has another
+		if (book && book.editions[0]) book.editions[0].title = book.title;
+		return book;
 	}
 
 	/**

@@ -53,7 +53,7 @@ publisher, release date, length): in the gaps of the card that is the same editi
 ASIN on any site, or its ISBN), else of the first card that has nothing else in its fields, else on a card of its own. The status line says what was filled in and from where; look it over before saving. It is in
 the form while editing a book too, where it fills in only what the book lacks.
 
-_Editions_ has a card per edition, with a field for each part: description, narrators, ASINs (a field per
+_Editions_ has a card per edition, with a field for each part: title, description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; _+ Another site_ adds a field for
 another Amazon or Audible site), Goodreads id, Hardcover edition (_+ Another catalog_ adds a field for its id on AudiobookDB, Open
 Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publisher,
@@ -65,6 +65,18 @@ when you leave the field it shows just the id, and an Audible or Amazon page's A
 its site, and another catalog's id to its field (added when the card has none). Leave a field empty when you don't know it; `+ Add an edition`
 adds a card and _Remove_ drops one. A card that is an edition of a box set says which other books it is on,
 since a change to it changes it there too. A field the page can't read is named when you save, and nothing changes.
+
+**A book released under another title** (_The Lantern Keeper_ in the UK, _The Keeper of Lanterns_ in the US) is one
+book: its title is the work's own, usually the first edition's, and an edition released under another title has that
+title in its card's _Title_ (left empty, an edition was released under the book's title; one that is the book's, a
+subtitle aside, is dropped when you save). The book's details say _Also published as_ under its title, and the
+search finds it by either; a book found by another title says so on its card. _Use as the book's title_ beside an
+edition's Title makes it the book's, and gives the book's title before to the other editions without one of their
+own, so every edition keeps the title it was released under. A box set's edition may have a title too: the set's
+other title, never its books'. _Fill in from another catalog_ by an Audible or Amazon page puts the title that site
+sells it under on the edition when the book has another. Imports find the book by any of its titles
+([Matching](imports.md#matching)), and removing it keeps every one of them out of later imports.
+
 The Hardcover book has its own field, which takes the book's id or, since the Hardcover app doesn't show
 it, the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions'
 pages: the page looks the book up on Hardcover and puts its id in the field (when you leave the field, or

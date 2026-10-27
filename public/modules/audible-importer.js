@@ -21,6 +21,7 @@ export class AudibleImporter extends FileImporter {
 	static CATALOG = 'audible';
 	static LABEL = 'Audible';
 	static EDITIONS_YOURS = true;
+	static EDITION_TITLES = true;
 	static SAMPLE_ASINS = SAMPLE_ASINS;
 
 	/** @param {string} [site] the Audible site whose ASINs the export has (audible.com unless said) */

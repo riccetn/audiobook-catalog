@@ -650,7 +650,14 @@ const typeEdition = (els, i, k, value) =>
 	els.f_editions.listeners.input[0]({target: {dataset: {i: String(i), k}, value}});
 const addEdition = els => els.addEditionBtn.listeners.click[0]({});
 const removeEdition = (els, i) =>
-	els.f_editions.listeners.click[0]({target: {closest: () => ({dataset: {remove: String(i)}})}});
+	els.f_editions.listeners.click[0]({
+		target: {closest: s => (s === '[data-remove]' ? {dataset: {remove: String(i)}} : null)},
+	});
+// an edition card's "Use as the book's title"
+const useEditionTitle = (els, i) =>
+	els.f_editions.listeners.click[0]({
+		target: {closest: s => (s === '[data-use-title]' ? {dataset: {useTitle: String(i)}} : null)},
+	});
 
 test("a form's Cancel sits next to its Save, and a Remove button comes after both, apart from them", () => {
 	let forms = 0;
@@ -1805,6 +1812,61 @@ test('dates read: shown on the card, edited in the form, and filterable by year'
 	assert.equal(book.get('CATALOG.books[0].read.length > 0'), false);
 });
 
+test("an edition's own title: shown on the book page, found by the search, and kept or made the book's in the form", async () => {
+	const mine = JSON.stringify([
+		{
+			t: 'The Lantern Keeper',
+			a: ['Ann Vale'],
+			e: [
+				{ext: {'audible.co.uk': 'B0UKLAMP01'}},
+				{t: 'The Keeper of Lanterns', ext: {'audible.com': 'B0USLAMP01'}},
+			],
+		},
+		{t: 'Other', a: ['Ann Vale']},
+	]);
+	const {els, get, ctx, readable, storage} = await bootBook('The Lantern Keeper', {files: {'books.json': mine}});
+	assert.match(
+		readable(els.results.innerHTML),
+		/<h2 class="title">The Lantern Keeper<\/h2><div class="alsoTitled">Also published as <cite>The Keeper of Lanterns<\/cite><\/div>/,
+	);
+	assert.match(readable(els.results.innerHTML), /<dt>Title<\/dt><dd>The Keeper of Lanterns<\/dd>/);
+
+	// the search finds it by either title; the card names the other title only when that is what was found
+	const list = await boot({page: 'books.html', storage});
+	list.els.q.value = 'keeper of lanterns';
+	await list.ctx.refreshView();
+	await idle();
+	assert.equal(cards(list.els.results.innerHTML), 1);
+	assert.match(list.els.results.innerHTML, /Also published as <cite>The Keeper of Lanterns<\/cite>/);
+	list.els.q.value = 'lantern keeper';
+	await list.ctx.refreshView();
+	await idle();
+	assert.equal(cards(list.els.results.innerHTML), 1);
+	assert.doesNotMatch(list.els.results.innerHTML, /Also published as/);
+
+	// the form: the US edition's Title made the book's, the UK edition gets the book's title before
+	ctx.openEditForm(get('BOOK_FILTER'));
+	assert.deepEqual(formEditions(get), [
+		{'ext:audible.co.uk': 'B0UKLAMP01'},
+		{t: 'The Keeper of Lanterns', 'ext:audible.com': 'B0USLAMP01'},
+	]);
+	useEditionTitle(els, 1);
+	assert.equal(els.f_t.value, 'The Keeper of Lanterns');
+	assert.deepEqual(formEditions(get), [
+		{'ext:audible.co.uk': 'B0UKLAMP01', t: 'The Lantern Keeper'},
+		{t: '', 'ext:audible.com': 'B0USLAMP01'},
+	]);
+	// a title that is the book's (a subtitle aside) is no title of the edition's own
+	typeEdition(els, 1, 't', 'The Keeper of Lanterns: A Novel');
+	els.addForm.listeners.submit[0]({preventDefault() {}});
+	await idle();
+	assert.deepEqual(get('CATALOG.book(BOOK_FILTER)'), {
+		t: 'The Keeper of Lanterns',
+		a: ['Ann Vale'],
+		e: [{t: 'The Lantern Keeper', ext: {'audible.co.uk': 'B0UKLAMP01'}}, {ext: {'audible.com': 'B0USLAMP01'}}],
+	});
+});
+
 test("ISBNs: shown in a book's details, searchable however typed, edited in the form", async () => {
 	// written before editions: read as the book's first edition
 	const mine = JSON.stringify([
@@ -2524,7 +2586,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 	first.els.exportBtn.listeners.click[0]();
 	await idle();
 	const backup = JSON.parse(blobs[0]);
-	// version 2: the stored records by store and id, without what is derived
+	// version 3: the stored records by store and id, without what is derived
 	assert.deepEqual(Object.keys(backup), [
 		'version',
 		'books',
@@ -2534,7 +2596,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 		'marks',
 		'exclusions',
 	]);
-	assert.equal(backup.version, 2);
+	assert.equal(backup.version, 3);
 	const byName = JSON.parse(JSON.stringify(Catalog.fromJSON(backup)));
 	assert.deepEqual(withoutIds(byName), {
 		books: demoBooks,
@@ -2613,7 +2675,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 
 	// a backup from a newer version of the page is refused, saying so
 	await other.els.importFile.listeners.change[0]({
-		target: {files: [{name: 'b.json', text: JSON.stringify({...backup, version: 3, books: {}})}], value: ''},
+		target: {files: [{name: 'b.json', text: JSON.stringify({...backup, version: 4, books: {}})}], value: ''},
 	});
 	await idle();
 	assert.match(other.els.ioStatus.textContent, /^Not restored: a newer version of the catalog made that backup/);

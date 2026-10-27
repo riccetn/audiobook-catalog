@@ -16,6 +16,8 @@ const cell = Csv.cell;
 export class GoodreadsImporter extends FileImporter {
 	static CATALOG = 'goodreads';
 	static LABEL = 'Goodreads';
+	// a Goodreads book is an edition, with the title it was published under
+	static EDITION_TITLES = true;
 	static AUDIO_BINDINGS = AUDIO_BINDINGS;
 
 	/**

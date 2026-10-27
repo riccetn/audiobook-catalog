@@ -29,6 +29,12 @@ import {ExternalCatalog} from './external-catalog.js';
  */
 
 const TRAILING_BOOK_N = new RegExp(',?\\s*' + Text.WORD_START + 'book\\s*\\d+\\s*$', 'iu');
+// A part after a colon that says the book holds several ("Books 1-3", "The Complete Trilogy"), so it is no
+// mere subtitle: a title without it would be the first book's, or the series'.
+const SEVERAL = new RegExp(
+	Text.WORD_START + '(?:books|volumes|vols|collection|box(?:ed)?\\s*set|omnibus|trilogy|series|complete|\\d)',
+	'iu',
+);
 // The stored keys that hold a text, and the field each is kept in.
 /** @type {Record<string, 'title' | 'series' | 'number'>} */
 const TEXT_FIELDS = {t: 'title', s: 'series', sn: 'number'};
@@ -352,11 +358,97 @@ export class Book {
 	}
 
 	/**
-	 * Identity keys, strongest first: its editions' external ids (ASINs, Goodreads and Hardcover ids), then
-	 * its own (another edition of it), then series, then title.
+	 * The titles its editions were released under besides its own (a UK edition's, say), each once and in
+	 * the editions' order. An edition that `shared` says is also on other books is a box set's, and its title
+	 * the set's: only the set's own book (isCollection()) has it, never one of its titles.
+	 * @param {(ed: Edition) => boolean} [shared] Book.sharedEditionTest() of the books it is among
 	 * @returns {string[]}
 	 */
-	keys() {
+	alternativeTitles(shared = () => false) {
+		const seen = new Set([Text.norm(this.title)]);
+		/** @type {string[]} */
+		const out = [];
+		for (const ed of this.editions) {
+			const k = Text.norm(ed.title || '');
+			if (!k || seen.has(k) || (!this.isCollection() && shared(ed))) continue;
+			seen.add(k);
+			out.push(/** @type {string} */ (ed.title));
+		}
+		return out;
+	}
+
+	/**
+	 * Make `title` its own title (in place). When it is the title one of its editions was released under,
+	 * that edition loses it (it has the book's title now) and the editions without one of their own keep the
+	 * title they were released under, the book's before: every edition keeps its title. A box set's edition
+	 * (`shared`) is left as it is, as its title is the set's.
+	 * @param {string} title
+	 * @param {(ed: Edition) => boolean} [shared]
+	 */
+	useTitle(title, shared = () => false) {
+		const was = this.title,
+			wanted = Text.norm(title);
+		const own = this.editions.filter(ed => !shared(ed));
+		if (wanted !== Text.norm(was) && own.some(ed => Text.norm(ed.title || '') === wanted))
+			for (const ed of own) {
+				if (Text.norm(ed.title || '') === wanted) ed.title = undefined;
+				else if (!ed.title && was) ed.title = was;
+			}
+		this.title = title;
+	}
+
+	/**
+	 * Whether `title` is one of its titles (its own or an edition's, alternativeTitles()), forgiving
+	 * Audible's long form ("A Crown of Embers 5: A Spark of Dawn"), a trailing "Book 2" and a subtitle
+	 * ("The Lantern Keeper: A Novel") on either.
+	 * @param {string} title
+	 * @param {(ed: Edition) => boolean} [shared]
+	 * @returns {boolean}
+	 */
+	hasTitle(title, shared) {
+		return [this.title, ...this.alternativeTitles(shared)].some(t => Book.sameTitle(t, title));
+	}
+
+	/**
+	 * Whether two titles name the same book: they are the same (norm()), or one is a shorter form of the
+	 * other (titleForms(): without Audible's series part, a trailing "Book 2" or a subtitle).
+	 * @param {string} x
+	 * @param {string} y
+	 * @returns {boolean}
+	 */
+	static sameTitle(x, y) {
+		const a = Text.norm(x),
+			b = Text.norm(y);
+		return !!a && !!b && (a === b || Book.titleForms(x).includes(b) || Book.titleForms(y).includes(a));
+	}
+
+	/**
+	 * A title and the shorter forms of it that name the same book (norm()), each once: the part after the
+	 * last colon ("A Crown of Embers 5: A Spark of Dawn" -> "a spark of dawn"), the part before the first
+	 * colon when the rest is a subtitle ("The Lantern Keeper: A Novel" -> "the lantern keeper", but never a
+	 * box set's "Lanterns: Books 1-3"), and the title without a trailing "Book 2".
+	 * @param {string} title
+	 * @returns {string[]}
+	 */
+	static titleForms(title) {
+		const forms = [title];
+		if (title.includes(':')) {
+			forms.push(title.slice(title.lastIndexOf(':') + 1));
+			const subtitle = title.slice(title.indexOf(':') + 1);
+			if (!SEVERAL.test(subtitle)) forms.push(title.slice(0, title.indexOf(':')));
+		}
+		forms.push(title.replace(TRAILING_BOOK_N, ''));
+		return [...new Set(forms.map(Text.norm).filter(Boolean))];
+	}
+
+	/**
+	 * Identity keys, strongest first: its editions' external ids (ASINs, Goodreads and Hardcover ids), then
+	 * its own (another edition of it), then series, then title, then the titles its editions were released
+	 * under (alternativeTitles(), with `shared`).
+	 * @param {(ed: Edition) => boolean} [shared]
+	 * @returns {string[]}
+	 */
+	keys(shared) {
 		const keys = [];
 		for (const id of new Set(this.editions.flatMap(ed => ed.idKeys()))) keys.push(Text.key('ext', id));
 		for (const [catalog, id] of Object.entries(ExternalCatalog.order(this.external) || {}))
@@ -365,37 +457,38 @@ export class Book {
 		if (this.series && this.number && Series.norm(this.series))
 			keys.push(Text.key('series', this.authorKey(), Series.norm(this.series), this.number.trim()));
 		if (Text.norm(this.title)) keys.push(Text.key('title', Text.norm(this.title), this.authorKey()));
+		for (const t of this.alternativeTitles(shared)) keys.push(Text.key('title', Text.norm(t), this.authorKey()));
 		return keys;
 	}
 
 	/**
-	 * Keys used to *find* an incoming book among existing books, with forgiving title variants:
-	 * "A Crown of Embers 5: A Spark of Dawn" -> "A Spark of Dawn", "X, Book 1" -> "X". One-directional
-	 * (long incoming vs short existing) so a boxed set is never mistaken for its first book.
+	 * Keys used to *find* an incoming book among existing books, with forgiving title variants of each of
+	 * its titles (titleForms()): "A Crown of Embers 5: A Spark of Dawn" -> "A Spark of Dawn", "X, Book 1" ->
+	 * "X", "X: A Novel" -> "X". One-directional (long incoming vs short existing) so a boxed set is never
+	 * mistaken for its first book.
+	 * @param {(ed: Edition) => boolean} [shared]
 	 * @returns {string[]}
 	 */
-	lookupKeys() {
-		const keys = this.keys();
+	lookupKeys(shared) {
+		const keys = this.keys(shared);
 		const author = this.authorKey();
-		const title = this.title;
-		const variants = [];
-		if (title.includes(':')) variants.push(title.slice(title.lastIndexOf(':') + 1));
-		const stripped = title.replace(TRAILING_BOOK_N, '');
-		if (stripped !== title) variants.push(stripped);
-		for (const v of variants) {
-			const k = Text.key('title', Text.norm(v), author);
-			if (Text.norm(v) && !keys.includes(k)) keys.push(k);
-		}
+		for (const title of [this.title, ...this.alternativeTitles(shared)])
+			for (const v of Book.titleForms(title)) {
+				const k = Text.key('title', v, author);
+				if (!keys.includes(k)) keys.push(k);
+			}
 		return keys;
 	}
 
 	/**
 	 * The exclusions list entries that keep it out of later imports once removed: the ASINs, Goodreads book
-	 * ids and Hardcover edition ids of its editions, and "Title | Author" (for books with none). '#' and '|'
-	 * would break the line, and matching ignores punctuation anyway, so they are dropped.
+	 * ids and Hardcover edition ids of its editions, and "Title | Author" for each of its titles (its own and
+	 * its editions', alternativeTitles() with `shared`; for books with no ids). '#' and '|' would break the
+	 * line, and matching ignores punctuation anyway, so they are dropped.
+	 * @param {(ed: Edition) => boolean} [shared]
 	 * @returns {string[]}
 	 */
-	exclusionEntries() {
+	exclusionEntries(shared) {
 		/** @type {(v: unknown) => string} */
 		const clean = v => Text.tidy(String(v || '').replace(/[#|]/g, ' '));
 		const entries = [];
@@ -404,8 +497,9 @@ export class Book {
 			if (ExternalCatalog.isId('goodreads', 'edition', gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
 		for (const hc of this.ids('hardcover'))
 			if (ExternalCatalog.isId('hardcover', 'edition', hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
-		if (clean(this.title) && clean(Text.namesText(this.authors)))
-			entries.push(`${clean(this.title)} | ${clean(Text.namesText(this.authors))}`);
+		const authors = clean(Text.namesText(this.authors));
+		for (const title of [this.title, ...this.alternativeTitles(shared)])
+			if (clean(title) && authors) entries.push(`${clean(title)} | ${authors}`);
 		return entries;
 	}
 

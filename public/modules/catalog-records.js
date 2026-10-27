@@ -55,6 +55,7 @@ import {Isbn} from './isbn.js';
  * @typedef {object} EditionRecord
  * @property {string} id
  * @property {string[]} bookIds
+ * @property {string} [title] the title it was released under, when that is not the book's (a box set's: the set's)
  * @property {Record<string, string>} external its ids by external catalog ({"audible.com": "B0…", "goodreads": "4242"})
  * @property {string} [isbn]
  * @property {string[]} narratorIds
@@ -375,7 +376,7 @@ export class CatalogRecords {
 	}
 
 	/**
-	 * What the catalog's search looks in for a book: its title, authors, series, genres, its editions' ids,
+	 * What the catalog's search looks in for a book: its title, authors, series, genres, its editions' titles, ids,
 	 * narrators, publisher, description and ISBN, and its own ids, in lower case; then, after a \u0001, its
 	 * ISBNs (13 digits), which a search for an ISBN typed any way finds (searchMatches).
 	 * @param {Book} b
@@ -388,6 +389,7 @@ export class CatalogRecords {
 			b.series,
 			...b.genres,
 			...b.editions.flatMap(ed => [
+				ed.title,
 				...ed.externalList().map(([, id]) => id),
 				Text.namesText(ed.narrators),
 				ed.publisher,
@@ -482,6 +484,7 @@ export class CatalogRecords {
 			narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)),
 			idKeys: ed.idAndIsbnKeys(),
 		};
+		if (ed.title) rec.title = ed.title;
 		if (ed.isbn) rec.isbn = ed.isbn;
 		if (ed.publisher) rec.publisherId = idOf('publishers', ed.publisher);
 		if (ed.released) rec.released = ed.released;
@@ -669,6 +672,7 @@ export class CatalogRecords {
 				if (!ed) throw new Error(`no edition is stored under ${id}`);
 				return new Edition({
 					id: ed.id,
+					title: ed.title,
 					external: CatalogRecords.editionExternal(ed),
 					isbn: ed.isbn,
 					narrators: ed.narratorIds.map(n => nameOf(n, 'narrator')),

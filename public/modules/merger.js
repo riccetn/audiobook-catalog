@@ -40,6 +40,8 @@ import {ExternalCatalog} from './external-catalog.js';
 /**
  * @typedef {object} MergeOptions
  * @property {boolean} [allDates] add every incoming date read the book lacks, not only to a book with none
+ * @property {boolean} [editionTitles] the incoming books' titles are their editions' (an Audible site's, a
+ *   Goodreads edition's), not the work's: Compare offers one the book lacks as its edition's title (Comparison)
  * @property {(book: Book) => boolean} [addable] whether an unmatched book may be added
  * @property {(book: Book) => boolean} [withEditions] whether a book that finds one here may fill in its editions or add
  *   one (by default it may); its editions still find the book, and a box set's still find its titles
@@ -126,7 +128,9 @@ export class Merger {
 		const indexKey = (/** @type {string} */ k, /** @type {number} */ i) => {
 			if (!index.has(k)) index.set(k, i);
 		};
-		const indexBook = (/** @type {number} */ i) => existing[i].keys().forEach(k => indexKey(k, i));
+		// a box set's edition is on each of its titles, and its title is the set's (Book.alternativeTitles)
+		const shared = Book.sharedEditionTest(existing);
+		const indexBook = (/** @type {number} */ i) => existing[i].keys(shared).forEach(k => indexKey(k, i));
 		existing.forEach((b, i) => indexBook(i));
 
 		/** @type {Map<string, string>} */

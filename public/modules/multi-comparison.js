@@ -5,7 +5,7 @@
 // was picked of it, as that catalog's own comparison would (Comparison), and then puts the picked values in.
 import {Text} from './text.js';
 import {Comparison} from './comparison.js';
-/** @import {Book} from './book.js' */
+import {Book} from './book.js';
 /** @import {Catalog} from './catalog.js' */
 /** @import {MergeOptions, MergeReport} from './merger.js' */
 /** @import {ComparedBook, Difference, SeriesRename} from './comparison.js' */
@@ -73,6 +73,7 @@ export class MultiComparison {
 	 */
 	static differences(catalog, sources) {
 		const spellings = Comparison.seriesSpellings(catalog.books);
+		const shared = Book.sharedEditionTest(catalog.books);
 		/** @type {[number, Difference][]} */
 		const out = [];
 		sources.forEach((s, source) => {
@@ -80,8 +81,13 @@ export class MultiComparison {
 				if (b.boxSet || !b.books.length) continue;
 				const place = catalog.books.indexOf(b.books[0]);
 				if (place < 0) continue;
-				const allDates = !!(s.opts && s.opts.allDates);
-				for (const d of Comparison.differences(b.at, place, b.books[0], b.theirs, spellings, allDates, true))
+				const options = {
+					allDates: !!(s.opts && s.opts.allDates),
+					gaps: true,
+					editionTitles: !!(s.opts && s.opts.editionTitles),
+					shared,
+				};
+				for (const d of Comparison.differences(b.at, place, b.books[0], b.theirs, spellings, options))
 					out.push([source, d]);
 			}
 		});

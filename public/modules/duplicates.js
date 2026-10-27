@@ -46,10 +46,12 @@ export class Duplicates {
 	groups() {
 		const books = this.books;
 		const isId = (/** @type {string} */ k) => /^\["(ext|book)"/.test(k);
+		// a box set's edition is on each of its titles, and its title is the set's (Book.alternativeTitles)
+		const shared = Book.sharedEditionTest(books);
 		/** @type {Map<string, number[]>} */
 		const byKey = new Map();
 		books.forEach((b, i) => {
-			for (const k of b.keys().filter(k => !isId(k))) {
+			for (const k of b.keys(shared).filter(k => !isId(k))) {
 				const list = byKey.get(k);
 				if (list) list.push(i);
 				else byKey.set(k, [i]);
@@ -59,7 +61,7 @@ export class Duplicates {
 		/** @type {(i: number) => number} */
 		const root = i => (parent[i] === i ? i : (parent[i] = root(parent[i])));
 		books.forEach((b, i) => {
-			for (const k of b.lookupKeys().filter(k => !isId(k))) {
+			for (const k of b.lookupKeys(shared).filter(k => !isId(k))) {
 				for (const j of byKey.get(k) || []) {
 					if (j !== i && !this.markedNotSame(b, books[j])) parent[root(j)] = root(i);
 				}

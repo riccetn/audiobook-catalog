@@ -785,6 +785,8 @@ function compareExport(Importer, text, fileName) {
 	const importer = importerOf(Importer);
 	const result = importer.read(text);
 	const notes = [`${Text.plural(result.books.length, 'finished book')} read from ${fileName}`];
+	/** @type {MergeOptions} */
+	const opts = {editionTitles: Importer.EDITION_TITLES};
 	if (result.skippedUnfinished) notes.push(`Not finished yet, skipped: ${result.skippedUnfinished}`);
 	openCompare({
 		source: Importer.CATALOG,
@@ -792,7 +794,8 @@ function compareExport(Importer, text, fileName) {
 		editionsYours: Importer.EDITIONS_YOURS,
 		notes,
 		incoming: result.books,
-		comparison: Comparison.compare(CATALOG, result.books),
+		comparison: Comparison.compare(CATALOG, result.books, opts),
+		opts,
 		warnings: result.warnings,
 		online: null,
 	});
