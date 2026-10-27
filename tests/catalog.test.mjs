@@ -3883,6 +3883,44 @@ test('records: ids stay, a copy that differs or an id used twice gets its own, a
 	);
 });
 
+test("a book's editions are kept in order of release, earliest first, and those without a date last", () => {
+	const catalog = Catalog.fromJSON({
+		books: [
+			book('Fern 1', 'Bo Reed', {
+				e: [
+					{p: 'No date'},
+					{d: '2021-05-04'},
+					{d: 'someday'},
+					{d: '2019'},
+					{d: '2021-05'},
+					{d: '2021-05-04', p: 'Tie'},
+				],
+			}),
+			book('Fern 2', 'Bo Reed', {e: [{d: '2020'}]}),
+		],
+	});
+	// every load and save gives the books their ids first, whatever added or changed their editions
+	catalog.assignIds();
+	assert.deepEqual(
+		catalog.books[0].editions.map(ed => ed.released ?? ed.publisher),
+		['2019', '2021-05', '2021-05-04', '2021-05-04', 'No date', 'someday'],
+	);
+	assert.equal(catalog.books[0].editions[3].publisher, 'Tie', 'editions released the same day keep their order');
+	// a box set's edition sits where its date puts it on each of its titles
+	const set = {ext: {'audible.com': 'B0FERNSET1'}, d: '2020-06'};
+	catalog.books[0].editions.push(Edition.fromJSON(set));
+	catalog.books[1].editions.unshift(Edition.fromJSON(set));
+	catalog.assignIds();
+	assert.deepEqual(
+		catalog.books.map(b => b.editions.map(ed => ed.released ?? ed.publisher)),
+		[
+			['2019', '2020-06', '2021-05', '2021-05-04', '2021-05-04', 'No date', 'someday'],
+			['2020', '2020-06'],
+		],
+	);
+	assert.equal(catalog.books[0].editions[1].id, catalog.books[1].editions[1].id, 'still one edition');
+});
+
 test('renameEntry renames a person on every book, keeping their id, or joins one the catalog has', () => {
 	const catalog = Catalog.fromJSON({
 		books: [

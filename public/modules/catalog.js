@@ -202,6 +202,8 @@ export class Catalog {
 	 * its copies on its titles keep (or get) one id while they are the same edition, and a copy that differs
 	 * gets one of its own. A series or person keeps its id when no book names them any more (they are
 	 * entries of their own, until removeEntry). The marks then point at the books they are about (resolveMarks).
+	 * As it runs on every load and before every save, it also puts each book's editions in order of release
+	 * (Book.sortEditions), whatever added or changed them.
 	 * @param {() => string} [newId]
 	 */
 	assignIds(newId = Catalog.newId) {
@@ -209,6 +211,7 @@ export class Catalog {
 		for (const b of this.books) {
 			if (!b.id || bookIds.has(b.id)) b.id = newId();
 			bookIds.add(b.id);
+			b.sortEditions();
 		}
 		/** @type {Map<string, string>} edition id -> the values of the first edition seen with it */
 		const valuesOf = new Map();
