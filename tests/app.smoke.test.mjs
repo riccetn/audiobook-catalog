@@ -1383,6 +1383,27 @@ test("a book's details link the Hardcover book and an edition's Hardcover id to 
 	]);
 });
 
+test('an edition added in the book form takes its place by release date, earliest first, undated last', async () => {
+	const storage = new Map();
+	const {ctx, els, get} = await bootBook(SALT_ROAD, {storage});
+	ctx.openEditForm(get('BOOK_FILTER'));
+	addEdition(els);
+	typeEdition(els, 2, 'p', 'Undated Audio');
+	addEdition(els);
+	typeEdition(els, 3, 'p', 'Early Audio');
+	typeEdition(els, 3, 'd', '2018-01');
+	els.addForm.listeners.submit[0]({preventDefault() {}, target: els.addForm});
+	await idle();
+	assert.equal(els.formError.textContent, '');
+	const order = ['Early Audio', 'Gullwing Audio', 'Harbourlight Sound', 'Undated Audio'];
+	assert.deepEqual(get('CATALOG.books[0].editions.map(ed => ed.publisher)'), order);
+	const stored = (await kept(storage)).books.find(b => b.t === SALT_ROAD);
+	assert.deepEqual(
+		stored.e.map(ed => ed.p),
+		order,
+	);
+});
+
 test('the Hardcover book field takes the address of a book or edition on Hardcover, and looks up its id', async () => {
 	// the page asks Hardcover, with the token saved in this browser
 	const hc = fakeHardcover(hardcoverState());

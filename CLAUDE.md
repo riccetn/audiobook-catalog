@@ -79,7 +79,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     author's, narrator's or publisher's books, by `namesOn`: `authorsOf`/`narratorsOf`/`publishersOf`), and `bookErrors` (`validate`'s errors but the
     series info's, which stop an import, a merge or the box sets).
   - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`, `static storedEditions` (a stored book's editions that are objects),
-    `lookupKeys`, `static bySeriesNumber`/`merge`, `tidyJSON` (tidy text, one edition per ISBN) and `fixSeriesTitle` (imports' titles with the series in them).
+    `lookupKeys`, `static bySeriesNumber`/`merge`, `tidyJSON` (tidy text, one edition per ISBN), `sortEditions` (by release date, earliest first, undated last; `Catalog.assignIds` runs it on every load and before every save) and `fixSeriesTitle` (imports' titles with the series in them).
   - `Edition` (`id external isbn narrators publisher released minutes description`): `idOn`/`ids`/`idKeys`/`idAndIsbnKeys` (its ids and "isbn 978…", what finds it and its box set's copies), `sameAs`/`conflictsWith`/`fillFrom`,
     `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`.
   - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata, with a

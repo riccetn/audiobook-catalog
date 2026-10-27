@@ -278,6 +278,17 @@ export class Book {
 		);
 	}
 
+	/**
+	 * Put its editions in order of release, earliest first (a release known only by its year or month before
+	 * the dated ones in it), and those without a release date last; editions that tie keep their order.
+	 */
+	sortEditions() {
+		// '~' sorts after every date, so the undated go last; sort() is stable, so ties keep their order
+		const keyed = this.editions.map(ed => ({ed, date: Text.parseDate(ed.released) || '~'}));
+		keyed.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+		this.editions = keyed.map(k => k.ed);
+	}
+
 	// ------------------------------------------------------------------ what it is
 	/**
 	 * Its own id in an external catalog ("hardcover"), or null; its editions have ids of their own.

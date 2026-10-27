@@ -88,7 +88,10 @@ The books (`books.json` before the catalog moved into the browser) are a list of
 
 Each title can have several **editions** (the Audible release, a UK release with another narrator, a
 dramatized adaptation, the CD...). Every field of an edition is optional, but an edition is never empty;
-its ids in external catalogs and its ISBN are what imports and box sets go by:
+its ids in external catalogs and its ISBN are what imports and box sets go by. A book's editions are kept in
+order of release, earliest first (an edition known only by its year or month before the dated ones in it),
+with those without a release date last, in the order they were added; the page puts them in that order
+whenever it saves, however they were added or changed:
 
 | key    | meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
