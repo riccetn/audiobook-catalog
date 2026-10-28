@@ -13,8 +13,8 @@ Then, on the phone:
 3. In the installed app, **Restore** that backup. The phone keeps it in its browser storage, like any
    browser does ([Running the app and keeping your catalog](saving.md)), and every edit and import on the phone is saved there.
 
-The phone's catalog and the PC's are separate. With sync set up on your catalog proxy, **Sync now** on each
-keeps them alike ([Syncing devices](catalog-proxy.md#syncing-devices)). Without it, to bring phone edits to the PC, Export on the phone and
+The phone's catalog and the PC's are separate. With sync set up on your server, **Sync now** on each
+keeps them alike ([Syncing devices](server.md#syncing-devices)). Without it, to bring phone edits to the PC, Export on the phone and
 **Merge** that file on the PC ([Merge a backup from another device](backups.md)), or Restore it if nothing
 changed on the PC meanwhile. The other way, Export on the PC and **Merge** it in the phone app.
 

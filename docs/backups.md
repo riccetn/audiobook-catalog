@@ -4,8 +4,8 @@
 sides have changed (books added, read or removed on the phone _and_ on the PC), merge instead: **Merge**
 on the _Import & export_ page previews the result first, and changes nothing until you confirm it.
 
-With sync set up on your catalog proxy, **Sync now** does this for you, and better: it knows what the two
-had in common when they last synced ([Syncing devices](catalog-proxy.md#syncing-devices)).
+With sync set up on your server, **Sync now** does this for you, and better: it knows what the two
+had in common when they last synced ([Syncing devices](server.md#syncing-devices)).
 
 A backup has no record of what the two catalogs last had in common, so the merge works from what each
 side has. Books are matched by title and author first, then by series and number, then by ASIN,

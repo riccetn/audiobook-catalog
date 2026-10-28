@@ -89,19 +89,19 @@ export class BookSource {
 		return needs === 'proxy' ? Boolean(this.context.proxy) : needs === 'key' ? Boolean(this.client) : true;
 	}
 
-	/** @returns {string} what to save to ask it ('save a catalog proxy') */
+	/** @returns {string} what to save to ask it ('save your server') */
 	get needsText() {
 		return BookSource.needing(this.kind);
 	}
 
 	/**
-	 * What to save to ask a source of `kind` ('save a catalog proxy'); '' when it needs nothing.
+	 * What to save to ask a source of `kind` ('save your server'); '' when it needs nothing.
 	 * @param {typeof BookSource} kind
 	 * @returns {string}
 	 */
 	static needing(kind) {
 		return kind.NEEDS === 'proxy'
-			? 'save a catalog proxy'
+			? 'save your server'
 			: kind.NEEDS === 'key'
 				? `save your ${kind.LABEL} ${kind.CLIENT.KEY_NAME}`
 				: '';
@@ -181,12 +181,11 @@ export class BookSource {
 			res = await proxy(route);
 		} catch (e) {
 			throw new Error(
-				'this browser could not reach the catalog proxy (offline, or check it on the Import & export page)',
+				'this browser could not reach your server (offline, or check it on the Import & export page)',
 				{cause: e},
 			);
 		}
-		if (res.status === 401)
-			throw new Error('the catalog proxy refused its key (check it on the Import & export page)');
+		if (res.status === 401) throw new Error('your server refused its key (check it on the Import & export page)');
 		return BookSource.answer(this.label, res, list);
 	}
 

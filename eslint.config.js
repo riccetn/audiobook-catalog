@@ -14,10 +14,10 @@ export default [
 	},
 	{files: ['public/**/*.js'], languageOptions: {globals: globals.browser}},
 	{files: ['public/sw.js'], languageOptions: {globals: globals.serviceworker}},
-	// The catalog proxy runs as a Cloudflare Worker, whose globals are a service worker's.
-	{files: ['proxy/**/*.js'], languageOptions: {globals: globals.serviceworker}},
+	// The app's server runs as a Cloudflare Worker, whose globals are a service worker's; its .mjs files run in Node.
+	{files: ['server/**/*.js'], languageOptions: {globals: globals.serviceworker}},
 	{
-		files: ['tests/**/*.mjs', 'build.mjs', 'proxy/deploy.mjs', 'eslint.config.js'],
+		files: ['tests/**/*.mjs', 'build.mjs', 'server/**/*.mjs', 'eslint.config.js'],
 		languageOptions: {globals: globals.node},
 	},
 ];

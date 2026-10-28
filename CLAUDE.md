@@ -7,13 +7,13 @@ read them for workflows and the data format. This file covers what you need to c
 
 A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `import.html`, `duplicates.html`, `stats.html`, `authors.html`,
 `narrators.html`, `publishers.html`, `author.html`, `narrator.html`, `publisher.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
-no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
-Node is only used to write the pages and run the tests.
+no server code in the app and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
+Node is only used to write the pages, run the tests and run `make serve`.
 
 Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`; the published site adds the API docs at `api/`),
-and nothing else goes there: `docs/`, `templates/`, `tests/`, `api-docs/` and `proxy/` stay outside it, so they are never served.
-The one piece that runs elsewhere is the optional catalog proxy (`proxy/`, below), a Cloudflare Worker the user deploys
-themselves; the app never needs it.
+and nothing else goes there: `docs/`, `templates/`, `tests/`, `api-docs/` and `server/` stay outside it, so they are never served.
+The one piece that runs elsewhere is the optional server (`server/`, below: the catalog proxy and sync), a Cloudflare Worker the user deploys
+themselves, or `make serve` on their computer; the app never needs it.
 The module names below are files in `public/`.
 
 The pages' HTML is the one thing built: `make pages` (`build.mjs`) renders `templates/pages/<name>.liquid` with
@@ -34,7 +34,7 @@ unknown variable or filter fails it). `make test` and `make serve` build first, 
   or `Validator`; what only Import & export uses stays there (the smoke test's `IMPORT_PAGE_ONLY` checks it), and what a page
   needs only for one action is loaded with `import()` when used (the book form's _Fill in_, the Hardcover lookups, the old
   localStorage catalog's move). `modules/` imports stay static.
-- Node 18+ for the tests (CI uses 24).
+- Node 22.13+ for the tests and `make serve` (`node:sqlite`; CI uses 24).
 
 ## Commands
 
@@ -47,13 +47,13 @@ make format     # prettier --write . (.prettierrc.json, .prettierignore); needs 
 make format-check  # prettier --check ., what make check runs
 make check      # test, typecheck, lint and format-check, what CI runs; run it before a PR
 make docs       # TypeDoc: the API documentation from the JSDoc, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
-make deploy-proxy  # node proxy/deploy.mjs: deploy the catalog proxy with its sync D1 database, found by name; the id only in the git-ignored proxy/wrangler.deploy.toml
-make serve      # make pages, then python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
+make deploy-server  # node server/deploy.mjs: deploy the server (proxy and sync) with its sync D1 database, found by name; the id only in the git-ignored server/wrangler.deploy.toml
+make serve      # make pages, then node server/serve.mjs: public/ and the server on http://127.0.0.1:8000/ (PORT=, HOST=; key in server/.dev.vars, sync in server/.local/sync.sqlite)
 node --test tests/catalog.test.mjs            # one suite (the smoke test reads the pages, so make pages after editing a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve`, `deploy-proxy`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve` (`-Port`, `-Bind`), `deploy-server`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
@@ -101,7 +101,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     `fixEditions`, `fixBookIds`, `fixEditionIds`, `fixPeople`/`fixNames`). Nothing else imports it: dropping version 1 is deleting `backup-v1.js` and that one line in `Backup.read`.
     Keep anything only the old format needs there, not in `Backup`, `Book`, `Edition` or `Text`. (`Contributor.fixLinks` and `Series.moveSites` stay
     where they are: IndexedDB's older records need them too.)
-  - `CatalogSync` (syncing devices through the catalog proxy's `/sync`: `keyFor` (PBKDF2 from the passphrase), `seal`/`open` (a version 3 backup, gzipped
+  - `CatalogSync` (syncing devices through your server's `/sync`: `keyFor` (PBKDF2 from the passphrase), `seal`/`open` (a version 3 backup, gzipped
     (`squeeze`) and encrypted with AES-GCM, with a `copy` id; `WrongPassphrase`), `combine(base, mine, theirs, prefer)` (`CatalogRecords.merge` of the backups'
     records (`Backup.records`) against the copy this device last synced; `prefer` `mine`/`theirs` settles conflicts, `replace` takes the synced copy (but keeps the exclusions);
     `UnrelatedCatalogs` when the two name a series or person under other ids, `Backup.checkNames`)).
@@ -176,9 +176,9 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   `ExternalCatalog` group; `externalFieldToId` turns a pasted address into its id, or moves it to its catalog's field, on focusout) and `externalLinks`, the page links
   (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), your key for each catalog (Hardcover's token, localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; AudiobookDB's API key, `audiobook-catalog-audiobookdb-key`, sent only through the proxy, with the requests that need it): `savedKey(Client)`,
-  `saveKey(Client, key)`, the sync (`syncCatalog(prefer)`: reads the proxy's copy, `CatalogSync.combine` with what this browser last synced (`CatalogDatabase.syncBase`, meta `sync`), saves, then sends the next copy over the revision read, again on a 409;
-  passphrase in localStorage `audiobook-catalog-sync-passphrase`, `savedPassphrase`, `lastSync`), `catalogClient(Client, key)` (asking directly, or through the proxy for `VIA_PROXY`), `keyedClients(Clients)`, the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
-  `proxyAddress` (https, or http on this computer), `fetchViaProxy(route, proxy, {key, body})` with the `X-Proxy-Key` header (and `X-Catalog-Key` for a catalog key, a POST for a body); set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the run banner of a catalog's shelves (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
+  `saveKey(Client, key)`, the sync (`syncCatalog(prefer)`: reads the server's copy (`fetchFromServer('sync')`), `CatalogSync.combine` with what this browser last synced (`CatalogDatabase.syncBase`, meta `sync`), saves, then sends the next copy over the revision read, again on a 409;
+  passphrase in localStorage `audiobook-catalog-sync-passphrase`, `savedPassphrase`, `lastSync`), `catalogClient(Client, key)` (asking directly, or through the proxy for `VIA_PROXY`), `keyedClients(Clients)`, your server (localStorage `audiobook-catalog-proxy`, its name from when it was only the proxy, `{url, key}`: `savedServer`,
+  `serverAddress` (https, or http on this computer), `fetchFromServer(path, server, {key, body})` with the `X-Server-Key` header (and `X-Catalog-Key` for a catalog key, a POST for a body), and `fetchViaProxy(route, ...)`, the same under `proxy/`; set on Import & export's _Your server_, `showServer`/`saveServer`/`checkServer`, which asks `ping` and says a server from before `/proxy/` is out of date), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the run banner of a catalog's shelves (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onCatalogJob`;
   the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
@@ -237,17 +237,24 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   read, an edition's ASIN, ISBN, narrators, publisher, release date, length, description, a series' total and status, a person's bio;
   a box set's edition once) and `byCatalog()` (how many of each kind have an id in each `ExternalCatalog.GROUPS`). A line opens to
   the first `LISTED` (100) entries, linked to their pages.
-- `proxy/`: the catalog proxy, a Cloudflare Worker (`worker.js`, `wrangler.toml`; `docs/catalog-proxy.md`) for the catalogs whose APIs send
-  no CORS headers. Routes name a catalog (`CATALOGS`: `audiobookdb`, `audible/<site>` (only `catalog/...`), `bookbrainz`, `isfdb`), never an
-  address (`upstreamUrl`); GET only, only `ALLOWED_ORIGINS`, only with the `PROXY_KEY` secret (`X-Proxy-Key`); no cookies or other headers either
-  way; answers found cached a day; `/ping`; `/sync` (`handleSync`), the one copy of the catalog the pages sync, encrypted by them, in a D1 database bound as `SYNC_DB` (`SYNC_SQL`: one row, replaced only over the
-  revision the page read, else 409; at most `MAX_SYNC`; 501 without the binding). A route's `keyed` paths (AudiobookDB's `auth/session`, your shelves, and POST of a book to a shelf, `keyedPath`) take your
-  account key from `X-Catalog-Key` (`CATALOG_KEY_HEADER`) as the route's `keyHeader`, are never cached, and are the only POSTs; the key sent elsewhere is refused (400), never stored. `handle(request, env, deps)` takes the fetch and cache so the tests run it in Node. Hardcover never goes
-  through it. Type checked with the pages (`jsconfig.json`), linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
+- `server/`: the optional server (`docs/server.md`), two unrelated jobs in modules of their own, behind one gate. `worker.js` (the Cloudflare Worker,
+  `wrangler.toml`): `handle(request, env, deps)` answers only `ALLOWED_ORIGINS`, only with the `SERVER_KEY` secret (`X-Server-Key`; `PROXY_KEY` and
+  `X-Proxy-Key`, the names from when it was only the proxy, still read), `/ping` (`{ok, proxy, sync}`), and routes `/sync` to `sync.js` and `/proxy/...`
+  to `proxy.js` (catalogs at the root too, for pages from before). `proxy.js` (`handleProxy`), for the catalogs whose APIs send no CORS headers: routes
+  name a catalog (`CATALOGS`: `audiobookdb`, `audible/<site>` (only `catalog/...`), `bookbrainz`, `isfdb`), never an address (`upstreamUrl(path, search)`);
+  GET only; no cookies or other headers either way; answers found cached a day. A route's `keyed` paths (AudiobookDB's `auth/session`, your shelves,
+  and POST of a book to a shelf, `keyedPath`) take your account key from `X-Catalog-Key` (`CATALOG_KEY_HEADER`) as the route's `keyHeader`, are never
+  cached, and are the only POSTs; the key sent elsewhere is refused (400), never stored. Hardcover never goes through it. `sync.js` (`handleSync`): the
+  one copy of the catalog the pages sync, encrypted by them, in a D1 database (`D1Database`, bound as `SYNC_DB`; `SYNC_SQL`, plain SQLite: one row,
+  replaced only over the revision the page read, else 409; at most `MAX_SYNC`; 501 without one). `responses.js`: `jsonResponse`, `corsHeaders`.
+  `serve.mjs` (`make serve`, Node built-ins only): `public/`'s files first, as Cloudflare's static assets, then `handle` (`startServer`, `publicFile`,
+  `memoryCache` for the proxy's cache), with `SYNC_DB` a SQLite file through `sqliteD1` (`sqlite-d1.js`, node:sqlite seen as D1) and the key in
+  `.dev.vars` (`readDevVars`; made and printed when missing). `deploy.mjs` (`make deploy-server`). `handle` takes the fetch and cache so the tests run it
+  in Node. The `.js` files are type checked with the pages (`jsconfig.json`) and linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
   - `service-worker.test.mjs`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-app.js`'s files and hash.
-  - `proxy.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses), and its sync with `fakeD1` (`tests/fake-d1.mjs`, knowing only `SYNC_SQL`).
+  - `server.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses), its sync on an in-memory SQLite (`sqliteD1`), and `make serve`'s server on a free port.
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
     what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws), a fake localStorage (`boot`'s `files`
@@ -260,8 +267,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
     in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover), Open Library and Wikidata
-    (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`), and the catalog proxy at a `*.workers.dev` address (`boot`'s `proxy`;
-    the proxy test puts the real `handle` there; `fakeProxyCatalogs` answers its Audible and AudiobookDB routes, and `fakeAudiobookdb` (`audiobookdbState`) is AudiobookDB behind the real Worker, with your account and shelves).; covers are `<img>`s, which the fake DOM never loads.
+    (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`), and your server at a `*.workers.dev` address (`boot`'s `proxy`;
+    the server tests put the real `handle` there; `fakeProxyCatalogs` answers its Audible and AudiobookDB routes, and `fakeAudiobookdb` (`audiobookdbState`) is AudiobookDB behind the real Worker, with your account and shelves).; covers are `<img>`s, which the fake DOM never loads.
 
 ## Data model (short form; full table in `docs/data-format.md`)
 

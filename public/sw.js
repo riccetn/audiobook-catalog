@@ -14,6 +14,10 @@ const sw = /** @type {ServiceWorkerGlobalScope & {APP_VERSION: string, APP_FILES
 
 const CACHE = `audiobook-catalog-${sw.APP_VERSION}`;
 const APP = sw.APP_FILES;
+// What the app's server answers when it serves the app too (server/worker.js): its catalog proxy and sync, which
+// are never cached (a synced copy kept here would hide the other devices' changes). sw.js is in the app's folder.
+const SERVER_PATHS = ['ping', 'sync'].map(route => new URL(route, location.href).pathname);
+const PROXY_PATH = new URL('proxy/', location.href).pathname;
 
 // Served from this computer (make serve), where the files change without a deploy.
 const LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
@@ -39,12 +43,15 @@ sw.addEventListener('activate', e => {
 
 /**
  * Whether a request may be answered from the cache: the app's own files. Only public/ is served, so the
- * old data/ files beside it are out of reach anyway; requests to Hardcover go straight to the network.
+ * old data/ files beside it are out of reach anyway; requests to Hardcover, and to the app's server, go
+ * straight to the network.
  * @param {Request} req
  * @returns {boolean}
  */
 function cacheable(req) {
-	return req.method === 'GET' && new URL(req.url).origin === location.origin;
+	const url = new URL(req.url);
+	if (req.method !== 'GET' || url.origin !== location.origin) return false;
+	return !SERVER_PATHS.includes(url.pathname) && !url.pathname.startsWith(PROXY_PATH);
 }
 
 /**

@@ -10,6 +10,6 @@
 		"lib": ["es2023", "dom", "dom.iterable"],
 		"types": []
 	},
-	"include": ["public/**/*.js", "proxy/**/*.js"],
+	"include": ["public/**/*.js", "server/**/*.js"],
 	"exclude": ["public/sw.js", "public/sw-app.js"]
 }

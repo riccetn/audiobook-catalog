@@ -17,7 +17,7 @@ export has them.
 ## Fill in a series' books from Audible
 
 Audible's catalog doesn't let a web page ask it about books, so it is asked through your
-[catalog proxy](catalog-proxy.md); without one, set up on the _Import & export_ page, there is nothing to compare.
+[server's catalog proxy](server.md); without one, set up on the _Import & export_ page, there is nothing to compare.
 No Audible account is needed, and nothing is sent to Audible.
 
 1. Press **Compare with Audible** beside **Edit** at the end of a series' page (on _Series_), or on the _Import & export_ page type the

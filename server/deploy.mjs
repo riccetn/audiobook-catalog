@@ -1,7 +1,7 @@
-// Deploys the catalog proxy with its sync database (make deploy-proxy, or node proxy/deploy.mjs), so the
+// Deploys the app's server with its sync database (make deploy-server, or node server/deploy.mjs), so the
 // database's id never has to be written into wrangler.toml, which git tracks. It finds the D1 database by its
 // name (making it the first time), writes wrangler.toml with the binding and that id into wrangler.deploy.toml
-// (git-ignored), and deploys that. A plain `npx wrangler deploy` still deploys the proxy, without sync.
+// (git-ignored), and deploys that. A plain `npx wrangler deploy` still deploys the server, without sync.
 import {spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';

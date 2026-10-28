@@ -1,9 +1,10 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, format, format-check, docs, serve, deploy-proxy or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, format, format-check, docs, serve, deploy-server or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'format', 'format-check', 'docs', 'serve', 'deploy-proxy')]
+	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'format', 'format-check', 'docs', 'serve', 'deploy-server')]
 	[string]$Command = 'help',
 	[int]$Port = 8000,
+	[string]$Bind = '127.0.0.1',
 	[string]$Out = 'api-docs/out'
 )
 
@@ -27,17 +28,17 @@ function Invoke-Prettier([string]$mode){
 
 switch ($Command) {
 	'help' {
-		'help         - list the available commands'
-		'check        - run everything CI runs: the tests, the type check, lint and the format check'
-		'pages        - write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)'
-		'test         - run the tests: the catalog classes and the browser smoke test'
-		'typecheck    - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
-		'lint         - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
-		'format       - format the code, JSON, Markdown and YAML with Prettier (the pre-commit hook does this to what you commit)'
-		'format-check - check that everything is formatted as Prettier would (format fixes it)'
-		'docs         - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
-		'serve        - open the app at http://localhost:8000/ (serves public/; -Port for another port)'
-		'deploy-proxy - deploy the catalog proxy to Cloudflare with its sync database (npx wrangler login once first)'
+		'help          - list the available commands'
+		'check         - run everything CI runs: the tests, the type check, lint and the format check'
+		'pages         - write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)'
+		'test          - run the tests: the catalog classes and the browser smoke test'
+		'typecheck     - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
+		'lint          - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
+		'format        - format the code, JSON, Markdown and YAML with Prettier (the pre-commit hook does this to what you commit)'
+		'format-check  - check that everything is formatted as Prettier would (format fixes it)'
+		'docs          - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
+		'serve         - open the app at http://localhost:8000/ with its server: the catalog proxy and sync, kept in SQLite (-Port, -Bind 0.0.0.0 for your network)'
+		'deploy-server - deploy the app''s server to Cloudflare with its sync database (npx wrangler login once first)'
 	}
 	'check' {
 		# Each step runs this script again, and the first that fails stops the rest, as make does.
@@ -95,15 +96,11 @@ switch ($Command) {
 	'serve' {
 		& $PSCommandPath pages
 		if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-		# Windows usually has the py launcher or python rather than python3.
-		$python = @('py', 'python3', 'python') | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
-		if (-not $python) {
-			Write-Host 'Python is not installed: any static server for public/ works too'
-			exit 1
-		}
-		Invoke-Native $python @('-m', 'http.server', "$Port", '--bind', '127.0.0.1', '--directory', 'public')
+		$env:PORT = "$Port"
+		$env:HOST = $Bind
+		Invoke-Native 'node' @('--disable-warning=ExperimentalWarning', 'server/serve.mjs')
 	}
-	'deploy-proxy' {
-		Invoke-Native 'node' @('proxy/deploy.mjs')
+	'deploy-server' {
+		Invoke-Native 'node' @('server/deploy.mjs')
 	}
 }

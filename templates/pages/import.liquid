@@ -88,7 +88,7 @@
 		{%- capture audible_note -%}
 			Shows a series' books on Audible beside yours, to pick what to take from Audible: narrators, publisher, release date,
 					length and ISBN your books' editions lack, and the series' Audible id and count of books. Read on the Audible site of your books' ASINs,
-					through your catalog proxy (below). Nothing is sent to Audible.
+					through your server's catalog proxy (below). Nothing is sent to Audible.
 		{%- endcapture %}
 		{% render 'shelf-compare', catalog: 'audible', title: 'Compare a series with Audible', note: audible_note, every: false %}
 	</section>
@@ -121,30 +121,31 @@
 	{%- capture audiobookdb_note -%}
 		Finds your books on AudiobookDB and shows the books on your AudiobookDB <em>Read</em> shelf beside this catalog's,
 				to pick what to take from AudiobookDB, and which of your books to put on your Read shelf there; for every book, or only a
-				series' or an author's. Asked through your catalog proxy (below). Nothing on AudiobookDB is changed or removed.
+				series' or an author's. Asked through your server's catalog proxy (below). Nothing on AudiobookDB is changed or removed.
 	{%- endcapture %}
 	{% render 'shelf-panel', catalog: 'audiobookdb', label: 'AudiobookDB', via: 'Through the proxy', note: audiobookdb_note, key_label: 'API key', key_name: 'API key', key_word: 'key' %}
 
-	<section class="panel" id="proxyPanel">
-		<h2>Catalog proxy <span class="via">Optional</span></h2>
+	<section class="panel" id="serverPanel">
+		<h2>Your server <span class="via">Optional</span></h2>
 		<div class="ioRow">
-			<span class="ioLabel">Proxy</span>
+			<span class="ioLabel">Server</span>
 			<div class="rowbtns">
-				<input type="url" id="proxyUrl" placeholder="https://your-proxy.workers.dev" autocomplete="off" spellcheck="false">
-				<input type="password" id="proxyKey" placeholder="Proxy key" autocomplete="off" spellcheck="false">
-				<button class="iconbtn2" id="proxySave" title="Keep this proxy in this browser, and see that it answers">Save proxy</button>
-				<button class="iconbtn2" id="proxyCheck" title="See that the saved proxy answers">Check</button>
-				<button class="iconbtn2" id="proxyRemove" title="Forget the proxy in this browser">Remove proxy</button>
+				<input type="url" id="serverUrl" placeholder="https://your-server.workers.dev" autocomplete="off" spellcheck="false">
+				<input type="password" id="serverKey" placeholder="Server key" autocomplete="off" spellcheck="false">
+				<button class="iconbtn2" id="serverSave" title="Keep this server in this browser, and see that it answers">Save server</button>
+				<button class="iconbtn2" id="serverCheck" title="See that the saved server answers">Check</button>
+				<button class="iconbtn2" id="serverRemove" title="Forget the server in this browser">Remove server</button>
 			</div>
-			<p class="ioNote">Some catalogs (AudiobookDB, Audible, BookBrainz, ISFDB) don't answer web pages, so this app can only ask
-				them through a proxy of your own: a small Cloudflare Worker, free, which the app's docs (<em>Catalog proxy</em>)
-				show how to set up. Everything else works without it.</p>
-			<p class="ioNote" id="proxyState"></p>
+			<p class="ioNote">A server of your own does two things for this app: its catalog proxy asks the catalogs that don't answer
+				web pages (AudiobookDB, Audible, BookBrainz, ISFDB), and it keeps the copy your devices sync with. It is a small
+				Cloudflare Worker, free, or <code>make serve</code> on your computer; the app's docs (<em>Your server</em>) show how to
+				set it up. Everything else works without it.</p>
+			<p class="ioNote" id="serverState"></p>
 		</div>
 	</section>
 
 	<section class="panel" id="syncPanel">
-		<h2>Sync between devices <span class="via">Through the proxy</span></h2>
+		<h2>Sync between devices <span class="via">Through your server</span></h2>
 		<div class="ioRow">
 			<span class="ioLabel">Passphrase</span>
 			<div class="rowbtns">
@@ -152,7 +153,7 @@
 				<button class="iconbtn2" id="syncPassphraseSave" title="Keep this passphrase in this browser">Save passphrase</button>
 				<button class="iconbtn2" id="syncPassphraseRemove" title="Forget the passphrase in this browser">Remove passphrase</button>
 			</div>
-			<p class="ioNote">The catalog is encrypted with this passphrase before it leaves the browser, so your proxy keeps only
+			<p class="ioNote">The catalog is encrypted with this passphrase before it leaves the browser, so your server keeps only
 				text it can't read. Use the same one on every device; it is kept in this browser only, and a lost passphrase can't be
 				recovered (each device still has its catalog).</p>
 			<p class="ioNote" id="syncPassphraseState"></p>
@@ -163,7 +164,7 @@
 				<button class="iconbtn2" id="syncBtn" title="Take in what your other devices changed, and send what this one changed">Sync now</button>
 			</div>
 			<p class="ioNote">Takes in what your other devices changed since this one last synced, and sends what this one changed,
-				through your catalog proxy, once sync is set up on it (the docs' <em>Catalog proxy</em>). When a device and this one
+				through your server, once sync is set up on it (the docs' <em>Your server</em>). When a device and this one
 				changed the same book, series or person, it asks which to keep.</p>
 			<p class="ioNote" id="syncState"></p>
 			<p class="ioNote" id="syncChoice" style="display:none"><span id="syncChoiceText"></span>

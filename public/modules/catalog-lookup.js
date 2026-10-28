@@ -166,7 +166,7 @@ export class CatalogLookup {
 			const what = CatalogLookup.editionIds(ed).find(x => source.answers(x));
 			if (!what) continue;
 			if (source.available) await ask(source, what, true);
-			// a key is saved in a moment; a proxy is set up once, and so not asked for each book
+			// a key is saved in a moment; a server is set up once, and so not asked for each book
 			else if (source.kind.NEEDS === 'key' && (!ed.narrators.length || !ed.minutes))
 				found.notes.push(
 					`to fill in narrators and length from ${source.label} too, ${source.needsText} ${ON_THE_PAGE}`,
@@ -185,12 +185,12 @@ export class CatalogLookup {
 		const keyed = sources.filter(s => s.kind.NEEDS !== 'proxy');
 		const proxy = `${listed(proxied, 'and')} can't be read from a web page; `;
 		if (!keyed.length)
-			return `${proxy}to ask ${proxied.length > 1 ? 'them' : 'it'} through your own proxy, save a catalog proxy ${ON_THE_PAGE} first`;
+			return `${proxy}to ask ${proxied.length > 1 ? 'them' : 'it'} through a server of your own, save your server ${ON_THE_PAGE} first`;
 		const ask = `to look it up on ${listed(
 			keyed.map(s => s.label),
 			'or',
 		)}, ${listed([...new Set(keyed.map(s => s.needsText))], 'or')} ${ON_THE_PAGE} first`;
-		return proxied.length ? `${proxy}${ask}, or save a catalog proxy there to ask ${listed(proxied, 'and')}` : ask;
+		return proxied.length ? `${proxy}${ask}, or save your server there to ask ${listed(proxied, 'and')}` : ask;
 	}
 
 	/**

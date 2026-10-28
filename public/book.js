@@ -19,7 +19,7 @@ import {
 	showIoStatus,
 	lookupHardcoverBook,
 	keyedClients,
-	browserProxy,
+	savedServer,
 	fetchViaProxy,
 	startPage,
 	byId,
@@ -1194,11 +1194,11 @@ export async function fillFromCatalog() {
 			import('./modules/catalog-lookup.js'),
 			import('./modules/catalog-connectors.js'),
 		]);
-		const proxy = browserProxy();
+		const server = savedServer();
 		const found = await new CatalogLookup(
 			url => fetch(url),
 			keyedClients(CatalogConnectors.CLIENTS),
-			proxy ? route => fetchViaProxy(route, proxy) : null,
+			server ? route => fetchViaProxy(route, server) : null,
 		).find(text, Text.splitNames(fieldById('f_a').value));
 		// the form was closed, or moved to another book, meanwhile
 		if (EDIT_ID !== editing || !byId('addForm').classList.contains('open')) return;

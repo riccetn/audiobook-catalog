@@ -1,12 +1,13 @@
 NODE ?= node
 PORT ?= 8000
+HOST ?= 127.0.0.1
 TSC ?= node_modules/.bin/tsc
 ESLINT ?= node_modules/.bin/eslint
 PRETTIER ?= node_modules/.bin/prettier
 TYPEDOC ?= api-docs/node_modules/.bin/typedoc
 API_DOCS ?= api-docs/out
 
-.PHONY: help check pages test typecheck lint format format-check docs serve deploy-proxy
+.PHONY: help check pages test typecheck lint format format-check docs serve deploy-server
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
@@ -41,8 +42,8 @@ docs:            ## write the API documentation from the code's JSDoc into api-d
 	@test -x $(TYPEDOC) || { echo 'TypeDoc is not installed: run npm install first'; exit 1; }
 	$(TYPEDOC) --options api-docs/typedoc.json --out $(API_DOCS)
 
-serve: pages     ## open the app at http://localhost:8000/ (serves public/; any static server works, but the pages are ES modules, so not from a file)
-	python3 -m http.server $(PORT) --bind 127.0.0.1 --directory public
+serve: pages     ## open the app at http://localhost:8000/ with its server: the catalog proxy and sync, kept in SQLite (server/serve.mjs; HOST=0.0.0.0 for your network)
+	PORT=$(PORT) HOST=$(HOST) $(NODE) --disable-warning=ExperimentalWarning server/serve.mjs
 
-deploy-proxy:    ## deploy the catalog proxy to Cloudflare with its sync database (proxy/deploy.mjs; npx wrangler login once first)
-	$(NODE) proxy/deploy.mjs
+deploy-server:   ## deploy the app's server to Cloudflare with its sync database (server/deploy.mjs; npx wrangler login once first)
+	$(NODE) server/deploy.mjs
