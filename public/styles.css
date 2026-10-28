@@ -140,6 +140,32 @@ h1 {
 	color: var(--moss);
 	font-weight: 600;
 }
+/* Set up another device: the settings to hand over, and the QR code (at its own size, so its modules stay even) */
+.setupPicks label {
+	display: block;
+	margin-bottom: 0.4rem;
+	color: var(--ink);
+}
+.setupCode {
+	grid-column: 2;
+	margin-top: 0.6rem;
+}
+.setupCode img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	image-rendering: pixelated;
+	background: #fff;
+	border-radius: 6px;
+}
+/* a link from another device brought settings: the page asks before saving them */
+.setupReceived {
+	border-color: var(--moss);
+}
+.setupReceived ul {
+	margin: 0 0 0.8rem;
+	padding-left: 1.2rem;
+}
 .panel p.backupState {
 	color: var(--ink);
 	font-weight: 600;
@@ -1453,7 +1479,8 @@ button:focus {
 		row-gap: 0.35rem;
 	}
 	.ioRow .ioNote,
-	.ioRow .ioLabel + .ioNote {
+	.ioRow .ioLabel + .ioNote,
+	.setupCode {
 		grid-column: 1;
 	}
 	.controls select {

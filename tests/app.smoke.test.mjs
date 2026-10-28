@@ -440,6 +440,7 @@ async function boot({
 	files = DEMO,
 	storage = new Map(),
 	hash = '',
+	origin = 'https://reader.example',
 	setTimeout = () => 0,
 	hardcover = null,
 	catalogs = null,
@@ -502,9 +503,12 @@ async function boot({
 	// The session history: `entries` of {hash, state}, `at` the current one; back() and forward() fire popstate.
 	// a page sent elsewhere (location.replace) says where in `replaced`, one it opens (location.assign) in `assigned`
 	const location = {
-		href: page,
+		href: `${origin}/${page}${hash}`,
+		origin,
+		hostname: new URL(origin).hostname,
 		hash,
 		pathname: '/' + page,
+		search: '',
 		replaced: null,
 		assigned: null,
 		replace(url) {
@@ -4054,6 +4058,108 @@ test('your server is kept in this browser, checked when saved, and only ever sen
 	assert.equal(before.els.ioStatus.textContent, 'Your server is from before this version: deploy it again.');
 });
 
+test('another device is set up from a QR code of the settings saved here, and asks before saving them', async () => {
+	const saved = new Map([
+		[
+			'audiobook-catalog-proxy',
+			JSON.stringify({url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'}),
+		],
+		['audiobook-catalog-sync-passphrase', 'sea glass lantern ö'],
+		['audiobook-catalog-hardcover-token', 'tok-123'],
+		['audiobook-catalog-audiobookdb-key', 'abdb-key'],
+	]);
+	const pc = await boot({page: 'import.html', storage: saved, files: null});
+	const pick = id => pc.els[`setupPick-${id}`];
+	assert.equal(
+		pc.els.setupPicks.textContent,
+		' Your server (https://catalog-proxy.example.workers.dev) The sync passphrase Your Hardcover API token Your AudiobookDB API key',
+	);
+	for (const id of ['server', 'passphrase', 'hardcover']) pick(id).checked = true;
+	assert.equal(pc.els.setupCode.style.display, 'none');
+	await pc.els.setupShowBtn.listeners.click[0]();
+	assert.match(pc.els.setupQr.getAttribute('src'), /^data:image\/gif;base64,/);
+	assert.equal(pc.els.setupCode.style.display, '');
+	// the link opens this page where the PC has it, with only the ticked settings after the #
+	const {link} = pc.get('setupLink()');
+	assert.match(link, /^https:\/\/reader\.example\/import\.html#setup=[\w-]+$/);
+	await pc.els.setupHideBtn.listeners.click[0]();
+	assert.equal(pc.els.setupQr.getAttribute('src'), null);
+	assert.equal(pc.els.setupCode.style.display, 'none');
+
+	// the phone opens it: the settings leave the address at once, and nothing is saved until asked
+	const asked = [];
+	const proxy = async (url, init = {}) => {
+		asked.push({url, key: init.headers['X-Server-Key']});
+		return new Response('{"ok":true,"proxy":["audiobookdb"],"sync":true}', {status: 200});
+	};
+	const phone = await boot({page: 'import.html', hash: link.slice(link.indexOf('#')), proxy, files: null});
+	assert.equal(phone.ctx.location.hash, '');
+	assert.deepEqual(
+		phone.ctx.history.entries.map(e => e.hash),
+		[''],
+	);
+	assert.equal(phone.els.setupReceived.style.display, '');
+	assert.equal(
+		phone.els.setupReceivedList.innerHTML,
+		'<li>Your server, https://catalog-proxy.example.workers.dev</li><li>The sync passphrase</li><li>Your Hardcover API token</li>',
+	);
+	assert.equal(phone.storage.get('audiobook-catalog-proxy'), undefined);
+	await phone.els.setupReceivedSave.listeners.click[0]();
+	assert.deepEqual(JSON.parse(phone.storage.get('audiobook-catalog-proxy')), {
+		url: 'https://catalog-proxy.example.workers.dev',
+		key: 'right-key',
+	});
+	assert.equal(phone.storage.get('audiobook-catalog-sync-passphrase'), 'sea glass lantern ö');
+	assert.equal(phone.storage.get('audiobook-catalog-hardcover-token'), 'tok-123');
+	assert.equal(phone.storage.get('audiobook-catalog-audiobookdb-key'), undefined, 'not ticked');
+	assert.equal(phone.els.setupReceived.style.display, 'none');
+	assert.match(phone.els.ioStatus.textContent, /^Settings saved; it answers: /);
+	assert.deepEqual(asked, [{url: 'https://catalog-proxy.example.workers.dev/ping', key: 'right-key'}]);
+	assert.match(phone.els.serverState.textContent, /Saved in this browser only/);
+
+	// a link opened where settings are saved says it replaces them; Don't save keeps what was there
+	const other = await boot({
+		page: 'import.html',
+		hash: link.slice(link.indexOf('#')),
+		storage: new Map([saved.entries().next().value]),
+		files: null,
+	});
+	assert.match(
+		other.els.setupReceivedList.innerHTML,
+		/<li>Your server, https:\/\/catalog-proxy\.example\.workers\.dev \(in place of the one saved here\)<\/li>/,
+	);
+	other.els.setupReceivedSkip.listeners.click[0]();
+	assert.equal(other.els.ioStatus.textContent, 'Nothing saved.');
+	assert.equal(other.storage.get('audiobook-catalog-sync-passphrase'), undefined);
+	assert.equal(other.ctx.location.hash, '');
+
+	// a page on this computer only (make serve) links to the server, which serves the app too; without one it can't
+	const local = await boot({
+		page: 'import.html',
+		storage: new Map(saved),
+		origin: 'http://127.0.0.1:8000',
+		files: null,
+	});
+	local.els['setupPick-hardcover'].checked = true;
+	assert.match(local.get('setupLink()').link, /^https:\/\/catalog-proxy\.example\.workers\.dev\/import\.html#setup=/);
+	const alone = await boot({
+		page: 'import.html',
+		storage: new Map([['audiobook-catalog-hardcover-token', 'tok-123']]),
+		origin: 'http://127.0.0.1:8000',
+		files: null,
+	});
+	alone.els['setupPick-hardcover'].checked = true;
+	await alone.els.setupShowBtn.listeners.click[0]();
+	assert.match(alone.els.ioStatus.textContent, /^This page is on this computer only/);
+	assert.equal(alone.els.setupCode.style.display, 'none');
+	// nothing ticked, nothing shown; nothing saved, nothing to show
+	alone.els['setupPick-hardcover'].checked = false;
+	await alone.els.setupShowBtn.listeners.click[0]();
+	assert.equal(alone.els.ioStatus.textContent, 'Tick a setting to hand over first.');
+	const empty = await boot({page: 'import.html', files: null});
+	assert.equal(empty.els.setupShowBtn.style.display, 'none');
+	assert.match(empty.els.setupState.textContent, /^Nothing to hand over yet/);
+});
 test('devices sync through your server: encrypted, taking in what the others changed, and asking when both changed a book', async () => {
 	// the real Worker behind the pages, with a D1 database for the synced copy
 	const database = new DatabaseSync(':memory:');

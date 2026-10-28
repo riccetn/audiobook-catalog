@@ -10,7 +10,7 @@ A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.ht
 no server code in the app and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to write the pages, run the tests and run `make serve`.
 
-Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files and `icons/`; the published site adds the API docs at `api/`),
+Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files, `icons/` and `vendor/`, the QR code library `make pages` copies; the published site adds the API docs at `api/`),
 and nothing else goes there: `docs/`, `templates/`, `tests/`, `api-docs/` and `server/` stay outside it, so they are never served.
 The one piece that runs elsewhere is the optional server (`server/`, below: the catalog proxy and sync), a Cloudflare Worker the user deploys
 themselves, or `make serve` on their computer; the app never needs it.
@@ -23,8 +23,10 @@ A page's template starts with `{% layout 'layout' title: 'Books' nav: 'books.htm
 on the Series page; `nav` is the link marked current, `aria-current` only on that page itself). The build is strict (an
 unknown variable or filter fails it). `make test` and `make serve` build first, and so do both workflows.
 
-- Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests**. `package.json` says
-  `"type": "module"` and its devDependencies are tools only, never served or imported by the app or tests:
+- Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests** but one: the QR code
+  library `qrcode-generator` (a dependency, which the user allowed for _Set up another device_), which `build.mjs` copies from `node_modules/`
+  into `public/vendor/qrcode.mjs` (git-ignored, with `// @ts-nocheck` put on top, not linted) and `import.js` loads with `import()` when a code is shown.
+  `package.json` says `"type": "module"` and its devDependencies are tools only, never served or imported by the app or tests:
   Liquid (`liquidjs`, `make pages`), TypeScript (`make typecheck`), ESLint with `@eslint/js` and `globals` (`make lint`) and Prettier (`make format`),
   plus TypeDoc (`make docs`) in the `api-docs/` workspace; don't add others, use Node built-ins in tests.
 - Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
@@ -102,6 +104,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     `fixEditions`, `fixBookIds`, `fixEditionIds`, `fixPeople`/`fixNames`). Nothing else imports it: dropping version 1 is deleting `backup-v1.js` and that one line in `Backup.read`.
     Keep anything only the old format needs there, not in `Backup`, `Book`, `Edition` or `Text`. (`Contributor.fixLinks` and `Series.moveSites` stay
     where they are: IndexedDB's older records need them too.)
+  - `DeviceSetup` (the settings kept in each browser only, your server, the sync passphrase and your keys, handed to another device in one link,
+    `import.html#setup=<base64url JSON>`: `link`, `fromHash` (a value that isn't what its setting holds is left out), `isEmpty`).
   - `CatalogSync` (syncing devices through your server's `/sync`: `keyFor` (PBKDF2 from the passphrase), `seal`/`open` (a version 3 backup, gzipped
     (`squeeze`) and encrypted with AES-GCM, with a `copy` id; `WrongPassphrase`), `combine(base, mine, theirs, prefer)` (`CatalogRecords.merge` of the backups'
     records (`Backup.records`) against the copy this device last synced; `prefer` `mine`/`theirs` settles conflicts, `replace` takes the synced copy (but keeps the exclusions);
@@ -218,7 +222,10 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   and can be asked (`cantAsk`) in turn, `drawMulti`/`applyMulti` with `PENDING_MULTI` (radio choices, nothing picked at first, nothing sent)), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
   `picks`; `drawCompare`, `shelfSections`; Apply runs `Comparison.apply` on a copy, then for a shelf sync saves and `push`es the ticked part of the plan, `applyShelfSync`),
   file exports (`exportFile`), Check (`Validator.check`) and Box sets (`Merger.boxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups,
-  and _Sync between devices_ (`runSync(prefer)`, `showSync`, `saveSyncPassphrase`, `showSyncChoice` for what both changed or a catalog made apart).
+  and _Sync between devices_ (`runSync(prefer)`, `showSync`, `saveSyncPassphrase`, `showSyncChoice` for what both changed or a catalog made apart),
+  and _Set up another device_ (`showSetupPicks`, the saved settings ticked; `setupLink` (this page's address, or the server's on `make serve`); `showSetupCode`,
+  hidden after `SETUP_SHOWN_MS`; the device that opens the link: `takeSettingsFromAddress` clears the address at once and shows `#setupReceived`,
+  `saveReceivedSettings` only on its Save).
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
   (`infoKey`, `hashKey`, `list`, `page`, labels, `href`).

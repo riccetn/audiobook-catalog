@@ -165,7 +165,8 @@ changed since this one last synced, saves it here, and sends the result as the n
 
 1. Deploy the server with `make deploy-server` ([On Cloudflare](#on-cloudflare)), or run `make serve`.
 2. On each device, open _Import & export_, save the server (above) if it isn't yet, and under **Sync between
-   devices** type the same passphrase and press **Save passphrase**. A long one is best: anyone with the copy
+   devices** type the same passphrase and press **Save passphrase**. (A phone can take both from the PC's
+   **Set up another device** QR code, [On your phone](phone.md#settings-by-qr-code).) A long one is best: anyone with the copy
    could try passphrases against it.
 3. Press **Sync now** first on the device whose catalog is complete. On the others, sync when their catalog
    is empty, or holds a backup of that one restored (each book, series and person keeps its id in a backup, so

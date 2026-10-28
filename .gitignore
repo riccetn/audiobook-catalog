@@ -10,6 +10,8 @@ node_modules/
 # written by make pages from templates/
 public/*.html
 public/sw-app.js
+# copied from node_modules by make pages
+public/vendor/
 
 # written by make docs
 api-docs/out/
