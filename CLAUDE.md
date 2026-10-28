@@ -252,7 +252,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   `memoryCache` for the proxy's cache), with `SYNC_DB` a SQLite file through `sqliteD1` (`sqlite-d1.js`, node:sqlite seen as D1) and the key in
   `.dev.vars` (`readDevVars`; made and printed when missing). `deploy.mjs` (`make deploy-server`; `.github/workflows/server.yml` runs it on pushes to
   `main` when the repository has `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). The Worker serves `public/` too (`[assets]` in `wrangler.toml`,
-  answered before `worker.js` runs, as `serve.mjs` does), and lets in its own origin beside `ALLOWED_ORIGINS`. `handle` takes the fetch and cache so the tests run it
+  answered before `worker.js` runs, as `serve.mjs` does; `html_handling = "none"`, as Chrome refuses the service worker a redirected page, so `handle` answers `/` with `ASSETS`' `index.html`,
+  and `sw.js` copies any redirected answer, `unredirected`), and lets in its own origin beside `ALLOWED_ORIGINS`. `handle` takes the fetch and cache so the tests run it
   in Node. The `.js` files are type checked with the pages (`jsconfig.json`) and linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).

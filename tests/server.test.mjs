@@ -154,6 +154,26 @@ test('proxy: the preflight allows the key headers, and ping says which catalogs'
 	]);
 });
 
+test("the server's own address opens the app's index page, and a page from before still pings it", async () => {
+	const {deps} = behind();
+	/** @type {string[]} */
+	const served = [];
+	const ASSETS = {
+		fetch: async request => {
+			served.push(new URL(request.url).pathname);
+			return new Response('<p>the app</p>', {headers: {'Content-Type': 'text/html'}});
+		},
+	};
+	const env = {...ENV, ASSETS};
+	const page = await handle(ask('/', {key: null, origin: null}), env, deps);
+	assert.equal(page.status, 200);
+	assert.equal(await page.text(), '<p>the app</p>');
+	assert.deepEqual(served, ['/index.html'], 'no redirect: index.html itself');
+	assert.equal((await (await handle(ask('/'), env, deps)).json()).ok, true, 'with the key, the ping');
+	assert.equal((await handle(ask('/ping', {key: null}), env, deps)).status, 401, 'only / is the app');
+	assert.deepEqual(served, ['/index.html']);
+});
+
 test('proxy: keeps answers found for a day, and asks again for one not found', async () => {
 	const {asked, kept, deps} = behind();
 	const path = '/proxy/audible/audible.com/catalog/products/B0FAKE0001';

@@ -10,6 +10,10 @@ workers_dev = true
 # the Worker or counting against its requests; anything else (/proxy/..., /sync, /ping) runs worker.js.
 [assets]
 directory = "../public"
+# Every file at the address it is named by: by default Cloudflare redirects /books.html to /books, and Chrome refuses
+# a redirected page from the service worker. The Worker answers / with index.html itself, through this binding.
+binding = "ASSETS"
+html_handling = "none"
 
 [vars]
 # The pages that may use the server: where the app is served, and make serve. Separate them with commas.

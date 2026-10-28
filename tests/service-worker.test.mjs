@@ -13,9 +13,9 @@ const site = path.join(root, 'public');
 
 /**
  * Starts sw.js at an address, with every file answered by the fake network and `caches` kept in a Map.
- * @param {{origin?: string, version?: string, stores?: Map<string, Map<string, Response>>}} [options]
+ * @param {{origin?: string, version?: string, stores?: Map<string, Map<string, Response>>, redirects?: boolean}} [options]
  */
-function start({origin = 'https://example.github.io', version = 'v1', stores = new Map()} = {}) {
+function start({origin = 'https://example.github.io', version = 'v1', stores = new Map(), redirects = false} = {}) {
 	const base = `${origin}/app/`;
 	const listeners = {};
 	const asked = [];
@@ -23,7 +23,10 @@ function start({origin = 'https://example.github.io', version = 'v1', stores = n
 	const fetch = async request => {
 		asked.push({url: request.url, cache: request.cache});
 		if (!online) throw new TypeError('offline');
-		return new Response(`fresh ${new URL(request.url).pathname}`);
+		const res = new Response(`fresh ${new URL(request.url).pathname}`, {headers: {'Content-Type': 'text/html'}});
+		// a host that drops .html from addresses (Cloudflare's assets by default) answers through a redirect
+		if (redirects) Object.defineProperty(res, 'redirected', {value: true});
+		return res;
 	};
 	const storeOf = name => {
 		if (!stores.has(name)) stores.set(name, new Map());
@@ -88,6 +91,7 @@ function start({origin = 'https://example.github.io', version = 'v1', stores = n
 			await new Promise(resolve => setImmediate(resolve)); // the copy is kept after answering
 			return res && (await res.text());
 		},
+		answer: file => fire('fetch', new Request(new URL(file, base))),
 	};
 }
 
@@ -156,4 +160,17 @@ test('make pages writes the files to cache, every file served but the API docs, 
 	const hash = crypto.createHash('sha256');
 	for (const file of files) hash.update(`${file}\0`).update(fs.readFileSync(path.join(site, file)));
 	assert.equal(written.match(/APP_VERSION = '(\w+)'/)[1], hash.digest('hex').slice(0, 16));
+});
+
+test('an answer reached through a redirect is copied, as Chrome refuses a redirected page', async () => {
+	const sw = start({redirects: true});
+	await sw.install();
+	for (const kept of sw.stores.get('audiobook-catalog-v1').values()) assert.equal(kept.redirected, false);
+	const page = await sw.answer('index.html');
+	assert.equal(page.redirected, false);
+	assert.equal(await page.text(), 'fresh /app/index.html');
+	assert.equal(page.headers.get('Content-Type'), 'text/html');
+	const fresh = await sw.answer('api/index.html');
+	assert.equal(fresh.redirected, false, 'fetched now, too');
+	assert.equal(await fresh.text(), 'fresh /app/api/index.html');
 });
