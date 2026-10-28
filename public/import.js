@@ -13,6 +13,7 @@ import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {Comparison} from './modules/comparison.js';
 import {MultiComparison} from './modules/multi-comparison.js';
 import {WrongPassphrase, UnrelatedCatalogs} from './modules/catalog-sync.js';
+import {DeviceSetup} from './modules/device-setup.js';
 import {Merger} from './modules/merger.js';
 import {Validator} from './modules/validator.js';
 import {
@@ -59,6 +60,7 @@ import {
 /** @import {FileExporter} from './modules/file-exporter.js' */
 /** @import {ShelfSync, ShelfComparison, SyncPlan, NotAudio} from './modules/shelf-sync.js' */
 /** @import {ClientClass} from './modules/catalog-client.js' */
+/** @import {DeviceSettings} from './modules/device-setup.js' */
 /** @import {CatalogJob} from './store.js' */
 /** @import {MergeOptions, MergeReport} from './modules/merger.js' */
 /** @import {ComparisonResult, ComparedBook, Difference, SeriesRename} from './modules/comparison.js' */
@@ -1191,6 +1193,7 @@ function saveKeyOf(Client, remove) {
 		);
 	}
 	showKey(Client);
+	showSetupPicks();
 }
 
 // ------------------------------------------------------------ your server
@@ -1232,6 +1235,7 @@ async function saveServer(remove) {
 		return;
 	}
 	showServer();
+	showSetupPicks();
 	if (remove) showIoStatus('Server removed.');
 	else await checkServer('Server saved');
 }
@@ -1295,6 +1299,7 @@ function saveSyncPassphrase(remove) {
 		return;
 	}
 	showSync();
+	showSetupPicks();
 	showIoStatus(remove ? 'Sync passphrase removed.' : 'Sync passphrase saved.');
 }
 
@@ -1363,6 +1368,194 @@ async function runSync(prefer) {
 		refreshPage();
 		showSync();
 	}
+}
+
+// ------------------------------------------------------------ setting up another device
+// The settings kept in this browser only (your server, the sync passphrase, your keys for the catalogs) go to
+// another device in one link, shown as a QR code (DeviceSetup); that device's page asks before saving them.
+
+/** How long the QR code shows before it hides itself, as anyone who sees it can read the settings. */
+const SETUP_SHOWN_MS = 2 * 60 * 1000;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let SETUP_HIDE_TIMER = null;
+/** @type {DeviceSettings | null} the settings a link brought, until saved or not */
+let RECEIVED_SETTINGS = null;
+
+/**
+ * The settings saved in this browser that a link can hand over, each with what the page calls it.
+ * @returns {{id: string, label: string, settings: DeviceSettings}[]}
+ */
+function savedDeviceSettings() {
+	const saved = [];
+	const server = savedServer();
+	if (server) saved.push({id: 'server', label: `Your server (${server.url})`, settings: {server}});
+	const passphrase = savedPassphrase();
+	if (passphrase) saved.push({id: 'passphrase', label: 'The sync passphrase', settings: {passphrase}});
+	for (const Client of CatalogConnectors.CLIENTS) {
+		const key = savedKey(Client);
+		if (key)
+			saved.push({
+				id: Client.CATALOG,
+				label: `Your ${Client.LABEL} ${Client.KEY_NAME}`,
+				settings: {keys: {[Client.CATALOG]: key}},
+			});
+	}
+	return saved;
+}
+
+/** List the settings saved in this browser, each ticked, for the QR code; a setting saved or removed since hides the code. */
+function showSetupPicks() {
+	hideSetupCode();
+	const saved = savedDeviceSettings();
+	fillElement(
+		byId('setupPicks'),
+		...saved.map(s =>
+			buildElement(
+				'label',
+				{},
+				buildElement('input', {type: 'checkbox', id: `setupPick-${s.id}`, checked: true}),
+				` ${s.label}`,
+			),
+		),
+	);
+	byId('setupShowBtn').style.display = saved.length ? '' : 'none';
+	byId('setupState').textContent = saved.length
+		? ''
+		: 'Nothing to hand over yet: save your server, the sync passphrase or a key on this page first.';
+}
+
+/**
+ * The Import & export page's address on the other device: this one, unless this page is on this computer only
+ * (make serve), when it is your server's, which serves the app too; '' when there is neither.
+ * @returns {string}
+ */
+function setupPageAddress() {
+	if (!['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) return location.origin + location.pathname;
+	const server = savedServer();
+	return server && server.url.startsWith('https:') ? `${server.url}/import.html` : '';
+}
+
+/**
+ * The link that hands the ticked settings over, or why there is none.
+ * @returns {{link: string} | {problem: string}}
+ */
+export function setupLink() {
+	/** @type {DeviceSettings} */
+	const settings = {};
+	for (const {id, settings: one} of savedDeviceSettings()) {
+		if (!(/** @type {HTMLInputElement} */ (byId(`setupPick-${id}`)).checked)) continue;
+		Object.assign(settings, one, one.keys ? {keys: {...settings.keys, ...one.keys}} : {});
+	}
+	if (DeviceSetup.isEmpty(settings)) return {problem: 'Tick a setting to hand over first.'};
+	const page = setupPageAddress();
+	if (!page)
+		return {
+			problem:
+				"This page is on this computer only, so a phone can't open the link: open the app at the address your phone uses (GitHub Pages, or your server) and show the code there.",
+		};
+	return {link: DeviceSetup.link(page, settings)};
+}
+
+/** Show the QR code of the link that hands the ticked settings over, for SETUP_SHOWN_MS. */
+async function showSetupCode() {
+	const made = setupLink();
+	if ('problem' in made) {
+		showIoStatus(made.problem, true);
+		return;
+	}
+	const {default: qrcode} = await import('./vendor/qrcode.mjs');
+	// type 0 picks the smallest code that holds the link; L (the least error correction) keeps a long key's code
+	// readable, as a code on a screen is not smudged or torn
+	const code = qrcode(0, 'L');
+	code.addData(made.link);
+	code.make();
+	// whole pixels a module (a code scaled by a fraction has uneven modules, which cameras misread), about 400 wide
+	// with the quiet zone of four modules the standard asks for
+	const cell = Math.max(3, Math.round(400 / (code.getModuleCount() + 8)));
+	byId('setupQr').setAttribute('src', code.createDataURL(cell, 4 * cell));
+	byId('setupCode').style.display = '';
+	byId('setupHideBtn').style.display = '';
+	if (SETUP_HIDE_TIMER !== null) clearTimeout(SETUP_HIDE_TIMER);
+	SETUP_HIDE_TIMER = setTimeout(hideSetupCode, SETUP_SHOWN_MS);
+}
+
+/** Hide the QR code, and forget it. */
+function hideSetupCode() {
+	if (SETUP_HIDE_TIMER !== null) clearTimeout(SETUP_HIDE_TIMER);
+	SETUP_HIDE_TIMER = null;
+	byId('setupQr').removeAttribute('src');
+	byId('setupCode').style.display = 'none';
+	byId('setupHideBtn').style.display = 'none';
+}
+
+/**
+ * When this page was opened by another device's link, take the settings out of the address at once (so they are
+ * in no history entry) and ask whether to save them. Only what this browser can use is offered: a server address
+ * serverAddress takes, and keys for the catalogs it knows.
+ */
+function takeSettingsFromAddress() {
+	const brought = DeviceSetup.fromHash(location.hash);
+	if (!brought) return;
+	history.replaceState(null, '', location.pathname + location.search);
+	/** @type {DeviceSettings} */
+	const settings = {};
+	/** @type {string[]} */
+	const lines = [];
+	const url = brought.server && serverAddress(brought.server.url);
+	if (brought.server && url) {
+		settings.server = {url, key: brought.server.key};
+		lines.push(`Your server, ${url}${savedServer() ? ' (in place of the one saved here)' : ''}`);
+	}
+	if (brought.passphrase) {
+		settings.passphrase = brought.passphrase;
+		lines.push(`The sync passphrase${savedPassphrase() ? ' (in place of the one saved here)' : ''}`);
+	}
+	for (const Client of CatalogConnectors.CLIENTS) {
+		const key = brought.keys?.[Client.CATALOG];
+		if (!key) continue;
+		settings.keys = {...settings.keys, [Client.CATALOG]: key};
+		lines.push(
+			`Your ${Client.LABEL} ${Client.KEY_NAME}${savedKey(Client) ? ' (in place of the one saved here)' : ''}`,
+		);
+	}
+	if (DeviceSetup.isEmpty(settings)) {
+		showIoStatus("The link's settings can't be used here, so nothing was saved.", true);
+		return;
+	}
+	RECEIVED_SETTINGS = settings;
+	fillElement(byId('setupReceivedList'), ...lines.map(line => buildElement('li', {}, line)));
+	byId('setupReceived').style.display = '';
+}
+
+/** Save the settings the link brought in this browser, and see that the server answers. */
+async function saveReceivedSettings() {
+	const settings = RECEIVED_SETTINGS;
+	if (!settings) return;
+	try {
+		if (settings.server) localStorage.setItem(SERVER_STORAGE_KEY, JSON.stringify(settings.server));
+		if (settings.passphrase) localStorage.setItem(SYNC_STORAGE_KEY, settings.passphrase);
+		for (const Client of CatalogConnectors.CLIENTS) {
+			const key = settings.keys?.[Client.CATALOG];
+			if (key) saveKey(Client, key);
+		}
+	} catch {
+		showIoStatus("Couldn't save the settings: this browser refused to store them.", true);
+		return;
+	}
+	closeReceivedSettings();
+	showServer();
+	showSync();
+	for (const Client of CatalogConnectors.CLIENTS) showKey(Client);
+	showSetupPicks();
+	if (settings.server) await checkServer('Settings saved');
+	else showIoStatus('Settings saved.');
+}
+
+/** Forget the settings the link brought, saved or not. */
+function closeReceivedSettings() {
+	RECEIVED_SETTINGS = null;
+	fillElement(byId('setupReceivedList'));
+	byId('setupReceived').style.display = 'none';
 }
 
 /**
@@ -2097,6 +2290,13 @@ byId('syncBtn').addEventListener('click', () => runSync());
 byId('syncKeepMine').addEventListener('click', () => runSync('mine'));
 byId('syncKeepTheirs').addEventListener('click', () => runSync('theirs'));
 byId('syncReplace').addEventListener('click', () => runSync('replace'));
+byId('setupShowBtn').addEventListener('click', showSetupCode);
+byId('setupHideBtn').addEventListener('click', hideSetupCode);
+byId('setupReceivedSave').addEventListener('click', saveReceivedSettings);
+byId('setupReceivedSkip').addEventListener('click', () => {
+	closeReceivedSettings();
+	showIoStatus('Nothing saved.');
+});
 
 byId('checkBtn').addEventListener('click', () => withWholeCatalog(checkCatalog));
 byId('boxSetsBtn').addEventListener('click', () => withWholeCatalog(previewBoxSets));
@@ -2118,6 +2318,8 @@ export const READY = startPage(
 		showServer();
 		showSyncChoice('', []);
 		showSync();
+		showSetupPicks();
+		takeSettingsFromAddress();
 		compareFromAddress();
 	},
 	{refresh: refreshPage, onCatalogJob},

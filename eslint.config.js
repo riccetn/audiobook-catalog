@@ -3,8 +3,8 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-	// What make docs writes.
-	{ignores: ['api-docs/out/']},
+	// What make docs writes, and the library make pages copies from node_modules.
+	{ignores: ['api-docs/out/', 'public/vendor/']},
 	js.configs.recommended,
 	{
 		rules: {

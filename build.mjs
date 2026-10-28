@@ -1,6 +1,7 @@
 // Writes the pages into public/ from the Liquid templates in templates/ (make pages): each page in templates/pages/
 // fills in templates/layout.liquid, which holds what every page shares (the <head>, the title and the nav bar).
-// The pages it writes are not committed (.gitignore), so build before serving or testing. Then it writes
+// The pages it writes are not committed (.gitignore), so build before serving or testing. It copies the one library
+// the app loads (the QR code's) into public/vendor/, and then it writes
 // public/sw-app.js, the files the service worker caches and the version it names its cache by (sw.js).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -24,6 +25,20 @@ for (const file of fs
 	// The layout gets the page's file name, to mark its own link in the nav bar.
 	const html = await engine.renderFile(path.join('pages', file), {page, title: ''});
 	fs.writeFileSync(path.join(site, page), html);
+}
+
+// The QR code library (Import & export's Set up another device), copied from node_modules as npm installed it, as
+// the browser loads the app's files as they are. Not type checked: its JavaScript has no JSDoc.
+const VENDOR = [['qrcode-generator/dist/qrcode.mjs', 'qrcode.mjs']];
+fs.mkdirSync(path.join(site, 'vendor'), {recursive: true});
+for (const [from, to] of VENDOR) {
+	const file = path.join(root, 'node_modules', from);
+	if (!fs.existsSync(file)) throw new Error(`${from.split('/')[0]} is not installed: run npm install first`);
+	const text = fs.readFileSync(file, 'utf8');
+	fs.writeFileSync(
+		path.join(site, 'vendor', to),
+		`// Copied from node_modules/${from} by make pages (build.mjs).\n// @ts-nocheck\n${text}`,
+	);
 }
 
 // What the service worker caches: every file served but itself, what this writes, hidden files and the API docs

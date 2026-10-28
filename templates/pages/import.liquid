@@ -3,6 +3,16 @@
 	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
 	<p id="ioStatus" class="ioStatus"></p>
 
+	<section class="panel setupReceived" id="setupReceived" style="display:none">
+		<h2>Settings from another device</h2>
+		<p>This link brings these settings, which are kept in this browser only (never in a backup):</p>
+		<ul id="setupReceivedList"></ul>
+		<div class="rowbtns">
+			<button class="iconbtn2" id="setupReceivedSave" title="Keep these settings in this browser">Save these settings</button>
+			<button class="iconbtn2" id="setupReceivedSkip" title="Forget the link and save nothing">Don't save</button>
+		</div>
+	</section>
+
 	<h2 class="pageSection">This catalog</h2>
 
 	<section class="panel" id="backupPanel">
@@ -171,6 +181,27 @@
 				<button class="iconbtn2" id="syncKeepMine" title="Keep this browser's version of what both changed">Keep this device's</button>
 				<button class="iconbtn2" id="syncKeepTheirs" title="Keep the other device's version of what both changed">Keep the synced ones</button>
 				<button class="iconbtn2" id="syncReplace" title="Put the synced catalog in place of this browser's">Use the synced catalog here</button></p>
+		</div>
+	</section>
+
+	<section class="panel" id="setupPanel">
+		<h2>Set up another device <span class="via">QR code</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Settings</span>
+			<div id="setupPicks" class="setupPicks"></div>
+			<p class="ioNote" id="setupState"></p>
+		</div>
+		<div class="ioRow">
+			<span class="ioLabel">QR code</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="setupShowBtn" title="Show a QR code that brings the ticked settings to another device">Show QR code</button>
+				<button class="iconbtn2" id="setupHideBtn" title="Hide the QR code" style="display:none">Hide</button>
+			</div>
+			<p class="ioNote">Scan the code with your phone's camera: it opens this page there, which asks before it saves the ticked
+				settings in the phone's browser. The settings are in the link after the <code>#</code>, which browsers never send to any
+				server, but anyone who sees the code can read them, so show it only to your own phone; it hides itself after two minutes.
+				The catalog itself goes by sync or a backup.</p>
+			<div class="setupCode" id="setupCode" style="display:none"><img id="setupQr" alt="QR code with the ticked settings"></div>
 		</div>
 	</section>
 

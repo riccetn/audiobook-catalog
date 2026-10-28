@@ -14,6 +14,7 @@ import {Book} from '../public/modules/book.js';
 import {Series} from '../public/modules/series.js';
 import {Contributor} from '../public/modules/contributor.js';
 import {Exclusions} from '../public/modules/exclusions.js';
+import {DeviceSetup} from '../public/modules/device-setup.js';
 import {Validator} from '../public/modules/validator.js';
 import {Merger} from '../public/modules/merger.js';
 import {Duplicates} from '../public/modules/duplicates.js';
@@ -6122,4 +6123,36 @@ test('stats: each value counts the books, editions, series and people without it
 	assert.deepEqual(counts.goodreads, {books: 1, editions: 0, series: 0, authors: 0, narrators: 0, publishers: 0});
 	assert.equal(counts.hardcover.series, 1);
 	assert.equal(counts.wikidata.books, 0);
+});
+
+test('DeviceSetup writes settings into a link and reads back only what each setting holds', () => {
+	const settings = {
+		server: {url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'},
+		passphrase: 'sea glass lantern ö',
+		keys: {hardcover: 'tok-123'},
+	};
+	const link = DeviceSetup.link('https://reader.example/import.html#old', settings);
+	assert.match(link, /^https:\/\/reader\.example\/import\.html#setup=[\w-]+$/);
+	assert.deepEqual(DeviceSetup.fromHash(link.slice(link.indexOf('#'))), settings);
+	assert.deepEqual(DeviceSetup.fromHash(link.slice(link.indexOf('#') + 1)), settings, 'with or without the #');
+	// other addresses, garbage and empty settings hold none
+	for (const hash of [
+		'',
+		'#book=1',
+		'#setup=',
+		'#setup=!!!',
+		`#setup=${DeviceSetup.encode(/** @type {any} */ ([1]))}`,
+	])
+		assert.equal(DeviceSetup.fromHash(hash), null, hash);
+	assert.equal(DeviceSetup.fromHash(`#setup=${DeviceSetup.encode({})}`), null);
+	// a value that isn't what its setting holds is left out
+	const odd = DeviceSetup.encode(
+		/** @type {any} */ ({
+			server: {url: 'https://x.example'},
+			passphrase: 5,
+			keys: {hardcover: 'tok', audiobookdb: 7},
+		}),
+	);
+	assert.deepEqual(DeviceSetup.fromHash(`#setup=${odd}`), {keys: {hardcover: 'tok'}});
+	assert.ok(DeviceSetup.isEmpty({keys: {}}));
 });
