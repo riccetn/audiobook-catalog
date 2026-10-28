@@ -16,5 +16,8 @@ export default [
 	{files: ['public/sw.js'], languageOptions: {globals: globals.serviceworker}},
 	// The catalog proxy runs as a Cloudflare Worker, whose globals are a service worker's.
 	{files: ['proxy/**/*.js'], languageOptions: {globals: globals.serviceworker}},
-	{files: ['tests/**/*.mjs', 'build.mjs', 'eslint.config.js'], languageOptions: {globals: globals.node}},
+	{
+		files: ['tests/**/*.mjs', 'build.mjs', 'proxy/deploy.mjs', 'eslint.config.js'],
+		languageOptions: {globals: globals.node},
+	},
 ];

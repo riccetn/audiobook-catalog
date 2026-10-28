@@ -43,12 +43,13 @@ make format     # prettier --write . (.prettierrc.json, .prettierignore); needs 
 make format-check  # prettier --check ., what make check runs
 make check      # test, typecheck, lint and format-check, what CI runs; run it before a PR
 make docs       # TypeDoc: the API documentation from the JSDoc, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
+make deploy-proxy  # node proxy/deploy.mjs: deploy the catalog proxy with its sync D1 database, found by name; the id only in the git-ignored proxy/wrangler.deploy.toml
 make serve      # make pages, then python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/catalog.test.mjs            # one suite (the smoke test reads the pages, so make pages after editing a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve`, `deploy-proxy`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is

@@ -1,7 +1,7 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, format, format-check, docs, serve or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, format, format-check, docs, serve, deploy-proxy or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'format', 'format-check', 'docs', 'serve')]
+	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'format', 'format-check', 'docs', 'serve', 'deploy-proxy')]
 	[string]$Command = 'help',
 	[int]$Port = 8000,
 	[string]$Out = 'api-docs/out'
@@ -37,6 +37,7 @@ switch ($Command) {
 		'format-check - check that everything is formatted as Prettier would (format fixes it)'
 		'docs         - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
 		'serve        - open the app at http://localhost:8000/ (serves public/; -Port for another port)'
+		'deploy-proxy - deploy the catalog proxy to Cloudflare with its sync database (npx wrangler login once first)'
 	}
 	'check' {
 		# Each step runs this script again, and the first that fails stops the rest, as make does.
@@ -101,5 +102,8 @@ switch ($Command) {
 			exit 1
 		}
 		Invoke-Native $python @('-m', 'http.server', "$Port", '--bind', '127.0.0.1', '--directory', 'public')
+	}
+	'deploy-proxy' {
+		Invoke-Native 'node' @('proxy/deploy.mjs')
 	}
 }

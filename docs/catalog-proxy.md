@@ -77,8 +77,9 @@ curl -H "X-Proxy-Key: <your key>" https://audiobook-catalog-proxy.<subdomain>.wo
 
 - **A new key:** run `npx wrangler secret put PROXY_KEY` again, then save the new key in the app.
 - **The app served from somewhere else:** add its origin (`https://name.example`, no path) to
-  `ALLOWED_ORIGINS` in `wrangler.toml` and run `npx wrangler deploy` again.
-- **After `git pull`:** if `proxy/worker.js` changed, run `npx wrangler deploy` again. A proxy deployed before
+  `ALLOWED_ORIGINS` in `wrangler.toml` and deploy again (`make deploy-proxy` with sync, else `npx wrangler deploy`).
+- **After `git pull`:** if `proxy/worker.js` changed, deploy it again (`make deploy-proxy` with sync, else
+  `npx wrangler deploy`). A proxy deployed before
   AudiobookDB's shelves were added refuses the key (_the proxy answered 405_ or _400_) until you do.
 - **To take it down:** run `npx wrangler delete` and press **Remove proxy** in the app.
 
@@ -104,16 +105,21 @@ one last synced, saves it here, and sends the result as the new copy.
 
 ### Setting it up
 
-1. Make the database, from the `proxy` folder:
+1. Deploy the proxy with its database, from the repository (signed in with `npx wrangler login`):
 
    ```sh
-   npx wrangler d1 create audiobook-catalog-sync
+   make deploy-proxy      # .\make.ps1 deploy-proxy on Windows; or node proxy/deploy.mjs
    ```
 
-2. Take the `#` off the four `[[d1_databases]]` lines at the end of `proxy/wrangler.toml`, put in the
-   `database_id` it printed, and deploy again with `npx wrangler deploy`. The Worker makes its one table on the
-   first sync. (In the dashboard instead: _Storage & Databases → D1 → Create_, then on the Worker _Settings →
-   Bindings → Add → D1 database_, named `SYNC_DB`.)
+   It finds the D1 database `audiobook-catalog-sync` by its name, makes it the first time, and deploys the
+   Worker with it bound as `SYNC_DB`. The database's id is never written into `wrangler.toml`: it goes into
+   `proxy/wrangler.deploy.toml`, which git ignores, and is looked up again on every deploy. The Worker makes its
+   one table on the first sync.
+
+2. From then on, deploy with `make deploy-proxy` rather than `npx wrangler deploy`, which deploys the proxy
+   without the database (sync then says it isn't set up). In the dashboard instead: _Storage & Databases → D1 →
+   Create_, then on the Worker _Settings → Bindings → Add → D1 database_, named `SYNC_DB`; a later
+   `npx wrangler deploy` drops that binding again.
 3. On each device, open _Import & export_, save the proxy (above) if it isn't yet, and under **Sync between
    devices** type the same passphrase and press **Save passphrase**. A long one is best: anyone with the copy
    could try passphrases against it.
@@ -129,7 +135,8 @@ that syncs, **Merge** that backup ([Merge a backup from another device](backups.
 To start over (another passphrase, say), delete the copy and sync from the device whose catalog you want:
 
 ```sh
-npx wrangler d1 execute audiobook-catalog-sync --remote --command "DELETE FROM sync"
+cd proxy
+npx wrangler d1 execute audiobook-catalog-sync --config wrangler.deploy.toml --remote --command "DELETE FROM sync"
 ```
 
 The copy can be up to about 1.9 MB as sent (a row of D1 holds 2 MB), which, compressed, is a catalog of many
@@ -146,7 +153,8 @@ The status line after **Save proxy** or **Check** says what happened:
 
 And after **Sync now**:
 
-- _sync is not set up on your proxy_: the Worker has no D1 database bound as `SYNC_DB` (setting it up, above).
+- _sync is not set up on your proxy_: the Worker has no D1 database bound as `SYNC_DB`: deploy it with
+  `make deploy-proxy` (setting it up, above).
 - _your proxy is from before sync_: run `npx wrangler deploy` again.
 - _the passphrase does not open the synced copy_: this browser's passphrase isn't the one the copy was sent with.
 - _another device changed these too_: pick whose version to keep, with the buttons below it.

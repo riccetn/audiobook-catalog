@@ -17,4 +17,8 @@ npx wrangler deploy
 npx wrangler secret put PROXY_KEY
 ```
 
+With sync, deploy with `make deploy-proxy` (`deploy.mjs`) instead: it finds or makes the D1 database by name and
+deploys the git-ignored `wrangler.deploy.toml`, `wrangler.toml` with the binding and the database's id, so the id is
+never in git.
+
 It is not part of the app: nothing in `public/` imports it, and GitHub Pages never serves it.

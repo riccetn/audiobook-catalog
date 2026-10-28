@@ -4,6 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handle, upstreamUrl, allowedOrigins, KEY_HEADER, CATALOG_KEY_HEADER, MAX_SYNC} from '../proxy/worker.js';
 import {fakeD1} from './fake-d1.mjs';
+import {deployConfig, DATABASE, BINDING, DEPLOY_CONFIG} from '../proxy/deploy.mjs';
+import fs from 'node:fs';
 
 const ENV = {PROXY_KEY: 'k3y-for-tests', ALLOWED_ORIGINS: 'https://example.github.io, http://127.0.0.1:8000'};
 const APP = 'https://example.github.io';
@@ -271,4 +273,15 @@ test('proxy: keeps one synced copy in D1, replaced only over the revision it was
 	assert.equal(none.status, 501);
 	assert.match((await none.json()).error, /SYNC_DB/);
 	assert.equal((await (await handle(ask('/ping'), ENV, deps)).json()).sync, false);
+});
+
+test('proxy: the deploy binds the sync database by the id it found, in a config git ignores', () => {
+	const id = '0f0e0d0c-0b0a-4009-8807-060504030201';
+	const config = deployConfig('name = "audiobook-catalog-proxy"\nmain = "worker.js"\n\n', id);
+	assert.match(config, /^# Written by deploy\.mjs/);
+	assert.match(config, /main = "worker.js"\n\n\[\[d1_databases\]\]\n/);
+	assert.match(config, new RegExp(`binding = "${BINDING}"\ndatabase_name = "${DATABASE}"\ndatabase_id = "${id}"\n$`));
+	assert.throws(() => deployConfig('', 'not an id"\nmain = "evil.js'), /not a D1 database id/);
+	assert.ok(fs.readFileSync('.gitignore', 'utf8').split('\n').includes(`proxy/${DEPLOY_CONFIG}`));
+	assert.doesNotMatch(fs.readFileSync('proxy/wrangler.toml', 'utf8'), /database_id/, 'no id in git');
 });
