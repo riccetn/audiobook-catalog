@@ -10,8 +10,9 @@ import {corsHeaders, jsonResponse} from './responses.js';
 
 /**
  * What the Worker is given by Cloudflare (or serve.mjs): the variables in wrangler.toml, the secrets, and the
- * sync database. PROXY_KEY is the key's name from when the server was only the proxy, still read.
- * @typedef {{SERVER_KEY?: string, PROXY_KEY?: string, ALLOWED_ORIGINS?: string, SYNC_DB?: D1Database}} Env
+ * sync database, and the app's files (ASSETS, when it serves the app too). PROXY_KEY is the key's name from when the
+ * server was only the proxy, still read.
+ * @typedef {{SERVER_KEY?: string, PROXY_KEY?: string, ALLOWED_ORIGINS?: string, SYNC_DB?: D1Database, ASSETS?: {fetch: (request: Request) => Promise<Response>}}} Env
  */
 /** @import {D1Database} from './sync.js' */
 /** @import {ProxyDeps} from './proxy.js' */
@@ -47,6 +48,15 @@ function sameKey(given, key) {
 }
 
 /**
+ * The server key a request was sent with, if any.
+ * @param {Request} request
+ * @returns {string | null}
+ */
+function keyOf(request) {
+	return request.headers.get(KEY_HEADER) ?? request.headers.get(OLD_KEY_HEADER);
+}
+
+/**
  * Answers one request to the server.
  * @param {Request} request
  * @param {Env} env
@@ -54,6 +64,11 @@ function sameKey(given, key) {
  * @returns {Promise<Response>}
  */
 export async function handle(request, env, deps) {
+	const path = new URL(request.url).pathname;
+	// The app's own address opens the app. Cloudflare's assets serve each file only at its name (wrangler.toml), so
+	// / is answered here; a page from before /ping asks / with the key, and still gets the ping.
+	if (path === '/' && env.ASSETS && request.method === 'GET' && !keyOf(request))
+		return env.ASSETS.fetch(new Request(new URL('/index.html', request.url), {headers: request.headers}));
 	const origin = request.headers.get('Origin');
 	// the app served by the server itself is always let in, wherever it is deployed
 	const own = origin === new URL(request.url).origin;
@@ -75,10 +90,8 @@ export async function handle(request, env, deps) {
 		return jsonResponse(405, {error: 'Only GET and POST are allowed.'}, {...cors, Allow: 'GET, POST, OPTIONS'});
 	const key = env.SERVER_KEY || env.PROXY_KEY;
 	if (!key) return jsonResponse(500, {error: 'The server has no key: set the SERVER_KEY secret.'}, cors);
-	const given = request.headers.get(KEY_HEADER) ?? request.headers.get(OLD_KEY_HEADER) ?? '';
-	if (!sameKey(given, key)) return jsonResponse(401, {error: 'Wrong or missing server key.'}, cors);
+	if (!sameKey(keyOf(request) ?? '', key)) return jsonResponse(401, {error: 'Wrong or missing server key.'}, cors);
 
-	const path = new URL(request.url).pathname;
 	if (path === '/' || path === '/ping')
 		return jsonResponse(200, {ok: true, proxy: Object.keys(CATALOGS), sync: Boolean(env.SYNC_DB)}, cors);
 	if (path === '/sync') return handleSync(request, env.SYNC_DB, cors);

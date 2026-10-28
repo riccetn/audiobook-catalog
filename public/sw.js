@@ -27,7 +27,18 @@ sw.addEventListener('install', e => {
 		caches
 			.open(CACHE)
 			// Past the browser's own cache, which may still hold the version before.
-			.then(c => c.addAll(APP.map(file => new Request(file, {cache: 'reload'}))))
+			.then(c =>
+				Promise.all(
+					APP.map(file => {
+						const req = new Request(file, {cache: 'reload'});
+						return fetch(req).then(res => {
+							// all or nothing, as addAll would: a version missing a file is never used
+							if (!res.ok) throw new Error(`${file}: ${res.status}`);
+							return unredirected(res).then(plain => c.put(req, plain));
+						});
+					}),
+				),
+			)
 			.then(() => sw.skipWaiting()),
 	);
 });
@@ -55,18 +66,34 @@ function cacheable(req) {
 }
 
 /**
+ * A response as a page may be given it. One the network reached through a redirect (a host that drops `.html` from
+ * addresses, as Cloudflare's assets did) can't answer a page's navigation: Chrome refuses it ("a redirected response
+ * was used for a request whose redirect mode is not follow"), so it is copied into a response of its own.
+ * @param {Response} res
+ * @returns {Promise<Response>}
+ */
+function unredirected(res) {
+	if (!res.redirected) return Promise.resolve(res);
+	return res
+		.blob()
+		.then(body => new Response(body, {status: res.status, statusText: res.statusText, headers: res.headers}));
+}
+
+/**
  * Fetches a request and keeps a copy in the cache when it was answered.
  * @param {Request} req
  * @returns {Promise<Response>}
  */
 function fetchAndKeep(req) {
-	return fetch(req).then(res => {
-		if (res.ok) {
-			const copy = res.clone();
-			caches.open(CACHE).then(c => c.put(req, copy));
-		}
-		return res;
-	});
+	return fetch(req)
+		.then(unredirected)
+		.then(res => {
+			if (res.ok) {
+				const copy = res.clone();
+				caches.open(CACHE).then(c => c.put(req, copy));
+			}
+			return res;
+		});
 }
 
 /**

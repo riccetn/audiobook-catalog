@@ -91,7 +91,9 @@ editor and deploy, then under _Settings → Variables and Secrets_ add `SERVER_K
 
 The Worker serves the app's pages too: its address opens the app, which works offline and installs on a phone just
 as it does from GitHub Pages ([On your phone](phone.md)). Cloudflare answers a request for one of the app's files
-itself, without running the Worker, and those requests are free and don't count against the 100,000 a day. On the
+itself, without running the Worker, and those requests are free and don't count against the 100,000 a day. Each file
+is served at the address it is named by (`books.html`, not `books`; Cloudflare's own redirect to the short address
+broke the app in Chrome and Edge), and the Worker answers the address itself with `index.html`. On the
 app served there, save the server under **Your server** as anywhere else (its own address, and the key); the server
 always lets in the app it serves, so its address needn't be in `ALLOWED_ORIGINS`.
 
