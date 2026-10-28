@@ -13,6 +13,8 @@ import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {Comparison} from './modules/comparison.js';
 import {MultiComparison} from './modules/multi-comparison.js';
 import {WrongPassphrase, UnrelatedCatalogs} from './modules/catalog-sync.js';
+import {Merger} from './modules/merger.js';
+import {Validator} from './modules/validator.js';
 import {
 	CATALOG,
 	SEEN_REVISION,
@@ -834,7 +836,7 @@ function applyIntoCopy(compare) {
 	const {online, picks} = compare;
 	const idsFound = picks.ids && online ? online.sync.kind.addIds(copy.books, online.result.found).length : 0;
 	const infoIds = picks.ids && online ? online.sync.kind.setInfoIds(copy, online.result.infoIds) : 0;
-	const errors = copy.bookErrors();
+	const errors = Validator.bookErrors(copy);
 	return {copy, report, patched, renamed, idsFound, infoIds, errors};
 }
 
@@ -914,7 +916,7 @@ function mergeIntoCatalog(backup) {
 		narrators: m.narrators,
 		publishers: m.publishers,
 	});
-	const errors = merged.validate({contributors: true}).errors;
+	const errors = Validator.check(merged, {contributors: true}).errors;
 	const changes = [
 		m.added,
 		m.updated,
@@ -1070,7 +1072,7 @@ function showTidyPreview(title, body, confirm) {
 }
 
 function checkCatalog() {
-	const {errors, warnings} = CATALOG.validate({contributors: true});
+	const {errors, warnings} = Validator.check(CATALOG, {contributors: true});
 	const people = [
 		Text.plural(CATALOG.nameIds.authors.size, 'author'),
 		Text.plural(CATALOG.nameIds.narrators.size, 'narrator'),
@@ -1091,11 +1093,11 @@ function checkCatalog() {
 	showTidyPreview(spell('Check the catalog'), out, '');
 }
 
-// Keep each box set as its own book and as its titles, in a copy of the catalog (Catalog.addBoxSets).
+// Keep each box set as its own book and as its titles, in a copy of the catalog (Merger.boxSets).
 function boxSetsIntoCopy() {
 	const copy = CATALOG.clone();
-	const report = copy.addBoxSets();
-	const errors = copy.bookErrors();
+	const report = Merger.boxSets(copy.books, copy.exclusions);
+	const errors = Validator.bookErrors(copy);
 	return {copy, report, errors};
 }
 
@@ -1969,7 +1971,7 @@ async function applyMulti() {
 		const said = appliedText(report, 0, idsFound, `${sync.label} ${sync.kind.FOUND}`, infoIds);
 		if (said !== 'Added 0 books') lines.push(`${sync.label}: ${said.replace(/^Added 0 books, /, '')}`);
 	});
-	if (copy.bookErrors().length) {
+	if (Validator.bookErrors(copy).length) {
 		showIoStatus(spell('The catalog changed and what was picked no longer validates; nothing was changed.'), true);
 		return;
 	}

@@ -6,16 +6,13 @@ import {Catalog} from './modules/catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {Contributor} from './modules/contributor.js';
 import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-database.js';
-import {Backup} from './modules/backup.js';
-import {CatalogSync} from './modules/catalog-sync.js';
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 /** @import {RecordSet, Snapshot, StoreName} from './modules/catalog-records.js' */
 /** @import {Book} from './modules/book.js' */
 /** @import {NamedKind} from './modules/catalog.js' */
 /** @import {ContributorKind} from './modules/contributor.js' */
-import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
-import {CatalogConnectors} from './modules/catalog-connectors.js';
+import {CompareCatalogs} from './modules/compare-catalogs.js';
 /** @import {ExternalKind, ExternalId} from './modules/external-catalog.js' */
 /** @import {Unchecked} from './modules/text.js' */
 /** @import {SyncPrefer} from './modules/catalog-sync.js' */
@@ -218,7 +215,7 @@ export const COMPARE_STORAGE_KEY = 'audiobook-catalog-compare';
 
 /**
  * Buttons that compare a series' or an author's books with each catalog that compares them
- * (CatalogConnectors.SYNCS, by PARTS), and with all of them at once when there are several; `words(label)` is
+ * (CompareCatalogs, the syncs' PARTS), and with all of them at once when there are several; `words(label)` is
  * each button's text.
  * @param {'series' | 'author'} kind
  * @param {string} id
@@ -226,7 +223,7 @@ export const COMPARE_STORAGE_KEY = 'audiobook-catalog-compare';
  * @returns {HTMLButtonElement[]}
  */
 export function shelfCompareButtons(kind, id, words) {
-	const syncs = CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind));
+	const syncs = CompareCatalogs.of(kind);
 	/** @type {(catalog: string, label: string) => HTMLButtonElement} */
 	const button = (catalog, label) =>
 		buildElement(
@@ -240,7 +237,7 @@ export function shelfCompareButtons(kind, id, words) {
 			words(label),
 		);
 	return [
-		...syncs.map(({CLIENT: Client}) => button(Client.CATALOG, Client.LABEL)),
+		...syncs.map(({catalog, label}) => button(catalog, label)),
 		...(syncs.length > 1 ? [button(ALL_CATALOGS, 'all catalogs')] : []),
 	];
 }
@@ -902,7 +899,7 @@ async function loadCatalog(whole) {
 		);
 		STARTUP_NOTICE = SAVE_REFUSED;
 		WHOLE = true;
-		readOldCatalog();
+		await readOldCatalog();
 		return;
 	}
 	/** @type {{records: RecordSet, revision: number} | null} */
@@ -912,7 +909,7 @@ async function loadCatalog(whole) {
 		if (revision === null) {
 			// a catalog from before it lived in IndexedDB is saved there at once (and is in the current format then)
 			WHOLE = true;
-			if (readOldCatalog()) await persist();
+			if (await readOldCatalog()) await persist();
 			// one that can't be saved (persist() said why) stays shown as it is
 			if (!whole && (await DATABASE.revision()) !== null) holdNothing();
 			return;
@@ -976,10 +973,11 @@ const MOVED_SUFFIX = '.moved-to-indexeddb';
 
 /**
  * Read the catalog localStorage kept into CATALOG; returns whether there was one. One that can't be read
- * is set aside (under CATALOG_KEY + '.unreadable'), and the catalog starts empty.
- * @returns {boolean}
+ * is set aside (under CATALOG_KEY + '.unreadable'), and the catalog starts empty. Reading backups is loaded
+ * only then, as no page needs it otherwise.
+ * @returns {Promise<boolean>}
  */
-function readOldCatalog() {
+async function readOldCatalog() {
 	/** @type {(key: string) => string | null} */
 	const item = key => {
 		try {
@@ -993,7 +991,8 @@ function readOldCatalog() {
 		if (!raw) return false;
 		/** @type {Unchecked} */
 		const saved = JSON.parse(raw);
-		const catalog = Catalog.fromJSON(saved);
+		const {Backup} = await import('./modules/backup.js');
+		const catalog = Backup.toCatalog(saved);
 		const marks = JSON.parse(item(NOT_DUP_KEY) || '[]');
 		if (Array.isArray(marks)) catalog.addMarkTexts(marks.filter(x => typeof x === 'string'));
 		CATALOG.replaceWith(catalog);
@@ -1305,9 +1304,13 @@ export function catalogClient(Client, key = savedKey(Client)) {
 	return new Client(get, key, pause);
 }
 
-/** @returns {CatalogClient[]} a client of each catalog whose key is saved in this browser */
-export function keyedClients() {
-	return CatalogConnectors.CLIENTS.filter(Client => savedKey(Client)).map(Client => catalogClient(Client));
+/**
+ * A client of each catalog of `Clients` (CatalogConnectors.CLIENTS) whose key is saved in this browser.
+ * @param {readonly ClientClass[]} Clients
+ * @returns {CatalogClient[]}
+ */
+export function keyedClients(Clients) {
+	return Clients.filter(Client => savedKey(Client)).map(Client => catalogClient(Client));
 }
 
 // ------------------------------------------------------------ Hardcover from the page
@@ -1319,6 +1322,7 @@ export function keyedClients() {
  * @returns {Promise<{id: string, title?: string}>}
  */
 export async function lookupHardcoverBook(text) {
+	const {HardcoverClient} = await import('./modules/hardcover-client.js');
 	const url = HardcoverClient.parseUrl(text);
 	if (!url || url.book) return HardcoverClient.bookId(null, text);
 	const token = savedKey(HardcoverClient);
@@ -1360,6 +1364,7 @@ export function lookupHardcoverField(prefix, kind) {
 	});
 	/** @type {HardcoverFieldLookupOnItsWay} */
 	const lookup = (async () => {
+		const {HardcoverClient} = await import('./modules/hardcover-client.js');
 		const token = savedKey(HardcoverClient);
 		if (!token) return kept('no Hardcover API token is saved on the Import & export page to look up its number');
 		/** @type {{id: string, name: string} | null} */
@@ -1508,6 +1513,11 @@ export async function syncCatalog(prefer) {
 	if (!DATABASE) throw new Error(SAVE_REFUSED || 'this browser keeps no catalog to sync');
 	const passphrase = savedPassphrase();
 	if (!passphrase) throw new Error('save a sync passphrase first');
+	// only Import & export syncs, so only it loads what syncing needs
+	const [{Backup}, {CatalogSync}] = await Promise.all([
+		import('./modules/backup.js'),
+		import('./modules/catalog-sync.js'),
+	]);
 	await wholeCatalog();
 	// another device may send its copy between this browser's reading and sending: then it reads again
 	for (let tries = 1; tries <= 3; tries++) {

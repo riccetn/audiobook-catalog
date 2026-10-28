@@ -204,6 +204,15 @@ export class Backup {
 	}
 
 	/**
+	 * A catalog from the way it is stored, or a backup (read() says what it takes). Throws when it is not a catalog.
+	 * @param {Unchecked} data
+	 * @returns {Catalog}
+	 */
+	static toCatalog(data) {
+		return Catalog.fromBackup(Backup.read(data));
+	}
+
+	/**
 	 * Read a backup exported from the page: version 2 or 3 (write(), readRecords()), or one without a `version`,
 	 * from before (BackupV1.read() says what it takes; what a backup predates is null, so callers leave theirs
 	 * alone). A backup of a version after this page's throws NewerBackup. Throws when it is none of these, or

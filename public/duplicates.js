@@ -10,6 +10,7 @@
 import {Text} from './modules/text.js';
 import {Edition} from './modules/edition.js';
 import {Book} from './modules/book.js';
+import {Validator} from './modules/validator.js';
 import {CATALOG, persist, showIoStatus, startPage, byId, spell, buildElement, fillElement} from './store.js';
 /** @import {Picks} from './modules/book.js' */
 /** @import {Child} from './store.js' */
@@ -326,7 +327,7 @@ export function mergeGroup(g) {
 	// an edition a box set shares with other titles gets what the merged one gained there too
 	copy.saveBook(keep, merged);
 	copy.books = copy.books.filter(b => b.id === keep || !ids.includes(/** @type {string} */ (b.id)));
-	const errors = copy.bookErrors();
+	const errors = Validator.bookErrors(copy);
 	if (errors.length) {
 		showIoStatus(`Couldn't merge ${merged.title}: ${errors[0]}`, true);
 		return;
@@ -360,7 +361,7 @@ export function joinBookEditions(id) {
 	const joined = b.clone();
 	joined.editions = [Edition.join(b.editions)];
 	copy.saveBook(id, joined);
-	const errors = copy.bookErrors();
+	const errors = Validator.bookErrors(copy);
 	if (errors.length) {
 		showIoStatus(`Couldn't join the editions of ${b.title}: ${errors[0]}`, true);
 		return;

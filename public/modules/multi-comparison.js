@@ -6,6 +6,7 @@
 import {Text} from './text.js';
 import {Comparison} from './comparison.js';
 import {Book} from './book.js';
+import {Merger} from './merger.js';
 /** @import {Catalog} from './catalog.js' */
 /** @import {MergeOptions, MergeReport} from './merger.js' */
 /** @import {ComparedBook, Difference, SeriesRename} from './comparison.js' */
@@ -137,7 +138,8 @@ export class MultiComparison {
 		const known = new Map();
 		sources.forEach(({result}, source) => {
 			const fresh = result.comparison.books.filter(b => b.kind === 'new');
-			const report = scratch.merge(
+			const report = Merger.into(
+				scratch,
 				fresh.map(b => b.theirs),
 				result.opts,
 			);
@@ -222,7 +224,10 @@ export class MultiComparison {
 			const picked = (/** @type {Set<string>} */ set) => (/** @type {Book} */ b) =>
 				set.has(`${source}:${s.incoming.indexOf(b)}`);
 			// a book of yours gains its edition only where that is picked (a new book comes with its own)
-			return catalog.merge(s.incoming.filter(picked(take)), {...s.opts, withEditions: picked(picks.editions)});
+			return Merger.into(catalog, s.incoming.filter(picked(take)), {
+				...s.opts,
+				withEditions: picked(picks.editions),
+			});
 		});
 		const renamed = Comparison.patchAll(
 			catalog,
