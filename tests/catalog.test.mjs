@@ -32,6 +32,7 @@ import {HardcoverSync} from '../public/modules/hardcover-sync.js';
 import {AudiobookdbClient} from '../public/modules/audiobookdb-client.js';
 import {AudiobookdbSync} from '../public/modules/audiobookdb-sync.js';
 import {CatalogRecords} from '../public/modules/catalog-records.js';
+import {CatalogSync, WrongPassphrase, UnrelatedCatalogs} from '../public/modules/catalog-sync.js';
 import {CatalogLookup} from '../public/modules/catalog-lookup.js';
 import {CatalogConnectors} from '../public/modules/catalog-connectors.js';
 import {CatalogClient} from '../public/modules/catalog-client.js';
@@ -5984,4 +5985,82 @@ test("editions' titles: stored and backed up (version 3), searched, and exported
 	});
 	const out = new GoodreadsExporter().write([us]);
 	assert.match(out.text, /\n4242,The Keeper of Lanterns,Ann Vale,/);
+});
+
+test('sync: the copy is the backup compressed and encrypted with the passphrase, which alone opens it', async () => {
+	const backup = Backup.write(v2Catalog());
+	const key = await CatalogSync.keyFor('a long passphrase');
+	const sealed = await CatalogSync.seal(backup, key, 'copy-1');
+	assert.ok(!sealed.includes('Tide'), 'nothing of the catalog shows');
+	const envelope = JSON.parse(sealed);
+	assert.equal(envelope.format, CatalogSync.FORMAT);
+	assert.equal(envelope.copy, 'copy-1');
+	assert.equal(envelope.kdf.iterations, CatalogSync.ITERATIONS);
+	const opened = await CatalogSync.open(sealed, 'a long passphrase');
+	assert.deepEqual(opened.backup, json(backup));
+	assert.equal(opened.copy, 'copy-1');
+	// sealed again with the key that opened it: the same salt, a new IV
+	const again = JSON.parse(await CatalogSync.seal(backup, opened.key, 'copy-1'));
+	assert.equal(again.kdf.salt, envelope.kdf.salt);
+	assert.notEqual(again.iv, envelope.iv);
+
+	await assert.rejects(CatalogSync.open(sealed, 'another passphrase'), WrongPassphrase);
+	for (const text of ['not json', '{}', JSON.stringify({...envelope, data: '!!'})])
+		await assert.rejects(CatalogSync.open(text, 'a long passphrase'), WrongPassphrase, text);
+	await assert.rejects(CatalogSync.open(JSON.stringify({...envelope, version: 2}), 'x'), NewerBackup);
+	const newer = await CatalogSync.seal({...backup, version: Backup.VERSION + 1}, key, 'copy-1');
+	await assert.rejects(CatalogSync.open(newer, 'a long passphrase'), NewerBackup);
+});
+
+test('sync: takes in what the other devices changed since the last sync, and names what both changed', () => {
+	const base = json(Backup.write(v2Catalog()));
+	const [one, two, three] = Object.keys(base.books);
+	const clone = () => structuredClone(base);
+	const unchanged = CatalogSync.combine(base, clone(), clone());
+	assert.deepEqual([unchanged.conflicts, unchanged.taken, unchanged.sent], [[], 0, 0]);
+
+	// this device retitled one book, another added a date read to another and removed the third
+	const mine = clone();
+	mine.books[one].title = 'Tide One Again';
+	const theirs = clone();
+	theirs.books[two].read = ['2025-01-02'];
+	delete theirs.books[three];
+	const both = CatalogSync.combine(base, mine, theirs);
+	assert.deepEqual(both.conflicts, []);
+	assert.equal(both.taken, 2);
+	assert.ok(both.sent > 0);
+	const byId = Object.fromEntries(both.records.books.map(b => [b.id, b]));
+	assert.equal(byId[one].title, 'Tide One Again');
+	assert.deepEqual(byId[two].read, ['2025-01-02']);
+	assert.equal(byId[three], undefined);
+	assert.equal(CatalogRecords.toCatalog(both.records).books.length, 2);
+
+	// both retitled one book: nothing is of use until told whose to keep
+	theirs.books[one].title = 'Tide One Revised';
+	const clash = CatalogSync.combine(base, mine, theirs);
+	assert.deepEqual(clash.conflicts, ['"Tide One Again"']);
+	const kept = prefer => CatalogSync.combine(base, mine, theirs, prefer).records.books.find(b => b.id === one).title;
+	assert.equal(kept('mine'), 'Tide One Again');
+	assert.equal(kept('theirs'), 'Tide One Revised');
+
+	// before the first sync, what both have alike is one, and what only one has is added
+	const first = CatalogSync.combine(null, mine, null);
+	assert.deepEqual([first.conflicts, first.taken], [[], 0]);
+	assert.equal(CatalogSync.combine(null, json(Backup.write(new Catalog())), base).records.books.length, 3);
+	// a catalog made apart from the synced one names its author under another id
+	let n = 0;
+	const apart = Catalog.fromJSON({books: [book('Sea Glass', 'Ann Vale')]});
+	apart.assignIds(() => `x${++n}`);
+	assert.throws(() => CatalogSync.combine(null, json(Backup.write(apart)), base), UnrelatedCatalogs);
+	apart.addExclusions(['Gone | Ann Vale']);
+	const replaced = CatalogSync.combine(null, json(Backup.write(apart)), base, 'replace');
+	assert.deepEqual(
+		replaced.records.exclusions.map(x => x.entry),
+		['BGONE', 'Lost | Ann Vale', 'Gone | Ann Vale'],
+		'exclusions are only added to',
+	);
+	assert.deepEqual(
+		replaced.records.books.map(b => b.title),
+		['Tide One', 'Tide Two', 'Tide Waters'],
+	);
 });

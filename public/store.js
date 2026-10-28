@@ -6,6 +6,8 @@ import {Catalog} from './modules/catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {Contributor} from './modules/contributor.js';
 import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-database.js';
+import {Backup} from './modules/backup.js';
+import {CatalogSync} from './modules/catalog-sync.js';
 /** @import {CatalogReader} from './modules/catalog-database.js' */
 /** @import {RecordSet, Snapshot, StoreName} from './modules/catalog-records.js' */
 /** @import {Book} from './modules/book.js' */
@@ -16,6 +18,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
 /** @import {ExternalKind, ExternalId} from './modules/external-catalog.js' */
 /** @import {Unchecked} from './modules/text.js' */
+/** @import {SyncPrefer} from './modules/catalog-sync.js' */
 
 /**
  * Comparing with Hardcover or AudiobookDB, or sending to it, going on (or just ended) in a page, as showCatalogJob() shows it.
@@ -1445,6 +1448,114 @@ export async function fetchViaProxy(route, proxy = browserProxy(), init = {}) {
 			{cause: e},
 		);
 	}
+}
+
+// ------------------------------------------------------------ syncing devices
+// With sync set up on the catalog proxy (a D1 database, docs/catalog-proxy.md), the proxy keeps one copy of the
+// catalog, encrypted with a passphrase that is kept in this browser only, like the proxy's key (never in a backup,
+// never sent). Syncing takes in what other devices changed since this browser last synced, saves it, and sends the
+// result as the next copy (CatalogSync). What this browser last synced is kept in IndexedDB (meta `sync`).
+export const SYNC_STORAGE_KEY = 'audiobook-catalog-sync-passphrase';
+
+/** @returns {string} the sync passphrase saved in this browser, or '' */
+export function savedPassphrase() {
+	try {
+		return localStorage.getItem(SYNC_STORAGE_KEY) || '';
+	} catch {
+		return '';
+	}
+}
+
+/** @returns {Promise<{revision: number, at: string} | null>} when this browser last synced, and the copy's revision then */
+export async function lastSync() {
+	try {
+		const base = DATABASE ? await DATABASE.syncBase() : null;
+		return base ? {revision: base.revision, at: base.at} : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * What a sync did: how many records it took in from the other devices, whether it sent a new copy, and the
+ * entries both this browser and another device changed (then nothing was done, unless told which to keep).
+ * @typedef {{taken: number, sent: boolean, conflicts: string[]}} SyncOutcome
+ */
+
+/**
+ * The proxy's answer to a sync request, or a plain error saying what is wrong.
+ * @param {Response} res
+ * @returns {Promise<{revision: number, data?: string | null}>}
+ */
+async function syncAnswer(res) {
+	if (res.status === 401) throw new Error('the proxy refused the key');
+	if (res.status === 501) throw new Error('sync is not set up on your proxy (see Catalog proxy in the docs)');
+	if (res.status === 404) throw new Error('your proxy is from before sync: deploy it again');
+	if (res.status === 413) throw new Error('the catalog is too big to sync');
+	if (!res.ok) throw new Error(`the proxy answered ${res.status}`);
+	return /** @type {{revision: number, data?: string | null}} */ (await res.json());
+}
+
+/**
+ * Sync this browser's catalog with the copy on the catalog proxy: take in what other devices changed since this
+ * browser last synced, save it here, and send the result. When both changed one entry, nothing is changed and
+ * the outcome names them, unless `prefer` says whose to keep. Throws a plain error (or CatalogSync's
+ * WrongPassphrase, UnrelatedCatalogs, or NewerBackup) when it can't.
+ * @param {SyncPrefer} [prefer]
+ * @returns {Promise<SyncOutcome>}
+ */
+export async function syncCatalog(prefer) {
+	if (!DATABASE) throw new Error(SAVE_REFUSED || 'this browser keeps no catalog to sync');
+	const passphrase = savedPassphrase();
+	if (!passphrase) throw new Error('save a sync passphrase first');
+	await wholeCatalog();
+	// another device may send its copy between this browser's reading and sending: then it reads again
+	for (let tries = 1; tries <= 3; tries++) {
+		const got = await syncAnswer(await fetchViaProxy('sync'));
+		const base = await DATABASE.syncBase();
+		const opened = got.data ? await CatalogSync.open(got.data, passphrase) : null;
+		// what this browser synced last is of use only while the copy is that one, at that revision or later
+		const known = base && opened && opened.copy === base.copy && got.revision >= base.revision ? base.backup : null;
+		await SAVING;
+		const mine = Backup.write(CATALOG);
+		const result = CatalogSync.combine(known, mine, opened ? opened.backup : null, prefer);
+		if (result.conflicts.length && !prefer) return {taken: 0, sent: false, conflicts: result.conflicts};
+		if (result.taken) {
+			const before = CATALOG.books;
+			// the synced catalog in place of this one names its series and people under other ids, which can't be
+			// stored beside this one's names: this one goes first
+			if (prefer === 'replace') {
+				const emptied = new Catalog();
+				emptied.addExclusions(CATALOG.exclusions.entries); // only ever added to
+				CATALOG.replaceWith(emptied);
+				await persist();
+			}
+			CATALOG.replaceWith(CatalogRecords.toCatalog(result.records));
+			await persist();
+			if (CatalogRecords.changes(SAVED, recordsNow()).count)
+				throw new Error('what the other devices changed could not be saved here, so nothing was sent');
+			if (redrawPage) redrawPage(before);
+		}
+		const copy = opened ? opened.copy || CatalogRecords.newId() : CatalogRecords.newId();
+		if (opened && !result.sent) {
+			await DATABASE.keepSyncBase({
+				revision: got.revision,
+				copy,
+				backup: opened.backup,
+				at: new Date().toISOString(),
+			});
+			return {taken: result.taken, sent: false, conflicts: result.conflicts};
+		}
+		const now = Backup.write(CATALOG);
+		const key = opened ? opened.key : await CatalogSync.keyFor(passphrase);
+		const body = JSON.stringify({revision: got.revision, data: await CatalogSync.seal(now, key, copy)});
+		const res = await fetchViaProxy('sync', undefined, {body});
+		if (res.status === 409) continue;
+		const sent = await syncAnswer(res);
+		await DATABASE.keepSyncBase({revision: sent.revision, copy, backup: now, at: new Date().toISOString()});
+		return {taken: result.taken, sent: true, conflicts: result.conflicts};
+	}
+	throw new Error('other devices kept syncing meanwhile; try again');
 }
 
 // ------------------------------------------------------------ runs on a catalog's shelves

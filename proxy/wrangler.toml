@@ -10,3 +10,11 @@ workers_dev = true
 ALLOWED_ORIGINS = "https://riccetn.github.io, http://127.0.0.1:8000, http://localhost:8000"
 
 # PROXY_KEY is a secret, never written here (the repo is public): npx wrangler secret put PROXY_KEY
+
+# Syncing the catalog between devices (optional; docs/catalog-proxy.md, "Syncing devices"): a D1 database the
+# Worker keeps the encrypted copy in. Make it with `npx wrangler d1 create audiobook-catalog-sync`, then take the
+# # off the four lines below and put in the database_id it printed (an id, not a secret).
+# [[d1_databases]]
+# binding = "SYNC_DB"
+# database_name = "audiobook-catalog-sync"
+# database_id = "<the id wrangler d1 create printed>"

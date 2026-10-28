@@ -2,7 +2,8 @@
 // and what it refuses.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {handle, upstreamUrl, allowedOrigins, KEY_HEADER, CATALOG_KEY_HEADER} from '../proxy/worker.js';
+import {handle, upstreamUrl, allowedOrigins, KEY_HEADER, CATALOG_KEY_HEADER, MAX_SYNC} from '../proxy/worker.js';
+import {fakeD1} from './fake-d1.mjs';
 
 const ENV = {PROXY_KEY: 'k3y-for-tests', ALLOWED_ORIGINS: 'https://example.github.io, http://127.0.0.1:8000'};
 const APP = 'https://example.github.io';
@@ -123,7 +124,11 @@ test('proxy: the preflight allows the key headers, and ping says which catalogs'
 	assert.equal(pre.headers.get('Access-Control-Allow-Headers'), `${KEY_HEADER}, ${CATALOG_KEY_HEADER}, Content-Type`);
 	assert.equal(pre.headers.get('Access-Control-Allow-Methods'), 'GET, POST');
 	const ping = await handle(ask('/ping'), ENV, deps);
-	assert.deepEqual(await ping.json(), {ok: true, catalogs: ['audiobookdb', 'audible', 'bookbrainz', 'isfdb']});
+	assert.deepEqual(await ping.json(), {
+		ok: true,
+		catalogs: ['audiobookdb', 'audible', 'bookbrainz', 'isfdb'],
+		sync: false,
+	});
 	assert.deepEqual(allowedOrigins({}), [
 		'https://riccetn.github.io',
 		'http://127.0.0.1:8000',
@@ -221,4 +226,49 @@ test('proxy: a catalog asking to slow down says how long, to the page too', asyn
 	assert.equal(slow.headers.get('Retry-After'), '30');
 	assert.equal(slow.headers.get('Access-Control-Expose-Headers'), 'Retry-After');
 	assert.equal(slow.headers.get('X-RateLimit-Remaining'), null);
+});
+
+test('proxy: keeps one synced copy in D1, replaced only over the revision it was read at', async () => {
+	const {deps} = behind();
+	const db = fakeD1();
+	const env = {...ENV, SYNC_DB: db};
+	const send = body => handle(ask('/sync', {method: 'POST', body: JSON.stringify(body)}), env, deps);
+	const read = async () => (await handle(ask('/sync'), env, deps)).json();
+
+	assert.deepEqual(await read(), {revision: 0, data: null, savedAt: null}, 'none yet');
+	const first = await send({revision: 0, data: 'sealed-1'});
+	assert.equal(first.status, 200);
+	assert.equal((await first.json()).revision, 1);
+	assert.equal(first.headers.get('Access-Control-Allow-Origin'), APP);
+	assert.equal(first.headers.get('Cache-Control'), 'no-store');
+	const kept = await read();
+	assert.equal(kept.revision, 1);
+	assert.equal(kept.data, 'sealed-1');
+	assert.match(kept.savedAt, /^\d{4}-\d\d-\d\dT/);
+
+	// a device that read revision 1 replaces it; one that read before (or nothing) is told to sync again
+	assert.equal((await (await send({revision: 1, data: 'sealed-2'})).json()).revision, 2);
+	for (const revision of [0, 1, 7]) {
+		const late = await send({revision, data: 'sealed-late'});
+		assert.equal(late.status, 409, `revision ${revision}`);
+		assert.equal((await late.json()).revision, 2);
+	}
+	assert.equal((await read()).data, 'sealed-2');
+
+	// what isn't a copy, or is too big for a row, is refused, and keeps nothing
+	for (const body of [{revision: 2}, {revision: -1, data: 'x'}, {revision: '2', data: 'x'}, {revision: 2, data: ''}])
+		assert.equal((await send(body)).status, 400, JSON.stringify(body));
+	assert.equal((await handle(ask('/sync', {method: 'POST', body: 'not json'}), env, deps)).status, 400);
+	assert.equal((await send({revision: 2, data: 'x'.repeat(MAX_SYNC + 1)})).status, 413);
+	assert.equal((await read()).revision, 2);
+
+	// only with the key, and only from the app
+	assert.equal((await handle(ask('/sync', {key: 'wrong'}), env, deps)).status, 401);
+	assert.equal((await handle(ask('/sync', {origin: 'https://evil.example'}), env, deps)).status, 403);
+	// ping says whether sync is set up; without a database, /sync says so
+	assert.equal((await (await handle(ask('/ping'), env, deps)).json()).sync, true);
+	const none = await handle(ask('/sync'), ENV, deps);
+	assert.equal(none.status, 501);
+	assert.match((await none.json()).error, /SYNC_DB/);
+	assert.equal((await (await handle(ask('/ping'), ENV, deps)).json()).sync, false);
 });

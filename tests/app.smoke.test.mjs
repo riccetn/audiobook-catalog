@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 import {fakeHardcover, hardcoverState} from './fake-hardcover.mjs';
 import {fakeCatalogs, fakeProxyCatalogs, fakeAudiobookdb, audiobookdbState} from './fake-catalogs.mjs';
 import {handle as handleProxy} from '../proxy/worker.js';
+import {fakeD1} from './fake-d1.mjs';
 import {Book} from '../public/modules/book.js';
 import {Exclusions} from '../public/modules/exclusions.js';
 import {Duplicates} from '../public/modules/duplicates.js';
@@ -529,7 +530,12 @@ async function boot({
 	const navigator = {languages};
 	const Node = {ELEMENT_NODE: 1, TEXT_NODE: 3};
 	const database = databaseOf(storage);
-	const crypto = {randomUUID: () => database.newId()};
+	// ids from the fake IndexedDB, and the browser's WebCrypto (syncing encrypts with it)
+	const crypto = {
+		randomUUID: () => database.newId(),
+		subtle: globalThis.crypto.subtle,
+		getRandomValues: array => globalThis.crypto.getRandomValues(array),
+	};
 	const context = vm.createContext({
 		document,
 		Node,
@@ -540,6 +546,12 @@ async function boot({
 		IDBKeyRange: FakeKeyRange,
 		structuredClone,
 		crypto,
+		TextEncoder,
+		TextDecoder,
+		CompressionStream,
+		DecompressionStream,
+		btoa,
+		atob,
 		fetch,
 		FileReader,
 		URL,
@@ -3990,6 +4002,108 @@ test('the catalog proxy is kept in this browser, checked when saved, and only ev
 	});
 	await away.els.proxyCheck.listeners.click[0]();
 	assert.match(away.els.ioStatus.textContent, /could not reach the catalog proxy/);
+});
+
+test('devices sync through the proxy: encrypted, taking in what the others changed, and asking when both changed a book', async () => {
+	// the real Worker behind the pages, with a D1 database for the synced copy
+	const db = fakeD1();
+	const env = {PROXY_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io', SYNC_DB: db};
+	const sent = [];
+	const proxy = async (url, init = {}) => {
+		sent.push({url, method: init.method || 'GET', body: init.body});
+		const request = new Request(url, {
+			method: init.method,
+			body: init.body,
+			headers: {...init.headers, Origin: 'https://example.github.io'},
+		});
+		return handleProxy(request, env, {fetch: async () => new Response('', {status: 500})});
+	};
+	// `idPrefix` gives a browser ids of its own (each fake one counts id-1, id-2, ... alike, where real ones never meet)
+	const device = async (files, passphrase = 'sea glass lantern', idPrefix = '') => {
+		const storage = new Map([
+			[
+				'audiobook-catalog-proxy',
+				JSON.stringify({url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'}),
+			],
+			...(passphrase ? [['audiobook-catalog-sync-passphrase', passphrase]] : []),
+		]);
+		let n = 0;
+		if (idPrefix) databaseOf(storage).newId = () => `${idPrefix}-${++n}`;
+		const page = await boot({page: 'import.html', proxy, files, storage});
+		await idle();
+		return page;
+	};
+	const sync = async (page, button = 'syncBtn') => {
+		await page.els[button].listeners.click[0]();
+		await idle();
+		return page.els.ioStatus.textContent;
+	};
+	const titles = async storage => (await kept(storage)).books.map(b => b.t).sort();
+
+	const pc = await device(DEMO);
+	assert.match(pc.els.syncState.textContent, /Not synced from this browser yet/);
+	assert.match(pc.els.syncPassphraseState.textContent, /saved in this browser only/);
+	assert.equal(await sync(pc), "Synced: nothing new from your other devices; this device's catalog sent.");
+	assert.equal(db.row.revision, 1);
+	assert.ok(!db.row.data.includes('The Salt Road'), 'the proxy keeps nothing it can read');
+	assert.match(pc.els.syncState.textContent, /^Last synced /);
+
+	// a phone with nothing yet takes the whole catalog
+	const phone = await device(null);
+	assert.match(await sync(phone), /^Synced: \d+ changes taken in from your other devices; nothing to send\.$/);
+	assert.deepEqual(await titles(phone.storage), await titles(pc.storage));
+	assert.equal(db.row.revision, 1);
+
+	// a date read added on the phone reaches the PC
+	const id = bookIdAt(phone.get, 0);
+	phone.run(`CATALOG.books.find(b => b.id === '${id}').read = ['2025-03-04']; persist()`);
+	await idle();
+	assert.match(await sync(phone), /this device's catalog sent\.$/);
+	assert.match(await sync(pc), /^Synced: 1 change taken in/);
+	assert.deepEqual(pc.database.records('books').find(b => b.id === id).read, ['2025-03-04']);
+
+	// both retitle that book: the PC syncs first, so the phone asks which to keep
+	pc.run(`CATALOG.books.find(b => b.id === '${id}').title = 'Retitled on the PC'; persist()`);
+	phone.run(`CATALOG.books.find(b => b.id === '${id}').title = 'Retitled on the phone'; persist()`);
+	await idle();
+	await sync(pc);
+	assert.equal(await sync(phone), 'Not synced: another device changed these too.');
+	assert.equal(phone.els.syncChoice.style.display, '');
+	assert.match(phone.els.syncChoiceText.textContent, /"Retitled on the phone"\. Keep which\?$/);
+	assert.equal(phone.els.syncReplace.style.display, 'none');
+	assert.equal(
+		phone.database.records('books').find(b => b.id === id).title,
+		'Retitled on the phone',
+		'nothing changed',
+	);
+	assert.match(await sync(phone, 'syncKeepTheirs'), /^Synced: 1 change taken in/);
+	assert.equal(phone.database.records('books').find(b => b.id === id).title, 'Retitled on the PC');
+	assert.equal(phone.els.syncChoice.style.display, 'none');
+
+	// another passphrase can't open the copy, and changes nothing
+	const before = db.row.revision;
+	const stranger = await device(null, 'another passphrase');
+	assert.match(await sync(stranger), /^Not synced: the passphrase does not open the synced copy\./);
+	assert.equal(await kept(stranger.storage), null);
+	assert.equal(db.row.revision, before);
+	// a catalog made apart from the synced one can only be replaced by it
+	const apart = await device(DEMO, 'sea glass lantern', 'apart');
+	assert.equal(await sync(apart), 'Not synced: this catalog and the synced one were not made from the same catalog.');
+	assert.equal(apart.els.syncReplace.style.display, '');
+	assert.match(await sync(apart, 'syncReplace'), /^Synced: /);
+	assert.ok((await titles(apart.storage)).includes('Retitled on the PC'));
+	// the passphrase is only ever sent sealed in, never as it is
+	assert.ok(sent.every(s => !String(s.body || '').includes('sea glass lantern')));
+
+	// without a passphrase, or with sync not set up on the proxy, it says so
+	const bare = await device(DEMO, '');
+	assert.match(await sync(bare), /^Not synced: save a sync passphrase first\.$/);
+	bare.els.syncPassphrase.value = 'sea glass lantern';
+	bare.els.syncPassphraseSave.listeners.click[0]();
+	assert.equal(bare.storage.get('audiobook-catalog-sync-passphrase'), 'sea glass lantern');
+	assert.equal(bare.els.syncPassphrase.value, '');
+	delete env.SYNC_DB;
+	assert.match(await sync(bare), /^Not synced: sync is not set up on your proxy/);
 });
 
 test('a Hardcover comparison sends nothing unticked, nothing once another tab saved, and says when Hardcover cannot be reached', async () => {

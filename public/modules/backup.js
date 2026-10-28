@@ -232,6 +232,27 @@ export class Backup {
 	 * @returns {Backup}
 	 */
 	static readRecords(data) {
+		const catalog = CatalogRecords.toCatalog(Backup.records(data));
+		return new Backup({
+			books: catalog.books,
+			series: catalog.infoByName('series'),
+			authors: catalog.infoByName('authors'),
+			narrators: catalog.infoByName('narrators'),
+			publishers: catalog.infoByName('publishers'),
+			nameIds: catalog.nameIds,
+			excluded: catalog.exclusions.entries,
+			notDuplicates: catalog.markTexts(),
+			marks: [...catalog.marks.values()],
+		});
+	}
+
+	/**
+	 * A version 2 or 3 backup's records, as IndexedDB keeps them (no derived fields or credits; a book's
+	 * position is its place in the backup), checked as readRecords() says. What syncing compares (CatalogSync).
+	 * @param {Record<string, unknown>} data
+	 * @returns {RecordSet}
+	 */
+	static records(data) {
 		/** @type {Record<string, Record<string, unknown>[]>} */
 		const records = {credits: []};
 		for (const store of Backup.STORES) {
@@ -263,29 +284,26 @@ export class Backup {
 		const exclusions = data.exclusions === undefined ? [] : data.exclusions;
 		if (!isTextList(exclusions)) throw new Error('exclusions is not a list of texts');
 		records.exclusions = /** @type {string[]} */ (exclusions).map((entry, position) => ({entry, position}));
+		Backup.checkNames(/** @type {RecordSet} */ (/** @type {unknown} */ (records)));
+		return /** @type {RecordSet} */ (/** @type {unknown} */ (records));
+	}
+
+	/**
+	 * Throws when two series, or two people of a kind, have one name (or one has none): records that can't be put together.
+	 * @param {RecordSet} records
+	 */
+	static checkNames(records) {
 		for (const [store, nameOf] of /** @type {const} */ ([
 			['series', (/** @type {Record<string, unknown>} */ r) => r.name],
 			['contributors', (/** @type {Record<string, unknown>} */ r) => `${r.kind} ${r.name}`],
 		])) {
 			const seen = new Set();
-			for (const rec of records[store]) {
+			for (const rec of /** @type {Record<string, unknown>[]} */ (records[store])) {
 				if (typeof rec.name !== 'string') throw new Error(`${store} ${Text.repr(rec.id)} has no name`);
 				if (seen.has(nameOf(rec))) throw new Error(`two ${store} are named ${Text.repr(rec.name)}`);
 				seen.add(nameOf(rec));
 			}
 		}
-		const catalog = CatalogRecords.toCatalog(/** @type {RecordSet} */ (/** @type {unknown} */ (records)));
-		return new Backup({
-			books: catalog.books,
-			series: catalog.infoByName('series'),
-			authors: catalog.infoByName('authors'),
-			narrators: catalog.infoByName('narrators'),
-			publishers: catalog.infoByName('publishers'),
-			nameIds: catalog.nameIds,
-			excluded: catalog.exclusions.entries,
-			notDuplicates: catalog.markTexts(),
-			marks: [...catalog.marks.values()],
-		});
 	}
 
 	/**

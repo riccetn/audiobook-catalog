@@ -9,8 +9,9 @@ catalog_ looks Audible pages, ASINs and AudiobookDB books and releases up throug
 ([Everyday workflows](workflows.md)), the AudiobookDB panel on _Import & export_ compares the catalog with
 your AudiobookDB shelves ([AudiobookDB](audiobookdb.md)), and a series is compared with its books on Audible
 ([Audible](audible.md#fill-in-a-series-books-from-audible)). It's a small Cloudflare Worker (`proxy/worker.js`)
-that runs on Cloudflare's free plan, which allows 100,000 requests a day. It is optional: everything else works
-without it, and catalogs that need it are just not asked.
+that runs on Cloudflare's free plan, which allows 100,000 requests a day. It can also keep an encrypted copy of
+your catalog for [syncing your devices](#syncing-devices). It is optional: everything else works without it, and
+catalogs that need it are just not asked.
 
 ## What the proxy will and won't do
 
@@ -81,6 +82,59 @@ curl -H "X-Proxy-Key: <your key>" https://audiobook-catalog-proxy.<subdomain>.wo
   AudiobookDB's shelves were added refuses the key (_the proxy answered 405_ or _400_) until you do.
 - **To take it down:** run `npx wrangler delete` and press **Remove proxy** in the app.
 
+## Syncing devices
+
+With a D1 database bound to it (Cloudflare's SQLite, free on the same plan: 5 GB, and far more reads and writes a
+day than syncing needs), the proxy also keeps one copy of your catalog, so your devices can sync through it.
+**Sync now** under **Sync between devices** on _Import & export_ takes in what your other devices changed since this
+one last synced, saves it here, and sends the result as the new copy.
+
+- **Encrypted before it leaves the browser.** The copy is a backup, compressed and encrypted (AES-GCM, with a key
+  made from your passphrase by PBKDF2) in the page. The proxy and Cloudflare keep only text they can't read, and
+  the passphrase is never sent. Like the proxy's key, it is kept in each browser only, never in a backup. A lost
+  passphrase can't be recovered, but each device still has its catalog: delete the copy (below) and sync again.
+- **Nothing is written over.** Each device keeps the copy it last synced, so a sync knows what changed on each
+  side. A book, series or person changed on only one side comes from that side, and one removed on one side is
+  removed. When both changed the same one, nothing changes until you pick **Keep this device's** or **Keep the
+  synced ones** for those. Two devices syncing at the same moment can't write over each other either: the proxy
+  keeps a copy only when it was sent by a device that read the one it replaces, and the other device just reads
+  it again.
+- **Only by hand.** Nothing syncs on its own: press **Sync now** when you start on a device and when you're done.
+  Backups are still worth making: the copy is one more place your catalog is, not a history of it.
+
+### Setting it up
+
+1. Make the database, from the `proxy` folder:
+
+   ```sh
+   npx wrangler d1 create audiobook-catalog-sync
+   ```
+
+2. Take the `#` off the four `[[d1_databases]]` lines at the end of `proxy/wrangler.toml`, put in the
+   `database_id` it printed, and deploy again with `npx wrangler deploy`. The Worker makes its one table on the
+   first sync. (In the dashboard instead: _Storage & Databases → D1 → Create_, then on the Worker _Settings →
+   Bindings → Add → D1 database_, named `SYNC_DB`.)
+3. On each device, open _Import & export_, save the proxy (above) if it isn't yet, and under **Sync between
+   devices** type the same passphrase and press **Save passphrase**. A long one is best: anyone with the copy
+   could try passphrases against it.
+4. Press **Sync now** first on the device whose catalog is complete. On the others, sync when their catalog
+   is empty, or holds a backup of that one restored (each book, series and person keeps its id in a backup, so
+   the two are known as one).
+
+A device whose catalog was made apart from the synced one (two catalogs that were never one) can't sync: both
+have the same authors under other ids. **Use the synced catalog here** replaces this device's catalog with the
+synced one (Export a backup first). To keep what only this device has, Export its backup before, and on a device
+that syncs, **Merge** that backup ([Merge a backup from another device](backups.md)) and sync there.
+
+To start over (another passphrase, say), delete the copy and sync from the device whose catalog you want:
+
+```sh
+npx wrangler d1 execute audiobook-catalog-sync --remote --command "DELETE FROM sync"
+```
+
+The copy can be up to about 1.9 MB as sent (a row of D1 holds 2 MB), which, compressed, is a catalog of many
+thousands of books; past that, the sync says the catalog is too big.
+
 ## When something is wrong
 
 The status line after **Save proxy** or **Check** says what happened:
@@ -89,3 +143,10 @@ The status line after **Save proxy** or **Check** says what happened:
 - _could not reach the catalog proxy_: the address is wrong, the Worker isn't deployed, or it doesn't allow
   this page. A browser can't tell those apart, so check `ALLOWED_ORIGINS` too.
 - _the proxy answered 500_: the Worker has no `PROXY_KEY` yet.
+
+And after **Sync now**:
+
+- _sync is not set up on your proxy_: the Worker has no D1 database bound as `SYNC_DB` (setting it up, above).
+- _your proxy is from before sync_: run `npx wrangler deploy` again.
+- _the passphrase does not open the synced copy_: this browser's passphrase isn't the one the copy was sent with.
+- _another device changed these too_: pick whose version to keep, with the buttons below it.
