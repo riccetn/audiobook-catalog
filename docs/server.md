@@ -16,7 +16,8 @@ The server is `server/`: the proxy is `proxy.js`, sync is `sync.js`, and `worker
 pages, only with the key) and hands it to one of them. It runs in two places, with the same code:
 
 - **On Cloudflare**, as a Worker on the free plan (100,000 requests a day), for your phone and every other browser.
-  The synced copy is kept in a D1 database. [Setting it up](#on-cloudflare).
+  The synced copy is kept in a D1 database. It serves the app too, at its own address, beside GitHub Pages.
+  [Setting it up](#on-cloudflare).
 - **On your computer**, with `make serve`, which serves the app's pages too. The synced copy is kept in a SQLite
   file. [Running it](#on-your-computer).
 
@@ -86,7 +87,31 @@ dashboard, though only without sync: _Workers & Pages → Create → Worker_, pa
 editor and deploy, then under _Settings → Variables and Secrets_ add `SERVER_KEY` as a secret and
 `ALLOWED_ORIGINS` as text (the line from `wrangler.toml`).
 
-To see it work from a terminal:
+### The app on it
+
+The Worker serves the app's pages too: its address opens the app, which works offline and installs on a phone just
+as it does from GitHub Pages ([On your phone](phone.md)). Cloudflare answers a request for one of the app's files
+itself, without running the Worker, and those requests are free and don't count against the 100,000 a day. On the
+app served there, save the server under **Your server** as anywhere else (its own address, and the key); the server
+always lets in the app it serves, so its address needn't be in `ALLOWED_ORIGINS`.
+
+Each address keeps its own catalog, as each browser does: the app at the Worker's address starts empty. Bring your
+catalog over with **Sync now**, or with Export there and Restore here. GitHub Pages keeps publishing the app as
+before, and its pages use the same server.
+
+`make deploy-server` deploys the pages `make pages` last wrote into `public/`. To deploy on every push to `main`
+instead, as GitHub Pages does, give the repository two secrets (_Settings → Secrets and variables → Actions_), and
+`.github/workflows/server.yml` deploys with them; without them it does nothing:
+
+- `CLOUDFLARE_ACCOUNT_ID`: your account's id, shown on the dashboard's _Workers & Pages_ page.
+- `CLOUDFLARE_API_TOKEN`: a token made under _My Profile → API Tokens → Create Token_, from the _Edit Cloudflare
+  Workers_ template, with _Account → D1 → Edit_ added (to find or make the sync database).
+
+The workflow writes the API documentation into `public/api/` first, so it is served at `/api/` there too.
+
+### From a terminal
+
+To see it work:
 
 ```sh
 curl -H "X-Server-Key: <your key>" https://audiobook-catalog-proxy.<subdomain>.workers.dev/ping
@@ -95,8 +120,8 @@ curl -H "X-Server-Key: <your key>" https://audiobook-catalog-proxy.<subdomain>.w
 
 ## What it will and won't do
 
-- **Only your pages.** It answers only the origins in `ALLOWED_ORIGINS` (in `server/wrangler.toml`): the
-  app on GitHub Pages and `make serve`.
+- **Only your pages.** It answers only the app it serves itself and the origins in `ALLOWED_ORIGINS` (in
+  `server/wrangler.toml`): the app on GitHub Pages and `make serve`.
 - **Only with the key.** Every request needs the server's key (the `SERVER_KEY` secret on Cloudflare), so a
   copy of the address alone is no use to anyone. The key is never in the repository.
 - **The proxy reaches only these catalogs.** A request names a catalog and a path in its API
@@ -168,7 +193,8 @@ thousands of books; past that, the sync says the catalog is too big.
   save the new key in the app.
 - **The app served from somewhere else:** add its origin (`https://name.example`, no path) to
   `ALLOWED_ORIGINS` in `wrangler.toml` and deploy again with `make deploy-server`.
-- **After `git pull`:** if anything in `server/` changed, deploy it again with `make deploy-server`. A server
+- **After `git pull`:** if anything in `server/` or the app changed, deploy it again with `make deploy-server` (the
+  workflow does this on every push to `main` once it has its secrets). A server
   deployed before the proxy moved under `/proxy/` makes **Check** say it's _from before this version_, and the
   catalogs that need the proxy fail, until you do. One deployed before AudiobookDB's shelves were added refuses
   the key (_your server refused it (400)_).

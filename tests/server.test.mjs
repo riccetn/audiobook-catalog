@@ -110,15 +110,20 @@ test('proxy: answers only the app with the key, and passes on only the body and 
 	assert.match(asked[0].headers['user-agent'], /audiobook-catalog-proxy/);
 
 	const status = async (path, opts) => (await handle(ask(path, opts), ENV, deps)).status;
-	assert.equal(await status('/audiobookdb/x', {origin: 'https://evil.example'}), 403);
-	assert.equal(await status('/audiobookdb/x', {key: null}), 401);
-	assert.equal(await status('/audiobookdb/x', {key: 'k3y-for-test'}), 401);
-	assert.equal(await status('/audiobookdb/x', {key: 'k3y-for-tests!'}), 401);
-	assert.equal(await status('/audiobookdb/x', {method: 'POST'}), 405);
-	assert.equal(await status('/audiobookdb/x', {method: 'DELETE'}), 405);
-	assert.equal(await status('/somewhere/else'), 404);
-	assert.equal(await status('/audiobookdb/x', {origin: null}), 200, 'curl, with the key');
-	assert.equal(asked.length, 2, 'nothing refused reached a catalog');
+	assert.equal(await status('/proxy/audiobookdb/x', {origin: 'https://evil.example'}), 403);
+	assert.equal(await status('/proxy/audiobookdb/x', {key: null}), 401);
+	assert.equal(await status('/proxy/audiobookdb/x', {key: 'k3y-for-test'}), 401);
+	assert.equal(await status('/proxy/audiobookdb/x', {key: 'k3y-for-tests!'}), 401);
+	assert.equal(await status('/proxy/audiobookdb/x', {method: 'POST'}), 405);
+	assert.equal(await status('/proxy/audiobookdb/x', {method: 'DELETE'}), 405);
+	assert.equal(await status('/proxy/somewhere/else'), 404);
+	assert.equal(await status('/proxy/audiobookdb/x', {origin: null}), 200, 'curl, with the key');
+	assert.equal(
+		await status('/proxy/audiobookdb/x', {origin: 'https://proxy.example.workers.dev'}),
+		200,
+		'the app it serves',
+	);
+	assert.equal(asked.length, 2, 'nothing refused reached a catalog (and the last came from the cache)');
 	assert.equal(
 		(await handle(ask('/ping'), {ALLOWED_ORIGINS: ENV.ALLOWED_ORIGINS}, deps)).status,
 		500,

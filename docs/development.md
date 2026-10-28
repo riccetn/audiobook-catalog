@@ -103,7 +103,8 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
 - `.github/workflows/ci.yml` runs the same on GitHub Actions. The smoke test also fails when `public/`
   holds a file no page uses (a page, a module one imports, or what their `<head>` or the manifest names), as the
   service worker caches all of it, so nothing ends up served by accident.
-- `.github/workflows/pages.yml` publishes `public/` to GitHub Pages on pushes to `main`.
+- `.github/workflows/pages.yml` publishes `public/` to GitHub Pages on pushes to `main`, and `.github/workflows/server.yml`
+  deploys the server with `public/` as its static assets (`make deploy-server`), once the repository has its Cloudflare secrets.
 
 ## Types
 

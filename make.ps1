@@ -38,7 +38,7 @@ switch ($Command) {
 		'format-check  - check that everything is formatted as Prettier would (format fixes it)'
 		'docs          - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
 		'serve         - open the app at http://localhost:8000/ with its server: the catalog proxy and sync, kept in SQLite (-Port, -Bind 0.0.0.0 for your network)'
-		'deploy-server - deploy the app''s server to Cloudflare with its sync database (npx wrangler login once first)'
+		'deploy-server - deploy the app''s server to Cloudflare with its sync database, serving the pages too (npx wrangler login once first)'
 	}
 	'check' {
 		# Each step runs this script again, and the first that fails stops the rest, as make does.
@@ -101,6 +101,8 @@ switch ($Command) {
 		Invoke-Native 'node' @('--disable-warning=ExperimentalWarning', 'server/serve.mjs')
 	}
 	'deploy-server' {
+		& $PSCommandPath pages
+		if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 		Invoke-Native 'node' @('server/deploy.mjs')
 	}
 }

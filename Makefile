@@ -45,5 +45,5 @@ docs:            ## write the API documentation from the code's JSDoc into api-d
 serve: pages     ## open the app at http://localhost:8000/ with its server: the catalog proxy and sync, kept in SQLite (server/serve.mjs; HOST=0.0.0.0 for your network)
 	PORT=$(PORT) HOST=$(HOST) $(NODE) --disable-warning=ExperimentalWarning server/serve.mjs
 
-deploy-server:   ## deploy the app's server to Cloudflare with its sync database (server/deploy.mjs; npx wrangler login once first)
+deploy-server: pages  ## deploy the app's server to Cloudflare with its sync database, serving the pages too (server/deploy.mjs; npx wrangler login once first)
 	$(NODE) server/deploy.mjs

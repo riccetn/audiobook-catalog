@@ -1,7 +1,7 @@
-// The app's optional server: a Cloudflare Worker (or, for development, the same code in Node: serve.mjs) with two
-// unrelated jobs, each in a module of its own: the catalog proxy (proxy.js, `/proxy/<catalog>/…`), for the catalogs
+// The app's optional server: a Cloudflare Worker (or, for development, the same code in Node: serve.mjs), which
+// serves the app's pages from public/ too (as static assets, before this code runs), with two unrelated jobs, each in a module of its own: the catalog proxy (proxy.js, `/proxy/<catalog>/…`), for the catalogs
 // whose APIs don't answer web pages, and syncing devices (sync.js, `/sync`). This file lets a request in or not:
-// it answers only the app's own origins (ALLOWED_ORIGINS), and only with the key (the SERVER_KEY secret), which the
+// it answers only the app's own origins (its own, and ALLOWED_ORIGINS), and only with the key (the SERVER_KEY secret), which the
 // app keeps in the browser like the Hardcover token; then it hands the request to its route.
 // Deployed on its own (see server/README.md); the app works without it.
 import {CATALOGS, CATALOG_KEY_HEADER, handleProxy} from './proxy.js';
@@ -55,7 +55,9 @@ function sameKey(given, key) {
  */
 export async function handle(request, env, deps) {
 	const origin = request.headers.get('Origin');
-	if (origin && !allowedOrigins(env).includes(origin))
+	// the app served by the server itself is always let in, wherever it is deployed
+	const own = origin === new URL(request.url).origin;
+	if (origin && !own && !allowedOrigins(env).includes(origin))
 		return jsonResponse(403, {error: 'This origin may not use the server.'}, {Vary: 'Origin'});
 	const cors = corsHeaders(origin);
 	if (request.method === 'OPTIONS') {

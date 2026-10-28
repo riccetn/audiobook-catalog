@@ -61,8 +61,9 @@ ESLint looks for mistakes, not formatting, with its recommended rules as they ar
 with two spaces, as `.editorconfig` says; `sample/` and `package-lock.json` are left alone, `.prettierignore`). `npm install` points git at
 `.githooks/` (the `prepare` script), whose `pre-commit` formats and restages the staged files, then runs ESLint on the staged JavaScript and, when there is any, the type check, and stops the commit on an error; `make format-check` fails on anything unformatted.
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `make check` and `make docs` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
-publishes `public/` to GitHub Pages on pushes to `main`, with `make docs API_DOCS=public/api` first, so the API documentation is served at `/api/`.
-The docs are written into `public/` only there: locally they stay in `api-docs/out/` (`sw-app.js` would list them, and the smoke test fails on files in `public/` no page uses).
+publishes `public/` to GitHub Pages on pushes to `main`, with `make docs API_DOCS=public/api` first, so the API documentation is served at `/api/`;
+`.github/workflows/server.yml` does the same and deploys the server with them (`make deploy-server`), once the repository has its Cloudflare secrets.
+The docs are written into `public/` only in those workflows: locally they stay in `api-docs/out/` (`sw-app.js` would list them, and the smoke test fails on files in `public/` no page uses).
 
 TypeDoc (`api-docs/typedoc.json`: `public/*.js` but `sw.js`, and `public/modules/*.js`, with `jsconfig.json`) needs TypeScript's JS API, which
 TypeScript 7 lacks, so `api-docs/` is an npm workspace (root `package.json` `workspaces`) with its own TypeScript 6 in `api-docs/node_modules/`,
@@ -249,7 +250,9 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   replaced only over the revision the page read, else 409; at most `MAX_SYNC`; 501 without one). `responses.js`: `jsonResponse`, `corsHeaders`.
   `serve.mjs` (`make serve`, Node built-ins only): `public/`'s files first, as Cloudflare's static assets, then `handle` (`startServer`, `publicFile`,
   `memoryCache` for the proxy's cache), with `SYNC_DB` a SQLite file through `sqliteD1` (`sqlite-d1.js`, node:sqlite seen as D1) and the key in
-  `.dev.vars` (`readDevVars`; made and printed when missing). `deploy.mjs` (`make deploy-server`). `handle` takes the fetch and cache so the tests run it
+  `.dev.vars` (`readDevVars`; made and printed when missing). `deploy.mjs` (`make deploy-server`; `.github/workflows/server.yml` runs it on pushes to
+  `main` when the repository has `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). The Worker serves `public/` too (`[assets]` in `wrangler.toml`,
+  answered before `worker.js` runs, as `serve.mjs` does), and lets in its own origin beside `ALLOWED_ORIGINS`. `handle` takes the fetch and cache so the tests run it
   in Node. The `.js` files are type checked with the pages (`jsconfig.json`) and linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
