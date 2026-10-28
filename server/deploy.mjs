@@ -34,11 +34,17 @@ export function deployConfig(toml, id) {
  * @returns {string}
  */
 function wrangler(args, {cwd = HERE, capture = false} = {}) {
-	const run = spawnSync('npx', ['wrangler', ...args], {
+	// --yes: npx would otherwise ask before installing wrangler. A captured run gets no input either, so wrangler
+	// asks nothing (its first-run question about usage metrics, say): a question printed where it is captured
+	// can't be seen, and would wait for an answer forever.
+	const run = spawnSync('npx', ['--yes', 'wrangler', ...args], {
 		cwd,
 		encoding: 'utf8',
-		stdio: capture ? ['inherit', 'pipe', 'inherit'] : 'inherit',
+		stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
 		shell: process.platform === 'win32', // npx is npx.cmd there
+		env: capture
+			? {...process.env, WRANGLER_SEND_METRICS: process.env.WRANGLER_SEND_METRICS || 'false'}
+			: process.env,
 	});
 	if (run.status !== 0) process.exit(run.status || 1);
 	return run.stdout || '';
@@ -53,14 +59,17 @@ function databaseId() {
 }
 
 function deploy() {
+	console.log(`Looking for the sync database ${DATABASE} on your Cloudflare account…`);
 	let id = databaseId();
 	if (!id) {
+		console.log('There is none yet: making it.');
 		wrangler(['d1', 'create', DATABASE], {cwd: os.tmpdir()});
 		id = databaseId();
 		if (!id) throw new Error(`wrangler made no database named ${DATABASE}`);
 	}
 	const toml = fs.readFileSync(path.join(HERE, 'wrangler.toml'), 'utf8');
 	fs.writeFileSync(path.join(HERE, DEPLOY_CONFIG), deployConfig(toml, id));
+	console.log(`Deploying the server with the sync database (${id}) bound as ${BINDING}…`);
 	wrangler(['deploy', '--config', DEPLOY_CONFIG]);
 }
 
