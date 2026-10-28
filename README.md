@@ -36,7 +36,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 - _Series_ lists every series and opens each one's books (and edits or removes it); _Books_ lists every book, searched,
   filtered and sorted; a book's title opens its own page, with everything about it and its **Edit** and **Merge**.
   _Import & export_ imports CSVs, runs Hardcover and AudiobookDB, checks the catalog, makes backups and merges them; _Duplicates_
-  merges books entered twice.
+  merges books entered twice; _Stats_ shows how complete the catalog is (what lacks an external id, a length, a release date, ...).
 - _Authors_ gives each author a page with a short bio, links to their website and their Audible, Goodreads
   and Hardcover pages, and their series and titles ([Authors](docs/authors.md)). _Narrators_ and _Publishers_
   do the same for everyone named on the editions ([Narrators and publishers](docs/narrators-publishers.md)).

@@ -1510,3 +1510,92 @@ button:focus {
 .alsoTitled cite {
 	font-style: italic;
 }
+/* the stats page: how many lack each value, each line opening to the ones that do */
+.statSection {
+	margin: 0 0 1.6rem;
+}
+.statSection h2 {
+	font-family: 'Lora', Georgia, serif;
+	font-size: 1.15rem;
+	margin: 0 0 0.5rem;
+}
+.statTotal {
+	color: var(--ink-soft);
+	font-family: inherit;
+	font-size: 0.85rem;
+	font-weight: normal;
+}
+.statRow {
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	margin-bottom: 0.35rem;
+	padding: 0.45rem 0.75rem;
+	font-size: 0.9rem;
+}
+.statRow summary,
+.statDone {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+.statRow summary {
+	cursor: pointer;
+	list-style: none;
+}
+.statRow summary::-webkit-details-marker {
+	display: none;
+}
+.statRow summary .statLabel::before {
+	content: '▸ ';
+	color: var(--ink-soft);
+}
+.statRow[open] summary .statLabel::before {
+	content: '▾ ';
+}
+.statCount {
+	color: var(--ink-soft);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.statDone .statCount {
+	color: var(--moss);
+}
+.statList {
+	margin: 0.4rem 0 0.1rem;
+	padding-left: 1.2rem;
+	columns: 16rem;
+	font-size: 0.85rem;
+}
+.statList a {
+	color: var(--ink);
+}
+.statList a:hover {
+	color: var(--moss);
+}
+.statMore {
+	color: var(--ink-soft);
+	list-style: none;
+}
+.statTableWrap {
+	overflow-x: auto;
+}
+.statTable {
+	border-collapse: collapse;
+	font-size: 0.85rem;
+	font-variant-numeric: tabular-nums;
+	min-width: 100%;
+}
+.statTable th,
+.statTable td {
+	border-bottom: 1px solid var(--line);
+	padding: 0.3rem 0.5rem;
+	text-align: right;
+}
+.statTable th:first-child {
+	text-align: left;
+}
+.statTable thead th {
+	color: var(--ink-soft);
+	font-weight: 600;
+}

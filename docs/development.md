@@ -14,6 +14,7 @@ public/               the app, and all that a static server serves (make serve, 
   book-list.js          what those three share: book cards, covers, the lists grouped by series, the address helpers
   import.html, import.js    export file imports (Audible, Goodreads) and exports (Goodreads), catalogs' shelves (Hardcover, AudiobookDB), Check / Box sets, backups (Export / Restore / Merge)
   duplicates.html, duplicates.js    find and merge books entered twice
+  stats.html, stats.js    how complete the catalog is: what lacks each value, and ids per external catalog (modules/catalog-stats.js counts)
   authors.html, narrators.html, publishers.html, credits.js    the lists of authors, narrators and publishers
                         (authors.js, narrators.js and publishers.js start credits.js with their kind)
   author.html, narrator.html, publisher.html, credit.js    one author's, narrator's or publisher's page: bio,

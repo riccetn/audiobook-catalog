@@ -5,7 +5,7 @@ read them for workflows and the data format. This file covers what you need to c
 
 ## What this is
 
-A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `import.html`, `duplicates.html`, `authors.html`,
+A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `import.html`, `duplicates.html`, `stats.html`, `authors.html`,
 `narrators.html`, `publishers.html`, `author.html`, `narrator.html`, `publisher.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
 no server code and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to write the pages and run the tests.
@@ -219,6 +219,11 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).
+- `stats.js` (`stats.html`, _Stats_; holds the whole catalog, changes nothing): how complete the catalog is, from `CatalogStats`
+  (`modules/catalog-stats.js`): `sections()` (per kind, `KINDS`, the entries lacking each value: an external id, editions, genres, date
+  read, an edition's ASIN, ISBN, narrators, publisher, release date, length, description, a series' total and status, a person's bio;
+  a box set's edition once) and `byCatalog()` (how many of each kind have an id in each `ExternalCatalog.GROUPS`). A line opens to
+  the first `LISTED` (100) entries, linked to their pages.
 - `proxy/`: the catalog proxy, a Cloudflare Worker (`worker.js`, `wrangler.toml`; `docs/catalog-proxy.md`) for the catalogs whose APIs send
   no CORS headers. Routes name a catalog (`CATALOGS`: `audiobookdb`, `audible/<site>` (only `catalog/...`), `bookbrainz`, `isfdb`), never an
   address (`upstreamUrl`); GET only, only `ALLOWED_ORIGINS`, only with the `PROXY_KEY` secret (`X-Proxy-Key`); no cookies or other headers either

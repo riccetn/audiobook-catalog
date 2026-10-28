@@ -31,6 +31,7 @@ const PAGES = [
 	'authors.html',
 	'narrators.html',
 	'publishers.html',
+	'stats.html',
 ];
 const ALL_PAGES = [...PAGES, 'book.html', 'author.html', 'narrator.html', 'publisher.html'];
 // someone's page shows the one its address names; without one it goes to the list
@@ -5444,4 +5445,40 @@ test("the authors list reads no book, and an author's page only their books", as
 	await idle();
 	assert.equal(bo.els.subtitle.textContent, '5 audiobooks in 1 series');
 	assert.equal(database.reads('books'), 5);
+});
+
+test('the stats page counts what the catalog lacks, and lists which ones', async () => {
+	const books = [
+		{
+			t: 'The Tidewright',
+			a: ['Ann Vale'],
+			s: 'Lantern Coast',
+			sn: '1',
+			g: ['Fantasy'],
+			r: ['2024-03-01'],
+			e: [{ext: {'audible.com': 'B0TIDEWRT1'}, n: ['Cy Hale'], p: 'Tern Press', d: '2020-05-01', len: 600}],
+		},
+		{t: 'Salt and Ember', a: ['Ann Vale'], s: 'Lantern Coast', sn: '2', e: [{isbn: '9780000000002'}]},
+	];
+	const files = {'books.json': JSON.stringify(books), 'authors.json': JSON.stringify({'Ann Vale': {bio: 'Writes.'}})};
+	const {els, get} = await boot({page: 'stats.html', files});
+	assert.equal(els.subtitle.textContent, '2 audiobooks, 2 editions');
+	const html = els.statsBody.innerHTML;
+	const second = get('CATALOG.books[1].id');
+	// one of two books has no genres, and the line lists it, linked to its page
+	const genres = els['stat-books-genres'].innerHTML;
+	assert.match(genres, /No genres<\/span><span class="statCount">1 \(50%\)/);
+	assert.ok(genres.includes(`href="book.html#book=${second}"`), genres);
+	// a value every one has is a line of its own that opens to nothing
+	assert.ok(
+		html.includes(
+			'<div class="statRow statDone"><span class="statLabel">No editions</span><span class="statCount">none</span></div>',
+		),
+		html,
+	);
+	assert.equal(els['stat-authors-bio'], undefined, 'the one author has a bio');
+	// the table counts Audible ids, a book by its editions'
+	const table = els.statCatalogs.innerHTML;
+	assert.match(table, /<th>Audible<\/th><td title="50%">1<\/td><td title="50%">1<\/td>/);
+	assert.doesNotMatch(table, /Goodreads/, 'a catalog nothing has an id in is left out');
 });
