@@ -20,6 +20,7 @@ import {Duplicates} from '../public/modules/duplicates.js';
 import {Backup, NewerBackup} from '../public/modules/backup.js';
 import {BackupV1} from '../public/modules/backup-v1.js';
 import {Catalog} from '../public/modules/catalog.js';
+import {CatalogStats} from '../public/modules/catalog-stats.js';
 import {Comparison} from '../public/modules/comparison.js';
 import {MultiComparison} from '../public/modules/multi-comparison.js';
 import {Csv} from '../public/modules/csv.js';
@@ -5984,4 +5985,52 @@ test("editions' titles: stored and backed up (version 3), searched, and exported
 	});
 	const out = new GoodreadsExporter().write([us]);
 	assert.match(out.text, /\n4242,The Keeper of Lanterns,Ann Vale,/);
+});
+
+// ------------------------------------------------------------------ stats
+test('stats: each value counts the books, editions, series and people without it', () => {
+	const shared = {ext: {'audible.com': 'B0LANTERN3'}, n: ['Cy Hale'], p: 'Tern Press'};
+	const catalog = Catalog.fromJSON({
+		books: [
+			{t: 'Lantern Coast 1-2', a: ['Ann Vale'], s: 'Lantern Coast', sn: '1-2', e: [shared]},
+			{t: 'The Tidewright', a: ['Ann Vale'], s: 'Lantern Coast', sn: '1', r: ['2024-03-01'], e: [shared]},
+			{t: 'Salt and Ember', a: ['Bo Reyes'], g: ['Fantasy'], ext: {goodreads: '42'}},
+		],
+		seriesInfo: {'Lantern Coast': {total: 3, ext: {hardcover: 'lantern-coast'}}},
+		authors: {'Bo Reyes': {bio: 'Writes.'}},
+	});
+	catalog.assignIds();
+	const stats = new CatalogStats(catalog);
+	const sections = Object.fromEntries(
+		stats
+			.sections()
+			.map(s => [s.kind, [s.total, Object.fromEntries(s.rows.map(r => [r.key, r.missing.map(x => x.name)]))]]),
+	);
+	assert.deepEqual(sections.books, [
+		3,
+		{
+			external: [],
+			editions: ['Salt and Ember'],
+			genres: ['Lantern Coast 1-2', 'The Tidewright'],
+			read: ['Lantern Coast 1-2', 'Salt and Ember'],
+		},
+	]);
+	// the box set's edition is counted once
+	assert.equal(sections.editions[0], 1);
+	assert.deepEqual(sections.editions[1].isbn, ['Lantern Coast 1-2']);
+	assert.deepEqual(sections.editions[1].asin, []);
+	assert.deepEqual(sections.series, [1, {external: [], total: [], status: ['Lantern Coast']}]);
+	// people without info lack everything
+	assert.deepEqual(sections.authors, [2, {external: ['Ann Vale', 'Bo Reyes'], bio: ['Ann Vale']}]);
+	assert.deepEqual(sections.narrators, [1, {external: ['Cy Hale'], bio: ['Cy Hale']}]);
+	// entries are known by the page they link to: a book's id for an edition
+	assert.equal(stats.sections()[1].rows[0].missing.length, 0);
+	assert.equal(stats.sections()[0].rows[1].missing[0].id, catalog.books[2].id);
+	assert.equal(stats.sections()[2].rows[2].missing[0].id, catalog.idFor('series', 'Lantern Coast'));
+
+	const counts = Object.fromEntries(stats.byCatalog().map(c => [c.group.key, c.counts]));
+	assert.deepEqual(counts.audible, {books: 2, editions: 1, series: 0, authors: 0, narrators: 0, publishers: 0});
+	assert.deepEqual(counts.goodreads, {books: 1, editions: 0, series: 0, authors: 0, narrators: 0, publishers: 0});
+	assert.equal(counts.hardcover.series, 1);
+	assert.equal(counts.wikidata.books, 0);
 });

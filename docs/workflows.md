@@ -173,6 +173,15 @@ Both marks are kept in the browser with the books they name, so they still hold 
 book; backups carry them by title and author (`notDuplicates`), so Restore and Merge bring them to
 another browser. Like the exclusion list, they are only ever added to.
 
+**See what is missing**: the _Stats_ page counts, for books, editions, series, authors, narrators and publishers,
+how many lack each value worth filling in, with its share of the whole: an id in any external catalog (a book's own or
+one of its editions'); a book's editions, genres and date read (a book without one has an unknown date, not an unread
+book); an edition's ASIN, ISBN, narrators, publisher, release date, length and description; a series' number of books
+and status; and a person's bio. Open a line to list the ones without it (the first 100), each linked to its page, where
+_Edit_ or _Fill in from another catalog_ adds what is missing. A box set's edition counts once. Below, _In external
+catalogs_ counts how many of each have an id in each catalog (every Audible or Amazon site together; a book counts its
+editions' ids too). The page only reads the catalog.
+
 **ISBNs**: both importers store the ISBN in the export (Audible Library Extractor's `ISBN10` and `ISBN13` columns,
 Goodreads' `ISBN` and `ISBN13`) on the edition they import. An edition has one ISBN: two different ISBNs are two
 editions, so a second one becomes an edition of its own. Edit them in the page under _Editions_
