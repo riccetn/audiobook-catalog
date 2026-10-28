@@ -15,7 +15,7 @@ import {Book} from '../public/modules/book.js';
 import {Exclusions} from '../public/modules/exclusions.js';
 import {Duplicates} from '../public/modules/duplicates.js';
 import {CatalogRecords} from '../public/modules/catalog-records.js';
-import {Catalog} from '../public/modules/catalog.js';
+import {Backup} from '../public/modules/backup.js';
 import {FakeIndexedDB, FakeKeyRange} from './fake-indexeddb.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -43,13 +43,17 @@ const DEMO_AUTHORS = readData('authors.json');
 const DEMO_NARRATORS = readData('narrators.json');
 const DEMO_PUBLISHERS = readData('publishers.json');
 
-// The module a page loads with <script type="module">, and the modules it imports, in load order.
+// The module a page loads with <script type="module">, and the modules it imports, in load order; with
+// `lazy`, also those it loads with import() when they are first used.
 const entryOf = page => [...read(page).matchAll(/<script type="module" src="([^"]+)">/g)].map(m => m[1]);
-function modulesOf(file, seen = new Set()) {
+function modulesOf(file, {lazy = false} = {}, seen = new Set()) {
 	seen.add(file);
-	for (const [, dep] of read(file).matchAll(/^import [^;]* from '(\.\.?\/[^']+)';$/gm)) {
+	const src = read(file);
+	const deps = [...src.matchAll(/^import [^;]* from '(\.\.?\/[^']+)';$/gm)];
+	if (lazy) deps.push(...src.matchAll(/\bimport\('(\.\.?\/[^']+)'\)/g));
+	for (const [, dep] of deps) {
 		const found = path.posix.join(path.posix.dirname(file), dep);
-		if (!seen.has(found)) modulesOf(found, seen);
+		if (!seen.has(found)) modulesOf(found, {lazy}, seen);
 	}
 	return [...seen];
 }
@@ -59,13 +63,31 @@ async function runModules(entry, context) {
 	if (!vm.SourceTextModule)
 		throw new Error('the smoke test needs node --experimental-vm-modules (make test passes it)');
 	const modules = new Map();
+	// a specifier is relative to the module that imports it (modules/book.js imports './edition.js')
+	const linker = (specifier, from) => load(path.posix.join(path.posix.dirname(from.identifier), specifier));
+	// what a module loads with import() when it needs it, as a browser does; one at a time, as two linking
+	// at once may share modules that are still being linked
+	let importing = Promise.resolve();
+	const importModuleDynamically = (specifier, from) => {
+		const module = linker(specifier, from);
+		const ready = importing.then(async () => {
+			if (module.status === 'unlinked') await module.link(linker);
+			if (module.status === 'linked') await module.evaluate();
+			return module;
+		});
+		importing = ready.catch(() => {});
+		return ready;
+	};
 	const load = file => {
-		if (!modules.has(file)) modules.set(file, new vm.SourceTextModule(read(file), {context, identifier: file}));
+		if (!modules.has(file))
+			modules.set(
+				file,
+				new vm.SourceTextModule(read(file), {context, identifier: file, importModuleDynamically}),
+			);
 		return modules.get(file);
 	};
 	const main = load(entry);
-	// a specifier is relative to the module that imports it (modules/book.js imports './edition.js')
-	await main.link((specifier, from) => load(path.posix.join(path.posix.dirname(from.identifier), specifier)));
+	await main.link(linker);
 	await main.evaluate();
 	return new Map([...modules].map(([file, m]) => [file, m.namespace]));
 }
@@ -633,12 +655,28 @@ const SALT_ROAD = JSON.parse(DEMO_BOOKS)[0].t;
 // The book cards in a list.
 const cards = html => (html.match(/class="book"/g) || []).length;
 
+const IMPORT_PAGE_ONLY = [
+	'modules/catalog-connectors.js',
+	'modules/catalog-lookup.js',
+	'modules/shelf-sync.js',
+	'modules/book-source.js',
+	'modules/file-importer.js',
+	'modules/backup.js',
+	'modules/backup-v1.js',
+	'modules/merger.js',
+	'modules/comparison.js',
+];
 for (const page of ALL_PAGES) {
 	const html = read(page);
 	assert.equal(entryOf(page).length, 1, `${page} loads one module`);
 	assert.ok(!/<script(?! type="module")/.test(html), `${page} loads no plain scripts`);
 	for (const shared of ['store.js', 'modules/catalog.js'])
 		assert.ok(modulesOf(entryOf(page)[0]).includes(shared), `${page} imports ${shared}`);
+	// what only Import & export needs (the catalogs' connectors, backups, imports and comparisons) no other page
+	// loads; the book form loads the lookup of other catalogs with import() when Fill in is used
+	if (page !== 'import.html')
+		for (const only of IMPORT_PAGE_ONLY)
+			assert.ok(!modulesOf(entryOf(page)[0]).includes(only), `${page} doesn't load ${only}`);
 	assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'), page);
 	for (const other of PAGES) assert.ok(html.includes(`href="${other}"`), `${page} links to ${other}`);
 	assert.doesNotMatch(html, /Catalog<\/a>/, `${page}: Series and Books in the nav bar instead`);
@@ -2598,7 +2636,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 		'exclusions',
 	]);
 	assert.equal(backup.version, 3);
-	const byName = JSON.parse(JSON.stringify(Catalog.fromJSON(backup)));
+	const byName = JSON.parse(JSON.stringify(Backup.toCatalog(backup)));
 	assert.deepEqual(withoutIds(byName), {
 		books: demoBooks,
 		seriesInfo: JSON.parse(DEMO_INFO),
@@ -3633,7 +3671,7 @@ test("the app can be installed: the manifest's icons exist, and the service work
 		assert.ok(html.includes('<link rel="manifest" href="manifest.webmanifest">'), page);
 		used.add(page);
 		for (const [, href] of html.matchAll(/<link [^>]*href="([^":]+)"/g)) used.add(href);
-		for (const file of modulesOf(entryOf(page)[0])) used.add(file);
+		for (const file of modulesOf(entryOf(page)[0], {lazy: true})) used.add(file);
 	}
 	for (const file of used) assert.ok(cached.includes(file), `sw.js caches ${file}`);
 	// public/ is what gets served, so it holds the app and nothing else (no catalog files, no notes).

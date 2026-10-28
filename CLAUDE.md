@@ -30,6 +30,10 @@ unknown variable or filter fails it). `make test` and `make serve` build first, 
 - Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` and the classes in `modules/`.
+- A page loads only the modules it needs. `store.js` and `Catalog` (which every page loads) import no connector, `Backup`, `Merger`
+  or `Validator`; what only Import & export uses stays there (the smoke test's `IMPORT_PAGE_ONLY` checks it), and what a page
+  needs only for one action is loaded with `import()` when used (the book form's _Fill in_, the Hardcover lookups, the old
+  localStorage catalog's move). `modules/` imports stay static.
 - Node 18+ for the tests (CI uses 24).
 
 ## Commands
@@ -74,10 +78,11 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     `marks` ("Not duplicates" and "Keep separate", by id: `markNotDuplicates`, `markKeepSeparate`, `markTexts`/`addMarkTexts`, `resolveMarks`),
     `nameIds` (the ids series and people are known by, by name, each an entry of its own: `idFor` (gives a new name one), `nameOf`, `namesOf`, `booksOf`, `removeEntry`/`removeProblem`, `seriesInfo`,
     `infoByName`/`replaceInfo` for the name-keyed backup shape; `renameEntry` renames a series or person on every book and keeps their id), `assignIds` (before every save);
-    `fromJSON`/`fromBackup`/`toJSON`/`clone`/`replaceWith`, `validate`, `book(id)`, `saveBook(id, book)`, `merge` (an import), `addBoxSets`,
+    `fromBackup`/`toJSON`/`clone`/`replaceWith`, `book(id)`, `saveBook(id, book)`,
     `duplicates()`, `addExclusions`, `renameEntry`, `seriesBooks`, `works(kind, name)` (an
-    author's, narrator's or publisher's books, by `namesOn`: `authorsOf`/`narratorsOf`/`publishersOf`), and `bookErrors` (`validate`'s errors but the
-    series info's, which stop an import, a merge or the box sets).
+    author's, narrator's or publisher's books, by `namesOn`: `authorsOf`/`narratorsOf`/`publishersOf`). It is the data alone: reading a backup into one is
+    `Backup.toCatalog`, an import `Merger.into(catalog, books, opts)` (box sets `Merger.boxSets`), and the Check `Validator.check(catalog)` (`Validator.bookErrors`:
+    its errors but the series info's, which stop an import, a merge or the box sets), so pages that only show the catalog don't load them.
   - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`, `static storedEditions` (a stored book's editions that are objects),
     `lookupKeys`, `alternativeTitles(shared)` (its editions' own titles; a box set's edition's, which `shared` (`sharedEditionTest`) tells, only on the set's own book), `hasTitle`/`static sameTitle`/`titleForms` (a title's short forms: Audible's series part, "Book 2", a subtitle but "Books 1-3"), `useTitle` (an edition's title made the book's, the old one going to the others; `keys`, `lookupKeys` and `exclusionEntries` take `shared` too), `static bySeriesNumber`/`merge`, `tidyJSON` (tidy text, one edition per ISBN), `sortEditions` (by release date, earliest first, undated last; `Catalog.assignIds` runs it on every load and before every save) and `fixSeriesTitle` (imports' titles with the series in them).
   - `Edition` (`id title external isbn narrators publisher released minutes description`; `title` only when it was released under another title than the book's): `idOn`/`ids`/`idKeys`/`idAndIsbnKeys` (its ids and "isbn 978…", what finds it and its box set's copies), `sameAs`/`conflictsWith`/`fillFrom`,
@@ -103,7 +108,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     the browser's `indexedDB` is passed in). `MemoryReader` answers a `CatalogReader`'s questions from records in memory.
   - The external catalogs, which the pages and `CatalogLookup` reach only through four base classes and the lists of them in
     `CatalogConnectors` (`IMPORTERS`, `EXPORTERS`, `SYNCS`, their `CLIENTS`, `SOURCES`, in the order they are asked), so a catalog is added by writing a class per
-    role and listing it there (`docs/development.md`, _External catalogs_); a class says what it is in statics (`CATALOG`, its ExternalCatalog key and its
+    role and listing it there (`docs/development.md`, _External catalogs_; a shelf sync also goes in `CompareCatalogs.ALL`, the series and author pages' Compare
+    buttons as plain data, so they don't load the syncs: `of(kind)`; a test keeps it the same as `SYNCS`); a class says what it is in statics (`CATALOG`, its ExternalCatalog key and its
     panel's prefix on Import & export; `LABEL`), and the pages read them, never a catalog's name:
     - `FileImporter` (reads an export file a row at a time into books, `readRow`; `EDITIONS_YOURS`; `EDITION_TITLES` (its titles are its editions', so Compare offers "Released as": `MergeOptions.editionTitles`, also set by `AudibleSync`); a site picked by the panel's `<CATALOG>ImportSite`) with
       `AudibleImporter` and `GoodreadsImporter`; `FileExporter` (`write` gives `{text, books, notes}`; `FORMAT`, `FILE_NAME`, `TYPE`) with `GoodreadsExporter`.
@@ -154,7 +160,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   `wholeCatalog()` (or `startPage`'s `{whole: true}`, the Duplicates page) holds every record from then on (`WHOLE`); `afterSaving(task)`
   runs a read once the saves are done, and `whenSaved` waits for those reads too. Reading all of it (`CatalogDatabase`, `CatalogRecords.toCatalog`); with none
   it starts **empty**, never with the demo data; one that can't be read is set aside (meta `unreadable`); when nothing was saved
-  yet, the catalog localStorage kept (`audiobook-catalog-device`, backup-shaped, plus `audiobook-catalog-not-duplicates`) is read through `Catalog.fromJSON`, saved, and its keys renamed `….moved-to-indexeddb`;
+  yet, the catalog localStorage kept (`audiobook-catalog-device`, backup-shaped, plus `audiobook-catalog-not-duplicates`) is read through `Backup.toCatalog` (loaded with `import()` only then), saved, and its keys renamed `….moved-to-indexeddb`;
   without IndexedDB the page shows that catalog and saves nothing),
   `persist` (async, queued; writes only the records that changed, with the ids `fromCatalog` gives; when another tab saved
   since this page last read or wrote (`SEEN_REVISION`), first takes in what it changed (`catchUp`: `CatalogRecords.merge`, then
@@ -165,7 +171,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   `ExternalCatalog` group; `externalFieldToId` turns a pasted address into its id, or moves it to its catalog's field, on focusout) and `externalLinks`, the page links
   (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), your key for each catalog (Hardcover's token, localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; AudiobookDB's API key, `audiobook-catalog-audiobookdb-key`, sent only through the proxy, with the requests that need it): `savedKey(Client)`,
-  `saveKey(Client, key)`, `catalogClient(Client, key)` (asking directly, or through the proxy for `VIA_PROXY`), `keyedClients()`, the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
+  `saveKey(Client, key)`, `catalogClient(Client, key)` (asking directly, or through the proxy for `VIA_PROXY`), `keyedClients(Clients)`, the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
   `proxyAddress` (https, or http on this computer), `fetchViaProxy(route, proxy, {key, body})` with the `X-Proxy-Key` header (and `X-Catalog-Key` for a catalog key, a POST for a body); set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the run banner of a catalog's shelves (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onCatalogJob`;
   the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
@@ -195,7 +201,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
 - `books.js` (`books.html`, _Books_): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
 - `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`; `bookDetails`, with the other books of its box set
   loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
-  and the book form (`openEditForm`; Remove book is in it; _Fill in from another catalog_, `fillFromCatalog`, fills its empty fields), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
+  and the book form (`openEditForm`; Remove book is in it; _Fill in from another catalog_, `fillFromCatalog`, fills its empty fields; it loads `CatalogLookup` and `CatalogConnectors` with `import()`), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
@@ -204,7 +210,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   `scopeOf`/`showScope` by the panel's prefix; _All catalogs_ (`allPanel`, prefix `all`, `ALL_CATALOGS` in a `CompareRequest`): `compareAll` runs every sync whose `PARTS` has the kind
   and can be asked (`cantAsk`) in turn, `drawMulti`/`applyMulti` with `PENDING_MULTI` (radio choices, nothing picked at first, nothing sent)), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
   `picks`; `drawCompare`, `shelfSections`; Apply runs `Comparison.apply` on a copy, then for a shelf sync saves and `push`es the ticked part of the plan, `applyShelfSync`),
-  file exports (`exportFile`), Check (`CATALOG.validate`) and Box sets (`addBoxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
+  file exports (`exportFile`), Check (`Validator.check`) and Box sets (`Merger.boxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
   (`infoKey`, `hashKey`, `list`, `page`, labels, `href`).
