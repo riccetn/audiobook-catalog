@@ -3,21 +3,18 @@
 // under: a book by Book.id, a series or person by their id in nameIds (the books name them, so a name leads
 // to its id), and their info and the marks by those ids. toJSON() writes it by name, as a version 1 backup has it
 // ({books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}), which the Check reads, and
-// fromJSON() reads a backup of any version; Export writes version 2, the stored records (Backup.write).
+// Backup.toCatalog() reads a backup of any version; Export writes version 3, the stored records (Backup.write).
+// Reading backups, imports (Merger) and the Check (Validator) live in their own modules, so a page that only
+// shows the catalog doesn't load them.
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 import {Edition} from './edition.js';
 import {Exclusions} from './exclusions.js';
-import {Validator} from './validator.js';
-import {Merger} from './merger.js';
 import {Duplicates} from './duplicates.js';
-import {Backup} from './backup.js';
 import {Text} from './text.js';
-/** @import {Unchecked} from './text.js' */
-/** @import {Problems} from './validator.js' */
-/** @import {MergeReport, MergeOptions} from './merger.js' */
 /** @import {ContributorKind} from './contributor.js' */
+/** @import {Backup} from './backup.js' */
 /** @import {Mark} from './duplicates.js' */
 
 /** @typedef {'series' | ContributorKind} NamedKind what is known by its name on the books: a series, or an author, narrator or publisher */
@@ -96,16 +93,6 @@ export class Catalog {
 	/** @returns {NameIds} no ids yet */
 	static emptyNameIds() {
 		return {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()};
-	}
-
-	/**
-	 * A catalog from the way it is stored, or a backup (Backup.read() says what it takes). Throws when it is
-	 * not a catalog.
-	 * @param {Unchecked} data
-	 * @returns {Catalog}
-	 */
-	static fromJSON(data) {
-		return Catalog.fromBackup(Backup.read(data));
 	}
 
 	/**
@@ -351,35 +338,6 @@ export class Catalog {
 		for (const [name, entry] of byName) info.set(this.idFor(kind, name), entry);
 	}
 
-	// ------------------------------------------------------------------ the Check
-	/**
-	 * What is wrong with the books and series info (Validator.validate), and with the author, narrator and
-	 * publisher info when `contributors` (Validator.validateContributors).
-	 * @param {{contributors?: boolean}} [opts]
-	 * @returns {Problems}
-	 */
-	validate({contributors = false} = {}) {
-		const json = JSON.parse(JSON.stringify(this));
-		const problems = Validator.validate(json.books, json.seriesInfo);
-		if (contributors) {
-			for (const kind of Contributor.KINDS) {
-				const found = Validator.validateContributors(json.books, kind, json[kind]);
-				problems.errors.push(...found.errors);
-				problems.warnings.push(...found.warnings);
-			}
-		}
-		return problems;
-	}
-
-	/**
-	 * validate()'s errors about the books, which stop an import, a merge or the box sets; one about series
-	 * info is not their doing (a series renamed in the page).
-	 * @returns {string[]}
-	 */
-	bookErrors() {
-		return this.validate().errors.filter(e => !e.startsWith('series-info'));
-	}
-
 	// ------------------------------------------------------------------ books
 	/**
 	 * Save `book` in place of the book stored under `id` (or add it, when `id` is null; it gets an id of its
@@ -431,24 +389,6 @@ export class Catalog {
 	 */
 	book(id) {
 		return id === null || id === undefined ? undefined : this.books.find(b => b.id === id);
-	}
-
-	/**
-	 * Add books the way imports do (see Merger.merge), never adding one the exclusions list covers.
-	 * @param {Book[]} incoming
-	 * @param {MergeOptions} [opts]
-	 * @returns {MergeReport}
-	 */
-	merge(incoming, opts) {
-		return new Merger(this.books, this.exclusions, opts).merge(incoming);
-	}
-
-	/**
-	 * Keep each box set both as its own book and as its titles (see Merger.boxSets).
-	 * @returns {MergeReport}
-	 */
-	addBoxSets() {
-		return Merger.boxSets(this.books, this.exclusions);
 	}
 
 	/** @returns {Duplicates} the duplicates among the books, but for those marked "Not duplicates" */

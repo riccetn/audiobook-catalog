@@ -82,6 +82,9 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
   client has no `KEY_STORAGE` (so `CatalogConnectors.CLIENTS` leaves it out), `PARTS` says it compares only
   series (the pages link only those to it), and its Compare row in the Audible panel is
   `{% render 'shelf-compare', ..., every: false %}`.
+- a shelf sync listed in `SYNCS` also goes in `CompareCatalogs.ALL` (`compare-catalogs.js`: its `CATALOG`, `LABEL` and
+  `PARTS` as plain data), which the series and author pages' Compare buttons read, so those pages don't load the
+  syncs; a test fails when the two lists differ.
 - a shelf sync listed in `SYNCS` is also asked by _Compare with all catalogs_ for each kind in its `PARTS` (`MultiComparison`), with nothing more
   to write.
 

@@ -6,6 +6,7 @@ import {Book} from './book.js';
 import {Series} from './series.js';
 import {Exclusions} from './exclusions.js';
 import {ExternalCatalog} from './external-catalog.js';
+/** @import {Catalog} from './catalog.js' */
 
 /**
  * What merge() did: the books (as added, or the existing book) on each list.
@@ -74,6 +75,17 @@ export class Merger {
 		this.books = books;
 		this.exclusions = exclusions || new Exclusions();
 		this.opts = opts || {};
+	}
+
+	/**
+	 * Add books to a catalog the way imports do (merge()), never adding one its exclusions list covers.
+	 * @param {Catalog} catalog
+	 * @param {Book[]} incoming
+	 * @param {MergeOptions} [opts]
+	 * @returns {MergeReport}
+	 */
+	static into(catalog, incoming, opts) {
+		return new Merger(catalog.books, catalog.exclusions, opts).merge(incoming);
 	}
 
 	/**

@@ -11,6 +11,7 @@ import {Contributor} from './contributor.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Cover} from './cover.js';
 /** @import {Unchecked} from './text.js' */
+/** @import {Catalog} from './catalog.js' */
 
 /** @typedef {{errors: string[], warnings: string[]}} Problems what the Check found */
 
@@ -28,6 +29,36 @@ const nameList = v => Array.isArray(v) && v.length > 0 && v.every(x => typeof x 
 
 /** Checks a stored catalog; every method is static. */
 export class Validator {
+	/**
+	 * What is wrong with a catalog's books and series info (validate()), and with its author, narrator and
+	 * publisher info when `contributors` (validateContributors()): the Check.
+	 * @param {Catalog} catalog
+	 * @param {{contributors?: boolean}} [opts]
+	 * @returns {Problems}
+	 */
+	static check(catalog, {contributors = false} = {}) {
+		const json = JSON.parse(JSON.stringify(catalog));
+		const problems = Validator.validate(json.books, json.seriesInfo);
+		if (contributors) {
+			for (const kind of Contributor.KINDS) {
+				const found = Validator.validateContributors(json.books, kind, json[kind]);
+				problems.errors.push(...found.errors);
+				problems.warnings.push(...found.warnings);
+			}
+		}
+		return problems;
+	}
+
+	/**
+	 * check()'s errors about the books, which stop an import, a merge or the box sets; one about series
+	 * info is not their doing (a series renamed in the page).
+	 * @param {Catalog} catalog
+	 * @returns {string[]}
+	 */
+	static bookErrors(catalog) {
+		return Validator.check(catalog).errors.filter(e => !e.startsWith('series-info'));
+	}
+
 	/**
 	 * Check stored books and their series info. Returns {errors, warnings}: errors block imports; warnings are worth a look.
 	 * @param {unknown} books

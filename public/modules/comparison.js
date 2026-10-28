@@ -6,6 +6,7 @@ import {Text} from './text.js';
 import {Series} from './series.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Book} from './book.js';
+import {Merger} from './merger.js';
 /** @import {Catalog} from './catalog.js' */
 /** @import {Edition} from './edition.js' */
 /** @import {MergeOptions, MergeReport} from './merger.js' */
@@ -100,7 +101,7 @@ export class Comparison {
 	 */
 	static compare(catalog, incoming, opts) {
 		const merged = catalog.clone();
-		const report = merged.merge(incoming, opts);
+		const report = Merger.into(merged, incoming, opts);
 		const mine = catalog.books,
 			count = mine.length;
 		/** @type {Map<Book, number>} */
@@ -333,7 +334,8 @@ export class Comparison {
 		const renames = Comparison.seriesRenames(catalog, compared);
 		const editions = picks.editions;
 		const withEditions = editions ? (/** @type {Book} */ b) => editions.has(incoming.indexOf(b)) : undefined;
-		const report = catalog.merge(
+		const report = Merger.into(
+			catalog,
 			incoming.filter((b, i) => picks.take.has(i)),
 			{...opts, withEditions},
 		);

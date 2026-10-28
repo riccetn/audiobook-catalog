@@ -9,7 +9,6 @@ import {Validator} from './modules/validator.js';
 import {HardcoverClient} from './modules/hardcover-client.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
-import {CatalogLookup} from './modules/catalog-lookup.js';
 import {
 	CATALOG,
 	STATUS_TIME,
@@ -1179,7 +1178,8 @@ byId('f_hcb').addEventListener('change', () => {
 fillElement(byId('f_bookExt'), externalFields('f_ext_', 'book', ['hardcover']));
 
 // Fill in from another catalog: the book a pasted address, id or ISBN names, looked up in the catalogs a page
-// may read (catalog-lookup.js), fills in the form's empty fields only, so nothing typed is lost.
+// may read (catalog-lookup.js), fills in the form's empty fields only, so nothing typed is lost. The lookup and
+// the catalogs it asks are loaded only when it is used.
 /** @type {string | null} */
 let FILLING = null; // what is being looked up, so pressing again doesn't ask twice
 export async function fillFromCatalog() {
@@ -1190,10 +1190,14 @@ export async function fillFromCatalog() {
 	const editing = EDIT_ID;
 	showIoStatus('Looking it up…');
 	try {
+		const [{CatalogLookup}, {CatalogConnectors}] = await Promise.all([
+			import('./modules/catalog-lookup.js'),
+			import('./modules/catalog-connectors.js'),
+		]);
 		const proxy = browserProxy();
 		const found = await new CatalogLookup(
 			url => fetch(url),
-			keyedClients(),
+			keyedClients(CatalogConnectors.CLIENTS),
 			proxy ? route => fetchViaProxy(route, proxy) : null,
 		).find(text, Text.splitNames(fieldById('f_a').value));
 		// the form was closed, or moved to another book, meanwhile
