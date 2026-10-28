@@ -6,7 +6,7 @@ PRETTIER ?= node_modules/.bin/prettier
 TYPEDOC ?= api-docs/node_modules/.bin/typedoc
 API_DOCS ?= api-docs/out
 
-.PHONY: help check pages test typecheck lint format format-check docs serve
+.PHONY: help check pages test typecheck lint format format-check docs serve deploy-proxy
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
@@ -43,3 +43,6 @@ docs:            ## write the API documentation from the code's JSDoc into api-d
 
 serve: pages     ## open the app at http://localhost:8000/ (serves public/; any static server works, but the pages are ES modules, so not from a file)
 	python3 -m http.server $(PORT) --bind 127.0.0.1 --directory public
+
+deploy-proxy:    ## deploy the catalog proxy to Cloudflare with its sync database (proxy/deploy.mjs; npx wrangler login once first)
+	$(NODE) proxy/deploy.mjs

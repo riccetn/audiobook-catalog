@@ -4,6 +4,8 @@
 // can pass a fake one.
 import {CatalogRecords} from './catalog-records.js';
 import {Contributor} from './contributor.js';
+/** @import {BackupJSON} from './backup.js' */
+/** @typedef {{revision: number, copy: string, backup: BackupJSON, at: string}} SyncBase the synced copy this browser last read or sent (`copy` names it, see CatalogSync.seal) */
 /** @import {RecordSet, StoreName, Changes} from './catalog-records.js' */
 
 /** What a save finds when another tab saved since this page last read or wrote the catalog. */
@@ -754,6 +756,30 @@ export class CatalogDatabase {
 		const meta = tx.objectStore('meta');
 		const rec = await requested(meta.get('revision'));
 		if (rec && rec.value === revision) meta.put({key: 'duplicates', value: count, revision});
+		await done;
+	}
+
+	/**
+	 * What this browser last synced with the other devices (CatalogSync): the synced copy's revision, the backup
+	 * that copy was, and when; null before the first sync.
+	 * @returns {Promise<SyncBase | null>}
+	 */
+	async syncBase() {
+		const tx = this.db.transaction('meta', 'readonly');
+		const rec = await requested(tx.objectStore('meta').get('sync'));
+		return rec ? rec.value : null;
+	}
+
+	/**
+	 * Keep what this browser synced last (see syncBase()); null forgets it.
+	 * @param {SyncBase | null} base
+	 * @returns {Promise<void>}
+	 */
+	async keepSyncBase(base) {
+		const tx = this.db.transaction('meta', 'readwrite');
+		const done = committed(tx);
+		if (base) tx.objectStore('meta').put({key: 'sync', value: base});
+		else tx.objectStore('meta').delete('sync');
 		await done;
 	}
 

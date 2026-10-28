@@ -47,12 +47,13 @@ make format     # prettier --write . (.prettierrc.json, .prettierignore); needs 
 make format-check  # prettier --check ., what make check runs
 make check      # test, typecheck, lint and format-check, what CI runs; run it before a PR
 make docs       # TypeDoc: the API documentation from the JSDoc, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
+make deploy-proxy  # node proxy/deploy.mjs: deploy the catalog proxy with its sync D1 database, found by name; the id only in the git-ignored proxy/wrangler.deploy.toml
 make serve      # make pages, then python3 -m http.server --directory public on http://127.0.0.1:8000/ (the pages are ES modules, so not from file://)
 node --test tests/catalog.test.mjs            # one suite (the smoke test reads the pages, so make pages after editing a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve`, `deploy-proxy`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
@@ -100,6 +101,10 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     `fixEditions`, `fixBookIds`, `fixEditionIds`, `fixPeople`/`fixNames`). Nothing else imports it: dropping version 1 is deleting `backup-v1.js` and that one line in `Backup.read`.
     Keep anything only the old format needs there, not in `Backup`, `Book`, `Edition` or `Text`. (`Contributor.fixLinks` and `Series.moveSites` stay
     where they are: IndexedDB's older records need them too.)
+  - `CatalogSync` (syncing devices through the catalog proxy's `/sync`: `keyFor` (PBKDF2 from the passphrase), `seal`/`open` (a version 3 backup, gzipped
+    (`squeeze`) and encrypted with AES-GCM, with a `copy` id; `WrongPassphrase`), `combine(base, mine, theirs, prefer)` (`CatalogRecords.merge` of the backups'
+    records (`Backup.records`) against the copy this device last synced; `prefer` `mine`/`theirs` settles conflicts, `replace` takes the synced copy (but keeps the exclusions);
+    `UnrelatedCatalogs` when the two name a series or person under other ids, `Backup.checkNames`)).
   - `CatalogRecords` (the catalog as IndexedDB records and back: `STORES` with their indexes, `fromCatalog`/`toCatalog`,
     `unstorable`, `snapshot`/`changes` for saving only what changed, `merge` (`DERIVED`) for taking in another tab's save; `bookRecord`/`seriesRecord`/`contributorRecord`/`creditsOf`, which a save
     also uses from inside its transaction) and `CatalogDatabase` (`open`, `load`, `read(fn)` with a `CatalogReader` (`get`, `all`, `under`,
@@ -171,7 +176,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   `ExternalCatalog` group; `externalFieldToId` turns a pasted address into its id, or moves it to its catalog's field, on focusout) and `externalLinks`, the page links
   (`pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`), your key for each catalog (Hardcover's token, localStorage `audiobook-catalog-hardcover-token`, only ever sent to
   Hardcover; AudiobookDB's API key, `audiobook-catalog-audiobookdb-key`, sent only through the proxy, with the requests that need it): `savedKey(Client)`,
-  `saveKey(Client, key)`, `catalogClient(Client, key)` (asking directly, or through the proxy for `VIA_PROXY`), `keyedClients(Clients)`, the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
+  `saveKey(Client, key)`, the sync (`syncCatalog(prefer)`: reads the proxy's copy, `CatalogSync.combine` with what this browser last synced (`CatalogDatabase.syncBase`, meta `sync`), saves, then sends the next copy over the revision read, again on a 409;
+  passphrase in localStorage `audiobook-catalog-sync-passphrase`, `savedPassphrase`, `lastSync`), `catalogClient(Client, key)` (asking directly, or through the proxy for `VIA_PROXY`), `keyedClients(Clients)`, the catalog proxy (localStorage `audiobook-catalog-proxy`, `{url, key}`: `browserProxy`,
   `proxyAddress` (https, or http on this computer), `fetchViaProxy(route, proxy, {key, body})` with the `X-Proxy-Key` header (and `X-Catalog-Key` for a catalog key, a POST for a body); set on Import & export, `showProxy`/`saveProxy`/`checkProxy`, which asks `ping`), `lookupHardcoverBook`, `lookupHardcoverField` (a series' or person's Hardcover number from the name in its address; the name is kept when Hardcover can't be asked) and the run banner of a catalog's shelves (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onCatalogJob`;
   the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
@@ -210,7 +216,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   `scopeOf`/`showScope` by the panel's prefix; _All catalogs_ (`allPanel`, prefix `all`, `ALL_CATALOGS` in a `CompareRequest`): `compareAll` runs every sync whose `PARTS` has the kind
   and can be asked (`cantAsk`) in turn, `drawMulti`/`applyMulti` with `PENDING_MULTI` (radio choices, nothing picked at first, nothing sent)), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
   `picks`; `drawCompare`, `shelfSections`; Apply runs `Comparison.apply` on a copy, then for a shelf sync saves and `push`es the ticked part of the plan, `applyShelfSync`),
-  file exports (`exportFile`), Check (`Validator.check`) and Box sets (`Merger.boxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups.
+  file exports (`exportFile`), Check (`Validator.check`) and Box sets (`Merger.boxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups,
+  and _Sync between devices_ (`runSync(prefer)`, `showSync`, `saveSyncPassphrase`, `showSyncChoice` for what both changed or a catalog made apart).
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
   (`infoKey`, `hashKey`, `list`, `page`, labels, `href`).
@@ -233,13 +240,14 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
 - `proxy/`: the catalog proxy, a Cloudflare Worker (`worker.js`, `wrangler.toml`; `docs/catalog-proxy.md`) for the catalogs whose APIs send
   no CORS headers. Routes name a catalog (`CATALOGS`: `audiobookdb`, `audible/<site>` (only `catalog/...`), `bookbrainz`, `isfdb`), never an
   address (`upstreamUrl`); GET only, only `ALLOWED_ORIGINS`, only with the `PROXY_KEY` secret (`X-Proxy-Key`); no cookies or other headers either
-  way; answers found cached a day; `/ping`. A route's `keyed` paths (AudiobookDB's `auth/session`, your shelves, and POST of a book to a shelf, `keyedPath`) take your
+  way; answers found cached a day; `/ping`; `/sync` (`handleSync`), the one copy of the catalog the pages sync, encrypted by them, in a D1 database bound as `SYNC_DB` (`SYNC_SQL`: one row, replaced only over the
+  revision the page read, else 409; at most `MAX_SYNC`; 501 without the binding). A route's `keyed` paths (AudiobookDB's `auth/session`, your shelves, and POST of a book to a shelf, `keyedPath`) take your
   account key from `X-Catalog-Key` (`CATALOG_KEY_HEADER`) as the route's `keyHeader`, are never cached, and are the only POSTs; the key sent elsewhere is refused (400), never stored. `handle(request, env, deps)` takes the fetch and cache so the tests run it in Node. Hardcover never goes
   through it. Type checked with the pages (`jsconfig.json`), linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
 - `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
   - `service-worker.test.mjs`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-app.js`'s files and hash.
-  - `proxy.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses).
+  - `proxy.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses), and its sync with `fakeD1` (`tests/fake-d1.mjs`, knowing only `SYNC_SQL`).
   - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
     what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws), a fake localStorage (`boot`'s `files`

@@ -12,6 +12,7 @@ import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {Comparison} from './modules/comparison.js';
 import {MultiComparison} from './modules/multi-comparison.js';
+import {WrongPassphrase, UnrelatedCatalogs} from './modules/catalog-sync.js';
 import {Merger} from './modules/merger.js';
 import {Validator} from './modules/validator.js';
 import {
@@ -27,6 +28,10 @@ import {
 	browserProxy,
 	proxyAddress,
 	fetchViaProxy,
+	SYNC_STORAGE_KEY,
+	savedPassphrase,
+	lastSync,
+	syncCatalog,
 	savedKey,
 	saveKey,
 	catalogClient,
@@ -59,6 +64,7 @@ import {
 /** @import {ComparisonResult, ComparedBook, Difference, SeriesRename} from './modules/comparison.js' */
 /** @import {Step} from './modules/catalog-client.js' */
 /** @import {MultiResult, MultiPicks} from './modules/multi-comparison.js' */
+/** @import {SyncPrefer} from './modules/catalog-sync.js' */
 
 /** @typedef {CatalogJob['mode']} CatalogMode */
 /** @typedef {typeof FileImporter} ImporterClass */
@@ -1248,6 +1254,109 @@ async function checkProxy(saved) {
 	}
 }
 
+// ------------------------------------------------------------ syncing devices
+// The passphrase is kept in this browser only, like the proxy; syncing itself is syncCatalog() in store.js.
+async function showSync() {
+	const saved = Boolean(savedPassphrase());
+	byId('syncPassphraseState').textContent = saved
+		? 'A passphrase is saved in this browser only (never in a backup).'
+		: 'Save the passphrase your devices sync with; the first device to sync sets it.';
+	byId('syncPassphraseRemove').style.display = saved ? '' : 'none';
+	const last = await lastSync();
+	byId('syncState').textContent = last
+		? `Last synced ${new Date(last.at).toLocaleString()}.`
+		: spell('Not synced from this browser yet.');
+}
+
+/**
+ * Save the passphrase typed in the page in this browser, or `remove` the saved one.
+ * @param {boolean} remove
+ */
+function saveSyncPassphrase(remove) {
+	const field = fieldById('syncPassphrase');
+	if (!remove && !field.value) {
+		showIoStatus('Type the sync passphrase first.', true);
+		return;
+	}
+	try {
+		if (remove) localStorage.removeItem(SYNC_STORAGE_KEY);
+		else localStorage.setItem(SYNC_STORAGE_KEY, field.value);
+		field.value = '';
+	} catch {
+		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the passphrase: this browser refused to store it.`, true);
+		return;
+	}
+	showSync();
+	showIoStatus(remove ? 'Sync passphrase removed.' : 'Sync passphrase saved.');
+}
+
+/**
+ * Show the choice a sync waits on (`which` buttons, after `text`), or hide it.
+ * @param {string} text
+ * @param {('syncKeepMine' | 'syncKeepTheirs' | 'syncReplace')[]} which
+ */
+function showSyncChoice(text, which) {
+	byId('syncChoice').style.display = which.length ? '' : 'none';
+	byId('syncChoiceText').textContent = text;
+	for (const id of /** @type {const} */ (['syncKeepMine', 'syncKeepTheirs', 'syncReplace']))
+		byId(id).style.display = which.includes(id) ? '' : 'none';
+}
+
+/**
+ * Sync with the other devices, keeping `prefer`'s version of what both changed when it is given.
+ * @param {SyncPrefer} [prefer]
+ */
+async function runSync(prefer) {
+	showSyncChoice('', []);
+	if (!browserProxy()) {
+		showIoStatus('Syncing goes through your catalog proxy: save one first (above).', true);
+		return;
+	}
+	const button = /** @type {HTMLButtonElement} */ (byId('syncBtn'));
+	button.disabled = true;
+	showIoStatus('Syncing…');
+	try {
+		const {taken, sent, conflicts} = await syncCatalog(prefer);
+		if (conflicts.length && !prefer) {
+			showIoStatus('Not synced: another device changed these too.', true);
+			showSyncChoice(`Changed on this device and another: ${Text.firstThree(conflicts)}. Keep which?`, [
+				'syncKeepMine',
+				'syncKeepTheirs',
+			]);
+		} else {
+			const parts = [
+				taken
+					? `${Text.plural(taken, 'change')} taken in from your other devices`
+					: 'nothing new from your other devices',
+				sent ? "this device's catalog sent" : 'nothing to send',
+			];
+			showIoStatus(`Synced: ${parts.join('; ')}.`);
+		}
+	} catch (e) {
+		if (e instanceof UnrelatedCatalogs) {
+			showIoStatus('Not synced: this catalog and the synced one were not made from the same catalog.', true);
+			showSyncChoice(
+				spell(
+					`Both have ${e.message.replace(/^two \S+ are named /, '')} under other ids. Use the synced catalog here (this one is replaced; Export a backup first), or see the docs to join them.`,
+				),
+				['syncReplace'],
+			);
+		} else
+			showIoStatus(
+				e instanceof WrongPassphrase
+					? `Not synced: ${e.message}. Use the passphrase your other devices sync with.`
+					: e instanceof NewerBackup
+						? 'Not synced: a newer version of the app synced last. Reload the page to update it, then sync again.'
+						: `Not synced: ${Text.errorText(e)}.`,
+				true,
+			);
+	} finally {
+		button.disabled = false;
+		refreshPage();
+		showSync();
+	}
+}
+
 /**
  * Run `task` with a catalog's shelves (`catalog`, its name), shown in the banner on top while it goes (as a `mode`
  * job), handing it the step it reports its progress through. Resolves to what it gave or threw and how long it
@@ -1974,6 +2083,12 @@ byId('proxySave').addEventListener('click', () => saveProxy(false));
 byId('proxyCheck').addEventListener('click', () => checkProxy());
 byId('proxyRemove').addEventListener('click', () => saveProxy(true));
 byId('importCancel').addEventListener('click', closeImportPreview);
+byId('syncPassphraseSave').addEventListener('click', () => saveSyncPassphrase(false));
+byId('syncPassphraseRemove').addEventListener('click', () => saveSyncPassphrase(true));
+byId('syncBtn').addEventListener('click', () => runSync());
+byId('syncKeepMine').addEventListener('click', () => runSync('mine'));
+byId('syncKeepTheirs').addEventListener('click', () => runSync('theirs'));
+byId('syncReplace').addEventListener('click', () => runSync('replace'));
 
 byId('checkBtn').addEventListener('click', () => withWholeCatalog(checkCatalog));
 byId('boxSetsBtn').addEventListener('click', () => withWholeCatalog(previewBoxSets));
@@ -1993,6 +2108,8 @@ export const READY = startPage(
 		for (const Sync of CatalogConnectors.SYNCS) showScope(Sync.CLIENT.CATALOG);
 		showScope('all');
 		showProxy();
+		showSyncChoice('', []);
+		showSync();
 		compareFromAddress();
 	},
 	{refresh: refreshPage, onCatalogJob},

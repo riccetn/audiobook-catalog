@@ -10,3 +10,7 @@ workers_dev = true
 ALLOWED_ORIGINS = "https://riccetn.github.io, http://127.0.0.1:8000, http://localhost:8000"
 
 # PROXY_KEY is a secret, never written here (the repo is public): npx wrangler secret put PROXY_KEY
+
+# Syncing the catalog between devices (optional; docs/catalog-proxy.md, "Syncing devices") needs a D1 database bound
+# as SYNC_DB. Its id is not written here: make deploy-proxy (deploy.mjs) finds it by name, makes it the first time,
+# and deploys this file with the binding added, from the git-ignored wrangler.deploy.toml.

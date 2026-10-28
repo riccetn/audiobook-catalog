@@ -13,3 +13,7 @@ public/sw-app.js
 
 # written by make docs
 api-docs/out/
+
+# written by make deploy-proxy (proxy/deploy.mjs) and wrangler
+proxy/wrangler.deploy.toml
+proxy/.wrangler/

@@ -849,13 +849,15 @@ export class CatalogRecords {
 	 * With `whole` (the page holds the whole catalog), books and exclusions keep this page's order, with the
 	 * other tab's new ones after them; otherwise each keeps the position it has. Derived fields and credits
 	 * are left as they come: toCatalog() doesn't read them, and the next save works them out again.
+	 * With `prefer` (syncing devices, when told which to keep), a conflict is still named, but takes that side's record.
 	 * @param {Snapshot} base
 	 * @param {RecordSet} mine
 	 * @param {RecordSet} theirs
 	 * @param {boolean} [whole]
+	 * @param {'mine' | 'theirs'} [prefer]
 	 * @returns {{records: RecordSet, conflicts: string[]}}
 	 */
-	static merge(base, mine, theirs, whole = true) {
+	static merge(base, mine, theirs, whole = true, prefer = undefined) {
 		/** @type {string[]} */
 		const conflicts = [];
 		/** @type {Record<string, any>} */
@@ -909,10 +911,12 @@ export class CatalogRecords {
 				let pick = their.get(key);
 				if (m !== before && t !== m) {
 					if (t === before) pick = my.get(key);
-					else
+					else {
 						conflicts.push(
 							label(store, /** @type {Record<string, any>} */ (my.get(key) || their.get(key))),
 						);
+						if (prefer === 'mine') pick = my.get(key);
+					}
 				}
 				if (pick) out.push(pick);
 			}

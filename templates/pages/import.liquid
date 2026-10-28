@@ -143,6 +143,36 @@
 		</div>
 	</section>
 
+	<section class="panel" id="syncPanel">
+		<h2>Sync between devices <span class="via">Through the proxy</span></h2>
+		<div class="ioRow">
+			<span class="ioLabel">Passphrase</span>
+			<div class="rowbtns">
+				<input type="password" id="syncPassphrase" placeholder="Sync passphrase" autocomplete="off" spellcheck="false">
+				<button class="iconbtn2" id="syncPassphraseSave" title="Keep this passphrase in this browser">Save passphrase</button>
+				<button class="iconbtn2" id="syncPassphraseRemove" title="Forget the passphrase in this browser">Remove passphrase</button>
+			</div>
+			<p class="ioNote">The catalog is encrypted with this passphrase before it leaves the browser, so your proxy keeps only
+				text it can't read. Use the same one on every device; it is kept in this browser only, and a lost passphrase can't be
+				recovered (each device still has its catalog).</p>
+			<p class="ioNote" id="syncPassphraseState"></p>
+		</div>
+		<div class="ioRow">
+			<span class="ioLabel">Sync</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="syncBtn" title="Take in what your other devices changed, and send what this one changed">Sync now</button>
+			</div>
+			<p class="ioNote">Takes in what your other devices changed since this one last synced, and sends what this one changed,
+				through your catalog proxy, once sync is set up on it (the docs' <em>Catalog proxy</em>). When a device and this one
+				changed the same book, series or person, it asks which to keep.</p>
+			<p class="ioNote" id="syncState"></p>
+			<p class="ioNote" id="syncChoice" style="display:none"><span id="syncChoiceText"></span>
+				<button class="iconbtn2" id="syncKeepMine" title="Keep this browser's version of what both changed">Keep this device's</button>
+				<button class="iconbtn2" id="syncKeepTheirs" title="Keep the other device's version of what both changed">Keep the synced ones</button>
+				<button class="iconbtn2" id="syncReplace" title="Put the synced catalog in place of this browser's">Use the synced catalog here</button></p>
+		</div>
+	</section>
+
 	<div id="importPreview" class="importPreview">
 		<h3 id="importPreviewTitle"></h3>
 		<p id="mergePrefer" class="mergePrefer"><label>Where both changed a book's title, author or series, or what a series or person has, keep
