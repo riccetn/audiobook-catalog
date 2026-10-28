@@ -3475,7 +3475,7 @@ test('AudiobookdbClient sends your key only with what acts for your account, wai
 	const old = audiobookdbClient('abdb-key-1', (route, init) =>
 		init.key ? new Response('{"error":"This path takes no catalog key."}', {status: 400}) : null,
 	);
-	await assert.rejects(old.client.shelves(), /run npx wrangler deploy in proxy\/ to bring it up to date/);
+	await assert.rejects(old.client.shelves(), /deploy it again \(make deploy-server\) to bring it up to date/);
 });
 
 test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids found (never a box set's book on a title)", () => {
@@ -5288,23 +5288,23 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	});
 	await assert.rejects(
 		down.find('B0LANTERN2'),
-		/\(Audible couldn't be asked: this browser could not reach the catalog proxy \(offline, or check it on the Import & export page\); AudiobookDB couldn't be asked/,
+		/\(Audible couldn't be asked: this browser could not reach your server \(offline, or check it on the Import & export page\); AudiobookDB couldn't be asked/,
 	);
 	const refused = new CatalogLookup(fakeCatalogs().fetch, [], async () => ({
 		ok: false,
 		status: 401,
 		json: async () => ({}),
 	}));
-	await assert.rejects(refused.find('B0LANTERN2'), /the catalog proxy refused its key/);
+	await assert.rejects(refused.find('B0LANTERN2'), /your server refused its key/);
 	assert.match((await down.find('OL901M')).notes[0], /^Audible couldn't be asked/);
 	// without a proxy, AudiobookDB can't be asked, and an ASIN says how it could be
 	await assert.rejects(
 		new CatalogLookup(fakeCatalogs().fetch, []).find('https://audiobookdb.org/releases/RlsLntrnUS01'),
-		/AudiobookDB can't be read from a web page; .* save a catalog proxy/,
+		/AudiobookDB can't be read from a web page; .* save your server/,
 	);
 	await assert.rejects(
 		new CatalogLookup(fakeCatalogs().fetch, []).find('B0LANTERN2'),
-		/save your Hardcover API token on the Import & export page first, or save a catalog proxy there to ask Audible and AudiobookDB$/,
+		/save your Hardcover API token on the Import & export page first, or save your server there to ask Audible and AudiobookDB$/,
 	);
 	assert.equal(AudibleSource.site('amazon.se'), 'audible.com');
 	assert.equal(AudibleSource.site('amazon.de'), 'audible.de');
@@ -5354,7 +5354,7 @@ test('CatalogLookup asks Hardcover, with a token, for its books and for the ASIN
 	);
 	await assert.rejects(
 		lookup.find('B0NOTHERE1'),
-		/no catalog has a book with ASIN B0NOTHERE1 \(to ask Audible and AudiobookDB too, save a catalog proxy on the Import & export page\)$/,
+		/no catalog has a book with ASIN B0NOTHERE1 \(to ask Audible and AudiobookDB too, save your server on the Import & export page\)$/,
 	);
 	// Open Library's edition, and Hardcover's for what it lacks (by its ISBN, which Hardcover doesn't have here)
 	const keeper = await lookup.find('OL901M');

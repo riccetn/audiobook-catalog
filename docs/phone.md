@@ -4,7 +4,8 @@ The app installs as a phone app (a PWA: Add to home screen, full screen, works o
 installs it from an HTTPS address, so host the `public/` folder as a plain static site, for example with
 GitHub Pages: set repository **Settings → Pages → Source** to **GitHub Actions**, and the _Pages_ workflow
 (`.github/workflows/pages.yml`) writes the pages from `templates/` and publishes `public/` on every push to `main`. That site only serves the app:
-your catalog is never in git, and nothing outside `public/` is published.
+your catalog is never in git, and nothing outside `public/` is published. [Your server](server.md#the-app-on-it) on
+Cloudflare serves the app too, at its own address, and installs the same way.
 
 Then, on the phone:
 
@@ -13,8 +14,8 @@ Then, on the phone:
 3. In the installed app, **Restore** that backup. The phone keeps it in its browser storage, like any
    browser does ([Running the app and keeping your catalog](saving.md)), and every edit and import on the phone is saved there.
 
-The phone's catalog and the PC's are separate. With sync set up on your catalog proxy, **Sync now** on each
-keeps them alike ([Syncing devices](catalog-proxy.md#syncing-devices)). Without it, to bring phone edits to the PC, Export on the phone and
+The phone's catalog and the PC's are separate. With sync set up on your server, **Sync now** on each
+keeps them alike ([Syncing devices](server.md#syncing-devices)). Without it, to bring phone edits to the PC, Export on the phone and
 **Merge** that file on the PC ([Merge a backup from another device](backups.md)), or Restore it if nothing
 changed on the PC meanwhile. The other way, Export on the PC and **Merge** it in the phone app.
 

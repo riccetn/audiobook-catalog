@@ -28,7 +28,9 @@ public/               the app, and all that a static server serves (make serve, 
 package.json          "type": "module" (every .js file is an ES module), Liquid (the pages), TypeScript (the type checker) and ESLint
 api-docs/             TypeDoc's settings (typedoc.json) and its own package.json; make docs writes the API documentation into api-docs/out/
 jsconfig.json, jsconfig.sw.json    what the type checker checks: the pages' modules, and the service worker on its own
-proxy/                the optional catalog proxy, a Cloudflare Worker (worker.js, wrangler.toml); deployed on its own, never served
+server/               the optional server, never served from public/: worker.js lets a request in and routes it to the
+                        catalog proxy (proxy.js, /proxy/...) or sync (sync.js, /sync); a Cloudflare Worker (wrangler.toml,
+                        deploy.mjs), or make serve on this computer (serve.mjs, with sync in SQLite: sqlite-d1.js)
 sample/               fictional demo data, used by the tests: the only data committed to git
 tests/                node:test suites (*.test.mjs), including the browser smoke test
 ```
@@ -76,7 +78,7 @@ key a token), `KEY_STORAGE` (where this browser keeps it), `KEY_HELP`, whether n
 and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` reads and saves every key the same way
 (`savedKey`, `saveKey`, `catalogClient`). Besides the class:
 
-- its ids and addresses go in `ExternalCatalog` (as before), and a proxied API's route in `proxy/worker.js`;
+- its ids and addresses go in `ExternalCatalog` (as before), and a proxied API's route in `server/proxy.js`;
 - an export file's or a shelf sync's panel goes in `templates/pages/import.liquid`, its ids starting with the class's
   `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`; a shelf sync's panel is `{% render 'shelf-panel', ... %}`).
 - a catalog without shelves of yours can still compare a series: `AudibleSync` plans nothing (`plan` is null), its
@@ -93,15 +95,16 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.js` read
 
 ## Tests
 
-- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`), the catalog proxy (`proxy.test.mjs`), the service worker (`service-worker.test.mjs`),
+- `make test` runs `node --experimental-vm-modules --test tests/*.test.mjs`: the classes (`catalog.test.mjs`), the server (`server.test.mjs`: the catalog proxy, sync and `make serve`), the service worker (`service-worker.test.mjs`),
   and the browser smoke test (`app.smoke.test.mjs`), which executes each page's real modules against a small fake DOM built from
   its HTML, with a fake `localStorage` holding the demo data, which the page moves into a fake IndexedDB
   (`tests/fake-indexeddb.mjs`) as a browser would (running ES modules in `node:vm` is what needs the flag;
-  Node prints an ExperimentalWarning for it).
+  Node prints an ExperimentalWarning for it, and for `node:sqlite`, which the server's tests use). They need Node 22.13 or later.
 - `.github/workflows/ci.yml` runs the same on GitHub Actions. The smoke test also fails when `public/`
   holds a file no page uses (a page, a module one imports, or what their `<head>` or the manifest names), as the
   service worker caches all of it, so nothing ends up served by accident.
-- `.github/workflows/pages.yml` publishes `public/` to GitHub Pages on pushes to `main`.
+- `.github/workflows/pages.yml` publishes `public/` to GitHub Pages on pushes to `main`, and `.github/workflows/server.yml`
+  deploys the server with `public/` as its static assets (`make deploy-server`), once the repository has its Cloudflare secrets.
 
 ## Types
 

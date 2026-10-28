@@ -14,6 +14,10 @@ public/sw-app.js
 # written by make docs
 api-docs/out/
 
-# written by make deploy-proxy (proxy/deploy.mjs) and wrangler
-proxy/wrangler.deploy.toml
-proxy/.wrangler/
+# written by make deploy-server (server/deploy.mjs) and wrangler
+server/wrangler.deploy.toml
+server/.wrangler/
+
+# make serve's key (also wrangler dev's) and synced copies
+server/.dev.vars
+server/.local/

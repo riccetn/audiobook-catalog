@@ -1,13 +1,18 @@
-// The catalog proxy (proxy/worker.js), run in Node with a fake catalog behind it: what it lets through,
-// and what it refuses.
+// The app's server (server/worker.js: the catalog proxy and sync), run in Node with a fake catalog behind it and
+// the sync copy in SQLite: what it lets through, and what it refuses; and make serve's local server around it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {handle, upstreamUrl, allowedOrigins, KEY_HEADER, CATALOG_KEY_HEADER, MAX_SYNC} from '../proxy/worker.js';
-import {fakeD1} from './fake-d1.mjs';
-import {deployConfig, DATABASE, BINDING, DEPLOY_CONFIG} from '../proxy/deploy.mjs';
+import {DatabaseSync} from 'node:sqlite';
+import {handle, allowedOrigins, KEY_HEADER, OLD_KEY_HEADER} from '../server/worker.js';
+import {upstreamUrl, CATALOG_KEY_HEADER} from '../server/proxy.js';
+import {MAX_SYNC} from '../server/sync.js';
+import {sqliteD1} from '../server/sqlite-d1.js';
+import {deployConfig, DATABASE, BINDING, DEPLOY_CONFIG} from '../server/deploy.mjs';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const ENV = {PROXY_KEY: 'k3y-for-tests', ALLOWED_ORIGINS: 'https://example.github.io, http://127.0.0.1:8000'};
+const ENV = {SERVER_KEY: 'k3y-for-tests', ALLOWED_ORIGINS: 'https://example.github.io, http://127.0.0.1:8000'};
 const APP = 'https://example.github.io';
 
 /** A fake catalog answering every address with what was asked, and a cache in a Map. */
@@ -40,7 +45,7 @@ function behind() {
  * @param {string} path
  * @param {{origin?: string | null, key?: string | null, method?: string, headers?: Record<string, string>, body?: string}} [opts]
  */
-function ask(path, {origin = APP, key = ENV.PROXY_KEY, method = 'GET', headers = {}, body} = {}) {
+function ask(path, {origin = APP, key = ENV.SERVER_KEY, method = 'GET', headers = {}, body} = {}) {
 	return new Request(`https://proxy.example.workers.dev${path}`, {
 		method,
 		body,
@@ -53,7 +58,10 @@ function ask(path, {origin = APP, key = ENV.PROXY_KEY, method = 'GET', headers =
 }
 
 test('proxy: routes name a catalog, never an address, and stay in its API', () => {
-	const up = path => upstreamUrl(new URL(`https://proxy.example.workers.dev${path}`));
+	const up = path => {
+		const url = new URL(`https://proxy.example.workers.dev${path}`);
+		return upstreamUrl(url.pathname, url.search);
+	};
 	assert.equal(
 		up('/audiobookdb/audiobooks/external/audible/B0FAKE0001'),
 		'https://audiobookdb.org/api/audiobooks/external/audible/B0FAKE0001',
@@ -86,7 +94,7 @@ test('proxy: routes name a catalog, never an address, and stay in its API', () =
 test('proxy: answers only the app with the key, and passes on only the body and its type', async () => {
 	const {asked, deps} = behind();
 	const ok = await handle(
-		ask('/audiobookdb/audiobooks/external/audible/B0FAKE0001', {
+		ask('/proxy/audiobookdb/audiobooks/external/audible/B0FAKE0001', {
 			headers: {Cookie: 'mine=1', Accept: 'application/json'},
 		}),
 		ENV,
@@ -102,15 +110,20 @@ test('proxy: answers only the app with the key, and passes on only the body and 
 	assert.match(asked[0].headers['user-agent'], /audiobook-catalog-proxy/);
 
 	const status = async (path, opts) => (await handle(ask(path, opts), ENV, deps)).status;
-	assert.equal(await status('/audiobookdb/x', {origin: 'https://evil.example'}), 403);
-	assert.equal(await status('/audiobookdb/x', {key: null}), 401);
-	assert.equal(await status('/audiobookdb/x', {key: 'k3y-for-test'}), 401);
-	assert.equal(await status('/audiobookdb/x', {key: 'k3y-for-tests!'}), 401);
-	assert.equal(await status('/audiobookdb/x', {method: 'POST'}), 405);
-	assert.equal(await status('/audiobookdb/x', {method: 'DELETE'}), 405);
-	assert.equal(await status('/somewhere/else'), 404);
-	assert.equal(await status('/audiobookdb/x', {origin: null}), 200, 'curl, with the key');
-	assert.equal(asked.length, 2, 'nothing refused reached a catalog');
+	assert.equal(await status('/proxy/audiobookdb/x', {origin: 'https://evil.example'}), 403);
+	assert.equal(await status('/proxy/audiobookdb/x', {key: null}), 401);
+	assert.equal(await status('/proxy/audiobookdb/x', {key: 'k3y-for-test'}), 401);
+	assert.equal(await status('/proxy/audiobookdb/x', {key: 'k3y-for-tests!'}), 401);
+	assert.equal(await status('/proxy/audiobookdb/x', {method: 'POST'}), 405);
+	assert.equal(await status('/proxy/audiobookdb/x', {method: 'DELETE'}), 405);
+	assert.equal(await status('/proxy/somewhere/else'), 404);
+	assert.equal(await status('/proxy/audiobookdb/x', {origin: null}), 200, 'curl, with the key');
+	assert.equal(
+		await status('/proxy/audiobookdb/x', {origin: 'https://proxy.example.workers.dev'}),
+		200,
+		'the app it serves',
+	);
+	assert.equal(asked.length, 2, 'nothing refused reached a catalog (and the last came from the cache)');
 	assert.equal(
 		(await handle(ask('/ping'), {ALLOWED_ORIGINS: ENV.ALLOWED_ORIGINS}, deps)).status,
 		500,
@@ -120,15 +133,18 @@ test('proxy: answers only the app with the key, and passes on only the body and 
 
 test('proxy: the preflight allows the key headers, and ping says which catalogs', async () => {
 	const {deps} = behind();
-	const pre = await handle(ask('/audiobookdb/x', {method: 'OPTIONS', key: null}), ENV, deps);
+	const pre = await handle(ask('/proxy/audiobookdb/x', {method: 'OPTIONS', key: null}), ENV, deps);
 	assert.equal(pre.status, 204);
 	assert.equal(pre.headers.get('Access-Control-Allow-Origin'), APP);
-	assert.equal(pre.headers.get('Access-Control-Allow-Headers'), `${KEY_HEADER}, ${CATALOG_KEY_HEADER}, Content-Type`);
+	assert.equal(
+		pre.headers.get('Access-Control-Allow-Headers'),
+		`${KEY_HEADER}, ${OLD_KEY_HEADER}, ${CATALOG_KEY_HEADER}, Content-Type`,
+	);
 	assert.equal(pre.headers.get('Access-Control-Allow-Methods'), 'GET, POST');
 	const ping = await handle(ask('/ping'), ENV, deps);
 	assert.deepEqual(await ping.json(), {
 		ok: true,
-		catalogs: ['audiobookdb', 'audible', 'bookbrainz', 'isfdb'],
+		proxy: ['audiobookdb', 'audible', 'bookbrainz', 'isfdb'],
 		sync: false,
 	});
 	assert.deepEqual(allowedOrigins({}), [
@@ -140,7 +156,7 @@ test('proxy: the preflight allows the key headers, and ping says which catalogs'
 
 test('proxy: keeps answers found for a day, and asks again for one not found', async () => {
 	const {asked, kept, deps} = behind();
-	const path = '/audible/audible.com/catalog/products/B0FAKE0001';
+	const path = '/proxy/audible/audible.com/catalog/products/B0FAKE0001';
 	assert.equal((await handle(ask(path), ENV, deps)).status, 200);
 	const again = await handle(ask(path, {origin: 'http://127.0.0.1:8000'}), ENV, deps);
 	assert.equal(asked.length, 1, 'the second answer came from the cache');
@@ -150,8 +166,8 @@ test('proxy: keeps answers found for a day, and asks again for one not found', a
 		'with the CORS of the page asking',
 	);
 	assert.match(again.headers.get('Cache-Control'), /max-age=86400/);
-	assert.equal((await handle(ask('/audiobookdb/missing'), ENV, deps)).status, 404);
-	await handle(ask('/audiobookdb/missing'), ENV, deps);
+	assert.equal((await handle(ask('/proxy/audiobookdb/missing'), ENV, deps)).status, 404);
+	await handle(ask('/proxy/audiobookdb/missing'), ENV, deps);
 	assert.equal(asked.length, 3);
 	assert.equal(kept.size, 1);
 	const down = {
@@ -161,23 +177,23 @@ test('proxy: keeps answers found for a day, and asks again for one not found', a
 		},
 		cache: null,
 	};
-	assert.equal((await handle(ask('/bookbrainz/x'), ENV, down)).status, 502);
+	assert.equal((await handle(ask('/proxy/bookbrainz/x'), ENV, down)).status, 502);
 });
 
 test('proxy: your catalog key goes only to the paths that need it, which alone take a POST and are never cached', async () => {
 	const {asked, kept, deps} = behind();
-	const shelf = '/audiobookdb/users/username/reader/shelves/read';
+	const shelf = '/proxy/audiobookdb/users/username/reader/shelves/read';
 	const withKey = (path, opts = {}) =>
 		ask(path, {...opts, headers: {[CATALOG_KEY_HEADER]: 'my-api-key', ...opts.headers}});
 
-	const session = await handle(withKey('/audiobookdb/auth/session'), ENV, deps);
+	const session = await handle(withKey('/proxy/audiobookdb/auth/session'), ENV, deps);
 	assert.equal(session.status, 200);
 	assert.equal(asked[0].headers['x-api-key'], 'my-api-key', 'sent on as AudiobookDB reads it');
 	assert.equal(asked[0].headers[CATALOG_KEY_HEADER.toLowerCase()], undefined);
 	assert.equal(session.headers.get('Cache-Control'), 'no-store');
 	assert.equal((await handle(withKey(`${shelf}?booksTake=100`), ENV, deps)).status, 200);
-	assert.equal((await handle(withKey('/audiobookdb/users/username/reader/shelves'), ENV, deps)).status, 200);
-	assert.equal((await handle(withKey('/audiobookdb/users/username/reader/shelves'), ENV, deps)).status, 200);
+	assert.equal((await handle(withKey('/proxy/audiobookdb/users/username/reader/shelves'), ENV, deps)).status, 200);
+	assert.equal((await handle(withKey('/proxy/audiobookdb/users/username/reader/shelves'), ENV, deps)).status, 200);
 	assert.equal(asked.length, 4, 'asked every time');
 	assert.equal(kept.size, 0, 'nothing of yours kept');
 
@@ -198,12 +214,16 @@ test('proxy: your catalog key goes only to the paths that need it, which alone t
 	assert.equal(asked[4].headers['x-api-key'], 'my-api-key');
 
 	const status = async request => (await handle(request, ENV, deps)).status;
-	assert.equal(await status(withKey('/audiobookdb/books/FAKEbook0001')), 400, 'a key sent where none is needed');
-	assert.equal(await status(withKey('/audible/audible.com/catalog/products/B0FAKE0001')), 400);
-	assert.equal(await status(withKey(`${shelf}/books/more`, {method: 'POST'})), 405);
-	assert.equal(await status(withKey('/audiobookdb/books', {method: 'POST'})), 405, 'never the shared catalog');
 	assert.equal(
-		await status(withKey('/audiobookdb/users/username/reader/shelves', {method: 'POST'})),
+		await status(withKey('/proxy/audiobookdb/books/FAKEbook0001')),
+		400,
+		'a key sent where none is needed',
+	);
+	assert.equal(await status(withKey('/proxy/audible/audible.com/catalog/products/B0FAKE0001')), 400);
+	assert.equal(await status(withKey(`${shelf}/books/more`, {method: 'POST'})), 405);
+	assert.equal(await status(withKey('/proxy/audiobookdb/books', {method: 'POST'})), 405, 'never the shared catalog');
+	assert.equal(
+		await status(withKey('/proxy/audiobookdb/users/username/reader/shelves', {method: 'POST'})),
 		405,
 		'never a new shelf',
 	);
@@ -223,17 +243,16 @@ test('proxy: a catalog asking to slow down says how long, to the page too', asyn
 			new Response('{}', {status: 429, headers: {'Retry-After': '30', 'X-RateLimit-Remaining': '0'}}),
 		cache: null,
 	};
-	const slow = await handle(ask('/audiobookdb/books/FAKEbook0001'), ENV, deps);
+	const slow = await handle(ask('/proxy/audiobookdb/books/FAKEbook0001'), ENV, deps);
 	assert.equal(slow.status, 429);
 	assert.equal(slow.headers.get('Retry-After'), '30');
 	assert.equal(slow.headers.get('Access-Control-Expose-Headers'), 'Retry-After');
 	assert.equal(slow.headers.get('X-RateLimit-Remaining'), null);
 });
 
-test('proxy: keeps one synced copy in D1, replaced only over the revision it was read at', async () => {
+test('sync: keeps one synced copy, replaced only over the revision it was read at', async () => {
 	const {deps} = behind();
-	const db = fakeD1();
-	const env = {...ENV, SYNC_DB: db};
+	const env = {...ENV, SYNC_DB: sqliteD1(new DatabaseSync(':memory:'))};
 	const send = body => handle(ask('/sync', {method: 'POST', body: JSON.stringify(body)}), env, deps);
 	const read = async () => (await handle(ask('/sync'), env, deps)).json();
 
@@ -264,7 +283,8 @@ test('proxy: keeps one synced copy in D1, replaced only over the revision it was
 	assert.equal((await send({revision: 2, data: 'x'.repeat(MAX_SYNC + 1)})).status, 413);
 	assert.equal((await read()).revision, 2);
 
-	// only with the key, and only from the app
+	// at the root, beside the proxy, not in it; only with the key, and only from the app
+	assert.equal((await handle(ask('/proxy/sync'), env, deps)).status, 404);
 	assert.equal((await handle(ask('/sync', {key: 'wrong'}), env, deps)).status, 401);
 	assert.equal((await handle(ask('/sync', {origin: 'https://evil.example'}), env, deps)).status, 403);
 	// ping says whether sync is set up; without a database, /sync says so
@@ -275,13 +295,85 @@ test('proxy: keeps one synced copy in D1, replaced only over the revision it was
 	assert.equal((await (await handle(ask('/ping'), ENV, deps)).json()).sync, false);
 });
 
-test('proxy: the deploy binds the sync database by the id it found, in a config git ignores', () => {
+test('server: the deploy binds the sync database by the id it found, in a config git ignores', () => {
 	const id = '0f0e0d0c-0b0a-4009-8807-060504030201';
 	const config = deployConfig('name = "audiobook-catalog-proxy"\nmain = "worker.js"\n\n', id);
 	assert.match(config, /^# Written by deploy\.mjs/);
 	assert.match(config, /main = "worker.js"\n\n\[\[d1_databases\]\]\n/);
 	assert.match(config, new RegExp(`binding = "${BINDING}"\ndatabase_name = "${DATABASE}"\ndatabase_id = "${id}"\n$`));
 	assert.throws(() => deployConfig('', 'not an id"\nmain = "evil.js'), /not a D1 database id/);
-	assert.ok(fs.readFileSync('.gitignore', 'utf8').split('\n').includes(`proxy/${DEPLOY_CONFIG}`));
-	assert.doesNotMatch(fs.readFileSync('proxy/wrangler.toml', 'utf8'), /database_id/, 'no id in git');
+	assert.ok(fs.readFileSync('.gitignore', 'utf8').split('\n').includes(`server/${DEPLOY_CONFIG}`));
+	assert.doesNotMatch(fs.readFileSync('server/wrangler.toml', 'utf8'), /database_id/, 'no id in git');
+});
+
+test('server: pages and servers from before still work: catalogs at the root, the old key header and secret', async () => {
+	const {asked, deps} = behind();
+	const old = await handle(
+		new Request('https://proxy.example.workers.dev/audiobookdb/books/FAKEbook0001', {
+			headers: {Origin: APP, [OLD_KEY_HEADER]: 'old-key'},
+		}),
+		{PROXY_KEY: 'old-key', ALLOWED_ORIGINS: APP},
+		deps,
+	);
+	assert.equal(old.status, 200);
+	assert.equal(asked[0].url, 'https://audiobookdb.org/api/books/FAKEbook0001');
+	assert.equal(asked[0].headers[OLD_KEY_HEADER.toLowerCase()], undefined, 'the old header stays in the server too');
+	assert.equal(
+		(await handle(ask('/ping', {key: 'old-key'}), {PROXY_KEY: 'old-key', ALLOWED_ORIGINS: APP}, deps)).status,
+		200,
+	);
+	assert.equal((await handle(ask('/ping', {key: 'old-key'}), {...ENV, PROXY_KEY: 'old-key'}, deps)).status, 401);
+});
+
+test('make serve: the pages from public/, everything else the server, with sync in SQLite', async t => {
+	const {startServer, publicFile, readDevVars, memoryCache} = await import('../server/serve.mjs');
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'serve-'));
+	fs.mkdirSync(path.join(root, 'modules'));
+	fs.writeFileSync(path.join(root, 'index.html'), '<p>the app</p>');
+	fs.writeFileSync(path.join(root, 'modules', 'book.js'), 'export {};');
+	const {asked, deps} = behind();
+	const env = {...ENV, SYNC_DB: sqliteD1(new DatabaseSync(':memory:'))};
+	const server = await startServer({root, port: 0, env, fetch: deps.fetch});
+	t.after(() => server.close());
+	const base = `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}`;
+	const get = (route, init = {}) => fetch(`${base}${route}`, init);
+	const keyed = {headers: {[KEY_HEADER]: ENV.SERVER_KEY, Origin: 'http://127.0.0.1:8000'}};
+
+	const page = await get('/');
+	assert.equal(page.status, 200);
+	assert.equal(await page.text(), '<p>the app</p>');
+	assert.match(page.headers.get('Content-Type'), /^text\/html/);
+	const module = await get('/modules/book.js');
+	assert.match(module.headers.get('Content-Type'), /^text\/javascript/);
+	assert.equal(
+		(await get('/../package.json')).status,
+		401,
+		'never outside public/: the server answers, wanting its key',
+	);
+	assert.equal(publicFile(root, '/%2e%2e/package.json'), null);
+	assert.equal(publicFile(root, '/%E0%A4%A'), null);
+
+	assert.deepEqual((await (await get('/ping', keyed)).json()).sync, true);
+	const proxied = await get('/proxy/bookbrainz/edition/1111-2222', keyed);
+	assert.equal(proxied.status, 200);
+	assert.equal(proxied.headers.get('Access-Control-Allow-Origin'), 'http://127.0.0.1:8000');
+	await get('/proxy/bookbrainz/edition/1111-2222', keyed);
+	assert.equal(asked.length, 1, 'kept for a day, as Cloudflare does');
+
+	const send = body => get('/sync', {method: 'POST', body: JSON.stringify(body), headers: keyed.headers});
+	assert.equal((await send({revision: 0, data: 'sealed-1'})).status, 200);
+	assert.equal((await send({revision: 0, data: 'sealed-late'})).status, 409);
+	assert.equal((await (await get('/sync', keyed)).json()).data, 'sealed-1');
+	assert.equal((await get('/sync')).status, 401);
+
+	assert.deepEqual(readDevVars('# mine\nSERVER_KEY = "abc"\nALLOWED_ORIGINS=http://127.0.0.1:8000\n\n'), {
+		SERVER_KEY: 'abc',
+		ALLOWED_ORIGINS: 'http://127.0.0.1:8000',
+	});
+	const cache = memoryCache();
+	const request = new Request('https://catalog.example/x');
+	await cache.put(request, new Response('kept', {headers: {'Cache-Control': 'public, max-age=60'}}));
+	assert.equal(await (await cache.match(request)).text(), 'kept');
+	await cache.put(request, new Response('not kept', {headers: {'Cache-Control': 'no-store'}}));
+	assert.equal(await (await cache.match(request)).text(), 'kept');
 });

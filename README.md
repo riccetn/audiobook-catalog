@@ -3,11 +3,12 @@
 A personal audiobook library, merged from Audible, Goodreads and Hardcover exports, grouped by series
 and searchable by title, author, series and genre. The app is four plain pages (the catalog, _Authors_,
 _Import & export_ and _Duplicates_) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
-and the catalog is kept in the browser's IndexedDB. There is no server code, and the only build step writes the
+and the catalog is kept in the browser's IndexedDB. The app needs no server (an optional one of your own, `server/`, asks the
+catalogs that don't answer web pages and syncs your devices), and the only build step writes the
 pages' HTML from [Liquid](https://liquidjs.com/) templates (`make pages`), so they share their head and nav bar.
 
 - Vanilla JavaScript: no framework, no bundler, nothing the app loads from npm (Liquid only writes the pages)
-- Node 18+ for the tests; TypeScript (`npm install`) checks the code against its JSDoc types, without a build step
+- Node 22.13+ for the tests and `make serve`; TypeScript (`npm install`) checks the code against its JSDoc types, without a build step
 
 ```sh
 git clone <this repo> && cd audiobook-catalog
@@ -18,7 +19,7 @@ make typecheck   # check the code against its types (TypeScript)
 make lint     # look for likely mistakes (ESLint)
 make check    # everything CI runs: test, typecheck, lint and the format check
 make docs     # the API documentation (TypeDoc) in api-docs/out/; published at <site>/api/ beside the app
-make serve    # serves public/ at http://localhost:8000/ (any static server, or GitHub Pages, works too)
+make serve    # the app at http://localhost:8000/, with your server (catalog proxy and sync) beside it
 make help
 ```
 
@@ -57,7 +58,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 - [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads
 - [Hardcover](docs/hardcover.md): comparing with your Hardcover shelves, and putting books and reads on them
 - [AudiobookDB](docs/audiobookdb.md): finding your books on AudiobookDB, comparing with your shelves there, and putting books on them
-- [Catalog proxy](docs/catalog-proxy.md): an optional Cloudflare Worker of your own for the catalogs that don't answer web pages,
+- [Your server](docs/server.md): an optional Cloudflare Worker of your own (or `make serve`) for the catalogs that don't answer web pages,
   which can also sync your devices
 - [Merge a backup from another device](docs/backups.md): combining two catalogs that both changed
 - [How imports avoid clobbering your edits](docs/imports.md): the comparison an import shows, comparing a series or an author with several catalogs at once, and how imported books are matched and merged

@@ -10,8 +10,9 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fakeHardcover, hardcoverState} from './fake-hardcover.mjs';
 import {fakeCatalogs, fakeProxyCatalogs, fakeAudiobookdb, audiobookdbState} from './fake-catalogs.mjs';
-import {handle as handleProxy} from '../proxy/worker.js';
-import {fakeD1} from './fake-d1.mjs';
+import {handle as handleServer} from '../server/worker.js';
+import {sqliteD1} from '../server/sqlite-d1.js';
+import {DatabaseSync} from 'node:sqlite';
 import {Book} from '../public/modules/book.js';
 import {Exclusions} from '../public/modules/exclusions.js';
 import {Duplicates} from '../public/modules/duplicates.js';
@@ -1544,8 +1545,8 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 	const behind = fakeProxyCatalogs();
 	const asked = [];
 	const proxy = async (url, init) => {
-		asked.push({url, key: init.headers['X-Proxy-Key']});
-		return behind.route(url.replace('https://catalog-proxy.example.workers.dev/', ''));
+		asked.push({url, key: init.headers['X-Server-Key']});
+		return behind.route(url.replace('https://catalog-proxy.example.workers.dev/proxy/', ''));
 	};
 	const storage = new Map([
 		[
@@ -1634,7 +1635,7 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 	await without.ctx.fillFromCatalog();
 	assert.match(
 		without.els.formError.textContent,
-		/AudiobookDB can't be read from a web page; to ask it through your own proxy, save a catalog proxy on the Import & export page first\.$/,
+		/AudiobookDB can't be read from a web page; to ask it through a server of your own, save your server on the Import & export page first\.$/,
 	);
 });
 
@@ -3982,14 +3983,14 @@ test('a Hardcover comparison flags print books and ebooks, yours and on your she
 	);
 });
 
-test('the catalog proxy is kept in this browser, checked when saved, and only ever sent its own key', async () => {
-	// the real Worker (proxy/worker.js) behind the page, with no catalog behind it
-	const env = {PROXY_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
+test('your server is kept in this browser, checked when saved, and only ever sent its own key', async () => {
+	// the real Worker (server/worker.js) behind the page, with no catalog behind it
+	const env = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
 	const sent = [];
 	const proxy = async (url, init = {}) => {
 		sent.push({url, headers: init.headers});
 		const request = new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}});
-		return handleProxy(request, env, {
+		return handleServer(request, env, {
 			fetch: async () => {
 				throw new Error('no catalog in this test');
 			},
@@ -3997,41 +3998,41 @@ test('the catalog proxy is kept in this browser, checked when saved, and only ev
 	};
 	const storage = new Map();
 	const {els} = await boot({page: 'import.html', proxy, storage});
-	assert.match(els.proxyState.textContent, /Paste your proxy's address and key/);
-	assert.equal(els.proxyCheck.style.display, 'none');
+	assert.match(els.serverState.textContent, /Paste your server's address and key/);
+	assert.equal(els.serverCheck.style.display, 'none');
 
-	els.proxyUrl.value = 'http://catalog-proxy.example.workers.dev';
-	els.proxyKey.value = 'right-key';
-	await els.proxySave.listeners.click[0]();
-	assert.match(els.ioStatus.textContent, /Paste the proxy's address first/, 'not https');
+	els.serverUrl.value = 'http://catalog-proxy.example.workers.dev';
+	els.serverKey.value = 'right-key';
+	await els.serverSave.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /Paste the server's address first/, 'not https');
 	assert.equal(storage.get('audiobook-catalog-proxy'), undefined);
 
-	els.proxyUrl.value = 'https://catalog-proxy.example.workers.dev/';
-	els.proxyKey.value = 'wrong-key';
-	await els.proxySave.listeners.click[0]();
-	assert.match(els.ioStatus.textContent, /^Catalog proxy saved; the proxy refused the key\.$/);
+	els.serverUrl.value = 'https://catalog-proxy.example.workers.dev/';
+	els.serverKey.value = 'wrong-key';
+	await els.serverSave.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /^Server saved; your server refused the key\.$/);
 
-	els.proxyUrl.value = 'https://catalog-proxy.example.workers.dev/';
-	els.proxyKey.value = ' right-key ';
-	await els.proxySave.listeners.click[0]();
+	els.serverUrl.value = 'https://catalog-proxy.example.workers.dev/';
+	els.serverKey.value = ' right-key ';
+	await els.serverSave.listeners.click[0]();
 	assert.equal(
 		els.ioStatus.textContent,
-		'Catalog proxy saved; it answers, for audiobookdb, audible, bookbrainz, isfdb.',
+		'Server saved; it answers: its catalog proxy asks audiobookdb, audible, bookbrainz, isfdb, and sync is not set up on it.',
 	);
 	assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-proxy')), {
 		url: 'https://catalog-proxy.example.workers.dev',
 		key: 'right-key',
 	});
-	assert.equal(els.proxyKey.value, '', 'the key is not left in the page');
-	assert.match(els.proxyState.textContent, /Saved in this browser only .*catalog-proxy\.example\.workers\.dev/);
+	assert.equal(els.serverKey.value, '', 'the key is not left in the page');
+	assert.match(els.serverState.textContent, /Saved in this browser only .*catalog-proxy\.example\.workers\.dev/);
 	assert.ok(sent.every(s => s.url === 'https://catalog-proxy.example.workers.dev/ping'));
-	assert.equal(JSON.stringify(sent.at(-1).headers), '{"X-Proxy-Key":"right-key"}');
+	assert.equal(JSON.stringify(sent.at(-1).headers), '{"X-Server-Key":"right-key"}');
 
-	await els.proxyCheck.listeners.click[0]();
-	assert.match(els.ioStatus.textContent, /^The catalog proxy answers/);
-	await els.proxyRemove.listeners.click[0]();
+	await els.serverCheck.listeners.click[0]();
+	assert.match(els.ioStatus.textContent, /^Your server answers/);
+	await els.serverRemove.listeners.click[0]();
 	assert.equal(storage.get('audiobook-catalog-proxy'), undefined);
-	assert.match(els.proxyState.textContent, /Paste your proxy's address/);
+	assert.match(els.serverState.textContent, /Paste your server's address/);
 
 	// a proxy the browser can't reach (or that refuses this page, which a browser can't tell apart)
 	const away = await boot({
@@ -4040,14 +4041,25 @@ test('the catalog proxy is kept in this browser, checked when saved, and only ev
 			['audiobook-catalog-proxy', JSON.stringify({url: 'https://gone.example.workers.dev', key: 'k'})],
 		]),
 	});
-	await away.els.proxyCheck.listeners.click[0]();
-	assert.match(away.els.ioStatus.textContent, /could not reach the catalog proxy/);
+	await away.els.serverCheck.listeners.click[0]();
+	assert.match(away.els.ioStatus.textContent, /could not reach your server/);
+
+	// a server deployed before the proxy moved under /proxy/ says so
+	const before = await boot({
+		page: 'import.html',
+		proxy: async () => new Response('{"ok":true,"catalogs":["audiobookdb"]}', {status: 200}),
+		storage: new Map([SERVER_SAVED]),
+	});
+	await before.els.serverCheck.listeners.click[0]();
+	assert.equal(before.els.ioStatus.textContent, 'Your server is from before this version: deploy it again.');
 });
 
-test('devices sync through the proxy: encrypted, taking in what the others changed, and asking when both changed a book', async () => {
+test('devices sync through your server: encrypted, taking in what the others changed, and asking when both changed a book', async () => {
 	// the real Worker behind the pages, with a D1 database for the synced copy
-	const db = fakeD1();
-	const env = {PROXY_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io', SYNC_DB: db};
+	const database = new DatabaseSync(':memory:');
+	const env = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io', SYNC_DB: sqliteD1(database)};
+	// the copy the server keeps
+	const row = () => database.prepare('SELECT revision, data FROM sync WHERE id = 1').get();
 	const sent = [];
 	const proxy = async (url, init = {}) => {
 		sent.push({url, method: init.method || 'GET', body: init.body});
@@ -4056,7 +4068,7 @@ test('devices sync through the proxy: encrypted, taking in what the others chang
 			body: init.body,
 			headers: {...init.headers, Origin: 'https://example.github.io'},
 		});
-		return handleProxy(request, env, {fetch: async () => new Response('', {status: 500})});
+		return handleServer(request, env, {fetch: async () => new Response('', {status: 500})});
 	};
 	// `idPrefix` gives a browser ids of its own (each fake one counts id-1, id-2, ... alike, where real ones never meet)
 	const device = async (files, passphrase = 'sea glass lantern', idPrefix = '') => {
@@ -4084,15 +4096,15 @@ test('devices sync through the proxy: encrypted, taking in what the others chang
 	assert.match(pc.els.syncState.textContent, /Not synced from this browser yet/);
 	assert.match(pc.els.syncPassphraseState.textContent, /saved in this browser only/);
 	assert.equal(await sync(pc), "Synced: nothing new from your other devices; this device's catalog sent.");
-	assert.equal(db.row.revision, 1);
-	assert.ok(!db.row.data.includes('The Salt Road'), 'the proxy keeps nothing it can read');
+	assert.equal(row().revision, 1);
+	assert.ok(!row().data.includes('The Salt Road'), 'the server keeps nothing it can read');
 	assert.match(pc.els.syncState.textContent, /^Last synced /);
 
 	// a phone with nothing yet takes the whole catalog
 	const phone = await device(null);
 	assert.match(await sync(phone), /^Synced: \d+ changes taken in from your other devices; nothing to send\.$/);
 	assert.deepEqual(await titles(phone.storage), await titles(pc.storage));
-	assert.equal(db.row.revision, 1);
+	assert.equal(row().revision, 1);
 
 	// a date read added on the phone reaches the PC
 	const id = bookIdAt(phone.get, 0);
@@ -4121,11 +4133,11 @@ test('devices sync through the proxy: encrypted, taking in what the others chang
 	assert.equal(phone.els.syncChoice.style.display, 'none');
 
 	// another passphrase can't open the copy, and changes nothing
-	const before = db.row.revision;
+	const before = row().revision;
 	const stranger = await device(null, 'another passphrase');
 	assert.match(await sync(stranger), /^Not synced: the passphrase does not open the synced copy\./);
 	assert.equal(await kept(stranger.storage), null);
-	assert.equal(db.row.revision, before);
+	assert.equal(row().revision, before);
 	// a catalog made apart from the synced one can only be replaced by it
 	const apart = await device(DEMO, 'sea glass lantern', 'apart');
 	assert.equal(await sync(apart), 'Not synced: this catalog and the synced one were not made from the same catalog.');
@@ -4143,7 +4155,7 @@ test('devices sync through the proxy: encrypted, taking in what the others chang
 	assert.equal(bare.storage.get('audiobook-catalog-sync-passphrase'), 'sea glass lantern');
 	assert.equal(bare.els.syncPassphrase.value, '');
 	delete env.SYNC_DB;
-	assert.match(await sync(bare), /^Not synced: sync is not set up on your proxy/);
+	assert.match(await sync(bare), /^Not synced: sync is not set up on your server/);
 });
 
 test('a Hardcover comparison sends nothing unticked, nothing once another tab saved, and says when Hardcover cannot be reached', async () => {
@@ -4310,13 +4322,13 @@ test("a series' or an author's page links to comparing their books with Hardcove
 });
 
 // ------------------------------------------------------------------ AudiobookDB
-const PROXY_ENV = {PROXY_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
-const PROXY_SAVED = [
+const SERVER_ENV = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
+const SERVER_SAVED = [
 	'audiobook-catalog-proxy',
 	JSON.stringify({url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'}),
 ];
 
-/** The real Worker (proxy/worker.js) in front of a fake AudiobookDB, as the page reaches it; `asked` is what the page sent. */
+/** The real Worker (server/worker.js) in front of a fake AudiobookDB, as the page reaches it; `asked` is what the page sent. */
 function audiobookdbBehindProxy(state = audiobookdbState()) {
 	const abdb = fakeAudiobookdb(state);
 	const asked = [];
@@ -4327,7 +4339,7 @@ function audiobookdbBehindProxy(state = audiobookdbState()) {
 			body: init.body,
 			headers: {...init.headers, Origin: 'https://example.github.io'},
 		});
-		return handleProxy(request, PROXY_ENV, {fetch: abdb.fetch});
+		return handleServer(request, SERVER_ENV, {fetch: abdb.fetch});
 	};
 	return {state, abdb, proxy, asked};
 }
@@ -4354,7 +4366,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 			page.fire('beforeunload', leaving);
 		}
 	};
-	const storage = new Map([PROXY_SAVED]);
+	const storage = new Map([SERVER_SAVED]);
 	const page = await boot({
 		page: 'import.html',
 		files: {'books.json': JSON.stringify(mine)},
@@ -4428,7 +4440,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 		['auth/session', 'users/username/reader/shelves'],
 	);
 	assert.ok(abdb.sent.filter(s => s.key).every(s => s.key === 'abdb-key-1'));
-	assert.ok(asked.every(a => a.headers['X-Proxy-Key'] === 'right-key'));
+	assert.ok(asked.every(a => a.headers['X-Server-Key'] === 'right-key'));
 	assert.ok(
 		asked.every(a => !a.headers['X-Catalog-Key'] || /\/audiobookdb\/(auth\/session|users\/)/.test(a.url)),
 		'the page sends the key only there too',
@@ -4508,7 +4520,7 @@ test("an AudiobookDB comparison can be only a series' or an author's books, and 
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0BRINETD1'}}]},
 	];
 	const {abdb, proxy} = audiobookdbBehindProxy();
-	const storage = new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
+	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
 	const {els, get, readable} = await boot({
 		page: 'import.html',
 		hash: '#audiobookdb-series=Gull+Isle',
@@ -4572,13 +4584,13 @@ test("a series is compared with Audible through the proxy, and Apply fills in it
 		return behind.route(`audible/${site}${u.pathname.replace(/^\/1\.0/, '')}${u.search}`);
 	};
 	const proxy = async (url, init = {}) =>
-		handleProxy(new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}}), PROXY_ENV, {
+		handleServer(new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}}), SERVER_ENV, {
 			fetch: async upstream => {
 				const res = await audible(String(upstream.url || upstream));
 				return new Response(JSON.stringify(await res.json()), {status: res.status});
 			},
 		});
-	const storage = new Map([PROXY_SAVED]);
+	const storage = new Map([SERVER_SAVED]);
 	const {els, get, readable} = await boot({
 		page: 'import.html',
 		hash: '#audible-series=Gull+Isle',
@@ -4648,13 +4660,13 @@ test('a series is compared with every catalog at once, and Apply takes only the 
 	// the real Worker in front of AudiobookDB and of Audible's catalog
 	const behind = fakeProxyCatalogs();
 	const proxy = async (url, init = {}) =>
-		handleProxy(
+		handleServer(
 			new Request(url, {
 				method: init.method,
 				body: init.body,
 				headers: {...init.headers, Origin: 'https://example.github.io'},
 			}),
-			PROXY_ENV,
+			SERVER_ENV,
 			{
 				fetch: async (upstream, opts) => {
 					const u = new URL(String(upstream.url || upstream));
@@ -4665,7 +4677,7 @@ test('a series is compared with every catalog at once, and Apply takes only the 
 				},
 			},
 		);
-	const storage = new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
+	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
 	const {els, get, readable} = await boot({
 		page: 'import.html',
 		hash: '#all-series=Gull+Isle',
@@ -4754,7 +4766,10 @@ test('AudiobookDB needs the proxy, says when the proxy is out of date, and says 
 	const mine = [{t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]}];
 	const none = await boot({page: 'import.html', files: {'books.json': JSON.stringify(mine)}});
 	await none.els.audiobookdbCompareBtn.listeners.click[0]();
-	assert.match(none.els.ioStatus.textContent, /AudiobookDB is asked through your catalog proxy: save one first/);
+	assert.match(
+		none.els.ioStatus.textContent,
+		/AudiobookDB is asked through your server's catalog proxy: save your server first/,
+	);
 
 	const {proxy} = audiobookdbBehindProxy();
 	const wrong = await boot({
@@ -4762,7 +4777,7 @@ test('AudiobookDB needs the proxy, says when the proxy is out of date, and says 
 		files: {'books.json': JSON.stringify(mine)},
 		proxy,
 		setTimeout: abdbTimeout,
-		storage: new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'not-my-key']]),
+		storage: new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'not-my-key']]),
 	});
 	await wrong.els.audiobookdbCompareBtn.listeners.click[0]();
 	await idle();
@@ -4779,13 +4794,13 @@ test('AudiobookDB needs the proxy, says when the proxy is out of date, and says 
 		files: {'books.json': JSON.stringify(mine)},
 		proxy: old,
 		setTimeout: abdbTimeout,
-		storage: new Map([PROXY_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]),
+		storage: new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]),
 	});
 	await stale.els.audiobookdbCompareBtn.listeners.click[0]();
 	await idle();
 	assert.match(
 		stale.els.importPreviewBody.innerHTML,
-		/Couldn't compare: the catalog proxy refused it \(400\): run npx wrangler deploy in proxy\/ to bring it up to date/,
+		/Couldn't compare: your server refused it \(400\): deploy it again \(make deploy-server\) to bring it up to date/,
 	);
 });
 

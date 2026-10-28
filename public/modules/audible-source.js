@@ -1,5 +1,5 @@
 // Audible as a source of the book form's Fill in: its catalog API doesn't answer web pages, so it is asked
-// through the user's own catalog proxy (proxy/worker.js), by an Audible or Amazon ASIN, on the site of the ASIN.
+// through the user's own catalog proxy (server/proxy.js), by an Audible or Amazon ASIN, on the site of the ASIN.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';

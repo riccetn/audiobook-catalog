@@ -1,5 +1,5 @@
 // AudiobookDB as a source of the book form's Fill in: its API doesn't answer web pages, so it is asked through
-// the user's own catalog proxy (proxy/worker.js), by its books and releases, by an ASIN (beside Audible), and
+// the user's own catalog proxy (server/proxy.js), by its books and releases, by an ASIN (beside Audible), and
 // by a typed title. The ASINs it lists are not taken, as it doesn't say which Audible site they are on.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';

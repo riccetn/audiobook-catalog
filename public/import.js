@@ -24,10 +24,10 @@ import {
 	showIoStatus,
 	minutes,
 	showCatalogJob,
-	PROXY_STORAGE_KEY,
-	browserProxy,
-	proxyAddress,
-	fetchViaProxy,
+	SERVER_STORAGE_KEY,
+	savedServer,
+	serverAddress,
+	fetchFromServer,
 	SYNC_STORAGE_KEY,
 	savedPassphrase,
 	lastSync,
@@ -1193,69 +1193,77 @@ function saveKeyOf(Client, remove) {
 	showKey(Client);
 }
 
-// ------------------------------------------------------------ the catalog proxy
+// ------------------------------------------------------------ your server
 // Its address and key are kept in this browser only (never in a backup), like your keys for the catalogs.
-function showProxy() {
-	const proxy = browserProxy();
-	byId('proxyState').textContent = proxy
-		? `Saved in this browser only (never in a backup): ${proxy.url}`
-		: "Paste your proxy's address and key and save them; they are kept in this browser only (never in a backup).";
-	byId('proxyCheck').style.display = proxy ? '' : 'none';
-	byId('proxyRemove').style.display = proxy ? '' : 'none';
+function showServer() {
+	const server = savedServer();
+	byId('serverState').textContent = server
+		? `Saved in this browser only (never in a backup): ${server.url}`
+		: "Paste your server's address and key and save them; they are kept in this browser only (never in a backup).";
+	byId('serverCheck').style.display = server ? '' : 'none';
+	byId('serverRemove').style.display = server ? '' : 'none';
 }
 
 /**
- * Save the proxy typed in the page in this browser and check it, or `remove` the saved one.
+ * Save the server typed in the page in this browser and check it, or `remove` the saved one.
  * @param {boolean} remove
  */
-async function saveProxy(remove) {
-	const url = fieldById('proxyUrl'),
-		key = fieldById('proxyKey');
-	const address = proxyAddress(url.value);
+async function saveServer(remove) {
+	const url = fieldById('serverUrl'),
+		key = fieldById('serverKey');
+	const address = serverAddress(url.value);
 	if (!remove) {
 		if (!address) {
-			showIoStatus("Paste the proxy's address first (https://…workers.dev).", true);
+			showIoStatus("Paste the server's address first (https://…workers.dev).", true);
 			return;
 		}
 		if (!key.value.trim()) {
-			showIoStatus("Paste the proxy's key first.", true);
+			showIoStatus("Paste the server's key first.", true);
 			return;
 		}
 	}
 	try {
-		if (remove) localStorage.removeItem(PROXY_STORAGE_KEY);
-		else localStorage.setItem(PROXY_STORAGE_KEY, JSON.stringify({url: address, key: key.value.trim()}));
+		if (remove) localStorage.removeItem(SERVER_STORAGE_KEY);
+		else localStorage.setItem(SERVER_STORAGE_KEY, JSON.stringify({url: address, key: key.value.trim()}));
 		url.value = '';
 		key.value = '';
 	} catch {
-		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the proxy: this browser refused to store it.`, true);
+		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the server: this browser refused to store it.`, true);
 		return;
 	}
-	showProxy();
-	if (remove) showIoStatus('Catalog proxy removed.');
-	else await checkProxy('Catalog proxy saved');
+	showServer();
+	if (remove) showIoStatus('Server removed.');
+	else await checkServer('Server saved');
 }
 
 /**
- * Ask the saved proxy whether it answers this page with its key, and say so.
+ * Ask the saved server whether it answers this page with its key, and what it does, and say so.
  * @param {string} [saved] what the status line starts with, after a save
  */
-async function checkProxy(saved) {
-	const start = saved ? `${saved}; ` : '';
+async function checkServer(saved) {
+	/** @type {(text: string, error?: boolean) => void} */
+	const say = (text, error = false) =>
+		showIoStatus(saved ? `${saved}; ${text}` : text.charAt(0).toUpperCase() + text.slice(1), error);
 	try {
-		const res = await fetchViaProxy('ping');
+		const res = await fetchFromServer('ping');
 		if (res.ok) {
-			const names = /** @type {{catalogs?: string[]}} */ (await res.json()).catalogs || [];
-			showIoStatus(`${start}${saved ? 'it' : 'The catalog proxy'} answers, for ${names.join(', ')}.`);
-		} else if (res.status === 401) showIoStatus(`${start}the proxy refused the key.`, true);
-		else showIoStatus(`${start}the proxy answered ${res.status}.`, true);
+			const ping = /** @type {{proxy?: string[], sync?: boolean}} */ (await res.json());
+			// a server from before the proxy moved under /proxy/ lists its catalogs as `catalogs`
+			if (!ping.proxy) say('your server is from before this version: deploy it again.', true);
+			else
+				say(
+					`${saved ? 'it' : 'your server'} answers: its catalog proxy asks ${ping.proxy.join(', ')}, and ` +
+						(ping.sync ? 'it keeps the copy devices sync with.' : 'sync is not set up on it.'),
+				);
+		} else if (res.status === 401) say('your server refused the key.', true);
+		else say(`your server answered ${res.status}.`, true);
 	} catch (e) {
-		showIoStatus(`${start}${Text.errorText(e)}.`, true);
+		say(`${Text.errorText(e)}.`, true);
 	}
 }
 
 // ------------------------------------------------------------ syncing devices
-// The passphrase is kept in this browser only, like the proxy; syncing itself is syncCatalog() in store.js.
+// The passphrase is kept in this browser only, like the server's key; syncing itself is syncCatalog() in store.js.
 async function showSync() {
 	const saved = Boolean(savedPassphrase());
 	byId('syncPassphraseState').textContent = saved
@@ -1308,8 +1316,8 @@ function showSyncChoice(text, which) {
  */
 async function runSync(prefer) {
 	showSyncChoice('', []);
-	if (!browserProxy()) {
-		showIoStatus('Syncing goes through your catalog proxy: save one first (above).', true);
+	if (!savedServer()) {
+		showIoStatus('Syncing goes through your server: save it first (above).', true);
 		return;
 	}
 	const button = /** @type {HTMLButtonElement} */ (byId('syncBtn'));
@@ -1470,8 +1478,8 @@ async function compareShelfSync(Sync) {
 		label = Client.LABEL,
 		prefix = Client.CATALOG;
 	const key = savedKey(Client);
-	if (Client.VIA_PROXY && !browserProxy()) {
-		showIoStatus(`${label} is asked through your catalog proxy: save one first (below).`, true);
+	if (Client.VIA_PROXY && !savedServer()) {
+		showIoStatus(`${label} is asked through your server's catalog proxy: save your server first (below).`, true);
 		return;
 	}
 	if (Client.KEY_NEEDED && !key) {
@@ -1632,14 +1640,14 @@ const multiSyncs = kind => CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.inc
 const namesSaid = names => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0] || '');
 
 /**
- * What keeps a catalog from being asked now ('' when nothing does): no proxy saved, or no key where it needs one.
+ * What keeps a catalog from being asked now ('' when nothing does): no server saved, or no key where it needs one.
  * @param {SyncClass} Sync
  * @returns {string}
  */
 function cantAsk(Sync) {
 	const Client = Sync.CLIENT;
-	if (Client.VIA_PROXY && !browserProxy())
-		return `${Client.LABEL}: not asked, as it needs your catalog proxy (below).`;
+	if (Client.VIA_PROXY && !savedServer())
+		return `${Client.LABEL}: not asked, as it needs your server's catalog proxy (below).`;
 	if (Client.KEY_NEEDED && !savedKey(Client))
 		return `${Client.LABEL}: not asked, as it needs your ${Client.LABEL} ${Client.KEY_NAME} (below).`;
 	return '';
@@ -2079,9 +2087,9 @@ onFilesPicked('importCsvFile', files => importCsv(IMPORT_KIND, files[0]));
 byId('importConfirm').addEventListener('click', () =>
 	PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_MULTI ? applyMulti() : applyCompare(),
 );
-byId('proxySave').addEventListener('click', () => saveProxy(false));
-byId('proxyCheck').addEventListener('click', () => checkProxy());
-byId('proxyRemove').addEventListener('click', () => saveProxy(true));
+byId('serverSave').addEventListener('click', () => saveServer(false));
+byId('serverCheck').addEventListener('click', () => checkServer());
+byId('serverRemove').addEventListener('click', () => saveServer(true));
 byId('importCancel').addEventListener('click', closeImportPreview);
 byId('syncPassphraseSave').addEventListener('click', () => saveSyncPassphrase(false));
 byId('syncPassphraseRemove').addEventListener('click', () => saveSyncPassphrase(true));
@@ -2107,7 +2115,7 @@ export const READY = startPage(
 		for (const Client of CatalogConnectors.CLIENTS) showKey(Client);
 		for (const Sync of CatalogConnectors.SYNCS) showScope(Sync.CLIENT.CATALOG);
 		showScope('all');
-		showProxy();
+		showServer();
 		showSyncChoice('', []);
 		showSync();
 		compareFromAddress();

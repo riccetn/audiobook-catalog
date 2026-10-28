@@ -32,8 +32,7 @@ export class AudibleClient extends CatalogClient {
 		await this.waitTurn();
 		const res = await this.get(`audible/${site}/catalog/${path}`);
 		if (res.status === 404) return null;
-		if (res.status === 401)
-			throw new Error('the catalog proxy refused its key (check it on the Import & export page)');
+		if (res.status === 401) throw new Error('your server refused its key (check it on the Import & export page)');
 		/** @type {unknown} */
 		let json = null;
 		try {

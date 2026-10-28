@@ -4,7 +4,7 @@ The catalog can find its books on [AudiobookDB](https://audiobookdb.org), compar
 there, take books and values from them, and put your books on your _Listened_ shelf there (AudiobookDB's Read
 shelf), through AudiobookDB's API.
 AudiobookDB's API doesn't answer web pages (it sends no CORS headers), so the page asks it through your own
-[catalog proxy](catalog-proxy.md): save one on the _Import & export_ page first.
+[server's catalog proxy](server.md): save your server on the _Import & export_ page first.
 
 ## Your API key
 
@@ -79,10 +79,10 @@ for it: removing the release from the edition doesn't remove the cover, but remo
 
 ## When something is wrong
 
-- _AudiobookDB is asked through your catalog proxy_: save a [catalog proxy](catalog-proxy.md) first.
+- _AudiobookDB is asked through your server's catalog proxy_: save [your server](server.md) first.
 - _AudiobookDB refused your API key_: make a new key on audiobookdb.org and save it again.
-- _the catalog proxy refused it (400)_ or _(405)_: your proxy was deployed before AudiobookDB's shelves were
-  added. Run `npx wrangler deploy` in `proxy/` again.
+- _your server refused it (400)_ or _(405)_: your server was deployed before AudiobookDB's shelves were
+  added. Deploy it again with `make deploy-server`.
 - _AudiobookDB asks to slow down_: it allows a daily budget of requests (about 10,500 a day without a key, and about 20,000 with yours).
   The page waits a little and asks again when AudiobookDB says it will take more soon, and stops when the day's budget
   is spent; try again the next day.

@@ -1,6 +1,6 @@
-// Syncing the catalog between devices through the catalog proxy (proxy/worker.js, `/sync`), which keeps one copy
-// of it: a version 3 backup (Backup.write), compressed and encrypted here with a passphrase, so the proxy and
-// Cloudflare hold only text they can't read. Each device keeps the copy it last synced (its `base`), and a sync
+// Syncing the catalog between devices through your server (server/sync.js, `/sync`), which keeps one copy
+// of it: a version 3 backup (Backup.write), compressed and encrypted here with a passphrase, so the server (and
+// Cloudflare) hold only text they can't read. Each device keeps the copy it last synced (its `base`), and a sync
 // takes in what changed in the copy since then the way a save takes in another tab's (CatalogRecords.merge):
 // a record only one side changed comes from that side, and one both changed differently is a conflict, named,
 // which the user settles by keeping this device's or the synced one. The page then saves the result and sends
@@ -64,9 +64,9 @@ export class CatalogSync {
 	}
 
 	/**
-	 * The catalog's backup, compressed and encrypted with `key` (AES-GCM, a new IV), as the text the proxy keeps.
+	 * The catalog's backup, compressed and encrypted with `key` (AES-GCM, a new IV), as the text the server keeps.
 	 * `copy` names the synced copy, the same from the first sync on, so a device can tell a copy made again (the
-	 * proxy's database emptied, say) from the one it synced before.
+	 * server's database emptied, say) from the one it synced before.
 	 * @param {BackupJSON} backup
 	 * @param {SyncKey} key
 	 * @param {string} copy
@@ -162,7 +162,7 @@ export class CatalogSync {
 	 * synced (`base`); each a backup, null for none (`base` before the first sync, `theirs` before any device
 	 * synced). With `prefer`, a record both changed is that side's (and still named in `conflicts`); without it
 	 * the result is of no use while there are conflicts. Throws UnrelatedCatalogs when the two name one series
-	 * or person under other ids (they weren't made from one catalog, see docs/catalog-proxy.md); `replace` then
+	 * or person under other ids (they weren't made from one catalog, see docs/server.md); `replace` then
 	 * takes the synced copy in place of this device's catalog, keeping this one's exclusions too.
 	 * @param {BackupJSON | null} base
 	 * @param {BackupJSON} mine

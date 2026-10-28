@@ -41,7 +41,7 @@ asked too: a book's or edition's page on hardcover.app, and the pages Hardcover 
 Amazon page (by its ASIN) and a Goodreads edition (`goodreads.com/book/show/…`); an ISBN is looked up there
 first, and an Open Library edition's ISBN or ASIN is looked up there for the narrators and length Open Library
 doesn't have. Audible, Amazon, Goodreads and AudiobookDB can't be read from a web page themselves, so without the
-token their addresses can't be looked up, unless you have a [catalog proxy](catalog-proxy.md) saved. With the proxy,
+token their addresses can't be looked up, unless you have [your server](server.md) saved. With its catalog proxy,
 an Audible or Amazon page (or a bare ASIN) is looked up on that Audible site's catalog (an Amazon site on its Audible
 site, else audible.com) and on AudiobookDB; an AudiobookDB book or release (`audiobookdb.org/releases/…`) is looked
 up there (a book of several releases comes without an edition: paste your release's address); a title typed instead

@@ -89,7 +89,7 @@ export class AudiobookdbClient extends CatalogClient {
 				);
 			if ((res.status === 400 || res.status === 405) && keyed)
 				throw new Error(
-					`the catalog proxy refused it (${res.status}): run npx wrangler deploy in proxy/ to bring it up to date`,
+					`your server refused it (${res.status}): deploy it again (make deploy-server) to bring it up to date`,
 				);
 			if (!res.ok || json === null) throw new Error(`AudiobookDB answered ${res.status}${said}`);
 			return json;

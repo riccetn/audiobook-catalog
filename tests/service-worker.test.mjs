@@ -108,8 +108,11 @@ test("the app's files come from the cache, past the browser's own cache when ins
 	assert.equal(await sw.get('api/index.html'), 'fresh /app/api/index.html');
 	assert.equal(await sw.get('api/index.html'), 'fresh /app/api/index.html');
 	assert.equal(sw.asked.length, fetched + 1);
-	// another site's requests are left to the network
+	// another site's requests are left to the network, and so are the app's server's when it serves the app too
 	assert.equal(await sw.get('https://api.hardcover.app/v1/graphql'), undefined);
+	for (const route of ['sync', 'ping', 'proxy/audiobookdb/books/FAKEbook0001'])
+		assert.equal(await sw.get(route), undefined, route);
+	assert.equal(sw.asked.length, fetched + 1);
 });
 
 test('a new version is fetched whole into a cache of its own, and the old one goes once it is active', async () => {

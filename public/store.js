@@ -1241,8 +1241,8 @@ export function externalLinks(ids, kind, cls = 'authorlink') {
 // ------------------------------------------------------------ the catalogs' keys and clients
 // Your key for a catalog (Hardcover's token, AudiobookDB's API key) is kept in this browser only (never in a
 // backup), under its client class's KEY_STORAGE, and saved on Import & export. A catalog whose API answers web
-// pages (Hardcover) is asked from the page itself; one that doesn't (AudiobookDB) through the catalog proxy,
-// which passes the key on only with the requests that need it and never keeps it.
+// pages (Hardcover) is asked from the page itself; one that doesn't (AudiobookDB) through your server's catalog
+// proxy, which passes the key on only with the requests that need it and never keeps it.
 /** @import {CatalogClient, ClientClass, CatalogFetch} from './modules/catalog-client.js' */
 
 /**
@@ -1289,8 +1289,8 @@ function fetchDirect(label) {
 }
 
 /**
- * A client of `Client`'s catalog asking from this page (or through the saved catalog proxy, for a catalog asked
- * through it), with `key` (your key; the one saved in this browser when left out).
+ * A client of `Client`'s catalog asking from this page (or through the saved server's catalog proxy, for a
+ * catalog asked through it), with `key` (your key; the one saved in this browser when left out).
  * @template {CatalogClient} C
  * @param {ClientClass<C>} Client
  * @param {string} [key]
@@ -1298,9 +1298,9 @@ function fetchDirect(label) {
  */
 export function catalogClient(Client, key = savedKey(Client)) {
 	const pause = (/** @type {number} */ ms) => new Promise(done => setTimeout(done, ms));
-	const proxy = browserProxy();
+	const server = savedServer();
 	/** @type {CatalogFetch} */
-	const get = Client.VIA_PROXY ? (route, init) => fetchViaProxy(route, proxy, init) : fetchDirect(Client.LABEL);
+	const get = Client.VIA_PROXY ? (route, init) => fetchViaProxy(route, server, init) : fetchDirect(Client.LABEL);
 	return new Client(get, key, pause);
 }
 
@@ -1387,22 +1387,24 @@ export function lookupHardcoverField(prefix, kind) {
 	return lookup;
 }
 
-// ------------------------------------------------------------ the catalog proxy
-// Catalogs whose APIs don't answer web pages (AudiobookDB, Audible, BookBrainz, ISFDB) are asked through the
-// user's own proxy (proxy/worker.js, a Cloudflare Worker) when its address and key are saved on Import & export.
+// ------------------------------------------------------------ your server
+// The app's optional server (server/worker.js: a Cloudflare Worker, or make serve on this computer), when its
+// address and key are saved on Import & export, does two things: its catalog proxy asks the catalogs whose APIs
+// don't answer web pages (AudiobookDB, Audible, BookBrainz, ISFDB), and it keeps the copy devices sync with.
 // Like the Hardcover token they are kept in this browser only (never in a backup); without them those catalogs
 // are not asked. Hardcover is never asked through it, so the token never leaves for anywhere but Hardcover.
-export const PROXY_STORAGE_KEY = 'audiobook-catalog-proxy';
-const PROXY_KEY_HEADER = 'X-Proxy-Key';
+// The storage key is the one from when the server was only the proxy, so a server saved then is still found.
+export const SERVER_STORAGE_KEY = 'audiobook-catalog-proxy';
+const SERVER_KEY_HEADER = 'X-Server-Key';
 const CATALOG_KEY_HEADER = 'X-Catalog-Key'; // your key for a catalog, which the proxy passes on only where it is needed
 
-/** @typedef {{url: string, key: string}} ProxySettings the proxy's address (no slash at the end) and its key */
+/** @typedef {{url: string, key: string}} ServerSettings the server's address (no slash at the end) and its key */
 
-/** @returns {ProxySettings | null} the catalog proxy saved in this browser, or null */
-export function browserProxy() {
+/** @returns {ServerSettings | null} the server saved in this browser, or null */
+export function savedServer() {
 	try {
-		const v = /** @type {Unchecked} */ (JSON.parse(localStorage.getItem(PROXY_STORAGE_KEY) || 'null'));
-		const url = v && typeof v.url === 'string' ? proxyAddress(v.url) : '';
+		const v = /** @type {Unchecked} */ (JSON.parse(localStorage.getItem(SERVER_STORAGE_KEY) || 'null'));
+		const url = v && typeof v.url === 'string' ? serverAddress(v.url) : '';
 		return url && typeof v.key === 'string' && v.key ? {url, key: v.key} : null;
 	} catch {
 		return null;
@@ -1410,12 +1412,12 @@ export function browserProxy() {
 }
 
 /**
- * The proxy address typed, tidied (no slash at the end), or '' when it isn't one: https, or http only on this
- * computer (a proxy run beside make serve), with no query or password in it.
+ * The server address typed, tidied (no slash at the end), or '' when it isn't one: https, or http only on this
+ * computer (make serve), with no query or password in it.
  * @param {string} text
  * @returns {string}
  */
-export function proxyAddress(text) {
+export function serverAddress(text) {
 	let url;
 	try {
 		url = new URL(text.trim());
@@ -1429,35 +1431,46 @@ export function proxyAddress(text) {
 }
 
 /**
- * Asks a catalog through the proxy: `route` is the catalog and the path in its API
- * (`audiobookdb/audiobooks/external/audible/B0…`, `ping` to see that the proxy answers). With `init.key`
- * (your key for that catalog, AudiobookDB's) it goes along for the proxy to pass on, and with `init.body` it
- * is a POST of that JSON. Throws plainly when no proxy is saved or the browser can't reach it.
- * @param {string} route
- * @param {ProxySettings | null} [proxy] the saved one when left out
- * @param {{method?: string, body?: string, key?: string}} [init]
+ * Asks the server: `path` is its route (`ping`, `sync`, `proxy/audiobookdb/…`). With `init.key` (your key for a
+ * catalog, AudiobookDB's) it goes along for the proxy to pass on, and with `init.body` it is a POST of that JSON.
+ * Throws plainly when no server is saved or the browser can't reach it.
+ * @param {string} path
+ * @param {ServerSettings | null} [server] the saved one when left out
+ * @param {{body?: string, key?: string}} [init]
  * @returns {Promise<Response>}
  */
-export async function fetchViaProxy(route, proxy = browserProxy(), init = {}) {
-	if (!proxy) throw new Error('save a catalog proxy on the Import & export page');
+export async function fetchFromServer(path, server = savedServer(), init = {}) {
+	if (!server) throw new Error('save your server on the Import & export page');
 	/** @type {Record<string, string>} */
-	const headers = {[PROXY_KEY_HEADER]: proxy.key};
+	const headers = {[SERVER_KEY_HEADER]: server.key};
 	if (init.key) headers[CATALOG_KEY_HEADER] = init.key;
 	if (init.body !== undefined) headers['Content-Type'] = 'application/json';
 	const ask = init.body !== undefined ? {method: 'POST', body: init.body, headers} : {headers};
 	try {
-		return await fetch(`${proxy.url}/${route.replace(/^\/+/, '')}`, ask);
+		return await fetch(`${server.url}/${path.replace(/^\/+/, '')}`, ask);
 	} catch (e) {
 		throw new Error(
-			'this browser could not reach the catalog proxy (check its address, and that it allows this page in ALLOWED_ORIGINS)',
+			'this browser could not reach your server (check its address, and that it allows this page in ALLOWED_ORIGINS)',
 			{cause: e},
 		);
 	}
 }
 
+/**
+ * Asks a catalog through the server's catalog proxy: `route` is the catalog and the path in its API
+ * (`audiobookdb/audiobooks/external/audible/B0…`); `init` as for fetchFromServer.
+ * @param {string} route
+ * @param {ServerSettings | null} [server] the saved one when left out
+ * @param {{body?: string, key?: string}} [init]
+ * @returns {Promise<Response>}
+ */
+export function fetchViaProxy(route, server = savedServer(), init = {}) {
+	return fetchFromServer(`proxy/${route.replace(/^\/+/, '')}`, server, init);
+}
+
 // ------------------------------------------------------------ syncing devices
-// With sync set up on the catalog proxy (a D1 database, docs/catalog-proxy.md), the proxy keeps one copy of the
-// catalog, encrypted with a passphrase that is kept in this browser only, like the proxy's key (never in a backup,
+// With sync set up on your server (a D1 database, or make serve's SQLite file; docs/server.md), the server keeps one
+// copy of the catalog, encrypted with a passphrase that is kept in this browser only, like the server's key (never in a backup,
 // never sent). Syncing takes in what other devices changed since this browser last synced, saves it, and sends the
 // result as the next copy (CatalogSync). What this browser last synced is kept in IndexedDB (meta `sync`).
 export const SYNC_STORAGE_KEY = 'audiobook-catalog-sync-passphrase';
@@ -1488,21 +1501,21 @@ export async function lastSync() {
  */
 
 /**
- * The proxy's answer to a sync request, or a plain error saying what is wrong.
+ * The server's answer to a sync request, or a plain error saying what is wrong.
  * @param {Response} res
  * @returns {Promise<{revision: number, data?: string | null}>}
  */
 async function syncAnswer(res) {
-	if (res.status === 401) throw new Error('the proxy refused the key');
-	if (res.status === 501) throw new Error('sync is not set up on your proxy (see Catalog proxy in the docs)');
-	if (res.status === 404) throw new Error('your proxy is from before sync: deploy it again');
+	if (res.status === 401) throw new Error('your server refused the key');
+	if (res.status === 501) throw new Error('sync is not set up on your server (see Your server in the docs)');
+	if (res.status === 404) throw new Error('your server is from before sync: deploy it again');
 	if (res.status === 413) throw new Error('the catalog is too big to sync');
-	if (!res.ok) throw new Error(`the proxy answered ${res.status}`);
+	if (!res.ok) throw new Error(`your server answered ${res.status}`);
 	return /** @type {{revision: number, data?: string | null}} */ (await res.json());
 }
 
 /**
- * Sync this browser's catalog with the copy on the catalog proxy: take in what other devices changed since this
+ * Sync this browser's catalog with the copy on your server: take in what other devices changed since this
  * browser last synced, save it here, and send the result. When both changed one entry, nothing is changed and
  * the outcome names them, unless `prefer` says whose to keep. Throws a plain error (or CatalogSync's
  * WrongPassphrase, UnrelatedCatalogs, or NewerBackup) when it can't.
@@ -1521,7 +1534,7 @@ export async function syncCatalog(prefer) {
 	await wholeCatalog();
 	// another device may send its copy between this browser's reading and sending: then it reads again
 	for (let tries = 1; tries <= 3; tries++) {
-		const got = await syncAnswer(await fetchViaProxy('sync'));
+		const got = await syncAnswer(await fetchFromServer('sync'));
 		const base = await DATABASE.syncBase();
 		const opened = got.data ? await CatalogSync.open(got.data, passphrase) : null;
 		// what this browser synced last is of use only while the copy is that one, at that revision or later
@@ -1559,7 +1572,7 @@ export async function syncCatalog(prefer) {
 		const now = Backup.write(CATALOG);
 		const key = opened ? opened.key : await CatalogSync.keyFor(passphrase);
 		const body = JSON.stringify({revision: got.revision, data: await CatalogSync.seal(now, key, copy)});
-		const res = await fetchViaProxy('sync', undefined, {body});
+		const res = await fetchFromServer('sync', undefined, {body});
 		if (res.status === 409) continue;
 		const sent = await syncAnswer(res);
 		await DATABASE.keepSyncBase({revision: sent.revision, copy, backup: now, at: new Date().toISOString()});
