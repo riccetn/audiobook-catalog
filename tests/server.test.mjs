@@ -7,7 +7,7 @@ import {handle, allowedOrigins, KEY_HEADER, OLD_KEY_HEADER} from '../server/work
 import {upstreamUrl, CATALOG_KEY_HEADER} from '../server/proxy.js';
 import {MAX_SYNC} from '../server/sync.js';
 import {sqliteD1} from '../server/sqlite-d1.js';
-import {deployConfig, DATABASE, BINDING, DEPLOY_CONFIG} from '../server/deploy.mjs';
+import {deployConfig, shellArg, DATABASE, BINDING, DEPLOY_CONFIG} from '../server/deploy.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -396,4 +396,12 @@ test('make serve: the pages from public/, everything else the server, with sync 
 	assert.equal(await (await cache.match(request)).text(), 'kept');
 	await cache.put(request, new Response('not kept', {headers: {'Cache-Control': 'no-store'}}));
 	assert.equal(await (await cache.match(request)).text(), 'kept');
+});
+
+test("deploy: Windows' shell gets one command line, quoted only where an argument needs it", () => {
+	assert.equal(shellArg('wrangler.deploy.toml'), 'wrangler.deploy.toml');
+	assert.equal(shellArg('--json'), '--json');
+	assert.equal(shellArg('C:\\My Projects\\x'), '"C:\\My Projects\\x"');
+	assert.equal(shellArg('a&b'), '"a&b"');
+	assert.equal(shellArg('say "hi"'), '"say ""hi"""');
 });

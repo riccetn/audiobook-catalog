@@ -28,6 +28,15 @@ export function deployConfig(toml, id) {
 }
 
 /**
+ * An argument as cmd.exe reads it: as it is when it holds nothing the shell would read, else in double quotes.
+ * @param {string} arg
+ * @returns {string}
+ */
+export function shellArg(arg) {
+	return /^[\w@+=:,./\\-]+$/.test(arg) ? arg : `"${arg.replace(/"/g, '""')}"`;
+}
+
+/**
  * Run wrangler (through npx, as it is no devDependency) in `cwd`; with `capture`, return what it printed.
  * @param {string[]} args
  * @param {{cwd?: string, capture?: boolean}} [opts]
@@ -37,15 +46,22 @@ function wrangler(args, {cwd = HERE, capture = false} = {}) {
 	// --yes: npx would otherwise ask before installing wrangler. A captured run gets no input either, so wrangler
 	// asks nothing (its first-run question about usage metrics, say): a question printed where it is captured
 	// can't be seen, and would wait for an answer forever.
-	const run = spawnSync('npx', ['--yes', 'wrangler', ...args], {
+	const command = ['npx', '--yes', 'wrangler', ...args];
+	/** @type {import('node:child_process').SpawnSyncOptionsWithStringEncoding} */
+	const options = {
 		cwd,
 		encoding: 'utf8',
 		stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
-		shell: process.platform === 'win32', // npx is npx.cmd there
 		env: capture
 			? {...process.env, WRANGLER_SEND_METRICS: process.env.WRANGLER_SEND_METRICS || 'false'}
 			: process.env,
-	});
+	};
+	// On Windows npx is npx.cmd, which only a shell runs, and Node deprecates handing a shell separate arguments
+	// (DEP0190, as it only joins them), so it gets the one command line, each argument quoted where it needs it.
+	const run =
+		process.platform === 'win32'
+			? spawnSync(command.map(shellArg).join(' '), {...options, shell: true})
+			: spawnSync(command[0], command.slice(1), options);
 	if (run.status !== 0) process.exit(run.status || 1);
 	return run.stdout || '';
 }
