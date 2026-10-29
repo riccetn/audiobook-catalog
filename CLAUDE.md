@@ -11,47 +11,53 @@ no server code in the app and no command line: any static server (`make serve`, 
 Node is only used to write the pages, run the tests and run `make serve`.
 
 Everything that is served lives in `public/` (pages, modules, `styles.css`, the PWA files, `icons/` and `vendor/`, the QR code library `make pages` copies; the published site adds the API docs at `api/`),
-and nothing else goes there: `docs/`, `templates/`, `tests/`, `api-docs/` and `server/` stay outside it, so they are never served.
+and nothing else goes there: `src/`, `docs/`, `templates/`, `tests/`, `api-docs/` and `server/` stay outside it, so they are never served.
 The one piece that runs elsewhere is the optional server (`server/`, below: the catalog proxy and sync), a Cloudflare Worker the user deploys
 themselves, or `make serve` on their computer; the app never needs it.
-The module names below are files in `public/`.
+The app is TypeScript in `src/`, compiled into `public/`; the module names below are the names they are served and
+imported under (`store.js` is `src/store.ts`, `modules/book.js` is `src/modules/book.ts`).
 
-The pages' HTML is the one thing built: `make pages` (`build.mjs`) renders `templates/pages/<name>.liquid` with
+`make pages` (`build.mjs`) builds `public/`: it compiles `src/` with `tsc` (`tsconfig.json`, and `tsconfig.sw.json` for `sw.ts`
+with the worker's globals) into `public/*.js` and `public/modules/*.js`, each with a source map (`.js.map`, the TypeScript inside
+it, so DevTools shows `src/`; never cached by `sw.js`), after clearing out the scripts compiled before; a type error stops it.
+Then it renders `templates/pages/<name>.liquid` with
 [Liquid](https://liquidjs.com/) into `public/<name>.html`, each filling in `templates/layout.liquid` (the `<head>`, the title and the
-nav bar, whose links are `nav-link.liquid` includes). The written pages are in `.gitignore`: **edit the templates, never `public/*.html`**.
+nav bar, whose links are `nav-link.liquid` includes). The written pages and scripts are in `.gitignore`: **edit the templates and `src/`, never `public/*.html` or `public/*.js`**.
 A page's template starts with `{% layout 'layout' title: 'Books' nav: 'books.html' script: 'books.js' %}` (`title` left out
 on the Series page; `nav` is the link marked current, `aria-current` only on that page itself). The build is strict (an
 unknown variable or filter fails it). `make test` and `make serve` build first, and so do both workflows.
 
-- Vanilla JavaScript, no framework, no bundler, **no npm packages in the app or the tests** but one: the QR code
+- TypeScript (strict), compiled by `tsc` alone: no framework, no bundler, no minifying, **no npm packages in the app or the tests** but one: the QR code
   library `qrcode-generator` (a dependency, which the user allowed for _Set up another device_), which `build.mjs` copies from `node_modules/`
-  into `public/vendor/qrcode.mjs` (git-ignored, with `// @ts-nocheck` put on top, not linted) and `import.js` loads with `import()` when a code is shown.
+  into `public/vendor/qrcode.mjs` (git-ignored, not linted; its types are `src/vendor/qrcode.d.mts`, from the package's) and `import.js` loads with `import()` when a code is shown.
   `package.json` says `"type": "module"` and its devDependencies are tools only, never served or imported by the app or tests:
-  Liquid (`liquidjs`, `make pages`), TypeScript (`make typecheck`), ESLint with `@eslint/js` and `globals` (`make lint`) and Prettier (`make format`),
-  plus TypeDoc (`make docs`) in the `api-docs/` workspace; don't add others, use Node built-ins in tests.
-- Types are JSDoc comments checked by `tsc` (checkJs, strict); nothing is compiled, the browser loads the files as they are.
+  Liquid (`liquidjs`, `make pages`), TypeScript (`make pages`, `make typecheck`), ESLint with `@eslint/js`, `globals` and `typescript-eslint` (`make lint`), Prettier (`make format`)
+  and TypeDoc (`make docs`); don't add others, use Node built-ins in tests. TypeScript is 6, not 7: typescript-eslint and TypeDoc need its JS API, which 7 lacks.
+- `tsconfig.json`: `strict`, `verbatimModuleSyntax` (a type alone comes in with `import type`, which the compiled file leaves out), `rootDir` `src`, `outDir` `public`,
+  `sourceMap` with `inlineSources`. Modules import each other by their served names (`'./book.js'`), which TypeScript finds as `.ts`.
+- The tests and `build.mjs` stay JavaScript (`.mjs`), and run what `make pages` compiled into `public/`.
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` and the classes in `modules/`.
 - A page loads only the modules it needs. `store.js` and `Catalog` (which every page loads) import no connector, `Backup`, `Merger`
   or `Validator`; what only Import & export uses stays there (the smoke test's `IMPORT_PAGE_ONLY` checks it), and what a page
   needs only for one action is loaded with `import()` when used (the book form's _Fill in_, the Hardcover lookups, the old
   localStorage catalog's move). `modules/` imports stay static.
-- Node 22.13+ for the tests and `make serve` (`node:sqlite`; CI uses 24).
+- Node 22.18+ for the tests and `make serve` (`node:sqlite`, and the server's TypeScript run as it is; CI uses 24).
 
 ## Commands
 
 ```sh
-make pages      # node build.mjs: write public/*.html from templates/ (needs `npm install` once)
-make test       # make pages, then node --experimental-vm-modules --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
-make typecheck  # tsc -p jsconfig.json and -p jsconfig.sw.json (sw.js, with the worker's globals); needs `npm install` once
-make lint       # eslint . with the recommended rules (eslint.config.js); needs `npm install` once
+make pages      # node build.mjs: compile src/ into public/ with tsc, write public/*.html from templates/ (needs `npm install` once)
+make test       # make pages, then node --experimental-vm-modules --enable-source-maps --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
+make typecheck  # tsc --noEmit -p tsconfig.json and -p tsconfig.sw.json, and tsc -p tsconfig.server.json; needs `npm install` once
+make lint       # eslint . with the recommended rules and typescript-eslint's (eslint.config.js; public/ is ignored); needs `npm install` once
 make format     # prettier --write . (.prettierrc.json, .prettierignore); needs `npm install` once
 make format-check  # prettier --check ., what make check runs
 make check      # test, typecheck, lint and format-check, what CI runs; run it before a PR
-make docs       # TypeDoc: the API documentation from the JSDoc, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
+make docs       # TypeDoc: the API documentation from the doc comments, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
 make deploy-server  # node server/deploy.mjs: deploy the server (proxy and sync) with its sync D1 database, found by name; the id only in the git-ignored server/wrangler.deploy.toml
 make serve      # make pages, then node server/serve.mjs: public/ and the server on http://127.0.0.1:8000/ (PORT=, HOST=; key in server/.dev.vars, sync in server/.local/sync.sqlite)
-node --test tests/catalog.test.mjs            # one suite (the smoke test reads the pages, so make pages after editing a template) (the smoke test needs --experimental-vm-modules too)
+node --test tests/catalog.test.mjs            # one suite (it runs the compiled public/, so make pages after editing src/ or a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
@@ -59,17 +65,15 @@ On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, 
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is
-`catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. Prettier formats (`.prettierrc.json`: tabs, single quotes, 120 columns, no spaces inside braces; Markdown and YAML
+`catch{`, an empty one holds a comment saying why failing is fine, and an unused parameter starts with `_`; `any` is allowed (`no-explicit-any` off) where the code means whatever a stored record or a catalog's answer holds; where a rule is wrong for one line, `// eslint-disable-next-line <rule> -- <why>`. Prettier formats (`.prettierrc.json`: tabs, single quotes, 120 columns, no spaces inside braces; Markdown and YAML
 with two spaces, as `.editorconfig` says; `sample/` and `package-lock.json` are left alone, `.prettierignore`). `npm install` points git at
-`.githooks/` (the `prepare` script), whose `pre-commit` formats and restages the staged files, then runs ESLint on the staged JavaScript and, when there is any, the type check, and stops the commit on an error; `make format-check` fails on anything unformatted.
+`.githooks/` (the `prepare` script), whose `pre-commit` formats and restages the staged files, then runs ESLint on the staged code and, when there is any, the type check, and stops the commit on an error; `make format-check` fails on anything unformatted.
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `make check` and `make docs` on pull requests and on pushes to `main`; `.github/workflows/pages.yml`
 publishes `public/` to GitHub Pages on pushes to `main`, with `make docs API_DOCS=public/api` first, so the API documentation is served at `/api/`;
 `.github/workflows/server.yml` does the same and deploys the server with them (`make deploy-server`), once the repository has its Cloudflare secrets.
 The docs are written into `public/` only in those workflows: locally they stay in `api-docs/out/` (`sw-app.js` would list them, and the smoke test fails on files in `public/` no page uses).
 
-TypeDoc (`api-docs/typedoc.json`: `public/*.js` but `sw.js`, and `public/modules/*.js`, with `jsconfig.json`) needs TypeScript's JS API, which
-TypeScript 7 lacks, so `api-docs/` is an npm workspace (root `package.json` `workspaces`) with its own TypeScript 6 in `api-docs/node_modules/`,
-and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is the check). The doc comments on exports are the API docs.
+TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`, with `tsconfig.json`). The doc comments on exports are the API docs.
 
 ## Architecture
 
@@ -163,7 +167,7 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
     once, matched across sources by merging them in turn) and `gains`; `noPicks` (nothing picked, so Apply changes nothing), `pickedCount`, `apply`
     (each source's picked books merged in turn, then the picked values patched; ids found are kept by the page)).
     Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
-    others bring them in with `/** @import {MergeReport} from './merger.js' */`.
+    others bring them in with `import type {MergeReport} from './merger.js'`. A class declares its fields, with their types and doc comments, above its constructor.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
   loading (`startPage(init, page)`: a page holds **only what it shows**: `CATALOG` starts empty, `loadRecords(want)` brings in books
   (and what they need) by id, series or edition key, `queryCatalog(ask)` asks the database with a `CatalogReader`, and
@@ -190,8 +194,8 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   addresses (`index.html#series=<id>`, `book.html#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are `CATALOG.marks` by book (and edition) ids, so they
   survive a retitle; backups carry them as text (`markTexts`/`addMarkTexts`), and a text that matches no book stays a text mark.
-- `manifest.webmanifest`, `sw.js`, `icons/`: the installable app. `sw.js` is cache-first (network-first on localhost) and caches
-  the app's own files: `sw-app.js`, written by `build.mjs` (git-ignored), lists them (`APP_FILES`, every file in `public/` but `sw.js` and `api/`)
+- `manifest.webmanifest`, `sw.js` (`src/sw.ts`, a classic worker script), `icons/`: the installable app. `sw.js` is cache-first (network-first on localhost) and caches
+  the app's own files: `sw-app.js`, written by `build.mjs` (git-ignored), lists them (`APP_FILES`, every file in `public/` but `sw.js`, the `.map` files and `api/`)
   and names the cache (`APP_VERSION`, their hash), so a deploy installs a whole new cache in the background and no list is kept by hand (the smoke
   test checks that every page and module a page imports is listed, and fails on a file in `public/` no page uses).
 - `book-list.js`: what the series, books and book pages share: a book's card (`bookCard`, only its title, number, authors,
@@ -245,24 +249,24 @@ and `skipErrorChecking` (6 and 7 disagree on a few types; `make typecheck` is th
   read, an edition's ASIN, ISBN, narrators, publisher, release date, length, description, a series' total and status, a person's bio;
   a box set's edition once) and `byCatalog()` (how many of each kind have an id in each `ExternalCatalog.GROUPS`). A line opens to
   the first `LISTED` (100) entries, linked to their pages.
-- `server/`: the optional server (`docs/server.md`), two unrelated jobs in modules of their own, behind one gate. `worker.js` (the Cloudflare Worker,
+- `server/`: the optional server (`docs/server.md`), two unrelated jobs in modules of their own, behind one gate. `worker.ts` (the Cloudflare Worker,
   `wrangler.toml`): `handle(request, env, deps)` answers only `ALLOWED_ORIGINS`, only with the `SERVER_KEY` secret (`X-Server-Key`; `PROXY_KEY` and
-  `X-Proxy-Key`, the names from when it was only the proxy, still read), `/ping` (`{ok, proxy, sync}`), and routes `/sync` to `sync.js` and `/proxy/...`
-  to `proxy.js` (catalogs at the root too, for pages from before). `proxy.js` (`handleProxy`), for the catalogs whose APIs send no CORS headers: routes
+  `X-Proxy-Key`, the names from when it was only the proxy, still read), `/ping` (`{ok, proxy, sync}`), and routes `/sync` to `sync.ts` and `/proxy/...`
+  to `proxy.ts` (catalogs at the root too, for pages from before). `proxy.ts` (`handleProxy`), for the catalogs whose APIs send no CORS headers: routes
   name a catalog (`CATALOGS`: `audiobookdb`, `audible/<site>` (only `catalog/...`), `bookbrainz`, `isfdb`), never an address (`upstreamUrl(path, search)`);
   GET only; no cookies or other headers either way; answers found cached a day. A route's `keyed` paths (AudiobookDB's `auth/session`, your shelves,
   and POST of a book to a shelf, `keyedPath`) take your account key from `X-Catalog-Key` (`CATALOG_KEY_HEADER`) as the route's `keyHeader`, are never
-  cached, and are the only POSTs; the key sent elsewhere is refused (400), never stored. Hardcover never goes through it. `sync.js` (`handleSync`): the
+  cached, and are the only POSTs; the key sent elsewhere is refused (400), never stored. Hardcover never goes through it. `sync.ts` (`handleSync`): the
   one copy of the catalog the pages sync, encrypted by them, in a D1 database (`D1Database`, bound as `SYNC_DB`; `SYNC_SQL`, plain SQLite: one row,
-  replaced only over the revision the page read, else 409; at most `MAX_SYNC`; 501 without one). `responses.js`: `jsonResponse`, `corsHeaders`.
+  replaced only over the revision the page read, else 409; at most `MAX_SYNC`; 501 without one). `responses.ts`: `jsonResponse`, `corsHeaders`.
   `serve.mjs` (`make serve`, Node built-ins only): `public/`'s files first, as Cloudflare's static assets, then `handle` (`startServer`, `publicFile`,
-  `memoryCache` for the proxy's cache), with `SYNC_DB` a SQLite file through `sqliteD1` (`sqlite-d1.js`, node:sqlite seen as D1) and the key in
+  `memoryCache` for the proxy's cache), with `SYNC_DB` a SQLite file through `sqliteD1` (`sqlite-d1.ts`, node:sqlite seen as D1) and the key in
   `.dev.vars` (`readDevVars`; made and printed when missing). `deploy.mjs` (`make deploy-server`; `.github/workflows/server.yml` runs it on pushes to
   `main` when the repository has `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). The Worker serves `public/` too (`[assets]` in `wrangler.toml`,
-  answered before `worker.js` runs, as `serve.mjs` does; `html_handling = "none"`, as Chrome refuses the service worker a redirected page, so `handle` answers `/` with `ASSETS`' `index.html`,
+  answered before `worker.ts` runs, as `serve.mjs` does; `html_handling = "none"`, as Chrome refuses the service worker a redirected page, so `handle` answers `/` with `ASSETS`' `index.html`,
   and `sw.js` copies any redirected answer, `unredirected`), and lets in its own origin beside `ALLOWED_ORIGINS`. `handle` takes the fetch and cache so the tests run it
-  in Node. The `.js` files are type checked with the pages (`jsconfig.json`) and linted with service worker globals; deployed with `npx wrangler`, not a devDependency.
-- `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages as written in `public/`, so they run after `make pages`.
+  in Node. The `.ts` files aren't compiled: Wrangler and Node (22.18 on) strip their types and run them, so they import each other as `./proxy.ts` and use only erasable TypeScript (`tsconfig.server.json`: `allowImportingTsExtensions`, `erasableSyntaxOnly`, `noEmit`; `make typecheck` checks them); linted with service worker globals; deployed with `npx wrangler`, not a devDependency. `serve.mjs`, `deploy.mjs` and the tests import them by their `.ts` names.
+- `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages and run the modules as written and compiled in `public/`, so they run after `make pages` (`--enable-source-maps` makes a stack trace name the line in `src/`).
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
   - `service-worker.test.mjs`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-app.js`'s files and hash.
   - `server.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses), its sync on an in-memory SQLite (`sqliteD1`), and `make serve`'s server on a free port.
@@ -343,8 +347,8 @@ The repo is public; the user's library is not.
 
 ## Conventions
 
-- Prettier's layout (above): tabs, also in JSON, semicolons, single quotes; leave the layout to it. Comments explain _why_ in plain sentences; JSDoc on
-  non-obvious functions.
+- Prettier's layout (above): tabs, also in JSON, semicolons, single quotes; leave the layout to it. Comments explain _why_ in plain sentences; a doc comment (`/** ... */`) on
+  non-obvious functions, `@param name what it is` and `@returns` only to describe, never to type.
 - Status messages and errors are short, plain English; anything that changes many books shows a preview first.
 - Pages draw with the DOM API, never HTML strings: `buildElement(tag, attrs, ...children)` from `store.js` makes an element
   (children are elements or text, always put in as text; an `on...` function in `attrs` is a listener), `fillElement(el, ...children)`
@@ -353,8 +357,8 @@ The repo is public; the user's library is not.
   from code) goes through `spell()` from `store.js`, which gives British spelling to a browser that prefers it
   (`prefersBritish`/`spelled`/`BRITISH_WORDS` in `modules/text.js`); the static HTML is respelled on load. Never respell data.
 - The catalog is stored as compact `JSON.stringify` output (backups are indented for reading).
-- Every function has its types in JSDoc (`@param`, `@returns`, `@type` for a variable that starts empty), and
-  `make typecheck` passes; a cast (`/** @type {X} */ (value)`) only where the code knows more than the checker, with
+- Every function has its parameters' types (and its return type where it isn't plain), a variable that starts empty its type
+  (`const out: string[] = []`), and `make typecheck` passes; a cast (`value as X`) only where the code knows more than the checker, with
   the reason when it isn't plain. No `@ts-ignore`. `catch` gets `unknown`: `errorText(exc)` gives its message.
 - Behavior changes need a test in the matching suite, and a docs update when user-visible
   (`docs/` documents every workflow; keep the README to the essentials).

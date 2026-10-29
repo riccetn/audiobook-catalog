@@ -1,5 +1,5 @@
 #!/bin/sh
-# Formats the staged files with Prettier, stages the result, then lints the staged JavaScript with ESLint and, when any
+# Formats the staged files with Prettier, stages the result, then lints the staged code with ESLint and, when any
 # is staged, type checks it with TypeScript, stopping the commit on an error (npm install points git here, with the
 # prepare script).
 # A file only partly staged has its staged version formatted and linted on its own, and its working copy formatted
@@ -17,7 +17,7 @@ staged=$(git diff --cached --name-only --diff-filter=ACMR)
 # Files with edits that aren't staged (or that are gone from the working tree).
 unstaged=$(git diff --name-only)
 is_partial(){ printf '%s\n' "$unstaged" | grep -Fxq -- "$1"; }
-is_js(){ case "$1" in *.js|*.mjs|*.cjs) return 0;; esac; return 1; }
+is_js(){ case "$1" in *.js|*.mjs|*.cjs|*.ts|*.mts) return 0;; esac; return 1; }
 
 whole=''
 partial=''
@@ -54,7 +54,7 @@ $partial
 EOF
 
 # Warnings are shown but let the commit through, as make lint does.
-js=$(printf '%s' "$whole" | grep -E '\.(js|mjs|cjs)$')
+js=$(printf '%s' "$whole" | grep -E '\.(js|mjs|cjs|ts|mts)$')
 if [ -n "$js" ]; then
 	printf '%s\n' "$js" | tr '\n' '\0' | xargs -0 node "$eslint" --no-warn-ignored || failed=1
 fi
@@ -64,8 +64,8 @@ if [ "$failed" = 1 ]; then
 fi
 
 # Types cross files, so this checks the whole project as it is on disk, as make typecheck does.
-if printf '%s\n' "$staged" | grep -Eq '\.(js|mjs|cjs)$'; then
-	{ node "$tsc" -p jsconfig.json && node "$tsc" -p jsconfig.sw.json; } || {
+if printf '%s\n' "$staged" | grep -Eq '\.(js|mjs|cjs|ts|mts)$'; then
+	{ node "$tsc" -p tsconfig.json --noEmit && node "$tsc" -p tsconfig.sw.json --noEmit && node "$tsc" -p tsconfig.server.json; } || {
 		echo 'TypeScript found errors: fix them, or commit with --no-verify to skip the hook'
 		exit 1
 	}

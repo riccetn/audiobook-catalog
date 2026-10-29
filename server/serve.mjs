@@ -4,15 +4,15 @@
 // gets the file, as Cloudflare answers its static assets first; anything else goes to `handle`.
 // The key and origins are read from server/.dev.vars (git-ignored; the file `wrangler dev` reads too) or the
 // environment. Without a key it makes one, keeps it in .dev.vars and prints it, to paste into the app.
-// Node built-ins only; node:sqlite needs Node 22.13 or later.
+// Node built-ins only; node:sqlite needs Node 22.13 or later, and running the server's TypeScript as it is 22.18.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {handle} from './worker.js';
-import {sqliteD1} from './sqlite-d1.js';
+import {handle} from './worker.ts';
+import {sqliteD1} from './sqlite-d1.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PUBLIC = path.join(HERE, '..', 'public');
@@ -104,7 +104,7 @@ export function memoryCache() {
 
 /**
  * Starts the server, and resolves once it listens.
- * @param {{root?: string, port?: number, host?: string, env: import('./worker.js').Env, fetch?: (request: Request) => Promise<Response>}} options
+ * @param {{root?: string, port?: number, host?: string, env: import('./worker.ts').Env, fetch?: (request: Request) => Promise<Response>}} options
  * @returns {Promise<http.Server>}
  */
 export function startServer({root = PUBLIC, port = 8000, host = '127.0.0.1', env, fetch = globalThis.fetch}) {

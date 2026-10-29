@@ -3,10 +3,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {handle, allowedOrigins, KEY_HEADER, OLD_KEY_HEADER} from '../server/worker.js';
-import {upstreamUrl, CATALOG_KEY_HEADER} from '../server/proxy.js';
-import {MAX_SYNC} from '../server/sync.js';
-import {sqliteD1} from '../server/sqlite-d1.js';
+import {handle, allowedOrigins, KEY_HEADER, OLD_KEY_HEADER} from '../server/worker.ts';
+import {upstreamUrl, CATALOG_KEY_HEADER} from '../server/proxy.ts';
+import {MAX_SYNC} from '../server/sync.ts';
+import {sqliteD1} from '../server/sqlite-d1.ts';
 import {deployConfig, shellArg, DATABASE, BINDING, DEPLOY_CONFIG} from '../server/deploy.mjs';
 import fs from 'node:fs';
 import os from 'node:os';

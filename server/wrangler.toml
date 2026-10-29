@@ -1,7 +1,7 @@
 # The app's server's Cloudflare settings (make deploy-server). See README.md.
 # Its name stays the one from when it was only the catalog proxy, as it is the workers.dev address.
 name = "audiobook-catalog-proxy"
-main = "worker.js"
+main = "worker.ts"
 compatibility_date = "2026-10-01"
 # A workers.dev address (audiobook-catalog-proxy.<your subdomain>.workers.dev), no domain of your own needed.
 workers_dev = true

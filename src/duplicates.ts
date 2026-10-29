@@ -1,0 +1,377 @@
+// The duplicates page: books that look like one title entered twice (the way an import would match
+// them; see Duplicates.groups), plus a pair picked by hand with Merge on a book's page
+// (duplicates.html#merge=<id>,<id>, the ids the two books are stored under). Merging keeps one entry, with the title, author and series you
+// pick, and every genre, date read and edition of the others; the rest are removed without excluding
+// them from imports (the kept book carries their ids, so an import finds it). Pairs marked
+// "Not duplicates" are remembered in this browser and in backups (store.ts).
+// The editions of the merged entries become one edition when none disagree on an ASIN or Goodreads id
+// (one book imported from both Audible and Goodreads), unless you untick that. Books merged before
+// that, whose editions still look like one, are listed below the duplicates to be joined the same way.
+import {Text} from './modules/text.js';
+import {Edition} from './modules/edition.js';
+import {Book} from './modules/book.js';
+import {Validator} from './modules/validator.js';
+import {CATALOG, persist, showIoStatus, startPage, byId, spell, buildElement, fillElement} from './store.js';
+import type {Picks} from './modules/book.js';
+import type {Child} from './store.js';
+
+// Books are known by the ids they are stored under, in the order CATALOG.books has them.
+export let DUP_GROUPS: string[][] = []; // groups of books shown
+export let DUP_PICKS: Picks[] = []; // per group: which book's title, author and series to keep
+export let DUP_MANUAL: string[] | null = null; // the pair picked by hand, until it is merged or kept apart
+let DUP_FOUND = 0; // how many of DUP_GROUPS Duplicates.groups found (the rest is DUP_MANUAL)
+export let SPLIT: string[] = []; // books whose editions look like one edition recorded twice
+
+/**
+ * The books stored under `ids`.
+ */
+const booksOf = (ids: string[]): Book[] => ids.map(id => CATALOG.book(id) as Book);
+/**
+ * The ids of books, in the order the catalog has them.
+ */
+function inCatalogOrder(ids: string[]): string[] {
+	const at = new Map(CATALOG.books.map((b, i) => [b.id, i]));
+	return [...ids].sort((x, y) => (at.get(x) ?? 0) - (at.get(y) ?? 0));
+}
+
+export type DupField = 'title' | 'authors' | 'series';
+const DUP_FIELDS: [DupField, string][] = [
+	['title', 'Title'],
+	['authors', 'Author'],
+	['series', 'Series'],
+]; // narrators are on the editions, which are all kept
+const dupValue: (b: Book, f: DupField) => string = (b, f) =>
+	f === 'series'
+		? b.series
+			? b.series + (b.number ? ` #${b.number}` : '')
+			: ''
+		: f === 'authors'
+			? Text.namesText(b.authors)
+			: b.title;
+
+/**
+ * The pair in the address (#merge=<id>,<id>), if it names two books.
+ */
+function manualPair(): string[] | null {
+	const m = /^#merge=([^,]+),([^,]+)$/.exec(location.hash || '');
+	if (!m) return null;
+	const dec: (v: string) => string = v => {
+		try {
+			return decodeURIComponent(v);
+		} catch {
+			return v;
+		}
+	};
+	const pair = [dec(m[1]), dec(m[2])];
+	return pair[0] !== pair[1] && pair.every(id => CATALOG.book(id)) ? inCatalogOrder(pair) : null;
+}
+
+function forgetManualPair() {
+	DUP_MANUAL = null;
+	try {
+		history.replaceState(null, '', location.pathname);
+	} catch {
+		/* the address just stays as it was */
+	}
+}
+
+// Find the groups again (the books changed), keeping the choices made for a group that is still there.
+function refreshPage() {
+	const duplicates = CATALOG.duplicates();
+	const idAt: (i: number) => string = i => CATALOG.books[i].id as string;
+	const found = duplicates.groups().map(g => g.map(idAt));
+	const pair = DUP_MANUAL;
+	const manual = pair && !found.some(g => pair.every(id => g.includes(id))) ? [pair] : [];
+	const groups = [...manual, ...found];
+	DUP_FOUND = found.length;
+	const before = new Map(DUP_GROUPS.map((g, k) => [g.join(','), DUP_PICKS[k]]));
+	DUP_GROUPS = groups;
+	DUP_PICKS = groups.map(g => before.get(g.join(',')) || {});
+	SPLIT = duplicates.splitEditions().map(idAt);
+	renderDuplicates();
+}
+
+/**
+ * Whether any of `editions` is also on a book outside `ids` (a box set): joining it would change those too.
+ */
+function sharedOutside(editions: Edition[], ids: string[]): boolean {
+	return CATALOG.books.some(
+		b => !ids.includes(b.id as string) && b.editions.some(x => editions.some(ed => x.sameAs(ed))),
+	);
+}
+
+/**
+ * The choices for group `g`, with joinEditions on by default when the editions can be joined.
+ */
+function groupPicks(g: number): Picks & {joinable: boolean; joinEditions: boolean} {
+	const ids = DUP_GROUPS[g],
+		picks = DUP_PICKS[g];
+	const separate = Book.merge(booksOf(ids), {...picks, joinEditions: false}).editions;
+	const joinable = Edition.joinable(separate) && !sharedOutside(separate, ids);
+	return {...picks, joinable, joinEditions: joinable && picks.joinEditions !== false};
+}
+
+const editionLines = (b: Book) => b.editions.map(ed => buildElement('div', {class: 'dup-extra'}, ed.format()));
+const fieldLine: (label: string, value: string) => Child[] = (label, value) => [
+	buildElement('span', {class: 'dup-label'}, label),
+	' ' + value,
+];
+
+function renderSplit(): Child[] {
+	if (!SPLIT.length) return [];
+	return [
+		buildElement('h2', {class: 'dup-heading'}, 'Editions that look like one'),
+		buildElement(
+			'p',
+			{class: 'hint'},
+			"These books have editions that don't disagree on an ASIN or Goodreads id, such as one from Audible and one from Goodreads.",
+		),
+		SPLIT.map(id => {
+			const b = CATALOG.book(id) as Book;
+			const joined = Edition.join(b.editions);
+			return buildElement(
+				'div',
+				{class: 'dup-group'},
+				buildElement(
+					'div',
+					{class: 'dup-books'},
+					buildElement(
+						'div',
+						{class: 'dup-book'},
+						buildElement('div', {class: 'dup-field'}, fieldLine('Title', b.title)),
+						buildElement('div', {class: 'dup-field'}, fieldLine('Author', Text.namesText(b.authors))),
+						editionLines(b),
+					),
+				),
+				buildElement('p', {class: 'dup-result'}, 'Becomes one edition: ' + joined.format()),
+				buildElement(
+					'div',
+					{class: 'formbtns'},
+					buildElement(
+						'button',
+						{type: 'button', class: 'save split-join', 'data-id': id, onclick: () => joinBookEditions(id)},
+						'Make one edition',
+					),
+					buildElement(
+						'button',
+						{type: 'button', class: 'split-apart', 'data-id': id, onclick: () => keepEditionsApart(id)},
+						'Keep separate',
+					),
+				),
+			);
+		}),
+	];
+}
+
+export function renderDuplicates() {
+	byId('subtitle').textContent =
+		(DUP_FOUND
+			? `${Text.plural(DUP_FOUND, 'possible duplicate')} among ${CATALOG.books.length} audiobooks`
+			: `No duplicates among ${CATALOG.books.length} audiobooks`) +
+		(SPLIT.length ? `; ${Text.plural(SPLIT.length, 'book')} with editions that look like one` : '');
+	fillElement(
+		byId('dupBody'),
+		!DUP_GROUPS.length &&
+			buildElement(
+				'p',
+				{class: 'empty'},
+				spell(
+					'No books look like duplicates. To merge two books anyway, ' +
+						'press Merge on the page of one of them and find the other there.',
+				),
+			),
+		DUP_GROUPS.map(duplicateGroup),
+		renderSplit(),
+	);
+}
+
+/**
+ * Group `g` of DUP_GROUPS: its books, with a choice for each field they differ on, and what merging them makes.
+ */
+function duplicateGroup(ids: string[], g: number): HTMLDivElement {
+	const books = booksOf(ids);
+	const picks = groupPicks(g);
+	const merged = Book.merge(books, picks);
+	// what every book has alike is said once; each book shows only what tells it apart
+	const choicesOf: (f: DupField) => Set<string> = f => new Set(books.map(x => dupValue(x, f)).filter(Boolean));
+	const shared = DUP_FIELDS.filter(([f]) => choicesOf(f).size === 1 && books.every(x => dupValue(x, f)));
+	const bookBox = (b: Book, k: number) =>
+		buildElement(
+			'div',
+			{class: 'dup-book'},
+			buildElement('div', {class: 'dup-label'}, `Entry ${k + 1}`),
+			DUP_FIELDS.map(([f, label]) => {
+				const value = dupValue(b, f);
+				if (!value || shared.some(([x]) => x === f)) return null;
+				if (choicesOf(f).size < 2) return buildElement('div', {class: 'dup-field'}, fieldLine(label, value));
+				const checked = dupValue(merged, f) === value && books.findIndex(x => dupValue(x, f) === value) === k;
+				const pick = () => {
+					DUP_PICKS[g][f] = k;
+					renderDuplicates();
+				};
+				return buildElement(
+					'label',
+					{class: 'dup-field dup-choice'},
+					buildElement('input', {
+						type: 'radio',
+						name: `dup-${g}-${f}`,
+						'data-g': g,
+						'data-f': f,
+						'data-k': k,
+						checked,
+						onchange: pick,
+					}),
+					' ',
+					fieldLine(label, value),
+				);
+			}),
+			[
+				b.genres.join(', '),
+				b.read.length ? 'Read ' + b.read.join(', ') : '',
+				...b.editions.map(ed => ed.format()),
+			]
+				.filter(Boolean)
+				.map(x => buildElement('div', {class: 'dup-extra'}, x)),
+		);
+	const editions = merged.editions.length;
+	return buildElement(
+		'div',
+		{class: 'dup-group'},
+		DUP_MANUAL &&
+			g === 0 &&
+			DUP_MANUAL.join() === ids.join() &&
+			buildElement('p', {class: 'dup-note'}, 'Picked by hand'),
+		shared.length > 0 &&
+			buildElement(
+				'p',
+				{class: 'dup-shared'},
+				shared.map(([f, label], i) => [i ? ' · ' : '', fieldLine(label, dupValue(books[0], f))]),
+			),
+		buildElement('div', {class: 'dup-books'}, books.map(bookBox)),
+		buildElement(
+			'p',
+			{class: 'dup-result'},
+			`Becomes: ${merged.title} — ${Text.namesText(merged.authors)}` +
+				(merged.series ? ` — ${dupValue(merged, 'series')}` : '') +
+				(editions ? `, ${Text.plural(editions, 'edition')}` : '') +
+				(merged.read.length ? `, read ${merged.read.join(', ')}` : ''),
+		),
+		// the editions are those above, unless they are made one
+		picks.joinEditions && editionLines(merged),
+		picks.joinable &&
+			buildElement(
+				'label',
+				{class: 'dup-join'},
+				buildElement('input', {
+					type: 'checkbox',
+					class: 'dup-joinbox',
+					'data-g': g,
+					checked: picks.joinEditions,
+					onchange: (e: Event) => {
+						DUP_PICKS[g].joinEditions = (e.currentTarget as HTMLInputElement).checked;
+						renderDuplicates();
+					},
+				}),
+				" Make the editions one edition (they don't disagree on an ASIN or Goodreads id)",
+			),
+		buildElement(
+			'div',
+			{class: 'formbtns'},
+			buildElement(
+				'button',
+				{type: 'button', class: 'save dup-merge', 'data-g': g, onclick: () => mergeGroup(g)},
+				'Merge into one',
+			),
+			buildElement(
+				'button',
+				{type: 'button', class: 'dup-apart', 'data-g': g, onclick: () => keepApart(g)},
+				'Not duplicates',
+			),
+		),
+	);
+}
+
+/**
+ * Merge group `g` into its first book: on a copy of the catalog, so nothing changes unless the result validates.
+ */
+export function mergeGroup(g: number) {
+	const ids = DUP_GROUPS[g];
+	if (!ids) return;
+	const merged = Book.merge(booksOf(ids), groupPicks(g));
+	const copy = CATALOG.clone();
+	const keep = inCatalogOrder(ids)[0];
+	merged.id = keep; // the book that comes first stays the record it was, in its place
+	// an edition a box set shares with other titles gets what the merged one gained there too
+	copy.saveBook(keep, merged);
+	copy.books = copy.books.filter(b => b.id === keep || !ids.includes(b.id as string));
+	const errors = Validator.bookErrors(copy);
+	if (errors.length) {
+		showIoStatus(`Couldn't merge ${merged.title}: ${errors[0]}`, true);
+		return;
+	}
+	CATALOG.books = copy.books;
+	forgetManualPair(); // one of its books is gone now
+	refreshPage();
+	persist();
+	showIoStatus(`Merged ${ids.length} entries into ${merged.title}.`);
+}
+
+/**
+ * Remember that the books of group `g` are different books (Catalog.markNotDuplicates).
+ */
+export function keepApart(g: number) {
+	CATALOG.markNotDuplicates(booksOf(DUP_GROUPS[g] || []));
+	if (DUP_MANUAL && DUP_MANUAL.join() === (DUP_GROUPS[g] || []).join()) forgetManualPair();
+	refreshPage();
+	persist();
+}
+
+/**
+ * Make the editions of the book stored under `id` one edition (it is in SPLIT).
+ */
+export function joinBookEditions(id: string) {
+	const b = CATALOG.book(id);
+	if (!b || !Edition.joinable(b.editions)) return;
+	const copy = CATALOG.clone();
+	const joined = b.clone();
+	joined.editions = [Edition.join(b.editions)];
+	copy.saveBook(id, joined);
+	const errors = Validator.bookErrors(copy);
+	if (errors.length) {
+		showIoStatus(`Couldn't join the editions of ${b.title}: ${errors[0]}`, true);
+		return;
+	}
+	CATALOG.books = copy.books;
+	forgetManualPair();
+	refreshPage();
+	persist();
+	showIoStatus(`${b.title} now has one edition.`);
+}
+
+/**
+ * Remember that the editions of the book stored under `id` are different editions (Catalog.markKeepSeparate).
+ */
+export function keepEditionsApart(id: string) {
+	const b = CATALOG.book(id);
+	if (!b) return;
+	CATALOG.markKeepSeparate(b);
+	refreshPage();
+	persist();
+}
+
+/**
+ * After a save took in what another tab changed (store.ts): the pair picked by hand stays, unless the
+ * other tab removed one of its books.
+ */
+function redraw() {
+	if (DUP_MANUAL && !DUP_MANUAL.every(id => CATALOG.book(id))) forgetManualPair();
+	refreshPage();
+}
+
+export const READY = startPage(
+	() => {
+		DUP_MANUAL = manualPair();
+		refreshPage();
+	},
+	{whole: true, refresh: redraw},
+);

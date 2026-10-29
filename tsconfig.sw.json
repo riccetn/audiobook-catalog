@@ -1,0 +1,9 @@
+{
+	"//": "The service worker runs in a worker, not a page, so it is compiled on its own with the worker's globals (make pages).",
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"lib": ["es2023", "webworker"]
+	},
+	"include": ["src/sw.ts"],
+	"exclude": []
+}

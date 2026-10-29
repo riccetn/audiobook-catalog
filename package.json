@@ -2,7 +2,7 @@
 	"private": true,
 	"type": "module",
 	"engines": {
-		"node": ">=22.13"
+		"node": ">=22.18"
 	},
 	"scripts": {
 		"prepare": "git config core.hooksPath .githooks"
@@ -13,11 +13,10 @@
 		"globals": "17.13.0",
 		"liquidjs": "10.30.0",
 		"prettier": "3.9.10",
-		"typescript": "7.0.2"
+		"typedoc": "0.28.20",
+		"typescript": "6.0.3",
+		"typescript-eslint": "8.72.1"
 	},
-	"workspaces": [
-		"api-docs"
-	],
 	"dependencies": {
 		"qrcode-generator": "2.0.4"
 	}
