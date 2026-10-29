@@ -7,8 +7,11 @@ node_modules/
 # Mac OS
 .DS_Store
 
-# written by make pages from templates/
+# written by make pages: the pages from templates/, and the scripts compiled from src/ with their source maps
 public/*.html
+public/*.js
+public/*.js.map
+public/modules/
 public/sw-app.js
 # copied from node_modules by make pages
 public/vendor/

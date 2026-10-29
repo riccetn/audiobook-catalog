@@ -12,7 +12,7 @@ with each other beyond living in one place:
   Audible ([Audible](audible.md#fill-in-a-series-books-from-audible)).
 - **Sync** (`/sync`). It keeps one encrypted copy of your catalog for [syncing your devices](#syncing-devices).
 
-The server is `server/`: the proxy is `proxy.js`, sync is `sync.js`, and `worker.js` lets a request in (only your
+The server is `server/`: the proxy is `proxy.ts`, sync is `sync.ts`, and `worker.ts` lets a request in (only your
 pages, only with the key) and hands it to one of them. It runs in two places, with the same code:
 
 - **On Cloudflare**, as a Worker on the free plan (100,000 requests a day), for your phone and every other browser.
@@ -30,7 +30,7 @@ make serve       # .\make.ps1 serve on Windows; node server/serve.mjs after make
 ```
 
 This serves the app at `http://127.0.0.1:8000/` and the server at the same address (`server/serve.mjs`, Node
-22.13 or later; Node built-ins only). A request for a file in `public/` gets the file, as Cloudflare answers its static
+22.18 or later; Node built-ins only). A request for a file in `public/` gets the file, as Cloudflare answers its static
 files first, and anything else goes to the server. The first time, it makes a key, keeps it in `server/.dev.vars`
 and prints it. In the app, open _Import & export_, and under **Your server** paste `http://127.0.0.1:8000` and the
 key, then press **Save server**.

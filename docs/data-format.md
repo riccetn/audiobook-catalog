@@ -216,7 +216,7 @@ optional (missing means `{}`).
 
 Books, editions, series and people keep only the ids other catalogs give them, never the address of
 their page there: the app knows, for each catalog, how its pages' addresses are made
-(`modules/external-catalog.js`), so it makes the link from the id, and reads the id out of an address
+(`modules/external-catalog.ts`), so it makes the link from the id, and reads the id out of an address
 pasted into a form. The key in `ext` is the catalog's:
 
 | key                                                                                                                                                   | catalog                                                            | ids it gives                                                                                                                                                                                                                                                                                                                      |
@@ -252,7 +252,7 @@ The browser keeps the catalog in IndexedDB, database `audiobook-catalog`, as pla
 descriptive field names. Every record has an id that never changes (`crypto.randomUUID()`), and records
 point at each other by id, so renaming a series changes one record. Fields marked _derived_ are written
 from the others on every save, only so an index can sort or filter without reading other records
-(`modules/catalog-records.js`). Every index that sorts ends with the record's key, so a page can ask for
+(`modules/catalog-records.ts`). Every index that sorts ends with the record's key, so a page can ask for
 the next rows after the last one it shows (`IDBKeyRange.lowerBound([sortTitle, id], true)`), which is
 how a list can be paged or scrolled without loading all of it. A page reads only what it shows (see
 [What each page loads](saving.md#what-each-page-loads)), so a save works the derived fields out inside
@@ -287,7 +287,7 @@ catalog or backup with one is not stored until it is fixed (see [Where the catal
 Authors and narrators keep a space between initials (`A. B. Quill`, not `A.B. Quill`), so the filters
 never list one person twice. Every text field also has stray spacing removed: runs of spaces, tabs,
 non-breaking or invisible characters, and leading/trailing whitespace. The importers and the edit forms
-apply this automatically (`Book.tidyJSON` in `modules/book.js`), and **Check** warns
+apply this automatically (`Book.tidyJSON` in `modules/book.ts`), and **Check** warns
 about any value that is not tidy. Capitalisation and quote styles are left alone.
 
 ## Known data quirks

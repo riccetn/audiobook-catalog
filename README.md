@@ -2,21 +2,22 @@
 
 A personal audiobook library, merged from Audible, Goodreads and Hardcover exports, grouped by series
 and searchable by title, author, series and genre. The app is four plain pages (the catalog, _Authors_,
-_Import & export_ and _Duplicates_) with a stylesheet and a script each, all in `public/`. Everything runs in the browser,
+_Import & export_ and _Duplicates_) with a stylesheet and a script each, served from `public/`. Everything runs in the browser,
 and the catalog is kept in the browser's IndexedDB. The app needs no server (an optional one of your own, `server/`, asks the
-catalogs that don't answer web pages and syncs your devices), and the only build step writes the
-pages' HTML from [Liquid](https://liquidjs.com/) templates (`make pages`), so they share their head and nav bar.
+catalogs that don't answer web pages and syncs your devices). The build (`make pages`) compiles the TypeScript in `src/`
+into `public/` and writes the pages' HTML from [Liquid](https://liquidjs.com/) templates, so they share their head and nav bar.
 
-- Vanilla JavaScript: no framework, no bundler, nothing the app loads from npm (Liquid only writes the pages)
-- Node 22.13+ for the tests and `make serve`; TypeScript (`npm install`) checks the code against its JSDoc types, without a build step
+- TypeScript compiled with `tsc`, with source maps: no framework, no bundler, nothing the app loads from npm but the
+  QR code library (Liquid only writes the pages)
+- Node 22.18+ for the tests and `make serve`
 
 ```sh
 git clone <this repo> && cd audiobook-catalog
 npm install   # once: Liquid, TypeScript, ESLint and TypeDoc
-make pages    # write the pages into public/ from templates/ (test and serve do it first)
+make pages    # compile src/ and write the pages into public/ (test and serve do it first)
 make test     # all tests, including a browser smoke test
-make typecheck   # check the code against its types (TypeScript)
-make lint     # look for likely mistakes (ESLint)
+make typecheck   # check the types (TypeScript) without compiling
+make lint     # look for likely mistakes (ESLint, typescript-eslint)
 make check    # everything CI runs: test, typecheck, lint and the format check
 make docs     # the API documentation (TypeDoc) in api-docs/out/; published at <site>/api/ beside the app
 make serve    # the app at http://localhost:8000/, with your server (catalog proxy and sync) beside it

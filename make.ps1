@@ -30,13 +30,13 @@ switch ($Command) {
 	'help' {
 		'help          - list the available commands'
 		'check         - run everything CI runs: the tests, the type check, lint and the format check'
-		'pages         - write the pages into public/ from the Liquid templates in templates/ (run `npm install` once first)'
+		'pages         - build public/: compile src/ with TypeScript, and write the pages from the Liquid templates in templates/ (run `npm install` once first)'
 		'test          - run the tests: the catalog classes and the browser smoke test'
-		'typecheck     - check the JavaScript against its JSDoc types with TypeScript (run `npm install` once first; nothing is compiled)'
-		'lint          - check the JavaScript for likely mistakes with ESLint (run `npm install` once first)'
+		'typecheck     - check the types of the app (src/) and the server (server/) with TypeScript, writing nothing (run `npm install` once first)'
+		'lint          - check the code for likely mistakes with ESLint and typescript-eslint (run `npm install` once first)'
 		'format        - format the code, JSON, Markdown and YAML with Prettier (the pre-commit hook does this to what you commit)'
 		'format-check  - check that everything is formatted as Prettier would (format fixes it)'
-		'docs          - write the API documentation from the code''s JSDoc into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
+		'docs          - write the API documentation from the code''s doc comments into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
 		'serve         - open the app at http://localhost:8000/ with its server: the catalog proxy and sync, kept in SQLite (-Port, -Bind 0.0.0.0 for your network)'
 		'deploy-server - deploy the app''s server to Cloudflare with its sync database, serving the pages too (npx wrangler login once first)'
 	}
@@ -60,7 +60,7 @@ switch ($Command) {
 		if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 		# PowerShell doesn't expand the glob, and Node before 21 doesn't either, so list the suites here.
 		$suites = Get-ChildItem tests -Filter '*.test.mjs' | ForEach-Object { 'tests/' + $_.Name }
-		Invoke-Native 'node' (@('--experimental-vm-modules', '--test') + $suites)
+		Invoke-Native 'node' (@('--experimental-vm-modules', '--enable-source-maps', '--test') + $suites)
 	}
 	'typecheck' {
 		$tsc = 'node_modules/typescript/bin/tsc'
@@ -68,8 +68,9 @@ switch ($Command) {
 			Write-Host 'TypeScript is not installed: run npm install first'
 			exit 1
 		}
-		Invoke-Native 'node' @($tsc, '-p', 'jsconfig.json')
-		Invoke-Native 'node' @($tsc, '-p', 'jsconfig.sw.json')
+		Invoke-Native 'node' @($tsc, '-p', 'tsconfig.json', '--noEmit')
+		Invoke-Native 'node' @($tsc, '-p', 'tsconfig.sw.json', '--noEmit')
+		Invoke-Native 'node' @($tsc, '-p', 'tsconfig.server.json')
 	}
 	'lint' {
 		$eslint = 'node_modules/eslint/bin/eslint.js'
@@ -86,7 +87,7 @@ switch ($Command) {
 		Invoke-Prettier '--check'
 	}
 	'docs' {
-		$typedoc = 'api-docs/node_modules/typedoc/bin/typedoc'
+		$typedoc = 'node_modules/typedoc/bin/typedoc'
 		if (-not (Test-Path $typedoc)) {
 			Write-Host 'TypeDoc is not installed: run npm install first'
 			exit 1

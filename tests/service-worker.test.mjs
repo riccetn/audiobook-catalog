@@ -143,7 +143,7 @@ test('on this computer the network goes first, and the cache answers offline', a
 	assert.equal(await sw.get('store.js'), 'fresh /app/store.js');
 });
 
-test('make pages writes the files to cache, every file served but the API docs, and the version, a hash of them', () => {
+test('make pages writes the files to cache, every file served but the source maps and the API docs, and the version, a hash of them', () => {
 	const written = fs.readFileSync(path.join(site, 'sw-app.js'), 'utf8');
 	const files = fs
 		.readdirSync(site, {recursive: true, encoding: 'utf8'})
@@ -152,6 +152,7 @@ test('make pages writes the files to cache, every file served but the API docs, 
 			f =>
 				!['sw.js', 'sw-app.js'].includes(f) &&
 				!f.startsWith('api/') &&
+				!f.endsWith('.map') &&
 				fs.statSync(path.join(site, f)).isFile(),
 		)
 		.sort();

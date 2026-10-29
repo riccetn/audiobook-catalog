@@ -1,0 +1,16 @@
+{
+	"//": "The server (server/): not compiled, as Wrangler and Node (22.18 on) run TypeScript as it is by stripping its types, so it imports its own files by their .ts names and uses only TypeScript that stripping can remove (make typecheck).",
+	"compilerOptions": {
+		"strict": true,
+		"target": "es2022",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"lib": ["es2023", "webworker"],
+		"types": [],
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+		"allowImportingTsExtensions": true,
+		"noEmit": true
+	},
+	"include": ["server/**/*.ts"]
+}
