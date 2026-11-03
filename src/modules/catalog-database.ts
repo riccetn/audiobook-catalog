@@ -503,7 +503,7 @@ class SaveTransaction {
 				const ed = editions.get(edId);
 				if (!ed) continue;
 				for (const n of ed.narratorIds) await name(n, 'narrator');
-				if (ed.publisherId) await name(ed.publisherId, 'publisher');
+				for (const p of CatalogRecords.publisherIdsOf(ed)) await name(p, 'publisher');
 			}
 			const book = CatalogRecords.bookOf(rec, editions, x => this.names.get(x) as string);
 			const derived = CatalogRecords.bookRecord(
@@ -579,7 +579,9 @@ export class CatalogDatabase {
 	// saved again in the new shape (`reshape` in meta says they wait for that).
 	// 4: a series no longer keeps a site; records from before are saved again with it moved to the series'
 	// author or publisher (Catalog.moveSeriesSites), the stores as they were.
-	static VERSION = 4;
+	// 5: an edition may have several publishers: `publisherId` became the list `publisherIds`, and its index
+	// a multi-entry one; records from before are saved again with the list.
+	static VERSION = 5;
 	/** every store, the records' and meta */
 	static ALL_STORES: (StoreName | 'meta')[] = [...CatalogRecords.STORE_NAMES, 'meta'];
 
@@ -635,9 +637,9 @@ export class CatalogDatabase {
 				if (!os.indexNames.contains(index)) os.createIndex(index, keyPath, options);
 		}
 		if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath: 'key'});
-		// records from before version 3 lack the derived fields its indexes read, and from before version 4
-		// a series may keep a site
-		if (oldVersion > 0 && oldVersion < 4) tx.objectStore('meta').put({key: 'reshape', value: oldVersion});
+		// records from before version 3 lack the derived fields its indexes read, from before version 4
+		// a series may keep a site, and from before version 5 an edition has one publisher's id
+		if (oldVersion > 0 && oldVersion < 5) tx.objectStore('meta').put({key: 'reshape', value: oldVersion});
 	}
 
 	/** @returns whether the records wait to be saved again in the current shape (see VERSION) */

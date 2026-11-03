@@ -49,9 +49,14 @@ export type NewNote = {nouns: [string, string]; ready: () => boolean};
 /**
  * The names in a field (one, or several separated by commas) that are not among `names`, as they will be saved.
  */
-export function newNames(names: string[], value: string, multiple: boolean): string[] {
+export function newNames(
+	names: string[],
+	value: string,
+	multiple: boolean,
+	split: (text: string) => string[] = Text.splitNames,
+): string[] {
 	const known = new Set(names);
-	const typed = multiple ? Text.splitNames(value) : [Text.tidy(value)].filter(Boolean);
+	const typed = multiple ? split(value) : [Text.tidy(value)].filter(Boolean);
 	return typed.filter(name => !known.has(name));
 }
 
@@ -74,12 +79,15 @@ export function comboBox(
 	{
 		names,
 		multiple = false,
+		split = Text.splitNames,
 		onPick,
 		note,
 		newNote,
 	}: {
 		names: () => string[];
 		multiple?: boolean;
+		/** how a field of several names is read (Text.splitPublishers for publishers') */
+		split?: (text: string) => string[];
 		onPick?: (value: string) => void;
 		note?: HTMLElement;
 		newNote?: NewNote;
@@ -136,7 +144,7 @@ export function comboBox(
 	function search() {
 		const [start, end] = part();
 		const typed = input.value.slice(start, end);
-		const others = multiple ? Text.splitNames(input.value.slice(0, start) + ',' + input.value.slice(end)) : [];
+		const others = multiple ? split(input.value.slice(0, start) + ',' + input.value.slice(end)) : [];
 		shown = matchingNames(names(), typed, others);
 		active = -1;
 		draw();
@@ -160,7 +168,7 @@ export function comboBox(
 
 	function drawNote() {
 		if (!note || !newNote) return;
-		const added = newNote.ready() ? newNames(names(), input.value, multiple) : [];
+		const added = newNote.ready() ? newNames(names(), input.value, multiple, split) : [];
 		note.hidden = !added.length;
 		note.textContent = added.length
 			? `New ${newNote.nouns[added.length > 1 ? 1 : 0]}: ${added.join(', ')}, added to the catalog when this is saved.`
@@ -203,7 +211,13 @@ export function comboBox(
  */
 export function comboField(
 	input: HTMLInputElement,
-	options: {names: () => string[]; multiple?: boolean; onPick?: (value: string) => void; newNote?: NewNote},
+	options: {
+		names: () => string[];
+		multiple?: boolean;
+		split?: (text: string) => string[];
+		onPick?: (value: string) => void;
+		newNote?: NewNote;
+	},
 ): HTMLDivElement {
 	const list = buildElement('ul', {id: input.id + 'List'});
 	const note = options.newNote ? buildElement('p', {id: input.id + 'New'}) : undefined;

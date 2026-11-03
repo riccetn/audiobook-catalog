@@ -302,14 +302,15 @@ export class Comparison {
 	 * An edition's value of `field`, as text and as kept; null when it has none.
 	 */
 	static editionValue(ed: Edition, field: EditionField): {text: string; value: string | string[] | number} | null {
-		if (field === 'n')
-			return ed.narrators.length ? {text: Text.namesText(ed.narrators), value: [...ed.narrators]} : null;
+		if (field === 'n' || field === 'p') {
+			const names = field === 'n' ? ed.narrators : ed.publishers;
+			return names.length ? {text: Text.namesText(names), value: [...names]} : null;
+		}
 		if (field === 'len')
 			return typeof ed.minutes === 'number' && Number.isInteger(ed.minutes)
 				? {text: Text.formatLength(ed.minutes), value: ed.minutes}
 				: null;
-		const v = field === 'p' ? ed.publisher : ed.released;
-		return v ? {text: v, value: v} : null;
+		return ed.released ? {text: ed.released, value: ed.released} : null;
 	}
 
 	/**

@@ -465,12 +465,8 @@ export class AudiobookdbSync extends ShelfSync {
 				const release = list(detail.releases).find(r => r.id === ed.idOn('audiobookdb'));
 				if (!release) continue;
 				for (const n of ed.narrators) take('narrators', n, persons(release.people, 'Narrator'), Text.norm);
-				take(
-					'publishers',
-					ed.publisher || undefined,
-					Text.isObject(release.publisher) ? [release.publisher] : [],
-					Text.norm,
-				);
+				for (const p of ed.publishers)
+					take('publishers', p, Text.isObject(release.publisher) ? [release.publisher] : [], Text.norm);
 			}
 		}
 		return [...ids.values()];

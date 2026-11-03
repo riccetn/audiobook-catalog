@@ -17,6 +17,8 @@ const INVISIBLE = /[\u200B\uFEFF]/g;
 const WHITESPACE = /[\s\x1c-\x1f]+/g; // \s plus the ASCII separator controls
 // What follows a comma without being a name of its own: "Ann Vale, Jr.".
 const NAME_SUFFIX = /^(jr|sr|i{2,3}|iv|phd|md)\.?$/i;
+// What follows a company's name after a comma: "Gull Audio, Inc."
+const COMPANY_SUFFIX = /^(inc|llc|l\.l\.c|ltd|co|corp|plc|gmbh|ab|as|oy|bv|sa|srl|pty ltd)\.?$/i;
 
 // The pages are written in American spelling and shown in British spelling to a browser that prefers it.
 // The words the pages use that the two spell differently, American first; add a word here when a page starts using one.
@@ -52,6 +54,14 @@ export class Text {
 	 */
 	static tidyNames(names: unknown[]): unknown[] {
 		const out = names.map(x => (typeof x === 'string' ? Text.normalizeName(x) : x));
+		return out.filter((x, i) => typeof x !== 'string' || out.indexOf(x) === i);
+	}
+
+	/**
+	 * Texts tidied, without the repeats that tidying reveals; what is not a text is kept.
+	 */
+	static tidyList(items: unknown[]): unknown[] {
+		const out = items.map(x => (typeof x === 'string' ? Text.tidy(x) : x));
 		return out.filter((x, i) => typeof x !== 'string' || out.indexOf(x) === i);
 	}
 
@@ -114,6 +124,24 @@ export class Text {
 			.map(x => Text.tidy(x))
 			.filter(Boolean)) {
 			if (NAME_SUFFIX.test(part) && names.length) names[names.length - 1] += ', ' + part;
+			else names.push(part);
+		}
+		return names.filter((x, i) => names.indexOf(x) === i);
+	}
+
+	/**
+	 * Split publishers' names written as text into a list: "Gull Audio, Tern & Finch Press" -> ["Gull Audio",
+	 * "Tern & Finch Press"]. Only commas and semicolons separate them, as "&" and "and" are often part of a
+	 * publisher's name; a company's suffix stays with its name ("Gull Audio, Inc."). Names are trimmed, and
+	 * repeats and empty parts dropped.
+	 */
+	static splitPublishers(text: unknown): string[] {
+		const names: string[] = [];
+		for (const part of String(text || '')
+			.split(/[,;]/)
+			.map(x => Text.tidy(x))
+			.filter(Boolean)) {
+			if (COMPANY_SUFFIX.test(part) && names.length) names[names.length - 1] += ', ' + part;
 			else names.push(part);
 		}
 		return names.filter((x, i) => names.indexOf(x) === i);

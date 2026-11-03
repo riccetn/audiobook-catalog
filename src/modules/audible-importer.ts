@@ -81,7 +81,7 @@ export class AudibleImporter extends FileImporter {
 		if (Text.splitNames(cell(row, 'Narrators')).length) edition.n = Text.splitNames(cell(row, 'Narrators'));
 		const isbns = Csv.rowIsbns(row);
 		if (isbns.length) edition.isbn = isbns;
-		if (cell(row, 'Publishers')) edition.p = cell(row, 'Publishers');
+		if (cell(row, 'Publishers')) edition.p = [cell(row, 'Publishers')];
 		const released = Text.parseDate(cell(row, 'Release Date'));
 		if (released) edition.d = released;
 		const minutes = Text.parseLength(cell(row, 'Length'));

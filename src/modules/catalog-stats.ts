@@ -130,7 +130,7 @@ export class CatalogStats {
 				['asin', 'No ASIN', x => Boolean(x.value.ids('asin').length)],
 				['isbn', 'No ISBN', x => Boolean(x.value.isbn)],
 				['narrators', 'No narrators', x => x.value.narrators.length > 0],
-				['publisher', 'No publisher', x => Boolean(x.value.publisher)],
+				['publisher', 'No publisher', x => x.value.publishers.length > 0],
 				['released', 'No release date', x => Boolean(x.value.released)],
 				['minutes', 'No length', x => x.value.minutes !== undefined],
 				['description', 'No description', x => Boolean(x.value.description)],

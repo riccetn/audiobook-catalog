@@ -38,6 +38,7 @@ import {
 import type {Child} from './store.js';
 import {
 	authorLinks,
+	nameLinks,
 	narratorLinks,
 	bookNarrators,
 	coverImage,
@@ -245,7 +246,7 @@ function editionRows(ed: Edition): [string, Child][] {
 				: k === 'n'
 					? narratorLinks(ed.narrators)
 					: k === 'p'
-						? buildElement('a', {href: publisherPageHref(value)}, value)
+						? nameLinks(ed.publishers, publisherPageHref)
 						: k.startsWith('ext:')
 							? idLink(k.slice(4), 'edition', value)
 							: value,
@@ -585,9 +586,12 @@ function newEntries(b: Book): string[] {
 		['publisher', 'publishers'],
 	];
 	return kinds.flatMap(([kind, named]) =>
-		newNames(FORM_NAMES[kind], Catalog.namesOn(named)(b).join(', '), true).map(
-			name => `the ${NOUNS[kind][0]} ${name}`,
-		),
+		newNames(
+			FORM_NAMES[kind],
+			Catalog.namesOn(named)(b).join(', '),
+			true,
+			kind === 'publisher' ? Text.splitPublishers : Text.splitNames,
+		).map(name => `the ${NOUNS[kind][0]} ${name}`),
 	);
 }
 
@@ -933,7 +937,9 @@ function editionField(fields: Record<string, string>, i: number, k: string): HTM
 	const kind = k === 'n' ? 'narrator' : 'publisher';
 	return comboField(input, {
 		names: () => FORM_NAMES[kind],
-		multiple: k === 'n',
+		multiple: true,
+		// "&" and "and" are part of many a publisher's name, so only commas part them
+		split: k === 'p' ? Text.splitPublishers : undefined,
 		newNote: newNote(kind),
 		onPick: value => {
 			if (FORM_EDITIONS[i]) FORM_EDITIONS[i].fields[k] = value;

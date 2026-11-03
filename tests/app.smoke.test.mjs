@@ -1055,7 +1055,7 @@ test('editing a book keeps its editions, and their covers', async () => {
 	const {ctx, els, get, run} = await bootBook(SALT_ROAD);
 	const cover = 'e3'.repeat(32);
 	run(
-		`CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642, img: {audiobookdb: '${cover}'}}, {ext: { 'audible.com': 'TESTASIN02' }}].map(e => Edition.fromJSON(e))`,
+		`CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: ['Gull Audio'], len: 642, img: {audiobookdb: '${cover}'}}, {ext: { 'audible.com': 'TESTASIN02' }}].map(e => Edition.fromJSON(e))`,
 	);
 	ctx.openEditForm(get('BOOK_FILTER'));
 	assert.equal(els.formTitle.textContent, 'Edit book');
@@ -1080,7 +1080,7 @@ test('editing a book keeps its editions, and their covers', async () => {
 		e: [
 			{
 				ext: {'audible.com': 'TESTASIN01', goodreads: '4242'},
-				p: 'Gull Audio',
+				p: ['Gull Audio'],
 				len: 642,
 				img: {audiobookdb: cover},
 			},
@@ -1157,18 +1157,22 @@ test("the book form's author, series, narrator and publisher fields offer the na
 	publisher.dispatch('input');
 	assert.deepEqual(options(els.f_e0_pList), ['Kestrel Row Audio']);
 	els.f_e0_pList.children[0].dispatch('click');
-	assert.equal(publisher.value, 'Kestrel Row Audio', 'one publisher, so no comma after it');
-	assert.equal(formEditions(get)[0].p, 'Kestrel Row Audio');
+	assert.equal(publisher.value, 'Kestrel Row Audio, ', 'ready for another publisher');
+	assert.equal(formEditions(get)[0].p, 'Kestrel Row Audio, ');
 	assert.equal(els.f_e0_pNew.hidden, true, 'a name the catalog has is not new');
 	els.f_a.dispatch('input');
 	assert.equal(els.f_aNew.hidden, true);
-	// a name the catalog doesn't have is typed as before, and the field says it is new
-	publisher.value = 'New Sound';
-	typeEdition(els, 0, 'p', 'New Sound');
+	// a name the catalog doesn't have is typed as before, and the field says it is new; only a comma parts
+	// publishers, as "&" is part of many a name
+	publisher.value = 'Kestrel Row Audio, Wren & Finch Sound';
+	typeEdition(els, 0, 'p', 'Kestrel Row Audio, Wren & Finch Sound');
 	publisher.dispatch('input');
 	assert.equal(els.f_e0_pList.innerHTML, '');
 	assert.equal(els.f_e0_pNew.hidden, false);
-	assert.equal(els.f_e0_pNew.textContent, 'New publisher: New Sound, added to the catalog when this is saved.');
+	assert.equal(
+		els.f_e0_pNew.textContent,
+		'New publisher: Wren & Finch Sound, added to the catalog when this is saved.',
+	);
 	els.f_s.value = 'Brand New Saga';
 	els.f_s.dispatch('input');
 	assert.equal(els.f_sNew.textContent, 'New series: Brand New Saga, added to the catalog when this is saved.');
@@ -1179,12 +1183,12 @@ test("the book form's author, series, narrator and publisher fields offer the na
 	await idle();
 	assert.equal(
 		els.ioStatus.textContent,
-		`Saved ${get('CATALOG.books[0].title')}. New in the catalog: the publisher New Sound.`,
+		`Saved ${get('CATALOG.books[0].title')}. New in the catalog: the publisher Wren & Finch Sound.`,
 	);
 	assert.deepEqual(get('CATALOG.books[0].authors'), ['Marisol Quenby', 'Priya Ostrander']);
-	assert.deepEqual(get('[CATALOG.books[0].editions[0].narrators, CATALOG.books[0].editions[0].publisher]'), [
+	assert.deepEqual(get('[CATALOG.books[0].editions[0].narrators, CATALOG.books[0].editions[0].publishers]'), [
 		['Tobias Frane', 'Ingrid Voss'],
-		'New Sound',
+		['Kestrel Row Audio', 'Wren & Finch Sound'],
 	]);
 	assert.ok(run('FORM_NAMES.author.length') > 0);
 });
@@ -1192,7 +1196,7 @@ test("the book form's author, series, narrator and publisher fields offer the na
 test("a book's details link an edition's ASIN to Audible and its Goodreads id to Goodreads; its card leaves editions out", async () => {
 	const {run, storage} = await bootBook(SALT_ROAD);
 	run(
-		"CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: 'Gull Audio', len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist()",
+		"CATALOG.books[0].editions = [{ext: { 'audible.com': 'TESTASIN01', goodreads: '4242' }, p: ['Gull Audio', 'Tern & Finch Press'], len: 642}, {isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist()",
 	);
 	const list = await boot({page: 'books.html', storage});
 	// (only its cover's address has its ids)
@@ -1201,7 +1205,7 @@ test("a book's details link an edition's ASIN to Audible and its Goodreads id to
 	const html = readable(els.results.innerHTML);
 	assert.match(
 		html,
-		/<h3>Edition 1<\/h3><dl class="details"><dt>ASIN<\/dt><dd>audible\.com <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a><\/dd><dt>Goodreads<\/dt><dd><a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a><\/dd><dt>Publisher<\/dt><dd><a href="publisher\.html#p=Gull\+Audio">Gull Audio<\/a><\/dd><dt>Length<\/dt><dd>10h 42m<\/dd><\/dl>/,
+		/<h3>Edition 1<\/h3><dl class="details"><dt>ASIN<\/dt><dd>audible\.com <a href="https:\/\/www\.audible\.com\/pd\/TESTASIN01" target="_blank" rel="noopener">TESTASIN01<\/a><\/dd><dt>Goodreads<\/dt><dd><a href="https:\/\/www\.goodreads\.com\/book\/show\/4242" target="_blank" rel="noopener">4242<\/a><\/dd><dt>Publishers<\/dt><dd><a href="publisher\.html#p=Gull\+Audio">Gull Audio<\/a>, <a href="publisher\.html#p=Tern\+%26\+Finch\+Press">Tern &amp; Finch Press<\/a><\/dd><dt>Length<\/dt><dd>10h 42m<\/dd><\/dl>/,
 	);
 	// an edition without either id has no links
 	assert.match(html, /<h3>Edition 2<\/h3><dl class="details"><dt>ISBN<\/dt><dd>9780000000002<\/dd><\/dl>/);
@@ -1251,7 +1255,7 @@ test("a book edited in the form keeps its id, and so do its editions, a box set'
 		after.map(b => [b.uid, b.e.map(ed => ed.uid)]),
 		before.map(b => [b.uid, b.e.map(ed => ed.uid)]),
 	);
-	assert.equal(after[1].e[0].p, 'Gull Audio', 'the edit reached the other title');
+	assert.deepEqual(after[1].e[0].p, ['Gull Audio'], 'the edit reached the other title');
 	const records = database.records('editions');
 	assert.deepEqual(
 		records.map(ed => [ed.id, ed.bookIds.length]),
@@ -1261,7 +1265,7 @@ test("a book edited in the form keeps its id, and so do its editions, a box set'
 		],
 		'still one record each',
 	);
-	assert.ok(records[0].publisherId);
+	assert.equal(records[0].publisherIds.length, 1);
 	assert.deepEqual(
 		database.records('books').map(b => b.title),
 		['Tidewater Rising', 'Gull Light'],
@@ -1460,10 +1464,10 @@ test('an edition added in the book form takes its place by release date, earlies
 	await idle();
 	assert.equal(els.formError.textContent, '');
 	const order = ['Early Audio', 'Gullwing Audio', 'Harbourlight Sound', 'Undated Audio'];
-	assert.deepEqual(get('CATALOG.books[0].editions.map(ed => ed.publisher)'), order);
+	assert.deepEqual(get('CATALOG.books[0].editions.map(ed => ed.publishers[0])'), order);
 	const stored = (await kept(storage)).books.find(b => b.t === SALT_ROAD);
 	assert.deepEqual(
-		stored.e.map(ed => ed.p),
+		stored.e.map(ed => ed.p[0]),
 		order,
 	);
 });
@@ -2078,7 +2082,7 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 	typeEdition(els, 0, 'p', 'Merlin Lane Audio');
 	els.addForm.listeners.submit[0]({preventDefault() {}});
 	await idle();
-	assert.equal(get(`CATALOG.book(${JSON.stringify(harvest)}).editions[0].publisher`), 'Merlin Lane Audio');
+	assert.deepEqual(get(`CATALOG.book(${JSON.stringify(harvest)}).editions[0].publishers`), ['Merlin Lane Audio']);
 	assert.match(els.ioStatus.textContent, /Also updated the shared edition on 2 other books/);
 });
 
@@ -2286,7 +2290,7 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	await first.saved();
 	// a book that lists an edition there is no record of
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 4);
+		const req = first.database.open('audiobook-catalog', 5);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	await new Promise(resolve => {
@@ -2309,7 +2313,7 @@ test("a series' site, from before authors kept their own, goes to its author whe
 	await first.saved();
 	// a database of version 3, whose series kept a site
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 4);
+		const req = first.database.open('audiobook-catalog', 5);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	const series = first.database.records('series').find(x => x.name === 'The Lantern Coast');
@@ -2337,6 +2341,38 @@ test("a series' site, from before authors kept their own, goes to its author whe
 		database.records('meta').some(m => m.key === 'reshape'),
 		false,
 	);
+});
+
+test('an edition stored with one publisher, from before database version 5, is saved again with a list of them', async () => {
+	const storage = new Map();
+	const first = await boot({storage});
+	await first.saved();
+	const {db} = await new Promise(resolve => {
+		const req = first.database.open('audiobook-catalog', 5);
+		req.onsuccess = () => resolve({db: req.result});
+	});
+	const before = first.database.records('editions');
+	await new Promise(resolve => {
+		const tx = db.transaction('editions', 'readwrite');
+		for (const {publisherIds, ...rec} of before)
+			tx.objectStore('editions').put(publisherIds.length ? {...rec, publisherId: publisherIds[0]} : rec);
+		tx.oncomplete = resolve;
+	});
+	first.database.data.get('audiobook-catalog').version = 4;
+	// a page that shows only a slice still finds it moved
+	const {database} = await boot({storage, page: 'books.html'});
+	const after = database.records('editions');
+	assert.deepEqual(
+		after.map(ed => [ed.id, ed.publisherIds]),
+		before.map(ed => [ed.id, ed.publisherIds]),
+	);
+	assert.ok(after.every(ed => !('publisherId' in ed)));
+	assert.ok(after.some(ed => ed.publisherIds.length));
+	assert.equal(
+		database.records('meta').some(m => m.key === 'reshape'),
+		false,
+	);
+	assert.deepEqual((await kept(storage)).books, demoBooks);
 });
 
 test("a catalog this browser can't read is set aside, not overwritten", async () => {
@@ -2643,7 +2679,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 	first.els.exportBtn.listeners.click[0]();
 	await idle();
 	const backup = JSON.parse(blobs[0]);
-	// version 3: the stored records by store and id, without what is derived
+	// version 4: the stored records by store and id, without what is derived
 	assert.deepEqual(Object.keys(backup), [
 		'version',
 		'books',
@@ -2653,7 +2689,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 		'marks',
 		'exclusions',
 	]);
-	assert.equal(backup.version, 3);
+	assert.equal(backup.version, 4);
 	const byName = JSON.parse(JSON.stringify(Backup.toCatalog(backup)));
 	assert.deepEqual(withoutIds(byName), {
 		books: demoBooks,
@@ -2732,7 +2768,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 
 	// a backup from a newer version of the page is refused, saying so
 	await other.els.importFile.listeners.change[0]({
-		target: {files: [{name: 'b.json', text: JSON.stringify({...backup, version: 4, books: {}})}], value: ''},
+		target: {files: [{name: 'b.json', text: JSON.stringify({...backup, version: 5, books: {}})}], value: ''},
 	});
 	await idle();
 	assert.match(other.els.ioStatus.textContent, /^Not restored: a newer version of the catalog made that backup/);
@@ -3658,13 +3694,13 @@ test('merging keeps editions apart when asked, and books merged that way can be 
 	ctx.mergeGroup(0);
 	assert.deepEqual(get('CATALOG.books[0].editions'), [
 		{ext: {'audible.com': 'B1'}, len: 642},
-		{ext: {goodreads: '4242'}, p: 'Gull Audio'},
+		{ext: {goodreads: '4242'}, p: ['Gull Audio']},
 	]);
 	// ...and the merged book is now offered for joining, like Beacons
 	assert.deepEqual(get('SPLIT'), [at[0], at[2]]);
 	ctx.joinBookEditions(at[0]);
 	assert.deepEqual(get('CATALOG.books[0].editions'), [
-		{ext: {'audible.com': 'B1', goodreads: '4242'}, p: 'Gull Audio', len: 642},
+		{ext: {'audible.com': 'B1', goodreads: '4242'}, p: ['Gull Audio'], len: 642},
 	]);
 	assert.match(els.ioStatus.textContent, /^The Salt Road now has one edition\./);
 	// "Keep separate" is remembered in this browser
@@ -4851,7 +4887,7 @@ test('a series is compared with every catalog at once, and Apply takes only the 
 			[
 				'Tidewater',
 				'1',
-				[[{audiobookdb: 'RlsTidewatr1'}, ['Dana Fenwick'], '2020-02-02', 'Gullwing Audio', 570]],
+				[[{audiobookdb: 'RlsTidewatr1'}, ['Dana Fenwick'], '2020-02-02', ['Gullwing Audio'], 570]],
 			],
 		],
 	);
@@ -5113,6 +5149,48 @@ test("the publishers page lists the editions' publishers, and a publisher's page
 		/class="with">with/,
 		"a publisher's page names no other publishers",
 	);
+});
+
+test('a book published by two publishers together is on both their pages, and its form names both', async () => {
+	const mine = [
+		{
+			t: 'Apple Hill',
+			a: ['Ann Vale'],
+			e: [{ext: {'audible.com': 'B0APPLEHL1'}, p: ['Gull Audio', 'Tern & Pike Press']}],
+		},
+		{t: 'Brine Tide', a: ['Ann Vale'], e: [{p: ['Tern & Pike Press']}]},
+	];
+	const {els, readable, storage} = await boot({page: 'publishers.html', files: {'books.json': JSON.stringify(mine)}});
+	assert.match(els.subtitle.textContent, /^2 publishers across 2 audiobooks/);
+	assert.match(
+		readable(els.creditBody.innerHTML),
+		/<a class="srow-title" href="publisher\.html#p=[^"]+">Gull Audio<\/a>\s*<span class="srow-owned">1 book<\/span>/,
+	);
+	assert.match(
+		readable(els.creditBody.innerHTML),
+		/<a class="srow-title" href="publisher\.html#p=[^"]+">Tern &amp; Pike Press<\/a>\s*<span class="srow-owned">2 books<\/span>/,
+	);
+	for (const [name, count] of [
+		['Gull Audio', '1 audiobook'],
+		['Tern & Pike Press', '2 audiobooks'],
+	]) {
+		const pub = await boot({page: 'publisher.html', hash: '#p=' + encodeURIComponent(name), storage, files: null});
+		await idle();
+		assert.equal(pub.els.subtitle.textContent, count);
+		assert.match(pub.readable(pub.els.creditBody.innerHTML), /Apple Hill/);
+	}
+	const page = await bootBook('Apple Hill', {storage, files: null});
+	assert.match(
+		page.readable(page.els.results.innerHTML),
+		/<dt>Publishers<\/dt><dd><a href="publisher\.html#p=[^"]+">Gull Audio<\/a>, <a href="publisher\.html#p=[^"]+">Tern &amp; Pike Press<\/a><\/dd>/,
+	);
+	page.ctx.openEditForm(page.get('BOOK_FILTER'));
+	assert.equal(page.els.f_e0_p.getAttribute('value'), 'Gull Audio, Tern & Pike Press');
+	// taking one off saves the other alone
+	typeEdition(page.els, 0, 'p', 'Tern & Pike Press');
+	page.els.addForm.listeners.submit[0]({preventDefault() {}, target: page.els.addForm});
+	await idle();
+	assert.deepEqual((await kept(storage)).books[0].e[0].p, ['Tern & Pike Press']);
 });
 
 test('the narrators on a book card, and the publishers in its details, link to their pages', async () => {

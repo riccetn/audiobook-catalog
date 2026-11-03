@@ -102,7 +102,7 @@ export class AudibleSource extends BookSource {
 		if (isbn) ed.isbn = isbn;
 		const narrators = names(product.narrators);
 		if (narrators.length) ed.n = narrators;
-		if (text(product.publisher_name)) ed.p = text(product.publisher_name);
+		if (text(product.publisher_name)) ed.p = [text(product.publisher_name)];
 		const released = BookSource.date(product.release_date);
 		if (released) ed.d = released;
 		if (Number.isInteger(product.runtime_length_min) && product.runtime_length_min > 0)

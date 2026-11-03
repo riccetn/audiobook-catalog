@@ -456,7 +456,7 @@ test('names and text are tidied', () => {
 		s: ' S ',
 		sn: '1',
 		g: ['Fantasy ', '  ', 'Cozy  Mystery'],
-		...ed({ext: {'audible.com': ' B0X'}, n: ['A.B.  Vale'], p: 'Gull  Audio', desc: ' UK   edition'}),
+		...ed({ext: {'audible.com': ' B0X'}, n: ['A.B.  Vale'], p: ['Gull  Audio'], desc: ' UK   edition'}),
 	};
 	assert.deepEqual(Book.tidyJSON(rec), {
 		t: 'A Title',
@@ -464,7 +464,7 @@ test('names and text are tidied', () => {
 		s: 'S',
 		sn: '1',
 		g: ['Fantasy', 'Cozy Mystery'],
-		...ed({ext: {'audible.com': 'B0X'}, n: ['A. B. Vale'], p: 'Gull Audio', desc: 'UK edition'}),
+		...ed({ext: {'audible.com': 'B0X'}, n: ['A. B. Vale'], p: ['Gull Audio'], desc: 'UK edition'}),
 	});
 	assert.equal(rec.t, 'A  Title ', 'the input record is not modified');
 });
@@ -508,7 +508,7 @@ test('validation: a clean catalog passes; required fields, unknown keys, ids', (
 			...ed({
 				ext: {'audible.com': 'B0', goodreads: '1', hardcover: '5'},
 				isbn: '9780000000002',
-				p: 'P',
+				p: ['P'],
 				d: '2021-05',
 				len: 600,
 			}),
@@ -908,7 +908,7 @@ test("Goodreads CSV: every book on the read shelf, one own edition's ids, the la
 			sn: '2',
 			g: ['Science Fiction', 'Witches'],
 			...ed(
-				{ext: {'audible.com': 'B1'}, p: 'Pub', d: '2019-04-02'},
+				{ext: {'audible.com': 'B1'}, p: ['Pub'], d: '2019-04-02'},
 				{ext: {goodreads: '4242'}, isbn: '9780306406157', d: '2020'},
 			),
 			r: ['2024-03-15', '2025-01', '2023-06-02'],
@@ -1288,8 +1288,8 @@ test('editions: a book from before editions gets its ids and ISBNs as its first 
 		[{ext: {goodreads: '7'}}, {ext: {'audible.com': 'B2'}}, {ext: {'audible.com': 'B1'}, isbn: ISBN_A}],
 	);
 	assert.deepEqual(
-		BackupV1.fixEditions({t: 'A', a: ['B'], id: 'B1', gr: '7', e: [{ext: {'audible.com': 'B1'}, p: 'P'}]}).e,
-		[{ext: {'audible.com': 'B1', goodreads: '7'}, p: 'P'}],
+		BackupV1.fixEditions({t: 'A', a: ['B'], id: 'B1', gr: '7', e: [{ext: {'audible.com': 'B1'}, p: ['P']}]}).e,
+		[{ext: {'audible.com': 'B1', goodreads: '7'}, p: ['P']}],
 	);
 	assert.deepEqual(BackupV1.fixEditions({t: 'A', a: ['B'], e: []}), {t: 'A', a: ['B']});
 	const current = {t: 'A', a: ['B'], e: [{ext: {'audible.com': 'B1'}}]};
@@ -1300,7 +1300,7 @@ test('editions: a book from before editions gets its ids and ISBNs as its first 
 });
 
 test('editions: validation of fields, and of a box set edition shared by several titles', () => {
-	const box = {ext: {'audible.com': 'BBOX'}, isbn: ISBN_BOX, p: 'Gull Audio', len: 1200};
+	const box = {ext: {'audible.com': 'BBOX'}, isbn: ISBN_BOX, p: ['Gull Audio'], len: 1200};
 	const clean = [
 		{t: 'Two', a: ['A'], s: 'S', sn: '2', e: [{ext: {'audible.com': 'B2'}}, box]},
 		{t: 'Three', a: ['A'], s: 'S', sn: '3', e: [{...box}]},
@@ -1312,7 +1312,7 @@ test('editions: validation of fields, and of a box set edition shared by several
 			{t: 'A', a: ['B'], e: []},
 			{t: 'C', a: ['B'], e: [{}, {n: ['']}]},
 			{t: 'D', a: ['B'], e: [{ext: {'audible.com': 'B1'}, d: '15/03/2024', len: 12.5, extra: 1}, 'nope']},
-			{t: 'E', a: ['B'], e: [{ext: {'audible.com': 'B9'}}, {ext: {'audible.com': 'B9'}, p: 'x'}]},
+			{t: 'E', a: ['B'], e: [{ext: {'audible.com': 'B9'}}, {ext: {'audible.com': 'B9'}, p: ['x']}]},
 		],
 		{},
 	).errors.join('\n');
@@ -1331,7 +1331,7 @@ test('editions: validation of fields, and of a box set edition shared by several
 	const {warnings} = Validator.validate(
 		[
 			{t: 'Two', a: ['A'], e: [box]},
-			{t: 'Three', a: ['A'], e: [{...box, p: 'Other  Audio'}]},
+			{t: 'Three', a: ['A'], e: [{...box, p: ['Other  Audio']}]},
 		],
 		{},
 	);
@@ -1363,19 +1363,19 @@ test('editions: length and release date are read from Audible, publisher and yea
 		'Release Date': '2021-05-04',
 		Length: '10 hrs and 42 mins',
 	});
-	assert.deepEqual(json(rec.editions), [{ext: {'audible.com': 'B1'}, p: 'Gull Audio', d: '2021-05-04', len: 642}]);
+	assert.deepEqual(json(rec.editions), [{ext: {'audible.com': 'B1'}, p: ['Gull Audio'], d: '2021-05-04', len: 642}]);
 	const result = new GoodreadsImporter().read(
 		'Book Id,Title,Author,Binding,Exclusive Shelf,Publisher,Year Published,Original Publication Year\n' +
 			'4242,T,A,Audible Audio,read,Gull Audio,2021,1999\n',
 	);
-	assert.deepEqual(json(result.books[0].editions), [{ext: {goodreads: '4242'}, p: 'Gull Audio', d: '2021'}]);
+	assert.deepEqual(json(result.books[0].editions), [{ext: {goodreads: '4242'}, p: ['Gull Audio'], d: '2021'}]);
 });
 
 test('merge: an edition fills in its match, a lone edition, or is added as another edition', () => {
 	// Goodreads finds the book Audible added: its only edition gains the Goodreads id and publisher
-	const existing = [book('One', 'Author', ed({ext: {'audible.com': 'B1'}, p: 'Mine'}))];
-	let report = merge(existing, [book('One', 'Author', ed({ext: {goodreads: '7'}, p: 'Theirs', d: '2021'}))]);
-	assert.deepEqual(existing[0].e, [{ext: {'audible.com': 'B1', goodreads: '7'}, p: 'Mine', d: '2021'}]);
+	const existing = [book('One', 'Author', ed({ext: {'audible.com': 'B1'}, p: ['Mine']}))];
+	let report = merge(existing, [book('One', 'Author', ed({ext: {goodreads: '7'}, p: ['Theirs'], d: '2021'}))]);
+	assert.deepEqual(existing[0].e, [{ext: {'audible.com': 'B1', goodreads: '7'}, p: ['Mine'], d: '2021'}]);
 	assert.deepEqual(
 		[report.goodreadsFilled.length, report.detailsFilled.length, report.editionsAdded.length],
 		[1, 1, 0],
@@ -1384,7 +1384,7 @@ test('merge: an edition fills in its match, a lone edition, or is added as anoth
 	// another ASIN is another edition; later imports fill in the one they share an ISBN with
 	report = merge(existing, [book('One', 'Author', ed({ext: {'audible.com': 'B1UK'}, isbn: ISBN_B}))]);
 	assert.deepEqual(existing[0].e, [
-		{ext: {'audible.com': 'B1', goodreads: '7'}, p: 'Mine', d: '2021'},
+		{ext: {'audible.com': 'B1', goodreads: '7'}, p: ['Mine'], d: '2021'},
 		{ext: {'audible.com': 'B1UK'}, isbn: ISBN_B},
 	]);
 	assert.equal(report.editionsAdded.length, 1);
@@ -1410,10 +1410,10 @@ test('merge: a box set edition on several titles matches them, and is filled in 
 		book('Three', 'Author', {s: 'S', sn: '3', ...ed(box())}),
 	];
 	const report = merge(existing, [
-		book('S: Books 2-3', 'Author', {s: 'S', sn: '2-3', ...ed({ext: {'audible.com': 'BBOX'}, p: 'Gull Audio'})}),
+		book('S: Books 2-3', 'Author', {s: 'S', sn: '2-3', ...ed({ext: {'audible.com': 'BBOX'}, p: ['Gull Audio']})}),
 	]);
 	assert.deepEqual([report.added.map(b => [b.t, b.sn]), report.matched], [[['S: Books 2-3', '2-3']], 1]);
-	const filled = {ext: {'audible.com': 'BBOX'}, p: 'Gull Audio', desc: 'S: Books 2-3'};
+	const filled = {ext: {'audible.com': 'BBOX'}, p: ['Gull Audio'], desc: 'S: Books 2-3'};
 	assert.deepEqual(
 		existing.map(b => b.e),
 		[[filled], [filled], [filled]],
@@ -1511,10 +1511,10 @@ test('merge: a box set already in the catalog as one book gains its titles; with
 		book('Ember: Books 1-3', 'Ann Vale', {
 			s: 'Ember',
 			sn: '1-3',
-			...ed({ext: {'audible.com': 'BBOX'}, p: 'Gull Audio'}),
+			...ed({ext: {'audible.com': 'BBOX'}, p: ['Gull Audio']}),
 		}),
 	]);
-	const set = {ext: {'audible.com': 'BBOX'}, p: 'Gull Audio', desc: 'Ember: Books 1-3'};
+	const set = {ext: {'audible.com': 'BBOX'}, p: ['Gull Audio'], desc: 'Ember: Books 1-3'};
 	assert.deepEqual(whole, [
 		book('Ember: Books 1-3', 'Ann Vale', {s: 'Ember', sn: '1-3', e: [set]}),
 		...[1, 2, 3].map(n => book(`Ember, Book ${n}`, 'Ann Vale', {s: 'Ember', sn: String(n), e: [set]})),
@@ -1698,7 +1698,7 @@ test('editions as text: formatted for the card and read back from the form', () 
 		ext: {'audible.com': 'B0X', goodreads: '4242'},
 		isbn: ISBN_A,
 		n: ['Ann Vale'],
-		p: 'Gull Audio',
+		p: ['Gull Audio'],
 		d: '2021-05',
 		len: 642,
 		desc: 'UK edition',
@@ -1848,7 +1848,7 @@ test('editions as fields: one field per part in the book form, each checked on i
 		ext: {'audible.com': 'B0X', goodreads: '4242', hardcover: '31337'},
 		isbn: ISBN_A,
 		n: ['Ann Vale', 'Bo Reed'],
-		p: 'Gull Audio',
+		p: ['Gull Audio'],
 		d: '2021-05',
 		len: 642,
 		desc: 'UK edition; abridged',
@@ -1954,8 +1954,8 @@ test('idFromAddress: the id a pasted address names, and the field it goes in', (
 test('saving a book keeps the copies of a shared edition in step', () => {
 	const catalog = new Catalog({
 		books: Bs([
-			book('Two', 'A', ed({ext: {'audible.com': 'BBOX'}, p: 'Gull Audio'}, {ext: {'audible.com': 'B2'}})),
-			book('Three', 'A', ed({ext: {'audible.com': 'BBOX'}, p: 'Gull Audio'})),
+			book('Two', 'A', ed({ext: {'audible.com': 'BBOX'}, p: ['Gull Audio']}, {ext: {'audible.com': 'B2'}})),
+			book('Three', 'A', ed({ext: {'audible.com': 'BBOX'}, p: ['Gull Audio']})),
 			book('Other', 'A', ed({ext: {'audible.com': 'B9'}, isbn: [ISBN_BOX]})),
 		]),
 	});
@@ -1972,7 +1972,7 @@ test('saving a book keeps the copies of a shared edition in step', () => {
 					'Two',
 					'A',
 					ed(
-						{ext: {'audible.com': 'BBOX'}, p: 'Kestrel Audio', isbn: [ISBN_BOX]},
+						{ext: {'audible.com': 'BBOX'}, p: ['Kestrel Audio'], isbn: [ISBN_BOX]},
 						{ext: {'audible.com': 'B2'}},
 					),
 				),
@@ -1983,8 +1983,8 @@ test('saving a book keeps the copies of a shared edition in step', () => {
 	assert.deepEqual(
 		books().map(b => b.e[0]),
 		[
-			{ext: {'audible.com': 'BBOX'}, p: 'Kestrel Audio', isbn: [ISBN_BOX]},
-			{ext: {'audible.com': 'BBOX'}, p: 'Kestrel Audio', isbn: [ISBN_BOX]},
+			{ext: {'audible.com': 'BBOX'}, p: ['Kestrel Audio'], isbn: [ISBN_BOX]},
+			{ext: {'audible.com': 'BBOX'}, p: ['Kestrel Audio'], isbn: [ISBN_BOX]},
 			{ext: {'audible.com': 'B9'}, isbn: [ISBN_BOX]},
 		],
 	);
@@ -1992,7 +1992,7 @@ test('saving a book keeps the copies of a shared edition in step', () => {
 	const four = book('Four', 'A', ed({ext: {'audible.com': 'BBOX'}, len: 900}));
 	assert.equal(catalog.saveBook(null, B(four)), 2);
 	assert.ok(catalog.books[3].id, 'a book added gets an id');
-	assert.deepEqual(books()[3].e, [{ext: {'audible.com': 'BBOX'}, isbn: [ISBN_BOX], p: 'Kestrel Audio', len: 900}]);
+	assert.deepEqual(books()[3].e, [{ext: {'audible.com': 'BBOX'}, isbn: [ISBN_BOX], p: ['Kestrel Audio'], len: 900}]);
 	assert.deepEqual(books()[1].e, books()[3].e);
 	// removing the edition from one title leaves the others
 	assert.equal(catalog.saveBook(catalog.books[3].id, B(book('Four', 'A'))), 0);
@@ -2036,7 +2036,7 @@ test('Book.merge keeps the picked fields and combines genres, dates read and edi
 		sn: '1',
 		g: ['Fantasy'],
 		r: ['2025-11-20'],
-		...ed({ext: {goodreads: '4242'}, p: 'Gullwing Audio'}, {isbn: ISBN_BOX}),
+		...ed({ext: {goodreads: '4242'}, p: ['Gullwing Audio']}, {isbn: ISBN_BOX}),
 	});
 	const b = book('The Salt Road', 'Marisol Quenby', {
 		s: 'The Lantern Coast',
@@ -2059,7 +2059,7 @@ test('Book.merge keeps the picked fields and combines genres, dates read and edi
 		r: ['2023-06-02', '2025-11-20'],
 		ext: {hardcover: '77'},
 		e: [
-			{ext: {'audible.com': 'B1', goodreads: '4242'}, n: ['Tobias Frane'], p: 'Gullwing Audio', len: 642},
+			{ext: {'audible.com': 'B1', goodreads: '4242'}, n: ['Tobias Frane'], p: ['Gullwing Audio'], len: 642},
 			{isbn: ISBN_BOX},
 			{ext: {'audible.com': 'B2'}},
 		],
@@ -2068,7 +2068,7 @@ test('Book.merge keeps the picked fields and combines genres, dates read and edi
 	assert.equal(picked.t, 'The Salt Road');
 	assert.equal(picked.s, 'The Lantern Coast');
 	// the inputs are left alone
-	assert.deepEqual(a.e, [{ext: {goodreads: '4242'}, p: 'Gullwing Audio'}, {isbn: ISBN_BOX}]);
+	assert.deepEqual(a.e, [{ext: {goodreads: '4242'}, p: ['Gullwing Audio']}, {isbn: ISBN_BOX}]);
 	assert.deepEqual(Validator.validate([picked], {}).errors, []);
 });
 
@@ -2077,7 +2077,7 @@ test('editions that do not disagree on an ASIN, Goodreads id or ISBN can be join
 	const goodreads = book(
 		'Salt Road',
 		'Marisol Quenby',
-		ed({ext: {goodreads: '4242'}, isbn: ISBN_B, p: 'Gull Audio', len: 600}),
+		ed({ext: {goodreads: '4242'}, isbn: ISBN_B, p: ['Gull Audio'], len: 600}),
 	);
 	const joinable = editions => Edition.joinable(editions.map(E));
 	assert.equal(joinable([{ext: {'audible.com': 'B1'}}, {ext: {goodreads: '4242'}}]), true);
@@ -2093,7 +2093,7 @@ test('editions that do not disagree on an ASIN, Goodreads id or ISBN can be join
 	assert.equal(joinable([{ext: {'audible.com': 'B1'}}]), false);
 	// the first edition's values win
 	assert.deepEqual(json(Book.merge(Bs([audible, goodreads]), {joinEditions: true}).editions), [
-		{ext: {'audible.com': 'B1', goodreads: '4242'}, isbn: ISBN_B, p: 'Gull Audio', len: 642},
+		{ext: {'audible.com': 'B1', goodreads: '4242'}, isbn: ISBN_B, p: ['Gull Audio'], len: 642},
 	]);
 	assert.equal(Book.merge(Bs([audible, goodreads])).editions.length, 2);
 	assert.equal(audible.e[0].gr, undefined); // the inputs are left alone
@@ -2365,14 +2365,14 @@ const v2Catalog = () => {
 				r: ['2024-05-01'],
 				ext: {hardcover: '77'},
 				...ed(
-					{ext: {'audible.com': 'BSET'}, n: ['Cy Hale'], p: 'Gull Audio', len: 600},
+					{ext: {'audible.com': 'BSET'}, n: ['Cy Hale'], p: ['Gull Audio'], len: 600},
 					{isbn: '9780000000002'},
 				),
 			}),
 			book('Tide Two', 'Ann Vale', {
 				s: 'Tide Saga',
 				sn: '2',
-				...ed({ext: {'audible.com': 'BSET'}, n: ['Cy Hale'], p: 'Gull Audio', len: 600}),
+				...ed({ext: {'audible.com': 'BSET'}, n: ['Cy Hale'], p: ['Gull Audio'], len: 600}),
 			}),
 			book('Tide Waters', 'Ann Vale'),
 		],
@@ -2419,7 +2419,7 @@ test('a version 2 backup is the stored records by store and uid, without what is
 	assert.deepEqual(backup.editions[one.editions[0].id], {
 		external: {'audible.com': 'BSET'},
 		narratorIds: [ids.narrators.get('Cy Hale')],
-		publisherId: ids.publishers.get('Gull Audio'),
+		publisherIds: [ids.publishers.get('Gull Audio')],
 		minutes: 600,
 	});
 	assert.deepEqual(backup.series, {[ids.series.get('Tide Saga')]: {name: 'Tide Saga', total: 3, status: 'ongoing'}});
@@ -2564,7 +2564,7 @@ test('a version 2 backup that is not one is refused, saying why', () => {
 		spoil(b);
 		assert.throws(() => Backup.read(b), error);
 	}
-	assert.throws(() => Backup.read({...backup(), version: 4}), NewerBackup);
+	assert.throws(() => Backup.read({...backup(), version: 5}), NewerBackup);
 	// a value that isn't what its field holds has no place in a record, so it is refused too
 	const odd = backup();
 	odd.books[id(odd)].number = 5;
@@ -2769,7 +2769,7 @@ test('author info: validated against the books, ids checked against their catalo
 	]);
 	// a publisher has no page on Goodreads
 	assert.deepEqual(
-		Validator.validateContributors([book('A', 'B', ed({p: 'Gull Audio'}))], 'publishers', {
+		Validator.validateContributors([book('A', 'B', ed({p: ['Gull Audio']}))], 'publishers', {
 			'Gull Audio': {ext: {goodreads: '1'}},
 		}).errors,
 		["publishers['Gull Audio']: Goodreads has no publisher pages, so no publisher id"],
@@ -2809,7 +2809,7 @@ test("author info from before ids: the address of each page becomes its id, and 
 });
 
 test('narrator and publisher info: names come from the editions, and backups carry and merge it', () => {
-	const books = [book('Lantern Road', 'Ann Vale', {e: [{n: ['Cy Hale'], p: 'Gull Audio'}]})];
+	const books = [book('Lantern Road', 'Ann Vale', {e: [{n: ['Cy Hale'], p: ['Gull Audio']}]})];
 	assert.deepEqual(
 		Validator.validateContributors(books, 'narrators', {'Cy Hale': {bio: 'Reads.'}, 'Ann Vale': {bio: 'Writes.'}}),
 		{errors: [], warnings: []},
@@ -2909,12 +2909,12 @@ test("narrators' and publishers' works come from the editions, each book once", 
 				s: 'Tide Saga',
 				sn: '2',
 				e: [
-					{n: ['Cy Hale'], p: 'Gull Audio'},
-					{n: ['Cy Hale', 'Di Moss'], p: 'Gull Audio'},
+					{n: ['Cy Hale'], p: ['Gull Audio']},
+					{n: ['Cy Hale', 'Di Moss'], p: ['Gull Audio']},
 				],
 			}),
-			book('First', 'Ann Vale', {s: 'Tide Saga', sn: '1', e: [{n: ['Di Moss'], p: 'Gull Audio'}]}),
-			book('Apple Hill', 'Bo Reed', {e: [{n: ['Cy Hale'], p: 'Harbor Sound'}]}),
+			book('First', 'Ann Vale', {s: 'Tide Saga', sn: '1', e: [{n: ['Di Moss'], p: ['Gull Audio']}]}),
+			book('Apple Hill', 'Bo Reed', {e: [{n: ['Cy Hale'], p: ['Harbor Sound']}]}),
 			book('Unread Edition', 'Bo Reed'),
 		]),
 	});
@@ -3189,7 +3189,7 @@ test('HardcoverSync.read: the Read shelf as books, with every finished date and 
 					ext: {'amazon.com': 'B0TIDEWAT1', hardcover: '501'},
 					isbn: '9780000000002',
 					n: ['Hollis Marr', 'Cy Hale'],
-					p: 'Gullwing Audio',
+					p: ['Gullwing Audio'],
 					d: '2021-05-04',
 					len: 642,
 				},
@@ -3500,7 +3500,7 @@ test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids f
 	assert.deepEqual(json(AudiobookdbSync.incoming(books.BrineTide001, mine)).e, [
 		{
 			ext: {'audible.co.uk': 'B0BRINEUK1', audiobookdb: 'RlsBrineUK01'},
-			p: 'Gullwing Audio',
+			p: ['Gullwing Audio'],
 			d: '2020-02-02',
 			len: 480,
 		},
@@ -3515,7 +3515,7 @@ test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids f
 			{
 				ext: {audiobookdb: 'RlsTidewatr1'},
 				n: ['Dana Fenwick'],
-				p: 'Gullwing Audio',
+				p: ['Gullwing Audio'],
 				d: '2020-02-02',
 				len: 570,
 				img: {audiobookdb: 'd2'.repeat(32)},
@@ -3761,7 +3761,7 @@ const numbered = () => {
 // A catalog's records, and the catalog they make again, as a backup has it (without the ids).
 const recordsOf = (catalog, newId = numbered()) => CatalogRecords.fromCatalog(catalog, newId);
 const withoutIds = x => JSON.parse(JSON.stringify(x), (k, v) => (k === 'uid' || k === 'ids' ? undefined : v));
-const BOX = {ext: {'audible.com': 'B0BOX00001'}, n: ['Cy Hale'], p: 'Gull Audio'};
+const BOX = {ext: {'audible.com': 'B0BOX00001'}, n: ['Cy Hale'], p: ['Gull Audio']};
 const shelf = () =>
 	Backup.toCatalog({
 		books: [
@@ -3892,12 +3892,12 @@ test("a book's editions are kept in order of release, earliest first, and those 
 		books: [
 			book('Fern 1', 'Bo Reed', {
 				e: [
-					{p: 'No date'},
+					{p: ['No date']},
 					{d: '2021-05-04'},
 					{d: 'someday'},
 					{d: '2019'},
 					{d: '2021-05'},
-					{d: '2021-05-04', p: 'Tie'},
+					{d: '2021-05-04', p: ['Tie']},
 				],
 			}),
 			book('Fern 2', 'Bo Reed', {e: [{d: '2020'}]}),
@@ -3906,17 +3906,17 @@ test("a book's editions are kept in order of release, earliest first, and those 
 	// every load and save gives the books their ids first, whatever added or changed their editions
 	catalog.assignIds();
 	assert.deepEqual(
-		catalog.books[0].editions.map(ed => ed.released ?? ed.publisher),
+		catalog.books[0].editions.map(ed => ed.released ?? ed.publishers[0]),
 		['2019', '2021-05', '2021-05-04', '2021-05-04', 'No date', 'someday'],
 	);
-	assert.equal(catalog.books[0].editions[3].publisher, 'Tie', 'editions released the same day keep their order');
+	assert.equal(catalog.books[0].editions[3].publishers[0], 'Tie', 'editions released the same day keep their order');
 	// a box set's edition sits where its date puts it on each of its titles
 	const set = {ext: {'audible.com': 'B0FERNSET1'}, d: '2020-06'};
 	catalog.books[0].editions.push(Edition.fromJSON(set));
 	catalog.books[1].editions.unshift(Edition.fromJSON(set));
 	catalog.assignIds();
 	assert.deepEqual(
-		catalog.books.map(b => b.editions.map(ed => ed.released ?? ed.publisher)),
+		catalog.books.map(b => b.editions.map(ed => ed.released ?? ed.publishers[0])),
 		[
 			['2019', '2020-06', '2021-05', '2021-05-04', '2021-05-04', 'No date', 'someday'],
 			['2020', '2020-06'],
@@ -3928,8 +3928,8 @@ test("a book's editions are kept in order of release, earliest first, and those 
 test('renameEntry renames a person on every book, keeping their id, or joins one the catalog has', () => {
 	const catalog = Backup.toCatalog({
 		books: [
-			book('Fern 1', 'Bo Reed', {a: ['Bo Reed', 'B. Reed'], e: [{n: ['Cy Hale', 'C. Hale'], p: 'Gull Audio'}]}),
-			book('Fern 2', 'B. Reed', {e: [{n: ['C. Hale'], p: 'Gull Press'}]}),
+			book('Fern 1', 'Bo Reed', {a: ['Bo Reed', 'B. Reed'], e: [{n: ['Cy Hale', 'C. Hale'], p: ['Gull Audio']}]}),
+			book('Fern 2', 'B. Reed', {e: [{n: ['C. Hale'], p: ['Gull Press']}]}),
 			book('Other', 'Ann Vale'),
 		],
 		authors: {'B. Reed': {bio: 'Short.'}},
@@ -3939,7 +3939,7 @@ test('renameEntry renames a person on every book, keeping their id, or joins one
 	const publisher = id('publishers', 'Gull Press');
 	assert.equal(catalog.renameEntry('publishers', 'Gull Press', 'Gull Audio Press'), 1);
 	assert.deepEqual(
-		catalog.books.map(b => b.editions[0]?.publisher),
+		catalog.books.map(b => b.editions[0]?.publishers[0]),
 		['Gull Audio', 'Gull Audio Press', undefined],
 	);
 	assert.equal(id('publishers', 'Gull Audio Press'), publisher);
@@ -3972,7 +3972,7 @@ test('removeEntry takes a series or person off every book, and refuses to leave 
 				a: ['Bo Reed', 'Ann Vale'],
 				s: 'Fern Saga',
 				sn: '1',
-				e: [{n: ['Cy Hale', 'Di Moss'], p: 'Gull Audio'}],
+				e: [{n: ['Cy Hale', 'Di Moss'], p: ['Gull Audio']}],
 			}),
 			book('Fern 2', 'Bo Reed', {s: 'Fern Saga', sn: '2', e: [{n: ['Cy Hale']}]}),
 		],
@@ -3993,7 +3993,7 @@ test('removeEntry takes a series or person off every book, and refuses to leave 
 		[['Di Moss'], []],
 	);
 	catalog.removeEntry('publishers', id('publishers', 'Gull Audio'));
-	assert.equal(catalog.books[0].editions[0].publisher, undefined);
+	assert.deepEqual(catalog.books[0].editions[0].publishers, []);
 	// Ann Vale shares her book; Bo Reed is the only author of Fern 2
 	assert.equal(catalog.removeProblem('authors', id('authors', 'Ann Vale')), '');
 	catalog.removeEntry('authors', id('authors', 'Ann Vale'));
@@ -4358,7 +4358,7 @@ const INCOMING = () =>
 			s: 'Gull Isle Series',
 			sn: '1',
 			r: ['2023-01-05'],
-			e: [{ext: {'audible.com': 'B1'}, n: ['Hollis Marr', 'Ida Quell'], p: 'Kestrel Row Audio', len: 601}],
+			e: [{ext: {'audible.com': 'B1'}, n: ['Hollis Marr', 'Ida Quell'], p: ['Kestrel Row Audio'], len: 601}],
 		},
 		{t: 'Paper Fen', a: ['Ann Vale']},
 		{t: 'Lantern Hours', a: ['R. T. Hale']},
@@ -4458,7 +4458,7 @@ test('applying a comparison imports only the books picked, and replaces only the
 			a: ['Ann Vale'],
 			r: ['2023-01-05'],
 			ext: {goodreads: '77'},
-			e: [{ext: {goodreads: '4242'}, isbn: '9780306406157', p: 'Gull Audio'}],
+			e: [{ext: {goodreads: '4242'}, isbn: '9780306406157', p: ['Gull Audio']}],
 		},
 	]);
 	const [gr] = Comparison.compare(dated, goodreads).books;
@@ -4483,19 +4483,19 @@ test('applying a comparison imports only the books picked, and replaces only the
 				a: ['Ann Vale'],
 				s: 'Gull Isle',
 				sn: '1',
-				e: [{ext: {'audible.com': 'BSET'}, p: 'Old Press'}],
+				e: [{ext: {'audible.com': 'BSET'}, p: ['Old Press']}],
 			},
 			{
 				t: 'Gull Isle, Book 2',
 				a: ['Ann Vale'],
 				s: 'Gull Isle',
 				sn: '2',
-				e: [{ext: {'audible.com': 'BSET'}, p: 'Old Press'}],
+				e: [{ext: {'audible.com': 'BSET'}, p: ['Old Press']}],
 			},
 		]),
 	});
 	const from = Bs([
-		{t: 'Gull Isle, Book 1', a: ['Ann Vale'], e: [{ext: {'audible.com': 'BSET'}, p: 'Kestrel Row Audio'}]},
+		{t: 'Gull Isle, Book 1', a: ['Ann Vale'], e: [{ext: {'audible.com': 'BSET'}, p: ['Kestrel Row Audio']}]},
 	]);
 	assert.deepEqual(
 		Comparison.compare(sets, from).books[0].differences.map(d => d.key),
@@ -4503,7 +4503,7 @@ test('applying a comparison imports only the books picked, and replaces only the
 	);
 	Comparison.apply(sets, from, {take: new Set(), patch: new Set(['0:p:0'])});
 	assert.deepEqual(
-		sets.books.map(b => b.editions[0].publisher),
+		sets.books.map(b => b.editions[0].publishers[0]),
 		['Kestrel Row Audio', 'Kestrel Row Audio'],
 	);
 });
@@ -4608,7 +4608,7 @@ test('several catalogs side by side: each value once with the catalogs that have
 				{
 					ext: {'audible.com': 'B1'},
 					n: ['Hollis Marr', 'Ida Quell'],
-					p: 'Gullwing Audio',
+					p: ['Gullwing Audio'],
 					d: '2019-05-05',
 					len: 540,
 				},
@@ -4704,10 +4704,10 @@ test('several catalogs side by side: each value once with the catalogs that have
 		catalog.books.map(b => [
 			b.title,
 			b.read,
-			b.editions.map(e => [e.narrators, e.publisher, e.released, e.minutes]),
+			b.editions.map(e => [e.narrators, e.publishers, e.released, e.minutes]),
 		]),
 		[
-			['Salt Road', ['2020'], [[['Hollis Marr'], 'Gullwing Audio', undefined, 540]]],
+			['Salt Road', ['2020'], [[['Hollis Marr'], ['Gullwing Audio'], undefined, 540]]],
 			['Paper Fen', [], []],
 			['Only Mine', [], []],
 			['Lantern Hours', [], []],
@@ -5003,13 +5003,13 @@ test("a book's cover is looked for by its ASINs first, then its Open Library edi
 
 test("a series' site, from before authors and publishers kept their own, goes to its one author or publisher, else its note", () => {
 	const books = [
-		{t: 'One', a: ['Ann Vale'], s: 'Solo', sn: '1', e: [{ext: {'audible.com': 'B1'}, p: 'Gull Audio'}]},
+		{t: 'One', a: ['Ann Vale'], s: 'Solo', sn: '1', e: [{ext: {'audible.com': 'B1'}, p: ['Gull Audio']}]},
 		{t: 'Two', a: ['Ann Vale'], s: 'Solo', sn: '2'},
 		{t: 'Three', a: ['Bo Reed'], s: 'Has Site', sn: '1'},
-		{t: 'Four', a: ['Cy Hale'], s: 'Pair', sn: '1', e: [{ext: {'audible.com': 'B4'}, p: 'Gull Audio'}]},
-		{t: 'Five', a: ['Di Moss'], s: 'Pair', sn: '2', e: [{ext: {'audible.com': 'B5'}, p: 'Gull Audio'}]},
-		{t: 'Six', a: ['Cy Hale'], s: 'Mixed', sn: '1', e: [{ext: {'audible.com': 'B6'}, p: 'Gull Audio'}]},
-		{t: 'Seven', a: ['Di Moss'], s: 'Mixed', sn: '2', e: [{ext: {'audible.com': 'B7'}, p: 'Owl Audio'}]},
+		{t: 'Four', a: ['Cy Hale'], s: 'Pair', sn: '1', e: [{ext: {'audible.com': 'B4'}, p: ['Gull Audio']}]},
+		{t: 'Five', a: ['Di Moss'], s: 'Pair', sn: '2', e: [{ext: {'audible.com': 'B5'}, p: ['Gull Audio']}]},
+		{t: 'Six', a: ['Cy Hale'], s: 'Mixed', sn: '1', e: [{ext: {'audible.com': 'B6'}, p: ['Gull Audio']}]},
+		{t: 'Seven', a: ['Di Moss'], s: 'Mixed', sn: '2', e: [{ext: {'audible.com': 'B7'}, p: ['Owl Audio']}]},
 	];
 	const backup = Backup.read({
 		books,
@@ -5157,7 +5157,7 @@ test('CatalogLookup finds a book on Open Library and Wikidata, without an accoun
 				ext: {'amazon.com': 'B0LANTERN2', goodreads: '5151', openlibrary: 'OL901M'},
 				isbn: '9780000000019',
 				n: ['Hollis Marr'],
-				p: 'Gullwing Audio',
+				p: ['Gullwing Audio'],
 				d: '2021-03-04',
 			},
 		],
@@ -5230,7 +5230,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 				ext: {'audible.com': 'B0LANTERN2', audiobookdb: 'RlsLntrnUS01'},
 				isbn: '9780000000019',
 				n: ['Hollis Marr', 'Dana Fenwick'],
-				p: 'Gullwing Audio',
+				p: ['Gullwing Audio'],
 				d: '2021-03-04',
 				len: 612,
 				img: {audiobookdb: 'c1'.repeat(32)},
@@ -5242,7 +5242,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	// an Amazon site's ASIN is asked on its Audible site, and stays the Amazon site's too
 	const uk = await lookup.find('https://www.amazon.co.uk/dp/B0LANTERNU');
 	assert.deepEqual(uk.book.editions[0].external, {'audible.co.uk': 'B0LANTERNU', 'amazon.co.uk': 'B0LANTERNU'});
-	assert.equal(uk.book.editions[0].publisher, 'Gullwing Audio UK');
+	assert.equal(uk.book.editions[0].publishers[0], 'Gullwing Audio UK');
 	assert.ok(proxy.sent.some(r => r.startsWith('audible/audible.co.uk/catalog/products/B0LANTERNU?')));
 	// an AudiobookDB release, with its book; its ASIN isn't taken, as AudiobookDB doesn't say which site it is on
 	const release = await lookup.find('https://audiobookdb.org/releases/RlsLntrnUS01');
@@ -5258,7 +5258,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 				ext: {audiobookdb: 'RlsLntrnUS01'},
 				isbn: '9780000000019',
 				n: ['Hollis Marr', 'Dana Fenwick'],
-				p: 'Gullwing Audio',
+				p: ['Gullwing Audio'],
 				d: '2021-03-04',
 				len: 612,
 				img: {audiobookdb: 'c1'.repeat(32)},
@@ -5596,7 +5596,7 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 				sn: '2',
 				e: [{ext: {'audible.com': 'B0LANTERN2'}}],
 			},
-			{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '04', e: [{p: 'Gullwing Audio'}]},
+			{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '04', e: [{p: ['Gullwing Audio']}]},
 			{t: 'Elsewhere', a: ['Bo Reed'], e: [{ext: {'audible.com': 'B0ELSEWHR1'}}]},
 		],
 	});
@@ -5787,9 +5787,9 @@ test("an edition's own title is kept, written and read back, in the stored form,
 		t: 'The Keeper of Lanterns',
 		ext: {'audible.com': 'B0USLAMP01'},
 	});
-	assert.deepEqual(json(E({t: 'The Keeper of Lanterns', p: 'Gullwing Audio'}).clone()), {
+	assert.deepEqual(json(E({t: 'The Keeper of Lanterns', p: ['Gullwing Audio']}).clone()), {
 		t: 'The Keeper of Lanterns',
-		p: 'Gullwing Audio',
+		p: ['Gullwing Audio'],
 	});
 	const us = TWO_TITLES().editions[1];
 	assert.equal(us.format(), 'Title The Keeper of Lanterns; Narrated by Dana Fenwick; ASIN audible.com B0USLAMP01');
@@ -5975,7 +5975,7 @@ test("editions' titles: stored and backed up (version 3), searched, and exported
 	assert.ok(CatalogRecords.searchMatches(records.books[0].search, 'keeper of lanterns'));
 	assert.deepEqual(json(CatalogRecords.toCatalog(records).books[0].editions[1]).t, 'The Keeper of Lanterns');
 	const backup = Backup.write(catalog);
-	assert.equal(backup.version, 3);
+	assert.equal(backup.version, 4);
 	assert.deepEqual(
 		Object.values(backup.editions).map(ed => ed.title),
 		[undefined, 'The Keeper of Lanterns'],
@@ -6079,7 +6079,7 @@ test('sync: takes in what the other devices changed since the last sync, and nam
 
 // ------------------------------------------------------------------ stats
 test('stats: each value counts the books, editions, series and people without it', () => {
-	const shared = {ext: {'audible.com': 'B0LANTERN3'}, n: ['Cy Hale'], p: 'Tern Press'};
+	const shared = {ext: {'audible.com': 'B0LANTERN3'}, n: ['Cy Hale'], p: ['Tern Press']};
 	const catalog = Backup.toCatalog({
 		books: [
 			{t: 'Lantern Coast 1-2', a: ['Ann Vale'], s: 'Lantern Coast', sn: '1-2', e: [shared]},
@@ -6155,4 +6155,132 @@ test('DeviceSetup writes settings into a link and reads back only what each sett
 	);
 	assert.deepEqual(DeviceSetup.fromHash(`#setup=${odd}`), {keys: {hardcover: 'tok'}});
 	assert.ok(DeviceSetup.isEmpty({keys: {}}));
+});
+
+test('an edition may have several publishers: a list of names, typed with commas, "&" and "and" kept in a name', () => {
+	assert.deepEqual(Text.splitPublishers('Gull Audio, Wren & Finch Sound; Tern and Pike Press'), [
+		'Gull Audio',
+		'Wren & Finch Sound',
+		'Tern and Pike Press',
+	]);
+	assert.deepEqual(Text.splitPublishers('Gull Audio, Inc., Tern Press Ltd, Gull Audio, Inc.'), [
+		'Gull Audio, Inc.',
+		'Tern Press Ltd',
+	]);
+	const two = E({ext: {'audible.com': 'B0X'}, p: ['Gull Audio', 'Wren & Finch Sound']});
+	assert.deepEqual(two.publishers, ['Gull Audio', 'Wren & Finch Sound']);
+	assert.equal(two.format(), 'ASIN audible.com B0X; Publishers Gull Audio, Wren & Finch Sound');
+	assert.equal(two.fields().p, 'Gull Audio, Wren & Finch Sound');
+	assert.deepEqual(json(Edition.fromFields(two.fields()).editions), [json(two)]);
+	assert.deepEqual(json(Edition.fromFields({p: ' Gull  Audio ,, Tern Press '}).editions), [
+		{p: ['Gull Audio', 'Tern Press']},
+	]);
+	// the Check wants a list, tidy, of names
+	assert.deepEqual(json(Edition.tidyJSON({p: [' Gull  Audio', 'A.B. Sound', 'Gull Audio']})), {
+		p: ['Gull Audio', 'A.B. Sound'],
+	});
+	const errors = Validator.check({books: [book('A', 'B', ed({p: 'Gull Audio'}, {d: '2020', p: []}))]}).errors;
+	assert.deepEqual(
+		errors.filter(e => /'p'/.test(e)),
+		[
+			"book #0 ('A') edition #1: 'p' must be a non-empty list of publishers' names",
+			"book #0 ('A') edition #2: 'p' must be a non-empty list of publishers' names",
+		],
+	);
+	// an import fills in an edition's publishers only when it has none
+	const books = [book('A', 'B', ed({ext: {'audible.com': 'B1'}}, {ext: {'audible.com': 'B2'}, p: ['Gull Audio']}))];
+	merge(books, [
+		book(
+			'A',
+			'B',
+			ed({ext: {'audible.com': 'B1'}, p: ['Tern Press']}, {ext: {'audible.com': 'B2'}, p: ['Tern Press']}),
+		),
+	]);
+	assert.deepEqual(
+		books[0].e.map(x => x.p),
+		[['Tern Press'], ['Gull Audio']],
+	);
+	// Goodreads keeps one publisher: the first
+	const rows = Csv.parse(new GoodreadsExporter().write(Bs([book('A', 'B', ed(json(two)))])).text);
+	assert.equal(rows[0].Publisher, 'Gull Audio');
+});
+
+test("a co-published book is each publisher's, and renaming or removing one leaves the other", () => {
+	const catalog = new Catalog({
+		books: Bs([
+			book('Apple Hill', 'Ann Vale', ed({ext: {'audible.com': 'B1'}, p: ['Gull Audio', 'Tern Press']})),
+			book('Brine Tide', 'Ann Vale', ed({p: ['Tern Press']})),
+		]),
+	});
+	catalog.assignIds();
+	assert.deepEqual(
+		catalog.works('publishers', 'Gull Audio').titles.map(b => b.title),
+		['Apple Hill'],
+	);
+	assert.deepEqual(
+		catalog.works('publishers', 'Tern Press').titles.map(b => b.title),
+		['Apple Hill', 'Brine Tide'],
+	);
+	const records = CatalogRecords.fromCatalog(catalog);
+	const pubIds = ['Gull Audio', 'Tern Press'].map(n => catalog.nameIds.publishers.get(n));
+	assert.deepEqual(records.editions[0].publisherIds, pubIds);
+	assert.deepEqual(
+		records.credits
+			.filter(c => c.kind === 'publisher')
+			.map(c => [c.contributorId, c.bookId])
+			.sort(),
+		[
+			[pubIds[0], catalog.books[0].id],
+			[pubIds[1], catalog.books[0].id],
+			[pubIds[1], catalog.books[1].id],
+		].sort(),
+	);
+	assert.deepEqual(
+		records.contributors.filter(c => c.kind === 'publisher').map(c => [c.name, c.bookCount]),
+		[
+			['Gull Audio', 1],
+			['Tern Press', 2],
+		],
+	);
+	assert.equal(catalog.renameEntry('publishers', 'Gull Audio', 'Gull House Audio'), 1);
+	assert.deepEqual(catalog.books[0].editions[0].publishers, ['Gull House Audio', 'Tern Press']);
+	// renamed to the other one, it is there once
+	catalog.renameEntry('publishers', 'Gull House Audio', 'Tern Press');
+	assert.deepEqual(catalog.books[0].editions[0].publishers, ['Tern Press']);
+	catalog.removeEntry('publishers', pubIds[1]);
+	assert.deepEqual(
+		catalog.books.map(b => b.editions[0].publishers),
+		[[], []],
+	);
+});
+
+test('publishers from before an edition could have several: a version 1 name, a version 3 id and an old record each become a list of one', () => {
+	// version 1 kept one name, which is never split
+	const v1 = Backup.toCatalog({books: [book('A', 'B', ed({p: 'Wren & Finch, Inc.'}))]});
+	assert.deepEqual(v1.books[0].editions[0].publishers, ['Wren & Finch, Inc.']);
+	// version 3 kept one id, `publisherId`
+	const catalog = new Catalog({books: Bs([book('A', 'B', ed({ext: {'audible.com': 'B1'}, p: ['Gull Audio']}))])});
+	const v4 = json(Backup.write(catalog));
+	const [edId] = Object.keys(v4.editions);
+	const pubId = v4.editions[edId].publisherIds[0];
+	const v3 = json(v4);
+	v3.version = 3;
+	delete v3.editions[edId].publisherIds;
+	v3.editions[edId].publisherId = pubId;
+	assert.deepEqual(Backup.read(v3).books[0].editions[0].publishers, ['Gull Audio']);
+	assert.deepEqual(Backup.records(v3).editions[0].publisherIds, [pubId]);
+	// ...which a version 4 backup has no place for
+	const odd = json(v3);
+	odd.version = 4;
+	assert.throws(() => Backup.read(odd), /has a field no backup has: 'publisherId'/);
+	// a stored record from before database version 5 is read, and saved again in the current shape
+	const records = CatalogRecords.fromCatalog(catalog);
+	const {publisherIds, ...old} = records.editions[0];
+	records.editions[0] = {...old, publisherId: publisherIds[0]};
+	assert.ok(CatalogRecords.outdated(records));
+	assert.deepEqual(CatalogRecords.toCatalog(records).books[0].editions[0].publishers, ['Gull Audio']);
+	assert.deepEqual(
+		CatalogRecords.creditsOf(records.books[0], records.editions).map(c => c.kind),
+		['author', 'publisher'],
+	);
 });
