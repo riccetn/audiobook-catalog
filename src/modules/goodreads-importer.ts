@@ -54,7 +54,7 @@ export class GoodreadsImporter extends FileImporter {
 			edition.n = Text.splitNames(cell(row, 'Additional Authors'));
 		const isbns = Csv.rowIsbns(row);
 		if (isbns.length) edition.isbn = isbns;
-		if (cell(row, 'Publisher')) edition.p = cell(row, 'Publisher');
+		if (cell(row, 'Publisher')) edition.p = [cell(row, 'Publisher')];
 		const year = Text.parseDate(cell(row, 'Year Published')); // this edition's; "Original Publication Year" is the book's
 		if (year) edition.d = year;
 		if (Object.keys(edition).length) rec.e = [edition];

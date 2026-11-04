@@ -163,8 +163,10 @@ export class Validator {
 			}
 		}
 		for (const ed of books.flatMap(Book.storedEditions)) {
-			if (typeof ed.p === 'string' && Text.tidy(ed.p) !== ed.p)
-				untidy.set(Text.key('publisher', ed.p), ['publisher', ed.p, Text.tidy(ed.p)]);
+			for (const p of Array.isArray(ed.p) ? ed.p : []) {
+				if (typeof p === 'string' && Text.tidy(p) !== p)
+					untidy.set(Text.key('publisher', p), ['publisher', p, Text.tidy(p)]);
+			}
 			for (const n of Array.isArray(ed.n) ? ed.n : []) {
 				if (typeof n === 'string' && Text.normalizeName(n) !== n)
 					untidy.set(Text.key('narrator', n), ['narrator', n, Text.normalizeName(n)]);
@@ -241,7 +243,7 @@ export class Validator {
 		}
 		if (Edition.ID_KEY in ed && !nonEmpty(ed[Edition.ID_KEY]))
 			errors.push(`${label}: ${repr(Edition.ID_KEY)} must be a non-empty string when present`);
-		for (const k of ['t', 'p', 'd', 'desc']) {
+		for (const k of ['t', 'd', 'desc']) {
 			if (k in ed && !nonEmpty(ed[k]))
 				errors.push(`${label}: ${repr(k)} must be a non-empty string when present`);
 		}
@@ -251,6 +253,7 @@ export class Validator {
 			warnings.push(...found.warnings.map(w => `${label}: ${w}`));
 		}
 		if ('n' in ed && !nameList(ed.n)) errors.push(`${label}: 'n' must be a non-empty list of narrators' names`);
+		if ('p' in ed && !nameList(ed.p)) errors.push(`${label}: 'p' must be a non-empty list of publishers' names`);
 		if ('img' in ed && !Cover.isKeys(ed.img))
 			errors.push(`${label}: 'img' must map a catalog (${Cover.CATALOGS.join(', ')}) to its cover's key`);
 		// a cover alone is no edition

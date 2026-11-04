@@ -160,7 +160,7 @@ export class AudiobookdbSource extends BookSource {
 			const narrators = people(release.people, 'Narrator');
 			if (narrators.length) ed.n = narrators;
 			if (Text.isObject(release.publisher) && tidyText(release.publisher.name))
-				ed.p = tidyText(release.publisher.name);
+				ed.p = [tidyText(release.publisher.name)];
 			const released = BookSource.date(release.releaseDate);
 			if (released) ed.d = released;
 			const minutes = AudiobookdbSource.minutes(release);

@@ -293,10 +293,13 @@ async function saveCreditForm() {
 	if (hardcover.error) return showFormError(hardcover.error);
 	const newName = Text.tidy(fieldById('cf_name').value);
 	if (!newName) return showFormError(`Give the ${KIND.one} a name.`);
-	// a publisher is one name, but authors and narrators are a list the book form splits
-	if (KIND !== CREDIT_KINDS.publisher && Text.splitNames(newName).join('\n') !== newName) {
+	// the book form reads names as a list: a publisher's parted by commas alone, as "&" is part of many a name
+	const publisher = KIND === CREDIT_KINDS.publisher;
+	if ((publisher ? Text.splitPublishers : Text.splitNames)(newName).join('\n') !== newName) {
 		return showFormError(
-			`${newName} would be read as several ${KIND.many}: a comma, a semicolon, "&" or "and" separates names.`,
+			publisher
+				? `${newName} would be read as several ${KIND.many}: a comma or a semicolon separates names.`
+				: `${newName} would be read as several ${KIND.many}: a comma, a semicolon, "&" or "and" separates names.`,
 		);
 	}
 	const renamed = newName !== name;

@@ -144,7 +144,8 @@ export class OpenLibrarySource extends BookSource {
 			const isbn = [first(edition.isbn_13), first(edition.isbn_10)].map(Isbn.parse).find(Boolean);
 			if (isbn) ed.isbn = isbn;
 			const publisher = tidyText(first(edition.publishers));
-			if (publisher) ed.p = publisher;
+			// its list is often one publisher's name written several ways, so only the first is taken
+			if (publisher) ed.p = [publisher];
 			const released = BookSource.date(edition.publish_date);
 			if (released) ed.d = released;
 			const narrators = (Array.isArray(edition.contributors) ? edition.contributors : [])

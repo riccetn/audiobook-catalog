@@ -353,8 +353,9 @@ export class BackupV1 {
 	}
 
 	/**
-	 * A stored book or edition with its authors ("a") and narrators ("n") as lists (fixNames()), its
-	 * editions' too; the record itself is returned when nothing changes.
+	 * A stored book or edition with its authors ("a"), narrators ("n") and publishers ("p") as lists
+	 * (fixNames(); a version 1 edition had one publisher's name, which may hold a comma, so it is not split),
+	 * its editions' too; the record itself is returned when nothing changes.
 	 */
 	static fixPeople<T>(rec: T): T {
 		if (!Text.isObject(rec)) return rec;
@@ -366,6 +367,11 @@ export class BackupV1 {
 			if (out === rec) out = {...rec};
 			if (names === null) delete out[k];
 			else out[k] = names;
+		}
+		if (typeof rec.p === 'string') {
+			if (out === rec) out = {...rec};
+			if (rec.p.trim()) out.p = [rec.p];
+			else delete out.p;
 		}
 		if (Array.isArray(rec.e) && rec.e.some(ed => BackupV1.fixPeople(ed) !== ed)) {
 			if (out === rec) out = {...rec};

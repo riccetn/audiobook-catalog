@@ -365,7 +365,7 @@ export class HardcoverSync extends ShelfSync {
 			typeof edition.publisher.name === 'string' &&
 			Text.tidy(edition.publisher.name)
 		)
-			ed.publisher = Text.tidy(edition.publisher.name);
+			ed.publishers = [Text.tidy(edition.publisher.name)];
 		const released = Text.parseDate(edition.release_date);
 		if (released) ed.released = released;
 		if (Number.isInteger(edition.audio_seconds) && edition.audio_seconds >= 60)

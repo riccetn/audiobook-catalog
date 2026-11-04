@@ -3,7 +3,7 @@
 // under: a book by Book.id, a series or person by their id in nameIds (the books name them, so a name leads
 // to its id), and their info and the marks by those ids. toJSON() writes it by name, as a version 1 backup has it
 // ({books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}), which the Check reads, and
-// Backup.toCatalog() reads a backup of any version; Export writes version 3, the stored records (Backup.write).
+// Backup.toCatalog() reads a backup of any version; Export writes version 4, the stored records (Backup.write).
 // Reading backups, imports (Merger) and the Check (Validator) live in their own modules, so a page that only
 // shows the catalog doesn't load them.
 import {Book} from './book.js';
@@ -534,8 +534,8 @@ export class Catalog {
 					ed.narrators = swap(ed.narrators);
 					hit = true;
 				}
-				if (kind === 'publishers' && ed.publisher === name) {
-					ed.publisher = newName;
+				if (kind === 'publishers' && ed.publishers.includes(name)) {
+					ed.publishers = swap(ed.publishers);
 					hit = true;
 				}
 			}
@@ -585,8 +585,8 @@ export class Catalog {
 						ed.narrators = ed.narrators.filter(n => n !== name);
 						hit = true;
 					}
-					if (kind === 'publishers' && ed.publisher === name) {
-						ed.publisher = undefined;
+					if (kind === 'publishers' && ed.publishers.includes(name)) {
+						ed.publishers = ed.publishers.filter(p => p !== name);
 						hit = true;
 					}
 				}
@@ -664,6 +664,6 @@ export class Catalog {
 	}
 	/** @returns the publishers of all its editions, each once */
 	static publishersOf(b: Book): string[] {
-		return [...new Set(b.editions.map(ed => ed.publisher || '').filter(Boolean))];
+		return [...new Set(b.editions.flatMap(ed => ed.publishers))];
 	}
 }

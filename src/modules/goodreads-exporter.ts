@@ -76,7 +76,8 @@ export class GoodreadsExporter extends FileExporter {
 				'Additional Authors': book.authors.slice(1).join(', '),
 				ISBN: Isbn.isbn10Of(isbn),
 				ISBN13: isbn,
-				Publisher: ed.publisher || '',
+				// Goodreads keeps one publisher
+				Publisher: ed.publishers[0] || '',
 				Binding: ed.ids('asin').length ? 'Audible Audio' : 'Audiobook',
 				'Year Published': ed.released ? ed.released.slice(0, 4) : '',
 				'Date Read': dates.length ? dates[dates.length - 1].replace(/-/g, '/') : '',

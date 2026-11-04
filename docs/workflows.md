@@ -56,7 +56,7 @@ the form while editing a book too, where it fills in only what the book lacks.
 _Editions_ has a card per edition, with a field for each part: title, description, narrators, ASINs (a field per
 site: audible.com's, and one for each site the edition has an ASIN on; _+ Another site_ adds a field for
 another Amazon or Audible site), Goodreads id, Hardcover edition (_+ Another catalog_ adds a field for its id on AudiobookDB, Open
-Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publisher,
+Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publishers,
 release date (`2021-05`) and length (`10h 42m`). The ASIN and other catalogs' edition fields also take the address of the book's
 page on that site (`https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0…`, `https://www.amazon.com/dp/B0…`,
 `https://www.goodreads.com/book/show/4242-the-salt-road`, `https://hardcover.app/books/the-salt-road/editions/501`,
@@ -83,9 +83,10 @@ pages: the page looks the book up on Hardcover and puts its id in the field (whe
 when you save). That needs your Hardcover API token, saved on the _Import & export_ page (see
 [Hardcover](hardcover.md)). The Goodreads book field takes the id of the book's work on Goodreads (all its
 editions), or the address of its page (`https://www.goodreads.com/work/editions/99`); the AudiobookDB, Open Library, ISFDB, BookBrainz and
-Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address, and show just the id when you leave them. Several authors, or several narrators of an
+Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address, and show just the id when you leave them. Several authors, or several narrators or publishers of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
-filter. As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
+filter. Authors and narrators may also be parted by "&" or "and", but publishers only by commas, since
+many a publisher's name has an "&" in it (`Wren & Finch Sound`). As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
 match the name you are typing (those starting with it first): click one, or pick it with the arrow keys and Enter,
 and it takes the place of what you typed (Escape closes the list); the series field does the same. A new name is simply
 typed out, and the field says so below it ("New author: ..., added to the catalog when this is saved"): saving

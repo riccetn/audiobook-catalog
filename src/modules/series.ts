@@ -145,7 +145,10 @@ export class Series {
 		const site = url.trim();
 		if (!site) return true;
 		const authors = [...new Set(books.flatMap(b => b.authors))];
-		const publishers = [...new Set(books.flatMap(b => b.editions.map(ed => ed.publisher || '')))];
+		// an edition without a publisher counts as one that isn't theirs
+		const publishers = [
+			...new Set(books.flatMap(b => b.editions.flatMap(ed => (ed.publishers.length ? ed.publishers : [''])))),
+		];
 		if (authors.length === 1 && give('authors', authors[0], site)) return true;
 		if (publishers.length === 1 && publishers[0] && give('publishers', publishers[0], site)) return true;
 		this.note = [this.note, `site: ${site}`].filter(Boolean).join('; ');

@@ -77,7 +77,8 @@ export interface EditionRecord {
 	external: Record<string, string>;
 	isbn?: string;
 	narratorIds: string[];
-	publisherId?: string;
+	/** most often one; a title published by several together has each */
+	publisherIds: string[];
 	released?: string;
 	minutes?: number;
 	description?: string;
@@ -218,7 +219,7 @@ export class CatalogRecords {
 				['bookIds', 'bookIds', {multiEntry: true}],
 				['idKeys', 'idKeys', {multiEntry: true}],
 				['narratorIds', 'narratorIds', {multiEntry: true}],
-				['publisherId', 'publisherId'],
+				['publisherIds', 'publisherIds', {multiEntry: true}],
 			],
 		},
 		series: {
@@ -418,7 +419,7 @@ export class CatalogRecords {
 				ed.title,
 				...ed.externalList().map(([, id]) => id),
 				Text.namesText(ed.narrators),
-				ed.publisher,
+				Text.namesText(ed.publishers),
 				ed.description,
 				ed.isbn,
 			]),
@@ -497,11 +498,11 @@ export class CatalogRecords {
 			bookIds,
 			external: (ExternalCatalog.order(ed.external) || {}) as Record<string, string>,
 			narratorIds: [...new Set(ed.narrators)].map(name => idOf('narrators', name)),
+			publisherIds: [...new Set(ed.publishers)].map(name => idOf('publishers', name)),
 			idKeys: ed.idAndIsbnKeys(),
 		};
 		if (ed.title) rec.title = ed.title;
 		if (ed.isbn) rec.isbn = ed.isbn;
-		if (ed.publisher) rec.publisherId = idOf('publishers', ed.publisher);
 		if (ed.released) rec.released = ed.released;
 		if (ed.minutes !== undefined) rec.minutes = ed.minutes;
 		if (ed.description) rec.description = ed.description;
@@ -634,7 +635,7 @@ export class CatalogRecords {
 		const kinds: [CreditKind, string[]][] = [
 			['author', rec.authorIds],
 			['narrator', editions.flatMap(ed => ed.narratorIds)],
-			['publisher', editions.map(ed => ed.publisherId).filter(Boolean) as string[]],
+			['publisher', editions.flatMap(CatalogRecords.publisherIdsOf)],
 		];
 		return kinds.flatMap(([kind, ids]) =>
 			[...new Set(ids)].map(contributorId => {
@@ -678,7 +679,7 @@ export class CatalogRecords {
 					external: CatalogRecords.editionExternal(ed),
 					isbn: ed.isbn,
 					narrators: ed.narratorIds.map(n => nameOf(n, 'narrator')),
-					publisher: ed.publisherId === undefined ? undefined : nameOf(ed.publisherId, 'publisher'),
+					publishers: CatalogRecords.publisherIdsOf(ed).map(p => nameOf(p, 'publisher')),
 					released: ed.released,
 					minutes: ed.minutes,
 					description: ed.description,
@@ -758,9 +759,17 @@ export class CatalogRecords {
 			[...records.books, ...records.series, ...records.contributors].some(
 				rec => !Array.isArray(rec.externalKeys),
 			) ||
-			records.editions.some(ed => !ed.external) ||
+			records.editions.some(ed => !ed.external || !Array.isArray(ed.publisherIds)) ||
 			records.series.some(rec => 'url' in rec)
 		);
+	}
+
+	/**
+	 * An edition record's publishers' ids; a record from before an edition could have several has one, `publisherId`, or none.
+	 */
+	static publisherIdsOf(ed: EditionRecord & {publisherId?: string}): string[] {
+		if (Array.isArray(ed.publisherIds)) return ed.publisherIds;
+		return ed.publisherId ? [ed.publisherId] : [];
 	}
 
 	/**

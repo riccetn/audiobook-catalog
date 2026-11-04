@@ -536,7 +536,7 @@ async function readWanted(
 	]);
 	const people = lacking('contributors', [
 		...books.flatMap(b => b.authorIds),
-		...editions.flatMap(ed => [...ed.narratorIds, ...(ed.publisherId ? [ed.publisherId] : [])]),
+		...editions.flatMap(ed => [...ed.narratorIds, ...CatalogRecords.publisherIdsOf(ed)]),
 		...(want.contributors || []),
 	]);
 	return {

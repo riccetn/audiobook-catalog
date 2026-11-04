@@ -1,5 +1,5 @@
 // An edition of a book: the title it was released under when that is not the book's (a UK edition's, say), its ids in external catalogs (an ASIN per Audible and Amazon site, Goodreads,
-// Hardcover, Open Library, ...; see ExternalCatalog), its ISBN, narrators, publisher, release date, length and your own
+// Hardcover, Open Library, ...; see ExternalCatalog), its ISBN, narrators, publishers, release date, length and your own
 // description of it ("UK edition"), and the key of its cover in a catalog that keeps one (Cover). A box set is one edition on each of its titles, linked by the ids the
 // copies share (sameAs).
 import {Text} from './text.js';
@@ -20,7 +20,8 @@ export interface EditionInit {
 	/** one ISBN, the 13-digit form (another ISBN is another edition) */
 	isbn?: string;
 	narrators?: string[];
-	publisher?: string;
+	/** most often one; a title published by several together names each */
+	publishers?: string[];
 	/** release date: "2021-05-04", "2021-05" or "2021" */
 	released?: string;
 	/** length in whole minutes */
@@ -38,11 +39,11 @@ export interface EditionInit {
 const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => def.family !== 'asin');
 const CATALOG_LABEL = `(?:${OTHER_CATALOGS.map(def => Text.escapeRegExp(def.name).replace(/ /g, '\\s+')).join('|')})(?:\\s+(?:book|edition))?(?:\\s+id)?`;
 const EDITION_PART = new RegExp(
-	`^(title|asin|${CATALOG_LABEL}|gr|isbns?|publisher|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`,
+	`^(title|asin|${CATALOG_LABEL}|gr|isbns?|publishers?|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`,
 	'i',
 );
 
-// A list of names, as the narrators are kept.
+// A list of names, as the narrators and publishers are kept.
 function nameList(v: unknown): v is string[] {
 	return Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string' && x.trim() !== '');
 }
@@ -67,7 +68,7 @@ export class Edition {
 		['n', 'Narrated by', 'Narrators'],
 		['ext', '', 'ASINs'],
 		['isbn', 'ISBN', 'ISBN'],
-		['p', 'Publisher', 'Publisher'],
+		['p', 'Publisher', 'Publishers'],
 		['d', 'Released', 'Released'],
 		['len', 'Length', 'Length'],
 	];
@@ -80,7 +81,7 @@ export class Edition {
 	external: Record<string, string>;
 	isbn: string | undefined;
 	narrators: string[];
-	publisher: string | undefined;
+	publishers: string[];
 	released: string | undefined;
 	minutes: number | undefined;
 	description: string | undefined;
@@ -94,7 +95,7 @@ export class Edition {
 		external = {},
 		isbn,
 		narrators = [],
-		publisher,
+		publishers = [],
 		released,
 		minutes,
 		description,
@@ -106,7 +107,7 @@ export class Edition {
 		this.external = {...external};
 		this.isbn = isbn;
 		this.narrators = [...narrators];
-		this.publisher = publisher;
+		this.publishers = [...publishers];
 		this.released = released;
 		this.minutes = minutes;
 		this.description = description;
@@ -143,6 +144,10 @@ export class Edition {
 			this.narrators = [];
 			if (nameList(v)) this.narrators = [...v];
 			else if (v !== undefined) this.extra[key] = v;
+		} else if (key === 'p') {
+			this.publishers = [];
+			if (nameList(v)) this.publishers = [...v];
+			else if (v !== undefined) this.extra[key] = v;
 		} else if (key === 'img') {
 			this.covers = {};
 			if (Cover.isKeys(v)) this.covers = {...v};
@@ -167,6 +172,7 @@ export class Edition {
 		if (key === Edition.ID_KEY) v = this.id;
 		else if (key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
 		else if (key === 'n') v = this.narrators.length ? [...this.narrators] : undefined;
+		else if (key === 'p') v = this.publishers.length ? [...this.publishers] : undefined;
 		else if (key === 'len') v = this.minutes;
 		else if (key === 'img') v = Object.keys(this.covers).length ? {...this.covers} : undefined;
 		else if (Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
@@ -333,7 +339,8 @@ export class Edition {
 		for (const [key, v] of this.externalList())
 			if (!isAsinSite(key)) parts.push(['ext:' + key, ExternalCatalog.name(key), v]);
 		if (this.isbn) parts.push(['isbn', 'ISBN', this.isbn]);
-		if (this.publisher) parts.push(['p', 'Publisher', this.publisher]);
+		if (this.publishers.length)
+			parts.push(['p', this.publishers.length > 1 ? 'Publishers' : 'Publisher', Text.namesText(this.publishers)]);
 		if (this.released) parts.push(['d', 'Released', this.released]);
 		if (this.minutes !== undefined && Number.isInteger(this.minutes))
 			parts.push(['len', 'Length', Text.formatLength(this.minutes)]);
@@ -522,7 +529,8 @@ export class Edition {
 					continue;
 				}
 				if (label === 'title') [field, v] = ['t', ed.t ? null : value];
-				else if (label === 'publisher') [field, v] = ['p', value];
+				else if (label.startsWith('publisher'))
+					[field, v] = ['p', Text.splitPublishers(value).length ? Text.splitPublishers(value) : null];
 				else if (label.startsWith('narrat'))
 					[field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
 				else if (label === 'description') [field, v] = ['desc', ed.desc ? null : value];
@@ -601,9 +609,9 @@ export class Edition {
 				ed[k] = value;
 				continue;
 			}
-			if (k === 'n') {
-				ed.n = Text.splitNames(value);
-				if (!ed.n.length) delete ed.n;
+			if (k === 'n' || k === 'p') {
+				ed[k] = k === 'n' ? Text.splitNames(value) : Text.splitPublishers(value);
+				if (!ed[k].length) delete ed[k];
 				continue;
 			}
 			const read = Edition.parse(`${label} ${value.replace(/;/g, ',')}`);
@@ -670,11 +678,13 @@ export class Edition {
 	static tidyJSON(ed: Unchecked): Unchecked {
 		if (!Text.isObject(ed)) return ed;
 		const out: Record<string, any> = {...ed};
-		for (const key of ['t', 'p', 'd', 'desc']) {
+		for (const key of ['t', 'd', 'desc']) {
 			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
 		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
 		if (Array.isArray(out.n)) out.n = Text.tidyNames(out.n);
+		// a publisher's name is tidied, not spaced out as a person's initials are
+		if (Array.isArray(out.p)) out.p = Text.tidyList(out.p);
 		// the 13-digit form; anything that is not an ISBN is kept (tidied) for the Check to report
 		if (typeof out.isbn === 'string') out.isbn = Isbn.parse(out.isbn) || Text.tidy(out.isbn);
 		return out;
@@ -682,10 +692,9 @@ export class Edition {
 }
 
 // The stored keys that hold a text, and the field each is kept in.
-const TEXT_FIELDS: Record<string, 'title' | 'isbn' | 'publisher' | 'released' | 'description'> = {
+const TEXT_FIELDS: Record<string, 'title' | 'isbn' | 'released' | 'description'> = {
 	t: 'title',
 	isbn: 'isbn',
-	p: 'publisher',
 	d: 'released',
 	desc: 'description',
 };

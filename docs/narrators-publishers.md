@@ -19,7 +19,10 @@ from before, `narrators.html#n=…` and `publishers.html#p=…`):
 
 Each book shows its authors, linked to their author pages; on a narrator's page it also names who else
 narrates the editions they narrate. A book is on the page when any of its editions names them, so a book
-with a US and a UK edition read by different narrators is on both narrators' pages.
+with a US and a UK edition read by different narrators is on both narrators' pages. An edition two
+publishers released together names both (in the book form, separated by a comma: `Gullwing Audio, Tern &
+Pike Press`; only a comma or semicolon parts publishers, as many a publisher's name has an "&" or "and"
+in it), and the book is on both publishers' pages.
 
 **Add or edit the bio and links**: press **Edit** at the end of their page, as on an author's page. Audible has
 no narrator or publisher pages, so its field keeps the name Audible searches for: type it, or paste the address
