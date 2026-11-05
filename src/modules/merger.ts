@@ -318,6 +318,11 @@ export class Merger {
 					boxSet,
 				});
 			const rec = original.clone();
+			// an edition the exclusions keep out is left out, but its book still matches by its other editions,
+			// its Hardcover id or its title; one whose every edition is kept out is never added
+			const editionCount = rec.editions.length;
+			rec.editions = rec.editions.filter(ed => !exclusions.coversEdition(ed));
+			const allExcluded = editionCount > 0 && !rec.editions.length;
 			if (rec.series) {
 				const k = Series.norm(rec.series);
 				if (!canonical.has(k)) canonical.set(k, rec.series);
@@ -415,7 +420,7 @@ export class Merger {
 				record([match, ...[...readers].filter(i => i !== match)], false);
 				continue;
 			}
-			if (exclusions.covers(rec)) report.excluded.push(rec);
+			if (exclusions.covers(rec) || allExcluded) report.excluded.push(rec);
 			else if (opts.addable && !opts.addable(original)) report.notAdded.push(rec);
 			else {
 				existing.push(rec);

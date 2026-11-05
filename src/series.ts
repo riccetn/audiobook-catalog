@@ -1,19 +1,14 @@
 // The series page (index.html): every series, and a series' own page (its books, and editing or removing it).
 // The book cards and lists are book-list.ts's; loading and saving live in store.ts.
-import {Text} from './modules/text.js';
 import {Series} from './modules/series.js';
-import {Validator} from './modules/validator.js';
-import {ExternalCatalog} from './modules/external-catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import type {SeriesRecord} from './modules/catalog-records.js';
 import type {CatalogReader} from './modules/catalog-database.js';
 import {
 	CATALOG,
-	persist,
 	loadRecords,
 	queryCatalog,
 	afterSaving,
-	showIoStatus,
 	startPage,
 	byId,
 	fieldById,
@@ -22,14 +17,11 @@ import {
 	fillElement,
 	joined,
 	creditPageHref,
-	fillExternalFields,
-	readExternalFields,
-	externalFields,
-	lookupHardcoverField,
 	idFromAddress,
 	shelfCompareButtons,
 	seriesPageHref,
 	standalonePageHref,
+	editPageHref,
 } from './store.js';
 import type {Child} from './store.js';
 import {
@@ -52,9 +44,6 @@ import {
 
 // Series are known by the ids they are stored under, so a series renamed (here or in another tab) is still the one shown.
 export let SERIES_FILTER: string | null = null; // the id of the series shown, STANDALONE, or null for every series
-let EDIT_SERIES: string | null = null; // the id of the series being edited, or null
-let REMOVING_SERIES: string | null = null; // the series Remove series was pressed for once, which a second press removes
-let JOIN_SERIES: string | null = null; // the existing series a rename was asked to join, once Save was pressed for it
 
 // The page holds only what it shows, read from the stored catalog by loadView(): every series' row, or the
 // books of the series shown.
@@ -356,12 +345,11 @@ function addressNow(): string {
 
 /**
  * Show a series (an id, STANDALONE) or every series, recorded in the address: a new history entry, so Back
- * returns here. Going to another series closes the form and starts at the top of the page.
+ * returns here. Going to another series starts at the top of the page.
  * @returns once it is drawn
  */
 export function openSeries(series: string | null): Promise<void> {
 	const moved = series !== SERIES_FILTER;
-	if (moved) closeSeriesForm();
 	SERIES_FILTER = series;
 	const drawn = showView();
 	if (addressNow() !== location.hash) setAddress('push', addressNow());
@@ -382,7 +370,6 @@ function showAddress() {
 	// the address's search is trimmed; leave the box alone when it already says that, or a space being typed is lost
 	if (box.value.trim() !== st.q) box.value = st.q;
 	fieldById('missingFilter').value = st.missing ? 'missing' : '';
-	if (st.series !== SERIES_FILTER) closeSeriesForm();
 	SERIES_FILTER = st.series;
 	showView();
 }
@@ -400,182 +387,23 @@ function showFilterCount() {
 watchSearchAndFilters(addressNow, showView);
 watchCoversBox(() => render());
 
-// ------------------------------------------------------------------ the series form
-// Edits the series: its name, which is renamed on every book in the series, and what CATALOG.series keeps
-// about it (released total, status, note, author site). Like book edits, it is kept in this browser (see
-// persist). Remove series takes it off its books and removes it.
+// ------------------------------------------------------------------ the Edit button
 /**
- * The Edit button at the end of a series' own page, which opens its form, and with `compare` (it has books)
- * the buttons that compare it with the catalogs.
+ * The Edit button at the end of a series' own page, which opens it on the Edit series page, and with
+ * `compare` (it has books) the buttons that compare it with the catalogs.
  * @param id the series'
  */
 function seriesEditButton(id: string, compare: boolean = false): HTMLDivElement {
 	return buildElement(
 		'div',
 		{class: 'page-actions'},
-		buildElement(
-			'button',
-			{type: 'button', class: 'sedit', 'data-series': id, onclick: () => openSeriesForm(id)},
-			'Edit',
-		),
+		buildElement('a', {class: 'sedit', 'data-series': id, href: editPageHref(id)}, 'Edit'),
 		...(compare ? shelfCompareButtons('series', id, label => `Compare with ${label}`) : []),
 	);
 }
 
-/**
- * Open the series form, once the series and its books are loaded (a rename or a removal changes them all).
- * @param id the series'
- */
-export async function openSeriesForm(id: string): Promise<void> {
-	await loadRecords({seriesBooks: [id], series: [id]});
-	const name = CATALOG.nameOf('series', id);
-	if (name === undefined) return;
-	const info = CATALOG.series.get(id);
-	EDIT_SERIES = id;
-	JOIN_SERIES = null;
-	REMOVING_SERIES = null;
-	fieldById('sf_name').value = name;
-	byId('seriesFormTitle').textContent = 'Edit series: ' + name;
-	fieldById('sf_total').value = info ? totalText(info) : '';
-	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') : 'ongoing';
-	fieldById('sf_note').value = info ? info.note || '' : '';
-	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
-	byId('seriesFormError').textContent = '';
-	const form = byId('seriesForm');
-	form.classList.add('open');
-	form.scrollIntoView({behavior: 'smooth', block: 'center'});
-}
-
-function closeSeriesForm() {
-	EDIT_SERIES = null;
-	JOIN_SERIES = null;
-	REMOVING_SERIES = null;
-	byId('seriesForm').classList.remove('open');
-	(byId('seriesForm') as HTMLFormElement).reset();
-	byId('seriesFormError').textContent = '';
-}
-
-async function saveSeriesForm() {
-	const id = EDIT_SERIES;
-	const name = id === null ? undefined : CATALOG.nameOf('series', id);
-	if (id === null || name === undefined) return;
-	const showError = (text: string) => {
-		byId('seriesFormError').textContent = text;
-	};
-	// a Hardcover address is looked up for its number first, unless the form is closed or moved meanwhile
-	const lookup = lookupHardcoverField('sf_ext_', 'series');
-	const hardcover = lookup ? await lookup : {error: '', note: ''};
-	// the series may have been renamed in another tab meanwhile, so its name is read again
-	const now = CATALOG.nameOf('series', id);
-	if (EDIT_SERIES !== id || now === undefined) return;
-	if (now !== name) return saveSeriesForm();
-	if (hardcover.error) return showError(hardcover.error);
-	const newName = Text.tidy(fieldById('sf_name').value);
-	if (!newName) return showError('Give the series a name.');
-	const renamed = newName !== name;
-	const totalTyped = fieldById('sf_total').value.trim();
-	const note = Text.tidy(fieldById('sf_note').value);
-	const had = CATALOG.series.get(id);
-	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
-	if (external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
-	// a series needs none of these; with all of them empty, it keeps none
-	const typedAny = totalTyped || note || Object.keys(external.ids).length;
-	let entry: Series | null = null;
-	if (typedAny) {
-		// unchecked as typed: the Check below says what is wrong with the total or status
-		const typed: Record<string, unknown> = {
-			total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase(),
-			status: fieldById('sf_status').value,
-			note,
-		};
-		if (Object.keys(external.ids).length) typed.ext = ExternalCatalog.order(external.ids);
-		// the same rules as Check, applied to just this series (checked before the rename,
-		// under the name its books have now)
-		const {errors} = Validator.validate(JSON.parse(JSON.stringify(CATALOG.books)), {[name]: typed});
-		const problems = errors
-			.filter(e => e.startsWith('series-info'))
-			.map(e => e.replace(/^series-info(\[[^\]]*\])?: /, ''));
-		if (problems.length) return showError(problems.join('; '));
-		entry = Series.fromJSON(newName, typed);
-	}
-	// Joining another series is easy to do by mistake (and replaces what it has), so the first Save says so.
-	// the series it would join, with its books, which move into it with these
-	if (renamed) await loadRecords({seriesNamed: [newName]});
-	if (EDIT_SERIES !== id) return;
-	const exists = CATALOG.nameIds.series.has(newName);
-	if (renamed && exists && JOIN_SERIES !== newName) {
-		JOIN_SERIES = newName;
-		return showError(
-			`There is already a series called ${newName}. Press Save again to move these books into it` +
-				(entry && CATALOG.seriesInfo(newName)
-					? '; its total, status, note and links will be replaced by these.'
-					: '.'),
-		);
-	}
-
-	// renamed on its books, keeping the id it is stored under (or taking the id of the one it joins)
-	const count = renamed ? CATALOG.renameEntry('series', name, newName) : 0;
-	const newId = CATALOG.idFor('series', newName);
-	// with every field emptied it keeps none, but a series it joins keeps its own
-	if (entry) CATALOG.series.set(newId, entry);
-	else if (!(renamed && exists)) CATALOG.series.delete(newId);
-	closeSeriesForm();
-	// the series shown keeps showing, under its new name
-	if (SERIES_FILTER === id && newId !== id) {
-		SERIES_FILTER = newId;
-		setAddress('replace', addressNow());
-	}
-	showView();
-	persist();
-	showIoStatus(
-		(renamed ? `Renamed ${name} to ${newName} on ${Text.plural(count, 'book')}.` : `Saved ${name}.`) +
-			(hardcover.note ? ' ' + hardcover.note : ''),
-	);
-}
-
-/**
- * Remove series: the first press says what it does, the second takes the series off its books (they keep
- * everything else, but their number in it) and removes it. The form loaded all its books.
- */
-function removeSeries() {
-	const id = EDIT_SERIES,
-		name = id === null ? undefined : CATALOG.nameOf('series', id);
-	if (id === null || name === undefined) return;
-	const count = CATALOG.booksOf('series', id).length;
-	if (REMOVING_SERIES !== id) {
-		REMOVING_SERIES = id;
-		byId('seriesFormError').textContent =
-			(count
-				? `This takes ${name} off its ${Text.plural(count, 'book')}, which stay in the catalog without a series or a number in it, and removes the series.`
-				: `This removes ${name}, which no book is in.`) + ' Press Remove series again to do it.';
-		return;
-	}
-	CATALOG.removeEntry('series', id);
-	closeSeriesForm();
-	// its page is gone, so every series shows
-	if (SERIES_FILTER === id) {
-		SERIES_FILTER = null;
-		setAddress('replace', addressNow());
-	}
-	showView();
-	persist();
-	showIoStatus(
-		count ? `Removed the series ${name} from ${Text.plural(count, 'book')}.` : `Removed the series ${name}.`,
-	);
-}
-
-byId('seriesForm').addEventListener('submit', e => {
-	e.preventDefault();
-	return saveSeriesForm();
-});
-byId('seriesRemoveBtn').addEventListener('click', removeSeries);
-byId('cancelSeries').addEventListener('click', closeSeriesForm);
-fillElement(byId('sf_ext'), externalFields('sf_ext_', 'series'));
-
-// After a save took in what another tab changed (store.ts): the series being edited stays open
-// unless the other tab removed it.
+// After a save took in what another tab changed (store.ts): the page shows what is stored now.
 function redraw() {
-	if (EDIT_SERIES !== null && CATALOG.nameOf('series', EDIT_SERIES) === undefined) closeSeriesForm();
 	refreshView();
 }
 

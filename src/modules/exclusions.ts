@@ -1,5 +1,7 @@
-// The books imports must never re-add, because you removed them on purpose: the exclusions list.
+// The books imports must never re-add, because you removed them on purpose: the exclusions list. An entry
+// that starts with "Edition" keeps out one edition only: its book still matches and gains everything else.
 import {Text} from './text.js';
+import type {Edition} from './edition.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
@@ -8,6 +10,8 @@ import {Series} from './series.js';
 const GOODREADS_ENTRY = /^(?:goodreads|gr)(?:\s+id)?:?\s*(\d+)$/i;
 // "Hardcover 12345": a Hardcover edition id.
 const HARDCOVER_ENTRY = /^hardcover(?:\s+id)?:?\s*(\d+)$/i;
+// "Edition B0…", "Edition ISBN 978…", "Edition Goodreads 4242", "Edition Hardcover 601": one edition, not its book.
+const EDITION_ENTRY = /^edition:?\s+(.+)$/i;
 
 /** Books that imports must never re-add (because you removed them on purpose). */
 export class Exclusions {
@@ -16,6 +20,8 @@ export class Exclusions {
 	isbns: Set<string>;
 	grs: Set<string>;
 	hcs: Set<string>;
+	/** the editions kept out, by Edition.idAndIsbnKeys() ("asin B0…", "isbn 978…", "goodreads 4242") */
+	editions: Set<string>;
 	lines: Map<string, string>;
 
 	constructor() {
@@ -24,6 +30,7 @@ export class Exclusions {
 		this.isbns = new Set(); // 13-digit ISBNs
 		this.grs = new Set(); // Goodreads book ids
 		this.hcs = new Set(); // Hardcover edition ids
+		this.editions = new Set();
 		this.lines = new Map(); // key -> the entry as written in the exclusions list
 	}
 
@@ -47,6 +54,8 @@ export class Exclusions {
 	add(entry: unknown): string | null {
 		let line = Text.tidy(String(entry).split('#')[0]);
 		if (!line) return null;
+		const edition = EDITION_ENTRY.exec(line);
+		if (edition) return this.addEdition(edition[1]);
 		const bar = line.indexOf('|');
 		if (bar < 0) {
 			const gr = GOODREADS_ENTRY.exec(line);
@@ -86,6 +95,63 @@ export class Exclusions {
 		if (split && split[0]) this.titles.add(Text.key(Text.norm(split[0]), Book.firstAuthor(author)));
 		this.lines.set(k, (line = `${title} | ${author}`));
 		return line;
+	}
+
+	/**
+	 * Add an edition's entry, `id` being what follows "Edition": an ASIN, "ISBN 978...", "Goodreads 4242"
+	 * or "Hardcover 601". Returns the entry as written, or null when it is not one or is there already.
+	 */
+	addEdition(id: string): string | null {
+		const gr = GOODREADS_ENTRY.exec(id),
+			hc = HARDCOVER_ENTRY.exec(id),
+			isbn = Isbn.parse(id);
+		const [key, shown] = gr
+			? [`goodreads ${gr[1]}`, `Goodreads ${gr[1]}`]
+			: hc
+				? [`hardcover ${hc[1]}`, `Hardcover ${hc[1]}`]
+				: isbn && (/^isbn/i.test(id) || !/^[\dX]{10}$/i.test(id))
+					? [`isbn ${isbn}`, `ISBN ${isbn}`]
+					: /^[\dA-Z]{10}$/.test(id)
+						? [`asin ${id}`, id]
+						: [null, null];
+		if (key === null || this.editions.has(key)) return null;
+		this.editions.add(key);
+		const line = `Edition ${shown}`;
+		this.lines.set(Text.key('edition', key), line);
+		return line;
+	}
+
+	/**
+	 * The entries that keep `ed` out of imports, one per id it has (an ASIN of any site, its ISBN, its
+	 * Goodreads and Hardcover edition ids).
+	 */
+	static editionEntries(ed: Edition): string[] {
+		const out = new Exclusions();
+		const entries = [
+			...ed.ids('asin'),
+			...ed.isbns().map(isbn => `ISBN ${isbn}`),
+			...ed.ids('goodreads').map(gr => `Goodreads ${gr}`),
+			...ed.ids('hardcover').map(hc => `Hardcover ${hc}`),
+		];
+		return entries.map(id => out.addEdition(id)).filter((line): line is string => line !== null);
+	}
+
+	/**
+	 * Whether the list keeps the edition `ed` out (an entry for an edition, by any id it has).
+	 */
+	coversEdition(ed: Edition): boolean {
+		return this.editions.size > 0 && ed.idAndIsbnKeys().some(k => this.editions.has(k));
+	}
+
+	/**
+	 * Take `entry` off the list (as `entries` writes it); returns whether it was there.
+	 */
+	remove(entry: string): boolean {
+		const kept = this.entries.filter(e => e !== entry);
+		if (kept.length === this.lines.size) return false;
+		const rebuilt = Exclusions.parse(kept.join('\n'));
+		Object.assign(this, rebuilt);
+		return true;
 	}
 
 	/**

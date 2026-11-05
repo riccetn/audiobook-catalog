@@ -178,6 +178,8 @@ export const bookPageHref: (id: string) => string = id => pageHref('book.html', 
  * The address of a series' page (its books), by the id it is stored under.
  */
 export const seriesPageHref: (id: string) => string = id => pageHref('index.html', '#series=' + hashValue(id));
+/** The Edit series page of the series stored under `id`. */
+export const editPageHref: (id: string) => string = id => pageHref('edit.html', '#series=' + hashValue(id));
 /** The address of the page of the books in no series. */
 export const standalonePageHref = () => pageHref('index.html', '#standalone');
 /**

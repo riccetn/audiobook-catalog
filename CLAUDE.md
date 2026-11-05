@@ -5,7 +5,7 @@ read them for workflows and the data format. This file covers what you need to c
 
 ## What this is
 
-A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `import.html`, `duplicates.html`, `stats.html`, `authors.html`,
+A personal audiobook catalog: static pages (`index.html`, `books.html`, `book.html`, `edit.html`, `import.html`, `duplicates.html`, `stats.html`, `authors.html`,
 `narrators.html`, `publishers.html`, `author.html`, `narrator.html`, `publisher.html`, sharing `styles.css`) that run entirely in the browser and keep the catalog in IndexedDB. There is
 no server code in the app and no command line: any static server (`make serve`, GitHub Pages) serves the pages, and
 Node is only used to write the pages, run the tests and run `make serve`.
@@ -92,7 +92,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     `Backup.toCatalog`, an import `Merger.into(catalog, books, opts)` (box sets `Merger.boxSets`), and the Check `Validator.check(catalog)` (`Validator.bookErrors`:
     its errors but the series info's, which stop an import, a merge or the box sets), so pages that only show the catalog don't load them.
   - `Book` (`id title authors series number genres read external editions`): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`, `static storedEditions` (a stored book's editions that are objects),
-    `lookupKeys`, `alternativeTitles(shared)` (its editions' own titles; a box set's edition's, which `shared` (`sharedEditionTest`) tells, only on the set's own book), `hasTitle`/`static sameTitle`/`titleForms` (a title's short forms: Audible's series part, "Book 2", a subtitle but "Books 1-3"), `useTitle` (an edition's title made the book's, the old one going to the others; `keys`, `lookupKeys` and `exclusionEntries` take `shared` too), `static bySeriesNumber`/`merge`, `tidyJSON` (tidy text, one edition per ISBN), `sortEditions` (by release date, earliest first, undated last; `Catalog.assignIds` runs it on every load and before every save) and `fixSeriesTitle` (imports' titles with the series in them).
+    `lookupKeys`, `alternativeTitles(shared)` (its editions' own titles; a box set's edition's, which `shared` (`sharedEditionTest`) tells, only on the set's own book), `hasTitle`/`static sameTitle`/`titleForms` (a title's short forms: Audible's series part, "Book 2", a subtitle but "Books 1-3"), `useTitle` (an edition's title made the book's, the old one going to the others; `keys`, `lookupKeys` and `exclusionEntries` take `shared` too), `static bySeriesNumber`/`merge`, `tidyJSON` (tidy text, one edition per ISBN), `sortEditions` (by release date, earliest first, undated last; `Catalog.assignIds` runs it on every load and before every save), `mergeEditions`/`splitEdition`/`removeEdition` (the Edit series page's) and `fixSeriesTitle` (imports' titles with the series in them).
   - `Edition` (`id title external isbn narrators publishers released minutes description`; `publishers` a list like `narrators`, parted only by commas in the form (`Text.splitPublishers`, as "&" is part of many a name); `title` only when it was released under another title than the book's): `idOn`/`ids`/`idKeys`/`idAndIsbnKeys` (its ids and "isbn 978…", what finds it and its box set's copies), `sameAs`/`conflictsWith`/`fillFrom`,
     `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`.
   - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata, with a
@@ -100,7 +100,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
   - `Series` (series info `total status note external`, and series numbers: `range`, `owned`, `missingNumbers`, `parseTitle`; `moveSites` gives an old series' site (`url`) to its one author or publisher, else its note), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
-    `Exclusions` (`parse`, `covers`, `entries`), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word, `firstThree` for a long list),
+    `Exclusions` (`parse`, `covers`, `entries`; `Edition …` entries keep out one edition, not its book: `coversEdition`, `editionEntries`, which `Merger` drops from an incoming book before matching; `remove`, `Catalog.removeExclusion`, Import & export's _Excluded_ list), `Text` (tidying, names, dates, `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word, `firstThree` for a long list),
     `Cover` (`addresses`: a book's cover addresses, first its editions' AudiobookDB cover keys (`img`, `Edition.covers`; `CATALOGS`, `isKeys`, `audiobookdbKey` reads one from an answer's `images`), then from their ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`write` (version 4; 3 had one `publisherId` on an edition, which `records` reads as a list of one; 2 is 3 without editions' titles), `read` (any version), `readRecords`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`, which matches series and people by uid too: `renamed`; `NewerBackup`),
     `BackupV1` (everything about backups before version 2, which `Backup.read` hands anything without a `version`: `read` (the catalog by name, a plain list of books, or several
@@ -210,7 +210,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   authors and series (`#f_aList`/`#f_aNew`, `#f_sList`/`#f_sNew` in the template) and each edition's narrators and
   publisher use it, over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` and the series' `name` index, when the form opens).
 - `series.js` (`index.html`, _Series_): every series (from the series records alone, `#q=...&missing`), and a series' page
-  (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and its form with Remove series, `openSeriesForm`); `SERIES_FILTER`, `openSeries`.
+  (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and Edit, a link to `edit.html`, `editPageHref`); `SERIES_FILTER`, `openSeries`.
   Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`
   (`movedAddress`, with `location.replace`).
 - `books.js` (`books.html`, _Books_): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
@@ -218,6 +218,12 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
   and the book form (`openEditForm`; Remove book is in it; _Fill in from another catalog_, `fillFromCatalog`, fills its empty fields; it loads `CatalogLookup` and `CatalogConnectors` with `import()`), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
+- `edit.js` (`edit.html#series=<id>`, _Edit series_, `docs/editing-series.md`): a series and its books on one page: the series' fields (what its form had:
+  name, total, status, note, ids; Remove series), and a card per book with its fields and an edition card each (`editionName` tells it apart:
+  its description, else narrators, else ids), whose inputs are `Edition.fields()` keys; Merge with…, Split and Remove edition (with "Don't let imports
+  add it again", `EXCLUDE`) change the book's copy (`DRAFTS`, `Draft`). A field is read on change (`readBookFields`, `readEditionFields`,
+  `Edition.fromFields`); one that can't be read is named and changes nothing. Review & save lists the changes (`changes`, `bookChanges`) and Save
+  `saveBook`s each changed book, adds `EXCLUDE`, then renames the series and saves its info.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
   `<CATALOG>Key`/`KeySave`/`KeyRemove`/`KeyState`, `showKey`/`saveKeyOf`). The comparison an export file's import (`compareExport`), or a shelf sync's Compare
@@ -319,8 +325,9 @@ sorting index ending in the key so lists can be paged. There is no `extra`: a va
 The database is version 5 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`, and from versions 1 to 4
 puts meta `reshape`, so the next page loads all of it, moves the series' sites and saves every record again with the derived fields this version reads and editions' `publisherIds`); `toCatalog` still reads
 version 1's records (ids under fields of their own) and an edition's one `publisherId` from before version 5 (`CatalogRecords.publisherIdsOf`), and `startPage` saves them again at once (`CatalogRecords.outdated`).
-`excluded` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` entries that imports must never re-add; code only
-ever adds to it (Restore and Merge add a backup's to it too). `notDuplicates` (pairs marked "Not duplicates" on the
+`excluded` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` entries that imports must never re-add, and `Edition <id>`
+entries for one edition (its book still matches); code only adds to it (Restore and Merge add a backup's to it too), but for Import & export's
+_Excluded_ list, where you remove an entry (`Catalog.removeExclusion`). `notDuplicates` (pairs marked "Not duplicates" on the
 Duplicates page) is add-only too. Restore also reads the old `data/` files (`books.json`, `series-info.json`, `authors.json`, `narrators.json`, `publishers.json`,
 `excluded.txt`, `not-duplicates.txt`) picked together (`Backup.readFiles`).
 

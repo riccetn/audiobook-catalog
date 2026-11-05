@@ -6284,3 +6284,95 @@ test('publishers from before an edition could have several: a version 1 name, a 
 		['author', 'publisher'],
 	);
 });
+
+test("an edition's exclusion keeps out that edition only, by any of its ids, and can be taken off the list", () => {
+	const ex = Exclusions.parse(
+		'Edition B0EXCL0001\nedition isbn 9780000000002\nEdition Goodreads 4242\nEdition Hardcover 601',
+	);
+	assert.deepEqual(ex.entries, [
+		'Edition B0EXCL0001',
+		'Edition ISBN 9780000000002',
+		'Edition Goodreads 4242',
+		'Edition Hardcover 601',
+	]);
+	assert.ok(ex.coversEdition(E({ext: {'audible.co.uk': 'B0EXCL0001'}})), 'an ASIN on any site');
+	assert.ok(ex.coversEdition(E({isbn: '9780000000002'})));
+	assert.ok(ex.coversEdition(E({ext: {goodreads: '4242'}})));
+	assert.ok(ex.coversEdition(E({ext: {hardcover: '601'}})));
+	assert.ok(!ex.coversEdition(E({ext: {'audible.com': 'B0OTHER001'}})));
+	// it never keeps out a book, as a book's own entry does
+	assert.ok(!ex.covers(B({t: 'The Salt Road', a: ['Ann Vale'], e: [{ext: {'audible.com': 'B0EXCL0001'}}]})));
+	assert.equal(ex.add('Edition B0EXCL0001'), null, 'already there');
+	assert.equal(ex.add('Edition nothing here'), null, 'not an id');
+	// the entries that keep an edition out, one per id
+	assert.deepEqual(
+		Exclusions.editionEntries(E({ext: {'audible.com': 'B0NEW00001', hardcover: '77'}, isbn: '9780000000019'})),
+		['Edition B0NEW00001', 'Edition ISBN 9780000000019', 'Edition Hardcover 77'],
+	);
+	// taken off, it keeps out nothing more
+	assert.ok(ex.remove('Edition B0EXCL0001'));
+	assert.equal(ex.remove('Edition B0EXCL0001'), false);
+	assert.ok(!ex.coversEdition(E({ext: {'audible.com': 'B0EXCL0001'}})));
+	assert.equal(ex.size, 3);
+	const catalog = new Catalog({exclusions: Exclusions.parse('B0GONE0001\nGone | Ann Vale')});
+	assert.ok(catalog.removeExclusion('Gone | Ann Vale'));
+	assert.deepEqual(catalog.exclusions.entries, ['B0GONE0001']);
+});
+
+test('an import leaves out an excluded edition, while its book still matches and gains the rest', () => {
+	const books = [book('The Salt Road', 'Ann Vale', ed({ext: {'audible.com': 'B0MINE0001'}}))];
+	const exclusions = Exclusions.parse('Edition B0EXCL0001');
+	const report = merge(
+		books,
+		[
+			book('The Salt Road', 'Ann Vale', {
+				r: ['2024-01-02'],
+				e: [{ext: {'audible.com': 'B0EXCL0001'}, n: ['Cy Hale']}, {ext: {'audible.co.uk': 'B0UK000001'}}],
+			}),
+			// a book whose every edition is kept out is not added
+			book('Another', 'Ann Vale', ed({ext: {'audible.com': 'B0EXCL0001'}})),
+		],
+		exclusions,
+	);
+	assert.equal(report.added.length, 0);
+	assert.equal(report.excluded.length, 1);
+	assert.deepEqual(books[0].r, ['2024-01-02']);
+	assert.deepEqual(
+		books[0].e.map(x => x.ext),
+		[{'audible.com': 'B0MINE0001', 'audible.co.uk': 'B0UK000001'}],
+		"the other edition fills in the book's only one, and the excluded one is nowhere",
+	);
+});
+
+test("a book's editions are merged, split and removed", () => {
+	const b = B({
+		t: 'The Salt Road',
+		a: ['Ann Vale'],
+		e: [
+			{uid: 'e1', ext: {'audible.com': 'B0SALT0001'}, n: ['Cy Hale']},
+			{uid: 'e2', isbn: '9780000000002', d: '2021-05-01'},
+			{uid: 'e3', ext: {'audible.com': 'B0SALT0002'}},
+		],
+	});
+	// two that don't disagree are one, at the first's place, keeping its id
+	const joined = b.mergeEditions([1, 0]);
+	assert.equal(joined.id, 'e1');
+	assert.deepEqual(json(b.editions), [
+		{uid: 'e1', ext: {'audible.com': 'B0SALT0001'}, isbn: '9780000000002', n: ['Cy Hale'], d: '2021-05-01'},
+		{uid: 'e3', ext: {'audible.com': 'B0SALT0002'}},
+	]);
+	// two ASINs on one site are two editions
+	assert.throws(() => b.mergeEditions([0, 1]), /different ids/);
+	// split: the ISBN moves, the narrator is on both
+	const split = b.splitEdition(0, ['isbn', 'd'], ['n']);
+	assert.equal(split.id, undefined, 'a new edition');
+	assert.deepEqual(json(b.editions), [
+		{uid: 'e1', ext: {'audible.com': 'B0SALT0001'}, n: ['Cy Hale']},
+		{isbn: '9780000000002', n: ['Cy Hale'], d: '2021-05-01'},
+		{uid: 'e3', ext: {'audible.com': 'B0SALT0002'}},
+	]);
+	assert.throws(() => b.splitEdition(2, []), /something of its own/);
+	assert.deepEqual(json(b.removeEdition(2)), {uid: 'e3', ext: {'audible.com': 'B0SALT0002'}});
+	assert.equal(b.editions.length, 2);
+	assert.throws(() => b.removeEdition(5), /no edition 6/);
+});

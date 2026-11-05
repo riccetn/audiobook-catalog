@@ -103,6 +103,51 @@ async function withWholeCatalog(task: () => void): Promise<void> {
 	if (await holdWholeCatalog()) task();
 }
 
+// ------------------------------------------------------------------ the exclusions list
+/** The exclusions list, each entry with a Remove button that lets imports add it again. */
+export function showExclusions() {
+	const entries = CATALOG.exclusions.entries;
+	fillElement(
+		byId('exclusionsList'),
+		entries.length
+			? buildElement(
+					'ul',
+					{class: 'exclusionsList'},
+					...entries.map(entry =>
+						buildElement(
+							'li',
+							{},
+							buildElement('span', {}, entry),
+							' ',
+							buildElement(
+								'button',
+								{
+									type: 'button',
+									class: 'removeExclusion',
+									'data-entry': entry,
+									onclick: () => removeExclusion(entry),
+								},
+								'Remove',
+							),
+						),
+					),
+				)
+			: buildElement('p', {class: 'ioNote'}, 'Imports skip nothing: no book or edition is excluded.'),
+	);
+}
+
+/** Take `entry` off the exclusions list, with an Undo that puts it back. */
+function removeExclusion(entry: string) {
+	if (!CATALOG.removeExclusion(entry)) return;
+	persist();
+	showExclusions();
+	showIoStatus(`Imports may add ${entry} again.`, false, () => {
+		CATALOG.addExclusions([entry]);
+		persist();
+		showExclusions();
+	});
+}
+
 /**
  * Hand the browser `text` as a file to save, named `name` and today's date.
  * @param type its media type: 'text/csv' or 'application/json'
@@ -2207,6 +2252,7 @@ byId('setupReceivedSkip').addEventListener('click', () => {
 });
 
 byId('checkBtn').addEventListener('click', () => withWholeCatalog(checkCatalog));
+byId('exclusionsBtn').addEventListener('click', () => withWholeCatalog(showExclusions));
 byId('boxSetsBtn').addEventListener('click', () => withWholeCatalog(previewBoxSets));
 byId('exportBtn').addEventListener('click', () => withWholeCatalog(exportBackup));
 byId('importBtn').addEventListener('click', () => byId('importFile').click());
