@@ -1669,8 +1669,7 @@ button:focus {
 .editPanel input,
 .editPanel select,
 .editBook .extFields input,
-.editField input,
-.editField textarea {
+.editField input {
 	width: 100%;
 	padding: 0.35rem 0.5rem;
 	border: 1px solid var(--line);
@@ -1679,12 +1678,7 @@ button:focus {
 	color: var(--ink);
 	font: inherit;
 }
-.editField textarea {
-	min-height: 4.5rem;
-	resize: vertical;
-}
-.editField.changed input,
-.editField.changed textarea {
+.editField.changed input {
 	border-color: var(--moss);
 	box-shadow: inset 0 0 0 1px var(--moss);
 }
@@ -1931,6 +1925,66 @@ button:focus {
 }
 .editCheck.cant {
 	opacity: 0.6;
+}
+/* the Other catalogs card's catalogs, side by side */
+.editPanel .editCatalogs .editCheck {
+	flex-basis: auto;
+}
+/* an external catalog's icon: its mark, in its color (edit.ts catalogIcon) */
+.catIcon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.45em;
+	height: 1.45em;
+	padding: 0 0.15em;
+	margin-right: 0.3em;
+	border-radius: 0.3em;
+	background: var(--cat, var(--ink-soft));
+	color: #fff;
+	font-size: 0.7rem;
+	font-weight: 700;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	vertical-align: 0.1em;
+	text-decoration: none;
+}
+.catIcon::before {
+	content: attr(data-mark);
+}
+.cat-audible {
+	--cat: #c8650a;
+}
+.cat-amazon {
+	--cat: #232f3e;
+}
+.cat-goodreads {
+	--cat: #6b4f2a;
+}
+.cat-hardcover {
+	--cat: #4f46b5;
+}
+.cat-audiobookdb {
+	--cat: #1f7a6d;
+}
+.cat-openlibrary {
+	--cat: #3a6ea5;
+}
+.cat-isfdb,
+.cat-bookbrainz,
+.cat-wikidata {
+	--cat: #6b6b6b;
+}
+.editChipFrom .catIcon {
+	margin-right: 0.15em;
+}
+.visuallyHidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
 }
 .editWhy {
 	color: var(--ink-soft);

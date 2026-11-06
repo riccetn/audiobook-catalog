@@ -157,9 +157,7 @@ function field(
 	attrs: Record<string, any> = {},
 	choices: FieldChoices[] = [],
 ): HTMLElement {
-	const tag = attrs.multiline ? 'textarea' : 'input';
-	delete attrs.multiline;
-	const input = buildElement(tag, {id, ...attrs});
+	const input = buildElement('input', {id, ...attrs});
 	(input as HTMLInputElement).value = value;
 	const onchange = attrs.onchange as (() => void) | undefined;
 	return buildElement(
@@ -195,7 +193,12 @@ function choiceChips(id: string, value: string, choices: FieldChoices[], onchang
 							onchange();
 						},
 					},
-					buildElement('span', {class: 'editChipFrom'}, c.labels.join(', ')),
+					buildElement(
+						'span',
+						{class: 'editChipFrom'},
+						...c.labels.flatMap(iconOfLabel),
+						buildElement('span', {class: 'visuallyHidden'}, c.labels.join(', ')),
+					),
 					' ',
 					c.text,
 				),
@@ -307,7 +310,8 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 				{
 					'data-key': k,
 					onchange,
-					...(k === 'desc' ? {multiline: true} : {}),
+					// a short name for it, as the book form's: "UK edition", "Full cast"
+					...(k === 'desc' ? {placeholder: 'e.g. UK edition'} : {}),
 					...(k === 't' ? {placeholder: 'the same as the book'} : {}),
 				},
 				choicesFor(d, ed, j, k),
@@ -455,8 +459,45 @@ function removePanel(i: number, j: number): HTMLElement {
 
 // ------------------------------------------------------------------ the other catalogs on a book
 /** A link opening a catalog's page in a new tab. */
-function outLink(href: string, text: string): HTMLAnchorElement {
-	return buildElement('a', {href, target: '_blank', rel: 'noopener', class: 'editOut'}, `${text} ↗`);
+function outLink(href: string, text: string, catalog: string): HTMLAnchorElement {
+	return buildElement(
+		'a',
+		{href, target: '_blank', rel: 'noopener', class: 'editOut'},
+		catalogIcon(catalog),
+		`${text} ↗`,
+	);
+}
+
+/** The short mark each catalog's icon shows, by its group (any Audible site is Audible's). */
+const CATALOG_MARKS: Record<string, string> = {
+	audible: 'Au',
+	amazon: 'Am',
+	goodreads: 'Gr',
+	hardcover: 'Hc',
+	audiobookdb: 'AD',
+	openlibrary: 'OL',
+	isfdb: 'IS',
+	bookbrainz: 'BB',
+	wikidata: 'WD',
+};
+
+/**
+ * A small icon for an external catalog (`catalog`, its key or any of its sites'): its mark in its own
+ * color, drawn here (CSS shows the mark), so showing it fetches nothing from the catalog.
+ */
+export function catalogIcon(catalog: string): HTMLElement {
+	const group = ExternalCatalog.groupOf(catalog)?.key || catalog;
+	return buildElement('span', {
+		class: `catIcon cat-${group}`,
+		'data-mark': CATALOG_MARKS[group] || group.slice(0, 2),
+		'aria-hidden': 'true',
+	});
+}
+
+/** The icon of the catalog `label` names in this run (by its place), when it is one of them. */
+function iconOfLabel(label: string): HTMLElement[] {
+	const at = RUN ? RUN.labels.indexOf(label) : -1;
+	return RUN && at >= 0 ? [catalogIcon(RUN.keys[at])] : [];
 }
 
 /**
@@ -473,7 +514,7 @@ function catalogLinks(d: Draft): Child[] {
 	const link = (url: string | null, source: number) => {
 		if (!url || seen.has(url)) return;
 		seen.add(url);
-		links.push(' · ', outLink(url, labels[source]));
+		links.push(' · ', outLink(url, labels[source], run.keys[source]));
 	};
 	for (const entry of reviewed.entries) link(entry.url, entry.source);
 	const missing: string[] = [];
@@ -561,7 +602,7 @@ function catalogFinds(d: Draft, i: number): HTMLElement[] {
 				spell(
 					`Maybe not an audiobook: ${note.edition} is ${note.said}${note.maybe ? '' : ` on ${run.labels[source]}`}.`,
 				),
-				...(note.url ? [' ', outLink(note.url, run.labels[source])] : []),
+				...(note.url ? [' ', outLink(note.url, run.labels[source], run.keys[source])] : []),
 			),
 		);
 	return out;
@@ -602,7 +643,7 @@ function excludedEditions(d: Draft): HTMLElement[] {
 					'li',
 					{},
 					`${text} (${labels[entry.source]})`,
-					...(url ? [' ', outLink(url, ExternalCatalog.name(site as string))] : []),
+					...(url ? [' ', outLink(url, ExternalCatalog.name(site as string), site as string)] : []),
 				),
 			);
 		}
@@ -670,7 +711,9 @@ function drawCatalogPicks(choices: CatalogChoice[], setSkipped: (catalog: string
 					disabled: Boolean(c.cantAsk),
 					onchange: (e: Event) => setSkipped(c.catalog, !(e.target as HTMLInputElement).checked),
 				}),
-				` ${c.label}`,
+				' ',
+				catalogIcon(c.catalog),
+				c.label,
 				...(c.cantAsk ? [buildElement('span', {class: 'editWhy'}, spell(` (${c.cantAsk})`))] : []),
 			),
 		),

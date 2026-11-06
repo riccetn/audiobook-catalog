@@ -21,7 +21,7 @@ catalogs (Goodreads, Hardcover, Open Library, ...). A field that changed is mark
 
 ## Its editions
 
-Each edition is told apart by the start of its description; without one, by its narrators; without those,
+Each edition is told apart by its description (a short name for it, such as `UK edition` or `Full cast`); without one, by its narrators; without those,
 by its ids. Its publishers, release date, length and ids follow. An edition a box set shares with other
 books of the series says so: a change to it changes it there too.
 
@@ -50,7 +50,7 @@ once more (after you add an id to a book, say).
 What they say is shown on the books, and nothing of it is taken until you pick it and save:
 
 - **Beside a field**, each value a catalog has that differs from yours, with the catalogs that have it
-  (`Hardcover, AudiobookDB 9h`). Press one to put it in the field; it is a change like any other you type.
+  (`9h`, marked with the icons of the catalogs that have it: **Hc** Hardcover, **AD** AudiobookDB, **Au** Audible). Press one to put it in the field; it is a change like any other you type.
   Beside the series' name, the names the catalogs give it.
 - **Links** to the book's page on each catalog that has it, and which don't (`not found on Audible`).
 - **Found on …**: the ids (and covers, shown) a catalog found for the book and its editions. **Take** puts them
