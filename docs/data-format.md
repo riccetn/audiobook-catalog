@@ -56,7 +56,7 @@ ids shortened.)
 | `series`       | `name`, `total`, `status`, `note`, `external`                                                                                                                                                                            |
 | `contributors` | `kind` (`author`, `narrator` or `publisher`), `name`, `bio`, `url`, `external`, `links`                                                                                                                                  |
 | `marks`        | the Duplicates page's marks: "Not duplicates" (`kind` `notDuplicates`, `bookIds`), "Keep separate" (`keepSeparate`, `bookIds`, `editionIds`, `key`), or a mark from an older backup that matched no book (`text`, `key`) |
-| `exclusions`   | the entries imports skip (an ASIN, `ISBN 978…`, `Goodreads 12345`, `Title \| Author`)                                                                                                                                    |
+| `exclusions`   | the entries imports skip (an ASIN, `ISBN 978…`, `Goodreads 12345`, `Title \| Author`; `Edition` and an id, `Edition B0…`, skips that edition only)                                                                       |
 
 The values mean what the same fields of the browser's records mean ([below](#how-the-browser-keeps-it), and
 the version 1 tables for the books, editions, series and people). The credits and the browser's own `meta`

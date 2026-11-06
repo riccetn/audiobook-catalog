@@ -720,7 +720,8 @@ button:focus {
 	margin: 0.9rem 0 0;
 }
 .book-details .book-actions button,
-.page-actions button {
+.page-actions button,
+.page-actions a.sedit {
 	padding: 0.35rem 0.9rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
@@ -731,6 +732,7 @@ button:focus {
 }
 .book-details .book-actions button:hover,
 .page-actions button:hover,
+.page-actions a.sedit:hover,
 .book-details .book-actions button[aria-expanded='true'] {
 	color: var(--moss);
 	border-color: var(--moss);
@@ -1625,4 +1627,282 @@ button:focus {
 .statTable thead th {
 	color: var(--ink-soft);
 	font-weight: 600;
+}
+
+/* The Edit series page (edit.html): the series, then a card per book holding its fields and editions, and a
+   save bar that stays at the bottom of the window. */
+.page-actions a.sedit {
+	text-decoration: none;
+}
+.editPanel,
+.editReview,
+.editBook {
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 0.9rem 1rem;
+	margin: 0 0 1rem;
+}
+.editPanel h2,
+.editReview h2,
+.editBooksTitle {
+	font-family: 'Lora', Georgia, serif;
+	font-size: 1.15rem;
+	margin: 0 0 0.6rem;
+}
+.editEyebrow {
+	margin: 0;
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--ink-soft);
+}
+.editTitle {
+	font-family: 'Lora', Georgia, serif;
+	font-size: 1.6rem;
+	margin: 0 0 1rem;
+}
+.editPanel label,
+.editBook .extFields label,
+.editField label {
+	display: block;
+	font-size: 0.8rem;
+	color: var(--ink-soft);
+	margin: 0.4rem 0 0.15rem;
+}
+.editPanel input,
+.editPanel select,
+.editBook .extFields input,
+.editField input,
+.editField textarea {
+	width: 100%;
+	padding: 0.35rem 0.5rem;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--paper);
+	color: var(--ink);
+	font: inherit;
+}
+.editField textarea {
+	min-height: 4.5rem;
+	resize: vertical;
+}
+.editField.changed input,
+.editField.changed textarea {
+	border-color: var(--moss);
+	box-shadow: inset 0 0 0 1px var(--moss);
+}
+.editCount {
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	font-size: 0.85rem;
+	font-weight: normal;
+	color: var(--ink-soft);
+}
+.editBook {
+	padding: 0;
+}
+.editBook > summary {
+	display: flex;
+	gap: 0.8rem;
+	align-items: center;
+	padding: 0.8rem 1rem;
+	cursor: pointer;
+}
+.editBook[open] > summary {
+	border-bottom: 1px solid var(--line);
+}
+.editBook > summary img {
+	width: 3rem;
+	height: 3rem;
+	object-fit: cover;
+	border-radius: 4px;
+}
+.editBookHead {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	flex: 1;
+}
+.editBookTitle {
+	font-family: 'Lora', Georgia, serif;
+	font-weight: 600;
+	font-size: 1.05rem;
+}
+.editBookMeta,
+.editEdMeta,
+.editEdShared {
+	font-size: 0.8rem;
+	color: var(--ink-soft);
+}
+.editPill {
+	font-size: 0.75rem;
+	padding: 0.05rem 0.55rem;
+	border-radius: 999px;
+	background: var(--paper);
+	color: var(--moss);
+	border: 1px solid var(--moss);
+}
+.editBookBody {
+	padding: 0.6rem 1rem 1rem;
+}
+.editBookLinks {
+	margin: 0 0 0.3rem;
+	font-size: 0.85rem;
+}
+.editFields {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+	gap: 0 0.9rem;
+}
+.editEditionsTitle {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--ink-soft);
+	margin: 1rem 0 0.4rem;
+}
+.editEdition {
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--paper);
+	padding: 0.5rem 0.8rem;
+	margin: 0 0 0.6rem;
+}
+.editEdition.changed {
+	border-color: var(--moss);
+}
+.editEdition > summary {
+	display: flex;
+	flex-direction: column;
+	cursor: pointer;
+}
+.editEdName {
+	font-weight: 600;
+	font-size: 0.92rem;
+}
+.editEdDesc {
+	font-family: 'Lora', Georgia, serif;
+	font-style: italic;
+	font-weight: normal;
+}
+.editInline {
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--card);
+	padding: 0.6rem 0.8rem;
+	margin-top: 0.6rem;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+}
+.editInline p {
+	flex-basis: 100%;
+	margin: 0;
+	font-size: 0.88rem;
+}
+.editSplitRow {
+	flex-basis: 100%;
+	display: flex;
+	gap: 0.6rem;
+	justify-content: space-between;
+	font-size: 0.85rem;
+}
+.editCheck {
+	flex-basis: 100%;
+	font-size: 0.88rem;
+}
+.editAddEdition {
+	font-size: 0.85rem;
+}
+.editReview {
+	display: none;
+}
+.editReview.open {
+	display: block;
+}
+/* while the review is open the fields can't change (inert), so Save saves what it lists */
+.editPanel[inert],
+.editBooks[inert],
+.saveBar[inert] {
+	opacity: 0.55;
+}
+.reviewList {
+	margin: 0 0 0.8rem;
+	padding-left: 1.1rem;
+	font-size: 0.9rem;
+}
+.saveBar {
+	position: sticky;
+	bottom: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+	justify-content: space-between;
+	align-items: center;
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 10px 10px 0 0;
+	padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+	margin-top: 1rem;
+}
+.panelbtns {
+	margin-top: 0.6rem;
+}
+.editPanel button,
+.editBook button,
+.saveBar button,
+.editReview button {
+	padding: 0.35rem 0.9rem;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--card);
+	color: var(--ink-soft);
+	font: inherit;
+	font-size: 0.85rem;
+	cursor: pointer;
+}
+.editPanel button:hover,
+.editBook button:hover,
+.saveBar button:hover,
+.editReview button:hover {
+	color: var(--moss);
+	border-color: var(--moss);
+}
+.saveBar button.save,
+.editReview button.save {
+	background: var(--moss);
+	border-color: var(--moss);
+	color: var(--paper);
+	font-weight: 600;
+}
+.editBook button.removeBook,
+.editPanel button.removeBook {
+	color: #b0453f;
+}
+.editBook .extFields {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+	gap: 0 0.9rem;
+}
+.saveBarBtns {
+	display: flex;
+	gap: 0.5rem;
+}
+.exclusionsList {
+	list-style: none;
+	padding: 0;
+	margin: 0.5rem 0 0;
+	max-height: 20rem;
+	overflow-y: auto;
+	font-size: 0.85rem;
+	flex-basis: 100%;
+}
+.exclusionsList li {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.6rem;
+	padding: 0.2rem 0;
+	border-bottom: 1px solid var(--line);
+	overflow-wrap: anywhere;
 }

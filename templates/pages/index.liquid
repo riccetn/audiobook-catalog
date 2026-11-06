@@ -23,21 +23,4 @@
 	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
 	<p id="ioStatus" class="ioStatus"></p>
 
-	<form id="seriesForm">
-		<h3 id="seriesFormTitle">Edit series</h3>
-		<div><label for="sf_name">Series name (renames it on every book in the series)</label><input id="sf_name"></div>
-		<div class="formrow">
-			<div><label for="sf_total">Books released so far</label><input id="sf_total" placeholder="e.g. 12, or many"></div>
-			<div><label for="sf_status">Status</label><select id="sf_status"><option value="ongoing">ongoing</option><option value="complete">complete</option></select></div>
-		</div>
-		<div><label for="sf_note">Note</label><input id="sf_note" placeholder="e.g. book 5 is announced"></div>
-		<div class="formrow extFields" id="sf_ext"></div>
-		<p id="seriesFormError" class="formError"></p>
-		<div class="formbtns">
-			<button type="submit" class="save" id="seriesSaveBtn">Save series</button>
-			<button type="button" id="cancelSeries">Cancel</button>
-			<button type="button" id="seriesRemoveBtn" class="removeBook">Remove series</button>
-		</div>
-	</form>
-
 	<div id="results"></div>

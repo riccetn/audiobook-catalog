@@ -35,7 +35,7 @@ const PAGES = [
 	'publishers.html',
 	'stats.html',
 ];
-const ALL_PAGES = [...PAGES, 'book.html', 'author.html', 'narrator.html', 'publisher.html'];
+const ALL_PAGES = [...PAGES, 'book.html', 'edit.html', 'author.html', 'narrator.html', 'publisher.html'];
 // someone's page shows the one its address names; without one it goes to the list
 const PAGE_HASH = {'author.html': '#a=Ann+Vale', 'narrator.html': '#n=Cy+Hale', 'publisher.html': '#p=Tern+Press'};
 const readData = file => fs.readFileSync(path.join(root, 'sample', file), 'utf8');
@@ -334,7 +334,10 @@ class FakeElement {
 		}
 	}
 	reset() {}
-	scrollIntoView() {}
+	// an element the page scrolled into view says so
+	scrollIntoView() {
+		this.scrolledTo = true;
+	}
 	click() {}
 	focus() {}
 	// where an element was last moved to, as 'before <id>' or 'after <id>'
@@ -667,6 +670,21 @@ const seriesIdOf = (get, name) => (get.database.records('series').find(x => x.na
 // A book's page, by its title (as an address from before has it, which the page turns into its id).
 const hashValue = v => encodeURIComponent(v).replace(/%20/g, '+');
 const bootBook = (title, options = {}) => boot({...options, page: 'book.html', hash: '#book=' + hashValue(title)});
+// A series' Edit series page, by its name (which the page turns into its id).
+const bootEdit = async (series, options = {}) => {
+	const page = await boot({...options, page: 'edit.html', hash: '#series=' + hashValue(series)});
+	await idle();
+	return page;
+};
+// Review & save on the Edit series page, then Save when the review opens (it doesn't when something is refused).
+const saveEdit = async ({els}) => {
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	if (!els.reviewPanel.classList.contains('open')) return false;
+	await els.reviewSaveBtn.listeners.click[0]();
+	await idle();
+	return true;
+};
 // the first of the demo books
 const SALT_ROAD = JSON.parse(DEMO_BOOKS)[0].t;
 // The book cards in a list.
@@ -733,7 +751,7 @@ test("a form's Cancel sits next to its Save, and a Remove button comes after bot
 			assert.equal(remove, buttons.length - 1, `${page}: Remove comes last`);
 		}
 	}
-	assert.equal(forms, 5, 'the book, series, author, narrator and publisher forms');
+	assert.equal(forms, 4, 'the book, author, narrator and publisher forms');
 });
 
 test('opens on the series overview, with a row per series', async () => {
@@ -972,13 +990,9 @@ test('back and forward step through series, searches and filters, and books', as
 	await idle();
 	assert.equal(get('SERIES_FILTER'), lantern);
 	assert.equal(cards(els.results.innerHTML), 4);
-	// leaving a series closes its form
-	await ctx.openSeriesForm(lantern);
-	assert.ok(els.seriesForm.classList.contains('open'));
 	history.back();
 	await idle();
 	assert.equal(get('SERIES_FILTER'), null);
-	assert.ok(!els.seriesForm.classList.contains('open'));
 	// typing a search is one entry, however many letters
 	for (const q of ['c', 'co', 'coast']) {
 		els.q.value = q;
@@ -3079,15 +3093,13 @@ test('series show which books are missing, and can be filtered to those; one wit
 });
 
 test('a series and a book keep their ids in external catalogs, typed as an id or pasted as an address', async () => {
-	const {ctx, els, get, storage} = await boot({hash: '#series=The+Lantern+Coast'});
-	ctx.openSeriesForm(seriesIdOf(get, 'The Lantern Coast'));
-	await idle();
+	const edit = await bootEdit('The Lantern Coast');
+	const {els, get, storage} = edit;
 	assert.equal(els.sf_ext_goodreads.value, '90001');
 	assert.equal(els.sf_ext_hardcover.value, 'the-lantern-coast-sample');
 	els.sf_ext_audible.value = 'https://www.audible.com/series/The-Lantern-Coast-Audiobooks/B0LANTERN1?ref=x';
 	els.sf_ext_goodreads.value = '';
-	await els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
+	assert.ok(await saveEdit(edit));
 	// Hardcover's series by the name in its address, as no token is saved to look up its number
 	assert.deepEqual(get("CATALOG.infoByName('series').get('The Lantern Coast').external"), {
 		'audible.com': 'B0LANTERN1',
@@ -3101,19 +3113,16 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 		'audible.com': 'B0LANTERN1',
 		hardcover: 'the-lantern-coast-sample',
 	});
+	const series = await boot({storage, hash: '#series=The+Lantern+Coast'});
 	assert.match(
-		els.results.innerHTML,
+		series.els.results.innerHTML,
 		/<a class="authorlink" href="https:\/\/www\.audible\.com\/series\/B0LANTERN1" target="_blank" rel="noopener">Audible ↗<\/a>/,
 	);
 	// something that is neither is refused
-	ctx.openSeriesForm(seriesIdOf(get, 'The Lantern Coast'));
-	await idle();
 	els.sf_ext_goodreads.value = 'https://www.goodreads.com/book/show/4242';
-	await els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
+	assert.equal(await saveEdit(edit), false);
 	assert.match(els.seriesFormError.textContent, /Goodreads: https:\/\/www\.goodreads\.com\/book\/show\/4242/);
-	els.cancelSeries.listeners.click[0]();
-	await idle();
+	assert.ok(get('SERIES_ID'));
 
 	// a book's Goodreads work, by its address
 	const book = await bootBook(SALT_ROAD, {storage});
@@ -3143,9 +3152,7 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 });
 
 test("an address pasted into a series', person's or book's id field becomes the id when the field is left", async () => {
-	const {ctx, els, get} = await boot({hash: '#series=The+Lantern+Coast'});
-	ctx.openSeriesForm(seriesIdOf(get, 'The Lantern Coast'));
-	await idle();
+	const {els} = await bootEdit('The Lantern Coast');
 	const leave = (input, value) => {
 		input.value = value;
 		input.dispatch('focusout');
@@ -3225,114 +3232,111 @@ test('an edition has fields for Goodreads and Hardcover, and one for another cat
 	);
 });
 
-test('a series can be edited in the page, and removed from its books', async () => {
+test('a series is edited on its Edit series page, and removed from its books', async () => {
 	const {ctx, els, get, storage} = await boot();
 	const info = JSON.parse(DEMO_INFO);
 	const [name] = Object.keys(info);
 	assert.doesNotMatch(els.results.innerHTML, /sedit/, 'not in the overview');
 	ctx.openSeries(seriesIdOf(get, name));
 	await idle();
+	const id = seriesIdOf(get, name);
 	assert.match(
 		els.results.innerHTML,
-		/<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare with [\w ]+<\/button>)+<\/div><\/div>$/,
+		new RegExp(
+			`<div class="page-actions"><a class="sedit" data-series="${id}" href="edit\\.html#series=${id}">Edit</a>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare with [\\w ]+</button>)+</div></div>$`,
+		),
 		'at the end of the page of the series',
 	);
 	const books = await boot({page: 'books.html', storage});
 	assert.doesNotMatch(books.els.results.innerHTML, /sedit|Compare with Hardcover/, 'nor in the list of all books');
 
-	// edit: the form starts from the current entry
-	ctx.openSeriesForm(seriesIdOf(get, name));
+	// the page starts from the current entry, and lists its books
+	let edit = await bootEdit(name, {storage});
+	assert.equal(edit.get('SERIES_ID'), id);
+	assert.equal(edit.els.sf_name.value, name);
+	assert.equal(edit.els.sf_total.value, String(info[name].total));
+	assert.equal(edit.els.sf_status.value, info[name].status);
+	assert.equal(edit.els.sf_note.value, info[name].note);
+	assert.equal(edit.els.subtitle.textContent, name);
+	assert.equal(edit.els.sf_url, undefined, 'a series keeps no site: its author or publisher does');
+	const count = demoBooks.filter(b => b.s === name).length;
+	assert.equal(edit.get('DRAFTS.length'), count);
+	assert.equal(edit.els.changeCount.textContent, 'No changes yet');
+	Object.assign(edit.els.sf_total, {value: '7'});
+	Object.assign(edit.els.sf_status, {value: 'ongoing'});
+	Object.assign(edit.els.sf_note, {value: '  book 8   is announced '});
+	// Review & save lists what changes, and saves nothing until Save
+	await edit.els.reviewBtn.listeners.click[0]();
 	await idle();
-	assert.ok(els.seriesForm.classList.contains('open'));
-	assert.equal(els.sf_total.value, String(info[name].total));
-	assert.equal(els.sf_status.value, info[name].status);
-	assert.equal(els.sf_note.value, info[name].note);
-	assert.equal(els.seriesFormTitle.textContent, `Edit series: ${name}`);
-	assert.equal(els.sf_url, undefined, 'a series keeps no site: its author or publisher does');
-	Object.assign(els.sf_total, {value: '7'});
-	Object.assign(els.sf_status, {value: 'ongoing'});
-	Object.assign(els.sf_note, {value: '  book 8   is announced '});
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
+	assert.ok(edit.els.reviewPanel.classList.contains('open'));
+	assert.match(edit.els.reviewList.textContent, /Books released: 7/);
+	assert.match(edit.els.reviewList.textContent, /Note: book 8 is announced/);
+	assert.equal(edit.get(`CATALOG.infoByName('series').get(${JSON.stringify(name)}).total`), info[name].total);
+	await edit.els.reviewSaveBtn.listeners.click[0]();
 	await idle();
-	assert.ok(!els.seriesForm.classList.contains('open'));
-	assert.deepEqual(get(`CATALOG.infoByName('series').get(${JSON.stringify(name)})`), {
+	assert.deepEqual(edit.get(`CATALOG.infoByName('series').get(${JSON.stringify(name)})`), {
 		total: 7,
 		status: 'ongoing',
 		note: 'book 8 is announced',
 	});
-	assert.match(els.results.innerHTML, /7 released total/);
+	assert.equal(edit.els.ioStatus.textContent, `Saved ${name}.`);
 	assert.deepEqual((await kept(storage)).seriesInfo[name].total, 7);
 
 	// invalid input is refused with a message, and nothing changes
-	ctx.openSeriesForm(seriesIdOf(get, name));
+	Object.assign(edit.els.sf_total, {value: 'lots'});
+	Object.assign(edit.els.sf_note, {value: ''});
+	assert.equal(await saveEdit(edit), false);
+	assert.match(edit.els.seriesFormError.textContent, /total must be a positive integer/);
+	assert.equal(edit.get(`CATALOG.infoByName('series').get(${JSON.stringify(name)}).total`), 7);
+	// Discard puts back what is stored, and goes back to the series' page
+	edit.els.discardBtn.listeners.click[0]();
 	await idle();
-	Object.assign(els.sf_total, {value: 'lots'});
-	Object.assign(els.sf_note, {value: ''});
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
-	assert.ok(els.seriesForm.classList.contains('open'));
-	assert.match(els.seriesFormError.textContent, /total must be a positive integer/);
-	assert.equal(get(`CATALOG.infoByName('series').get(${JSON.stringify(name)}).total`), 7);
-	els.cancelSeries.listeners.click[0]();
-	await idle();
-	assert.ok(!els.seriesForm.classList.contains('open'));
+	assert.equal(edit.els.sf_total.value, '7');
+	assert.equal(edit.ctx.location.assigned, 'index.html#series=' + id);
 
 	// a series with nothing kept about it gets it ("many" is allowed)
 	const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
 	assert.ok(bare, 'the demo data has a series without info');
-	ctx.openSeriesForm(seriesIdOf(get, bare));
-	await idle();
-	assert.equal(els.sf_total.value, '');
-	assert.equal(els.seriesFormTitle.textContent, `Edit series: ${bare}`);
-	Object.assign(els.sf_total, {value: 'Many'});
-	Object.assign(els.sf_status, {value: 'complete'});
-	Object.assign(els.sf_note, {value: 'finished'});
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
-	assert.deepEqual(get(`CATALOG.infoByName('series').get(${JSON.stringify(bare)})`), {
+	edit = await bootEdit(bare, {storage});
+	assert.equal(edit.els.sf_total.value, '');
+	Object.assign(edit.els.sf_total, {value: 'Many'});
+	Object.assign(edit.els.sf_status, {value: 'complete'});
+	Object.assign(edit.els.sf_note, {value: 'finished'});
+	assert.ok(await saveEdit(edit));
+	assert.deepEqual(edit.get(`CATALOG.infoByName('series').get(${JSON.stringify(bare)})`), {
 		total: 'many',
 		status: 'complete',
 		note: 'finished',
 	});
 
 	// emptying every field keeps nothing about it, and the series stays
-	ctx.openSeriesForm(seriesIdOf(get, bare));
-	await idle();
-	for (const field of [els.sf_total, els.sf_note]) field.value = '';
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
-	assert.equal(els.seriesFormError.textContent, '');
-	assert.equal(get(`CATALOG.infoByName('series').has(${JSON.stringify(bare)})`), false);
-	assert.equal(els.ioStatus.textContent, `Saved ${bare}.`);
+	for (const field of [edit.els.sf_total, edit.els.sf_note]) field.value = '';
+	assert.ok(await saveEdit(edit));
+	assert.equal(edit.els.seriesFormError.textContent, '');
+	assert.equal(edit.get(`CATALOG.infoByName('series').has(${JSON.stringify(bare)})`), false);
+	assert.equal(edit.els.ioStatus.textContent, `Saved ${bare}.`);
 	assert.ok(
 		databaseOf(storage)
 			.records('series')
 			.some(x => x.name === bare),
 	);
 
-	// Remove series warns first, then takes it off its books, which stay
-	const id = seriesIdOf(get, name),
-		count = demoBooks.filter(b => b.s === name).length;
-	ctx.openSeries(id);
-	await idle();
-	ctx.openSeriesForm(id);
-	await idle();
-	els.seriesRemoveBtn.listeners.click[0]();
+	// Remove series warns first, then takes it off its books, which stay, and goes to every series
+	edit = await bootEdit(name, {storage});
+	edit.els.seriesRemoveBtn.listeners.click[0]();
 	await idle();
 	assert.equal(
-		els.seriesFormError.textContent,
+		edit.els.seriesFormError.textContent,
 		`This takes ${name} off its ${count} books, which stay in the catalog without a series or a number in it, and removes the series. Press Remove series again to do it.`,
 	);
 	assert.equal(
-		get(`CATALOG.books.filter(b => b.series === ${JSON.stringify(name)}).length`),
+		edit.get(`CATALOG.books.filter(b => b.series === ${JSON.stringify(name)}).length`),
 		count,
 		'nothing changed yet',
 	);
-	els.seriesRemoveBtn.listeners.click[0]();
+	await edit.els.seriesRemoveBtn.listeners.click[0]();
 	await idle();
-	assert.ok(!els.seriesForm.classList.contains('open'));
-	assert.equal(els.ioStatus.textContent, `Removed the series ${name} from ${count} books.`);
-	assert.equal(get('SERIES_FILTER'), null, 'every series shows');
+	assert.equal(edit.ctx.location.replaced, 'index.html');
 	const saved = await kept(storage);
 	assert.equal(saved.books.length, demoBooks.length);
 	assert.equal(saved.books.filter(b => b.s === name || (!b.s && b.sn)).length, 0, 'no series, and no number in it');
@@ -3359,23 +3363,23 @@ test('a series no book is in any more stays, and can be removed', async () => {
 	await idle();
 	assert.match(
 		home.els.results.innerHTML,
-		/No books in Fern Saga yet\.<\/p><div class="page-actions"><button type="button" class="sedit"/,
+		/No books in Fern Saga yet\.<\/p><div class="page-actions"><a class="sedit"/,
 	);
-	home.ctx.openSeriesForm(id);
-	await idle();
-	home.els.seriesRemoveBtn.listeners.click[0]();
+	const edit = await bootEdit('Fern Saga', {storage, files: null});
+	assert.equal(edit.get('DRAFTS.length'), 0);
+	edit.els.seriesRemoveBtn.listeners.click[0]();
 	assert.equal(
-		home.els.seriesFormError.textContent,
+		edit.els.seriesFormError.textContent,
 		'This removes Fern Saga, which no book is in. Press Remove series again to do it.',
 	);
-	home.els.seriesRemoveBtn.listeners.click[0]();
+	await edit.els.seriesRemoveBtn.listeners.click[0]();
 	await idle();
 	await kept(storage);
 	assert.deepEqual(databaseOf(storage).records('series'), []);
 });
 
-test('a series can be renamed from its form, on every book in it', async () => {
-	const {ctx, els, get, storage} = await boot();
+test('a series can be renamed on its Edit series page, on every book in it', async () => {
+	const {storage} = await boot();
 	const info = JSON.parse(DEMO_INFO);
 	const [name] = Object.keys(info);
 	const count = demoBooks.filter(b => b.s === name).length;
@@ -3385,23 +3389,17 @@ test('a series can be renamed from its form, on every book in it', async () => {
 	const seriesId = databaseOf(storage)
 		.records('series')
 		.find(x => x.name === name).id;
-	// shown from the series itself: the page follows the new name
-	ctx.openSeries(seriesIdOf(get, name));
-	await idle();
-	ctx.openSeriesForm(seriesIdOf(get, name));
-	await idle();
+	let edit = await bootEdit(name, {storage});
+	const {els, get} = edit;
 	assert.equal(els.sf_name.value, name);
 	Object.assign(els.sf_name, {value: '  The Renamed   Saga '});
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
-	assert.ok(!els.seriesForm.classList.contains('open'));
+	assert.ok(await saveEdit(edit));
 	assert.equal(get(`CATALOG.books.filter(b => b.series === 'The Renamed Saga').length`), count);
 	assert.equal(get(`CATALOG.books.some(b => b.series === ${JSON.stringify(name)})`), false);
 	assert.deepEqual(get(`CATALOG.infoByName('series').get('The Renamed Saga')`), info[name]);
 	assert.equal(get(`CATALOG.infoByName('series').has(${JSON.stringify(name)})`), false);
-	assert.equal(get('SERIES_FILTER'), seriesId, 'still the series shown, by its id');
-	assert.equal(ctx.location.hash, `#series=${seriesId}`);
-	assert.equal(els.crumbLabel.textContent, 'The Renamed Saga');
+	assert.equal(get('SERIES_ID'), seriesId, 'still the series shown, by its id');
+	assert.equal(els.subtitle.textContent, 'The Renamed Saga');
 	assert.match(els.ioStatus.textContent, new RegExp(`Renamed .* on ${count} book`));
 	const saved = await kept(storage);
 	assert.ok(saved.seriesInfo['The Renamed Saga']);
@@ -3418,39 +3416,28 @@ test('a series can be renamed from its form, on every book in it', async () => {
 	// a series without info is renamed without having to add some
 	const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
 	const bareCount = demoBooks.filter(b => b.s === bare).length;
-	ctx.openSeriesForm(seriesIdOf(get, bare));
-	await idle();
-	Object.assign(els.sf_name, {value: 'Plain Renamed'});
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
-	assert.equal(els.seriesFormError.textContent, '');
-	assert.equal(get(`CATALOG.books.filter(b => b.series === 'Plain Renamed').length`), bareCount);
-	assert.equal(get(`CATALOG.infoByName('series').has('Plain Renamed')`), false);
+	edit = await bootEdit(bare, {storage});
+	Object.assign(edit.els.sf_name, {value: 'Plain Renamed'});
+	assert.ok(await saveEdit(edit));
+	assert.equal(edit.els.seriesFormError.textContent, '');
+	assert.equal(edit.get(`CATALOG.books.filter(b => b.series === 'Plain Renamed').length`), bareCount);
+	assert.equal(edit.get(`CATALOG.infoByName('series').has('Plain Renamed')`), false);
 
 	// an empty name is refused
-	ctx.openSeriesForm(seriesIdOf(get, 'Plain Renamed'));
-	await idle();
-	Object.assign(els.sf_name, {value: '   '});
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
-	assert.match(els.seriesFormError.textContent, /Give the series a name/);
-	els.cancelSeries.listeners.click[0]();
-	await idle();
+	Object.assign(edit.els.sf_name, {value: '   '});
+	assert.equal(await saveEdit(edit), false);
+	assert.match(edit.els.seriesFormError.textContent, /Give the series a name/);
 
-	// joining another series takes a second Save, and its info gives way to this form's
-	ctx.openSeriesForm(seriesIdOf(get, 'Plain Renamed'));
+	// joining another series is said in the review, and its info gives way to this page's
+	Object.assign(edit.els.sf_name, {value: 'The Renamed Saga'});
+	await edit.els.reviewBtn.listeners.click[0]();
 	await idle();
-	Object.assign(els.sf_name, {value: 'The Renamed Saga'});
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
+	assert.match(edit.els.reviewList.textContent, /already a series called The Renamed Saga: these books move into it/);
+	assert.equal(edit.get(`CATALOG.books.filter(b => b.series === 'Plain Renamed').length`), bareCount);
+	await edit.els.reviewSaveBtn.listeners.click[0]();
 	await idle();
-	assert.ok(els.seriesForm.classList.contains('open'));
-	assert.match(els.seriesFormError.textContent, /already a series called The Renamed Saga\. Press Save again/);
-	assert.equal(get(`CATALOG.books.filter(b => b.series === 'Plain Renamed').length`), bareCount);
-	els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
-	assert.ok(!els.seriesForm.classList.contains('open'));
-	assert.equal(get(`CATALOG.books.filter(b => b.series === 'The Renamed Saga').length`), count + bareCount);
-	assert.deepEqual(get(`CATALOG.infoByName('series').get('The Renamed Saga')`), info[name]);
+	assert.equal(edit.get(`CATALOG.books.filter(b => b.series === 'The Renamed Saga').length`), count + bareCount);
+	assert.deepEqual(edit.get(`CATALOG.infoByName('series').get('The Renamed Saga')`), info[name]);
 });
 
 // Lets pending promises (a save on its way to the fake server) settle.
@@ -4415,7 +4402,7 @@ test("a series' or an author's page links to comparing their books with Hardcove
 	// at the end of the page, beside Edit
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<div class="page-actions"><button type="button" class="sedit" data-series="[^"]+">Edit<\/button><button type="button" class="catalogCompare" data-compare="hardcover">Compare with Hardcover<\/button>/,
+		/<div class="page-actions"><a class="sedit" data-series="[^"]+" href="edit\.html#series=The\+Lantern\+Coast">Edit<\/a><button type="button" class="catalogCompare" data-compare="hardcover">Compare with Hardcover<\/button>/,
 	);
 	const session = new Map();
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby', session});
@@ -5361,12 +5348,9 @@ test("a Hardcover address in the series or info form is looked up for its number
 
 	// a series' and a publisher's likewise
 	storage.set('audiobook-catalog-hardcover-token', 'tok-123');
-	const index = await boot({hardcover: hc.fetch, setTimeout, storage});
-	index.ctx.openSeriesForm(seriesIdOf(get, 'The Lantern Coast'));
-	await idle();
+	const index = await bootEdit('The Lantern Coast', {hardcover: hc.fetch, setTimeout, storage});
 	index.els.sf_ext_hardcover.value = 'hardcover.app/series/the-lantern-coast';
-	await index.els.seriesForm.listeners.submit[0]({preventDefault() {}});
-	await idle();
+	assert.ok(await saveEdit(index));
 	assert.equal(index.get("CATALOG.infoByName('series').get('The Lantern Coast').external.hardcover"), '3101');
 	const pub = await boot({
 		page: 'publisher.html',
@@ -5833,4 +5817,132 @@ test('the stats page counts what the catalog lacks, and lists which ones', async
 	const table = els.statCatalogs.innerHTML;
 	assert.match(table, /<th>Audible<\/th><td title="50%">1<\/td><td title="50%">1<\/td>/);
 	assert.doesNotMatch(table, /Goodreads/, 'a catalog nothing has an id in is left out');
+});
+
+test("the Edit series page edits each book's fields and editions in place, and saves them only after a review", async () => {
+	const files = {
+		'books.json': JSON.stringify([
+			{
+				t: 'Fern 1',
+				a: ['Bo Reed'],
+				s: 'Fern Saga',
+				sn: '1',
+				e: [
+					{ext: {'audible.com': 'B0FERN0001'}, n: ['Cy Hale'], d: '2020-01-01'},
+					{isbn: '9780000000002', d: '2021-05-01'},
+				],
+			},
+			{
+				t: 'Fern 2',
+				a: ['Bo Reed'],
+				s: 'Fern Saga',
+				sn: '2',
+				e: [
+					{ext: {'audible.com': 'B0FERN0002'}, d: '2022', desc: 'A storm comes to the fen.'},
+					{ext: {'audible.com': 'B0FERN0003'}},
+				],
+			},
+		]),
+	};
+	const session = new Map();
+	const edit = await bootEdit('Fern Saga', {files, session});
+	const {els, get, storage} = edit;
+	assert.deepEqual(get('DRAFTS.map(d => d.book.title)'), ['Fern 1', 'Fern 2']);
+	// an edition is told apart by its description, else its narrators, else its ids
+	assert.match(els.editBooks.innerHTML, /<span class="editEdName editEdDesc">A storm comes to the fen\.<\/span>/);
+	assert.match(els.editBooks.innerHTML, /<span class="editEdName">Narrated by Cy Hale<\/span>/);
+	assert.match(els.editBooks.innerHTML, /<span class="editEdName">audible\.com B0FERN0003<\/span>/);
+
+	// typed into a book's and an edition's fields
+	els.b0_t.value = 'Fern One';
+	els.b0_t.listeners.change[0]();
+	els.b0e0_n.value = 'Cy Hale, Ann Vale';
+	els.b0e0_n.listeners.change[0]();
+	assert.equal(els.changeCount.textContent, '2 changes');
+	assert.equal(get('DRAFTS[0].book.editions[0].narrators.join()'), 'Cy Hale,Ann Vale');
+	assert.equal(get('CATALOG.book(DRAFTS[0].id).title'), 'Fern 1', 'nothing saved yet');
+	// what can't be read is said on the book, and changes nothing
+	els.b1_r.value = 'last spring';
+	els.b1_r.listeners.change[0]();
+	assert.match(els['book-1-error'].textContent, /Not a date: last spring/);
+	els.b1_r.value = '';
+	els.b1_r.listeners.change[0]();
+	assert.equal(els['book-1-error'].textContent, '');
+
+	// Merge with…: the two editions of Fern 1 become one
+	els['book-0-ed-0-merge'].listeners.click[0]();
+	els['book-0-ed-0-merge-1'].listeners.click[0]();
+	assert.equal(get('DRAFTS[0].book.editions.length'), 1);
+	assert.equal(get('DRAFTS[0].book.editions[0].isbn'), '9780000000002');
+	// Split: the ISBN goes to an edition of its own again, the narrators are on both
+	els['book-0-ed-0-split'].listeners.click[0]();
+	els['book-0-ed-0-split-isbn'].value = 'move';
+	els['book-0-ed-0-split-n'].value = 'copy';
+	els['book-0-ed-0-split-do'].listeners.click[0]();
+	assert.deepEqual(get('DRAFTS[0].book.editions.map(ed => ed.format())'), [
+		'Narrated by Cy Hale, Ann Vale; ASIN audible.com B0FERN0001; Released 2020-01-01',
+		'Narrated by Cy Hale, Ann Vale; ISBN 9780000000002',
+	]);
+	// Remove edition, kept out of imports
+	els['book-1-ed-1-remove'].listeners.click[0]();
+	els['book-1-ed-1-exclude'].checked = true;
+	els['book-1-ed-1-remove-do'].listeners.click[0]();
+	assert.equal(get('DRAFTS[1].book.editions.length'), 1);
+	assert.deepEqual(get('EXCLUDE'), ['Edition B0FERN0003']);
+
+	// an edition's field that can't be read stops Review & save, which scrolls to it
+	els.b1e0_more.value = 'not an address';
+	els.b1e0_more.listeners.change[0]();
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	assert.equal(els.reviewPanel.classList.contains('open'), false);
+	assert.match(els['book-1-ed-0-error'].textContent, /Not an edition's address: not an address/);
+	assert.equal(els['book-1-ed-0-error'].scrolledTo, true);
+	els.b1e0_more.value = '';
+	els.b1e0_more.listeners.change[0]();
+
+	// Review & save lists it all, and the fields can't change while it is open, so Save saves what it lists
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	for (const part of ['seriesPanel', 'editBooks', 'saveBar']) assert.ok(els[part].hasAttribute('inert'), part);
+	els.reviewBackBtn.listeners.click[0]();
+	assert.equal(els.editBooks.hasAttribute('inert'), false, 'Back edits again');
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	const review = els.reviewList.textContent;
+	assert.match(review, /Fern One: Title: Fern 1 → Fern One/);
+	assert.match(review, /Edition Narrated by Cy Hale: Narrators: Cy Hale → Cy Hale, Ann Vale/);
+	assert.match(review, /Removed edition: ISBN 9780000000002/);
+	assert.match(review, /New edition: Narrated by Cy Hale, Ann Vale; ISBN 9780000000002/);
+	assert.match(review, /Fern 2: Removed edition: audible\.com B0FERN0003, and kept out of imports/);
+	await els.reviewSaveBtn.listeners.click[0]();
+	await idle();
+	assert.match(els.ioStatus.textContent, /^Saved 2 books, kept 1 edition id out of imports\./);
+	assert.equal(els.changeCount.textContent, 'No changes yet');
+	// Save goes back to the series' page, which says what was saved, once
+	const seriesId = get('SERIES_ID');
+	assert.equal(edit.ctx.location.assigned, 'index.html#series=' + seriesId);
+	const series = await boot({storage, files: null, session, hash: '#series=' + seriesId});
+	assert.match(series.els.ioStatus.textContent, /^Saved 2 books, kept 1 edition id out of imports\./);
+	assert.equal(session.has('audiobook-catalog-status'), false);
+	const saved = await kept(storage);
+	assert.deepEqual(
+		saved.books.map(b => [b.t, b.e.map(x => x.ext || x.isbn)]),
+		[
+			['Fern One', [{'audible.com': 'B0FERN0001'}, '9780000000002']],
+			['Fern 2', [{'audible.com': 'B0FERN0002'}]],
+		],
+	);
+	assert.deepEqual(saved.excluded, ['Edition B0FERN0003']);
+
+	// the list of what imports skip, on Import & export, takes it off again
+	const io = await boot({page: 'import.html', storage, files: null});
+	io.els.exclusionsBtn.listeners.click[0]();
+	await idle();
+	assert.match(io.els.exclusionsList.innerHTML, /<span>Edition B0FERN0003<\/span>/);
+	io.els.exclusionsList.querySelector('.removeExclusion').listeners.click[0]();
+	await idle();
+	assert.equal(io.els.ioStatus.textContent.startsWith('Imports may add Edition B0FERN0003 again.'), true);
+	assert.match(io.els.exclusionsList.innerHTML, /no book or edition is excluded/);
+	assert.deepEqual((await kept(storage)).excluded, []);
 });

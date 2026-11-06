@@ -119,18 +119,24 @@ Author names on the books link there. See [Authors](authors.md).
 each with a page of their bio, links, series and titles; their names on the books link there. See
 [Narrators and publishers](narrators-publishers.md).
 
-**Update release info for a series**: press **Edit** at the end of a series' page (open it from _Series_) to edit how many books are released, whether it is ongoing or complete, the note and
+**Edit a series and its books**: press **Edit** at the end of a series' page (open it from _Series_). The
+_Edit series_ page shows the series and every book in it, each book with its fields (title, authors, number,
+genres, dates read and its ids) and its editions, all of them editable in place. See
+[Editing a series](editing-series.md) for the page, and for merging, splitting and removing editions there.
+Nothing is saved until you press **Review & save**, which lists every change, and then **Save**.
+
+The series' own fields are how many books are released, whether it is ongoing or complete, the note and
 the series' ids on Audible, Goodreads, Hardcover, AudiobookDB, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
 `https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each).
 When you leave a field holding an address it shows just the id, and an address pasted into another catalog's field moves to that one's.
-Every field is optional, and clearing them all keeps nothing about the series. The form checks the same rules as **Check**.
-The same form renames the series: change its name and every book in the series gets the new name.
-Renaming it to a series you already have moves its books into that one; the first **Save** says so and
-the second does it, and what the form has replaces what the other series has.
+Every field is optional, and clearing them all keeps nothing about the series. Save checks the same rules as **Check**.
+Changing the series' name renames it on every book in the series.
+Renaming it to a series you already have moves its books into that one; the review says so, and what the
+page has replaces what the other series has.
 
 A series is an entry of its own: it stays when no book is in it any more ("no books yet" on _Series_), until you
-remove it. **Remove series** in its form takes it off its books, which stay in the catalog without a series
+remove it. **Remove series** on its _Edit series_ page takes it off its books, which stay in the catalog without a series
 or a number in it, and removes it; the first press says how many books it changes, the second does it.
 
 **Find books missing from a series**: when a series has a released total,
@@ -147,9 +153,11 @@ import brings it back. Backups carry the list (`excluded`), one entry per line: 
 `Goodreads 4242` (a bare number is read as an ASIN), `Hardcover 501` or `Title | Author`. An entry
 `ISBN 978-0-00-000000-2` (or just the ISBN-13) skips every imported book that carries that ISBN, in any of its editions' forms (so
 an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN counts as both an ASIN and an ISBN.
-Removing a book in the page does not add its ISBNs, since another book may share them. The list is only
-ever added to: to let an import add a book again, delete its entries from a backup's `excluded` and
-restore it.
+Removing a book in the page does not add its ISBNs, since another book may share them. An edition removed
+on the _Edit series_ page can be kept out too, with entries that start with `Edition` (`Edition B0…`,
+`Edition ISBN 978…`, `Edition Goodreads 4242`, `Edition Hardcover 501`): imports leave that edition out, but its book
+still matches and gains everything else. To let an import add something again, press **Show** beside
+_Excluded_ on _Import & export_, which lists every entry, and **Remove** it there.
 
 **Merge duplicates**: the _Duplicates_ page (its link shows how many it found) lists books that look like
 one title entered twice, found the way an import matches books (same author, series and number,

@@ -395,6 +395,14 @@ export class Catalog {
 	}
 
 	/**
+	 * Take an entry off the exclusions list, so imports may add what it kept out again; returns whether it
+	 * was there. The one way an entry goes: imports, Restore and Merge only ever add to the list.
+	 */
+	removeExclusion(entry: string): boolean {
+		return this.exclusions.remove(entry);
+	}
+
+	/**
 	 * Mark each two of `books` as different books ("Not duplicates"); returns how many marks were new.
 	 */
 	markNotDuplicates(books: Book[]): number {

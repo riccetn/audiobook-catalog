@@ -280,6 +280,66 @@ export class Book {
 		this.editions = keyed.map(k => k.ed);
 	}
 
+	// ------------------------------------------------------------------ its editions, changed
+	/**
+	 * Make the editions at `places` one (Edition.join: the first, filled in from the others), at the first's
+	 * place. Throws when they disagree on an id (Edition.joinable), as two ASINs on one site are two editions.
+	 * @returns the joined edition
+	 */
+	mergeEditions(places: number[]): Edition {
+		const picked = [...new Set(places)].sort((a, b) => a - b).map(at => this.editionAt(at));
+		if (!Edition.joinable(picked))
+			throw new Error('These editions have different ids, so they are not one edition.');
+		const joined = Edition.join(picked);
+		const first = picked[0];
+		this.editions = this.editions
+			.filter(ed => ed === first || !picked.includes(ed))
+			.map(ed => (ed === first ? joined : ed));
+		return joined;
+	}
+
+	/**
+	 * Split the edition at `at` in two: the fields named in `move` (keys of Edition.fields(), such as
+	 * 'ext:audible.com', 'isbn' or 'n') go to a new edition after it, and those in `copy` are on both.
+	 * Throws when either would be left with nothing that names an edition.
+	 * @returns the new edition
+	 */
+	splitEdition(at: number, move: string[], copy: string[] = []): Edition {
+		const ed = this.editionAt(at);
+		const fields = ed.fields();
+		const kept: Record<string, string> = {},
+			moved: Record<string, string> = {};
+		for (const [k, v] of Object.entries(fields)) {
+			if (move.includes(k)) moved[k] = v;
+			else kept[k] = v;
+			if (copy.includes(k)) moved[k] = kept[k] = v;
+		}
+		const [left] = Edition.fromFields(kept).editions,
+			[right] = Edition.fromFields(moved).editions;
+		if (!left || !right) throw new Error('Each edition needs something of its own, such as an id or a narrator.');
+		// the edition keeps its stored id, and the new one is stored as a new edition
+		if (ed.id !== undefined) left.id = ed.id;
+		this.editions = [...this.editions.slice(0, at), left, right, ...this.editions.slice(at + 1)];
+		return right;
+	}
+
+	/**
+	 * Take the edition at `at` off the book.
+	 * @returns the edition taken off
+	 */
+	removeEdition(at: number): Edition {
+		const ed = this.editionAt(at);
+		this.editions = this.editions.filter(x => x !== ed);
+		return ed;
+	}
+
+	/** The edition at `at`; throws when there is none. */
+	editionAt(at: number): Edition {
+		const ed = this.editions[at];
+		if (!ed) throw new Error(`${this.title} has no edition ${at + 1}`);
+		return ed;
+	}
+
 	// ------------------------------------------------------------------ what it is
 	/**
 	 * Its own id in an external catalog ("hardcover"), or null; its editions have ids of their own.
