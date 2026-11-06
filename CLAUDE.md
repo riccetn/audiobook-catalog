@@ -137,7 +137,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       both read the shelf's books with `readShelfBooks` and plan with `planFor`, which never sends an edition `HardcoverClient.notAudio` (`reading_format_id`) calls a print book or an ebook and lists yours with `yourNotAudio`; `bookRecord`, which `HardcoverSource` uses too, `read`, `lookups`/`addIds`, `planExport`)
       and `AudiobookdbSync` (finds your books (`find`: by their AudiobookDB id, else their own editions' ASINs), then with the key your Read shelf (`readShelf`) as
       incoming books (`incoming`: the release that is yours, else a lone one; none of several, so not `addable`); for a series or an author only that part
-      (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids), `planExport` (every book on Read, as everything in the catalog counts as
+      (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids, and a release's ASINs by site where the edition has none there), `planExport` (every book on Read, as everything in the catalog counts as
       read; a book on another exclusive shelf, To Listen or Currently Listening, is left alone; Read is the Listened shelf); add-only: never takes a book off a
       shelf, makes a shelf or edits AudiobookDB's catalog), and `AudibleSync` (a series only, `PARTS`: no shelves or key, so `plan` is null and
       nothing is sent; reads the series on its books' Audible site (`siteOf`), by the series' ASIN there or `findSeries`, its `relationships`
@@ -149,7 +149,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
       (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the
       proxy, by an Audible site's ASIN on that site, `isSite`; an Amazon site's ASIN is that site's alone, so never asked of Audible; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
-      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the form's authors; ASINs it lists aren't taken, as it doesn't say their site;
+      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the form's authors; a release's ASINs under the sites its links name (`category.url`, `AudiobookdbClient.asinsBySite`);
       `book`, `minutes`), `HardcoverSource` (with the token: its books, and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
       `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
       sources, with the fetch, the clients whose key is saved and the catalog proxy passed in: the candidates in order own, also, fallback (a fallback only when

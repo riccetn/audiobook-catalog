@@ -3479,6 +3479,52 @@ test('AudiobookdbClient sends your key only with what acts for your account, wai
 	await assert.rejects(old.client.shelves(), /deploy it again \(make deploy-server\) to bring it up to date/);
 });
 
+test("AudiobookDB's release links name each ASIN's site, and an edition gains its ASIN there when it has none", () => {
+	const link = (itemId, url, title = 'Audible') => ({itemId, category: {title, url}});
+	const release = {
+		id: 'RlsSaltRd001',
+		external: [
+			link('B0SALTRDUK', 'https://www.audible.co.uk'),
+			link('B0SALTRDAM', 'https://www.amazon.com', 'Amazon'),
+			link('B0SALTRDUK', 'https://www.audible.co.uk'),
+			link('B0SALTRD99', 'https://example.org', 'Other'),
+			link('not an asin', 'https://www.audible.com'),
+		],
+	};
+	assert.deepEqual(AudiobookdbClient.asinsBySite(release), {
+		'audible.co.uk': 'B0SALTRDUK',
+		'amazon.com': 'B0SALTRDAM',
+	});
+	assert.deepEqual(AudiobookdbClient.asins(release), ['B0SALTRDUK', 'B0SALTRDAM']);
+	const found = {
+		asin: new Map(),
+		books: new Map([['SaltRoad0001', {id: 'SaltRoad0001', releases: [release]}]]),
+	};
+	const mine = Bs([
+		{
+			t: 'Salt Road',
+			a: ['Ann Vale'],
+			ext: {audiobookdb: 'SaltRoad0001'},
+			e: [{ext: {audiobookdb: 'RlsSaltRd001', 'amazon.com': 'B0KINDLE01'}}],
+		},
+		// another of your editions has the UK ASIN: it isn't this one's to gain
+		{t: 'Salt Road (UK)', a: ['Ann Vale'], e: [{ext: {'audible.co.uk': 'B0SALTRDUK'}}]},
+	]);
+	// its amazon.com ASIN stays, and the UK one is the other edition's: nothing to gain
+	assert.deepEqual(AudiobookdbSync.addIds(mine, found), []);
+	assert.deepEqual(mine[0].editions[0].external, {'amazon.com': 'B0KINDLE01', audiobookdb: 'RlsSaltRd001'});
+	mine[1].editions[0].external = {'audible.co.uk': 'B0OTHERUK1'};
+	assert.deepEqual(
+		AudiobookdbSync.addIds(mine, found).map(b => b.title),
+		['Salt Road'],
+	);
+	assert.deepEqual(mine[0].editions[0].external, {
+		'audible.co.uk': 'B0SALTRDUK',
+		'amazon.com': 'B0KINDLE01',
+		audiobookdb: 'RlsSaltRd001',
+	});
+});
+
 test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids found (never a box set's book on a title)", () => {
 	const {books} = audiobookdbState();
 	const shelves = audiobookdbState().shelves;
@@ -3513,7 +3559,8 @@ test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids f
 		ext: {audiobookdb: 'Tidewater001'},
 		e: [
 			{
-				ext: {audiobookdb: 'RlsTidewatr1'},
+				// its ASIN under the site its link names
+				ext: {'audible.com': 'B0TIDEWAT1', audiobookdb: 'RlsTidewatr1'},
 				n: ['Dana Fenwick'],
 				p: ['Gullwing Audio'],
 				d: '2020-02-02',
@@ -5319,7 +5366,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 		/^Error: no catalog has a book with ASIN B0LANTERNU/,
 	);
 	assert.ok(!proxy.sent.slice(before).some(r => r.startsWith('audible/')), 'Audible is not asked about it');
-	// an AudiobookDB release, with its book; its ASIN isn't taken, as AudiobookDB doesn't say which site it is on
+	// an AudiobookDB release, with its book, and its ASIN under the site its link names
 	const release = await lookup.find('https://audiobookdb.org/releases/RlsLntrnUS01');
 	assert.deepEqual(plain(release), {
 		t: 'The Lantern Keeper',
@@ -5330,7 +5377,9 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 		ext: {audiobookdb: 'LnTrnKpr2xYz'},
 		e: [
 			{
-				ext: {audiobookdb: 'RlsLntrnUS01'},
+				// the title Audible, asked by that ASIN, has it under (the form keeps it only when it differs)
+				t: 'The Lantern Keeper',
+				ext: {'audible.com': 'B0LANTERN2', audiobookdb: 'RlsLntrnUS01'},
 				isbn: '9780000000019',
 				n: ['Hollis Marr', 'Dana Fenwick'],
 				p: ['Gullwing Audio'],

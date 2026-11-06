@@ -4618,7 +4618,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 				[{'audible.com': 'B0LANTERN1', audiobookdb: 'RlsLntrnHrs1'}],
 			],
 			['Brine Tide', {audiobookdb: 'BrineTide001'}, [{'audible.com': 'B0BRINETD1', audiobookdb: 'RlsBrineUS01'}]],
-			['Tidewater', {audiobookdb: 'Tidewater001'}, [{audiobookdb: 'RlsTidewatr1'}]],
+			['Tidewater', {audiobookdb: 'Tidewater001'}, [{'audible.com': 'B0TIDEWAT1', audiobookdb: 'RlsTidewatr1'}]],
 		],
 	);
 	// the covers: Lantern Hours' book's (its release has none), Tidewater's release's; Brine Tide has none
@@ -4859,7 +4859,15 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 			[
 				'Tidewater',
 				'1',
-				[[{audiobookdb: 'RlsTidewatr1'}, ['Dana Fenwick'], '2020-02-02', ['Gullwing Audio'], 570]],
+				[
+					[
+						{'audible.com': 'B0TIDEWAT1', audiobookdb: 'RlsTidewatr1'},
+						['Dana Fenwick'],
+						'2020-02-02',
+						['Gullwing Audio'],
+						570,
+					],
+				],
 			],
 		],
 	);

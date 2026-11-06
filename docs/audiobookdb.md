@@ -65,6 +65,14 @@ and comparing again shows what is still missing, as nothing already there is add
 Nothing is ever changed or removed on AudiobookDB: no book is taken off a shelf, no shelf is made, and
 AudiobookDB's own catalog (its books, people and series) is never edited.
 
+## ASINs
+
+A release's links on AudiobookDB name the site each of its ASINs is on, so a release's ASINs are kept under
+those sites (an audible.com link as `audible.com`, an audible.co.uk one as `audible.co.uk`): when _Fill in from
+another catalog_ fills in a release, when **Compare** or the _Edit_ page takes one, and with the ids found for an
+edition of yours that is that release, where it has no ASIN on that site yet. An ASIN another of your editions
+already has stays that one's.
+
 ## Covers
 
 AudiobookDB has a cover for most books and releases. The address of its image can't be worked out from the

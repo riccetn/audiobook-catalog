@@ -3,6 +3,7 @@
 // give it a fake. Your API key, when saved, is sent only with what acts for your account (who you are, your
 // shelves, putting a book on one); the proxy passes it on to those paths alone, and refuses it anywhere else.
 import {Text} from './text.js';
+import {ExternalCatalog} from './external-catalog.js';
 import {CatalogClient} from './catalog-client.js';
 import type {Unchecked} from './text.js';
 import type {CatalogFetch, Pause} from './catalog-client.js';
@@ -179,18 +180,44 @@ export class AudiobookdbClient extends CatalogClient {
 	}
 
 	/**
-	 * The ASINs an AudiobookDB release has on Audible (AudiobookDB doesn't say which site).
+	 * The ASINs an AudiobookDB release has on Audible (or Amazon), on any site, as its links list them.
 	 */
 	static asins(release: Unchecked): string[] {
-		return (Array.isArray(release.external) ? release.external : [])
-			.filter(
-				(x: unknown) =>
-					Text.isObject(x) &&
-					Text.isObject(x.category) &&
-					x.category.title === 'Audible' &&
-					typeof x.itemId === 'string',
-			)
-			.map((x: Unchecked) => x.itemId.trim().toUpperCase())
-			.filter((a: string) => /^[A-Z0-9]{10}$/.test(a));
+		return [...new Set(AudiobookdbClient.asinLinks(release).map(x => x.asin))];
+	}
+
+	/**
+	 * The ASINs of an AudiobookDB release by their site, from its links: each link's category names the site
+	 * its ASIN is on (`category.url`, `https://www.audible.co.uk`), and an ASIN is that site's alone. A link
+	 * whose site isn't a catalog's is left out; the first ASIN of a site is taken.
+	 */
+	static asinsBySite(release: Unchecked): Record<string, string> {
+		const out: Record<string, string> = {};
+		for (const {site, asin} of AudiobookdbClient.asinLinks(release)) if (site && !out[site]) out[site] = asin;
+		return out;
+	}
+
+	/** A release's ASIN links, each with its site's ExternalCatalog key (null when its site isn't one). */
+	static asinLinks(release: Unchecked): {site: string | null; asin: string}[] {
+		const out: {site: string | null; asin: string}[] = [];
+		for (const x of Array.isArray(release.external) ? release.external : []) {
+			if (!Text.isObject(x) || !Text.isObject(x.category) || typeof x.itemId !== 'string') continue;
+			const asin = x.itemId.trim().toUpperCase();
+			if (!/^[A-Z0-9]{10}$/.test(asin)) continue;
+			const site = AudiobookdbClient.siteOf(x.category.url);
+			if (site || x.category.title === 'Audible') out.push({site, asin});
+		}
+		return out;
+	}
+
+	/** The ASIN site (`audible.de`, `amazon.com`) an address is on; null when it is no Audible or Amazon site. */
+	static siteOf(url: unknown): string | null {
+		let host: string;
+		try {
+			host = new URL(String(url)).hostname.replace(/^www\./, '').toLowerCase();
+		} catch {
+			return null;
+		}
+		return ExternalCatalog.family(host) === 'asin' && ExternalCatalog.get(host) ? host : null;
 	}
 }
