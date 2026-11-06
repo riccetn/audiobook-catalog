@@ -60,6 +60,11 @@ export let ASKING: Promise<void> = Promise.resolve();
 export let TAKEN: Set<string> = new Set();
 /** The new books picked, by their place in the review's: the catalog (its place) each is added as. */
 export let FRESH_PICKS: Map<number, number> = new Map();
+/**
+ * The missing books picked (the books of the series the catalogs list, by their place in the review's): the
+ * catalog (its place) each is added as, and the book as read from it (null while it is being read).
+ */
+export let MISSING_PICKS: Map<number, {source: number; book: Book | null}> = new Map();
 /** The catalogs (by place) whose ids found for the series and its people are kept. */
 export let INFO_PICKS: Set<number> = new Set();
 /** The series' books, in series order, as the page has changed them. */
@@ -481,6 +486,11 @@ const CATALOG_MARKS: Record<string, string> = {
 	wikidata: 'WD',
 };
 
+/** The catalogs whose site's `/favicon.ico` is broken: the icon their pages name instead, by group. */
+const FAVICONS: Record<string, string> = {
+	hardcover: 'https://assets.hardcover.app/static/favicon.ico',
+};
+
 /**
  * A small icon for an external catalog (`catalog`, its key or any of its sites'): its site's favicon, else
  * (when that can't be loaded) its mark in its own color, which CSS draws.
@@ -488,16 +498,17 @@ const CATALOG_MARKS: Record<string, string> = {
 export function catalogIcon(catalog: string): HTMLElement {
 	const group = ExternalCatalog.groupOf(catalog)?.key || catalog;
 	const home = ExternalCatalog.home(catalog);
+	const src = FAVICONS[group] || (home && `${home}/favicon.ico`);
 	const icon = buildElement('span', {
-		class: home ? `catIcon cat-${group} favicon` : `catIcon cat-${group}`,
+		class: src ? `catIcon cat-${group} favicon` : `catIcon cat-${group}`,
 		'data-mark': CATALOG_MARKS[group] || group.slice(0, 2),
 		'aria-hidden': 'true',
 	});
-	if (home)
+	if (src)
 		fillElement(
 			icon,
 			buildElement('img', {
-				src: `${home}/favicon.ico`,
+				src,
 				alt: '',
 				referrerpolicy: 'no-referrer',
 				decoding: 'async',
@@ -736,20 +747,13 @@ function drawCatalogPicks(choices: CatalogChoice[], setSkipped: (catalog: string
 	);
 }
 
-/** What the catalogs read, the books of the series they have that aren't here, and the ids they found. */
+/** What the catalogs read, and the ids they found. */
 function drawCatalogFound() {
 	const run = RUN;
 	fillElement(byId('catalogNotes'), ...(run ? run.notes.map(n => buildElement('li', {}, spell(n))) : []));
 	if (!run) return fillElement(byId('catalogFound'));
 	fillElement(
 		byId('catalogFound'),
-		...run.review.missing.map(({source, titles}) =>
-			buildElement(
-				'p',
-				{class: 'hint'},
-				spell(`On ${run.labels[source]}, not in your catalog: ${titles.join('; ')}.`),
-			),
-		),
 		...run.review.infoIds.map(({source, ids}) =>
 			buildElement(
 				'label',
@@ -772,11 +776,75 @@ function drawCatalogFound() {
 	);
 }
 
-/** The books none of yours are, each with Add (and which catalog's, when several have it). */
+/** The catalog `source` (by place) picks for a new book, when several have it: a select of them. */
+function sourceSelect(
+	id: string,
+	from: {source: number}[],
+	picked: number,
+	pick: (source: number) => void,
+	run: CatalogRun,
+): HTMLElement {
+	return buildElement(
+		'select',
+		{id, onchange: (e: Event) => pick(Number((e.target as HTMLSelectElement).value))},
+		...from.map(f =>
+			buildElement(
+				'option',
+				{value: String(f.source), selected: f.source === picked},
+				`as ${run.labels[f.source]} has it`,
+			),
+		),
+	);
+}
+
+/** A missing book's line: its number and title, and once read its authors. */
+function missingLine(entry: {title: string; number?: string}, book: Book | null): string {
+	const title = book ? book.title : entry.title;
+	const number = book ? book.number || entry.number : entry.number;
+	return `${number ? `${number}. ` : ''}${title}${book && book.authors.length ? ` by ${book.authors.join(', ')}` : ''}`;
+}
+
+/**
+ * Pick a missing book to add as `source` has it: read from that catalog first when its comparison didn't
+ * (only now that it is to be added). One that can't be read is unticked again, saying why.
+ */
+async function pickMissing(n: number, source: number) {
+	const run = RUN;
+	if (!run) return;
+	MISSING_PICKS.set(n, {source, book: null});
+	drawNewBooks();
+	let book: Book | null = null,
+		problem = '';
+	try {
+		book = await run.missingBook(n, source);
+		if (!book) problem = `${run.labels[source]} doesn't have it after all`;
+	} catch (exc) {
+		problem = Text.errorText(exc);
+	}
+	// unticked, or ticked as another catalog's, while it was read
+	const now = MISSING_PICKS.get(n);
+	if (RUN !== run || !now || now.source !== source || now.book) return;
+	if (book) MISSING_PICKS.set(n, {source, book});
+	else {
+		MISSING_PICKS.delete(n);
+		showIoStatus(
+			spell(`Couldn't read ${run.review.missing[n].title} from ${run.labels[source]}: ${problem}`),
+			true,
+		);
+	}
+	drawNewBooks();
+	showChangeCount();
+}
+
+/**
+ * The books none of yours are, each a card with Add (and which catalog's, when several have it): those on
+ * your shelves there, then the books of the series they list, which are read only when ticked.
+ */
 function drawNewBooks() {
 	const run = RUN;
 	const fresh = run ? run.review.fresh : [];
-	if (!run || !fresh.length) return fillElement(byId('newBooks'));
+	const missing = run ? run.review.missing : [];
+	if (!run || (!fresh.length && !missing.length)) return fillElement(byId('newBooks'));
 	fillElement(
 		byId('newBooks'),
 		buildElement('h2', {class: 'editBooksTitle'}, spell('Not in your catalog')),
@@ -788,6 +856,11 @@ function drawNewBooks() {
 		...fresh.map((book, n) => {
 			const picked = FRESH_PICKS.get(n);
 			const from = book.from.find(f => f.source === picked) || book.from[0];
+			const pick = (source: number) => {
+				FRESH_PICKS.set(n, source);
+				drawNewBooks();
+				showChangeCount();
+			};
 			return buildElement(
 				'div',
 				{class: picked === undefined ? 'editNew' : 'editNew picked', id: `fresh-${n}`},
@@ -799,34 +872,59 @@ function drawNewBooks() {
 						id: `fresh-${n}-add`,
 						checked: picked !== undefined,
 						onchange: (e: Event) => {
-							if ((e.target as HTMLInputElement).checked) FRESH_PICKS.set(n, from.source);
-							else FRESH_PICKS.delete(n);
-							drawNewBooks();
-							showChangeCount();
+							if ((e.target as HTMLInputElement).checked) pick(from.source);
+							else {
+								FRESH_PICKS.delete(n);
+								drawNewBooks();
+								showChangeCount();
+							}
 						},
 					}),
 					` Add ${from.line}`,
 				),
 				book.from.length > 1
-					? buildElement(
-							'select',
-							{
-								id: `fresh-${n}-from`,
-								onchange: (e: Event) => {
-									FRESH_PICKS.set(n, Number((e.target as HTMLSelectElement).value));
-									drawNewBooks();
-									showChangeCount();
-								},
-							},
-							...book.from.map(f =>
-								buildElement(
-									'option',
-									{value: String(f.source), selected: f.source === from.source},
-									`as ${run.labels[f.source]} has it`,
-								),
-							),
-						)
+					? sourceSelect(`fresh-${n}-from`, book.from, from.source, pick, run)
 					: buildElement('span', {class: 'hint'}, ` (${run.labels[from.source]})`),
+			);
+		}),
+		...missing.map((entry, n) => {
+			const picked = MISSING_PICKS.get(n);
+			const from = entry.from.find(f => f.source === picked?.source) || entry.from[0];
+			const reading = !!picked && !picked.book;
+			return buildElement(
+				'div',
+				{class: picked ? 'editNew picked' : 'editNew', id: `missing-${n}`},
+				buildElement(
+					'label',
+					{class: 'editCheck'},
+					buildElement('input', {
+						type: 'checkbox',
+						id: `missing-${n}-add`,
+						checked: !!picked,
+						onchange: (e: Event) => {
+							if ((e.target as HTMLInputElement).checked) void pickMissing(n, from.source);
+							else {
+								MISSING_PICKS.delete(n);
+								drawNewBooks();
+								showChangeCount();
+							}
+						},
+					}),
+					` Add ${missingLine(entry, picked?.book || null)}`,
+				),
+				entry.from.length > 1
+					? sourceSelect(
+							`missing-${n}-from`,
+							entry.from,
+							from.source,
+							source => void pickMissing(n, source),
+							run,
+						)
+					: null,
+				from.url ? outLink(from.url, run.labels[from.source], run.keys[from.source]) : null,
+				reading
+					? buildElement('span', {class: 'hint'}, spell(`Reading it from ${run.labels[from.source]}…`))
+					: null,
 			);
 		}),
 	);
@@ -872,6 +970,7 @@ export function askCatalogs(): Promise<void> {
 		);
 		TAKEN = new Set();
 		FRESH_PICKS = new Map();
+		MISSING_PICKS = new Map();
 		INFO_PICKS = new Set();
 		drawCatalogFound();
 		drawNewBooks();
@@ -1134,6 +1233,12 @@ export function changes(): [string, string][] {
 			const from = run.review.fresh[n] && run.review.fresh[n].from.find(f => f.source === source);
 			if (from) out.push([spell('New book'), `${from.line}, as ${run.labels[source]} has it`]);
 		}
+		for (const [n, {source, book}] of MISSING_PICKS)
+			if (book && run.review.missing[n])
+				out.push([
+					spell('New book'),
+					`${missingLine(run.review.missing[n], book)}, as ${run.labels[source]} has it`,
+				]);
 		for (const source of INFO_PICKS)
 			out.push([run.labels[source], spell('Keep the ids it found for the series and people')]);
 	}
@@ -1316,6 +1421,7 @@ export async function save() {
 	let added = 0;
 	const run = RUN;
 	if (run) for (const [n, source] of FRESH_PICKS) added += (run.addFresh(n, source)?.added || []).length;
+	if (run) for (const {book} of MISSING_PICKS.values()) if (book) added += run.addMissing(book).added.length;
 	const parts: string[] = [];
 	let newId: string | null = null;
 	if (series) {
@@ -1402,6 +1508,7 @@ function startDrafts(books: Book[]) {
 	OPEN_PANEL = null;
 	TAKEN = new Set();
 	FRESH_PICKS = new Map();
+	MISSING_PICKS = new Map();
 	INFO_PICKS = new Set();
 	setReviewing(false);
 	DRAFTS = books.map(b => ({id: b.id as string, before: b.clone(), book: b.clone(), error: ''}));

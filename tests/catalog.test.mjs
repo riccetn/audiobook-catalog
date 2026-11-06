@@ -4676,7 +4676,12 @@ test("the Edit series page's review: each book's values and entries from a catal
 		incoming,
 		comparison: Comparison.compare(catalog, incoming),
 		notAudio: [],
-		missing: ['Gull Song'],
+		// Gull Song is a new book already; Wren Deep only listed in the series there
+		missing: [
+			{title: 'Gull Song', number: '3'},
+			{title: 'Wren Deep', number: '4', url: 'https://hardcover.app/books/wren-deep', id: 'wren-deep'},
+			{title: 'Wren Deep', number: '04'},
+		],
 		infoIds: [],
 		opts: {},
 	};
@@ -4702,7 +4707,11 @@ test("the Edit series page's review: each book's values and entries from a catal
 		review.fresh.map(f => f.from.map(x => [x.source, x.at])),
 		[[[0, 1]]],
 	);
-	assert.deepEqual(review.missing, [{source: 0, titles: ['Gull Song']}]);
+	assert.deepEqual(
+		review.missing,
+		[{title: 'Wren Deep', number: '4', from: [{source: 0, at: 1, url: 'https://hardcover.app/books/wren-deep'}]}],
+		'each once, and not the new books',
+	);
 
 	// taking the catalog's book in: its id and edition details, not the excluded edition; another book is no match
 	const taken = BookReview.take(salt, incoming[0], catalog.exclusions, {}, true);
@@ -5753,7 +5762,18 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 	assert.deepEqual(result.warnings, [
 		'Salt Road: audible.com has 2 editions of book 1 and none has an ASIN of yours; give yours its ASIN to fill it in',
 	]);
-	assert.deepEqual(result.missing, ['3. Gull Song'], 'not the placeholder, the box set or the companion');
+	assert.deepEqual(
+		result.missing.map(m => [
+			m.number,
+			m.title,
+			m.url,
+			m.book.series,
+			m.book.number,
+			m.book.editions.map(ed => ed.ids('asin')),
+		]),
+		[['3', 'Gull Song', 'https://www.audible.com/pd/B0GULLSNG3', 'Gull Isle', '3', [['B0GULLSNG3']]]],
+		'not the placeholder, the box set or the companion; the book to add at hand, with its one edition',
+	);
 	assert.equal(
 		sync.summary(result, catalog, {kind: 'series', name: 'Gull Isle', label: 'the series “Gull Isle”'}),
 		'Only the series “Gull Isle”: 3 books in this catalog, 4 books in the series on audible.com',
@@ -5842,7 +5862,10 @@ test("AudibleSync reads a series by its books when Audible's answer for it has n
 	};
 	const client = new AudibleClient(untitled, '', async () => {});
 	const result = await new AudibleSync(client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
-	assert.deepEqual(result.missing, ['1. Salt Road', '3. Gull Song', '4. Brine Tide']);
+	assert.deepEqual(
+		result.missing.map(m => `${m.number}. ${m.title}`),
+		['1. Salt Road', '3. Gull Song', '4. Brine Tide'],
+	);
 	assert.equal(result.numbers, 4);
 	// a series the site doesn't have is still none
 	const stub = async route =>

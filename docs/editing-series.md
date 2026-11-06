@@ -63,10 +63,11 @@ What they say is shown on the books, and nothing of it is taken until you pick i
   doesn't sell.
 
 Under the books, **Not in your catalog** lists the catalogs' books that none of yours are, each once with the
-catalogs that have it: tick one to add it when you save (and pick whose, when several have it). _Other
-catalogs_ also names the books a catalog lists in the series that it didn't read (so they can't be added from
-here), and offers to keep the ids the
-catalogs found for the series and its people where they have none.
+catalogs that have it: tick one to add it when you save (and pick whose, when several have it). The books a
+catalog only lists in the series (on AudiobookDB, those not on your shelves; on Audible, the numbers you have
+none of) are there too, with a link to their page. AudiobookDB's are read from it only when you tick one, so
+ticking may take a moment; one it can't read is unticked again, saying why. _Other catalogs_ offers to keep the
+ids the catalogs found for the series and its people where they have none.
 
 An edition you keep out of imports (an `Edition` entry, as **Remove edition** below puts) offers nothing: its
 values aren't shown beside the fields and taking its book leaves it out. A book lists those editions behind

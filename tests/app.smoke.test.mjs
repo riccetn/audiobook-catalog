@@ -4377,7 +4377,7 @@ test("the Edit series page compares a series' books with Hardcover when it opens
 	// every catalog set up is asked, each with its site's favicon for an icon; those that can't be say why
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/<span class="catIcon cat-hardcover favicon" data-mark="Hc" aria-hidden="true"><img src="https:\/\/hardcover\.app\/favicon\.ico" alt="" referrerpolicy="no-referrer" decoding="async"><\/span>/,
+		/<span class="catIcon cat-hardcover favicon" data-mark="Hc" aria-hidden="true"><img src="https:\/\/assets\.hardcover\.app\/static\/favicon\.ico" alt="" referrerpolicy="no-referrer" decoding="async"><\/span>/,
 	);
 	// a favicon that can't be loaded leaves the catalog's mark, which CSS draws
 	const hcIcon = els.catalogPicks.querySelector('.cat-hardcover');
@@ -4686,7 +4686,10 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 		/<a href="https:\/\/audiobookdb\.org\/[^"]+" target="_blank" rel="noopener" class="editOut"><span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB ↗<\/a>/,
 	);
 	assert.match(els.newBooks.innerHTML, /Add Tidewater — Ann Vale/);
-	assert.match(els.catalogFound.textContent, /On AudiobookDB, not in your catalog: Gull Song\./);
+	// a book only listed in the series there is a card too, read from AudiobookDB only once ticked
+	assert.match(els['missing-0'].textContent, /^ Add 3\. Gull Song/);
+	assert.match(els['missing-0'].innerHTML, /href="https:\/\/audiobookdb\.org\/[^"]*GullSong0001"/);
+	assert.ok(!abdb.sent.some(s => s.path.startsWith('books/GullSong0001')), 'not read before it is ticked');
 	// the ids it found for a book not on your shelves there, to take into the book's form
 	assert.match(els['book-0-ids-0'].textContent, /^Found on AudiobookDB: .*BrineTide001/);
 	await els['book-0-ids-0-take'].listeners.click[0]();
@@ -4700,6 +4703,28 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	);
 	assert.ok(!abdb.sent.some(s => s.method === 'POST'), 'nothing is sent');
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
+	els['missing-0-add'].checked = true;
+	els['missing-0-add'].listeners.change[0]({target: els['missing-0-add']});
+	await idle();
+	assert.ok(abdb.sent.some(s => s.path.startsWith('books/GullSong0001')));
+	assert.match(els['missing-0'].textContent, /^ Add 3\. Gull Song by Ann Vale/);
+	assert.ok(await saveEdit({els}));
+	const saved = await kept(storage);
+	assert.deepEqual(
+		saved.books.map(b => [b.t, b.s, b.sn, b.ext, (b.e || []).map(e => e.ext)]),
+		[
+			['Lantern Hours', undefined, undefined, undefined, [{'audible.com': 'B0LANTERN1'}]],
+			[
+				'Brine Tide',
+				'Gull Isle',
+				'2',
+				{audiobookdb: 'BrineTide001'},
+				[{'audible.com': 'B0BRINETD1', audiobookdb: 'RlsBrineUS01'}],
+			],
+			['Gull Song', 'Gull Isle', '3', {audiobookdb: 'GullSong0001'}, [{audiobookdb: 'RlsGullSng01'}]],
+		],
+		'the missing book ticked is added as AudiobookDB has it',
+	);
 
 	// an author's books: only theirs are looked up
 	const byHale = await bootAsked('#author=R.+T.+Hale', {...options, files: null});
@@ -4746,7 +4771,11 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 		els.catalogPicks.innerHTML,
 		/id="catalog-audiobookdb"> <span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB/,
 	);
-	assert.match(els.catalogFound.textContent, /On Audible, not in your catalog: 1\. Salt Road; 3\. Gull Song\./);
+	// the series' books not in the catalog, as cards: Audible's answer has what adding one takes
+	assert.deepEqual(
+		[0, 1].map(n => els[`missing-${n}`].textContent.match(/^ Add ([^↗]*?)Audible ↗/)[1]),
+		['1. Salt Road', '3. Gull Song'],
+	);
 	assert.ok(behind.sent.every(r => r.startsWith('audible/audible.com/catalog/')));
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
 
@@ -4764,6 +4793,11 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	assert.match(els.catalogFound.textContent, /Keep the ids Audible found for Gull Isle/);
 	els['info-0'].checked = true;
 	els['info-0'].listeners.change[0]({target: els['info-0']});
+	const sent = behind.sent.length;
+	els['missing-1-add'].checked = true;
+	els['missing-1-add'].listeners.change[0]({target: els['missing-1-add']});
+	await idle();
+	assert.equal(behind.sent.length, sent, 'nothing more is read');
 	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
 	assert.deepEqual(
@@ -4771,13 +4805,14 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 		[
 			['The Lantern Keeper', [[{'audible.com': 'B0LANTERN2'}, ['Hollis Marr', 'Dana Fenwick'], 612]]],
 			['Brine Tide', [[{'audible.com': 'B0BRINETD4'}, ['Dana Fenwick'], 480]]],
+			['Gull Song', [[{'audible.com': 'B0GULLSNG3'}, undefined, undefined]]],
 		],
 	);
 	assert.deepEqual(
 		[saved.seriesInfo['Gull Isle'].ext, saved.seriesInfo['Gull Isle'].total],
 		[{'audible.com': 'B0SERIES02'}, 4],
 	);
-	assert.match(els.ioStatus.textContent, /Saved 2 books, kept ids found for 1 series or person\./);
+	assert.match(els.ioStatus.textContent, /Saved 2 books, added 1 book, kept ids found for 1 series or person\./);
 
 	// an edition you keep out of imports is listed behind a link, and offers nothing
 	const out = await bootAsked('#series=Gull+Isle', {

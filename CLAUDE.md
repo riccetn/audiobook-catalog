@@ -167,7 +167,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     (each source's picked books merged in turn, then the picked values patched; ids found are kept by the page)).
     `BookReview` (the Edit page's view of them, book by book: `compare(catalog, sources, ids)` gives per book id the `fields` with each catalog's
     values (`FieldChoices`, an edition's by its id), `entries` (a catalog's book that is yours: `url`, `gains`, `edition`, its `excluded` editions),
-    `notFound` and `notAudio`, then `fresh`, `missing` and `infoIds`; editions an `Edition …` exclusion covers offer nothing (`without`);
+    `notFound` and `notAudio`, then `fresh`, `missing` (each once, without the `fresh` ones) and `infoIds`; editions an `Edition …` exclusion covers offer nothing (`without`);
     `take(book, theirs, exclusions, opts, withEdition)` merges a catalog's book into a copy, `withIds` its sync's `addIds`, `urlOf`).
     Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
     others bring them in with `import type {MergeReport} from './merger.js'`. A class declares its fields, with their types and doc comments, above its constructor.
@@ -232,11 +232,11 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   The other catalogs: on open `askCatalogs` (`ASKING`, which tests await) loads `edit-catalogs.js` with `import()` (only it loads the connectors) and,
   holding the whole catalog, `runCatalogs(kind, name, ids)` compares every `CatalogConnectors.SYNCS` whose `PARTS` has the kind, can be asked
   (`cantAsk`) and isn't unticked (`catalogChoices`, `setSkipped`, localStorage `audiobook-catalog-edit-skip`), giving a `CatalogRun` (`RUN`: `review`, a
-  `BookReview`; `take`, `idsFor`, `addFresh`, `keepInfoIds`). Each catalog is shown with its icon (`catalogIcon`: its site's `favicon.ico`, `ExternalCatalog.home`, else on an error its mark, `CATALOG_MARKS`,
+  `BookReview`; `take`, `idsFor`, `addFresh`, `keepInfoIds`). Each catalog is shown with its icon (`catalogIcon`: its site's `favicon.ico`, `ExternalCatalog.home` (`FAVICONS` where that one is broken), else on an error its mark, `CATALOG_MARKS`,
   which CSS draws). The page shows each catalog's values as chips beside the fields (`choiceChips`, ids
   `<field>-pick-<n>`), links (`catalogLinks`), what to Take (`catalogFinds`: ids and covers `book-<i>-ids-<source>`, a book's gains
   `book-<i>-take-<source>-<at>` with its edition apart, `TAKEN`), excluded editions behind a `<details>`, and under the books the new ones (`drawNewBooks`,
-  `FRESH_PICKS`) and the series' and people's ids (`INFO_PICKS`), which Save adds. Nothing is sent to a catalog.
+  `FRESH_PICKS`; and the books a catalog only lists in the series, `ShelfComparison.missing` (`MissingBook`, with the book when the comparison read it, else its id, read by the sync's `missingBook` only once ticked, `MISSING_PICKS`, `CatalogRun.missingBook`/`addMissing`)) and the series' and people's ids (`INFO_PICKS`), which Save adds. Nothing is sent to a catalog.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn` (only for `EVERY_BOOK` syncs),
   `<CATALOG>Key`/`KeySave`/`KeyRemove`/`KeyState`, `showKey`/`saveKeyOf`). The comparison an export file's import (`compareExport`), or a shelf sync's Compare

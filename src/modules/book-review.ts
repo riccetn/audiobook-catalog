@@ -4,6 +4,7 @@
 // editions), its editions a catalog says may not be audiobooks, and the editions it lists that you keep out
 // of imports; then the books none of yours are. It reads the comparisons and changes nothing; take() puts a
 // catalog's book into a copy of one of yours, as an import would.
+import {Text} from './text.js';
 import {Book} from './book.js';
 import type {Edition} from './edition.js';
 import {Merger} from './merger.js';
@@ -54,13 +55,18 @@ export interface ReviewedBook {
 	/** its editions the catalogs say may not be audiobooks */
 	notAudio: {source: number; note: NotAudio}[];
 }
+/**
+ * A book of the series the catalogs list that none of yours (nor of the new books) is, each once: its title and
+ * number as the first catalog has it, and each catalog's (by its place in that comparison's `missing`).
+ */
+export type MissingEntry = {title: string; number?: string; from: {source: number; at: number; url: string | null}[]};
 /** What the catalogs say about the books shown (by book id), and what they have besides. */
 export interface ReviewResult {
 	books: Map<string, ReviewedBook>;
 	/** the books none of yours are, each once with the catalogs that have it */
 	fresh: NewBook[];
-	/** each catalog's books of the series that aren't in the catalog (as it says them) */
-	missing: {source: number; titles: string[]}[];
+	/** the books of the series the catalogs list that aren't in the catalog, read only when added */
+	missing: MissingEntry[];
 	/** what the catalogs read on your shelves as something else */
 	otherNotAudio: {source: number; note: NotAudio}[];
 	/** ids found there for the series and people */
@@ -143,10 +149,36 @@ export class BookReview {
 		return {
 			books,
 			fresh: multi.fresh,
-			missing: sources.map(({result}, source) => ({source, titles: result.missing})).filter(m => m.titles.length),
+			missing: BookReview.missing(sources, multi.fresh),
 			otherNotAudio,
 			infoIds: sources.map(({result}, source) => ({source, ids: result.infoIds})).filter(x => x.ids.length),
 		};
+	}
+
+	/**
+	 * The books of the series the catalogs list and the catalog doesn't have, each once (the same number, else
+	 * the same title), but those among the new books (`fresh`), which are added as they are.
+	 */
+	static missing(sources: ReviewSource[], fresh: NewBook[]): MissingEntry[] {
+		const numberKey: (n: string | undefined) => string = n =>
+			!n ? '' : /^\d+(\.\d+)?$/.test(n.trim()) ? String(Number(n)) : n.trim().toLowerCase();
+		const same: (a: {title: string; number?: string}, b: {title: string; number?: string}) => boolean = (a, b) =>
+			a.number && b.number
+				? numberKey(a.number) === numberKey(b.number)
+				: Text.norm(a.title) === Text.norm(b.title);
+		const known = fresh.flatMap(f =>
+			f.from.map(({source, at}) => sources[source].result.incoming[at]).filter((b): b is Book => !!b),
+		);
+		const out: MissingEntry[] = [];
+		sources.forEach(({result}, source) =>
+			result.missing.forEach((m, at) => {
+				if (known.some(b => same(m, {title: b.title, ...(b.number ? {number: b.number} : {})}))) return;
+				let entry = out.find(e => same(e, m));
+				if (!entry) out.push((entry = {title: m.title, ...(m.number ? {number: m.number} : {}), from: []}));
+				if (!entry.from.some(f => f.source === source)) entry.from.push({source, at, url: m.url ?? null});
+			}),
+		);
+		return out;
 	}
 
 	/** A catalog's book without the editions `exclusions` keep out (itself when it has none of them). */

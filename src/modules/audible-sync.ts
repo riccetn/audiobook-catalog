@@ -16,7 +16,7 @@ import type {Book} from './book.js';
 import type {Catalog} from './catalog.js';
 import type {MergeOptions} from './merger.js';
 import type {Step} from './catalog-client.js';
-import type {ShelfPart, ShelfComparison, InfoId, NotAudio} from './shelf-sync.js';
+import type {ShelfPart, ShelfComparison, InfoId, NotAudio, MissingBook} from './shelf-sync.js';
 
 /**
  * A comparison with a series on Audible: the site asked, and how many books the series has there (whole numbers).
@@ -111,7 +111,7 @@ export class AudibleSync extends ShelfSync {
 			return book;
 		};
 		const incoming: Book[] = [];
-		const missing: string[] = [];
+		const missing: MissingBook[] = [];
 		const warnings: string[] = [];
 		const editionsYours: Book[] = [];
 		for (const [key, {number, products: editions}] of byNumber) {
@@ -138,7 +138,13 @@ export class AudibleSync extends ShelfSync {
 				!key.includes('-') &&
 				!mine.some(b => b.number && AudibleSync.numberKey(b.number) === key)
 			)
-				missing.push(`${number}. ${Text.tidy(best.title)}`);
+				missing.push({
+					title: Text.tidy(best.title),
+					number,
+					url: ExternalCatalog.url(site, 'edition', best.asin),
+					// its one edition there; with several, none, as which is yours can't be told
+					book: incomingOf(best, undefined, number, editions.length === 1),
+				});
 		}
 		const notAudio = await this.unsold(mine, site, products, step);
 		// a product's title is its site's, the title it was released under there

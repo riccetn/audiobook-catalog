@@ -17,7 +17,7 @@ import {ShelfSync} from './shelf-sync.js';
 import type {Unchecked} from './text.js';
 import type {Edition} from './edition.js';
 import type {Step} from './catalog-client.js';
-import type {ShelfPart, InfoId, PlanEntry, Sent} from './shelf-sync.js';
+import type {ShelfPart, InfoId, PlanEntry, Sent, MissingBook} from './shelf-sync.js';
 import type {AudiobookdbShelf} from './audiobookdb-client.js';
 import {Catalog} from './catalog.js';
 import type {NamedKind} from './catalog.js';
@@ -66,8 +66,8 @@ export interface AudiobookdbComparison {
 	plan: AudiobookdbPlan | null;
 	/** how many books your Read shelf has (in the scope asked for); null without your key */
 	onShelf: number | null;
-	/** the series' books on AudiobookDB that aren't in the catalog (a series only) */
-	missing: string[];
+	/** the series' books on AudiobookDB that aren't in the catalog (a series only), read when added (missingBook()) */
+	missing: MissingBook[];
 	/** none: AudiobookDB lists only audiobooks */
 	notAudio: never[];
 }
@@ -111,13 +111,16 @@ export class AudiobookdbSync extends ShelfSync {
 		}
 		const read = shelves ? AudiobookdbSync.readShelf(shelves) : null;
 		let wanted = read ? read.books : [];
-		const missing: string[] = [];
+		const missing: MissingBook[] = [];
 		if (part) {
 			const id = AudiobookdbSync.partId(part, mine, found);
 			let theirs: Unchecked[] = [];
+			// the series' books as it lists them, each with its number in it
+			let listed: Unchecked[] = [];
 			if (id) {
 				step(`Reading ${part.kind === 'series' ? 'the series' : 'the author'} ${part.name} on AudiobookDB`);
 				const answer = part.kind === 'series' ? await client.series(id) : await client.person(id);
+				if (answer && part.kind === 'series') listed = list(answer.books).filter(x => Text.isObject(x.book));
 				theirs = answer
 					? list(
 							part.kind === 'series'
@@ -139,8 +142,19 @@ export class AudiobookdbSync extends ShelfSync {
 			);
 			if (part.kind === 'series') {
 				const shelved = new Set(wanted.map(sb => sb.id));
-				for (const b of theirs)
-					if (!myIds.has(b.id) && !shelved.has(b.id) && tidyText(b.title)) missing.push(tidyText(b.title));
+				for (const x of listed)
+					if (
+						typeof x.book.id === 'string' &&
+						!myIds.has(x.book.id) &&
+						!shelved.has(x.book.id) &&
+						tidyText(x.book.title)
+					)
+						missing.push({
+							title: tidyText(x.book.title),
+							...(tidyText(x.ordinal) ? {number: tidyText(x.ordinal)} : {}),
+							url: ExternalCatalog.url('audiobookdb', 'book', x.book.id),
+							id: x.book.id,
+						});
 			}
 		}
 		const details = await AudiobookdbClient.each(
@@ -180,6 +194,25 @@ export class AudiobookdbSync extends ShelfSync {
 			missing,
 			notAudio: [],
 		};
+	}
+
+	/**
+	 * A book of the series AudiobookDB has and the catalog doesn't, read now that it is to be added: its book
+	 * with its one release (several, none, as which is yours can't be told), numbered as the series lists it.
+	 */
+	async missingBook(missing: MissingBook, part: ShelfPart): Promise<Book | null> {
+		if (missing.book) return missing.book;
+		if (!missing.id) return null;
+		const detail = await this.client.book(missing.id);
+		if (!detail) return null;
+		const releases = list(detail.releases);
+		const book = AudiobookdbSource.book(detail, releases.length === 1 ? releases[0] : null);
+		if (!book.title || !book.authors.length) return null;
+		if (part.kind === 'series' && book.series !== part.name) {
+			book.series = part.name;
+			if (missing.number) book.number = missing.number;
+		}
+		return book;
 	}
 
 	static notAdded(count: number): string {

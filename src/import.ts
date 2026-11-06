@@ -723,7 +723,10 @@ function shelfSections(compare: PendingCompare, sync: ShelfSync, result: ShelfCo
 					{},
 					spell(`In the series on ${label}, not in this catalog: ${result.missing.length}`),
 				),
-				messageList(result.missing, 100),
+				messageList(
+					result.missing.map(m => (m.number ? `${m.number}. ${m.title}` : m.title)),
+					100,
+				),
 			),
 		);
 	}

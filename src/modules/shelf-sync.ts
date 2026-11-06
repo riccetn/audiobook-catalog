@@ -53,6 +53,12 @@ export type NotAudio = {
 	url?: string | null;
 	maybe?: boolean;
 };
+/**
+ * A book of the series compared that the catalog has none of: its title (and number) there, its page there
+ * (`url`), and the book to add when the comparison read it (`book`), else its id there (`id`), which
+ * missingBook() reads it by, only when it is to be added.
+ */
+export type MissingBook = {title: string; number?: string; url?: string | null; book?: Book; id?: string};
 /** Your shelves on a catalog beside the catalog (compare()). */
 export interface ShelfComparison {
 	/** the books on your Read shelf beside the catalog's */
@@ -71,7 +77,7 @@ export interface ShelfComparison {
 	/** what putting your books there would do; null when it can't be known (no key) */
 	plan: SyncPlan | null;
 	/** the series' books there that aren't in the catalog (a series only) */
-	missing: string[];
+	missing: MissingBook[];
 	/** the editions of yours and on your shelves there that may not be audiobooks */
 	notAudio: NotAudio[];
 	/** the incoming books whose edition is yours there (found by its id), ticked at first */
@@ -132,6 +138,14 @@ export class ShelfSync {
 	 */
 	async compare(_catalog: Catalog, _step: Step, _part?: ShelfPart): Promise<ShelfComparison> {
 		throw new Error(`${this.label}: compare is not written`);
+	}
+
+	/**
+	 * A missing book of a comparison's (`missing`) as it is added: as it was read, else read now (by its id
+	 * there), in the series `part` names. null when the catalog doesn't have it after all.
+	 */
+	async missingBook(missing: MissingBook, _part: ShelfPart): Promise<Book | null> {
+		return missing.book || null;
 	}
 
 	/**

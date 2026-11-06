@@ -9,7 +9,7 @@ import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {CATALOG, savedKey, savedServer, catalogClient, showCatalogJob, whenSaved, type CatalogJob} from './store.js';
 import type {Book} from './modules/book.js';
 import type {MergeReport} from './modules/merger.js';
-import type {ShelfSync, ShelfComparison} from './modules/shelf-sync.js';
+import type {ShelfSync, ShelfComparison, ShelfPart} from './modules/shelf-sync.js';
 import type {CatalogEntry, ReviewResult} from './modules/book-review.js';
 
 type SyncClass = typeof ShelfSync;
@@ -81,9 +81,12 @@ export class CatalogRun {
 	/** what was read, and what couldn't be, one line each */
 	notes: string[];
 	review: ReviewResult;
+	/** the series or author compared */
+	part: ShelfPart;
 
-	constructor(sources: Compared[], notes: string[], ids: string[]) {
+	constructor(sources: Compared[], notes: string[], ids: string[], part: ShelfPart) {
 		this.sources = sources;
+		this.part = part;
 		this.labels = sources.map(s => s.sync.label);
 		this.keys = sources.map(s => s.sync.kind.CLIENT.CATALOG);
 		this.notes = notes;
@@ -117,6 +120,22 @@ export class CatalogRun {
 		if (!from) return null;
 		const {result} = this.sources[source];
 		return Merger.into(CATALOG, [result.incoming[from.at]], result.opts);
+	}
+
+	/**
+	 * The missing book `missing` (its place in the review's) as `source` has it, read from that catalog when
+	 * the comparison didn't (only now that it is to be added); null when the catalog doesn't have it after all.
+	 */
+	async missingBook(missing: number, source: number): Promise<Book | null> {
+		const from = this.review.missing[missing] && this.review.missing[missing].from.find(f => f.source === source);
+		if (!from) return null;
+		const {sync, result} = this.sources[source];
+		return sync.missingBook(result.missing[from.at], this.part);
+	}
+
+	/** Add a missing book (as missingBook() gave it) to the catalog, as an import would. */
+	addMissing(book: Book): MergeReport {
+		return Merger.into(CATALOG, [book], {});
 	}
 
 	/** Keep the ids a catalog found for the series and people, where they have none; how many gained one. */
@@ -163,5 +182,5 @@ export async function runCatalogs(kind: 'series' | 'author', name: string, ids: 
 		}
 	}
 	showCatalogJob(null);
-	return new CatalogRun(sources, notes, ids);
+	return new CatalogRun(sources, notes, ids, {kind, name});
 }
