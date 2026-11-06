@@ -235,7 +235,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   `BookReview`; `take`, `idsFor`, `addFresh`, `keepInfoIds`). Each catalog is shown with its icon (`catalogIcon`: its site's `favicon.ico`, `ExternalCatalog.home` (`FAVICONS` where that one is broken), else on an error its mark, `CATALOG_MARKS`,
   which CSS draws). The page shows each catalog's values as chips beside the fields (`choiceChips`, ids
   `<field>-pick-<n>`), links (`catalogLinks`), what to Take (`catalogFinds`: ids and covers `book-<i>-ids-<source>`, a book's gains
-  `book-<i>-take-<source>-<at>` with its edition apart, `TAKEN`), excluded editions behind a `<details>`, and under the books the new ones (`drawNewBooks`,
+  `book-<i>-take-<source>-<at>` with its edition apart, `TAKEN`), excluded editions behind a `<details>`, and among the books, in series order (`bookOrder`, yours by where they were when the page opened), the new ones (`newCards`,
   `FRESH_PICKS`; and the books a catalog only lists in the series, `ShelfComparison.missing` (`MissingBook`, with the book when the comparison read it, else its id, read by the sync's `missingBook` only once ticked, `MISSING_PICKS`, `CatalogRun.missingBook`/`addMissing`)) and the series' and people's ids (`INFO_PICKS`), which Save adds. Nothing is sent to a catalog.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn` (only for `EVERY_BOOK` syncs),

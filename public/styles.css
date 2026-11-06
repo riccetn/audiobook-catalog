@@ -2083,19 +2083,21 @@ button:focus {
 	cursor: pointer;
 	text-decoration: underline;
 }
-.editNewBooks {
-	margin: 0 0 1rem;
-}
 .editNew {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.4rem 0.8rem;
 	align-items: center;
 	padding: 0.6rem 0.8rem;
-	margin: 0 0 0.5rem;
+	margin: 0 0 1rem;
 	border: 1px dashed var(--line);
 	border-radius: 10px;
 	background: var(--card);
+}
+.editNewTag {
+	flex-basis: 100%;
+	font-size: 0.8rem;
+	color: var(--ink-soft);
 }
 .editNew.picked {
 	border-style: solid;

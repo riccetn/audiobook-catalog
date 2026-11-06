@@ -4396,8 +4396,13 @@ test("the Edit series page compares a series' books with Hardcover when it opens
 	);
 	assert.match(els.catalogNotes.textContent, /Hardcover: 1 book read\./);
 	assert.match(els['book-0'].innerHTML, /not found on Hardcover/);
-	assert.match(els.newBooks.innerHTML, /Add Tidewater — Ann Vale {2}\[Gull Isle #1\]/);
-	assert.doesNotMatch(els.newBooks.innerHTML + els.editBooks.innerHTML, /Paper Fen|Lantern Hours/);
+	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale {2}\[Gull Isle #1\]/);
+	assert.deepEqual(
+		[...els.editBooks.innerHTML.matchAll(/id="((?:book|fresh)-\d+)"/g)].map(m => m[1]),
+		['fresh-0', 'book-0'],
+		'book 1 before your book 2',
+	);
+	assert.doesNotMatch(els.editBooks.innerHTML, /Paper Fen|Lantern Hours/);
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')), 'nothing is sent');
 	assert.equal(els.changeCount.textContent, 'No changes yet', 'nothing is picked at first');
 
@@ -4479,7 +4484,7 @@ test("a series' and an author's page link to the Edit page, which old links to t
 	assert.deepEqual(get('DRAFTS.map(d => d.book.title)'), ['Brine Tide']);
 	assert.equal(els.b0_s.value, 'Gull Isle');
 	assert.match(els.catalogNotes.textContent, /Hardcover: 2 books read\./);
-	assert.match(els.newBooks.innerHTML, /Tidewater — Ann Vale/);
+	assert.match(els.editBooks.innerHTML, /Tidewater — Ann Vale/);
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
 	// the series typed on a book is saved with it, and Save goes back to the author's page
@@ -4685,9 +4690,9 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 		els['book-0'].innerHTML,
 		/<a href="https:\/\/audiobookdb\.org\/[^"]+" target="_blank" rel="noopener" class="editOut"><span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB ↗<\/a>/,
 	);
-	assert.match(els.newBooks.innerHTML, /Add Tidewater — Ann Vale/);
+	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale/);
 	// a book only listed in the series there is a card too, read from AudiobookDB only once ticked
-	assert.match(els['missing-0'].textContent, /^ Add 3\. Gull Song/);
+	assert.match(els['missing-0'].textContent, /^Not in your catalog Add 3\. Gull Song/);
 	assert.match(els['missing-0'].innerHTML, /href="https:\/\/audiobookdb\.org\/[^"]*GullSong0001"/);
 	assert.ok(!abdb.sent.some(s => s.path.startsWith('books/GullSong0001')), 'not read before it is ticked');
 	// the ids it found for a book not on your shelves there, to take into the book's form
@@ -4695,7 +4700,7 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	await els['book-0-ids-0-take'].listeners.click[0]();
 	assert.equal(get("DRAFTS[0].book.idOn('audiobookdb')"), 'BrineTide001');
 	assert.equal(get("DRAFTS[0].book.editions[0].idOn('audiobookdb')"), 'RlsBrineUS01');
-	assert.doesNotMatch(els.newBooks.innerHTML + els.editBooks.innerHTML, /Paper Fen|Lantern Hours/);
+	assert.doesNotMatch(els.editBooks.innerHTML, /Paper Fen|Lantern Hours/);
 	assert.ok(abdb.sent.some(s => s.path === 'series/SrsGullIsle1?include=books'));
 	assert.ok(
 		!abdb.sent.some(s => s.path === 'audiobooks/external/audible/B0LANTERN1'),
@@ -4707,7 +4712,7 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	els['missing-0-add'].listeners.change[0]({target: els['missing-0-add']});
 	await idle();
 	assert.ok(abdb.sent.some(s => s.path.startsWith('books/GullSong0001')));
-	assert.match(els['missing-0'].textContent, /^ Add 3\. Gull Song by Ann Vale/);
+	assert.match(els['missing-0'].textContent, /^Not in your catalog Add 3\. Gull Song by Ann Vale/);
 	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
 	assert.deepEqual(
@@ -4730,7 +4735,7 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	const byHale = await bootAsked('#author=R.+T.+Hale', {...options, files: null});
 	assert.deepEqual(byHale.get('DRAFTS.map(d => d.book.title)'), ['Lantern Hours']);
 	assert.match(byHale.els['book-0'].innerHTML, /AudiobookDB ↗/);
-	assert.doesNotMatch(byHale.els.newBooks.innerHTML, /Tidewater|Brine Tide/);
+	assert.doesNotMatch(byHale.els.editBooks.innerHTML, /Tidewater|Brine Tide/);
 });
 
 test("the Edit series page takes from Audible a book's edition when asked, and keeps the series' id found when ticked", async () => {
@@ -4773,8 +4778,13 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	);
 	// the series' books not in the catalog, as cards: Audible's answer has what adding one takes
 	assert.deepEqual(
-		[0, 1].map(n => els[`missing-${n}`].textContent.match(/^ Add ([^↗]*?)Audible ↗/)[1]),
+		[0, 1].map(n => els[`missing-${n}`].textContent.match(/^Not in your catalog Add ([^↗]*?)Audible ↗/)[1]),
 		['1. Salt Road', '3. Gull Song'],
+	);
+	// among yours, in series order
+	assert.deepEqual(
+		[...els.editBooks.innerHTML.matchAll(/id="((?:book|missing|fresh)-\d+)"/g)].map(m => m[1]),
+		['missing-0', 'book-0', 'missing-1', 'book-1'],
 	);
 	assert.ok(behind.sent.every(r => r.startsWith('audible/audible.com/catalog/')));
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
@@ -4894,7 +4904,7 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	);
 	// an edition's description is a short name for it: one line
 	assert.match(els['book-0'].innerHTML, /<input id="b0e0_desc" data-key="desc" placeholder="e\.g\. UK edition">/);
-	assert.match(els.newBooks.innerHTML, /Add Tidewater — Ann Vale/);
+	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale/);
 	// AudiobookDB's book to take brings the ids it found: they aren't offered apart too
 	assert.match(els['book-0'].textContent, /AudiobookDB has more: AudiobookDB id/);
 	assert.doesNotMatch(els['book-0'].textContent, /Found on AudiobookDB/);

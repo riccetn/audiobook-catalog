@@ -62,7 +62,7 @@ What they say is shown on the books, and nothing of it is taken until you pick i
 - **Maybe not an audiobook**: an edition of yours a catalog calls a print book or ebook, or an ASIN Audible
   doesn't sell.
 
-Under the books, **Not in your catalog** lists the catalogs' books that none of yours are, each once with the
+Among your books, in series order, cards marked **Not in your catalog** are the catalogs' books that none of yours are, each once with the
 catalogs that have it: tick one to add it when you save (and pick whose, when several have it). The books a
 catalog only lists in the series (on AudiobookDB, those not on your shelves; on Audible, the numbers you have
 none of) are there too, with a link to their page. AudiobookDB's are read from it only when you tick one, so

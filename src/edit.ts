@@ -836,24 +836,25 @@ async function pickMissing(n: number, source: number) {
 	showChangeCount();
 }
 
-/**
- * The books none of yours are, each a card with Add (and which catalog's, when several have it): those on
- * your shelves there, then the books of the series they list, which are read only when ticked.
- */
+/** Draw the books again with the new ones among them, as a new book's tick or catalog changed. */
 function drawNewBooks() {
+	render();
+}
+
+/** The mark on a new book's card. */
+const newTag = () => buildElement('span', {class: 'editNewTag'}, spell('Not in your catalog'));
+
+/**
+ * The books none of yours are, each a card with Add (and which catalog's, when several have it), with the
+ * book it is for its place among yours: those on your shelves there, and the books of the series they list,
+ * which are read only when ticked.
+ */
+function newCards(): {book: Book; card: HTMLElement}[] {
 	const run = RUN;
-	const fresh = run ? run.review.fresh : [];
-	const missing = run ? run.review.missing : [];
-	if (!run || (!fresh.length && !missing.length)) return fillElement(byId('newBooks'));
-	fillElement(
-		byId('newBooks'),
-		buildElement('h2', {class: 'editBooksTitle'}, spell('Not in your catalog')),
-		buildElement(
-			'p',
-			{class: 'hint'},
-			spell('Books the other catalogs have that none of yours are. Tick one to add it when you save.'),
-		),
-		...fresh.map((book, n) => {
+	if (!run) return [];
+	const name = KIND === 'series' ? shownName() : undefined;
+	return [
+		...run.review.fresh.map((book, n) => {
 			const picked = FRESH_PICKS.get(n);
 			const from = book.from.find(f => f.source === picked) || book.from[0];
 			const pick = (source: number) => {
@@ -861,9 +862,11 @@ function drawNewBooks() {
 				drawNewBooks();
 				showChangeCount();
 			};
-			return buildElement(
+			const theirs = run.sources[from.source].result.incoming[from.at];
+			const card = buildElement(
 				'div',
 				{class: picked === undefined ? 'editNew' : 'editNew picked', id: `fresh-${n}`},
+				newTag(),
 				buildElement(
 					'label',
 					{class: 'editCheck'},
@@ -886,14 +889,22 @@ function drawNewBooks() {
 					? sourceSelect(`fresh-${n}-from`, book.from, from.source, pick, run)
 					: buildElement('span', {class: 'hint'}, ` (${run.labels[from.source]})`),
 			);
+			return {book: theirs, card};
 		}),
-		...missing.map((entry, n) => {
+		...run.review.missing.map((entry, n) => {
 			const picked = MISSING_PICKS.get(n);
 			const from = entry.from.find(f => f.source === picked?.source) || entry.from[0];
 			const reading = !!picked && !picked.book;
-			return buildElement(
+			const book = Book.fromJSON({
+				t: entry.title,
+				a: [],
+				...(name !== undefined ? {s: name} : {}),
+				...(entry.number ? {sn: entry.number} : {}),
+			});
+			const card = buildElement(
 				'div',
 				{class: picked ? 'editNew picked' : 'editNew', id: `missing-${n}`},
+				newTag(),
 				buildElement(
 					'label',
 					{class: 'editCheck'},
@@ -926,8 +937,9 @@ function drawNewBooks() {
 					? buildElement('span', {class: 'hint'}, spell(`Reading it from ${run.labels[from.source]}…`))
 					: null,
 			);
+			return {book, card};
 		}),
-	);
+	];
 }
 
 /**
@@ -945,7 +957,6 @@ export function askCatalogs(): Promise<void> {
 		if (!asked.length) {
 			RUN = null;
 			render();
-			drawNewBooks();
 			drawCatalogFound();
 			if (KIND === 'series') drawSeriesChips();
 			fillElement(
@@ -973,7 +984,6 @@ export function askCatalogs(): Promise<void> {
 		MISSING_PICKS = new Map();
 		INFO_PICKS = new Set();
 		drawCatalogFound();
-		drawNewBooks();
 		render();
 		if (KIND === 'series') drawSeriesChips();
 	})();
@@ -1001,7 +1011,12 @@ function drawSeriesChips() {
 
 /** Draw the books again, and how many changes there are. */
 export function render() {
-	fillElement(byId('editBooks'), ...DRAFTS.map(bookCard));
+	// your books (where they were when the page opened, so a card doesn't move as its number is typed) and the
+	// new ones, in series order
+	const cards = [...DRAFTS.map((d, i) => ({book: d.before, card: bookCard(d, i)})), ...newCards()].sort((x, y) =>
+		bookOrder(x.book, y.book),
+	);
+	fillElement(byId('editBooks'), ...cards.map(c => c.card));
 	DRAFTS.forEach((d, k) => fillExternalFields(inputId(k, null, 'ext_'), 'book', d.book.external));
 	byId('bookCount').textContent = DRAFTS.length ? Text.plural(DRAFTS.length, 'book') : '';
 	showChangeCount();
@@ -1375,7 +1390,7 @@ export async function review() {
  */
 function setReviewing(open: boolean) {
 	byId('reviewPanel').classList.toggle('open', open);
-	for (const part of ['seriesPanel', 'catalogPanel', 'editBooks', 'newBooks', 'saveBar']) {
+	for (const part of ['seriesPanel', 'catalogPanel', 'editBooks', 'saveBar']) {
 		if (open) byId(part).setAttribute('inert', '');
 		else byId(part).removeAttribute('inert');
 	}
@@ -1502,6 +1517,16 @@ export async function loadShown() {
 	else await loadSeries();
 }
 
+/** The order of the books shown: by series number (an author's by series first, then number). */
+function bookOrder(x: Book, y: Book): number {
+	if (KIND === 'series') return Book.bySeriesNumber(x, y);
+	return (
+		(x.series || '\uffff').localeCompare(y.series || '\uffff') ||
+		Book.bySeriesNumber(x, y) ||
+		x.title.localeCompare(y.title)
+	);
+}
+
 /** Start the drafts from the books as they are now, nothing picked from the other catalogs. */
 function startDrafts(books: Book[]) {
 	EXCLUDE = [];
@@ -1513,7 +1538,6 @@ function startDrafts(books: Book[]) {
 	setReviewing(false);
 	DRAFTS = books.map(b => ({id: b.id as string, before: b.clone(), book: b.clone(), error: ''}));
 	render();
-	drawNewBooks();
 	drawCatalogFound();
 }
 
@@ -1541,7 +1565,7 @@ export async function loadSeries() {
 	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
 	byId('seriesFormError').textContent = '';
 	REMOVING_SERIES = false;
-	startDrafts(CATALOG.booksOf('series', id).slice().sort(Book.bySeriesNumber));
+	startDrafts(CATALOG.booksOf('series', id).slice().sort(bookOrder));
 	drawSeriesChips();
 }
 
@@ -1562,11 +1586,7 @@ export async function loadAuthor() {
 	byId('subtitle').textContent = name;
 	byId('backLink').setAttribute('href', creditPageHref('authors', id));
 	byId('backLink').textContent = '← ' + name;
-	const bySeries = (x: Book, y: Book) =>
-		(x.series || '\uffff').localeCompare(y.series || '\uffff') ||
-		Book.bySeriesNumber(x, y) ||
-		x.title.localeCompare(y.title);
-	startDrafts(CATALOG.booksOf('authors', id).slice().sort(bySeries));
+	startDrafts(CATALOG.booksOf('authors', id).slice().sort(bookOrder));
 }
 
 for (const field of ['sf_name', 'sf_total', 'sf_status', 'sf_note'])
