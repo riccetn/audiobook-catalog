@@ -50,7 +50,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 ## Documentation
 
 - [Everyday workflows](docs/workflows.md): editing, series info, missing books, removing and merging
-- [Editing a series](docs/editing-series.md): a series and all its books on one page, with merging, splitting and removing editions
+- [Editing a series](docs/editing-series.md): a series' or an author's books on one page, with what the other catalogs have for them, and merging, splitting and removing editions
   books, a book's details, ISBNs, dates read, links
 - [Authors](docs/authors.md): author pages with a bio, links, and their series and titles
 - [Narrators and publishers](docs/narrators-publishers.md): a page for each narrator and publisher with a bio, links, and their series and titles

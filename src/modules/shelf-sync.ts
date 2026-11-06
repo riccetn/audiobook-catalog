@@ -93,8 +93,10 @@ export class ShelfSync {
 	static NOT_FOUND = '';
 	/** What Compare finds on your books besides the books themselves, which Apply saves when ticked: "ids", "ids and covers". */
 	static FOUND = 'ids';
-	/** What it compares besides every book: a series' books, an author's (their pages link to Compare). */
+	/** What it compares besides every book: a series' books, an author's (the Edit series page asks it). */
 	static PARTS = ['series', 'author'] as readonly ('series' | 'author')[];
+	/** Whether it compares every book of the catalog (Import & export's Compare), not only a series' or an author's. */
+	static EVERY_BOOK = true;
 
 	client: CatalogClient;
 

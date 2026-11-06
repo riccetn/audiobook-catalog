@@ -12,7 +12,6 @@ import type {Book} from './modules/book.js';
 import type {NamedKind} from './modules/catalog.js';
 import type {ContributorKind} from './modules/contributor.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
-import {CompareCatalogs} from './modules/compare-catalogs.js';
 import type {ExternalKind, ExternalId} from './modules/external-catalog.js';
 import type {Unchecked} from './modules/text.js';
 import type {SyncPrefer} from './modules/catalog-sync.js';
@@ -179,91 +178,10 @@ export const bookPageHref: (id: string) => string = id => pageHref('book.html', 
  */
 export const seriesPageHref: (id: string) => string = id => pageHref('index.html', '#series=' + hashValue(id));
 /** The Edit series page of the series stored under `id`. */
-export const editPageHref: (id: string) => string = id => pageHref('edit.html', '#series=' + hashValue(id));
+export const editPageHref: (id: string, kind?: 'series' | 'author') => string = (id, kind = 'series') =>
+	pageHref('edit.html', `#${kind}=` + hashValue(id));
 /** The address of the page of the books in no series. */
 export const standalonePageHref = () => pageHref('index.html', '#standalone');
-/**
- * The address that compares a series' or an author's books with a catalog's shelves on the Import & export page
- * (`import.html#hardcover-series=<id>`): what a Compare button opens where this tab keeps nothing, and older links.
- * @param catalog the catalog's key, as its client class says it (CatalogClient.CATALOG)
- * @param id the series' or the author's
- */
-export const shelfCompareHref = (catalog: string, kind: 'series' | 'author', id: string): string =>
-	`import.html#${catalog}-${kind}=` + hashValue(id);
-
-/**
- * What a Compare button asks the Import & export page to compare: a series' or an author's books (by id) with
- * a catalog's (its client's CATALOG).
- */
-export type CompareRequest = {catalog: string; kind: 'series' | 'author'; id: string};
-/** Where a Compare button leaves its CompareRequest for the Import & export page: this tab only, read once. */
-export const COMPARE_STORAGE_KEY = 'audiobook-catalog-compare';
-
-/**
- * Buttons that compare a series' or an author's books with each catalog that compares them
- * (CompareCatalogs, the syncs' PARTS), and with all of them at once when there are several; `words(label)` is
- * each button's text.
- */
-export function shelfCompareButtons(
-	kind: 'series' | 'author',
-	id: string,
-	words: (label: string) => string,
-): HTMLButtonElement[] {
-	const syncs = CompareCatalogs.of(kind);
-	const button: (catalog: string, label: string) => HTMLButtonElement = (catalog, label) =>
-		buildElement(
-			'button',
-			{
-				type: 'button',
-				class: 'catalogCompare',
-				'data-compare': catalog,
-				onclick: () => openShelfCompare({catalog, kind, id}),
-			},
-			words(label),
-		);
-	return [
-		...syncs.map(({catalog, label}) => button(catalog, label)),
-		...(syncs.length > 1 ? [button(ALL_CATALOGS, 'all catalogs')] : []),
-	];
-}
-
-/** The CompareRequest's catalog that compares with every catalog at once (the All catalogs panel's prefix). */
-export const ALL_CATALOGS = 'all';
-
-/**
- * Open the Import & export page to compare `request`, handed over in this tab's sessionStorage, so the address
- * stays the page's own and a reload or Back doesn't compare again; a browser that keeps nothing there gets
- * the comparison's address (shelfCompareHref).
- */
-export function openShelfCompare(request: CompareRequest) {
-	let address = 'import.html';
-	try {
-		sessionStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(request));
-	} catch {
-		address = shelfCompareHref(request.catalog, request.kind, request.id);
-	}
-	location.assign(address);
-}
-
-/**
- * The comparison a Compare button handed over (openShelfCompare), taken so it is done once; null for none.
- */
-export function takeShelfCompare(): CompareRequest | null {
-	try {
-		const raw = sessionStorage.getItem(COMPARE_STORAGE_KEY);
-		if (raw === null) return null;
-		sessionStorage.removeItem(COMPARE_STORAGE_KEY);
-		const request: unknown = JSON.parse(raw);
-		return Text.isObject(request) &&
-			typeof request.catalog === 'string' &&
-			(request.kind === 'series' || request.kind === 'author') &&
-			typeof request.id === 'string'
-			? {catalog: request.catalog, kind: request.kind, id: request.id}
-			: null;
-	} catch {
-		return null; // nothing kept, or not what a button keeps
-	}
-}
 
 /**
  * What an address of one of those pages holds after `key`= (#n=id), or null: the id there, as it is.

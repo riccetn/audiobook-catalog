@@ -1,13 +1,12 @@
 {%- comment -%}
-	A catalog's shelves on Import & export (ShelfSync in import.js): Compare, for every book or a series' or an
-	author's, and your key for the catalog. `catalog` is the panel's prefix (its client's CATALOG), `label` its
+	A catalog's shelves on Import & export (ShelfSync in import.js): Compare, for every book, and your key for the catalog. `catalog` is the panel's prefix (its client's CATALOG), `label` its
 	name, `via` how it is asked, `note` what Compare does, `key_label` the row's label, `key_name` what the
 	catalog calls the key ('API token') and `key_word` the buttons' word for it ('token').
 {%- endcomment %}
 {%- capture compare_title %}Compare your {{ label }} shelves with this catalog{% endcapture %}
 	<section class="panel" id="{{ catalog }}Panel">
 		<h2>{{ label }} <span class="via">{{ via }}</span></h2>
-		{% render 'shelf-compare', catalog: catalog, title: compare_title, note: note, every: true %}
+		{% render 'shelf-compare', catalog: catalog, title: compare_title, note: note %}
 		<div class="ioRow">
 			<span class="ioLabel">{{ key_label }}</span>
 			<div class="rowbtns">

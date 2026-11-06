@@ -24,6 +24,7 @@ import {Catalog} from '../public/modules/catalog.js';
 import {CatalogStats} from '../public/modules/catalog-stats.js';
 import {Comparison} from '../public/modules/comparison.js';
 import {MultiComparison} from '../public/modules/multi-comparison.js';
+import {BookReview} from '../public/modules/book-review.js';
 import {Csv} from '../public/modules/csv.js';
 import {Cover} from '../public/modules/cover.js';
 import {AudibleImporter} from '../public/modules/audible-importer.js';
@@ -37,7 +38,6 @@ import {CatalogRecords} from '../public/modules/catalog-records.js';
 import {CatalogSync, WrongPassphrase, UnrelatedCatalogs} from '../public/modules/catalog-sync.js';
 import {CatalogLookup} from '../public/modules/catalog-lookup.js';
 import {CatalogConnectors} from '../public/modules/catalog-connectors.js';
-import {CompareCatalogs} from '../public/modules/compare-catalogs.js';
 import {CatalogClient} from '../public/modules/catalog-client.js';
 import {ShelfSync} from '../public/modules/shelf-sync.js';
 import {FileImporter} from '../public/modules/file-importer.js';
@@ -4596,6 +4596,79 @@ test("picking another catalog's name for a series renames the series, on all its
 	assert.equal(Comparison.seriesRenames(taken, Comparison.compare(taken, shelf).books).size, 0);
 });
 
+test("the Edit series page's review: each book's values and entries from a catalog, its excluded editions left out, and what it can take", () => {
+	const catalog = new Catalog({
+		books: Bs([
+			{
+				t: 'Salt Road',
+				a: ['Ann Vale'],
+				s: 'Gull Isle',
+				sn: '1',
+				e: [{ext: {'audible.com': 'B0SALTRD01'}, n: ['Hollis Marr'], len: 600}],
+			},
+			{t: 'Paper Fen', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
+		]),
+	});
+	catalog.assignIds();
+	catalog.addExclusions(['Edition B0KEPTOUT1']);
+	const incoming = Bs([
+		{
+			t: 'Salt Road',
+			a: ['Ann Vale'],
+			s: 'Gull Isle',
+			sn: '1',
+			ext: {hardcover: '77'},
+			e: [
+				{ext: {'audible.com': 'B0SALTRD01'}, p: ['Kestrel Row Audio'], len: 540},
+				{ext: {'audible.com': 'B0KEPTOUT1'}, p: ['Kept Out Audio']},
+			],
+		},
+		{t: 'Gull Song', a: ['Ann Vale'], s: 'Gull Isle', sn: '3'},
+	]);
+	const result = {
+		incoming,
+		comparison: Comparison.compare(catalog, incoming),
+		notAudio: [],
+		missing: ['Gull Song'],
+		infoIds: [],
+		opts: {},
+	};
+	const [salt, fen] = catalog.books;
+	const before = JSON.stringify(catalog);
+	const review = BookReview.compare(catalog, [{label: 'Hardcover', catalog: 'hardcover', result}], [salt.id, fen.id]);
+	assert.equal(JSON.stringify(catalog), before, 'reviewing changes nothing');
+	const one = review.books.get(salt.id);
+	// the excluded edition's publisher is no choice
+	assert.deepEqual(
+		one.fields.map(f => [f.field, f.edition, f.choices.map(c => [c.text, c.labels])]),
+		[
+			['p', salt.editions[0].id, [['Kestrel Row Audio', ['Hardcover']]]],
+			['len', salt.editions[0].id, [['9h', ['Hardcover']]]],
+		],
+	);
+	assert.deepEqual(
+		one.entries.map(e => [e.url, e.gains, e.edition, e.excluded.map(ed => ed.ids('asin'))]),
+		[['https://hardcover.app/id/book/77', ['Hardcover id'], ['publisher'], [['B0KEPTOUT1']]]],
+	);
+	assert.deepEqual(review.books.get(fen.id).notFound, [0]);
+	assert.deepEqual(
+		review.fresh.map(f => f.from.map(x => [x.source, x.at])),
+		[[[0, 1]]],
+	);
+	assert.deepEqual(review.missing, [{source: 0, titles: ['Gull Song']}]);
+
+	// taking the catalog's book in: its id and edition details, not the excluded edition; another book is no match
+	const taken = BookReview.take(salt, incoming[0], catalog.exclusions, {}, true);
+	assert.equal(taken.idOn('hardcover'), '77');
+	assert.deepEqual(
+		taken.editions.map(ed => [ed.ids('asin'), ed.publishers, ed.minutes]),
+		[[['B0SALTRD01'], ['Kestrel Row Audio'], 600]],
+	);
+	assert.equal(JSON.stringify(catalog), before, 'taking works on a copy');
+	assert.equal(BookReview.take(fen, incoming[0], catalog.exclusions, {}, true), null);
+	assert.equal(BookReview.urlOf(incoming[1], 'hardcover'), null);
+});
+
 test('several catalogs side by side: each value once with the catalogs that have it, each new book once, nothing picked', () => {
 	const catalog = COMPARED();
 	const other = Bs([
@@ -5540,15 +5613,6 @@ test('CatalogConnectors lists each catalog once, with what the pages need of it'
 		assert.ok(Sync.PARTS.length && Sync.PARTS.every(p => p === 'series' || p === 'author'));
 	}
 	assert.deepEqual(AudibleSync.PARTS, ['series'], 'Audible compares a series only');
-	// the series and author pages' Compare buttons come from plain data, so those pages don't load the syncs
-	assert.deepEqual(
-		CompareCatalogs.ALL,
-		syncs.map(Sync => ({catalog: Sync.CLIENT.CATALOG, label: Sync.CLIENT.LABEL, parts: [...Sync.PARTS]})),
-	);
-	assert.deepEqual(
-		CompareCatalogs.of('author').map(c => c.catalog),
-		['hardcover', 'audiobookdb'],
-	);
 	for (const Client of CatalogConnectors.CLIENTS) {
 		assert.ok(Client.prototype instanceof CatalogClient);
 		assert.ok(ExternalCatalog.get(Client.CATALOG), `${Client.LABEL} is an external catalog`);

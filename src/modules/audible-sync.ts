@@ -30,6 +30,7 @@ const PLACEHOLDER = /series advisor placeholder/i;
 export class AudibleSync extends ShelfSync {
 	static CLIENT = AudibleClient;
 	static PARTS = ['series'] as readonly ('series' | 'author')[];
+	static EVERY_BOOK = false;
 	static FOUND = 'ids and book counts';
 
 	// The client is its own catalog's, with what that catalog asks.

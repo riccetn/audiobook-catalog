@@ -883,10 +883,6 @@ button:focus {
 	margin: 0 0.2rem 0 0;
 	accent-color: var(--moss);
 }
-.importPreview .cmpChoice {
-	display: inline-block;
-	margin-right: 0.8rem;
-}
 .importPreview .cmpIds {
 	display: block;
 	margin: 0.6rem 0 0;
@@ -1905,4 +1901,136 @@ button:focus {
 	padding: 0.2rem 0;
 	border-bottom: 1px solid var(--line);
 	overflow-wrap: anywhere;
+}
+
+/* The other catalogs on the Edit series page: the catalogs asked, their values beside each field (a chip that
+   fills the field in), what they would add to a book, and the books none of yours are. */
+.editPanel[hidden] {
+	display: none;
+}
+.editCatalogs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem 1rem;
+}
+.editPanel .editCatalogs label,
+.editPanel #catalogFound label {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	width: auto;
+	margin: 0.2rem 0;
+	color: var(--ink);
+	font-size: 0.9rem;
+}
+.editPanel .editCatalogs input,
+.editPanel #catalogFound input,
+.editTake input,
+.editNew input {
+	width: auto;
+}
+.editCheck.cant {
+	opacity: 0.6;
+}
+.editWhy {
+	color: var(--ink-soft);
+	font-size: 0.85em;
+}
+.editNotes {
+	margin: 0.5rem 0 0;
+	padding-left: 1.1rem;
+	font-size: 0.85rem;
+	color: var(--ink-soft);
+}
+.editChips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem;
+	margin-top: 0.3rem;
+}
+.editChip {
+	display: inline-flex;
+	gap: 0.35rem;
+	align-items: baseline;
+	max-width: 100%;
+	padding: 0.15rem 0.5rem;
+	border: 1px dashed var(--line);
+	border-radius: 6px;
+	background: var(--paper);
+	color: var(--ink);
+	font: inherit;
+	font-size: 0.82rem;
+	text-align: left;
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+.editChip:hover {
+	border-style: solid;
+	border-color: var(--ink-soft);
+}
+.editChip.picked {
+	border-style: solid;
+	border-color: var(--moss);
+}
+.editChipFrom {
+	font-size: 0.72rem;
+	font-weight: 600;
+	color: var(--moss);
+	white-space: nowrap;
+}
+.editOut {
+	white-space: nowrap;
+}
+.editNotFound {
+	color: var(--ink-soft);
+}
+.editTake,
+.editNotAudio {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem 0.8rem;
+	align-items: center;
+	margin: 0.5rem 0;
+	padding: 0.45rem 0.6rem;
+	border-left: 3px solid var(--moss);
+	background: var(--paper);
+	font-size: 0.88rem;
+}
+.editTake.taken {
+	border-left-color: var(--line);
+	color: var(--ink-soft);
+}
+.editNotAudio {
+	border-left-color: var(--gold);
+}
+.editCovers {
+	display: inline-flex;
+	gap: 0.3rem;
+}
+.editExcluded {
+	margin: 0.5rem 0;
+	font-size: 0.88rem;
+	color: var(--ink-soft);
+}
+.editExcluded summary {
+	cursor: pointer;
+	text-decoration: underline;
+}
+.editNewBooks {
+	margin: 0 0 1rem;
+}
+.editNew {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem 0.8rem;
+	align-items: center;
+	padding: 0.6rem 0.8rem;
+	margin: 0 0 0.5rem;
+	border: 1px dashed var(--line);
+	border-radius: 10px;
+	background: var(--card);
+}
+.editNew.picked {
+	border-style: solid;
+	border-color: var(--moss);
 }

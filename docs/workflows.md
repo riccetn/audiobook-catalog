@@ -121,7 +121,8 @@ each with a page of their bio, links, series and titles; their names on the book
 
 **Edit a series and its books**: press **Edit** at the end of a series' page (open it from _Series_). The
 _Edit series_ page shows the series and every book in it, each book with its fields (title, authors, number,
-genres, dates read and its ids) and its editions, all of them editable in place. See
+genres, dates read and its ids) and its editions, all of them editable in place, and what the other catalogs
+you set up have for them, to pick. **Edit their books** on an author's page does the same for their books. See
 [Editing a series](editing-series.md) for the page, and for merging, splitting and removing editions there.
 Nothing is saved until you press **Review & save**, which lists every change, and then **Save**.
 

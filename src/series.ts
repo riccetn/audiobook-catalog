@@ -18,7 +18,6 @@ import {
 	joined,
 	creditPageHref,
 	idFromAddress,
-	shelfCompareButtons,
 	seriesPageHref,
 	standalonePageHref,
 	editPageHref,
@@ -178,7 +177,7 @@ export function render() {
 					more: LIST.rest,
 					onMore: () => showMore(),
 					// it can be edited, and compared with the catalogs, after its books
-					after: id => seriesEditButton(id, true),
+					after: id => seriesEditButton(id),
 				})
 			: [
 					buildElement(
@@ -389,16 +388,15 @@ watchCoversBox(() => render());
 
 // ------------------------------------------------------------------ the Edit button
 /**
- * The Edit button at the end of a series' own page, which opens it on the Edit series page, and with
- * `compare` (it has books) the buttons that compare it with the catalogs.
+ * The Edit button at the end of a series' own page, which opens it on the Edit series page (where it is also
+ * compared with the other catalogs).
  * @param id the series'
  */
-function seriesEditButton(id: string, compare: boolean = false): HTMLDivElement {
+function seriesEditButton(id: string): HTMLDivElement {
 	return buildElement(
 		'div',
 		{class: 'page-actions'},
 		buildElement('a', {class: 'sedit', 'data-series': id, href: editPageHref(id)}, 'Edit'),
-		...(compare ? shelfCompareButtons('series', id, label => `Compare with ${label}`) : []),
 	);
 }
 
