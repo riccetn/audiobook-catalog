@@ -4836,11 +4836,8 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	// AudiobookDB's book to take brings the ids it found: they aren't offered apart too
 	assert.match(els['book-0'].textContent, /AudiobookDB has more: AudiobookDB id/);
 	assert.doesNotMatch(els['book-0'].textContent, /Found on AudiobookDB/);
-	// an edition a catalog says may not be an audiobook is said on its book
-	assert.match(
-		els['book-0'].innerHTML,
-		/Maybe not an audiobook: ASIN B0BRINETD1 is not sold on audible\.com: maybe a Kindle or print edition's ASIN\./,
-	);
+	// an amazon.com ASIN is that site's alone: it isn't asked of audible.com, so isn't said not to be sold there
+	assert.doesNotMatch(els['book-0'].textContent, /Maybe not an audiobook/);
 	assert.equal(els.changeCount.textContent, 'No changes yet', 'nothing is picked at first');
 
 	// a value picked fills the field in, and can be typed over

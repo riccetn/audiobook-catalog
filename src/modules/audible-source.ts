@@ -29,30 +29,27 @@ export class AudibleSource extends BookSource {
 	}
 
 	/**
-	 * Any Audible or Amazon site's ASIN is its own.
+	 * Any Audible site's ASIN is its own. An Amazon site's isn't: an ASIN is one site's, and Goodreads' and
+	 * Hardcover's are mostly Kindle or print editions', which no Audible site sells.
 	 */
 	answers(pasted: Pasted): Answers {
-		return ExternalCatalog.family(pasted.catalog) === 'asin' ? 'own' : null;
+		return AudibleSource.isSite(pasted.catalog) ? 'own' : null;
 	}
 
 	/**
 	 * The book of an ASIN on its site's Audible; null when that site doesn't sell it.
 	 */
 	async lookup(pasted: Pasted): Promise<Book | null> {
-		const book = await this.product(AudibleSource.site(pasted.catalog), pasted.id);
+		const book = await this.product(pasted.catalog, pasted.id);
 		// the title is the site's, the one this edition was released under there: the book form keeps it on the
 		// edition when the book has another
 		if (book && book.editions[0]) book.editions[0].title = book.title;
 		return book;
 	}
 
-	/**
-	 * The Audible site whose catalog API answers for an ASIN of `key`: the site itself, an Amazon site's Audible
-	 * (amazon.de: audible.de), else audible.com.
-	 */
-	static site(key: string): string {
-		const site = key.replace(/^amazon\./, 'audible.');
-		return ExternalCatalog.get(site)?.group === 'audible' ? site : ExternalCatalog.AUDIBLE_SITE;
+	/** Whether `key` is an Audible site's (`audible.de`), whose catalog API answers for its ASINs; an Amazon site's isn't. */
+	static isSite(key: string): boolean {
+		return ExternalCatalog.get(key)?.group === 'audible';
 	}
 
 	/**

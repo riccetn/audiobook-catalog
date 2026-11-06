@@ -143,12 +143,12 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       nothing is sent; reads the series on its books' Audible site (`siteOf`), by the series' ASIN there or `findSeries`, its `relationships`
       children, then their products `AudibleClient.BATCH` (50) at a time; every edition Audible sells is listed, so a book takes the one with its
       ASIN (`yours`, ticked at first), else its number's only one; placeholders, box sets and unnumbered ones aren't missing books; `setInfoIds`
-      keeps the series' ASIN under the site and its `total`; `unsold`: your ASINs on that site Audible doesn't sell, as maybe not audiobooks). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
+      keeps the series' ASIN under the site and its `total`; `unsold`: your ASINs under that Audible site it doesn't sell, as maybe not audiobooks; `siteOf` and both count only Audible sites' ASINs). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
       `products`). Comparing only reads the catalog; sending only adds.
     - `BookSource` (a catalog the book form's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
       (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the
-      proxy, by any Audible or Amazon site's ASIN on its site, `site`; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
+      proxy, by an Audible site's ASIN on that site, `isSite`; an Amazon site's ASIN is that site's alone, so never asked of Audible; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
       proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the form's authors; ASINs it lists aren't taken, as it doesn't say their site;
       `book`, `minutes`), `HardcoverSource` (with the token: its books, and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
       `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
