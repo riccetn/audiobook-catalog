@@ -232,7 +232,8 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   The other catalogs: on open `askCatalogs` (`ASKING`, which tests await) loads `edit-catalogs.js` with `import()` (only it loads the connectors) and,
   holding the whole catalog, `runCatalogs(kind, name, ids)` compares every `CatalogConnectors.SYNCS` whose `PARTS` has the kind, can be asked
   (`cantAsk`) and isn't unticked (`catalogChoices`, `setSkipped`, localStorage `audiobook-catalog-edit-skip`), giving a `CatalogRun` (`RUN`: `review`, a
-  `BookReview`; `take`, `idsFor`, `addFresh`, `keepInfoIds`). The page shows each catalog's values as chips beside the fields (`choiceChips`, ids
+  `BookReview`; `take`, `idsFor`, `addFresh`, `keepInfoIds`). Each catalog is shown with its icon (`catalogIcon`: its site's `favicon.ico`, `ExternalCatalog.home`, else on an error its mark, `CATALOG_MARKS`,
+  which CSS draws). The page shows each catalog's values as chips beside the fields (`choiceChips`, ids
   `<field>-pick-<n>`), links (`catalogLinks`), what to Take (`catalogFinds`: ids and covers `book-<i>-ids-<source>`, a book's gains
   `book-<i>-take-<source>-<at>` with its edition apart, `TAKEN`), excluded editions behind a `<details>`, and under the books the new ones (`drawNewBooks`,
   `FRESH_PICKS`) and the series' and people's ids (`INFO_PICKS`), which Save adds. Nothing is sent to a catalog.

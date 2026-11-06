@@ -1949,8 +1949,21 @@ button:focus {
 	vertical-align: 0.1em;
 	text-decoration: none;
 }
-.catIcon::before {
+.catIcon:not(.favicon)::before {
 	content: attr(data-mark);
+}
+/* the site's own favicon, in place of the mark */
+.catIcon.favicon {
+	background: none;
+	padding: 0;
+	min-width: 0;
+	width: 1.15rem;
+	height: 1.15rem;
+}
+.catIcon.favicon img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
 }
 .cat-audible {
 	--cat: #c8650a;

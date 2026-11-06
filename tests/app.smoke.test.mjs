@@ -4374,18 +4374,25 @@ test("the Edit series page compares a series' books with Hardcover when it opens
 	const options = {files: {'books.json': JSON.stringify(mine)}, hardcover: hc.fetch, setTimeout, storage};
 	const edit = await bootAsked('#series=Gull+Isle', options);
 	const {els, get} = edit;
-	// every catalog set up is asked, each with its icon (its mark, drawn by the page); those that can't be say why
+	// every catalog set up is asked, each with its site's favicon for an icon; those that can't be say why
+	assert.match(
+		els.catalogPicks.innerHTML,
+		/<span class="catIcon cat-hardcover favicon" data-mark="Hc" aria-hidden="true"><img src="https:\/\/hardcover\.app\/favicon\.ico" alt="" referrerpolicy="no-referrer" decoding="async"><\/span>/,
+	);
+	// a favicon that can't be loaded leaves the catalog's mark, which CSS draws
+	const hcIcon = els.catalogPicks.querySelector('.cat-hardcover');
+	hcIcon.querySelector('img').listeners.error[0]();
 	assert.match(
 		els.catalogPicks.innerHTML,
 		/<span class="catIcon cat-hardcover" data-mark="Hc" aria-hidden="true"><\/span>/,
 	);
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/<input type="checkbox" id="catalog-hardcover" checked=""> <span class="catIcon cat-hardcover"[^>]*><\/span>Hardcover/,
+		/<input type="checkbox" id="catalog-hardcover" checked=""> <span class="catIcon cat-hardcover[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>Hardcover/,
 	);
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/id="catalog-audiobookdb" disabled=""> <span class="catIcon cat-audiobookdb"[^>]*><\/span>AudiobookDB<span class="editWhy"> \(needs your server's catalog proxy/,
+		/id="catalog-audiobookdb" disabled=""> <span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB<span class="editWhy"> \(needs your server's catalog proxy/,
 	);
 	assert.match(els.catalogNotes.textContent, /Hardcover: 1 book read\./);
 	assert.match(els['book-0'].innerHTML, /not found on Hardcover/);
@@ -4676,7 +4683,7 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	assert.match(els.catalogNotes.textContent, /AudiobookDB: \d+ books? read\./);
 	assert.match(
 		els['book-0'].innerHTML,
-		/<a href="https:\/\/audiobookdb\.org\/[^"]+" target="_blank" rel="noopener" class="editOut"><span class="catIcon cat-audiobookdb"[^>]*><\/span>AudiobookDB ↗<\/a>/,
+		/<a href="https:\/\/audiobookdb\.org\/[^"]+" target="_blank" rel="noopener" class="editOut"><span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB ↗<\/a>/,
 	);
 	assert.match(els.newBooks.innerHTML, /Add Tidewater — Ann Vale/);
 	assert.match(els.catalogFound.textContent, /On AudiobookDB, not in your catalog: Gull Song\./);
@@ -4733,11 +4740,11 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	});
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/id="catalog-audible" checked=""> <span class="catIcon cat-audible"[^>]*><\/span>Audible/,
+		/id="catalog-audible" checked=""> <span class="catIcon cat-audible[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>Audible/,
 	);
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/id="catalog-audiobookdb"> <span class="catIcon cat-audiobookdb"[^>]*><\/span>AudiobookDB/,
+		/id="catalog-audiobookdb"> <span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB/,
 	);
 	assert.match(els.catalogFound.textContent, /On Audible, not in your catalog: 1\. Salt Road; 3\. Gull Song\./);
 	assert.ok(behind.sent.every(r => r.startsWith('audible/audible.com/catalog/')));
@@ -4838,7 +4845,7 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	});
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/id="catalog-hardcover" disabled=""> <span class="catIcon cat-hardcover"[^>]*><\/span>Hardcover<span class="editWhy"> \(needs your Hardcover API token/,
+		/id="catalog-hardcover" disabled=""> <span class="catIcon cat-hardcover[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>Hardcover<span class="editWhy"> \(needs your Hardcover API token/,
 	);
 	// a field's values, each once with the catalogs that have it
 	const chips = id => [...els[id].closest('.editField').querySelectorAll('.editChip')].map(c => c.textContent);
@@ -4846,7 +4853,10 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	assert.deepEqual(chips('b0e0_len'), ['AudiobookDB, Audible 8h']);
 	assert.deepEqual(chips('b0_sn'), ['AudiobookDB 2']);
 	// a chip names its catalogs by their icons
-	assert.match(els['b0_sn-pick-0'].innerHTML, /^<span class="editChipFrom"><span class="catIcon cat-audiobookdb"/);
+	assert.match(
+		els['b0_sn-pick-0'].innerHTML,
+		/^<span class="editChipFrom"><span class="catIcon cat-audiobookdb favicon"/,
+	);
 	// an edition's description is a short name for it: one line
 	assert.match(els['book-0'].innerHTML, /<input id="b0e0_desc" data-key="desc" placeholder="e\.g\. UK edition">/);
 	assert.match(els.newBooks.innerHTML, /Add Tidewater — Ann Vale/);

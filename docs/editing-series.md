@@ -50,7 +50,8 @@ once more (after you add an id to a book, say).
 What they say is shown on the books, and nothing of it is taken until you pick it and save:
 
 - **Beside a field**, each value a catalog has that differs from yours, with the catalogs that have it
-  (`9h`, marked with the icons of the catalogs that have it: **Hc** Hardcover, **AD** AudiobookDB, **Au** Audible). Press one to put it in the field; it is a change like any other you type.
+  (`9h`, marked with the icons of the catalogs that have it: each site's own icon, loaded from it, else a short
+  mark such as **Hc** for Hardcover). Press one to put it in the field; it is a change like any other you type.
   Beside the series' name, the names the catalogs give it.
 - **Links** to the book's page on each catalog that has it, and which don't (`not found on Audible`).
 - **Found on …**: the ids (and covers, shown) a catalog found for the book and its editions. **Take** puts them

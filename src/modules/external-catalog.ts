@@ -384,6 +384,16 @@ export class ExternalCatalog {
 	}
 
 	/**
+	 * The address of a catalog's site (`https://www.audible.co.uk`), from its pages' addresses; a group's key
+	 * (`audible`) is its default site's. null when it has none.
+	 */
+	static home(key: string): string | null {
+		const def = BY_KEY.get(key) || BY_KEY.get(GROUPS.find(g => g.key === key)?.default || '');
+		const pattern = def && Object.values(def.kinds).find(Boolean);
+		return pattern ? new URL(pattern.url.replace(/\{id\}/g, 'x')).origin : null;
+	}
+
+	/**
 	 * The catalog's name as the page shows it; the key itself for one this app doesn't know.
 	 */
 	static name(key: string): string {

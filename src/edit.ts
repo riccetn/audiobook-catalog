@@ -482,16 +482,32 @@ const CATALOG_MARKS: Record<string, string> = {
 };
 
 /**
- * A small icon for an external catalog (`catalog`, its key or any of its sites'): its mark in its own
- * color, drawn here (CSS shows the mark), so showing it fetches nothing from the catalog.
+ * A small icon for an external catalog (`catalog`, its key or any of its sites'): its site's favicon, else
+ * (when that can't be loaded) its mark in its own color, which CSS draws.
  */
 export function catalogIcon(catalog: string): HTMLElement {
 	const group = ExternalCatalog.groupOf(catalog)?.key || catalog;
-	return buildElement('span', {
-		class: `catIcon cat-${group}`,
+	const home = ExternalCatalog.home(catalog);
+	const icon = buildElement('span', {
+		class: home ? `catIcon cat-${group} favicon` : `catIcon cat-${group}`,
 		'data-mark': CATALOG_MARKS[group] || group.slice(0, 2),
 		'aria-hidden': 'true',
 	});
+	if (home)
+		fillElement(
+			icon,
+			buildElement('img', {
+				src: `${home}/favicon.ico`,
+				alt: '',
+				referrerpolicy: 'no-referrer',
+				decoding: 'async',
+				onerror: () => {
+					icon.classList.remove('favicon');
+					fillElement(icon);
+				},
+			}),
+		);
+	return icon;
 }
 
 /** The icon of the catalog `label` names in this run (by its place), when it is one of them. */
