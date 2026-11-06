@@ -334,7 +334,10 @@ class FakeElement {
 		}
 	}
 	reset() {}
-	scrollIntoView() {}
+	// an element the page scrolled into view says so
+	scrollIntoView() {
+		this.scrolledTo = true;
+	}
 	click() {}
 	focus() {}
 	// where an element was last moved to, as 'before <id>' or 'after <id>'
@@ -3285,10 +3288,11 @@ test('a series is edited on its Edit series page, and removed from its books', a
 	assert.equal(await saveEdit(edit), false);
 	assert.match(edit.els.seriesFormError.textContent, /total must be a positive integer/);
 	assert.equal(edit.get(`CATALOG.infoByName('series').get(${JSON.stringify(name)}).total`), 7);
-	// Discard puts back what is stored
+	// Discard puts back what is stored, and goes back to the series' page
 	edit.els.discardBtn.listeners.click[0]();
 	await idle();
 	assert.equal(edit.els.sf_total.value, '7');
+	assert.equal(edit.ctx.location.assigned, 'index.html#series=' + id);
 
 	// a series with nothing kept about it gets it ("many" is allowed)
 	const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
@@ -5840,7 +5844,8 @@ test("the Edit series page edits each book's fields and editions in place, and s
 			},
 		]),
 	};
-	const edit = await bootEdit('Fern Saga', {files});
+	const session = new Map();
+	const edit = await bootEdit('Fern Saga', {files, session});
 	const {els, get, storage} = edit;
 	assert.deepEqual(get('DRAFTS.map(d => d.book.title)'), ['Fern 1', 'Fern 2']);
 	// an edition is told apart by its description, else its narrators, else its ids
@@ -5885,7 +5890,23 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	assert.equal(get('DRAFTS[1].book.editions.length'), 1);
 	assert.deepEqual(get('EXCLUDE'), ['Edition B0FERN0003']);
 
-	// Review & save lists it all, and Save saves it
+	// an edition's field that can't be read stops Review & save, which scrolls to it
+	els.b1e0_more.value = 'not an address';
+	els.b1e0_more.listeners.change[0]();
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	assert.equal(els.reviewPanel.classList.contains('open'), false);
+	assert.match(els['book-1-ed-0-error'].textContent, /Not an edition's address: not an address/);
+	assert.equal(els['book-1-ed-0-error'].scrolledTo, true);
+	els.b1e0_more.value = '';
+	els.b1e0_more.listeners.change[0]();
+
+	// Review & save lists it all, and the fields can't change while it is open, so Save saves what it lists
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	for (const part of ['seriesPanel', 'editBooks', 'saveBar']) assert.ok(els[part].hasAttribute('inert'), part);
+	els.reviewBackBtn.listeners.click[0]();
+	assert.equal(els.editBooks.hasAttribute('inert'), false, 'Back edits again');
 	await els.reviewBtn.listeners.click[0]();
 	await idle();
 	const review = els.reviewList.textContent;
@@ -5898,6 +5919,12 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	await idle();
 	assert.match(els.ioStatus.textContent, /^Saved 2 books, kept 1 edition id out of imports\./);
 	assert.equal(els.changeCount.textContent, 'No changes yet');
+	// Save goes back to the series' page, which says what was saved, once
+	const seriesId = get('SERIES_ID');
+	assert.equal(edit.ctx.location.assigned, 'index.html#series=' + seriesId);
+	const series = await boot({storage, files: null, session, hash: '#series=' + seriesId});
+	assert.match(series.els.ioStatus.textContent, /^Saved 2 books, kept 1 edition id out of imports\./);
+	assert.equal(session.has('audiobook-catalog-status'), false);
 	const saved = await kept(storage);
 	assert.deepEqual(
 		saved.books.map(b => [b.t, b.e.map(x => x.ext || x.isbn)]),

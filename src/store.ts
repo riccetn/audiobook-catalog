@@ -1548,6 +1548,35 @@ export async function startPage(
 	await init();
 	updateNav();
 	if (STARTUP_NOTICE) showIoStatus(STARTUP_NOTICE, true);
+	else showHandedStatus();
+}
+
+/** The sessionStorage key of a status line handed to the next page this tab opens (openWithStatus). */
+export const STATUS_STORAGE_KEY = 'audiobook-catalog-status';
+
+/**
+ * Open `address`, which says `status` in its status line when it starts (as Save on the Edit series page
+ * says what it saved on the series' page); a browser that keeps nothing in sessionStorage just opens it.
+ */
+export function openWithStatus(address: string, status: string) {
+	try {
+		sessionStorage.setItem(STATUS_STORAGE_KEY, status);
+	} catch {
+		/* the page opens without it */
+	}
+	location.assign(address);
+}
+
+/** Show the status line the page before handed over (openWithStatus), once. */
+function showHandedStatus() {
+	let status: string | null = null;
+	try {
+		status = sessionStorage.getItem(STATUS_STORAGE_KEY);
+		sessionStorage.removeItem(STATUS_STORAGE_KEY);
+	} catch {
+		/* nothing handed over */
+	}
+	if (status) showIoStatus(status);
 }
 
 // Installable as an app (on a phone, say), and usable offline once it is: see sw.js.

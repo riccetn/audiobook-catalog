@@ -29,6 +29,7 @@ import {
 	idFromAddress,
 	bookPageHref,
 	seriesPageHref,
+	openWithStatus,
 	hashValue,
 } from './store.js';
 import {coverImage, totalText, setAddress} from './book-list.js';
@@ -654,21 +655,16 @@ function bookProblems(b: Book): string[] {
 /** Review & save: every change, listed, with Save; nothing when something can't be saved. */
 export async function review() {
 	const panel = byId('reviewPanel');
-	panel.classList.remove('open');
-	if (DRAFTS.some(d => d.error)) {
-		showIoStatus('Some fields are not understood: they are marked on their books.', true);
-		return;
-	}
+	setReviewing(false);
+	const unread = unreadField();
+	if (unread) return showProblem(unread, 'Some fields are not understood: they are marked on their books.');
 	for (const [i, d] of DRAFTS.entries()) {
 		const problems = bookProblems(d.book);
 		byId(`book-${i}-error`).textContent = problems.join('; ');
-		if (problems.length) {
-			showIoStatus(`${d.book.title}: ${problems.join('; ')}`, true);
-			return;
-		}
+		if (problems.length) return showProblem(byId(`book-${i}-error`), `${d.book.title}: ${problems.join('; ')}`);
 	}
 	const series = await readSeriesPanel();
-	if (!series) return;
+	if (!series) return showProblem(byId('seriesFormError'));
 	const name = SERIES_ID === null ? undefined : CATALOG.nameOf('series', SERIES_ID);
 	if (name === undefined) return;
 	const lines = changes();
@@ -690,13 +686,43 @@ export async function review() {
 			: [buildElement('li', {}, 'Nothing changed.')]),
 	);
 	(byId('reviewSaveBtn') as HTMLButtonElement).disabled = !lines.length;
-	panel.classList.add('open');
+	setReviewing(true);
 	panel.scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+/**
+ * Open or close the review: while it is open the fields can't be changed (`inert`), so Save saves what the
+ * review lists; Back closes it to edit again.
+ */
+function setReviewing(open: boolean) {
+	byId('reviewPanel').classList.toggle('open', open);
+	for (const part of ['seriesPanel', 'editBooks', 'saveBar']) {
+		if (open) byId(part).setAttribute('inert', '');
+		else byId(part).removeAttribute('inert');
+	}
+}
+
+/** The first problem shown under a book or an edition whose fields can't be read, or null when there is none. */
+function unreadField(): HTMLElement | null {
+	for (const [i, d] of DRAFTS.entries()) {
+		if (d.error) return byId(`book-${i}-error`);
+		for (const j of d.book.editions.keys()) {
+			const error = document.getElementById(`book-${i}-ed-${j}-error`);
+			if (error && error.textContent) return error;
+		}
+	}
+	return null;
+}
+
+/** Why Review & save stopped: in the status line, and the problem it names scrolled into view. */
+function showProblem(at: HTMLElement, status?: string) {
+	if (status) showIoStatus(status, true);
+	at.scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 
 /** Save: the books, the exclusions, then the series' rename and info. */
 export async function save() {
-	byId('reviewPanel').classList.remove('open');
+	setReviewing(false);
 	const series = await readSeriesPanel();
 	const id = SERIES_ID;
 	const name = id === null ? undefined : CATALOG.nameOf('series', id);
@@ -730,10 +756,18 @@ export async function save() {
 	SERIES_ID = newId;
 	if (newId !== id) setAddress('replace', '#series=' + hashValue(newId));
 	await loadSeries();
-	showIoStatus(
+	const status =
 		(parts.length ? parts.join(', ').replace(/^./, c => c.toUpperCase()) + '.' : `Saved ${series.newName}.`) +
-			(series.note ? ' ' + series.note : ''),
-	);
+		(series.note ? ' ' + series.note : '');
+	showIoStatus(status);
+	openWithStatus(seriesPageHref(newId), status);
+}
+
+/** Discard: nothing is saved, and the series' page opens again. */
+function discard() {
+	if (SERIES_ID === null) return;
+	void loadSeries();
+	location.assign(seriesPageHref(SERIES_ID));
 }
 
 /**
@@ -789,6 +823,7 @@ export async function loadSeries() {
 	REMOVING_SERIES = false;
 	EXCLUDE = [];
 	OPEN_PANEL = null;
+	setReviewing(false);
 	DRAFTS = CATALOG.booksOf('series', id)
 		.slice()
 		.sort(Book.bySeriesNumber)
@@ -804,8 +839,8 @@ byId('sf_ext').addEventListener('change', showChangeCount);
 byId('seriesRemoveBtn').addEventListener('click', removeSeries);
 byId('reviewBtn').addEventListener('click', review);
 byId('reviewSaveBtn').addEventListener('click', save);
-byId('reviewBackBtn').addEventListener('click', () => byId('reviewPanel').classList.remove('open'));
-byId('discardBtn').addEventListener('click', () => loadSeries());
+byId('reviewBackBtn').addEventListener('click', () => setReviewing(false));
+byId('discardBtn').addEventListener('click', discard);
 
 /** After a save took in what another tab changed (store.ts): the page shows the series as stored now. */
 function refresh() {

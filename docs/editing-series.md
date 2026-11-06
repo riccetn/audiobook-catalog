@@ -38,4 +38,6 @@ the address of the edition's page on any catalog, and becomes a field of its own
 ## Saving
 
 **Review & save** lists every change, book by book: the fields, and each edition added, changed or removed.
-**Save** saves them, and **Back** goes on editing. **Discard** puts back what is stored.
+While the list is open the fields can't be changed, so **Save** saves just what it lists; **Back** goes on
+editing. When a field can't be read, Review & save says so and scrolls to it instead. **Save** returns to the
+series' page, which says what was saved; **Discard** returns to it without saving anything.

@@ -222,8 +222,9 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   name, total, status, note, ids; Remove series), and a card per book with its fields and an edition card each (`editionName` tells it apart:
   its description, else narrators, else ids), whose inputs are `Edition.fields()` keys; Merge with…, Split and Remove edition (with "Don't let imports
   add it again", `EXCLUDE`) change the book's copy (`DRAFTS`, `Draft`). A field is read on change (`readBookFields`, `readEditionFields`,
-  `Edition.fromFields`); one that can't be read is named and changes nothing. Review & save lists the changes (`changes`, `bookChanges`) and Save
-  `saveBook`s each changed book, adds `EXCLUDE`, then renames the series and saves its info.
+  `Edition.fromFields`); one that can't be read is named and changes nothing. Review & save lists the changes (`changes`, `bookChanges`; the fields are `inert` while it is open,
+  and a field that can't be read is scrolled to instead) and Save `saveBook`s each changed book, adds `EXCLUDE`, then renames the series and saves its info,
+  and goes back to the series' page with what it saved in its status line (`openWithStatus` in `store.js`, sessionStorage `audiobook-catalog-status`); Discard goes back too.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
   their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
   `<CATALOG>Key`/`KeySave`/`KeyRemove`/`KeyState`, `showKey`/`saveKeyOf`). The comparison an export file's import (`compareExport`), or a shelf sync's Compare

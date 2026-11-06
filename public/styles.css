@@ -1821,6 +1821,12 @@ button:focus {
 .editReview.open {
 	display: block;
 }
+/* while the review is open the fields can't change (inert), so Save saves what it lists */
+.editPanel[inert],
+.editBooks[inert],
+.saveBar[inert] {
+	opacity: 0.55;
+}
 .reviewList {
 	margin: 0 0 0.8rem;
 	padding-left: 1.1rem;
