@@ -2063,9 +2063,22 @@ button:focus {
 	background: var(--paper);
 	font-size: 0.88rem;
 }
-.editTake.taken {
-	border-left-color: var(--line);
-	color: var(--ink-soft);
+.editEdition > .editTake,
+.editEdition > .editNotAudio {
+	background: var(--card);
+}
+.editEdition > summary .editPill {
+	align-self: flex-start;
+	margin-top: 0.2rem;
+}
+.editPill.review {
+	display: inline-flex;
+	gap: 0.25rem;
+	align-items: center;
+}
+.editPill.notAudio {
+	color: var(--gold);
+	border-color: var(--gold);
 }
 .editNotAudio {
 	border-left-color: var(--gold);

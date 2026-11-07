@@ -4695,9 +4695,18 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	assert.match(els['missing-0'].textContent, /^Not in your catalog Add 3\. Gull Song/);
 	assert.match(els['missing-0'].innerHTML, /href="https:\/\/audiobookdb\.org\/[^"]*GullSong0001"/);
 	assert.ok(!abdb.sent.some(s => s.path.startsWith('books/GullSong0001')), 'not read before it is ticked');
-	// the ids it found for a book not on your shelves there, to take into the book's form
-	assert.match(els['book-0-ids-0'].textContent, /^Found on AudiobookDB: .*BrineTide001/);
-	await els['book-0-ids-0-take'].listeners.click[0]();
+	// the ids it found for a book not on your shelves there: the book's with the book, the edition's on its card,
+	// whose summary says there is something to review
+	assert.match(els['book-0-take-0-ids'].textContent, /^AudiobookDB: Ids: AudiobookDB BrineTide001Take$/);
+	assert.match(
+		els['book-0-ed-0'].innerHTML,
+		/<summary>.*<span class="editPill review"[^>]*>.*to review<\/span><\/summary>/,
+	);
+	assert.match(els['book-0-ed-0-take-0-ids'].textContent, /^AudiobookDB: .*RlsBrineUS01/);
+	await els['book-0-take-0-ids-do'].listeners.click[0]();
+	assert.ok(!get("DRAFTS[0].book.editions[0].idOn('audiobookdb')"), 'the book alone');
+	await els['book-0-ed-0-take-0-ids-do'].listeners.click[0]();
+	assert.doesNotMatch(els['book-0'].innerHTML, /editTake|to review/, 'nothing more to take');
 	assert.equal(get("DRAFTS[0].book.idOn('audiobookdb')"), 'BrineTide001');
 	assert.equal(get("DRAFTS[0].book.editions[0].idOn('audiobookdb')"), 'RlsBrineUS01');
 	assert.doesNotMatch(els.editBooks.innerHTML, /Paper Fen|Lantern Hours/);
@@ -4736,6 +4745,44 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	assert.deepEqual(byHale.get('DRAFTS.map(d => d.book.title)'), ['Lantern Hours']);
 	assert.match(byHale.els['book-0'].innerHTML, /AudiobookDB ↗/);
 	assert.doesNotMatch(byHale.els.editBooks.innerHTML, /Tidewater|Brine Tide/);
+});
+
+test("the Edit series page shows on an edition's card what the catalogs say of it, and offers their other editions apart", async () => {
+	// an ASIN Audible doesn't sell, on a book whose one edition there is another
+	const mine = [
+		{t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0WRONGST3'}}]},
+		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '4', e: [{ext: {'audible.com': 'B0BRINETD4'}}]},
+	];
+	const behind = fakeProxyCatalogs();
+	const proxy = async (url, init = {}) =>
+		handleServer(new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}}), SERVER_ENV, {
+			fetch: async upstream => {
+				const u = new URL(String(upstream.url || upstream));
+				const site = u.hostname.replace(/^api\./, '');
+				const res = await behind.route(`audible/${site}${u.pathname.replace(/^\/1\.0/, '')}${u.search}`);
+				return new Response(JSON.stringify(await res.json()), {status: res.status});
+			},
+		});
+	const {els, get} = await bootAsked('#series=Gull+Isle', {
+		files: {'books.json': JSON.stringify(mine)},
+		proxy,
+		storage: new Map([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]),
+		setTimeout: (fn, ms) => {
+			if (ms === 250) Promise.resolve().then(fn);
+			return 0;
+		},
+	});
+	const card = els['book-0-ed-0'];
+	assert.match(card.innerHTML, /<span class="editPill notAudio"[^>]*>not audio\?<\/span><\/summary>/);
+	assert.match(card.textContent, /Maybe not an audiobook: ASIN B0WRONGST3 is not sold on audible\.com/);
+	assert.doesNotMatch(els['book-0'].innerHTML.replace(card.innerHTML, ''), /editNotAudio/, 'only on its card');
+	// Audible's edition isn't yours: offered as another edition, added only when asked
+	const added = els['book-0'].querySelector('.editNewEdition');
+	assert.match(added.textContent, /^Audible has another edition: .*B0LANTERN2.*Add$/);
+	assert.equal(get('DRAFTS[0].book.editions.length'), 1);
+	added.querySelector('button').listeners.click[0]();
+	assert.deepEqual(get("DRAFTS[0].book.editions.map(ed => ed.ids('asin'))"), [['B0WRONGST3'], ['B0LANTERN2']]);
+	assert.equal(els['book-0'].querySelector('.editNewEdition'), null, 'offered no more');
 });
 
 test("the Edit series page takes from Audible a book's edition when asked, and keeps the series' id found when ticked", async () => {
@@ -4790,15 +4837,13 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
 
 	// each book's edition there, to take with what it fills in
-	assert.match(
-		els['book-0'].textContent,
-		/Audible's edition has: ISBN, narrators, publisher, release date, lengthTake/,
-	);
-	assert.match(els['book-1'].textContent, /Audible's edition has: /);
+	assert.match(els['book-0-ed-0'].innerHTML, /to review<\/span><\/summary>/);
+	assert.match(els['book-0-ed-0'].textContent, /Audible: Narrators: .*ISBN: .*Take/);
+	assert.match(els['book-1-ed-0'].textContent, /Audible: /);
 	const take = n => els['book-' + n].querySelector('.editTake button');
 	take(0).listeners.click[0]();
 	take(1).listeners.click[0]();
-	assert.match(els['book-0'].innerHTML, /Taken from Audible\./);
+	assert.doesNotMatch(els['book-0'].innerHTML, /editTake/, 'taken');
 	// the series' Audible id and count, kept when ticked
 	assert.match(els.catalogFound.textContent, /Keep the ids Audible found for Gull Isle/);
 	els['info-0'].checked = true;
@@ -4844,7 +4889,7 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 		0,
 		'nothing of it is offered',
 	);
-	assert.match(out.els['book-0'].textContent, /Audible's edition has/, 'the other books are as before');
+	assert.match(out.els['book-0'].textContent, /Audible: Narrators: /, 'the other books are as before');
 });
 
 test("the Edit series page shows every catalog's value beside a book's field, and takes only those picked", async () => {
@@ -4906,8 +4951,12 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	assert.match(els['book-0'].innerHTML, /<input id="b0e0_desc" data-key="desc" placeholder="e\.g\. UK edition">/);
 	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale/);
 	// AudiobookDB's book to take brings the ids it found: they aren't offered apart too
-	assert.match(els['book-0'].textContent, /AudiobookDB has more: AudiobookDB id/);
-	assert.doesNotMatch(els['book-0'].textContent, /Found on AudiobookDB/);
+	assert.equal(
+		els['book-0'].querySelectorAll('.editTake').filter(x => /^AudiobookDB/.test(x.textContent)).length,
+		2,
+		"the book's and the edition's",
+	);
+	assert.ok(!els['book-0-take-0-ids'] && !els['book-0-ed-0-take-0-ids'], 'AudiobookDB id found once');
 	// an amazon.com ASIN is that site's alone: it isn't asked of audible.com, so isn't said not to be sold there
 	assert.doesNotMatch(els['book-0'].textContent, /Maybe not an audiobook/);
 	assert.equal(els.changeCount.textContent, 'No changes yet', 'nothing is picked at first');

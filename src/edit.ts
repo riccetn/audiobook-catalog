@@ -42,6 +42,7 @@ import {coverImage, totalText, setAddress} from './book-list.js';
 import type {Child} from './store.js';
 import type {CatalogRun, CatalogChoice} from './edit-catalogs.js';
 import type {CatalogEntry, FieldChoices} from './modules/book-review.js';
+import type {NotAudio} from './modules/shelf-sync.js';
 
 /** A book being edited: the book as loaded (`before`, as stored text) and the copy the page changes. */
 export type Draft = {id: string; before: Book; book: Book; error: string};
@@ -56,8 +57,6 @@ export let AUTHOR_ID: string | null = null;
 export let RUN: CatalogRun | null = null;
 /** Resolves once the other catalogs have been asked (each time the page asks them). */
 export let ASKING: Promise<void> = Promise.resolve();
-/** The catalogs' books and ids taken into the drafts: "<book id>:<source>:<at>", "<book id>:<source>:ids". */
-export let TAKEN: Set<string> = new Set();
 /** The new books picked, by their place in the review's: the catalog (its place) each is added as. */
 export let FRESH_PICKS: Map<number, number> = new Map();
 /**
@@ -287,6 +286,7 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			buildElement('h3', {class: 'editEditionsTitle'}, 'Editions'),
 			...b.editions.map((ed, j) => editionCard(d, i, j)),
 			...(b.editions.length ? [] : [buildElement('p', {class: 'hint'}, 'No editions yet.')]),
+			...newEditionOffers(d, i),
 			...excludedEditions(d),
 			buildElement(
 				'button',
@@ -338,7 +338,8 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 	return buildElement(
 		'details',
 		{class: was && was.format() === ed.format() ? 'editEdition' : 'editEdition changed', id: `book-${i}-ed-${j}`},
-		buildElement('summary', {}, ...editionSummary(d, ed)),
+		buildElement('summary', {}, ...editionSummary(d, ed), ...editionMarks(d, j)),
+		...editionFinds(d, i, j),
 		buildElement('div', {class: 'editFields'}, ...inputs),
 		buildElement('p', {class: 'formError', id: `book-${i}-ed-${j}-error`}),
 		buildElement(
@@ -558,78 +559,230 @@ function catalogLinks(d: Draft): Child[] {
 }
 
 /**
- * What the other catalogs would add to the book, each with Take (and whether to take its edition too): the
- * ids and covers they found for it, and what their book fills in; and its editions they say may not be
- * audiobooks.
+ * What a catalog would add to a book: its book of yours taken in (`entry`, as an import would, with its
+ * edition), else the ids and covers it found for it (`entry` null). `key` names it on the page.
  */
-function catalogFinds(d: Draft, i: number): HTMLElement[] {
+type Offer = {key: string; source: number; entry: CatalogEntry | null; after: Book};
+
+/**
+ * What the other catalogs would add to the book now, each once: each catalog's book of yours, else (for a
+ * catalog with none to take) the ids and covers it found. Worked out from the book as it now is, so what is
+ * taken is offered no more.
+ */
+function offersFor(d: Draft): Offer[] {
 	const run = RUN;
 	const reviewed = run && run.review.books.get(d.id);
 	if (!run || !reviewed) return [];
-	const out: HTMLElement[] = [];
-	// found by its ids there, on your shelves or not
-	for (const source of run.keys.keys()) {
-		const key = `${d.id}:${source}:ids`;
-		// a book of that catalog's to take brings these ids too: offered once, there
-		const entryTakes = reviewed.entries.some(
-			e =>
-				e.source === source &&
-				(e.gains.length || e.edition.length) &&
-				!TAKEN.has(`${d.id}:${e.source}:${e.at}`),
-		);
-		const withIds = TAKEN.has(key) || entryTakes ? null : run.idsFor(d.book, source);
-		if (!withIds) continue;
-		const lines = bookChanges(d.book, withIds);
-		out.push(
-			buildElement(
-				'div',
-				{class: 'editTake', id: `book-${i}-ids-${source}`},
-				buildElement('span', {}, spell(`Found on ${run.labels[source]}: ${lines.join('; ') || 'a cover'}`)),
-				...coverPreviews(d.book, withIds),
-				buttonFor('Take', () => takeIds(i, source), `book-${i}-ids-${source}-take`),
-			),
-		);
-	}
+	const out: Offer[] = [];
+	const now = d.book.text();
 	for (const entry of reviewed.entries) {
-		if (!entry.gains.length && !entry.edition.length) continue;
-		const key = `${d.id}:${entry.source}:${entry.at}`;
-		const label = run.labels[entry.source];
-		const id = `book-${i}-take-${entry.source}-${entry.at}`;
-		if (TAKEN.has(key)) {
-			out.push(buildElement('p', {class: 'editTake taken', id}, spell(`Taken from ${label}.`)));
-			continue;
-		}
-		// what its book fills in, and its edition apart (it may not be yours); its edition alone is taken as it is
+		const after = run.take(d.book, entry, true);
+		if (after && after.text() !== now)
+			out.push({key: `${entry.source}-${entry.at}`, source: entry.source, entry, after});
+	}
+	// a book of that catalog's to take brings its ids too: offered once, there
+	for (const source of run.keys.keys()) {
+		if (out.some(o => o.source === source)) continue;
+		const after = run.idsFor(d.book, source);
+		if (after && after.text() !== now) out.push({key: `${source}-ids`, source, entry: null, after});
+	}
+	return out;
+}
+
+/** The edition of `after` (an offer's book) that is `ed`, the book's `j`th: by its id, else by its place. */
+function editionIn(after: Book, ed: Edition, j: number): Edition | undefined {
+	return ed.id !== undefined ? after.editions.find(x => x.id === ed.id) : after.editions[j];
+}
+
+/** The editions an offer would add to the book: those of `after` that are none of the book's. */
+function newEditionsOf(d: Draft, after: Book): Edition[] {
+	const known = d.book.editions.map((ed, j) => editionIn(after, ed, j));
+	return after.editions.filter(ed => !known.includes(ed));
+}
+
+/** What an offer changes on the book itself (not its editions), one line each. */
+function bookPartChanges(d: Draft, after: Book): string[] {
+	return bookChanges(d.book, bookPartOf(d, after));
+}
+
+/** The book with an offer's own values (title, people, series, genres, dates read, ids), its editions as they are. */
+function bookPartOf(d: Draft, after: Book): Book {
+	const out = after.clone();
+	out.id = d.book.id;
+	out.editions = d.book.clone().editions;
+	return out;
+}
+
+/** The book with its `j`th edition as an offer has it. */
+function withEditionOf(d: Draft, j: number, now: Edition): Book {
+	const out = d.book.clone();
+	const was = out.editions[j];
+	const ed = now.clone();
+	ed.id = was.id;
+	out.editions[j] = ed;
+	return out;
+}
+
+/** What an edition would be changed by, from the catalogs: each offer that changes it, with its lines. */
+function editionOffers(d: Draft, j: number): {offer: Offer; lines: string[]; now: Edition}[] {
+	const ed = d.book.editions[j];
+	const out: {offer: Offer; lines: string[]; now: Edition}[] = [];
+	for (const offer of offersFor(d)) {
+		const now = editionIn(offer.after, ed, j);
+		if (!now || now.format() === ed.format()) continue;
+		out.push({offer, lines: editionFieldChanges(ed, now), now});
+	}
+	return out;
+}
+
+/** The notes that an edition may not be an audiobook, as the catalogs say (by the id or ISBN they name). */
+function notAudioOf(d: Draft, ed: Edition): {source: number; note: NotAudio}[] {
+	const reviewed = RUN && RUN.review.books.get(d.id);
+	if (!reviewed) return [];
+	const ids = [...Object.values(ed.external), ...(ed.isbn ? [ed.isbn] : [])];
+	return reviewed.notAudio.filter(({note}) => ids.some(id => note.edition.split(/\s+/).includes(id)));
+}
+
+/** A catalog's line: its icon and what it would change, with Take. */
+function offerRow(id: string, source: number, text: string, take: () => void, extra: Child[] = []): HTMLElement {
+	const run = RUN as CatalogRun;
+	return buildElement(
+		'div',
+		{class: 'editTake', id},
+		buildElement('span', {}, catalogIcon(run.keys[source]), spell(`${run.labels[source]}: ${text}`)),
+		...extra,
+		buttonFor('Take', take, `${id}-do`),
+	);
+}
+
+/**
+ * What the other catalogs would change on the book itself (its ids, dates read, genres, ...), each with Take;
+ * and the editions they would add, each with Add. What they would change on an edition is on its card.
+ */
+function catalogFinds(d: Draft, i: number): HTMLElement[] {
+	const run = RUN;
+	if (!run) return [];
+	const out: HTMLElement[] = [];
+	for (const offer of offersFor(d)) {
+		const lines = bookPartChanges(d, offer.after);
+		if (lines.length)
+			out.push(
+				offerRow(`book-${i}-take-${offer.key}`, offer.source, lines.join('; '), () => {
+					d.book = bookPartOf(d, offer.after);
+					renderBook(i);
+				}),
+			);
+	}
+	// a note that names none of its editions (as they are now) stays with the book
+	const reviewed = run.review.books.get(d.id);
+	const placed = new Set(d.book.editions.flatMap(ed => notAudioOf(d, ed).map(x => x.note)));
+	for (const {source, note} of reviewed ? reviewed.notAudio : [])
+		if (!placed.has(note)) out.push(notAudioNote(source, note));
+	return out;
+}
+
+/** A catalog's note that an edition may not be an audiobook. */
+function notAudioNote(source: number, note: NotAudio): HTMLElement {
+	const run = RUN as CatalogRun;
+	return buildElement(
+		'p',
+		{class: 'editNotAudio'},
+		catalogIcon(run.keys[source]),
+		spell(
+			`Maybe not an audiobook: ${note.edition} is ${note.said}${note.maybe ? '' : ` on ${run.labels[source]}`}.`,
+		),
+		...(note.url ? [' ', outLink(note.url, run.labels[source], run.keys[source])] : []),
+	);
+}
+
+/** The editions the other catalogs would add to the book, each with Add (an edition listed there may not be yours). */
+function newEditionOffers(d: Draft, i: number): HTMLElement[] {
+	const run = RUN;
+	if (!run) return [];
+	const out: HTMLElement[] = [];
+	for (const offer of offersFor(d))
+		newEditionsOf(d, offer.after).forEach((ed, k) => {
+			const id = `book-${i}-new-${offer.key}-${k}`;
+			out.push(
+				buildElement(
+					'div',
+					{class: 'editTake editNewEdition', id},
+					buildElement(
+						'span',
+						{},
+						catalogIcon(run.keys[offer.source]),
+						spell(`${run.labels[offer.source]} has another edition: ${editionName(ed).name}`),
+						buildElement('span', {class: 'editEdMeta'}, ` ${ed.format()}`),
+					),
+					...coverPreviews(d.book, Book.fromJSON({t: d.book.title, a: d.book.authors, e: [ed.toJSON()]})),
+					buttonFor(
+						'Add',
+						() => {
+							d.book = d.book.clone();
+							d.book.editions.push(ed.clone());
+							renderBook(i);
+						},
+						`${id}-do`,
+					),
+				),
+			);
+		});
+	return out;
+}
+
+/** In an edition's card: what the catalogs would change on it, each with Take, and their notes that it may not be an audiobook. */
+function editionFinds(d: Draft, i: number, j: number): HTMLElement[] {
+	const run = RUN;
+	if (!run) return [];
+	const ed = d.book.editions[j];
+	return [
+		...editionOffers(d, j).map(({offer, lines, now}) =>
+			offerRow(
+				`book-${i}-ed-${j}-take-${offer.key}`,
+				offer.source,
+				lines.join('; ') || 'a cover',
+				() => {
+					d.book = withEditionOf(d, j, now);
+					renderBook(i);
+				},
+				coverPreviews(
+					Book.fromJSON({t: d.book.title, a: d.book.authors, e: [ed.toJSON()]}),
+					Book.fromJSON({t: d.book.title, a: d.book.authors, e: [now.toJSON()]}),
+				),
+			),
+		),
+		...notAudioOf(d, ed).map(({source, note}) => notAudioNote(source, note)),
+	];
+}
+
+/** The marks on an edition's summary: what the catalogs would change on it, and whether it may not be an audiobook. */
+function editionMarks(d: Draft, j: number): HTMLElement[] {
+	const run = RUN;
+	if (!run) return [];
+	const ed = d.book.editions[j];
+	const offers = editionOffers(d, j);
+	const notAudio = notAudioOf(d, ed);
+	const out: HTMLElement[] = [];
+	if (offers.length) {
+		const sources = [...new Set(offers.map(o => o.offer.source))];
 		out.push(
 			buildElement(
-				'div',
-				{class: 'editTake', id},
-				entry.gains.length
-					? buildElement('span', {}, spell(`${label} has more: ${entry.gains.join('; ')}`))
-					: buildElement('span', {}, spell(`${label}'s edition has: ${entry.edition.join('; ')}`)),
-				...(entry.gains.length && entry.edition.length
-					? [
-							buildElement(
-								'label',
-								{class: 'editCheck'},
-								buildElement('input', {type: 'checkbox', id: `${id}-edition`}),
-								spell(` and its edition: ${entry.edition.join('; ')}`),
-							),
-						]
-					: []),
-				buttonFor('Take', () => takeEntry(i, entry), `${id}-do`),
+				'span',
+				{
+					class: 'editPill review',
+					title: spell(`${sources.map(s => run.labels[s]).join(', ')} would change it`),
+				},
+				...sources.map(s => catalogIcon(run.keys[s])),
+				spell('to review'),
 			),
 		);
 	}
-	for (const {source, note} of reviewed.notAudio)
+	if (notAudio.length)
 		out.push(
 			buildElement(
-				'p',
-				{class: 'editNotAudio'},
-				spell(
-					`Maybe not an audiobook: ${note.edition} is ${note.said}${note.maybe ? '' : ` on ${run.labels[source]}`}.`,
-				),
-				...(note.url ? [' ', outLink(note.url, run.labels[source], run.keys[source])] : []),
+				'span',
+				{class: 'editPill notAudio', title: spell('A catalog says it may not be an audiobook')},
+				spell('not audio?'),
 			),
 		);
 	return out;
@@ -690,33 +843,6 @@ function excludedEditions(d: Draft): HTMLElement[] {
 			buildElement('ul', {}, ...rows),
 		),
 	];
-}
-
-/** Take into the book what a catalog's book adds (and, ticked, its edition), as an import would. */
-export function takeEntry(i: number, entry: CatalogEntry) {
-	const d = DRAFTS[i];
-	if (!RUN) return;
-	const box = document.getElementById(
-		`book-${i}-take-${entry.source}-${entry.at}-edition`,
-	) as HTMLInputElement | null;
-	const taken = RUN.take(d.book, entry, entry.gains.length ? Boolean(box && box.checked) : true);
-	if (!taken) {
-		showIoStatus(spell(`${RUN.labels[entry.source]}'s book is another book now: nothing was taken.`), true);
-		return;
-	}
-	d.book = taken;
-	TAKEN.add(`${d.id}:${entry.source}:${entry.at}`);
-	TAKEN.add(`${d.id}:${entry.source}:ids`);
-	renderBook(i);
-}
-
-/** Take into the book the ids (and covers) a catalog found for it. */
-export function takeIds(i: number, source: number) {
-	const d = DRAFTS[i];
-	const withIds = RUN && RUN.idsFor(d.book, source);
-	if (withIds) d.book = withIds;
-	TAKEN.add(`${d.id}:${source}:ids`);
-	renderBook(i);
 }
 
 // ------------------------------------------------------------------ the other catalogs on the page
@@ -979,7 +1105,6 @@ export function askCatalogs(): Promise<void> {
 			name,
 			DRAFTS.map(d => d.id),
 		);
-		TAKEN = new Set();
 		FRESH_PICKS = new Map();
 		MISSING_PICKS = new Map();
 		INFO_PICKS = new Set();
@@ -1221,19 +1346,24 @@ export function bookChanges(before: Book, after: Book, excluded: string[] = []):
 			continue;
 		}
 		if (was.format() === ed.format()) continue;
-		const a = was.fields(),
-			b = ed.fields();
-		const parts = [...new Set([...Object.keys(a), ...Object.keys(b)])]
-			.filter(k => !k.startsWith('img:') && (a[k] || '') !== (b[k] || ''))
-			.map(k => {
-				const label = k.startsWith('ext:')
-					? Edition.fieldLabel(k.slice(4))
-					: (EDITION_FIELDS.find(([key]) => key === k) || [k, k])[1];
-				return `${label}: ${from(a[k] || '', b[k] || '')}`;
-			});
-		out.push(`Edition ${editionName(was).name}: ${parts.join('; ')}`);
+		out.push(`Edition ${editionName(was).name}: ${editionFieldChanges(was, ed).join('; ') || 'a cover'}`);
 	}
 	return out;
+}
+
+/** What changed on an edition, one line per field (a cover alone, none). */
+function editionFieldChanges(was: Edition, ed: Edition): string[] {
+	const from = (x: string, now: string) => (x ? `${x} → ${now || '(empty)'}` : now);
+	const a = was.fields(),
+		b = ed.fields();
+	return [...new Set([...Object.keys(a), ...Object.keys(b)])]
+		.filter(k => !k.startsWith('img:') && (a[k] || '') !== (b[k] || ''))
+		.map(k => {
+			const label = k.startsWith('ext:')
+				? Edition.fieldLabel(k.slice(4))
+				: (EDITION_FIELDS.find(([key]) => key === k) || [k, k])[1];
+			return `${label}: ${from(a[k] || '', b[k] || '')}`;
+		});
 }
 
 /** Every change on the page, as [what it is on, the change]. */
@@ -1531,7 +1661,6 @@ function bookOrder(x: Book, y: Book): number {
 function startDrafts(books: Book[]) {
 	EXCLUDE = [];
 	OPEN_PANEL = null;
-	TAKEN = new Set();
 	FRESH_PICKS = new Map();
 	MISSING_PICKS = new Map();
 	INFO_PICKS = new Set();

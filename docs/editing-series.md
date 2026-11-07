@@ -54,13 +54,14 @@ What they say is shown on the books, and nothing of it is taken until you pick i
   mark such as **Hc** for Hardcover). Press one to put it in the field; it is a change like any other you type.
   Beside the series' name, the names the catalogs give it.
 - **Links** to the book's page on each catalog that has it, and which don't (`not found on Audible`).
-- **Found on …**: the ids (and covers, shown) a catalog found for the book and its editions. **Take** puts them
-  in the book's fields.
-- **… has more**: what the catalog's book would add, as an import would (ids, dates read, and what its edition
-  fills in on yours). Tick _and its edition_ to take the edition too (filled into the one it is, or added),
-  as an edition listed there may not be yours.
-- **Maybe not an audiobook**: an edition of yours a catalog calls a print book or ebook, or an ASIN Audible
-  doesn't sell.
+- **On the book**: what a catalog would change on the book itself (its ids, dates read, genres, ...), as an
+  import would take its book in. **Take** puts it in the book's fields.
+- **On an edition's card**: what a catalog would change on that edition (its ids, cover, narrators, length, ...),
+  each with **Take**, and a catalog's note that it may be no audiobook (a print book or ebook there, or an ASIN
+  Audible doesn't sell). A closed edition says so on its summary: **to review**, with the catalogs' icons, and
+  **not audio?**.
+- **Another edition**: an edition a catalog has that is none of yours, under the editions. **Add** adds it, as an
+  edition listed there may not be yours.
 
 Among your books, in series order, cards marked **Not in your catalog** are the catalogs' books that none of yours are, each once with the
 catalogs that have it: tick one to add it when you save (and pick whose, when several have it). The books a
