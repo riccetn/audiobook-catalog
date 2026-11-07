@@ -21,6 +21,7 @@ api-docs/out/
 
 # written by make deploy-server (server/deploy.mjs) and wrangler
 server/wrangler.deploy.toml
+server/sync-database-id
 server/.wrangler/
 
 # make serve's key (also wrangler dev's) and synced copies

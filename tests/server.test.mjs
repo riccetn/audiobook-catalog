@@ -7,7 +7,7 @@ import {handle, allowedOrigins, KEY_HEADER, OLD_KEY_HEADER} from '../server/work
 import {upstreamUrl, CATALOG_KEY_HEADER} from '../server/proxy.ts';
 import {MAX_SYNC} from '../server/sync.ts';
 import {sqliteD1} from '../server/sqlite-d1.ts';
-import {deployConfig, shellArg, DATABASE, BINDING, DEPLOY_CONFIG} from '../server/deploy.mjs';
+import {deployConfig, keptId, shellArg, DATABASE, BINDING, DEPLOY_CONFIG, ID_FILE} from '../server/deploy.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -324,6 +324,17 @@ test('server: the deploy binds the sync database by the id it found, in a config
 	assert.throws(() => deployConfig('', 'not an id"\nmain = "evil.js'), /not a D1 database id/);
 	assert.ok(fs.readFileSync('.gitignore', 'utf8').split('\n').includes(`server/${DEPLOY_CONFIG}`));
 	assert.doesNotMatch(fs.readFileSync('server/wrangler.toml', 'utf8'), /database_id/, 'no id in git');
+});
+
+test('server: the deploy keeps the sync database id it found in a file git ignores, and reads it back', () => {
+	const id = '0f0e0d0c-0b0a-4009-8807-060504030201';
+	assert.equal(keptId(`${id}\n`), id);
+	assert.equal(keptId(`  ${id}\r\n`), id);
+	// missing, empty or not an id: looked up again
+	assert.equal(keptId(null), null);
+	assert.equal(keptId(''), null);
+	assert.equal(keptId('not an id'), null);
+	assert.ok(fs.readFileSync('.gitignore', 'utf8').split('\n').includes(`server/${ID_FILE}`));
 });
 
 test('server: pages and servers from before still work: catalogs at the root, the old key header and secret', async () => {
