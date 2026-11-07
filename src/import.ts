@@ -11,7 +11,6 @@ import {Backup, NewerBackup, UnreadableBackup} from './modules/backup.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {Comparison} from './modules/comparison.js';
-import {MultiComparison} from './modules/multi-comparison.js';
 import {WrongPassphrase, UnrelatedCatalogs} from './modules/catalog-sync.js';
 import {DeviceSetup} from './modules/device-setup.js';
 import {Merger} from './modules/merger.js';
@@ -43,10 +42,6 @@ import {
 	byId,
 	fieldById,
 	spell,
-	valueFromPageHash,
-	idFromAddress,
-	takeShelfCompare,
-	ALL_CATALOGS,
 	buildElement,
 	fillElement,
 	noteBackup,
@@ -65,7 +60,6 @@ import type {CatalogJob} from './store.js';
 import type {MergeOptions, MergeReport} from './modules/merger.js';
 import type {ComparisonResult, ComparedBook, Difference, SeriesRename} from './modules/comparison.js';
 import type {Step} from './modules/catalog-client.js';
-import type {MultiResult, MultiPicks} from './modules/multi-comparison.js';
 import type {SyncPrefer} from './modules/catalog-sync.js';
 
 export type CatalogMode = CatalogJob['mode'];
@@ -729,7 +723,10 @@ function shelfSections(compare: PendingCompare, sync: ShelfSync, result: ShelfCo
 					{},
 					spell(`In the series on ${label}, not in this catalog: ${result.missing.length}`),
 				),
-				messageList(result.missing, 100),
+				messageList(
+					result.missing.map(m => (m.number ? `${m.number}. ${m.title}` : m.title)),
+					100,
+				),
 			),
 		);
 	}
@@ -1571,64 +1568,14 @@ async function withCatalogJob<T>(
 }
 
 /**
- * The part of the catalog to compare with a catalog's shelves, as picked beside its panel's button: null for every book.
- * @param online the panel's prefix
+ * An address from when a series' or an author's page compared its books here (#hardcover-series=<id>,
+ * #all-author=<id>, ...) goes to the Edit series page, which compares them now; true when it went.
  */
-function scopeOf(online: string): {kind: 'series' | 'author'; name: string; label: string} | null {
-	const kind = fieldById(`${online}Scope`).value;
-	if (kind !== 'series' && kind !== 'author') return null;
-	const name = Text.tidy(fieldById(`${online}ScopeName`).value);
-	return {kind, name, label: kind === 'series' ? `the series \u201C${name}\u201D` : `books by ${name}`};
-}
-
-/**
- * The name field shows for a series or an author, and offers the names in the catalog.
- * @param online the panel's prefix
- */
-function showScope(online: string) {
-	const kind = fieldById(`${online}Scope`).value;
-	const input = byId(`${online}ScopeName`) as HTMLInputElement;
-	input.style.display = kind ? '' : 'none';
-	input.placeholder = kind === 'series' ? 'Series' : 'Author';
-	if (!kind) return;
-	withWholeCatalog(() => {
-		const names = [...CATALOG.namesOf(kind === 'series' ? 'series' : 'authors')].sort((x, y) => x.localeCompare(y));
-		fillElement(
-			byId(`${online}ScopeNames`),
-			names.map(name => buildElement('option', {value: name})),
-		);
-	});
-}
-
-/**
- * A Compare button on a series' or an author's page opens this page to compare their books with a catalog
- * (takeShelfCompare; older links name it in the address, #hardcover-series=<id>, #audiobookdb-author=<id>),
- * or with all of them at once (ALL_CATALOGS): pick them beside that Compare button, and compare.
- */
-async function compareFromAddress() {
-	const handed = takeShelfCompare();
-	const asked: (online: string) => {kind: 'series' | 'author'; id: string | null} | null = online => {
-		if (handed) return handed.catalog === online ? {kind: handed.kind, id: handed.id} : null;
-		if (!location.hash.startsWith(`#${online}-`)) return null;
-		for (const kind of ['series', 'author'] as const) {
-			const value = valueFromPageHash(location.hash, `${online}-${kind}`);
-			if (value !== null) return {kind, id: value};
-		}
-		return null;
-	};
-	const online = [...CatalogConnectors.SYNCS.map(Sync => Sync.CLIENT.CATALOG), ALL_CATALOGS].find(asked);
-	const request = online && asked(online);
-	if (!online || !request || !(await holdWholeCatalog())) return; // the names are the catalog's
-	const key = request.kind === 'series' ? 'series' : 'authors';
-	const id = idFromAddress(key, request.id);
-	const name = id === null ? undefined : CATALOG.nameOf(key, id);
-	if (name === undefined) return;
-	fieldById(`${online}Scope`).value = request.kind;
-	fieldById(`${online}ScopeName`).value = name;
-	showScope(online);
-	byId(`${online}Panel`).scrollIntoView({block: 'start'});
-	const Sync = CatalogConnectors.SYNCS.find(Sync => Sync.CLIENT.CATALOG === online);
-	await (Sync ? compareShelfSync(Sync) : compareAll());
+function movedCompareAddress(): boolean {
+	const found = /^#[a-z]+-(series|author)=(.*)$/.exec(location.hash);
+	if (!found) return false;
+	location.replace(`edit.html#${found[1]}=${found[2]}`);
+	return true;
 }
 
 /**
@@ -1649,27 +1596,11 @@ async function compareShelfSync(Sync: SyncClass) {
 		showIoStatus(`Save your ${label} ${Client.KEY_NAME} first (below the buttons).`, true);
 		return;
 	}
-	const scope = scopeOf(prefix);
-	if (scope && !scope.name) {
-		showIoStatus(`Type the ${scope.kind === 'series' ? 'series' : 'author'} to compare first.`, true);
-		return;
-	}
 	if (!(await holdWholeCatalog())) return;
-	if (scope && !Sync.inScope(CATALOG, scope).length) {
-		showIoStatus(
-			spell(
-				`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`,
-			),
-			true,
-		);
-		return;
-	}
 	closeImportPreview();
 	await whenSaved(); // compared with the catalog as saved
 	const sync = new (Sync as new (client: unknown) => ShelfSync)(catalogClient(Client, key));
-	const run = await withCatalogJob(label, 'compare', step =>
-		sync.compare(CATALOG, step, scope ? Sync.part(CATALOG, scope.kind, scope.name) : undefined),
-	);
+	const run = await withCatalogJob(label, 'compare', step => sync.compare(CATALOG, step));
 	if (!run) return;
 	const result = run.value;
 	if (!result) {
@@ -1681,7 +1612,7 @@ async function compareShelfSync(Sync: SyncClass) {
 		);
 		return;
 	}
-	const notes = [spell(`${sync.summary(result, CATALOG, scope)} (took ${minutes(run.elapsed)})`)];
+	const notes = [spell(`${sync.summary(result, CATALOG, null)} (took ${minutes(run.elapsed)})`)];
 	openCompare({
 		source: prefix,
 		name: label,
@@ -1767,384 +1698,6 @@ async function applyShelfSync(compare: PendingCompare) {
 	showIoStatus(ok ? `${here}; ${label} updated.` : `Not everything went through on ${label}; see the details.`, !ok);
 }
 
-// ------------------------------------------------------------ Compare with several catalogs at once
-// A series' or an author's books beside every catalog that compares them (each one's own Compare, run in
-// turn), in one preview: where the catalogs and this one differ, every value with the catalogs that have it,
-// to pick one. Nothing is picked at first, so Apply as it opens changes nothing; nothing is sent to any
-// catalog (each catalog's own Compare does that).
-
-/** The comparison with several catalogs open in the preview. */
-export interface PendingMulti {
-	scope: {kind: 'series' | 'author'; name: string; label: string};
-	sources: {sync: ShelfSync; result: ShelfComparison}[];
-	/** lines on top: what each catalog read, and those not asked */
-	notes: string[];
-	result: MultiResult;
-	picks: MultiPicks;
-}
-let PENDING_MULTI: PendingMulti | null = null;
-
-/**
- * The catalogs that compare a series' or an author's books.
- */
-const multiSyncs = (kind: 'series' | 'author'): SyncClass[] =>
-	CatalogConnectors.SYNCS.filter(Sync => Sync.PARTS.includes(kind));
-
-/**
- * The names of catalogs as a sentence: "Hardcover, AudiobookDB and Audible".
- */
-const namesSaid = (names: string[]): string =>
-	names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0] || '';
-
-/**
- * What keeps a catalog from being asked now ('' when nothing does): no server saved, or no key where it needs one.
- */
-function cantAsk(Sync: SyncClass): string {
-	const Client = Sync.CLIENT;
-	if (Client.VIA_PROXY && !savedServer())
-		return `${Client.LABEL}: not asked, as it needs your server's catalog proxy (below).`;
-	if (Client.KEY_NEEDED && !savedKey(Client))
-		return `${Client.LABEL}: not asked, as it needs your ${Client.LABEL} ${Client.KEY_NAME} (below).`;
-	return '';
-}
-
-/** Compare the series or author picked in the All catalogs panel with every catalog that can be asked. */
-async function compareAll() {
-	if (PAGE_RUN) return;
-	const scope = scopeOf('all');
-	if (!scope || !scope.name) {
-		showIoStatus(`Type the ${scope && scope.kind === 'author' ? 'author' : 'series'} to compare first.`, true);
-		return;
-	}
-	if (!(await holdWholeCatalog())) return;
-	if (!CATALOG.books.filter(Comparison.scope(scope.kind, scope.name)).length) {
-		showIoStatus(
-			spell(
-				`No book in this catalog is ${scope.kind === 'series' ? 'in' : 'by'} ${scope.kind === 'series' ? scope.label : scope.name}.`,
-			),
-			true,
-		);
-		return;
-	}
-	const syncs = multiSyncs(scope.kind);
-	const notes = syncs.map(cantAsk).filter(Boolean);
-	const asked = syncs.filter(Sync => !cantAsk(Sync));
-	if (!asked.length) {
-		showIoStatus(notes.join(' '), true);
-		return;
-	}
-	closeImportPreview();
-	await whenSaved(); // compared with the catalog as saved
-	const labels = asked.map(Sync => Sync.CLIENT.LABEL);
-	const sources: {sync: ShelfSync; result: ShelfComparison}[] = [];
-	const run = await withCatalogJob(namesSaid(labels), 'compare', async step => {
-		for (const Sync of asked) {
-			const Client = Sync.CLIENT;
-			const sync = new (Sync as new (client: unknown) => ShelfSync)(catalogClient(Client, savedKey(Client)));
-			try {
-				const result = await sync.compare(
-					CATALOG,
-					(text, done, total) => step(`${Client.LABEL}: ${text}`, done, total),
-					Sync.part(CATALOG, scope.kind, scope.name),
-				);
-				sources.push({sync, result});
-				notes.push(
-					`${Client.LABEL}: ${sync.summary(result, CATALOG, scope).replace(`Only ${scope.label}: `, '')}`,
-				);
-			} catch (e) {
-				notes.push(`${Client.LABEL}: couldn't compare: ${Text.errorText(e)}`);
-			}
-		}
-	});
-	if (!run) return;
-	notes.unshift(
-		spell(
-			`Only ${scope.label}: ${Text.plural(CATALOG.books.filter(Comparison.scope(scope.kind, scope.name)).length, 'book')} in this catalog (took ${minutes(run.elapsed)})`,
-		),
-	);
-	const result = MultiComparison.compare(
-		CATALOG,
-		sources.map(({sync, result}) => ({label: sync.label, result})),
-	);
-	PENDING_MULTI = {scope, sources, notes, result, picks: MultiComparison.noPicks()};
-	drawMulti();
-	openPreview('allPanel');
-}
-
-/** @returns the Apply button's label for what is picked; '' for nothing */
-function multiApplyLabel(): string {
-	const n = PENDING_MULTI ? MultiComparison.pickedCount(PENDING_MULTI.picks) : 0;
-	return n ? `Apply ${Text.plural(n, 'change')}` : '';
-}
-
-/**
- * One choice of a group of radio buttons: picked, `pick()`; the group's first is this catalog's.
- * @param name the group's
- * @param pick the choice's data-pick
- */
-function radioChoice(
-	name: string,
-	checked: boolean,
-	pick: string,
-	onpick: () => void,
-	label: Child[],
-): HTMLLabelElement {
-	return buildElement(
-		'label',
-		{class: 'cmpPick cmpChoice'},
-		buildElement('input', {
-			type: 'radio',
-			name,
-			'data-pick': pick,
-			checked,
-			onchange: () => {
-				onpick();
-				showPreviewButtons(multiApplyLabel());
-			},
-		}),
-		' ',
-		...label,
-	);
-}
-
-/**
- * A tickbox of the comparison with several catalogs, in `set` by `key`.
- * @param pick its data-pick
- */
-function multiBox(
-	set: Set<string> | Set<number>,
-	key: string | number,
-	pick: string,
-	label: Child[],
-): HTMLLabelElement {
-	const picked = set as Set<string | number>;
-	return buildElement(
-		'label',
-		{class: 'cmpPick'},
-		buildElement('input', {
-			type: 'checkbox',
-			'data-pick': pick,
-			checked: picked.has(key),
-			onchange: (e: Event) => {
-				if ((e.currentTarget as HTMLInputElement).checked) picked.add(key);
-				else picked.delete(key);
-				showPreviewButtons(multiApplyLabel());
-			},
-		}),
-		' ',
-		...label,
-	);
-}
-
-/** Draw the comparison with several catalogs (PENDING_MULTI) in the preview. */
-function drawMulti() {
-	const multi = PENDING_MULTI as PendingMulti;
-	const {sources, result, picks} = multi;
-	const labelOf = (source: number) => sources[source].sync.label;
-	const named = (from: {source: number}[]) => namesSaid(from.map(f => labelOf(f.source)));
-	const renames = Comparison.seriesRenames(
-		CATALOG,
-		sources.flatMap(s => s.result.comparison.books),
-	);
-	const out: Child[] = multi.notes.map(n => para(n));
-	out.push(
-		para(
-			spell(
-				`${Text.plural(result.differing.length, 'book')} with values that differ, ${result.fresh.length} new, ${result.gains.length} with more to give. Nothing is picked: pick what to take.`,
-			),
-		),
-	);
-
-	out.push(
-		compareGroup(
-			'Different in the catalogs',
-			result.differing.map(b => [
-				buildElement('span', {class: 'cmpBook'}, Comparison.bookLine(b.book)),
-				buildElement(
-					'ul',
-					{},
-					b.fields.map(f =>
-						buildElement(
-							'li',
-							{class: 'cmpField'},
-							`${f.label}: `,
-							radioChoice(
-								`v:${f.id}`,
-								!picks.values.has(f.id),
-								`value:${f.id}:here`,
-								() => picks.values.delete(f.id),
-								[buildElement('span', {class: 'cmpHere'}, f.here || 'none'), spell(' here')],
-							),
-							f.choices.map((c, i) => [
-								' ',
-								radioChoice(
-									`v:${f.id}`,
-									picks.values.get(f.id) === i,
-									`value:${f.id}:${i}`,
-									() => picks.values.set(f.id, i),
-									[buildElement('span', {class: 'cmpThere'}, c.text), ` on ${named(c.from)}`],
-								),
-							]),
-							f.id.endsWith(':s') && renames.has(f.here) ? renameNote(f.here) : '',
-						),
-					),
-				),
-			]),
-			null,
-			[],
-			spell(
-				"Pick a catalog's value to use it in place of this catalog's. An edition's values are those of the edition each catalog matched with yours, which may not be the same one.",
-			),
-		),
-	);
-
-	out.push(
-		compareGroup(
-			'New books',
-			result.fresh.map((b, n) => [
-				radioChoice(`f:${n}`, !picks.fresh.has(n), `fresh:${n}:none`, () => picks.fresh.delete(n), [
-					'not added',
-				]),
-				b.from.map(f => [
-					' ',
-					radioChoice(
-						`f:${n}`,
-						picks.fresh.get(n) === f.source,
-						`fresh:${n}:${f.source}`,
-						() => picks.fresh.set(n, f.source),
-						[`from ${labelOf(f.source)}: `, buildElement('span', {class: 'cmpThere'}, f.line)],
-					),
-				]),
-			]),
-			null,
-			[],
-		),
-	);
-
-	out.push(
-		compareGroup(
-			'More to give',
-			result.gains.map(g => {
-				const key = `${g.source}:${g.at}`,
-					label = labelOf(g.source);
-				return [
-					buildElement('span', {class: 'cmpBook'}, `${Comparison.bookLine(g.book)}, on ${label}`),
-					buildElement(
-						'ul',
-						{},
-						g.gains.length
-							? buildElement('li', {}, multiBox(picks.take, key, `take:${key}`, [g.gains.join('; ')]))
-							: null,
-						g.edition.length
-							? buildElement(
-									'li',
-									{},
-									multiBox(picks.editions, key, `editions:${key}`, [
-										`the ${label} edition: ${g.edition.join('; ')}`,
-									]),
-								)
-							: null,
-					),
-				];
-			}),
-			null,
-			[],
-			spell(
-				'Ticked, it fills in what this catalog lacks, and changes nothing it has; a value picked above wins.',
-			),
-		),
-	);
-
-	const ids: Child[] = sources.flatMap(({sync, result: r}, source) => {
-		const saving = [
-			r.idsFound.length && Text.plural(r.idsFound.length, 'book'),
-			r.infoIds.length && Text.plural(r.infoIds.length, 'series or person', 'series and people'),
-		]
-			.filter(Boolean)
-			.join(', ');
-		return saving
-			? [
-					multiBox(picks.ids, source, `ids:${source}`, [
-						`Save the ${sync.label} ${sync.kind.FOUND} found for ${saving}`,
-					]),
-				]
-			: [];
-	});
-	if (ids.length) out.push(compareGroup('Ids found', ids, null, []));
-
-	for (const {sync, result: r} of sources) {
-		if (r.missing.length)
-			out.push(
-				buildElement(
-					'details',
-					{class: 'cmpOnlyHere'},
-					buildElement(
-						'summary',
-						{},
-						spell(`In the series on ${sync.label}, not in this catalog: ${r.missing.length}`),
-					),
-					messageList(r.missing, 100),
-				),
-			);
-		out.push(...notAudioSections(r.notAudio, sync.label));
-		if (r.warnings.length)
-			out.push(para(`${sync.label} needs a look (${r.warnings.length}):`, 'warn'), messageList(r.warnings));
-	}
-	if (!result.differing.length && !result.fresh.length && !result.gains.length && !ids.length)
-		out.push(para(spell('Nothing to take: the catalogs have nothing this one lacks or has otherwise.')));
-	showPreview(
-		spell(`Compare ${multi.scope.label} with ${namesSaid(sources.map(s => s.sync.label)) || 'the catalogs'}`),
-		out,
-		multiApplyLabel(),
-	);
-}
-
-/** Take in what is picked of the comparison with several catalogs, and save it. Nothing is sent anywhere. */
-async function applyMulti() {
-	const multi = PENDING_MULTI;
-	if (!multi || PAGE_RUN) return;
-	closeImportPreview();
-	await whenSaved();
-	if ((await storedRevision()) !== SEEN_REVISION) {
-		showIoStatus(
-			spell('The catalog was edited in another tab since you compared; nothing was changed. Compare again.'),
-			true,
-		);
-		return;
-	}
-	const {sources, picks} = multi;
-	const copy = CATALOG.clone();
-	const {reports, patched, renamed} = MultiComparison.apply(
-		copy,
-		sources.map(s => s.result),
-		multi.result,
-		picks,
-	);
-	const lines: string[] = [];
-	let infoChanged = 0;
-	sources.forEach(({sync, result}, source) => {
-		const report = reports[source];
-		const kept = picks.ids.has(source);
-		const idsFound = kept ? sync.kind.addIds(copy.books, result.found).length : 0;
-		const infoIds = kept ? sync.kind.setInfoIds(copy, result.infoIds) : 0;
-		infoChanged += infoIds;
-		const said = appliedText(report, 0, idsFound, `${sync.label} ${sync.kind.FOUND}`, infoIds);
-		if (said !== 'Added 0 books') lines.push(`${sync.label}: ${said.replace(/^Added 0 books, /, '')}`);
-	});
-	if (Validator.bookErrors(copy).length) {
-		showIoStatus(spell('The catalog changed and what was picked no longer validates; nothing was changed.'), true);
-		return;
-	}
-	takeBooks(copy, renamed);
-	sources.forEach(({sync, result}, source) => {
-		if (picks.ids.has(source)) sync.kind.setInfoIds(CATALOG, result.infoIds);
-	});
-	if (patched) lines.push(`changed ${Text.plural(patched, 'value')}`);
-	if (lines.length || infoChanged) await persist();
-	refreshPage();
-	showIoStatus(lines.length ? lines.join('; ') + '.' : 'Nothing was picked, so nothing changed.');
-}
-
 // Leaving the page stops sending to a catalog's shelves: the browser asks first. (Nothing is lost by stopping
 // early: compare and apply again to carry on, as nothing already there is added twice.)
 addEventListener('beforeunload', e => {
@@ -2158,8 +1711,8 @@ addEventListener('beforeunload', e => {
  * Each update of a run (showCatalogJob in store.ts): no second run while one goes.
  */
 function onCatalogJob(job: CatalogJob | null) {
-	for (const prefix of [...CatalogConnectors.SYNCS.map(Sync => Sync.CLIENT.CATALOG), 'all'])
-		(byId(`${prefix}CompareBtn`) as HTMLButtonElement).disabled = Boolean(job && job.running);
+	for (const Sync of CatalogConnectors.SYNCS.filter(Sync => Sync.EVERY_BOOK))
+		(byId(`${Sync.CLIENT.CATALOG}CompareBtn`) as HTMLButtonElement).disabled = Boolean(job && job.running);
 }
 
 /**
@@ -2174,7 +1727,6 @@ function openPreview(panelId: string) {
 
 function closeImportPreview() {
 	PENDING_COMPARE = null;
-	PENDING_MULTI = null;
 	PENDING_MERGE = null;
 	PENDING_TIDY = null;
 	byId('mergePrefer').classList.remove('show');
@@ -2209,8 +1761,7 @@ for (const Exporter of CatalogConnectors.EXPORTERS) {
 for (const Sync of CatalogConnectors.SYNCS) {
 	const Client = Sync.CLIENT,
 		prefix = Client.CATALOG;
-	byId(`${prefix}CompareBtn`).addEventListener('click', () => compareShelfSync(Sync));
-	byId(`${prefix}Scope`).addEventListener('change', () => showScope(prefix));
+	if (Sync.EVERY_BOOK) byId(`${prefix}CompareBtn`).addEventListener('click', () => compareShelfSync(Sync));
 	if (!Client.KEY_STORAGE) continue; // asked without a key (Audible)
 	byId(`${prefix}KeySave`).addEventListener('click', () => saveKeyOf(Client, false));
 	byId(`${prefix}KeyRemove`).addEventListener('click', () => saveKeyOf(Client, true));
@@ -2227,11 +1778,9 @@ function onFilesPicked(id: string, take: (files: File[]) => Promise<void>) {
 		if (files.length) return take(files);
 	});
 }
-byId('allCompareBtn').addEventListener('click', compareAll);
-byId('allScope').addEventListener('change', () => showScope('all'));
 onFilesPicked('importCsvFile', files => importCsv(IMPORT_KIND, files[0]));
 byId('importConfirm').addEventListener('click', () =>
-	PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : PENDING_MULTI ? applyMulti() : applyCompare(),
+	PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : applyCompare(),
 );
 byId('serverSave').addEventListener('click', () => saveServer(false));
 byId('serverCheck').addEventListener('click', () => checkServer());
@@ -2265,16 +1814,14 @@ onFilesPicked('importFile', importBackup);
 
 export const READY = startPage(
 	() => {
+		if (movedCompareAddress()) return;
 		refreshPage();
 		for (const Client of CatalogConnectors.CLIENTS) showKey(Client);
-		for (const Sync of CatalogConnectors.SYNCS) showScope(Sync.CLIENT.CATALOG);
-		showScope('all');
 		showServer();
 		showSyncChoice('', []);
 		showSync();
 		showSetupPicks();
 		takeSettingsFromAddress();
-		compareFromAddress();
 	},
 	{refresh: refreshPage, onCatalogJob},
 );

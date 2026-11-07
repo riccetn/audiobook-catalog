@@ -359,10 +359,11 @@ function assert(ok, message) {
  */
 export function audiobookdbState() {
 	const person = (role, id, name) => ({role: {name: role}, person: {id, name}});
-	const audible = asin => ({
+	// a release's link names the site its ASIN is on
+	const audible = (asin, site = 'audible.com') => ({
 		id: `Ext${asin.slice(2, 11)}`,
 		itemId: asin,
-		category: {title: 'Audible', url: 'https://www.audible.com'},
+		category: {title: 'Audible', url: `https://www.${site}`},
 	});
 	const release = (id, title, asin, extra = {}) => ({
 		id,
@@ -413,7 +414,9 @@ export function audiobookdbState() {
 			series: [gullIsle('2')],
 			releases: [
 				release('RlsBrineUS01', 'Brine Tide', 'B0BRINETD1'),
-				release('RlsBrineUK01', 'Brine Tide', 'B0BRINEUK1'),
+				release('RlsBrineUK01', 'Brine Tide', 'B0BRINEUK1', {
+					external: [audible('B0BRINEUK1', 'audible.co.uk')],
+				}),
 			],
 		},
 		PaperFen0001: {

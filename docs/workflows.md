@@ -42,12 +42,12 @@ Amazon page (by its ASIN) and a Goodreads edition (`goodreads.com/book/show/…`
 first, and an Open Library edition's ISBN or ASIN is looked up there for the narrators and length Open Library
 doesn't have. Audible, Amazon, Goodreads and AudiobookDB can't be read from a web page themselves, so without the
 token their addresses can't be looked up, unless you have [your server](server.md) saved. With its catalog proxy,
-an Audible or Amazon page (or a bare ASIN) is looked up on that Audible site's catalog (an Amazon site on its Audible
-site, else audible.com) and on AudiobookDB; an AudiobookDB book or release (`audiobookdb.org/releases/…`) is looked
+an Audible page (or a bare ASIN, as audible.com's) is looked up on that Audible site's catalog and on AudiobookDB, and
+an Amazon page on AudiobookDB only, as an ASIN is one site's alone (an Amazon one is often a Kindle or print edition's); an AudiobookDB book or release (`audiobookdb.org/releases/…`) is looked
 up there (a book of several releases comes without an edition: paste your release's address); a title typed instead
 of an address is searched on AudiobookDB (by the authors in the form too, when AudiobookDB has several books of that
 title: type the author first, or paste the address of the one you mean); and an edition found
-elsewhere with an ASIN is looked up on Audible for what it lacks. Hardcover is still asked for what those lack. It fills in the title, authors, series and number, genres (from Wikidata, Audible and AudiobookDB), the
+elsewhere with an Audible site's ASIN is looked up on Audible for what it lacks. Hardcover is still asked for what those lack. It fills in the title, authors, series and number, genres (from Wikidata, Audible and AudiobookDB), the
 book's ids in those catalogs, and an edition (narrators, ASIN, Goodreads, Hardcover, Open Library and AudiobookDB ids, ISBN,
 publisher, release date, length): in the gaps of the card that is the same edition (it has one of its ids, an
 ASIN on any site, or its ISBN), else of the first card that has nothing else in its fields, else on a card of its own. The status line says what was filled in and from where; look it over before saving. It is in
@@ -121,7 +121,8 @@ each with a page of their bio, links, series and titles; their names on the book
 
 **Edit a series and its books**: press **Edit** at the end of a series' page (open it from _Series_). The
 _Edit series_ page shows the series and every book in it, each book with its fields (title, authors, number,
-genres, dates read and its ids) and its editions, all of them editable in place. See
+genres, dates read and its ids) and its editions, all of them editable in place, and what the other catalogs
+you set up have for them, to pick. **Edit their books** on an author's page does the same for their books. See
 [Editing a series](editing-series.md) for the page, and for merging, splitting and removing editions there.
 Nothing is saved until you press **Review & save**, which lists every change, and then **Save**.
 

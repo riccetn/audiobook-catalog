@@ -49,12 +49,10 @@ AudiobookDB doesn't keep dates read, ratings or reviews, so none are compared or
 AudiobookDB lists only audiobooks, so unlike Hardcover and Audible its comparison has no _Maybe not audiobooks_
 lists.
 
-**A series or an author.** Pick _a series_ or _an author_ beside the button and type its name (the field offers
-the names in the catalog): only the books of that series, or by that author, are looked up, compared and offered
-to put on AudiobookDB. The series or author is found on AudiobookDB by the AudiobookDB id in its info form, else
-from your books of it there. For a series, the books AudiobookDB lists in it that aren't in the catalog are
-listed too, to look through. The **Compare with AudiobookDB** button beside **Edit**, at the end of a series' page (on _Series_) or an author's
-page, opens the _Import & export_ page and compares that series or author at once.
+**A series or an author.** Their _Edit_ page ([Editing a series](editing-series.md#other-catalogs)) compares only
+the books of that series, or by that author, with AudiobookDB. The series or author is found on AudiobookDB by the
+AudiobookDB id in its form, else from your books of it there. For a series, the books AudiobookDB lists in it that
+aren't in the catalog are named too, to look through.
 
 ## Apply
 
@@ -66,6 +64,14 @@ and comparing again shows what is still missing, as nothing already there is add
 
 Nothing is ever changed or removed on AudiobookDB: no book is taken off a shelf, no shelf is made, and
 AudiobookDB's own catalog (its books, people and series) is never edited.
+
+## ASINs
+
+A release's links on AudiobookDB name the site each of its ASINs is on, so a release's ASINs are kept under
+those sites (an audible.com link as `audible.com`, an audible.co.uk one as `audible.co.uk`): when _Fill in from
+another catalog_ fills in a release, when **Compare** or the _Edit_ page takes one, and with the ids found for an
+edition of yours that is that release, where it has no ASIN on that site yet. An ASIN another of your editions
+already has stays that one's.
 
 ## Covers
 

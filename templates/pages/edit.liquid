@@ -1,13 +1,13 @@
 {% layout 'layout' title: 'Edit series' nav: 'index.html' script: 'edit.js' %}
 	<div class="crumb show"><a id="backLink" href="index.html">&larr; All series</a></div>
-	<p class="editEyebrow">Edit series</p>
+	<p class="editEyebrow" id="eyebrow">Edit series</p>
 	<h2 class="editTitle" id="subtitle">Loading&hellip;</h2>
 	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
 	<p id="ioStatus" class="ioStatus"></p>
 
 	<section class="editPanel" id="seriesPanel" aria-labelledby="seriesPanelTitle">
 		<h2 id="seriesPanelTitle">Series</h2>
-		<div><label for="sf_name">Name (renames it on every book in the series)</label><input id="sf_name"></div>
+		<div><label for="sf_name">Name (renames it on every book in the series)</label><input id="sf_name"><div class="editChipsBox" id="sf_nameChips"></div></div>
 		<div class="formrow">
 			<div><label for="sf_total">Books released so far</label><input id="sf_total" placeholder="e.g. 12, or many"></div>
 			<div><label for="sf_status">Status</label><select id="sf_status"><option value="ongoing">ongoing</option><option value="complete">complete</option></select></div>
@@ -16,6 +16,16 @@
 		<div class="formrow extFields" id="sf_ext"></div>
 		<p id="seriesFormError" class="formError"></p>
 		<div class="panelbtns"><button type="button" id="seriesRemoveBtn" class="removeBook">Remove series</button></div>
+	</section>
+
+	<section class="editPanel" id="catalogPanel" aria-labelledby="catalogPanelTitle">
+		<h2 id="catalogPanelTitle">Other catalogs</h2>
+		<p class="hint">Each catalog ticked is asked when the page opens. What it has that differs from your books is shown on them, to
+			pick; nothing is taken until you pick it and save, and nothing is sent to any catalog.</p>
+		<div class="editCatalogs" id="catalogPicks"></div>
+		<div class="formbtns"><button type="button" id="askBtn">Ask again</button></div>
+		<ul class="editNotes" id="catalogNotes"></ul>
+		<div id="catalogFound"></div>
 	</section>
 
 	<h2 class="editBooksTitle">Books <span class="editCount" id="bookCount"></span></h2>

@@ -1,6 +1,6 @@
 // AudiobookDB as a source of the book form's Fill in: its API doesn't answer web pages, so it is asked through
 // the user's own catalog proxy (server/proxy.ts), by its books and releases, by an ASIN (beside Audible), and
-// by a typed title. The ASINs it lists are not taken, as it doesn't say which Audible site they are on.
+// by a typed title. A release's ASINs are taken under the site its links name for them.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
@@ -112,7 +112,7 @@ export class AudiobookdbSource extends BookSource {
 	/**
 	 * A book made of an AudiobookDB book and one of its releases: title, authors, its numbered series (not an
 	 * umbrella one numbered 0), genres, and the edition: its release id, ISBN, narrators, publisher, release date,
-	 * length and cover (the release's, else the book's). Its ASINs are left out, as AudiobookDB doesn't say which Audible site they are on.
+	 * length, cover (the release's, else the book's), and its ASINs, each under the site its link names.
 	 */
 	static book(book: Unchecked, release: Unchecked | null): Book {
 		const people: (x: unknown, role: string) => string[] = (x, role) =>
@@ -154,7 +154,9 @@ export class AudiobookdbSource extends BookSource {
 		if (genres.length) rec.g = [...new Set(genres)].slice(0, 5);
 		if (release) {
 			const ed: Record<string, any> = {};
-			if (typeof release.id === 'string' && release.id) ed.ext = {audiobookdb: release.id};
+			const ext: Record<string, string> = {...AudiobookdbClient.asinsBySite(release)};
+			if (typeof release.id === 'string' && release.id) ext.audiobookdb = release.id;
+			if (Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
 			const isbn = Isbn.parse(release.isbn);
 			if (isbn) ed.isbn = isbn;
 			const narrators = people(release.people, 'Narrator');

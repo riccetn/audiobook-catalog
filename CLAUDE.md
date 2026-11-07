@@ -122,8 +122,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     the browser's `indexedDB` is passed in). `MemoryReader` answers a `CatalogReader`'s questions from records in memory.
   - The external catalogs, which the pages and `CatalogLookup` reach only through four base classes and the lists of them in
     `CatalogConnectors` (`IMPORTERS`, `EXPORTERS`, `SYNCS`, their `CLIENTS`, `SOURCES`, in the order they are asked), so a catalog is added by writing a class per
-    role and listing it there (`docs/development.md`, _External catalogs_; a shelf sync also goes in `CompareCatalogs.ALL`, the series and author pages' Compare
-    buttons as plain data, so they don't load the syncs: `of(kind)`; a test keeps it the same as `SYNCS`); a class says what it is in statics (`CATALOG`, its ExternalCatalog key and its
+    role and listing it there (`docs/development.md`, _External catalogs_); a class says what it is in statics (`CATALOG`, its ExternalCatalog key and its
     panel's prefix on Import & export; `LABEL`), and the pages read them, never a catalog's name:
     - `FileImporter` (reads an export file a row at a time into books, `readRow`; `EDITIONS_YOURS`; `EDITION_TITLES` (its titles are its editions', so Compare offers "Released as": `MergeOptions.editionTitles`, also set by `AudibleSync`); a site picked by the panel's `<CATALOG>ImportSite`) with
       `AudibleImporter` and `GoodreadsImporter`; `FileExporter` (`write` gives `{text, books, notes}`; `FORMAT`, `FILE_NAME`, `TYPE`) with `GoodreadsExporter`.
@@ -131,26 +130,26 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       no other difference), `KEY_STORAGE`, `KEY_HELP`, `KEY_NEEDED`, `cleanKey`; `VIA_PROXY`, `PAUSE_MS`, `ID`) with `HardcoverClient` (GraphQL `ask`;
       queries, `parseUrl`/`bookId`, `idBySlug`) and `AudiobookdbClient` (through the catalog proxy; the key goes only with `keyed` asks (`whoAmI`, `shelves`,
       `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release).
-    - `ShelfSync` (your shelves on a catalog: `CLIENT`, `compare(catalog, step, part)` gives a `ShelfComparison` with a `SyncPlan` (`name`, `add`, `reads`,
+    - `ShelfSync` (your shelves on a catalog: `CLIENT`, `PARTS` (the kinds the Edit page compares it for), `EVERY_BOOK` (it compares the whole catalog: a Compare row on Import & export; not `AudibleSync`), `compare(catalog, step, part)` gives a `ShelfComparison` with a `SyncPlan` (`name`, `add`, `reads`,
       `otherShelf`, `unknown`, `inexact`), `summary`, `push` (the plan's entries in turn, each by the subclass's `send`; stops after `STOP_AFTER` failures in a row), `FOUND` (what Apply saves besides books: AudiobookDB's "ids and covers"),
       `part` (a series' or author's id there), `addIds`/`setInfoIds`, `notAdded`, `NOT_FOUND`, `SENDS_READS`, `inScope`, `sameName`; the comparison's `notAudio`, editions yours or on your shelves there the catalog has as something else, shown as _Maybe not audiobooks_) with `HardcoverSync`
       (`comparePart`: reads only that part of the shelves, by the series' or author's Hardcover ids (`partIds`; Hardcover refuses `_ilike`), `shelfOf`/`shelfOfBooks`;
       both read the shelf's books with `readShelfBooks` and plan with `planFor`, which never sends an edition `HardcoverClient.notAudio` (`reading_format_id`) calls a print book or an ebook and lists yours with `yourNotAudio`; `bookRecord`, which `HardcoverSource` uses too, `read`, `lookups`/`addIds`, `planExport`)
       and `AudiobookdbSync` (finds your books (`find`: by their AudiobookDB id, else their own editions' ASINs), then with the key your Read shelf (`readShelf`) as
       incoming books (`incoming`: the release that is yours, else a lone one; none of several, so not `addable`); for a series or an author only that part
-      (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids), `planExport` (every book on Read, as everything in the catalog counts as
+      (`partId`); `addIds`/`infoIds`/`setInfoIds` (book, release, series and people ids, and a release's ASINs by site where the edition has none there), `planExport` (every book on Read, as everything in the catalog counts as
       read; a book on another exclusive shelf, To Listen or Currently Listening, is left alone; Read is the Listened shelf); add-only: never takes a book off a
       shelf, makes a shelf or edits AudiobookDB's catalog), and `AudibleSync` (a series only, `PARTS`: no shelves or key, so `plan` is null and
       nothing is sent; reads the series on its books' Audible site (`siteOf`), by the series' ASIN there or `findSeries`, its `relationships`
       children, then their products `AudibleClient.BATCH` (50) at a time; every edition Audible sells is listed, so a book takes the one with its
       ASIN (`yours`, ticked at first), else its number's only one; placeholders, box sets and unnumbered ones aren't missing books; `setInfoIds`
-      keeps the series' ASIN under the site and its `total`; `unsold`: your ASINs on that site Audible doesn't sell, as maybe not audiobooks). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
+      keeps the series' ASIN under the site and its `total`; `unsold`: your ASINs under that Audible site it doesn't sell, as maybe not audiobooks; `siteOf` and both count only Audible sites' ASINs). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
       `products`). Comparing only reads the catalog; sending only adds.
     - `BookSource` (a catalog the book form's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
       (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the
-      proxy, by any Audible or Amazon site's ASIN on its site, `site`; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
-      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the form's authors; ASINs it lists aren't taken, as it doesn't say their site;
+      proxy, by an Audible site's ASIN on that site, `isSite`; an Amazon site's ASIN is that site's alone, so never asked of Audible; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
+      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the form's authors; a release's ASINs under the sites its links name (`category.url`, `AudiobookdbClient.asinsBySite`);
       `book`, `minutes`), `HardcoverSource` (with the token: its books, and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
       `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
       sources, with the fetch, the clients whose key is saved and the catalog proxy passed in: the candidates in order own, also, fallback (a fallback only when
@@ -162,10 +161,14 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     catalog agrees on them, `seriesRenames`/`patchAll`, returned as `renamed` for the page to rename on `CATALOG` too; a title that is
     one of the book's (`Book.hasTitle`) is no difference, and with `editionTitles` a new one is also offered as "Released as", the
     edition's `t` (key `<at>:t:<edition>`), beside renaming the book (`useTitle`); `differences` takes `DifferenceOptions`).
-    `MultiComparison` (several shelf syncs' `ShelfComparison`s side by side, for _Compare with all catalogs_: `compare` gives `differing` (per book, each
+    `MultiComparison` (several shelf syncs' `ShelfComparison`s side by side: `compare` gives `differing` (per book, each
     field's values once with the sources that have them, `Comparison.differences` with `gaps` so a value the catalog lacks counts too), `fresh` (new books
     once, matched across sources by merging them in turn) and `gains`; `noPicks` (nothing picked, so Apply changes nothing), `pickedCount`, `apply`
     (each source's picked books merged in turn, then the picked values patched; ids found are kept by the page)).
+    `BookReview` (the Edit page's view of them, book by book: `compare(catalog, sources, ids)` gives per book id the `fields` with each catalog's
+    values (`FieldChoices`, an edition's by its id), `entries` (a catalog's book that is yours: `url`, `gains`, `edition`, its `excluded` editions),
+    `notFound` and `notAudio`, then `fresh`, `missing` (each once, without the `fresh` ones) and `infoIds`; editions an `Edition …` exclusion covers offer nothing (`without`);
+    `take(book, theirs, exclusions, opts, withEdition)` merges a catalog's book into a copy, `withIds` its sync's `addIds`, `urlOf`).
     Typedefs that aren't a class (`Unchecked` for data not yet checked, `MergeReport`, `Picks`, ...) live in the module that makes them;
     others bring them in with `import type {MergeReport} from './merger.js'`. A class declares its fields, with their types and doc comments, above its constructor.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
@@ -210,7 +213,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   authors and series (`#f_aList`/`#f_aNew`, `#f_sList`/`#f_sNew` in the template) and each edition's narrators and
   publisher use it, over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` and the series' `name` index, when the form opens).
 - `series.js` (`index.html`, _Series_): every series (from the series records alone, `#q=...&missing`), and a series' page
-  (`#series=<id>`, `#standalone`: its books, Compare with Hardcover, and Edit, a link to `edit.html`, `editPageHref`); `SERIES_FILTER`, `openSeries`.
+  (`#series=<id>`, `#standalone`: its books, and Edit, a link to `edit.html`, `editPageHref`); `SERIES_FILTER`, `openSeries`.
   Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`
   (`movedAddress`, with `location.replace`).
 - `books.js` (`books.html`, _Books_): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
@@ -218,19 +221,27 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
   and the book form (`openEditForm`; Remove book is in it; _Fill in from another catalog_, `fillFromCatalog`, fills its empty fields; it loads `CatalogLookup` and `CatalogConnectors` with `import()`), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
   `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
-- `edit.js` (`edit.html#series=<id>`, _Edit series_, `docs/editing-series.md`): a series and its books on one page: the series' fields (what its form had:
+- `edit.js` (`edit.html#series=<id>`, _Edit series_, `docs/editing-series.md`; `#author=<id>` (or a name), every book by an author, `KIND`, `AUTHOR_ID`, with
+  each book's series and number among its fields and no series panel): a series and its books on one page: the series' fields (what its form had:
   name, total, status, note, ids; Remove series), and a card per book with its fields and an edition card each (`editionName` tells it apart:
   its description, else narrators, else ids), whose inputs are `Edition.fields()` keys; Merge with…, Split and Remove edition (with "Don't let imports
   add it again", `EXCLUDE`) change the book's copy (`DRAFTS`, `Draft`). A field is read on change (`readBookFields`, `readEditionFields`,
   `Edition.fromFields`); one that can't be read is named and changes nothing. Review & save lists the changes (`changes`, `bookChanges`; the fields are `inert` while it is open,
   and a field that can't be read is scrolled to instead) and Save `saveBook`s each changed book, adds `EXCLUDE`, then renames the series and saves its info,
   and goes back to the series' page with what it saved in its status line (`openWithStatus` in `store.js`, sessionStorage `audiobook-catalog-status`); Discard goes back too.
+  The other catalogs: on open `askCatalogs` (`ASKING`, which tests await) loads `edit-catalogs.js` with `import()` (only it loads the connectors) and,
+  holding the whole catalog, `runCatalogs(kind, name, ids)` compares every `CatalogConnectors.SYNCS` whose `PARTS` has the kind, can be asked
+  (`cantAsk`) and isn't unticked (`catalogChoices`, `setSkipped`, localStorage `audiobook-catalog-edit-skip`), giving a `CatalogRun` (`RUN`: `review`, a
+  `BookReview`; `take`, `idsFor`, `addFresh`, `keepInfoIds`). Each catalog is shown with its icon (`catalogIcon`: its site's `favicon.ico`, `ExternalCatalog.home` (`FAVICONS` where that one is broken), else on an error its mark, `CATALOG_MARKS`,
+  which CSS draws). The page shows each catalog's values as chips beside the fields (`choiceChips`, ids
+  `<field>-pick-<n>`), links (`catalogLinks`), what to Take (`offersFor`: each catalog's book of yours taken in (`CatalogRun.take`), else the ids it found; split into the book's own part, `catalogFinds`, `book-<i>-take-<source>-<at|ids>`,
+  each edition's on its card, `editionFinds`, `book-<i>-ed-<j>-take-…`, with `editionMarks` on its summary (and its `notAudioOf` notes), and the editions none of yours are, `newEditionOffers`), excluded editions behind a `<details>`, and among the books, in series order (`bookOrder`, yours by where they were when the page opened), the new ones (`newCards`,
+  `FRESH_PICKS`; and the books a catalog only lists in the series, `ShelfComparison.missing` (`MissingBook`, with the book when the comparison read it, else its id, read by the sync's `missingBook` only once ticked, `MISSING_PICKS`, `CatalogRun.missingBook`/`addMissing`)) and the series' and people's ids (`INFO_PICKS`), which Save adds. Nothing is sent to a catalog.
 - `import.js` (`import.html`; shows the book count until an action calls `withWholeCatalog`): knows the catalogs only through `CatalogConnectors` and
-  their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn`, `<CATALOG>Scope`,
+  their panels by prefix (`<CATALOG>ImportBtn`, `<CATALOG>ExportBtn`; a shelf sync's panel is `templates/shelf-panel.liquid`: `<CATALOG>CompareBtn` (only for `EVERY_BOOK` syncs),
   `<CATALOG>Key`/`KeySave`/`KeyRemove`/`KeyState`, `showKey`/`saveKeyOf`). The comparison an export file's import (`compareExport`), or a shelf sync's Compare
-  (`compareShelfSync(Sync)`; for a series or an author, which their pages' buttons beside Edit open with `shelfCompareButtons`/`openShelfCompare`: a `CompareRequest` handed over in sessionStorage (`COMPARE_STORAGE_KEY`, read once by `takeShelfCompare`), else, and from older links, the address `shelfCompareHref`, `#hardcover-series=<id>`/`#audiobookdb-author=<id>`;
-  `scopeOf`/`showScope` by the panel's prefix; _All catalogs_ (`allPanel`, prefix `all`, `ALL_CATALOGS` in a `CompareRequest`): `compareAll` runs every sync whose `PARTS` has the kind
-  and can be asked (`cantAsk`) in turn, `drawMulti`/`applyMulti` with `PENDING_MULTI` (radio choices, nothing picked at first, nothing sent)), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
+  (`compareShelfSync(Sync)`, the whole catalog; a series or an author is compared on its Edit page, and the old addresses of their comparison here,
+  `#hardcover-series=<id>`/`#audiobookdb-author=<id>`/`#all-series=<id>`, go there, `movedCompareAddress`), opens (`PENDING_COMPARE`, with `online` for a shelf sync, its ticks in
   `picks`; `drawCompare`, `shelfSections`; Apply runs `Comparison.apply` on a copy, then for a shelf sync saves and `push`es the ticked part of the plan, `applyShelfSync`),
   file exports (`exportFile`), Check (`Validator.check`) and Box sets (`Merger.boxSets`), Export / Restore (`Backup.readFiles`) / Merge of backups,
   and _Sync between devices_ (`runSync(prefer)`, `showSync`, `saveSyncPassphrase`, `showSyncChoice` for what both changed or a catalog made apart),
@@ -247,7 +258,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
 - `credit.js` (`author.html`, `narrator.html`, `publisher.html`, started by `author.js`/`narrator.js`/`publisher.js` with
   `startCreditPage(kind)`): one's page (`#a=<id>`, `#n=<id>`, `#p=<id>`; loads their books by their credits; without an
   address it goes to the list): bio and links from `CATALOG.authors` (`.narrators`, `.publishers`, by id), their series and
-  titles from the books (`CATALOG.works`), and the form (its Name renames them on every book, `renameEntry`, and a name the catalog has joins them on a second Save; Remove author/narrator/publisher). Names on the catalog's book
+  titles from the books (`CATALOG.works`), an author's _Edit their books_ link (`editPageHref(id, 'author')`), and the form (its Name renames them on every book, `renameEntry`, and a name the catalog has joins them on a second Save; Remove author/narrator/publisher). Names on the catalog's book
   cards link here (`creditPageHref`).
 - `duplicates.js` (`duplicates.html`): duplicate groups and merging (joining editions that don't
   conflict, `Edition.joinable`), and books whose editions look like one (`splitEditions`).

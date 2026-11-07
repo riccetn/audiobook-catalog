@@ -16,7 +16,7 @@ import type {Book} from './book.js';
 import type {Catalog} from './catalog.js';
 import type {MergeOptions} from './merger.js';
 import type {Step} from './catalog-client.js';
-import type {ShelfPart, ShelfComparison, InfoId, NotAudio} from './shelf-sync.js';
+import type {ShelfPart, ShelfComparison, InfoId, NotAudio, MissingBook} from './shelf-sync.js';
 
 /**
  * A comparison with a series on Audible: the site asked, and how many books the series has there (whole numbers).
@@ -30,6 +30,7 @@ const PLACEHOLDER = /series advisor placeholder/i;
 export class AudibleSync extends ShelfSync {
 	static CLIENT = AudibleClient;
 	static PARTS = ['series'] as readonly ('series' | 'author')[];
+	static EVERY_BOOK = false;
 	static FOUND = 'ids and book counts';
 
 	// The client is its own catalog's, with what that catalog asks.
@@ -110,7 +111,7 @@ export class AudibleSync extends ShelfSync {
 			return book;
 		};
 		const incoming: Book[] = [];
-		const missing: string[] = [];
+		const missing: MissingBook[] = [];
 		const warnings: string[] = [];
 		const editionsYours: Book[] = [];
 		for (const [key, {number, products: editions}] of byNumber) {
@@ -137,7 +138,13 @@ export class AudibleSync extends ShelfSync {
 				!key.includes('-') &&
 				!mine.some(b => b.number && AudibleSync.numberKey(b.number) === key)
 			)
-				missing.push(`${number}. ${Text.tidy(best.title)}`);
+				missing.push({
+					title: Text.tidy(best.title),
+					number,
+					url: ExternalCatalog.url(site, 'edition', best.asin),
+					// its one edition there; with several, none, as which is yours can't be told
+					book: incomingOf(best, undefined, number, editions.length === 1),
+				});
 		}
 		const notAudio = await this.unsold(mine, site, products, step);
 		// a product's title is its site's, the title it was released under there
@@ -168,17 +175,17 @@ export class AudibleSync extends ShelfSync {
 	}
 
 	/**
-	 * The editions of `books` whose ASIN on `site` (or its Amazon's) Audible doesn't sell there: maybe not
-	 * audiobooks, as an Amazon ASIN may be a Kindle or print edition's (from a Goodreads or Hardcover import),
-	 * though Audible also stops selling some. `sold` holds the products already read; the others are asked.
+	 * The editions of `books` whose ASIN on `site` Audible doesn't sell there: maybe not audiobooks (an ASIN
+	 * put under the wrong site, say), though Audible also stops selling some. An Amazon site's ASIN isn't
+	 * asked: it is that site's alone, often a Kindle or print edition's. `sold` holds the products already
+	 * read; the others are asked.
 	 */
 	async unsold(books: Book[], site: string, sold: Map<string, Unchecked>, step: Step): Promise<NotAudio[]> {
 		const asins: [Book, string, string][] = [];
 		for (const book of books)
 			for (const ed of book.editions)
 				for (const [key, id] of Object.entries(ed.external))
-					if (ExternalCatalog.family(key) === 'asin' && AudibleSource.site(key) === site && !sold.has(id))
-						asins.push([book, id, key]);
+					if (key === site && !sold.has(id)) asins.push([book, id, key]);
 		if (!asins.length) return [];
 		const found = await this.client.products(
 			site,
@@ -193,25 +200,21 @@ export class AudibleSync extends ShelfSync {
 				book,
 				yours: true,
 				edition: `ASIN ${a}`,
-				said: `not sold on ${site}: maybe a Kindle or print edition's ASIN`,
-				// its page where it came from: an Amazon one shows what it is
+				said: `not sold on ${site}: maybe another site's ASIN, or not an audiobook`,
 				url: ExternalCatalog.url(key, 'edition', a),
 				maybe: true,
 			}));
 	}
 
 	/**
-	 * The Audible site a series is read on: the one most of `books`' ASINs are from (an Amazon site's is its
-	 * Audible's: amazon.de, audible.de), else the first its info has an id on, else audible.com.
+	 * The Audible site a series is read on: the one most of `books`' Audible ASINs are from (an Amazon site's
+	 * ASIN is that site's alone), else the first its info has an id on, else audible.com.
 	 */
 	static siteOf(books: Book[], info: Series | undefined): string {
 		const counts: Map<string, number> = new Map();
 		for (const ed of books.flatMap(b => b.editions))
 			for (const key of Object.keys(ed.external))
-				if (ExternalCatalog.family(key) === 'asin') {
-					const site = AudibleSource.site(key);
-					counts.set(site, (counts.get(site) || 0) + 1);
-				}
+				if (AudibleSource.isSite(key)) counts.set(key, (counts.get(key) || 0) + 1);
 		const top = [...counts].sort((x, y) => y[1] - x[1])[0];
 		if (top) return top[0];
 		const saved = info && Object.keys(info.external).find(k => ExternalCatalog.get(k)?.group === 'audible');
@@ -226,8 +229,7 @@ export class AudibleSync extends ShelfSync {
 		const byAsin: Map<string, Book> = new Map();
 		for (const b of books)
 			for (const ed of b.editions)
-				for (const [key, id] of Object.entries(ed.external))
-					if (ExternalCatalog.family(key) === 'asin' && AudibleSource.site(key) === site) byAsin.set(id, b);
+				for (const [key, id] of Object.entries(ed.external)) if (key === site) byAsin.set(id, b);
 		if (!byAsin.size) return null;
 		const products = await this.client.products(
 			site,

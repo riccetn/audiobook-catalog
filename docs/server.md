@@ -8,8 +8,8 @@ with each other beyond living in one place:
   BookBrainz and ISFDB are like that. Open Library, Wikidata and Hardcover aren't, and the app asks them itself.
   Through the proxy, the book form's _Fill in from another catalog_ looks Audible pages, ASINs and AudiobookDB books
   and releases up ([Everyday workflows](workflows.md)), the AudiobookDB panel on _Import & export_ compares the
-  catalog with your AudiobookDB shelves ([AudiobookDB](audiobookdb.md)), and a series is compared with its books on
-  Audible ([Audible](audible.md#fill-in-a-series-books-from-audible)).
+  catalog with your AudiobookDB shelves ([AudiobookDB](audiobookdb.md)), and a series' _Edit_ page compares its books
+  with AudiobookDB and Audible ([Audible](audible.md#fill-in-a-series-books-from-audible)).
 - **Sync** (`/sync`). It keeps one encrypted copy of your catalog for [syncing your devices](#syncing-devices).
 
 The server is `server/`: the proxy is `proxy.ts`, sync is `sync.ts`, and `worker.ts` lets a request in (only your

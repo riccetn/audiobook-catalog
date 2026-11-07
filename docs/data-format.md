@@ -129,7 +129,7 @@ whenever it saves, however they were added or changed:
 
 **Which site an ASIN is from**: an Audible import's ASINs are from the Audible site you pick (audible.com
 unless you pick another, see [Audible](audible.md)); ASINs from Hardcover or Goodreads are amazon.com's,
-the site they use. An edition's ASIN from before ASINs were kept by site (`"id": "B0…"`) is read as its
+the site they use; AudiobookDB's are the sites its release's links name (`audible.co.uk`, ...). An edition's ASIN from before ASINs were kept by site (`"id": "B0…"`) is read as its
 audible.com ASIN.
 
 **Box sets**: an edition that holds several titles (a box set, an omnibus) is listed on each of those

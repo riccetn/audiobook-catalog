@@ -10,12 +10,14 @@ import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 import {Comparison} from './comparison.js';
 import {Cover} from './cover.js';
+import {ExternalCatalog} from './external-catalog.js';
 import {AudiobookdbSource} from './audiobookdb-source.js';
 import {AudiobookdbClient} from './audiobookdb-client.js';
 import {ShelfSync} from './shelf-sync.js';
 import type {Unchecked} from './text.js';
+import type {Edition} from './edition.js';
 import type {Step} from './catalog-client.js';
-import type {ShelfPart, InfoId, PlanEntry, Sent} from './shelf-sync.js';
+import type {ShelfPart, InfoId, PlanEntry, Sent, MissingBook} from './shelf-sync.js';
 import type {AudiobookdbShelf} from './audiobookdb-client.js';
 import {Catalog} from './catalog.js';
 import type {NamedKind} from './catalog.js';
@@ -64,8 +66,8 @@ export interface AudiobookdbComparison {
 	plan: AudiobookdbPlan | null;
 	/** how many books your Read shelf has (in the scope asked for); null without your key */
 	onShelf: number | null;
-	/** the series' books on AudiobookDB that aren't in the catalog (a series only) */
-	missing: string[];
+	/** the series' books on AudiobookDB that aren't in the catalog (a series only), read when added (missingBook()) */
+	missing: MissingBook[];
 	/** none: AudiobookDB lists only audiobooks */
 	notAudio: never[];
 }
@@ -109,13 +111,16 @@ export class AudiobookdbSync extends ShelfSync {
 		}
 		const read = shelves ? AudiobookdbSync.readShelf(shelves) : null;
 		let wanted = read ? read.books : [];
-		const missing: string[] = [];
+		const missing: MissingBook[] = [];
 		if (part) {
 			const id = AudiobookdbSync.partId(part, mine, found);
 			let theirs: Unchecked[] = [];
+			// the series' books as it lists them, each with its number in it
+			let listed: Unchecked[] = [];
 			if (id) {
 				step(`Reading ${part.kind === 'series' ? 'the series' : 'the author'} ${part.name} on AudiobookDB`);
 				const answer = part.kind === 'series' ? await client.series(id) : await client.person(id);
+				if (answer && part.kind === 'series') listed = list(answer.books).filter(x => Text.isObject(x.book));
 				theirs = answer
 					? list(
 							part.kind === 'series'
@@ -137,8 +142,19 @@ export class AudiobookdbSync extends ShelfSync {
 			);
 			if (part.kind === 'series') {
 				const shelved = new Set(wanted.map(sb => sb.id));
-				for (const b of theirs)
-					if (!myIds.has(b.id) && !shelved.has(b.id) && tidyText(b.title)) missing.push(tidyText(b.title));
+				for (const x of listed)
+					if (
+						typeof x.book.id === 'string' &&
+						!myIds.has(x.book.id) &&
+						!shelved.has(x.book.id) &&
+						tidyText(x.book.title)
+					)
+						missing.push({
+							title: tidyText(x.book.title),
+							...(tidyText(x.ordinal) ? {number: tidyText(x.ordinal)} : {}),
+							url: ExternalCatalog.url('audiobookdb', 'book', x.book.id),
+							id: x.book.id,
+						});
 			}
 		}
 		const details = await AudiobookdbClient.each(
@@ -178,6 +194,25 @@ export class AudiobookdbSync extends ShelfSync {
 			missing,
 			notAudio: [],
 		};
+	}
+
+	/**
+	 * A book of the series AudiobookDB has and the catalog doesn't, read now that it is to be added: its book
+	 * with its one release (several, none, as which is yours can't be told), numbered as the series lists it.
+	 */
+	async missingBook(missing: MissingBook, part: ShelfPart): Promise<Book | null> {
+		if (missing.book) return missing.book;
+		if (!missing.id) return null;
+		const detail = await this.client.book(missing.id);
+		if (!detail) return null;
+		const releases = list(detail.releases);
+		const book = AudiobookdbSource.book(detail, releases.length === 1 ? releases[0] : null);
+		if (!book.title || !book.authors.length) return null;
+		if (part.kind === 'series' && book.series !== part.name) {
+			book.series = part.name;
+			if (missing.number) book.number = missing.number;
+		}
+		return book;
 	}
 
 	static notAdded(count: number): string {
@@ -319,15 +354,13 @@ export class AudiobookdbSync extends ShelfSync {
 
 	/**
 	 * A book on your Read shelf as an import takes it: AudiobookDB's book, with the release that is an edition
-	 * of yours of it (by its release id or ASIN; the ASIN is put under your edition's site, as AudiobookDB
-	 * doesn't say which it is), else its one release; with several releases and none of yours, none, as it
-	 * can't tell which is yours. null when it has no title or author.
+	 * of yours of it (by its release id or ASIN), else its one release, with its ASINs under the sites its
+	 * links name; with several releases and none of yours, none, as it can't tell which is yours. null when it has no title or author.
 	 * @param mine your books, with the AudiobookDB ids found
 	 */
 	static incoming(detail: Unchecked, mine: Book[]): Book | null {
 		const releases = list(detail.releases);
 		let release: Unchecked | null = releases.length === 1 ? releases[0] : null;
-		let asin: [string, string] | null = null;
 		for (const b of mine.filter(x => x.idOn('audiobookdb') === detail.id)) {
 			for (const ed of b.editions) {
 				const hit =
@@ -335,19 +368,12 @@ export class AudiobookdbSync extends ShelfSync {
 					releases.find(r => AudiobookdbClient.asins(r).some(a => ed.ids('asin').includes(a)));
 				if (!hit) continue;
 				release = hit;
-				const site = Object.keys(ed.external).find(
-					k =>
-						ed.ids('asin').includes(ed.external[k]) &&
-						AudiobookdbClient.asins(hit).includes(ed.external[k]),
-				);
-				asin = site ? [site, ed.external[site]] : null;
 				break;
 			}
 			if (release && releases.length > 1) break;
 		}
 		const book = AudiobookdbSource.book(detail, release);
 		if (!book.title || !book.authors.length) return null;
-		if (asin && book.editions[0]) book.editions[0].external = {[asin[0]]: asin[1], ...book.editions[0].external};
 		return book;
 	}
 
@@ -356,11 +382,15 @@ export class AudiobookdbSync extends ShelfSync {
 	 * of the book an edition of its own is on AudiobookDB, and each edition the id of the release it is (by
 	 * its ASIN), when that release is of the book's own AudiobookDB book (a box set's edition is on its
 	 * titles, but is the box set's release), and each edition with a release id that release's cover (else the
-	 * book's). Only empty values are filled. Changes `books` in place; returns those that gained an id or a cover.
+	 * book's) and its ASINs, each under the site its link names, where the edition has none there. Only empty
+	 * values are filled. Changes `books` in place; returns those that gained an id or a cover.
 	 */
 	static addIds(books: Book[], found: AudiobookdbFound): Book[] {
 		const filled = [],
 			shared = Book.sharedEditionTest(books);
+		const editions = books.flatMap(b => b.editions);
+		const owners: Map<string, Edition[]> = new Map();
+		for (const ed of editions) for (const a of ed.ids('asin')) owners.set(a, [...(owners.get(a) || []), ed]);
 		for (const b of books) {
 			let gained = false;
 			if (!b.idOn('audiobookdb')) {
@@ -392,8 +422,19 @@ export class AudiobookdbSync extends ShelfSync {
 						gained = true;
 					}
 				}
-				for (const ed of b.editions.filter(x => x.idOn('audiobookdb') && !x.covers.audiobookdb)) {
+				for (const ed of b.editions.filter(x => x.idOn('audiobookdb'))) {
 					const release = releases.find(r => r.id === ed.idOn('audiobookdb'));
+					const asins = release ? Object.entries(AudiobookdbClient.asinsBySite(release)) : [];
+					const copies = asins.length ? editions.filter(y => y === ed || y.sameAs(ed)) : [];
+					// an ASIN another of your editions has is that one's, not this one's
+					const othersHave = (asin: string) => (owners.get(asin) || []).some(y => !copies.includes(y));
+					for (const [site, asin] of asins)
+						if (!ed.external[site] && !othersHave(asin)) {
+							for (const x of copies.filter(y => !y.external[site]))
+								x.external = ExternalCatalog.order({...x.external, [site]: asin}) || {};
+							gained = true;
+						}
+					if (ed.covers.audiobookdb) continue;
 					const cover =
 						release && (Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(detail.images));
 					if (!cover) continue;

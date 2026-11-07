@@ -47,7 +47,7 @@ export interface HardcoverComparison {
 	/** what putting your books on Hardcover would do */
 	plan: HardcoverPlan;
 	/** none */
-	missing: string[];
+	missing: never[];
 	/** your editions Hardcover has as print books or ebooks, and the books on your Read shelf read as one */
 	notAudio: NotAudio[];
 }

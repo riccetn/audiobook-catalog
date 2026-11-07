@@ -24,6 +24,7 @@ import {Catalog} from '../public/modules/catalog.js';
 import {CatalogStats} from '../public/modules/catalog-stats.js';
 import {Comparison} from '../public/modules/comparison.js';
 import {MultiComparison} from '../public/modules/multi-comparison.js';
+import {BookReview} from '../public/modules/book-review.js';
 import {Csv} from '../public/modules/csv.js';
 import {Cover} from '../public/modules/cover.js';
 import {AudibleImporter} from '../public/modules/audible-importer.js';
@@ -37,7 +38,6 @@ import {CatalogRecords} from '../public/modules/catalog-records.js';
 import {CatalogSync, WrongPassphrase, UnrelatedCatalogs} from '../public/modules/catalog-sync.js';
 import {CatalogLookup} from '../public/modules/catalog-lookup.js';
 import {CatalogConnectors} from '../public/modules/catalog-connectors.js';
-import {CompareCatalogs} from '../public/modules/compare-catalogs.js';
 import {CatalogClient} from '../public/modules/catalog-client.js';
 import {ShelfSync} from '../public/modules/shelf-sync.js';
 import {FileImporter} from '../public/modules/file-importer.js';
@@ -3479,6 +3479,52 @@ test('AudiobookdbClient sends your key only with what acts for your account, wai
 	await assert.rejects(old.client.shelves(), /deploy it again \(make deploy-server\) to bring it up to date/);
 });
 
+test("AudiobookDB's release links name each ASIN's site, and an edition gains its ASIN there when it has none", () => {
+	const link = (itemId, url, title = 'Audible') => ({itemId, category: {title, url}});
+	const release = {
+		id: 'RlsSaltRd001',
+		external: [
+			link('B0SALTRDUK', 'https://www.audible.co.uk'),
+			link('B0SALTRDAM', 'https://www.amazon.com', 'Amazon'),
+			link('B0SALTRDUK', 'https://www.audible.co.uk'),
+			link('B0SALTRD99', 'https://example.org', 'Other'),
+			link('not an asin', 'https://www.audible.com'),
+		],
+	};
+	assert.deepEqual(AudiobookdbClient.asinsBySite(release), {
+		'audible.co.uk': 'B0SALTRDUK',
+		'amazon.com': 'B0SALTRDAM',
+	});
+	assert.deepEqual(AudiobookdbClient.asins(release), ['B0SALTRDUK', 'B0SALTRDAM']);
+	const found = {
+		asin: new Map(),
+		books: new Map([['SaltRoad0001', {id: 'SaltRoad0001', releases: [release]}]]),
+	};
+	const mine = Bs([
+		{
+			t: 'Salt Road',
+			a: ['Ann Vale'],
+			ext: {audiobookdb: 'SaltRoad0001'},
+			e: [{ext: {audiobookdb: 'RlsSaltRd001', 'amazon.com': 'B0KINDLE01'}}],
+		},
+		// another of your editions has the UK ASIN: it isn't this one's to gain
+		{t: 'Salt Road (UK)', a: ['Ann Vale'], e: [{ext: {'audible.co.uk': 'B0SALTRDUK'}}]},
+	]);
+	// its amazon.com ASIN stays, and the UK one is the other edition's: nothing to gain
+	assert.deepEqual(AudiobookdbSync.addIds(mine, found), []);
+	assert.deepEqual(mine[0].editions[0].external, {'amazon.com': 'B0KINDLE01', audiobookdb: 'RlsSaltRd001'});
+	mine[1].editions[0].external = {'audible.co.uk': 'B0OTHERUK1'};
+	assert.deepEqual(
+		AudiobookdbSync.addIds(mine, found).map(b => b.title),
+		['Salt Road'],
+	);
+	assert.deepEqual(mine[0].editions[0].external, {
+		'audible.co.uk': 'B0SALTRDUK',
+		'amazon.com': 'B0KINDLE01',
+		audiobookdb: 'RlsSaltRd001',
+	});
+});
+
 test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids found (never a box set's book on a title)", () => {
 	const {books} = audiobookdbState();
 	const shelves = audiobookdbState().shelves;
@@ -3513,7 +3559,8 @@ test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids f
 		ext: {audiobookdb: 'Tidewater001'},
 		e: [
 			{
-				ext: {audiobookdb: 'RlsTidewatr1'},
+				// its ASIN under the site its link names
+				ext: {'audible.com': 'B0TIDEWAT1', audiobookdb: 'RlsTidewatr1'},
 				n: ['Dana Fenwick'],
 				p: ['Gullwing Audio'],
 				d: '2020-02-02',
@@ -4596,6 +4643,88 @@ test("picking another catalog's name for a series renames the series, on all its
 	assert.equal(Comparison.seriesRenames(taken, Comparison.compare(taken, shelf).books).size, 0);
 });
 
+test("the Edit series page's review: each book's values and entries from a catalog, its excluded editions left out, and what it can take", () => {
+	const catalog = new Catalog({
+		books: Bs([
+			{
+				t: 'Salt Road',
+				a: ['Ann Vale'],
+				s: 'Gull Isle',
+				sn: '1',
+				e: [{ext: {'audible.com': 'B0SALTRD01'}, n: ['Hollis Marr'], len: 600}],
+			},
+			{t: 'Paper Fen', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
+		]),
+	});
+	catalog.assignIds();
+	catalog.addExclusions(['Edition B0KEPTOUT1']);
+	const incoming = Bs([
+		{
+			t: 'Salt Road',
+			a: ['Ann Vale'],
+			s: 'Gull Isle',
+			sn: '1',
+			ext: {hardcover: '77'},
+			e: [
+				{ext: {'audible.com': 'B0SALTRD01'}, p: ['Kestrel Row Audio'], len: 540},
+				{ext: {'audible.com': 'B0KEPTOUT1'}, p: ['Kept Out Audio']},
+			],
+		},
+		{t: 'Gull Song', a: ['Ann Vale'], s: 'Gull Isle', sn: '3'},
+	]);
+	const result = {
+		incoming,
+		comparison: Comparison.compare(catalog, incoming),
+		notAudio: [],
+		// Gull Song is a new book already; Wren Deep only listed in the series there
+		missing: [
+			{title: 'Gull Song', number: '3'},
+			{title: 'Wren Deep', number: '4', url: 'https://hardcover.app/books/wren-deep', id: 'wren-deep'},
+			{title: 'Wren Deep', number: '04'},
+		],
+		infoIds: [],
+		opts: {},
+	};
+	const [salt, fen] = catalog.books;
+	const before = JSON.stringify(catalog);
+	const review = BookReview.compare(catalog, [{label: 'Hardcover', catalog: 'hardcover', result}], [salt.id, fen.id]);
+	assert.equal(JSON.stringify(catalog), before, 'reviewing changes nothing');
+	const one = review.books.get(salt.id);
+	// the excluded edition's publisher is no choice
+	assert.deepEqual(
+		one.fields.map(f => [f.field, f.edition, f.choices.map(c => [c.text, c.labels])]),
+		[
+			['p', salt.editions[0].id, [['Kestrel Row Audio', ['Hardcover']]]],
+			['len', salt.editions[0].id, [['9h', ['Hardcover']]]],
+		],
+	);
+	assert.deepEqual(
+		one.entries.map(e => [e.url, e.gains, e.edition, e.excluded.map(ed => ed.ids('asin'))]),
+		[['https://hardcover.app/id/book/77', ['Hardcover id'], ['publisher'], [['B0KEPTOUT1']]]],
+	);
+	assert.deepEqual(review.books.get(fen.id).notFound, [0]);
+	assert.deepEqual(
+		review.fresh.map(f => f.from.map(x => [x.source, x.at])),
+		[[[0, 1]]],
+	);
+	assert.deepEqual(
+		review.missing,
+		[{title: 'Wren Deep', number: '4', from: [{source: 0, at: 1, url: 'https://hardcover.app/books/wren-deep'}]}],
+		'each once, and not the new books',
+	);
+
+	// taking the catalog's book in: its id and edition details, not the excluded edition; another book is no match
+	const taken = BookReview.take(salt, incoming[0], catalog.exclusions, {}, true);
+	assert.equal(taken.idOn('hardcover'), '77');
+	assert.deepEqual(
+		taken.editions.map(ed => [ed.ids('asin'), ed.publishers, ed.minutes]),
+		[[['B0SALTRD01'], ['Kestrel Row Audio'], 600]],
+	);
+	assert.equal(JSON.stringify(catalog), before, 'taking works on a copy');
+	assert.equal(BookReview.take(fen, incoming[0], catalog.exclusions, {}, true), null);
+	assert.equal(BookReview.urlOf(incoming[1], 'hardcover'), null);
+});
+
 test('several catalogs side by side: each value once with the catalogs that have it, each new book once, nothing picked', () => {
 	const catalog = COMPARED();
 	const other = Bs([
@@ -5239,12 +5368,14 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	});
 	assert.deepEqual(asin.sources, ['Audible', 'AudiobookDB']);
 	assert.deepEqual(asin.notes, [], 'no need for Hardcover: Audible gave the narrators and length');
-	// an Amazon site's ASIN is asked on its Audible site, and stays the Amazon site's too
-	const uk = await lookup.find('https://www.amazon.co.uk/dp/B0LANTERNU');
-	assert.deepEqual(uk.book.editions[0].external, {'audible.co.uk': 'B0LANTERNU', 'amazon.co.uk': 'B0LANTERNU'});
-	assert.equal(uk.book.editions[0].publishers[0], 'Gullwing Audio UK');
-	assert.ok(proxy.sent.some(r => r.startsWith('audible/audible.co.uk/catalog/products/B0LANTERNU?')));
-	// an AudiobookDB release, with its book; its ASIN isn't taken, as AudiobookDB doesn't say which site it is on
+	// an Amazon site's ASIN is that site's alone: Audible isn't asked about it
+	const before = proxy.sent.length;
+	await assert.rejects(
+		lookup.find('https://www.amazon.co.uk/dp/B0LANTERNU'),
+		/^Error: no catalog has a book with ASIN B0LANTERNU/,
+	);
+	assert.ok(!proxy.sent.slice(before).some(r => r.startsWith('audible/')), 'Audible is not asked about it');
+	// an AudiobookDB release, with its book, and its ASIN under the site its link names
 	const release = await lookup.find('https://audiobookdb.org/releases/RlsLntrnUS01');
 	assert.deepEqual(plain(release), {
 		t: 'The Lantern Keeper',
@@ -5255,7 +5386,9 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 		ext: {audiobookdb: 'LnTrnKpr2xYz'},
 		e: [
 			{
-				ext: {audiobookdb: 'RlsLntrnUS01'},
+				// the title Audible, asked by that ASIN, has it under (the form keeps it only when it differs)
+				t: 'The Lantern Keeper',
+				ext: {'audible.com': 'B0LANTERN2', audiobookdb: 'RlsLntrnUS01'},
 				isbn: '9780000000019',
 				n: ['Hollis Marr', 'Dana Fenwick'],
 				p: ['Gullwing Audio'],
@@ -5269,12 +5402,12 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	const work = await lookup.find('https://audiobookdb.org/books/LnTrnKpr2xYz');
 	assert.equal(work.book.editions.length, 0);
 	assert.match(work.notes[0], /AudiobookDB has 2 releases of it; paste your release's address/);
-	// Open Library's edition, and Audible for what it lacks, by its ASIN
+	// Open Library's edition: its ASIN is amazon.com's, which Audible isn't asked about
+	const sentBefore = proxy.sent.length;
 	const keeper = await lookup.find('OL901M');
-	assert.deepEqual(keeper.sources, ['Open Library', 'Audible']);
-	assert.deepEqual(keeper.book.editions[0].narrators, ['Hollis Marr']);
-	assert.equal(keeper.book.editions[0].minutes, 612);
-	assert.deepEqual(keeper.notes, []);
+	assert.deepEqual(keeper.sources, ['Open Library']);
+	assert.ok(keeper.book.editions[0].external['amazon.com']);
+	assert.ok(!proxy.sent.slice(sentBefore).some(r => r.startsWith('audible/')));
 	// what neither has, and a proxy that can't be reached (said, rather than failing the lookup)
 	await assert.rejects(
 		lookup.find('B0NOTHERE1'),
@@ -5297,7 +5430,8 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 		json: async () => ({}),
 	}));
 	await assert.rejects(refused.find('B0LANTERN2'), /your server refused its key/);
-	assert.match((await down.find('OL901M')).notes[0], /^Audible couldn't be asked/);
+	// Open Library's amazon.com ASIN isn't asked of Audible, so a server that can't be reached doesn't matter
+	assert.doesNotMatch((await down.find('OL901M')).notes.join(' '), /Audible/);
 	// without a proxy, AudiobookDB can't be asked, and an ASIN says how it could be
 	await assert.rejects(
 		new CatalogLookup(fakeCatalogs().fetch, []).find('https://audiobookdb.org/releases/RlsLntrnUS01'),
@@ -5307,8 +5441,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 		new CatalogLookup(fakeCatalogs().fetch, []).find('B0LANTERN2'),
 		/save your Hardcover API token on the Import & export page first, or save your server there to ask Audible and AudiobookDB$/,
 	);
-	assert.equal(AudibleSource.site('amazon.se'), 'audible.com');
-	assert.equal(AudibleSource.site('amazon.de'), 'audible.de');
+	assert.ok(AudibleSource.isSite('audible.de') && !AudibleSource.isSite('amazon.de'));
 	assert.equal(AudiobookdbSource.minutes({duration: '26:05:31'}), 1566);
 	assert.equal(AudiobookdbSource.minutes({duration: 'soon'}), null);
 });
@@ -5540,15 +5673,6 @@ test('CatalogConnectors lists each catalog once, with what the pages need of it'
 		assert.ok(Sync.PARTS.length && Sync.PARTS.every(p => p === 'series' || p === 'author'));
 	}
 	assert.deepEqual(AudibleSync.PARTS, ['series'], 'Audible compares a series only');
-	// the series and author pages' Compare buttons come from plain data, so those pages don't load the syncs
-	assert.deepEqual(
-		CompareCatalogs.ALL,
-		syncs.map(Sync => ({catalog: Sync.CLIENT.CATALOG, label: Sync.CLIENT.LABEL, parts: [...Sync.PARTS]})),
-	);
-	assert.deepEqual(
-		CompareCatalogs.of('author').map(c => c.catalog),
-		['hardcover', 'audiobookdb'],
-	);
 	for (const Client of CatalogConnectors.CLIENTS) {
 		assert.ok(Client.prototype instanceof CatalogClient);
 		assert.ok(ExternalCatalog.get(Client.CATALOG), `${Client.LABEL} is an external catalog`);
@@ -5638,7 +5762,18 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 	assert.deepEqual(result.warnings, [
 		'Salt Road: audible.com has 2 editions of book 1 and none has an ASIN of yours; give yours its ASIN to fill it in',
 	]);
-	assert.deepEqual(result.missing, ['3. Gull Song'], 'not the placeholder, the box set or the companion');
+	assert.deepEqual(
+		result.missing.map(m => [
+			m.number,
+			m.title,
+			m.url,
+			m.book.series,
+			m.book.number,
+			m.book.editions.map(ed => ed.ids('asin')),
+		]),
+		[['3', 'Gull Song', 'https://www.audible.com/pd/B0GULLSNG3', 'Gull Isle', '3', [['B0GULLSNG3']]]],
+		'not the placeholder, the box set or the companion; the book to add at hand, with its one edition',
+	);
 	assert.equal(
 		sync.summary(result, catalog, {kind: 'series', name: 'Gull Isle', label: 'the series “Gull Isle”'}),
 		'Only the series “Gull Isle”: 3 books in this catalog, 4 books in the series on audible.com',
@@ -5669,28 +5804,34 @@ test("AudibleSync says which of your ASINs Audible doesn't sell: maybe not audio
 				sn: '2',
 				e: [{ext: {'audible.com': 'B0LANTERN2'}}],
 			},
-			// an Amazon ASIN from an import, which may be a Kindle edition's; another site's isn't asked
+			// an audible.com ASIN audible.com doesn't sell; an Amazon site's ASIN is that site's alone, and isn't
+			// asked of Audible, nor is another Audible site's
 			{
 				t: 'Gull Song',
 				a: ['Ann Vale'],
 				s: 'Gull Isle',
 				sn: '3',
-				e: [{ext: {'amazon.com': 'B0KINDLE03'}}, {ext: {'audible.de': 'B0GULLDE03'}}],
+				e: [
+					{ext: {'amazon.com': 'B0KINDLE03'}},
+					{ext: {'audible.de': 'B0GULLDE03'}},
+					{ext: {'audible.com': 'B0WRONGST3'}},
+				],
 			},
 		],
 	});
 	const {client, sent} = audibleClient();
 	const result = await new AudibleSync(client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
-	assert.equal(sent.at(-1), 'audible/audible.com/catalog/products?asins=B0KINDLE03&response_groups=product_desc');
+	assert.equal(sent.at(-1), 'audible/audible.com/catalog/products?asins=B0WRONGST3&response_groups=product_desc');
+	assert.ok(!sent.some(s => /B0KINDLE03|B0GULLDE03/.test(s)), 'only audible.com ASINs are asked of audible.com');
 	assert.deepEqual(
 		result.notAudio.map(n => [n.book.title, n.yours, n.edition, n.said, n.url, n.maybe]),
 		[
 			[
 				'Gull Song',
 				true,
-				'ASIN B0KINDLE03',
-				"not sold on audible.com: maybe a Kindle or print edition's ASIN",
-				'https://www.amazon.com/dp/B0KINDLE03',
+				'ASIN B0WRONGST3',
+				"not sold on audible.com: maybe another site's ASIN, or not an audiobook",
+				'https://www.audible.com/pd/B0WRONGST3',
 				true,
 			],
 		],
@@ -5721,7 +5862,10 @@ test("AudibleSync reads a series by its books when Audible's answer for it has n
 	};
 	const client = new AudibleClient(untitled, '', async () => {});
 	const result = await new AudibleSync(client).compare(catalog, () => {}, {kind: 'series', name: 'Gull Isle'});
-	assert.deepEqual(result.missing, ['1. Salt Road', '3. Gull Song', '4. Brine Tide']);
+	assert.deepEqual(
+		result.missing.map(m => `${m.number}. ${m.title}`),
+		['1. Salt Road', '3. Gull Song', '4. Brine Tide'],
+	);
 	assert.equal(result.numbers, 4);
 	// a series the site doesn't have is still none
 	const stub = async route =>
@@ -5746,7 +5890,8 @@ test('AudibleSync reads a series on the site of its books, and says when Audible
 		),
 		'audible.co.uk',
 	);
-	assert.equal(AudibleSync.siteOf(on({'amazon.de': 'B0DE000001'}), undefined), 'audible.de');
+	// an Amazon site's ASIN is that site's alone: it doesn't make the series Audible's there
+	assert.equal(AudibleSync.siteOf(on({'amazon.de': 'B0DE000001'}), undefined), 'audible.com');
 	assert.equal(
 		AudibleSync.siteOf([], new Series('S', {external: {goodreads: '1', 'audible.fr': 'B0FR000001'}})),
 		'audible.fr',

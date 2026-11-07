@@ -3243,7 +3243,7 @@ test('a series is edited on its Edit series page, and removed from its books', a
 	assert.match(
 		els.results.innerHTML,
 		new RegExp(
-			`<div class="page-actions"><a class="sedit" data-series="${id}" href="edit\\.html#series=${id}">Edit</a>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare with [\\w ]+</button>)+</div></div>$`,
+			`<div class="page-actions"><a class="sedit" data-series="${id}" href="edit\\.html#series=${id}">Edit</a></div></div>$`,
 		),
 		'at the end of the page of the series',
 	);
@@ -4351,7 +4351,16 @@ test('a Hardcover comparison sends nothing unticked, nothing once another tab sa
 	assert.equal(offline.els.importConfirm.style.display, 'none');
 });
 
-test("the Hardcover comparison can be only a series' or an author's books", async () => {
+// The Edit series page asks the other catalogs once it has drawn the books (edit-catalogs.js): wait for that.
+const bootAsked = async (hash, options = {}) => {
+	const page = await boot({...options, page: 'edit.html', hash});
+	await idle();
+	await page.ctx.ASKING;
+	await idle();
+	return page;
+};
+
+test("the Edit series page compares a series' books with Hardcover when it opens, and adds a new book only when ticked", async () => {
 	const mine = [
 		{t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]},
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
@@ -4362,63 +4371,97 @@ test("the Hardcover comparison can be only a series' or an author's books", asyn
 		return 0;
 	};
 	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
-	const {els, readable} = await boot({
-		page: 'import.html',
-		files: {'books.json': JSON.stringify(mine)},
-		hardcover: hc.fetch,
-		setTimeout,
-		storage,
-	});
-	assert.equal(els.hardcoverScopeName.style.display, 'none');
-	els.hardcoverScope.value = 'series';
-	els.hardcoverScope.listeners.change[0]();
-	await idle();
-	assert.equal(els.hardcoverScopeName.style.display, '');
-	assert.equal(
-		readable(els.hardcoverScopeNames.innerHTML),
-		'<option value="Gull Isle"></option>',
-		'the series in the catalog are offered',
+	const options = {files: {'books.json': JSON.stringify(mine)}, hardcover: hc.fetch, setTimeout, storage};
+	const edit = await bootAsked('#series=Gull+Isle', options);
+	const {els, get} = edit;
+	// every catalog set up is asked, each with its site's favicon for an icon; those that can't be say why
+	assert.match(
+		els.catalogPicks.innerHTML,
+		/<span class="catIcon cat-hardcover favicon" data-mark="Hc" aria-hidden="true"><img src="https:\/\/assets\.hardcover\.app\/static\/favicon\.ico" alt="" referrerpolicy="no-referrer" decoding="async"><\/span>/,
 	);
-	await els.hardcoverCompareBtn.listeners.click[0]();
-	assert.match(els.ioStatus.textContent, /Type the series to compare first/);
-	els.hardcoverScopeName.value = 'Ember Coast';
-	await els.hardcoverCompareBtn.listeners.click[0]();
-	assert.match(els.ioStatus.textContent, /No book in this catalog is in the series “Ember Coast”/);
-	assert.equal(hc.sent.length, 0);
+	// a favicon that can't be loaded leaves the catalog's mark, which CSS draws
+	const hcIcon = els.catalogPicks.querySelector('.cat-hardcover');
+	hcIcon.querySelector('img').listeners.error[0]();
+	assert.match(
+		els.catalogPicks.innerHTML,
+		/<span class="catIcon cat-hardcover" data-mark="Hc" aria-hidden="true"><\/span>/,
+	);
+	assert.match(
+		els.catalogPicks.innerHTML,
+		/<input type="checkbox" id="catalog-hardcover" checked=""> <span class="catIcon cat-hardcover[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>Hardcover/,
+	);
+	assert.match(
+		els.catalogPicks.innerHTML,
+		/id="catalog-audiobookdb" disabled=""> <span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB<span class="editWhy"> \(needs your server's catalog proxy/,
+	);
+	assert.match(els.catalogNotes.textContent, /Hardcover: 1 book read\./);
+	assert.match(els['book-0'].innerHTML, /not found on Hardcover/);
+	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale {2}\[Gull Isle #1\]/);
+	assert.deepEqual(
+		[...els.editBooks.innerHTML.matchAll(/id="((?:book|fresh)-\d+)"/g)].map(m => m[1]),
+		['fresh-0', 'book-0'],
+		'book 1 before your book 2',
+	);
+	assert.doesNotMatch(els.editBooks.innerHTML, /Paper Fen|Lantern Hours/);
+	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')), 'nothing is sent');
+	assert.equal(els.changeCount.textContent, 'No changes yet', 'nothing is picked at first');
 
-	els.hardcoverScopeName.value = 'Gull Isle';
-	await els.hardcoverCompareBtn.listeners.click[0]();
+	// ticked, it is added on Save
+	els['fresh-0-add'].checked = true;
+	els['fresh-0-add'].listeners.change[0]({target: els['fresh-0-add']});
+	assert.equal(els.changeCount.textContent, '1 change');
+	await els.reviewBtn.listeners.click[0]();
 	await idle();
-	const html = readable(els.importPreviewBody.innerHTML);
-	assert.match(html, /^<p>Only the series “Gull Isle”: 1 book in this catalog, 1 on your Hardcover Read shelf/);
-	assert.match(html, /New from Hardcover \(1\)<\/h4>.*Tidewater — Ann Vale/);
-	assert.doesNotMatch(html, /Paper Fen|Lantern Hours/);
-	assert.match(html, /Not found on Hardcover \(1\)<\/h4>.*Brine Tide — Ann Vale/);
+	assert.match(els.reviewList.textContent, /New book: Tidewater — Ann Vale {2}\[Gull Isle #1\], as Hardcover has it/);
+	await els.reviewSaveBtn.listeners.click[0]();
+	await idle();
+	assert.match(els.ioStatus.textContent, /^Added 1 book\./);
+	assert.deepEqual(
+		(await kept(storage)).books.map(b => [b.t, b.s, b.sn]),
+		[
+			['Lantern Hours', undefined, undefined],
+			['Brine Tide', 'Gull Isle', '2'],
+			['Tidewater', 'Gull Isle', '1'],
+		],
+	);
+	assert.equal(get('CATALOG.books.length'), 3);
+
+	// a catalog unticked is left out of the next run, remembered in this browser
+	const again = await bootAsked('#series=Gull+Isle', {...options, files: null});
+	again.els['catalog-hardcover'].checked = false;
+	again.els['catalog-hardcover'].listeners.change[0]({target: again.els['catalog-hardcover']});
+	assert.equal(storage.get('audiobook-catalog-edit-skip'), '["hardcover"]');
+	const asked = hc.sent.length;
+	again.els.askBtn.listeners.click[0]();
+	await again.ctx.ASKING;
+	assert.equal(hc.sent.length, asked);
+	assert.match(again.els.catalogNotes.textContent, /No catalog is ticked/);
+	assert.doesNotMatch(again.els.editBooks.innerHTML, /editOut|not found on/, 'nothing of the last run is shown');
 });
 
-test("a series' or an author's page links to comparing their books with Hardcover, which starts it", async () => {
+test("a series' and an author's page link to the Edit page, which old links to their comparison go to", async () => {
 	const home = await boot({hash: '#series=The+Lantern+Coast'});
 	await idle();
-	// at the end of the page, beside Edit
 	assert.match(
 		home.readable(home.els.results.innerHTML),
-		/<div class="page-actions"><a class="sedit" data-series="[^"]+" href="edit\.html#series=The\+Lantern\+Coast">Edit<\/a><button type="button" class="catalogCompare" data-compare="hardcover">Compare with Hardcover<\/button>/,
+		/<div class="page-actions"><a class="sedit" data-series="[^"]+" href="edit\.html#series=The\+Lantern\+Coast">Edit<\/a><\/div>/,
 	);
-	const session = new Map();
-	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby', session});
+	assert.doesNotMatch(home.els.results.innerHTML, /catalogCompare/);
+	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
 	assert.match(
 		author.readable(author.els.creditBody.innerHTML),
-		/<div class="page-actions"><button type="button" class="aedit">Edit<\/button><button type="button" class="catalogCompare" data-compare="hardcover">Compare their books with Hardcover<\/button>/,
+		/<a class="sedit" href="edit\.html#author=id-\d+">Edit their books<\/a>/,
 	);
-	// the button hands the comparison over in this tab's sessionStorage, and opens Import & export as it is
-	author.els.creditBody.querySelector('button[data-compare="hardcover"]').listeners.click[0]();
-	assert.equal(author.ctx.location.assigned, 'import.html');
-	assert.deepEqual(JSON.parse(session.get('audiobook-catalog-compare')), {
-		catalog: 'hardcover',
-		kind: 'author',
-		id: author.get('CATALOG.nameIds.authors.get("Marisol Quenby")'),
-	});
+	for (const [hash, to] of [
+		['#hardcover-author=Ann+Vale', 'edit.html#author=Ann+Vale'],
+		['#all-series=id-3', 'edit.html#series=id-3'],
+		['#audible-series=Gull+Isle', 'edit.html#series=Gull+Isle'],
+	]) {
+		const io = await boot({page: 'import.html', hash, files: null});
+		assert.equal(io.ctx.location.replaced, to, hash);
+	}
 
+	// an author's books, by name as from an older link: their series is a field of each book
 	const mine = [
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
 		{t: 'Lantern Hours', a: ['R. T. Hale']},
@@ -4429,25 +4472,27 @@ test("a series' or an author's page links to comparing their books with Hardcove
 		return 0;
 	};
 	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
-	// the catalog Import & export reads is this one, where Ann Vale is known by a name, as from an older link
-	session.set('audiobook-catalog-compare', JSON.stringify({catalog: 'hardcover', kind: 'author', id: 'Ann Vale'}));
-	const {els, get, readable} = await boot({
-		page: 'import.html',
+	const {els, get} = await bootAsked('#author=Ann+Vale', {
 		files: {'books.json': JSON.stringify(mine)},
 		hardcover: hc.fetch,
 		setTimeout,
 		storage,
-		session,
 	});
-	await idle();
-	assert.deepEqual([els.hardcoverScope.value, els.hardcoverScopeName.value], ['author', 'Ann Vale']);
-	assert.equal(els.importPreviewTitle.textContent, 'Compare with Hardcover');
-	assert.match(
-		readable(els.importPreviewBody.innerHTML),
-		/^<p>Only books by Ann Vale: 1 book in this catalog, 2 on your Hardcover Read shelf/,
-	);
+	assert.equal(get('KIND'), 'author');
+	assert.equal(els.seriesPanel.hidden, true);
+	assert.equal(els.eyebrow.textContent, "Edit an author's books");
+	assert.deepEqual(get('DRAFTS.map(d => d.book.title)'), ['Brine Tide']);
+	assert.equal(els.b0_s.value, 'Gull Isle');
+	assert.match(els.catalogNotes.textContent, /Hardcover: 2 books read\./);
+	assert.match(els.editBooks.innerHTML, /Tidewater — Ann Vale/);
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
+	// the series typed on a book is saved with it, and Save goes back to the author's page
+	els.b0_s.value = 'Gull Isles';
+	els.b0_s.listeners.change[0]();
+	assert.ok(await saveEdit({els}));
+	assert.equal((await kept(storage)).books[0].s, 'Gull Isles');
+	assert.equal(get('location.assigned'), 'author.html#a=' + get('AUTHOR_ID'));
 });
 
 // ------------------------------------------------------------------ AudiobookDB
@@ -4592,7 +4637,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 				[{'audible.com': 'B0LANTERN1', audiobookdb: 'RlsLntrnHrs1'}],
 			],
 			['Brine Tide', {audiobookdb: 'BrineTide001'}, [{'audible.com': 'B0BRINETD1', audiobookdb: 'RlsBrineUS01'}]],
-			['Tidewater', {audiobookdb: 'Tidewater001'}, [{audiobookdb: 'RlsTidewatr1'}]],
+			['Tidewater', {audiobookdb: 'Tidewater001'}, [{'audible.com': 'B0TIDEWAT1', audiobookdb: 'RlsTidewatr1'}]],
 		],
 	);
 	// the covers: Lantern Hours' book's (its release has none), Tidewater's release's; Brine Tide has none
@@ -4631,76 +4676,116 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	assert.doesNotMatch(html, /Not on your AudiobookDB Listened shelf|New from AudiobookDB|Save the AudiobookDB ids/);
 });
 
-test("an AudiobookDB comparison can be only a series' or an author's books, and their pages link to it", async () => {
-	const home = await boot({hash: '#series=The+Lantern+Coast'});
-	await idle();
-	assert.match(
-		home.readable(home.els.results.innerHTML),
-		/<button type="button" class="catalogCompare" data-compare="audiobookdb">Compare with AudiobookDB<\/button>/,
-	);
-	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
-	assert.match(
-		author.readable(author.els.creditBody.innerHTML),
-		/<button type="button" class="catalogCompare" data-compare="audiobookdb">Compare their books with AudiobookDB<\/button>/,
-	);
-
+test("the Edit series page compares a series' or an author's books with AudiobookDB through the proxy", async () => {
 	const mine = [
 		{t: 'Lantern Hours', a: ['R. T. Hale'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]},
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0BRINETD1'}}]},
 	];
 	const {abdb, proxy} = audiobookdbBehindProxy();
 	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
-	const {els, get, readable} = await boot({
-		page: 'import.html',
-		hash: '#audiobookdb-series=Gull+Isle',
-		files: {'books.json': JSON.stringify(mine)},
-		proxy,
-		storage,
-		setTimeout: abdbTimeout,
-	});
-	await idle();
-	assert.deepEqual([els.audiobookdbScope.value, els.audiobookdbScopeName.value], ['series', 'Gull Isle']);
-	const html = readable(els.importPreviewBody.innerHTML);
+	const options = {files: {'books.json': JSON.stringify(mine)}, proxy, storage, setTimeout: abdbTimeout};
+	const {els, get} = await bootAsked('#series=Gull+Isle', options);
+	assert.match(els.catalogNotes.textContent, /AudiobookDB: \d+ books? read\./);
 	assert.match(
-		html,
-		/^<p>Only the series “Gull Isle”: 1 book in this catalog, 1 of them on AudiobookDB, 1 book on your AudiobookDB Listened shelf/,
+		els['book-0'].innerHTML,
+		/<a href="https:\/\/audiobookdb\.org\/[^"]+" target="_blank" rel="noopener" class="editOut"><span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB ↗<\/a>/,
 	);
-	assert.match(html, /New from AudiobookDB \(1\)<\/h4>.*Tidewater — Ann Vale/);
-	assert.doesNotMatch(html, /Paper Fen|Lantern Hours/);
-	assert.match(html, /On another AudiobookDB shelf, left alone \(1\)<\/h4>.*Brine Tide/);
-	assert.match(html, /In the series on AudiobookDB, not in this catalog: 1<\/summary><ul><li>Gull Song<\/li>/);
+	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale/);
+	// a book only listed in the series there is a card too, read from AudiobookDB only once ticked
+	assert.match(els['missing-0'].textContent, /^Not in your catalog Add 3\. Gull Song/);
+	assert.match(els['missing-0'].innerHTML, /href="https:\/\/audiobookdb\.org\/[^"]*GullSong0001"/);
+	assert.ok(!abdb.sent.some(s => s.path.startsWith('books/GullSong0001')), 'not read before it is ticked');
+	// the ids it found for a book not on your shelves there: the book's with the book, the edition's on its card,
+	// whose summary says there is something to review
+	assert.match(els['book-0-take-0-ids'].textContent, /^AudiobookDB: Ids: AudiobookDB BrineTide001Take$/);
+	assert.match(
+		els['book-0-ed-0'].innerHTML,
+		/<summary>.*<span class="editPill review"[^>]*>.*to review<\/span><\/summary>/,
+	);
+	assert.match(els['book-0-ed-0-take-0-ids'].textContent, /^AudiobookDB: .*RlsBrineUS01/);
+	await els['book-0-take-0-ids-do'].listeners.click[0]();
+	assert.ok(!get("DRAFTS[0].book.editions[0].idOn('audiobookdb')"), 'the book alone');
+	await els['book-0-ed-0-take-0-ids-do'].listeners.click[0]();
+	assert.doesNotMatch(els['book-0'].innerHTML, /editTake|to review/, 'nothing more to take');
+	assert.equal(get("DRAFTS[0].book.idOn('audiobookdb')"), 'BrineTide001');
+	assert.equal(get("DRAFTS[0].book.editions[0].idOn('audiobookdb')"), 'RlsBrineUS01');
+	assert.doesNotMatch(els.editBooks.innerHTML, /Paper Fen|Lantern Hours/);
 	assert.ok(abdb.sent.some(s => s.path === 'series/SrsGullIsle1?include=books'));
 	assert.ok(
 		!abdb.sent.some(s => s.path === 'audiobooks/external/audible/B0LANTERN1'),
 		"only the series' books are looked up",
 	);
+	assert.ok(!abdb.sent.some(s => s.method === 'POST'), 'nothing is sent');
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
-
-	// an author: their books on your Read shelf, by the names AudiobookDB gives them
-	els.audiobookdbScope.value = 'author';
-	els.audiobookdbScope.listeners.change[0]();
-	els.audiobookdbScopeName.value = 'R. T. Hale';
-	await els.audiobookdbCompareBtn.listeners.click[0]();
+	els['missing-0-add'].checked = true;
+	els['missing-0-add'].listeners.change[0]({target: els['missing-0-add']});
 	await idle();
-	const byHale = readable(els.importPreviewBody.innerHTML);
-	assert.match(
-		byHale,
-		/^<p>Only books by R\. T\. Hale: 1 book in this catalog, 1 of them on AudiobookDB, 0 books on your AudiobookDB Listened shelf/,
+	assert.ok(abdb.sent.some(s => s.path.startsWith('books/GullSong0001')));
+	assert.match(els['missing-0'].textContent, /^Not in your catalog Add 3\. Gull Song by Ann Vale/);
+	assert.ok(await saveEdit({els}));
+	const saved = await kept(storage);
+	assert.deepEqual(
+		saved.books.map(b => [b.t, b.s, b.sn, b.ext, (b.e || []).map(e => e.ext)]),
+		[
+			['Lantern Hours', undefined, undefined, undefined, [{'audible.com': 'B0LANTERN1'}]],
+			[
+				'Brine Tide',
+				'Gull Isle',
+				'2',
+				{audiobookdb: 'BrineTide001'},
+				[{'audible.com': 'B0BRINETD1', audiobookdb: 'RlsBrineUS01'}],
+			],
+			['Gull Song', 'Gull Isle', '3', {audiobookdb: 'GullSong0001'}, [{audiobookdb: 'RlsGullSng01'}]],
+		],
+		'the missing book ticked is added as AudiobookDB has it',
 	);
-	assert.match(byHale, /Not on your AudiobookDB Listened shelf \(1\)<\/h4>.*Lantern Hours/);
-	assert.doesNotMatch(byHale, /Tidewater|Brine Tide/);
+
+	// an author's books: only theirs are looked up
+	const byHale = await bootAsked('#author=R.+T.+Hale', {...options, files: null});
+	assert.deepEqual(byHale.get('DRAFTS.map(d => d.book.title)'), ['Lantern Hours']);
+	assert.match(byHale.els['book-0'].innerHTML, /AudiobookDB ↗/);
+	assert.doesNotMatch(byHale.els.editBooks.innerHTML, /Tidewater|Brine Tide/);
 });
 
-test("a series is compared with Audible through the proxy, and Apply fills in its books' editions and the series' id", async () => {
-	const home = await boot({hash: '#series=The+Lantern+Coast'});
-	await idle();
-	assert.match(
-		home.readable(home.els.results.innerHTML),
-		/<button type="button" class="catalogCompare" data-compare="audible">Compare with Audible<\/button>/,
-	);
-	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
-	assert.doesNotMatch(author.els.creditBody.innerHTML, /data-compare="audible"/, 'Audible compares a series only');
+test("the Edit series page shows on an edition's card what the catalogs say of it, and offers their other editions apart", async () => {
+	// an ASIN Audible doesn't sell, on a book whose one edition there is another
+	const mine = [
+		{t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0WRONGST3'}}]},
+		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '4', e: [{ext: {'audible.com': 'B0BRINETD4'}}]},
+	];
+	const behind = fakeProxyCatalogs();
+	const proxy = async (url, init = {}) =>
+		handleServer(new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}}), SERVER_ENV, {
+			fetch: async upstream => {
+				const u = new URL(String(upstream.url || upstream));
+				const site = u.hostname.replace(/^api\./, '');
+				const res = await behind.route(`audible/${site}${u.pathname.replace(/^\/1\.0/, '')}${u.search}`);
+				return new Response(JSON.stringify(await res.json()), {status: res.status});
+			},
+		});
+	const {els, get} = await bootAsked('#series=Gull+Isle', {
+		files: {'books.json': JSON.stringify(mine)},
+		proxy,
+		storage: new Map([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]),
+		setTimeout: (fn, ms) => {
+			if (ms === 250) Promise.resolve().then(fn);
+			return 0;
+		},
+	});
+	const card = els['book-0-ed-0'];
+	assert.match(card.innerHTML, /<span class="editPill notAudio"[^>]*>not audio\?<\/span><\/summary>/);
+	assert.match(card.textContent, /Maybe not an audiobook: ASIN B0WRONGST3 is not sold on audible\.com/);
+	assert.doesNotMatch(els['book-0'].innerHTML.replace(card.innerHTML, ''), /editNotAudio/, 'only on its card');
+	// Audible's edition isn't yours: offered as another edition, added only when asked
+	const added = els['book-0'].querySelector('.editNewEdition');
+	assert.match(added.textContent, /^Audible has another edition: .*B0LANTERN2.*Add$/);
+	assert.equal(get('DRAFTS[0].book.editions.length'), 1);
+	added.querySelector('button').listeners.click[0]();
+	assert.deepEqual(get("DRAFTS[0].book.editions.map(ed => ed.ids('asin'))"), [['B0WRONGST3'], ['B0LANTERN2']]);
+	assert.equal(els['book-0'].querySelector('.editNewEdition'), null, 'offered no more');
+});
 
+test("the Edit series page takes from Audible a book's edition when asked, and keeps the series' id found when ticked", async () => {
 	const mine = [
 		{t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0LANTERN2'}}]},
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '4', e: [{p: 'Gullwing Audio'}]},
@@ -4719,10 +4804,9 @@ test("a series is compared with Audible through the proxy, and Apply fills in it
 				return new Response(JSON.stringify(await res.json()), {status: res.status});
 			},
 		});
-	const storage = new Map([SERVER_SAVED]);
-	const {els, get, readable} = await boot({
-		page: 'import.html',
-		hash: '#audible-series=Gull+Isle',
+	// AudiobookDB, which needs only the server too, is left out of this run
+	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]);
+	const {els, get} = await bootAsked('#series=Gull+Isle', {
 		files: {'books.json': JSON.stringify(mine)},
 		proxy,
 		storage,
@@ -4731,54 +4815,84 @@ test("a series is compared with Audible through the proxy, and Apply fills in it
 			return 0;
 		},
 	});
-	await idle();
-	assert.deepEqual([els.audibleScope.value, els.audibleScopeName.value], ['series', 'Gull Isle']);
-	const html = readable(els.importPreviewBody.innerHTML);
 	assert.match(
-		html,
-		/^<p>Only the series “Gull Isle”: 2 books in this catalog, 4 books in the series on audible\.com/,
+		els.catalogPicks.innerHTML,
+		/id="catalog-audible" checked=""> <span class="catIcon cat-audible[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>Audible/,
 	);
-	assert.match(html, /The Lantern Keeper/);
-	assert.match(html, /Save the Audible ids and book counts found for 1 series/);
 	assert.match(
-		html,
-		/In the series on Audible, not in this catalog: 2<\/summary><ul><li>1\. Salt Road<\/li><li>3\. Gull Song<\/li>/,
+		els.catalogPicks.innerHTML,
+		/id="catalog-audiobookdb"> <span class="catIcon cat-audiobookdb[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>AudiobookDB/,
 	);
-	assert.doesNotMatch(html, /Save your Audible|shelf/, 'no key and no shelves');
+	// the series' books not in the catalog, as cards: Audible's answer has what adding one takes
+	assert.deepEqual(
+		[0, 1].map(n => els[`missing-${n}`].textContent.match(/^Not in your catalog Add ([^↗]*?)Audible ↗/)[1]),
+		['1. Salt Road', '3. Gull Song'],
+	);
+	// among yours, in series order
+	assert.deepEqual(
+		[...els.editBooks.innerHTML.matchAll(/id="((?:book|missing|fresh)-\d+)"/g)].map(m => m[1]),
+		['missing-0', 'book-0', 'missing-1', 'book-1'],
+	);
 	assert.ok(behind.sent.every(r => r.startsWith('audible/audible.com/catalog/')));
 	assert.equal(get('CATALOG.books.length'), 2, 'comparing changes nothing');
 
-	// the edition found by its ASIN is yours, so it is ticked; Brine Tide's is the one of its number, to tick
-	const edition = n => els.importPreviewBody.querySelector(`input[data-pick="editions:${n}"]`);
-	assert.match(html, /data-pick="editions:0" checked="">/);
-	assert.match(html, /data-pick="editions:1">/);
-	edition(1).checked = true;
-	edition(1).dispatch('change');
-	await els.importConfirm.listeners.click[0]();
+	// each book's edition there, to take with what it fills in
+	assert.match(els['book-0-ed-0'].innerHTML, /to review<\/span><\/summary>/);
+	assert.match(els['book-0-ed-0'].textContent, /Audible: Narrators: .*ISBN: .*Take/);
+	assert.match(els['book-1-ed-0'].textContent, /Audible: /);
+	const take = n => els['book-' + n].querySelector('.editTake button');
+	take(0).listeners.click[0]();
+	take(1).listeners.click[0]();
+	assert.doesNotMatch(els['book-0'].innerHTML, /editTake/, 'taken');
+	// the series' Audible id and count, kept when ticked
+	assert.match(els.catalogFound.textContent, /Keep the ids Audible found for Gull Isle/);
+	els['info-0'].checked = true;
+	els['info-0'].listeners.change[0]({target: els['info-0']});
+	const sent = behind.sent.length;
+	els['missing-1-add'].checked = true;
+	els['missing-1-add'].listeners.change[0]({target: els['missing-1-add']});
 	await idle();
+	assert.equal(behind.sent.length, sent, 'nothing more is read');
+	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
 	assert.deepEqual(
 		saved.books.map(b => [b.t, b.e.map(e => [e.ext, e.n, e.len])]),
 		[
 			['The Lantern Keeper', [[{'audible.com': 'B0LANTERN2'}, ['Hollis Marr', 'Dana Fenwick'], 612]]],
 			['Brine Tide', [[{'audible.com': 'B0BRINETD4'}, ['Dana Fenwick'], 480]]],
+			['Gull Song', [[{'audible.com': 'B0GULLSNG3'}, undefined, undefined]]],
 		],
 	);
 	assert.deepEqual(
 		[saved.seriesInfo['Gull Isle'].ext, saved.seriesInfo['Gull Isle'].total],
 		[{'audible.com': 'B0SERIES02'}, 4],
 	);
-	assert.match(els.ioStatus.textContent, /Audible ids and book counts found for 1 series/);
+	assert.match(els.ioStatus.textContent, /Saved 2 books, added 1 book, kept ids found for 1 series or person\./);
+
+	// an edition you keep out of imports is listed behind a link, and offers nothing
+	const out = await bootAsked('#series=Gull+Isle', {
+		files: {'books.json': JSON.stringify(mine), 'excluded.txt': 'Edition B0BRINETD4\n'},
+		proxy,
+		storage: new Map([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]),
+		setTimeout: (fn, ms) => {
+			if (ms === 250) Promise.resolve().then(fn);
+			return 0;
+		},
+	});
+	const brine = out.els['book-1'];
+	assert.match(
+		brine.innerHTML,
+		/<details class="editExcluded"><summary>1 excluded edition<\/summary>.*<li>[^<]*audible\.com B0BRINETD4[^<]*\(Audible\) <a href="https:\/\/www\.audible\.com\/pd\/B0BRINETD4"/,
+	);
+	assert.equal(
+		brine.querySelectorAll('.editChip').length + brine.querySelectorAll('.editTake').length,
+		0,
+		'nothing of it is offered',
+	);
+	assert.match(out.els['book-0'].textContent, /Audible: Narrators: /, 'the other books are as before');
 });
 
-test('a series is compared with every catalog at once, and Apply takes only the values picked', async () => {
-	const home = await boot({hash: '#series=The+Lantern+Coast'});
-	await idle();
-	assert.match(
-		home.readable(home.els.results.innerHTML),
-		/<button type="button" class="catalogCompare" data-compare="all">Compare with all catalogs<\/button>/,
-	);
-
+test("the Edit series page shows every catalog's value beside a book's field, and takes only those picked", async () => {
 	const mine = [
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '4', e: [{ext: {'amazon.com': 'B0BRINETD1'}}]},
 	];
@@ -4807,9 +4921,7 @@ test('a series is compared with every catalog at once, and Apply takes only the 
 			},
 		);
 	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
-	const {els, get, readable} = await boot({
-		page: 'import.html',
-		hash: '#all-series=Gull+Isle',
+	const {els, get} = await bootAsked('#series=Gull+Isle', {
 		files: {
 			'books.json': JSON.stringify(mine),
 			'series-info.json': JSON.stringify({'Gull Isle': {ext: {'audible.com': 'B0SERIES02'}}}),
@@ -4821,51 +4933,45 @@ test('a series is compared with every catalog at once, and Apply takes only the 
 			return 0;
 		},
 	});
-	await idle();
-	assert.deepEqual([els.allScope.value, els.allScopeName.value], ['series', 'Gull Isle']);
-	assert.equal(els.importPreview.place, 'after allPanel');
-	assert.equal(els.importPreviewTitle.textContent, 'Compare the series “Gull Isle” with AudiobookDB and Audible');
-	const html = readable(els.importPreviewBody.innerHTML);
-	assert.match(html, /<p>Hardcover: not asked, as it needs your Hardcover API token \(below\)\.<\/p>/);
-	assert.match(html, /<p>Audible: 1 book in this catalog, 4 books in the series on audible\.com<\/p>/);
-	// where they differ: every value, once, with the catalogs that have it, and this catalog's picked
 	assert.match(
-		html,
-		/Released: <label class="cmpPick cmpChoice"><input type="radio" name="v:0:d:0" data-pick="value:0:d:0:here" checked=""> <span class="cmpHere">none<\/span> here<\/label> <label[^>]*><input type="radio" name="v:0:d:0" data-pick="value:0:d:0:0"> <span class="cmpThere">2020-02-02<\/span> on AudiobookDB<\/label> <label[^>]*><input type="radio" name="v:0:d:0" data-pick="value:0:d:0:1"> <span class="cmpThere">2023-09-12<\/span> on Audible<\/label>/,
+		els.catalogPicks.innerHTML,
+		/id="catalog-hardcover" disabled=""> <span class="catIcon cat-hardcover[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>Hardcover<span class="editWhy"> \(needs your Hardcover API token/,
 	);
-	assert.match(html, /<span class="cmpThere">8h<\/span> on AudiobookDB and Audible/);
+	// a field's values, each once with the catalogs that have it
+	const chips = id => [...els[id].closest('.editField').querySelectorAll('.editChip')].map(c => c.textContent);
+	assert.deepEqual(chips('b0e0_d'), ['AudiobookDB 2020-02-02', 'Audible 2023-09-12']);
+	assert.deepEqual(chips('b0e0_len'), ['AudiobookDB, Audible 8h']);
+	assert.deepEqual(chips('b0_sn'), ['AudiobookDB 2']);
+	// a chip names its catalogs by their icons
 	assert.match(
-		html,
-		/Number in series: .*<span class="cmpHere">4<\/span> here.*<span class="cmpThere">2<\/span> on AudiobookDB/,
+		els['b0_sn-pick-0'].innerHTML,
+		/^<span class="editChipFrom"><span class="catIcon cat-audiobookdb favicon"/,
 	);
-	assert.match(
-		html,
-		/New books \(1\)<\/h4>.*data-pick="fresh:0:none" checked=""> not added<\/label> <label[^>]*><input type="radio" name="f:0" data-pick="fresh:0:0"> from AudiobookDB: <span class="cmpThere">Tidewater — Ann Vale/,
+	// an edition's description is a short name for it: one line
+	assert.match(els['book-0'].innerHTML, /<input id="b0e0_desc" data-key="desc" placeholder="e\.g\. UK edition">/);
+	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale/);
+	// AudiobookDB's book to take brings the ids it found: they aren't offered apart too
+	assert.equal(
+		els['book-0'].querySelectorAll('.editTake').filter(x => /^AudiobookDB/.test(x.textContent)).length,
+		2,
+		"the book's and the edition's",
 	);
-	assert.match(html, /data-pick="editions:1:0"> the Audible edition: audible\.com id, narrators/);
-	assert.match(html, /In the series on Audible, not in this catalog: 3<\/summary>/);
-	// each catalog's books that may not be audiobooks, as in its own comparison
-	assert.match(
-		html,
-		/Maybe not audiobooks, in this catalog \(1\)<\/h4>.*<a href="book\.html#book=[^"]+">Brine Tide — Ann Vale {2}\[Gull Isle #4\]<\/a>: ASIN B0BRINETD1 is not sold on audible\.com: maybe a Kindle or print edition's ASIN <a href="https:\/\/www\.amazon\.com\/dp\/B0BRINETD1"/,
-	);
-	assert.doesNotMatch(html, /checked=""><\/?[^h]|type="checkbox"[^>]*checked/, 'no tickbox is ticked');
-	assert.equal(els.importConfirm.style.display, 'none', 'nothing is picked at first');
+	assert.ok(!els['book-0-take-0-ids'] && !els['book-0-ed-0-take-0-ids'], 'AudiobookDB id found once');
+	// an amazon.com ASIN is that site's alone: it isn't asked of audible.com, so isn't said not to be sold there
+	assert.doesNotMatch(els['book-0'].textContent, /Maybe not an audiobook/);
+	assert.equal(els.changeCount.textContent, 'No changes yet', 'nothing is picked at first');
 
-	const pick = name => {
-		const input = els.importPreviewBody.querySelector(`input[data-pick="${name}"]`);
-		input.checked = true;
-		input.dispatch('change');
-	};
-	pick('value:0:d:0:1');
-	pick('value:0:n:0:0');
-	pick('value:0:sn:0');
-	pick('value:0:sn:here'); // changed back: the number stays
-	pick('fresh:0:0');
-	pick('ids:1');
-	assert.equal(els.importConfirm.textContent, 'Apply 4 changes');
-	await els.importConfirm.listeners.click[0]();
-	await idle();
+	// a value picked fills the field in, and can be typed over
+	els['b0e0_d-pick-1'].listeners.click[0]();
+	assert.equal(els.b0e0_d.value, '2023-09-12');
+	els['b0e0_n-pick-0'].listeners.click[0]();
+	els['b0_sn-pick-0'].listeners.click[0]();
+	els.b0_sn.value = '4'; // changed back: the number stays
+	els.b0_sn.listeners.change[0]();
+	els['fresh-0-add'].checked = true;
+	els['fresh-0-add'].listeners.change[0]({target: els['fresh-0-add']});
+	assert.equal(els.changeCount.textContent, '2 changes', "the edition's, and the new book");
+	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
 	assert.deepEqual(
 		saved.books.map(b => [b.t, b.sn, b.e.map(e => [e.ext, e.n, e.d, e.p, e.len])]),
@@ -4874,21 +4980,22 @@ test('a series is compared with every catalog at once, and Apply takes only the 
 			[
 				'Tidewater',
 				'1',
-				[[{audiobookdb: 'RlsTidewatr1'}, ['Dana Fenwick'], '2020-02-02', ['Gullwing Audio'], 570]],
+				[
+					[
+						{'audible.com': 'B0TIDEWAT1', audiobookdb: 'RlsTidewatr1'},
+						['Dana Fenwick'],
+						'2020-02-02',
+						['Gullwing Audio'],
+						570,
+					],
+				],
 			],
 		],
-	);
-	assert.deepEqual(
-		[saved.seriesInfo['Gull Isle'].ext, saved.seriesInfo['Gull Isle'].total],
-		[{'audible.com': 'B0SERIES02'}, 4],
 	);
 	assert.equal(saved.authors['Ann Vale'], undefined, "AudiobookDB's ids found weren't picked");
 	assert.ok(!abdb.sent.some(s => s.method === 'POST'), 'nothing is sent');
 	assert.equal(get('CATALOG.books.length'), 2);
-	assert.match(
-		els.ioStatus.textContent,
-		/AudiobookDB: Added 1 book.*Audible: saved Audible ids and book counts found for 1 series or person; changed 2 values\./,
-	);
+	assert.match(els.ioStatus.textContent, /^Saved 1 book, added 1 book\./);
 });
 
 test('AudiobookDB needs the proxy, says when the proxy is out of date, and says when it refuses the key', async () => {
@@ -5201,7 +5308,7 @@ test("author info can be added, edited and removed on the author's page, and lin
 	);
 	assert.match(
 		els.creditBody.innerHTML,
-		/<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button>(<button type="button" class="catalogCompare" data-compare="[a-z]+">Compare their books with [\w ]+<\/button>)+<\/div>$/,
+		/<\/ul><\/div><div class="page-actions"><button type="button" class="aedit">Edit<\/button><a class="sedit" href="edit\.html#author=id-\d+">Edit their books<\/a><\/div>$/,
 	);
 	editClick();
 	assert.ok(els.creditForm.classList.contains('open'));

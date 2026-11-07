@@ -30,7 +30,7 @@ import {
 	readExternalFields,
 	externalLinks,
 	lookupHardcoverField,
-	shelfCompareButtons,
+	editPageHref,
 	bookPageHref,
 	seriesPageHref,
 } from './store.js';
@@ -225,7 +225,7 @@ function renderCreditPage(id: string) {
 			{class: 'page-actions'},
 			buildElement('button', {type: 'button', class: 'aedit', onclick: () => openCreditForm(id)}, 'Edit'),
 			...(KIND === CREDIT_KINDS.author && count > 0
-				? shelfCompareButtons('author', id, label => `Compare their books with ${label}`)
+				? [buildElement('a', {class: 'sedit', href: editPageHref(id, 'author')}, 'Edit their books')]
 				: []),
 		),
 	);

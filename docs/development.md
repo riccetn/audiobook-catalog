@@ -88,13 +88,9 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.ts` read
   `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`; a shelf sync's panel is `{% render 'shelf-panel', ... %}`).
 - a catalog without shelves of yours can still compare a series: `AudibleSync` plans nothing (`plan` is null), its
   client has no `KEY_STORAGE` (so `CatalogConnectors.CLIENTS` leaves it out), `PARTS` says it compares only
-  series (the pages link only those to it), and its Compare row in the Audible panel is
-  `{% render 'shelf-compare', ..., every: false %}`.
-- a shelf sync listed in `SYNCS` also goes in `CompareCatalogs.ALL` (`compare-catalogs.ts`: its `CATALOG`, `LABEL` and
-  `PARTS` as plain data), which the series and author pages' Compare buttons read, so those pages don't load the
-  syncs; a test fails when the two lists differ.
-- a shelf sync listed in `SYNCS` is also asked by _Compare with all catalogs_ for each kind in its `PARTS` (`MultiComparison`), with nothing more
-  to write.
+  series, and `EVERY_BOOK` is false, so its panel on Import & export has no Compare row.
+- a shelf sync listed in `SYNCS` is also asked by the Edit series page for each kind in its `PARTS`
+  (`edit-catalogs.ts`, `BookReview`), with nothing more to write.
 
 `tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone.
 

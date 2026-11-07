@@ -189,13 +189,14 @@ export class CatalogLookup {
 	}
 
 	/**
-	 * What an edition can be looked up by elsewhere: its ASIN (an Audible site's first, under that site), then its ISBN.
+	 * What an edition can be looked up by elsewhere: its ASIN (an Audible site's first), under its own site, then
+	 * its ISBN. An Amazon site's ASIN stays that site's, so Audible isn't asked about it.
 	 */
 	static editionIds(ed: Edition): Pasted[] {
 		const ids: Pasted[] = [];
-		const audible = Object.keys(ed.external).find(key => ExternalCatalog.groupOf(key)?.key === 'audible');
-		const asin = audible ? ed.external[audible] : ed.ids('asin')[0];
-		if (asin) ids.push({catalog: audible || ExternalCatalog.AUDIBLE_SITE, kind: 'edition', id: asin});
+		const keys = Object.keys(ed.external).filter(key => ExternalCatalog.family(key) === 'asin');
+		const site = keys.find(key => ExternalCatalog.groupOf(key)?.key === 'audible') || keys[0];
+		if (site) ids.push({catalog: site, kind: 'edition', id: ed.external[site]});
 		const isbn = ed.isbns()[0];
 		if (isbn) ids.push({catalog: 'isbn', kind: 'isbn', id: isbn});
 		return ids;
