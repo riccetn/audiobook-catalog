@@ -7,7 +7,7 @@ import {handle, allowedOrigins, KEY_HEADER, OLD_KEY_HEADER} from '../server/work
 import {upstreamUrl, CATALOG_KEY_HEADER} from '../server/proxy.ts';
 import {MAX_SYNC} from '../server/sync.ts';
 import {sqliteD1} from '../server/sqlite-d1.ts';
-import {deployConfig, shellArg, DATABASE, BINDING, DEPLOY_CONFIG} from '../server/deploy.mjs';
+import {deployConfig, keptId, shellArg, DATABASE, BINDING, DEPLOY_CONFIG} from '../server/deploy.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -322,6 +322,9 @@ test('server: the deploy binds the sync database by the id it found, in a config
 	assert.match(config, /main = "worker.js"\n\n\[\[d1_databases\]\]\n/);
 	assert.match(config, new RegExp(`binding = "${BINDING}"\ndatabase_name = "${DATABASE}"\ndatabase_id = "${id}"\n$`));
 	assert.throws(() => deployConfig('', 'not an id"\nmain = "evil.js'), /not a D1 database id/);
+	// the next deploy takes the id from the config the last one wrote, without asking Cloudflare
+	assert.equal(keptId(config), id);
+	assert.equal(keptId('name = "audiobook-catalog-proxy"\n'), null);
 	assert.ok(fs.readFileSync('.gitignore', 'utf8').split('\n').includes(`server/${DEPLOY_CONFIG}`));
 	assert.doesNotMatch(fs.readFileSync('server/wrangler.toml', 'utf8'), /database_id/, 'no id in git');
 });

@@ -60,8 +60,8 @@ You need a free Cloudflare account and Node (which you already have for the test
    It prints the address: `https://audiobook-catalog-proxy.<subdomain>.workers.dev` (the Worker keeps the name
    it had when it was only the proxy, so the address stays the same). It also finds the D1 database
    `audiobook-catalog-sync` by its name, makes it the first time, and binds it as `SYNC_DB` for sync. The database's
-   id is never written into `wrangler.toml`: it goes into `server/wrangler.deploy.toml`, which git ignores, and is
-   looked up again on every deploy. The server makes its one table on the first sync.
+   id is never written into `wrangler.toml`: it goes into `server/wrangler.deploy.toml`, which git ignores, and
+   later deploys take it from there (delete that file to make the next deploy look the database up again). The server makes its one table on the first sync.
 
 3. Make a key and give it to the Worker. Any long random text works, for example
    `node -e "console.log(crypto.randomUUID())"`. Then:

@@ -24,4 +24,5 @@ ALLOWED_ORIGINS = "https://riccetn.github.io, http://127.0.0.1:8000, http://loca
 
 # Syncing the catalog between devices (optional; docs/server.md, "Syncing devices") needs a D1 database bound
 # as SYNC_DB. Its id is not written here: make deploy-server (deploy.mjs) finds it by name, makes it the first time,
-# and deploys this file with the binding added, from the git-ignored wrangler.deploy.toml.
+# and deploys this file with the binding added, from the git-ignored wrangler.deploy.toml, where later deploys find
+# the id again.
