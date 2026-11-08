@@ -17,9 +17,9 @@ The rest:
 - `serve.mjs`: `make serve`, the app's pages from `public/` and the server beside them on this computer, with the
   key in `.dev.vars` and the synced copy in `.local/sync.sqlite` (both git-ignored). Node 22.18 or later.
 - `wrangler.toml`: the Worker's name and `ALLOWED_ORIGINS`. The key is a secret, never written here.
-- `deploy.mjs`: `make deploy-server`, which finds or makes the D1 database by name the first time, keeps its id in
-  the git-ignored `sync-database-id`, and deploys the git-ignored `wrangler.deploy.toml` (`wrangler.toml` with the
-  binding and the database's id), so the id is never in git.
+- `deploy.mjs`: `make deploy-server`, which finds or makes the D1 database by name (or takes its id from the last
+  deploy's) and deploys the git-ignored `wrangler.deploy.toml` (`wrangler.toml` with the binding and the database's
+  id), so the id is never in git.
 
 Setting it up, and saving it in the app: [docs/server.md](../docs/server.md). In short:
 

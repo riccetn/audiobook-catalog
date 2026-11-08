@@ -55,7 +55,7 @@ make format     # prettier --write . (.prettierrc.json, .prettierignore); needs 
 make format-check  # prettier --check ., what make check runs
 make check      # test, typecheck, lint and format-check, what CI runs; run it before a PR
 make docs       # TypeDoc: the API documentation from the doc comments, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
-make deploy-server  # node server/deploy.mjs: deploy the server (proxy and sync) with its sync D1 database, found by name the first time; its id kept in the git-ignored server/sync-database-id and server/wrangler.deploy.toml
+make deploy-server  # node server/deploy.mjs: deploy the server (proxy and sync) with its sync D1 database, found by name the first time; the id only in the git-ignored server/wrangler.deploy.toml, which later deploys read it from
 make serve      # make pages, then node server/serve.mjs: public/ and the server on http://127.0.0.1:8000/ (PORT=, HOST=; key in server/.dev.vars, sync in server/.local/sync.sqlite)
 node --test tests/catalog.test.mjs            # one suite (it runs the compiled public/, so make pages after editing src/ or a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
@@ -279,7 +279,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   replaced only over the revision the page read, else 409; at most `MAX_SYNC`; 501 without one). `responses.ts`: `jsonResponse`, `corsHeaders`.
   `serve.mjs` (`make serve`, Node built-ins only): `public/`'s files first, as Cloudflare's static assets, then `handle` (`startServer`, `publicFile`,
   `memoryCache` for the proxy's cache), with `SYNC_DB` a SQLite file through `sqliteD1` (`sqlite-d1.ts`, node:sqlite seen as D1) and the key in
-  `.dev.vars` (`readDevVars`; made and printed when missing). `deploy.mjs` (`make deploy-server`; the D1 id kept in git-ignored `sync-database-id` after the first lookup, `ID_FILE`, `keptId`, looked up again when a deploy with it fails; `.github/workflows/server.yml` runs it on pushes to
+  `.dev.vars` (`readDevVars`; made and printed when missing). `deploy.mjs` (`make deploy-server`; takes the D1 id from an earlier `wrangler.deploy.toml`, `keptId`, else looks it up by name; `.github/workflows/server.yml` runs it on pushes to
   `main` when the repository has `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). The Worker serves `public/` too (`[assets]` in `wrangler.toml`,
   answered before `worker.ts` runs, as `serve.mjs` does; `html_handling = "none"`, as Chrome refuses the service worker a redirected page, so `handle` answers `/` with `ASSETS`' `index.html`,
   and `sw.js` copies any redirected answer, `unredirected`), and lets in its own origin beside `ALLOWED_ORIGINS`. `handle` takes the fetch and cache so the tests run it

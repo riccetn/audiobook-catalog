@@ -1,10 +1,9 @@
 // Deploys the app's server with its sync database (make deploy-server, or node server/deploy.mjs), so the
-// database's id never has to be written into wrangler.toml, which git tracks. The first time it finds the D1
-// database by its name (making it if there is none) and keeps its id in sync-database-id (git-ignored), so later
-// deploys don't ask Cloudflare for it again; it writes wrangler.toml with the binding and that id into
-// wrangler.deploy.toml (git-ignored too), and deploys that. When a deploy with the kept id fails (the database was
-// deleted, or the id is another account's), it looks the database up again and tries once more.
-// A plain `npx wrangler deploy` still deploys the server, without sync.
+// database's id never has to be written into wrangler.toml, which git tracks. It takes the id from the
+// wrangler.deploy.toml a deploy wrote before (git-ignored), else finds the D1 database by its name (making it the
+// first time), writes wrangler.toml with the binding and that id into wrangler.deploy.toml, and deploys that.
+// To look the database up again, delete wrangler.deploy.toml. A plain `npx wrangler deploy` still deploys the
+// server, without sync.
 import {spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,26 +13,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 export const DATABASE = 'audiobook-catalog-sync';
 export const BINDING = 'SYNC_DB';
 export const DEPLOY_CONFIG = 'wrangler.deploy.toml';
-export const ID_FILE = 'sync-database-id';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-
-/**
- * @param {string} id
- * @returns {boolean} whether it is shaped like a D1 database's id
- */
-function isDatabaseId(id) {
-	return /^[0-9a-f-]{36}$/i.test(id);
-}
-
-/**
- * The id kept in sync-database-id, read from what the file holds.
- * @param {string | null} text the file's text, null when there is none
- * @returns {string | null} the id, or null when the file is missing or holds no id (so it is looked up again)
- */
-export function keptId(text) {
-	const id = (text || '').trim();
-	return isDatabaseId(id) ? id : null;
-}
 
 /**
  * wrangler.toml with the sync database bound, by its id.
@@ -42,11 +22,21 @@ export function keptId(text) {
  * @returns {string}
  */
 export function deployConfig(toml, id) {
-	if (!isDatabaseId(id)) throw new Error(`not a D1 database id: ${id}`);
+	if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error(`not a D1 database id: ${id}`);
 	return (
 		`# Written by deploy.mjs from wrangler.toml, with the sync database's id; not kept in git.\n` +
 		`${toml.trimEnd()}\n\n[[d1_databases]]\nbinding = "${BINDING}"\ndatabase_name = "${DATABASE}"\ndatabase_id = "${id}"\n`
 	);
+}
+
+/**
+ * The sync database's id in a wrangler.deploy.toml deployConfig wrote.
+ * @param {string} config
+ * @returns {string | null} the id, or null when it holds none
+ */
+export function keptId(config) {
+	const found = config.match(/^database_id = "([0-9a-f-]{36})"$/im);
+	return found ? found[1] : null;
 }
 
 /**
@@ -59,13 +49,12 @@ export function shellArg(arg) {
 }
 
 /**
- * Run wrangler (through npx, as it is no devDependency) in `cwd`; with `capture`, return what it printed. When it
- * fails, this exits, unless `mayFail`, when it returns null.
+ * Run wrangler (through npx, as it is no devDependency) in `cwd`; with `capture`, return what it printed.
  * @param {string[]} args
- * @param {{cwd?: string, capture?: boolean, mayFail?: boolean}} [opts]
- * @returns {string | null}
+ * @param {{cwd?: string, capture?: boolean}} [opts]
+ * @returns {string}
  */
-function wrangler(args, {cwd = HERE, capture = false, mayFail = false} = {}) {
+function wrangler(args, {cwd = HERE, capture = false} = {}) {
 	// --yes: npx would otherwise ask before installing wrangler. A captured run gets no input either, so wrangler
 	// asks nothing (its first-run question about usage metrics, say): a question printed where it is captured
 	// can't be seen, and would wait for an answer forever.
@@ -85,57 +74,35 @@ function wrangler(args, {cwd = HERE, capture = false, mayFail = false} = {}) {
 		process.platform === 'win32'
 			? spawnSync(command.map(shellArg).join(' '), {...options, shell: true})
 			: spawnSync(command[0], command.slice(1), options);
-	if (run.status !== 0) {
-		if (mayFail) return null;
-		process.exit(run.status || 1);
-	}
+	if (run.status !== 0) process.exit(run.status || 1);
 	return run.stdout || '';
 }
 
 /** @returns {string | null} the sync database's id, or null when there is none yet */
 function databaseId() {
 	// asked outside this folder, so wrangler finds no config to read or write
-	const listed = JSON.parse(wrangler(['d1', 'list', '--json'], {cwd: os.tmpdir(), capture: true}) || '[]');
+	const listed = JSON.parse(wrangler(['d1', 'list', '--json'], {cwd: os.tmpdir(), capture: true}));
 	const found = listed.find(d => d.name === DATABASE);
 	return found ? found.uuid || found.id : null;
 }
 
-/** @returns {string} the sync database's id, found by its name on the Cloudflare account (made when missing) */
-function findDatabase() {
-	console.log(`Looking for the sync database ${DATABASE} on your Cloudflare account…`);
-	let id = databaseId();
+function deploy() {
+	const config = path.join(HERE, DEPLOY_CONFIG);
+	let id = fs.existsSync(config) ? keptId(fs.readFileSync(config, 'utf8')) : null;
+	if (!id) {
+		console.log(`Looking for the sync database ${DATABASE} on your Cloudflare account…`);
+		id = databaseId();
+	}
 	if (!id) {
 		console.log('There is none yet: making it.');
 		wrangler(['d1', 'create', DATABASE], {cwd: os.tmpdir()});
 		id = databaseId();
 		if (!id) throw new Error(`wrangler made no database named ${DATABASE}`);
 	}
-	fs.writeFileSync(path.join(HERE, ID_FILE), `${id}\n`);
-	return id;
-}
-
-/**
- * Deploy with the sync database bound by its id.
- * @param {string} id
- * @param {boolean} mayFail
- * @returns {boolean} whether it deployed
- */
-function deployWith(id, mayFail) {
 	const toml = fs.readFileSync(path.join(HERE, 'wrangler.toml'), 'utf8');
-	fs.writeFileSync(path.join(HERE, DEPLOY_CONFIG), deployConfig(toml, id));
+	fs.writeFileSync(config, deployConfig(toml, id));
 	console.log(`Deploying the server with the sync database (${id}) bound as ${BINDING}…`);
-	return wrangler(['deploy', '--config', DEPLOY_CONFIG], {mayFail}) !== null;
-}
-
-function deploy() {
-	const file = path.join(HERE, ID_FILE);
-	const kept = keptId(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null);
-	if (kept) {
-		console.log(`Using the sync database's id kept in server/${ID_FILE}.`);
-		if (deployWith(kept, true)) return;
-		console.log(`That didn't deploy: looking the database up again, in case its id changed.`);
-	}
-	deployWith(findDatabase(), false);
+	wrangler(['deploy', '--config', DEPLOY_CONFIG]);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) deploy();
