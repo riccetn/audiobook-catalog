@@ -10,7 +10,8 @@ importScripts('sw-app.js');
 // version sw-app.js set.
 const sw = self as unknown as ServiceWorkerGlobalScope & {APP_VERSION: string; APP_FILES: string[]};
 
-const CACHE = `audiobook-catalog-${sw.APP_VERSION}`;
+const CACHE_PREFIX = 'audiobook-catalog-';
+const CACHE = `${CACHE_PREFIX}${sw.APP_VERSION}`;
 const APP = sw.APP_FILES;
 // What the app's server answers when it serves the app too (server/worker.ts): its catalog proxy and sync, which
 // are never cached (a synced copy kept here would hide the other devices' changes). sw.js is in the app's folder.
@@ -36,8 +37,9 @@ sw.addEventListener('install', e => {
 						});
 					}),
 				),
-			)
-			.then(() => sw.skipWaiting()),
+			),
+		// No skipWaiting: the new version waits until no page of the old one is open, as an open page that
+		// imports a module later (import()) would otherwise get the new version's beside its own old ones.
 	);
 });
 
@@ -45,8 +47,11 @@ sw.addEventListener('activate', e => {
 	e.waitUntil(
 		caches
 			.keys()
-			.then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-			.then(() => sw.clients.claim()),
+			// Only this app's older caches: the origin may be shared (riccetn.github.io serves every project of
+			// the account), and another app's caches are its own.
+			.then(keys =>
+				Promise.all(keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE).map(k => caches.delete(k))),
+			),
 	);
 });
 

@@ -1268,6 +1268,21 @@ test('missing books: gaps up to the released total, boxed sets fill their range,
 	assert.equal(Series.missingNumbers(owned, undefined), null);
 });
 
+test('owned: a box set counts the titles it covers, but a range too long for one is taken for a typo, and Check warns', () => {
+	const set = sn => book('Glass Harbor Omnibus', 'Ida Venn', {s: 'Glass Harbor', sn});
+	assert.equal(Series.owned(Bs([set('1-3'), book('Two', 'Ida Venn', {s: 'Glass Harbor', sn: '2'})])), 3);
+	const started = Date.now();
+	assert.equal(Series.owned(Bs([set('1-3000000000')])), 1);
+	assert.ok(Date.now() - started < 1000, 'not counted one number at a time');
+	const warnings = Validator.validate([set('1-3000')], {}).warnings.join('\n');
+	assert.ok(warnings.includes('covers more than 30 titles'), warnings);
+	assert.ok(
+		!Validator.validate([set('1-3')], {})
+			.warnings.join('\n')
+			.includes('covers more than'),
+	);
+});
+
 // ---------------------------------------------------------------- editions
 test('editions: a book from before editions gets its ids and ISBNs as its first edition', () => {
 	const [old] = BackupV1.fixBooks([{t: 'A', a: ['B'], id: 'B1', gr: '7', isbn: '978-0-00-000000-2', r: ['2024']}]);

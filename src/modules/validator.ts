@@ -112,6 +112,9 @@ export class Validator {
 			if (b.sn && typeof b.sn === 'string' && !Series.NUMBER.test(b.sn.trim())) {
 				warnings.push(`${label}: unusual series number ${repr(b.sn)}`);
 			}
+			const range = Series.range(b.sn);
+			if (range && range[1] - range[0] >= Series.BOX_MAX)
+				warnings.push(`${label}: series number ${repr(b.sn)} covers more than ${Series.BOX_MAX} titles`);
 			const titleKey = Text.key(Text.norm(b.t), Book.firstAuthor(b.a));
 			const editions = Book.storedEditions(b).map(Edition.fromJSON);
 			const isbns = editions.flatMap(ed => ed.isbns());

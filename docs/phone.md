@@ -41,7 +41,8 @@ saving it by hand does.
 
 The service worker (`public/sw.js`) answers the app's files from its cache, without downloading them again.
 At each start the browser checks only whether a new version was published; if one was, it is downloaded whole
-in the background and shows from the next start on. Served from your own computer (`make serve`), the network
+in the background and shows once every page of the app is closed (an installed app: closed, not only in the
+background), so a page never mixes the two versions. Served from your own computer (`make serve`), the network
 goes first instead, so an edit shows at once.
 
 On a phone's narrow screen the page keeps the list near the top: the page links stay on one line that

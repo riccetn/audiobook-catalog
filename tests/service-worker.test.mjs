@@ -50,8 +50,8 @@ function start({origin = 'https://example.github.io', version = 'v1', stores = n
 	};
 	const self = {
 		addEventListener: (type, fn) => (listeners[type] = fn),
-		skipWaiting: async () => {},
-		clients: {claim: async () => {}},
+		skipWaiting: async () => assert.fail('a new version waits until no page of the old one is open'),
+		clients: {claim: async () => assert.fail('a new version waits until no page of the old one is open')},
 	};
 	const context = vm.createContext({
 		self,
@@ -119,16 +119,18 @@ test("the app's files come from the cache, past the browser's own cache when ins
 	assert.equal(sw.asked.length, fetched + 1);
 });
 
-test('a new version is fetched whole into a cache of its own, and the old one goes once it is active', async () => {
+test("a new version is fetched whole into a cache of its own, and the app's old one goes once it is active", async () => {
 	const sw = start({version: 'v1'});
 	await sw.install();
 	await sw.activate();
 	sw.stores.get('audiobook-catalog-v1').set('https://example.github.io/app/store.js', new Response('old store.js'));
+	// another app on the same origin (an account's github.io) keeps its caches
+	sw.stores.set('other-app-v7', new Map());
 	const next = start({version: 'v2', stores: sw.stores});
 	await next.install();
-	assert.deepEqual([...sw.stores.keys()], ['audiobook-catalog-v1', 'audiobook-catalog-v2']);
+	assert.deepEqual([...sw.stores.keys()], ['audiobook-catalog-v1', 'other-app-v7', 'audiobook-catalog-v2']);
 	await next.activate();
-	assert.deepEqual([...sw.stores.keys()], ['audiobook-catalog-v2']);
+	assert.deepEqual([...sw.stores.keys()], ['other-app-v7', 'audiobook-catalog-v2']);
 	assert.equal(await next.get('store.js'), 'fresh /app/store.js');
 });
 

@@ -214,7 +214,9 @@ export class Series {
 
 	/**
 	 * How many titles of a series `books` (the series' books) hold: a box set kept as its own book beside
-	 * its titles adds none, and one without them adds the numbers it covers that no title has.
+	 * its titles adds none, and one without them adds the numbers it covers that no title has. A range of more
+	 * than BOX_MAX titles is taken for a typo (Check warns of it) and counts as one title, so "1-3000000" can't
+	 * make the count, and every save that works it out, run through millions of numbers.
 	 */
 	static owned(books: Book[]): number {
 		const titles = books.filter(b => !b.isCollection());
@@ -222,6 +224,10 @@ export class Series {
 		let count = titles.length;
 		for (const b of books.filter(b => b.isCollection())) {
 			const [from, to] = Series.range(b.number) as [number, number]; // a collection's number is a range
+			if (to - from >= Series.BOX_MAX) {
+				count++;
+				continue;
+			}
 			for (let n = Math.ceil(from); n <= to; n++)
 				if (!numbers.has(String(n))) {
 					numbers.add(String(n));
