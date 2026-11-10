@@ -37,6 +37,8 @@ export interface BookRecord {
 	read: string[];
 	/** its own ids by external catalog ({"hardcover": "77"}) */
 	external?: Record<string, string>;
+	/** web addresses of other pages about it */
+	links?: string[];
 	/** in the book's order */
 	editionIds: string[];
 	position: number;
@@ -84,11 +86,13 @@ export interface EditionRecord {
 	description?: string;
 	/** the key of its cover by catalog ({"audiobookdb": "<the image's hash>"}) */
 	covers?: Record<string, string>;
+	/** web addresses of other pages about it */
+	links?: string[];
 	/** "asin B0…" (whichever site), "goodreads 12345", "hardcover 678", "isbn 978…", for matching imports */
 	idKeys: string[];
 }
 /**
- * A series: an entry of its own, whether or not a book names it. The rest after `external` is derived from its books.
+ * A series: an entry of its own, whether or not a book names it. The rest after `links` is derived from its books.
  */
 export interface SeriesRecord {
 	id: string;
@@ -98,6 +102,8 @@ export interface SeriesRecord {
 	note?: string;
 	/** its ids by external catalog */
 	external?: Record<string, string>;
+	/** web addresses of other pages about it */
+	links?: string[];
 	sortName: string;
 	bookCount: number;
 	/** how many of its titles there are (Series.owned) */
@@ -286,7 +292,7 @@ export class CatalogRecords {
 	static UNDATED = 'undated';
 	// The info a series' or person's record holds, beside its name.
 	static INFO: Record<'series' | 'contributors', string[]> = {
-		series: ['total', 'status', 'note', 'external'],
+		series: ['total', 'status', 'note', 'external', 'links'],
 		contributors: ['bio', 'url', 'external', 'links'],
 	};
 
@@ -483,6 +489,7 @@ export class CatalogRecords {
 		} else rec.standalone = 1;
 		if (b.number) rec.number = b.number;
 		if (Object.keys(b.external).length) rec.external = ExternalCatalog.order(b.external) as Record<string, string>;
+		if (b.links.length) rec.links = [...b.links];
 		const lastRead = latest(b.read);
 		if (lastRead) rec.lastRead = lastRead;
 		return rec;
@@ -507,6 +514,7 @@ export class CatalogRecords {
 		if (ed.minutes !== undefined) rec.minutes = ed.minutes;
 		if (ed.description) rec.description = ed.description;
 		if (Object.keys(ed.covers).length) rec.covers = {...ed.covers};
+		if (ed.links.length) rec.links = [...ed.links];
 		return rec;
 	}
 
@@ -532,6 +540,7 @@ export class CatalogRecords {
 			if (info.note !== undefined) rec.note = info.note;
 			if (Object.keys(info.external).length)
 				rec.external = ExternalCatalog.order(info.external) as Record<string, string>;
+			if (info.links.length) rec.links = [...info.links];
 		}
 		const missing = Series.missingNumbers(own, rec.total);
 		if (missing) rec.missing = missing;
@@ -549,6 +558,7 @@ export class CatalogRecords {
 			status: rec.status,
 			note: rec.note,
 			external: rec.external,
+			links: rec.links,
 		});
 		return CatalogRecords.seriesRecord(
 			rec.id,
@@ -670,6 +680,7 @@ export class CatalogRecords {
 			genres: rec.genres,
 			read: rec.read,
 			external: rec.external || (hardcoverId ? {hardcover: hardcoverId} : {}),
+			links: rec.links,
 			editions: rec.editionIds.map(id => {
 				const ed = editions.get(id);
 				if (!ed) throw new Error(`no edition is stored under ${id}`);
@@ -684,6 +695,7 @@ export class CatalogRecords {
 					minutes: ed.minutes,
 					description: ed.description,
 					covers: ed.covers,
+					links: ed.links,
 				});
 			}),
 		});
@@ -706,7 +718,13 @@ export class CatalogRecords {
 			// a record from before authors and publishers kept their own site has the series' (Catalog.moveSeriesSites)
 			const {url} = s as SeriesRecord & {url?: string};
 			if (CatalogRecords.hasInfo('series', s) || url !== undefined) {
-				const info = new Series(s.name, {total: s.total, status: s.status, note: s.note, external: s.external});
+				const info = new Series(s.name, {
+					total: s.total,
+					status: s.status,
+					note: s.note,
+					external: s.external,
+					links: s.links,
+				});
 				if (url !== undefined) info.extra.url = url;
 				catalog.series.set(s.id, info);
 			}

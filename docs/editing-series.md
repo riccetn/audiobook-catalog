@@ -10,13 +10,14 @@ each with its series and number among its fields; the author's own name, bio and
 ## The series
 
 Its name (a new name renames it on every book in it), how many books are released, whether it is ongoing or
-complete, a note, and its ids in other catalogs. **Remove series** takes it off its books and removes it; it
+complete, a note, its ids in other catalogs, and links to other pages about it, one per line (a catalog's page among
+them goes to its id field when that is empty). **Remove series** takes it off its books and removes it; it
 asks you to save or discard your changes first. See [Everyday workflows](workflows.md).
 
 ## A book
 
-Each book's card has its title, authors, number in the series, genres, dates read and its ids in other
-catalogs (Goodreads, Hardcover, Open Library, ...). A field that changed is marked, and one that can't be read
+Each book's card has its title, authors, number in the series, genres, dates read, its ids in other
+catalogs (Goodreads, Hardcover, Open Library, ...) and its links, one per line. A field that changed is marked, and one that can't be read
 (a date such as "last spring") is named on the book and changes nothing until it is fixed.
 
 ## Its editions
@@ -26,12 +27,14 @@ by its ids. Its publishers, release date, length and ids follow. An edition a bo
 books of the series says so: a change to it changes it there too.
 
 Open an edition to edit its title (only when it was released under another title than the book's),
-narrators, publishers, release date, length, ISBN, description and each of its ids. **Another id** takes
+narrators, publishers, release date, length, ISBN, description, links and each of its ids (an edition's page on a
+catalog typed among its links goes to its id, or to **Another id**). **Another id** takes
 the address of the edition's page on any catalog, and becomes a field of its own.
 
 - **Merge with…** lists the book's other editions that can be one with it (none of their ids disagree:
   two ASINs on one site, or two ISBNs, are two editions) and makes them one, keeping what the first has.
-- **Split** moves the fields you pick to a new edition, and copies those you pick onto both.
+- **Split** moves the fields you pick to a new edition, and copies those you pick onto both; its links stay on
+  the edition kept.
 - **Remove edition** takes it off the book. Tick **Don't let imports add it again** to put its ids on the
   exclusion list as `Edition` entries: imports then leave that edition out, but its book still matches by
   its other editions or its title and gains everything else. **Show** beside _Excluded_ on _Import &

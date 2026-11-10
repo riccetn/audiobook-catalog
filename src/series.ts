@@ -195,7 +195,13 @@ export function render() {
  */
 const seriesInfoOf = (rec: SeriesRecord): Series | undefined =>
 	CatalogRecords.hasInfo('series', rec)
-		? new Series(rec.name, {total: rec.total, status: rec.status, note: rec.note, external: rec.external})
+		? new Series(rec.name, {
+				total: rec.total,
+				status: rec.status,
+				note: rec.note,
+				external: rec.external,
+				links: rec.links,
+			})
 		: undefined;
 
 function renderOverview() {

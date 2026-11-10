@@ -21,6 +21,8 @@ export interface BookInit {
 	read?: string[];
 	/** its ids by external catalog: {"hardcover": "77", "goodreads": "1234"} */
 	external?: Record<string, string>;
+	/** web addresses of other pages about it (its publisher's page, say), in the order typed */
+	links?: string[];
 	editions?: Edition[];
 	/** the id it is stored under in this browser, which never changes (see CatalogRecords) */
 	id?: string;
@@ -59,7 +61,7 @@ export class Book {
 	}
 
 	/** the keys of a stored book, in order */
-	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'ext', 'e'];
+	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'ext', 'links', 'e'];
 	// The key a backup keeps the book's id under, before the others. It is not one of KEYS, as it says which
 	// record the book is, not what the book is: text() and the comparisons built on it leave it out.
 	static ID_KEY = 'uid';
@@ -75,6 +77,8 @@ export class Book {
 	read: string[];
 	/** its ids by external catalog */
 	external: Record<string, string>;
+	/** web addresses of other pages about it, which name nothing imports match by */
+	links: string[];
 	editions: Edition[];
 	/** what the stored book holds that is not a book's value (the Check reports it) */
 	extra: Record<string, unknown>;
@@ -87,6 +91,7 @@ export class Book {
 		genres = [],
 		read = [],
 		external = {},
+		links = [],
 		editions = [],
 		id,
 	}: BookInit = {}) {
@@ -98,12 +103,13 @@ export class Book {
 		this.genres = [...genres];
 		this.read = [...read];
 		this.external = {...external};
+		this.links = [...links];
 		this.editions = [...editions];
 		this.extra = {};
 	}
 
 	/**
-	 * A book from the way it is stored (`{t, a, s, sn, g, r, ext, e}`), in the current format (BackupV1.fixBooks()
+	 * A book from the way it is stored (`{t, a, s, sn, g, r, ext, links, e}`), in the current format (BackupV1.fixBooks()
 	 * brings one from an older backup to it). A value that is not what its key holds, and a key a book has not, is
 	 * kept aside as it is and written back by toJSON(), so the Check still reports it. Throws when it is
 	 * not an object.
@@ -193,6 +199,16 @@ export class Book {
 					this.external = {};
 				},
 			);
+		else if (key === 'links')
+			put(
+				textList(v) && v.length > 0,
+				() => {
+					this.links = [...(v as string[])];
+				},
+				() => {
+					this.links = [];
+				},
+			);
 		else if (key === 'e') {
 			put(
 				Array.isArray(v) && v.length > 0 && v.every(Text.isObject),
@@ -229,6 +245,7 @@ export class Book {
 		else if (key === 'g') v = this.genres.length ? [...this.genres] : undefined;
 		else if (key === 'r') v = this.read.length ? [...this.read] : undefined;
 		else if (key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
+		else if (key === 'links') v = this.links.length ? [...this.links] : undefined;
 		else if (key === 'e') v = this.editions.length ? this.editions.map(ed => ed.toJSON()) : undefined;
 		else if (Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
 		return v === undefined ? this.extra[key] : v;
@@ -572,7 +589,7 @@ export class Book {
 	/**
 	 * One book made of several entries for the same title. `pick` says, for the title, the authors, the
 	 * series (and its number) and the external ids, which entry's value to keep, as an index into
-	 * `books`; by default the first entry that has one. Genres and dates read are combined, and so are
+	 * `books`; by default the first entry that has one. Genres, dates read and links are combined, and so are
 	 * editions: an edition that shares an ASIN, Goodreads id or ISBN with one already kept fills in what it
 	 * lacks, the others are added. With `pick.joinEditions`, editions that do not disagree on an ASIN or
 	 * Goodreads id become one edition (see Edition.joinable).
@@ -604,6 +621,7 @@ export class Book {
 		for (const b of external ? [external, ...books] : books) {
 			for (const [catalog, id] of Object.entries(b.external)) if (!out.idOn(catalog)) out.external[catalog] = id;
 		}
+		out.links = [...new Set(books.flatMap(b => b.links))];
 		const editions: Edition[] = [];
 		for (const ed of books.flatMap(b => b.editions)) {
 			const same = editions.find(x => x.sameAs(ed));
@@ -649,6 +667,10 @@ export class Book {
 			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
 		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
+		if (Array.isArray(out.links)) {
+			out.links = Text.tidyLinks(out.links);
+			if (!out.links.length) delete out.links;
+		}
 		if (Array.isArray(out.a)) out.a = Text.tidyNames(out.a);
 		if (Array.isArray(out.g)) {
 			out.g = out.g

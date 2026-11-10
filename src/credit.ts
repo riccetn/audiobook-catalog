@@ -29,6 +29,8 @@ import {
 	fillExternalFields,
 	readExternalFields,
 	externalLinks,
+	linksField,
+	webLinks,
 	lookupHardcoverField,
 	editPageHref,
 	bookPageHref,
@@ -38,7 +40,7 @@ import {CREDIT_KINDS} from './credit-kinds.js';
 import {setAddress, nameLinks, authorLinks, statusTag} from './book-list.js';
 import type {CreditKind} from './credit-kinds.js';
 import type {Book} from './modules/book.js';
-import type {Child} from './store.js';
+import type {Child, FormField} from './store.js';
 import type {ContributorRecord} from './modules/catalog-records.js';
 
 let KIND: CreditKind = CREDIT_KINDS.author;
@@ -173,7 +175,7 @@ function renderCreditPage(id: string) {
 	const links = [
 		info.url && link(info.url, 'Website'),
 		...externalLinks(info.external, KIND.one),
-		...info.links.map(href => link(href, (Text.webHost(href) || href).replace(/^www\./, ''))),
+		...webLinks(info.links),
 	].filter(x => !!x);
 	const out: Child[] = [
 		buildElement('div', {class: 'author-head'}, buildElement('h2', {class: 'author-name'}, name)),
@@ -249,6 +251,7 @@ function openCreditForm(id: string) {
 	fieldById('cf_bio').value = info.bio || '';
 	fieldById('cf_url').value = info.url || '';
 	fillExternalFields('cf_ext_', KIND.one, info.external);
+	fieldById('cf_links').value = info.links.join('\n');
 	byId('creditFormError').textContent = '';
 	byId('creditSaveBtn').textContent = `Save ${KIND.one}`;
 	byId('creditRemoveBtn').textContent = `Remove ${KIND.one}`;
@@ -306,12 +309,11 @@ async function saveCreditForm() {
 	const had = kept().get(id);
 	const external = readExternalFields('cf_ext_', KIND.one, had ? had.external : {});
 	if (external.bad.length) return showFormError(`Not an id or address there: ${external.bad.join('; ')}.`);
-	// the links the form has no field for are kept
 	const entry = Contributor.tidy(newName, {
 		bio: fieldById('cf_bio').value,
 		url: fieldById('cf_url').value,
 		ext: external.ids,
-		links: had ? had.links : [],
+		links: Text.parseLinks(fieldById('cf_links').value),
 	});
 	// the same rules as Check, applied to this entry alone (under the name their books have now); an id in
 	// a catalog this app doesn't know is only a warning there, but here it is most likely a mistake
@@ -472,6 +474,12 @@ export function startCreditPage(kind: 'author' | 'narrator' | 'publisher'): Prom
 	byId('cf_url_label').textContent = KIND.site[0];
 	byId('cf_url').setAttribute('placeholder', KIND.site[1]);
 	fillElement(byId('cf_ext'), externalFields('cf_ext_', KIND.one));
+	fillElement(
+		byId('cf_linksBox'),
+		linksField('cf_links', KIND.one, group => document.getElementById('cf_ext_' + group) as FormField | null, {
+			label: 'Other links, one per line',
+		}),
+	);
 	byId('creditForm').addEventListener('submit', e => {
 		e.preventDefault();
 		return saveCreditForm();

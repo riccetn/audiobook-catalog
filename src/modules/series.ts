@@ -1,5 +1,5 @@
 // A series: what you keep about it (its series info: how many books are out, whether it is complete, a
-// note and its ids in external catalogs), and what goes for every series: names that are spelled differently but are one
+// note, its ids in external catalogs and links to other pages about it), and what goes for every series: names that are spelled differently but are one
 // series, numbers and box sets' ranges ("4-6"), and a series written into a title ("Title (Series, #3)").
 import {Text} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
@@ -52,7 +52,7 @@ const rangeText: (text: string) => string = text => text.replace(/\s*[-–]\s*/,
 export class Series {
 	static STATUSES: SeriesStatus[] = ['ongoing', 'complete'];
 	// The keys of a series' entry in the stored series info, in order.
-	static KEYS = ['total', 'status', 'note', 'ext'];
+	static KEYS = ['total', 'status', 'note', 'ext', 'links'];
 	// A series number: "3", "2.5", or a box set's range "4-6".
 	static NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
 	// A box set's range of whole numbers, "1-3"; more than BOX_MAX titles is taken for a typo.
@@ -66,6 +66,8 @@ export class Series {
 	note: string | undefined;
 	/** its ids by external catalog: {"goodreads": "123", "hardcover": "the-lantern-coast"} */
 	external: Record<string, string>;
+	/** web addresses of other pages about it (its publisher's page of the series, say), in the order typed */
+	links: string[];
 	/** what the stored entry holds that is not a series' info (the Check reports it) */
 	extra: Record<string, unknown>;
 
@@ -76,13 +78,21 @@ export class Series {
 			status,
 			note,
 			external = {},
-		}: {total?: number | 'many'; status?: SeriesStatus; note?: string; external?: Record<string, string>} = {},
+			links = [],
+		}: {
+			total?: number | 'many';
+			status?: SeriesStatus;
+			note?: string;
+			external?: Record<string, string>;
+			links?: string[];
+		} = {},
 	) {
 		this.name = name;
 		this.total = total;
 		this.status = status;
 		this.note = note;
 		this.external = {...external};
+		this.links = [...links];
 		this.extra = {};
 	}
 
@@ -99,6 +109,8 @@ export class Series {
 			else if (k === 'status' && Series.STATUSES.includes(v)) series.status = v;
 			else if (k === 'note' && typeof v === 'string') series.note = v;
 			else if (k === 'ext' && ExternalCatalog.isIds(v)) series.external = {...v};
+			else if (k === 'links' && Array.isArray(v) && v.length && v.every(x => typeof x === 'string' && x.trim()))
+				series.links = [...v];
 			else series.extra[k] = v;
 		}
 		return series;
@@ -112,6 +124,7 @@ export class Series {
 			status: this.status,
 			note: this.note,
 			ext: ExternalCatalog.order(this.external) || undefined,
+			links: this.links.length ? [...this.links] : undefined,
 		};
 		for (const k of Series.KEYS) {
 			if (fields[k] !== undefined) out[k] = fields[k];

@@ -27,6 +27,7 @@ import {
 	fillElement,
 	showIoStatus,
 	externalFields,
+	linksField,
 	fillExternalFields,
 	readExternalFields,
 	lookupHardcoverField,
@@ -39,7 +40,7 @@ import {
 	hashValue,
 } from './store.js';
 import {coverImage, totalText, setAddress} from './book-list.js';
-import type {Child} from './store.js';
+import type {Child, FormField} from './store.js';
 import type {CatalogRun, CatalogChoice} from './edit-catalogs.js';
 import type {CatalogEntry, FieldChoices} from './modules/book-review.js';
 import type {NotAudio} from './modules/shelf-sync.js';
@@ -95,6 +96,7 @@ const EDITION_FIELDS: [string, string][] = [
 	['len', 'Length'],
 	['isbn', 'ISBN'],
 	['desc', 'Description'],
+	['links', 'Links'],
 ];
 
 // ------------------------------------------------------------------ what a book and an edition show
@@ -161,7 +163,8 @@ function field(
 	attrs: Record<string, any> = {},
 	choices: FieldChoices[] = [],
 ): HTMLElement {
-	const input = buildElement('input', {id, ...attrs});
+	// links one per line
+	const input = buildElement(attrs['data-key'] === 'links' ? 'textarea' : 'input', {id, ...attrs});
 	(input as HTMLInputElement).value = value;
 	const onchange = attrs.onchange as (() => void) | undefined;
 	return buildElement(
@@ -245,6 +248,18 @@ function bookCard(d: Draft, i: number): HTMLElement {
 		{class: 'formrow extFields', id: inputId(i, null, 'ext'), onchange: () => readBookFields(i)},
 		...externalFields(inputId(i, null, 'ext_'), 'book'),
 	);
+	// a catalog's page typed among the links goes to its id field
+	const links = linksField(
+		inputId(i, null, 'links'),
+		'book',
+		group => document.getElementById(inputId(i, null, 'ext_') + group) as FormField | null,
+		{
+			value: b.links.join('\n'),
+			onMoved: () => readBookFields(i),
+			attrs: {onchange: () => readBookFields(i)},
+		},
+	);
+	links.classList.toggle('changed', b.links.join(' ') !== d.before.links.join(' '));
 	return buildElement(
 		'details',
 		{class: changed ? 'editBook changed' : 'editBook', id: `book-${i}`, open: ''},
@@ -281,6 +296,7 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			),
 			buildElement('div', {class: 'editFields'}, ...fields),
 			ids,
+			links,
 			buildElement('p', {class: 'formError', id: `book-${i}-error`}, d.error),
 			...catalogFinds(d, i),
 			buildElement('h3', {class: 'editEditionsTitle'}, 'Editions'),
@@ -318,6 +334,10 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 					// a short name for it, as the book form's: "UK edition", "Full cast"
 					...(k === 'desc' ? {placeholder: 'e.g. UK edition'} : {}),
 					...(k === 't' ? {placeholder: 'the same as the book'} : {}),
+					// an edition's page on a catalog typed among its links goes to its id
+					...(k === 'links'
+						? {placeholder: 'https://… one per line', onfocusout: () => editionLinksToIds(i, j)}
+						: {}),
 				},
 				choicesFor(d, ed, j, k),
 			),
@@ -411,7 +431,8 @@ function mergePanel(i: number, j: number): HTMLElement {
 /** Split: the fields that move to a new edition (ticked), and those copied onto both. */
 function splitPanel(i: number, j: number): HTMLElement {
 	const fields = DRAFTS[i].book.editions[j].fields();
-	const keys = Object.keys(fields).filter(k => !k.startsWith('img:'));
+	// its covers and links stay on the edition kept
+	const keys = Object.keys(fields).filter(k => !k.startsWith('img:') && k !== 'links');
 	const label = (k: string) =>
 		k.startsWith('ext:')
 			? Edition.fieldLabel(k.slice(4))
@@ -1194,7 +1215,37 @@ export function readBookFields(i: number) {
 		.filter(Boolean);
 	b.read = dates;
 	b.external = external.ids;
+	b.links = Text.parseLinks(value('links'));
 	markFields(i);
+}
+
+/**
+ * An edition's page on a catalog typed among its links (an Audible or Goodreads edition, say) goes to its id
+ * field on the card, when that is empty or holds the same id, else to Another id when that is empty; the
+ * edition is then read again. Other links stay.
+ */
+function editionLinksToIds(i: number, j: number) {
+	const card = byId(`book-${i}-ed-${j}`);
+	const input = (key: string) => card.querySelector(`[data-key="${key}"]`) as HTMLInputElement | null;
+	const links = input('links');
+	if (!links) return;
+	const kept: string[] = [];
+	let moved = false;
+	for (const line of links.value.split(/\r\n|\r|\n/)) {
+		const found = line.trim() ? Edition.idFromAddress(line.trim()) : null;
+		const into =
+			found &&
+			[input(found.field), input('more')].find(
+				x => x && (!Text.tidy(x.value) || Text.tidy(x.value) === found.id),
+			);
+		if (found && into) {
+			into.value = into === input('more') ? line.trim() : found.id;
+			moved = true;
+		} else kept.push(line);
+	}
+	if (!moved) return;
+	links.value = kept.join('\n').trim();
+	readEditionFields(i, j);
 }
 
 /**
@@ -1259,6 +1310,8 @@ function markFields(i: number) {
 		const box = input.closest('.editField');
 		if (box) box.classList.toggle('changed', input.value !== bookFieldText(d.before, k));
 	}
+	const links = fieldById(inputId(i, null, 'links')).closest('.linksField');
+	if (links) links.classList.toggle('changed', d.book.links.join(' ') !== d.before.links.join(' '));
 	showChangeCount();
 }
 
@@ -1333,6 +1386,8 @@ export function bookChanges(before: Book, after: Book, excluded: string[] = []):
 			.map(([k, v]) => `${ExternalCatalog.name(k)} ${v}`)
 			.join(', ');
 	if (ids(before) !== ids(after)) out.push(`Ids: ${from(ids(before), ids(after))}`);
+	if (before.links.join(' ') !== after.links.join(' '))
+		out.push(`Links: ${from(before.links.join(' '), after.links.join(' '))}`);
 	const kept = new Set(after.editions.map(ed => ed.id).filter(id => id !== undefined));
 	for (const ed of before.editions) {
 		if (ed.id !== undefined && kept.has(ed.id)) continue;
@@ -1419,6 +1474,8 @@ function seriesChanges(name: string): string[] {
 	const ext = readExternalFields('sf_ext_', 'series', info ? info.external : {});
 	const shown = (ids: Record<string, string>) => JSON.stringify(ExternalCatalog.order(ids) || {});
 	if (ext.bad.length || shown(ext.ids) !== shown(info ? info.external : {})) out.push('Its ids in other catalogs');
+	const links = Text.parseLinks(fieldById('sf_links').value).join(' ');
+	if (links !== (info ? info.links.join(' ') : '')) out.push(`Links: ${links || '(empty)'}`);
 	return out;
 }
 
@@ -1449,8 +1506,10 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 	const had = CATALOG.series.get(id);
 	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
 	if (external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
+	const links = Text.parseLinks(fieldById('sf_links').value);
 	// a series needs none of these; with all of them empty, it keeps none
-	if (!(totalTyped || note || Object.keys(external.ids).length)) return {newName, entry: null, note: hardcover.note};
+	if (!(totalTyped || note || Object.keys(external.ids).length || links.length))
+		return {newName, entry: null, note: hardcover.note};
 	// unchecked as typed: the Check below says what is wrong with the total or status
 	const typed: Record<string, unknown> = {
 		...(totalTyped ? {total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase()} : {}),
@@ -1458,6 +1517,7 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 		note,
 	};
 	if (Object.keys(external.ids).length) typed.ext = ExternalCatalog.order(external.ids);
+	if (links.length) typed.links = links;
 	const {errors} = Validator.validate(JSON.parse(JSON.stringify(CATALOG.books)), {[name]: typed});
 	const problems = errors
 		.filter(e => e.startsWith('series-info'))
@@ -1692,6 +1752,7 @@ export async function loadSeries() {
 	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') || 'ongoing' : 'ongoing';
 	fieldById('sf_note').value = info ? info.note || '' : '';
 	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
+	fieldById('sf_links').value = info ? info.links.join('\n') : '';
 	byId('seriesFormError').textContent = '';
 	REMOVING_SERIES = false;
 	startDrafts(CATALOG.booksOf('series', id).slice().sort(bookOrder));
@@ -1722,6 +1783,13 @@ for (const field of ['sf_name', 'sf_total', 'sf_status', 'sf_note'])
 	byId(field).addEventListener('change', showChangeCount);
 fillElement(byId('sf_ext'), ...externalFields('sf_ext_', 'series'));
 byId('sf_ext').addEventListener('change', showChangeCount);
+fillElement(
+	byId('sf_linksBox'),
+	linksField('sf_links', 'series', group => document.getElementById('sf_ext_' + group) as FormField | null, {
+		onMoved: showChangeCount,
+		attrs: {onchange: showChangeCount},
+	}),
+);
 byId('seriesRemoveBtn').addEventListener('click', removeSeries);
 byId('reviewBtn').addEventListener('click', review);
 byId('reviewSaveBtn').addEventListener('click', save);

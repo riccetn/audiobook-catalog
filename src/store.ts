@@ -985,13 +985,7 @@ function externalFieldToId(prefix: string, kind: ExternalKind, group: string) {
 	const field = document.getElementById(prefix + group) as HTMLInputElement | null;
 	const text = field ? Text.tidy(field.value) : '';
 	if (!field || !text) return;
-	/** @param into the group of the field it goes in */
-	const shown = (found: ExternalId, into: string) => {
-		const bare = ExternalCatalog.readId(found.id, kind, into);
-		return bare && bare.catalog === found.catalog
-			? found.id
-			: ExternalCatalog.url(found.catalog, kind, found.id) || text;
-	};
+	const shown = (found: ExternalId, into: string) => idFieldText(found, kind, into, text);
 	const found = ExternalCatalog.readId(text, kind, group);
 	if (found) {
 		field.value = shown(found, group);
@@ -1006,6 +1000,96 @@ function externalFieldToId(prefix: string, kind: ExternalKind, group: string) {
 	if (there && there !== value) return;
 	other.value = value;
 	field.value = '';
+}
+
+/**
+ * What a group's id field shows for an id found: the id alone, or the address of its page when the id alone
+ * would be read as another of the group's sites' (audible.co.uk's in the Audible field).
+ * @param into the group of the field it goes in
+ * @param text what was typed, when there is no such address
+ */
+function idFieldText(found: ExternalId, kind: ExternalKind, into: string, text: string): string {
+	const bare = ExternalCatalog.readId(found.id, kind, into);
+	return bare && bare.catalog === found.catalog
+		? found.id
+		: ExternalCatalog.url(found.catalog, kind, found.id) || text;
+}
+
+/**
+ * The field for links, one per line (Text.parseLinks reads them): a <div> with a label and a <textarea> whose id
+ * is `id`. When it is left, an address that is a page of a catalog the form has an id field for moves to that
+ * field, when it is empty or holds the same id (moveCatalogLinks), and `onMoved` is called.
+ * @param fieldFor the form's id field for a group of catalogs, or null when it has none
+ * @param attrs the textarea's other attributes
+ */
+export function linksField(
+	id: string,
+	kind: ExternalKind,
+	fieldFor: (group: string) => FormField | null,
+	{
+		label = 'Links, one per line',
+		value = '',
+		onMoved,
+		attrs = {},
+	}: {label?: string; value?: string; onMoved?: () => void; attrs?: Record<string, any>} = {},
+): HTMLDivElement {
+	const textarea = buildElement('textarea', {
+		id,
+		rows: 2,
+		placeholder: "https://… a page about it, such as its publisher's",
+		...attrs,
+		onfocusout: () => {
+			const now = moveCatalogLinks(textarea.value, kind, fieldFor);
+			if (now === textarea.value) return;
+			textarea.value = now;
+			if (onMoved) onMoved();
+		},
+	});
+	// a textarea's value is its own, not an attribute's
+	textarea.value = value;
+	return buildElement('div', {class: 'linksField'}, buildElement('label', {for: id}, label), textarea);
+}
+
+/**
+ * Links typed one per line, without the pages of catalogs the form has an id field for, which go to that field
+ * when it is empty or holds the same id (as an id is what the catalog keeps of such a page); the rest stay as typed.
+ * `text` as it is when none moves.
+ * @param fieldFor the form's id field for a group of catalogs, or null when it has none
+ */
+export function moveCatalogLinks(
+	text: string,
+	kind: ExternalKind,
+	fieldFor: (group: string) => FormField | null,
+): string {
+	const kept: string[] = [];
+	let moved = false;
+	for (const line of text.split(/\r\n|\r|\n/)) {
+		const link = line.trim();
+		const found = link ? ExternalCatalog.fromAddress(link, kind) : null;
+		const g = found && ExternalCatalog.groupOf(found.catalog);
+		const field = g ? fieldFor(g.key) : null;
+		if (found && g && field) {
+			const value = idFieldText(found, kind, g.key, link),
+				there = Text.tidy(field.value);
+			if (!there || there === value || ExternalCatalog.readId(there, kind, g.key)?.id === found.id) {
+				field.value = there || value;
+				moved = true;
+				continue;
+			}
+		}
+		kept.push(line);
+	}
+	return moved ? kept.join('\n').trim() : text;
+}
+
+/**
+ * Links to other pages about something (Book.links and the like), each named by its site ("gullwing.example ↗").
+ * @param cls the links' class
+ */
+export function webLinks(links: string[], cls: string = 'authorlink'): HTMLAnchorElement[] {
+	return links.map(href =>
+		buildElement('a', {class: cls, href, target: '_blank', rel: 'noopener'}, `${Text.linkLabel(href)} ↗`),
+	);
 }
 
 /**

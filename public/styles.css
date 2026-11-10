@@ -1027,7 +1027,8 @@ button:focus {
 .editionFields > .ef-n {
 	grid-column: span 3;
 }
-/* the title it was released under, and the button that makes it the book's */
+/* the title it was released under, and the button that makes it the book's; its links */
+.editionFields > .ef-links,
 .editionFields > .ef-t {
 	grid-column: 1 / -1;
 }
@@ -1080,7 +1081,8 @@ button:focus {
 	font-family: inherit;
 	font-size: 0.9rem;
 }
-#addForm .editionFields input {
+#addForm .editionFields input,
+#addForm .editionFields textarea {
 	background: var(--card);
 }
 .removeEdition,
@@ -1660,6 +1662,7 @@ button:focus {
 }
 .editPanel label,
 .editBook .extFields label,
+.editBook .linksField label,
 .editField label {
 	display: block;
 	font-size: 0.8rem;
@@ -1668,9 +1671,13 @@ button:focus {
 }
 .editPanel input,
 .editPanel select,
+.editPanel textarea,
 .editBook .extFields input,
-.editField input {
+.editBook .linksField textarea,
+.editField input,
+.editField textarea {
 	width: 100%;
+	resize: vertical;
 	padding: 0.35rem 0.5rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
@@ -1678,7 +1685,9 @@ button:focus {
 	color: var(--ink);
 	font: inherit;
 }
-.editField.changed input {
+.editField.changed input,
+.editField.changed textarea,
+.linksField.changed textarea {
 	border-color: var(--moss);
 	box-shadow: inset 0 0 0 1px var(--moss);
 }

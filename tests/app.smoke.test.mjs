@@ -2693,7 +2693,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 	first.els.exportBtn.listeners.click[0]();
 	await idle();
 	const backup = JSON.parse(blobs[0]);
-	// version 4: the stored records by store and id, without what is derived
+	// version 5: the stored records by store and id, without what is derived
 	assert.deepEqual(Object.keys(backup), [
 		'version',
 		'books',
@@ -2703,7 +2703,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 		'marks',
 		'exclusions',
 	]);
-	assert.equal(backup.version, 4);
+	assert.equal(backup.version, 5);
 	const byName = JSON.parse(JSON.stringify(Backup.toCatalog(backup)));
 	assert.deepEqual(withoutIds(byName), {
 		books: demoBooks,
@@ -2782,7 +2782,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 
 	// a backup from a newer version of the page is refused, saying so
 	await other.els.importFile.listeners.change[0]({
-		target: {files: [{name: 'b.json', text: JSON.stringify({...backup, version: 5, books: {}})}], value: ''},
+		target: {files: [{name: 'b.json', text: JSON.stringify({...backup, version: 6, books: {}})}], value: ''},
 	});
 	await idle();
 	assert.match(other.els.ioStatus.textContent, /^Not restored: a newer version of the catalog made that backup/);
@@ -6052,4 +6052,139 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	assert.equal(io.els.ioStatus.textContent.startsWith('Imports may add Edition B0FERN0003 again.'), true);
 	assert.match(io.els.exclusionsList.innerHTML, /no book or edition is excluded/);
 	assert.deepEqual((await kept(storage)).excluded, []);
+});
+
+test("links: a book's and an edition's, typed in the book form (a catalog's page going to its id) and shown on its page", async () => {
+	const mine = JSON.stringify([
+		{
+			t: 'The Lantern Keeper',
+			a: ['Ann Vale'],
+			links: ['https://ann-vale.example/lantern-keeper'],
+			e: [{ext: {'audible.com': 'B0LANT0001'}, links: ['https://gullwing.example/lantern-keeper']}],
+		},
+	]);
+	const {els, get, ctx, readable, storage} = await bootBook('The Lantern Keeper', {files: {'books.json': mine}});
+	assert.match(
+		readable(els.results.innerHTML),
+		/<dt>Link<\/dt><dd><a class="weblink" href="https:\/\/ann-vale\.example\/lantern-keeper" target="_blank" rel="noopener">ann-vale\.example ↗<\/a><\/dd>/,
+	);
+	assert.match(
+		readable(els.results.innerHTML),
+		/<h3>Edition<\/h3><dl class="details"><dt>ASIN<\/dt><dd>[^]*?<\/dd><dt>Link<\/dt><dd><a class="weblink" href="https:\/\/gullwing\.example\/lantern-keeper" target="_blank" rel="noopener">gullwing\.example ↗<\/a><\/dd><\/dl>/,
+	);
+
+	ctx.openEditForm(get('BOOK_FILTER'));
+	assert.equal(els.f_links.value, 'https://ann-vale.example/lantern-keeper');
+	assert.equal(formEditions(get)[0].links, 'https://gullwing.example/lantern-keeper');
+	// a catalog's page among the book's links goes to its id field, which is shown; other links stay as typed
+	els.f_links.value =
+		'https://ann-vale.example/lantern-keeper\nwww.gullwing.example/lanterns\nhttps://openlibrary.org/works/OL77W';
+	els.f_links.dispatch('focusout');
+	assert.equal(els.f_ext_openlibrary.value, 'OL77W');
+	assert.equal(els.f_links.value, 'https://ann-vale.example/lantern-keeper\nwww.gullwing.example/lanterns');
+	assert.equal(els.f_ids.open, true);
+	// and an edition's page among an edition's goes to the card's field for it
+	typeEdition(els, 0, 'links', 'https://gullwing.example/lantern-keeper\nhttps://www.goodreads.com/book/show/4242');
+	els.f_editions.querySelector('textarea[data-i="0"][data-k="links"]').dispatch('focusout');
+	assert.deepEqual(formEditions(get)[0], {
+		'ext:audible.com': 'B0LANT0001',
+		'ext:goodreads': '4242',
+		links: 'https://gullwing.example/lantern-keeper',
+	});
+	// an address whose field holds another id stays a link, for the Check to note
+	typeEdition(els, 0, 'links', 'https://gullwing.example/lantern-keeper\nhttps://www.goodreads.com/book/show/99');
+	els.f_editions.querySelector('textarea[data-i="0"][data-k="links"]').dispatch('focusout');
+	assert.equal(
+		formEditions(get)[0].links,
+		'https://gullwing.example/lantern-keeper\nhttps://www.goodreads.com/book/show/99',
+	);
+	typeEdition(els, 0, 'links', 'https://gullwing.example/lantern-keeper');
+	els.addForm.listeners.submit[0]({preventDefault() {}});
+	await idle();
+	assert.deepEqual(get('CATALOG.book(BOOK_FILTER)'), {
+		t: 'The Lantern Keeper',
+		a: ['Ann Vale'],
+		ext: {openlibrary: 'OL77W'},
+		links: ['https://ann-vale.example/lantern-keeper', 'https://www.gullwing.example/lanterns'],
+		e: [
+			{ext: {'audible.com': 'B0LANT0001', goodreads: '4242'}, links: ['https://gullwing.example/lantern-keeper']},
+		],
+	});
+	assert.deepEqual((await kept(storage)).books[0].links, [
+		'https://ann-vale.example/lantern-keeper',
+		'https://www.gullwing.example/lanterns',
+	]);
+	assert.match(
+		readable(els.results.innerHTML),
+		/<dt>Links<\/dt><dd><a class="weblink" href="https:\/\/ann-vale\.example\/lantern-keeper"[^>]*>ann-vale\.example ↗<\/a> <a class="weblink" href="https:\/\/www\.gullwing\.example\/lanterns"[^>]*>gullwing\.example ↗<\/a><\/dd>/,
+	);
+	// a book's card in a list leaves them out
+	const list = await boot({page: 'books.html', storage});
+	assert.doesNotMatch(list.els.results.innerHTML, /gullwing|ann-vale/);
+});
+
+test("links: a series', a book's and an edition's, edited on the Edit series page and shown on the series' page", async () => {
+	const files = {
+		'books.json': JSON.stringify([
+			{t: 'The Lantern Keeper', a: ['Ann Vale'], s: 'Lanterns', sn: '1', e: [{desc: 'UK edition'}]},
+		]),
+		'series-info.json': JSON.stringify({}),
+	};
+	const edit = await bootEdit('Lanterns', {files});
+	const {els, storage} = edit;
+	assert.equal(els.sf_links.value, '');
+	els.sf_total.value = '3';
+	els.sf_links.value = 'gullwing.example/lanterns\nhttps://www.goodreads.com/series/1234-lanterns';
+	els.sf_links.dispatch('focusout');
+	assert.equal(els.sf_ext_goodreads.value, '1234');
+	assert.equal(els.sf_links.value, 'gullwing.example/lanterns');
+	els.b0_links.value = 'https://ann-vale.example/lanterns/1';
+	els.b0_links.dispatch('change');
+	// an edition's catalog page goes to Another id, as the card has no field for it yet
+	els.b0e0_links.value = 'https://gullwing.example/lanterns/1/uk\nhttps://www.goodreads.com/book/show/4242';
+	els.b0e0_links.dispatch('focusout');
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	assert.match(els.reviewList.textContent, /Links: https:\/\/gullwing\.example\/lanterns/);
+	assert.match(els.reviewList.textContent, /Links: https:\/\/ann-vale\.example\/lanterns\/1/);
+	assert.match(els.reviewList.textContent, /Links: https:\/\/gullwing\.example\/lanterns\/1\/uk/);
+	await els.reviewSaveBtn.listeners.click[0]();
+	await idle();
+	const stored = await kept(storage);
+	assert.deepEqual(stored.seriesInfo.Lanterns, {
+		total: 3,
+		status: 'ongoing',
+		note: '',
+		ext: {goodreads: '1234'},
+		links: ['https://gullwing.example/lanterns'],
+	});
+	assert.deepEqual(stored.books[0].links, ['https://ann-vale.example/lanterns/1']);
+	assert.deepEqual(stored.books[0].e, [
+		{ext: {goodreads: '4242'}, desc: 'UK edition', links: ['https://gullwing.example/lanterns/1/uk']},
+	]);
+	// the series' page shows them after its catalog links
+	const series = await boot({storage, hash: edit.ctx.location.assigned.slice('index.html'.length)});
+	await idle();
+	assert.match(
+		series.els.results.innerHTML,
+		/Goodreads ↗<\/a> <a class="authorlink" href="https:\/\/gullwing\.example\/lanterns" target="_blank" rel="noopener">gullwing\.example ↗<\/a>/,
+	);
+});
+
+test("links: a person's other links, typed in their form beside their website, a catalog's page going to its id", async () => {
+	const {els, get} = await boot({page: 'publisher.html', hash: '#p=Kestrel+Row+Audio'});
+	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	assert.equal(els.cf_links.value, '');
+	els.cf_links.value = 'gullwing.example/about\nhttps://www.wikidata.org/wiki/Q77\n https://gullwing.example/about ';
+	els.cf_links.dispatch('focusout');
+	assert.equal(els.cf_ext_wikidata.value, 'Q77');
+	await els.creditForm.listeners.submit[0]({preventDefault() {}});
+	await idle();
+	assert.deepEqual(get("CATALOG.infoByName('publishers').get('Kestrel Row Audio')").links, [
+		'https://gullwing.example/about',
+	]);
+	assert.equal(get("CATALOG.infoByName('publishers').get('Kestrel Row Audio')").ext.wikidata, 'Q77');
+	assert.match(els.creditBody.innerHTML, /href="https:\/\/gullwing\.example\/about"[^>]*>gullwing\.example ↗<\/a>/);
+	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	assert.equal(els.cf_links.value, 'https://gullwing.example/about');
 });
