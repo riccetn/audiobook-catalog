@@ -1,5 +1,5 @@
 // Syncing the catalog between devices through your server (server/sync.ts, `/sync`), which keeps one copy
-// of it: a version 4 backup (Backup.write), compressed and encrypted here with a passphrase, so the server (and
+// of it: a version 5 backup (Backup.write), compressed and encrypted here with a passphrase, so the server (and
 // Cloudflare) hold only text they can't read. Each device keeps the copy it last synced (its `base`), and a sync
 // takes in what changed in the copy since then the way a save takes in another tab's (CatalogRecords.merge):
 // a record only one side changed comes from that side, and one both changed differently is a conflict, named,

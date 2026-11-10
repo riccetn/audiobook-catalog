@@ -107,8 +107,8 @@ export class Contributor {
 	}
 
 	/**
-	 * An entry with tidy text: a bio keeps its paragraphs (lines) but loses stray spacing, links are
-	 * trimmed, and empty fields are left out. Returns null when nothing is left.
+	 * An entry with tidy text: a bio keeps its paragraphs (lines) but loses stray spacing, links are tidied
+	 * as Text.tidyLinks() does, and empty fields are left out. Returns null when nothing is left.
 	 * @param entry the entry as typed or stored
 	 */
 	static tidy(name: string, entry: Unchecked): Contributor | null {
@@ -130,10 +130,7 @@ export class Contributor {
 			) as Record<string, string>;
 		}
 		if (Array.isArray(entry.links))
-			info.links = entry.links
-				.filter(x => typeof x === 'string')
-				.map(x => x.trim())
-				.filter(Boolean);
+			info.links = Text.tidyLinks(entry.links.filter(x => typeof x === 'string')) as string[];
 		return info.bio || info.url || Object.keys(info.external).length || info.links.length ? info : null;
 	}
 

@@ -32,10 +32,12 @@ import {
 	externalFields,
 	fillExternalFields,
 	readExternalFields,
+	linksField,
+	webLinks,
 	bookPageHref,
 	seriesPageHref,
 } from './store.js';
-import type {Child} from './store.js';
+import type {Child, FormField} from './store.js';
 import {
 	authorLinks,
 	nameLinks,
@@ -247,9 +249,11 @@ function editionRows(ed: Edition): [string, Child][] {
 					? narratorLinks(ed.narrators)
 					: k === 'p'
 						? nameLinks(ed.publishers, publisherPageHref)
-						: k.startsWith('ext:')
-							? idLink(k.slice(4), 'edition', value)
-							: value,
+						: k === 'links'
+							? joined(webLinks(ed.links, 'weblink'), ' ')
+							: k.startsWith('ext:')
+								? idLink(k.slice(4), 'edition', value)
+								: value,
 		]);
 }
 
@@ -462,6 +466,10 @@ function bookDetails(b: Book): HTMLDivElement {
 					([key, value]) =>
 						[`${ExternalCatalog.name(key)} book`, idLink(key, 'book', value)] as [string, Child],
 				),
+				[
+					b.links.length > 1 ? 'Links' : 'Link',
+					b.links.length > 0 && joined(webLinks(b.links, 'weblink'), ' '),
+				],
 			]),
 			editions,
 			bookActions(id),
@@ -616,6 +624,7 @@ function openAddForm() {
 	byId('formRemoveBtn').style.display = 'none';
 	byId('formError').textContent = '';
 	(form as HTMLFormElement).reset();
+	fieldById('f_links').value = '';
 	setFormEditions([], null);
 	showBookIds([]);
 	const {series, authors} = newBookDefaults();
@@ -706,6 +715,7 @@ export function openEditForm(id: string) {
 	fieldById('f_s').value = b.series || '';
 	fieldById('f_sn').value = b.number || '';
 	fieldById('f_r').value = b.read.join(', ');
+	fieldById('f_links').value = b.links.join('\n');
 	setFormEditions(b.editions, id);
 	loadFormNames();
 	byId('formError').textContent = '';
@@ -746,6 +756,7 @@ const EDITION_HINTS: Record<string, string> = {
 	p: 'e.g. Gullwing Audio',
 	d: 'e.g. 2021-05',
 	len: 'e.g. 10h 42m',
+	links: "https://… one per line, e.g. its publisher's page",
 };
 /** the hint in a catalog's id field: "id or goodreads.com address" */
 const externalHint: (catalog: string) => string = catalog =>
@@ -926,13 +937,16 @@ function renderFormEditions() {
  * @param k the part
  */
 function editionField(fields: Record<string, string>, i: number, k: string): HTMLElement {
-	const input = buildElement('input', {
+	const input = buildElement(k === 'links' ? 'textarea' : 'input', {
 		'data-i': i,
 		'data-k': k,
 		value: fields[k] || '',
 		placeholder: EDITION_HINTS[k],
 		id: `f_e${i}_${k}`,
+		...(k === 'links' ? {rows: 2} : {}),
 	}) as HTMLInputElement;
+	// a textarea's value is its own, not an attribute's
+	if (k === 'links') input.value = fields[k] || '';
 	if (k !== 'n' && k !== 'p') return input;
 	const kind = k === 'n' ? 'narrator' : 'publisher';
 	return comboField(input, {
@@ -987,6 +1001,7 @@ editionsEditor.addEventListener('focusout', e => {
 	const target = event.target as HTMLInputElement | null;
 	const {i, k} = (target && target.dataset) || {};
 	const edition = FORM_EDITIONS[Number(i)];
+	if (target && edition && k === 'links') return editionLinksToIds(event, edition.fields);
 	if (!target || !k || !edition || !k.startsWith('ext:')) return;
 	const found = Edition.idFromAddress(target.value);
 	if (!found) return;
@@ -1014,6 +1029,33 @@ editionsEditor.addEventListener('focusout', e => {
 		: null;
 	if (refocus) refocus.focus();
 });
+/**
+ * An edition's page on a catalog (an Audible or Goodreads edition, say) typed among its links goes to the
+ * card's id field for it, when that is empty or holds the same id, and the cards are drawn again with the
+ * focus kept where it was going; other links stay.
+ */
+function editionLinksToIds(event: FocusEvent, fields: Record<string, string>) {
+	const kept: string[] = [];
+	let moved = false;
+	for (const line of (fields.links || '').split(/\r\n|\r|\n/)) {
+		const found = line.trim() ? Edition.idFromAddress(line.trim()) : null;
+		const there = found ? Text.tidy(fields[found.field] || '') : '';
+		if (found && (!there || there === found.id)) {
+			fields[found.field] = found.id;
+			moved = true;
+		} else kept.push(line);
+	}
+	if (!moved) return;
+	fields.links = kept.join('\n').trim();
+	const next = event.relatedTarget as HTMLElement | null;
+	const {i: nextI, k: nextK} = (next && next.dataset) || {};
+	renderFormEditions();
+	const refocus = nextK
+		? (editionsEditor.querySelector(`[data-i="${nextI}"][data-k="${nextK}"]`) as HTMLElement | null)
+		: null;
+	if (refocus) refocus.focus();
+}
+
 editionsEditor.addEventListener('click', e => {
 	const target = e.target as Element | null;
 	const useTitle = target && target.closest ? (target.closest('[data-use-title]') as HTMLElement | null) : null;
@@ -1123,6 +1165,21 @@ byId('f_hcb').addEventListener('change', () => {
 });
 // the book's ids in external catalogs other than Hardcover (whose field looks the book up)
 fillElement(byId('f_bookExt'), externalFields('f_ext_', 'book', ['hardcover']));
+// its links, below them: a catalog's page pasted there goes to its id field, which is then shown
+fillElement(
+	byId('f_linksBox'),
+	linksField(
+		'f_links',
+		'book',
+		group => document.getElementById(group === 'hardcover' ? 'f_hcb' : 'f_ext_' + group) as FormField | null,
+		{
+			label: "Links to other pages about the book, one per line (its publisher's, say)",
+			onMoved: () => {
+				(byId('f_ids') as HTMLDetailsElement).open = true;
+			},
+		},
+	),
+);
 
 // Fill in from another catalog: the book a pasted address, id or ISBN names, looked up in the catalogs a page
 // may read (catalog-lookup.ts), fills in the form's empty fields only, so nothing typed is lost. The lookup and
@@ -1291,6 +1348,7 @@ byId('addForm').addEventListener('submit', async e => {
 		return;
 	}
 	b.read = dates;
+	b.links = Text.parseLinks(fieldById('f_links').value);
 	const read = readFormEditions();
 	const {bad: badParts, book: fromEditions} = read;
 	// an edition's title is the one it was released under when that is not the book's (a subtitle aside),

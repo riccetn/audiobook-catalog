@@ -87,6 +87,7 @@ export class Validator {
 				errors.push(...found.errors.map(e => `${label}: ${e}`));
 				warnings.push(...found.warnings.map(w => `${label}: ${w}`));
 			}
+			if ('links' in b) Validator.checkLinks(b.links, 'book', label, errors, warnings);
 			if ('g' in b && !(Array.isArray(b.g) && b.g.every(nonEmpty))) {
 				errors.push(`${label}: 'g' must be a list of non-empty strings`);
 			}
@@ -224,6 +225,8 @@ export class Validator {
 				errors.push(...found.errors.map(e => `series-info[${repr(name)}]: ${e}`));
 				warnings.push(...found.warnings.map(w => `series-info[${repr(name)}]: ${w}`));
 			}
+			if ('links' in entry)
+				Validator.checkLinks(entry.links, 'series', `series-info[${repr(name)}]`, errors, warnings);
 			const unknown = Object.keys(entry)
 				.filter(k => !Series.KEYS.includes(k))
 				.sort();
@@ -255,6 +258,7 @@ export class Validator {
 			errors.push(...found.errors.map(e => `${label}: ${e}`));
 			warnings.push(...found.warnings.map(w => `${label}: ${w}`));
 		}
+		if ('links' in ed) Validator.checkLinks(ed.links, 'edition', label, errors, warnings);
 		if ('n' in ed && !nameList(ed.n)) errors.push(`${label}: 'n' must be a non-empty list of narrators' names`);
 		if ('p' in ed && !nameList(ed.p)) errors.push(`${label}: 'p' must be a non-empty list of publishers' names`);
 		if ('img' in ed && !Cover.isKeys(ed.img))
@@ -273,6 +277,39 @@ export class Validator {
 			else if (!isbn) errors.push(`${label}: ${repr(ed.isbn)} is not a valid ISBN`);
 			else if (isbn !== ed.isbn) warnings.push(`${label}: write ISBN ${repr(ed.isbn)} as ${repr(isbn)}`);
 		}
+	}
+
+	/**
+	 * Check the links of a stored book, edition or series (`kind`); adds to `errors` and `warnings`. They must be a
+	 * list of texts; a link that is no http or https address, one listed twice, and a page of a catalog the
+	 * patterns read (better kept as its id, which matches and links) are worth a look.
+	 */
+	static checkLinks(
+		links: unknown,
+		kind: 'book' | 'edition' | 'series',
+		label: string,
+		errors: string[],
+		warnings: string[],
+	) {
+		if (!(Array.isArray(links) && links.length && links.every(nonEmpty))) {
+			errors.push(`${label}: 'links' must be a non-empty list of web addresses`);
+			return;
+		}
+		links.forEach((v: string, j: number) => {
+			if (links.indexOf(v) !== j) warnings.push(`${label}: lists the link ${repr(v)} twice`);
+			else if (!Text.webHost(v.trim()))
+				warnings.push(`${label}: link ${repr(v)} is not a web address starting with http:// or https://`);
+			else {
+				// a book's page there, or one of its editions' (an Audible page is an edition's)
+				const found =
+					ExternalCatalog.fromAddress(v, kind) ||
+					(kind === 'book' ? ExternalCatalog.fromAddress(v, 'edition') : null);
+				if (found)
+					warnings.push(
+						`${label}: link ${repr(v)} is a page on ${ExternalCatalog.name(found.catalog)}; keep its id ${repr(found.id)} instead`,
+					);
+			}
+		});
 	}
 
 	/**

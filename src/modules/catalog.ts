@@ -3,7 +3,7 @@
 // under: a book by Book.id, a series or person by their id in nameIds (the books name them, so a name leads
 // to its id), and their info and the marks by those ids. toJSON() writes it by name, as a version 1 backup has it
 // ({books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}), which the Check reads, and
-// Backup.toCatalog() reads a backup of any version; Export writes version 4, the stored records (Backup.write).
+// Backup.toCatalog() reads a backup of any version; Export writes version 5, the stored records (Backup.write).
 // Reading backups, imports (Merger) and the Check (Validator) live in their own modules, so a page that only
 // shows the catalog doesn't load them.
 import {Book} from './book.js';

@@ -22,6 +22,7 @@ import {
 	authorPageHref,
 	narratorPageHref,
 	externalLinks,
+	webLinks,
 	bookPageHref,
 	seriesPageHref,
 	hashValue,
@@ -54,8 +55,9 @@ export const narratorLinks: (names: string[]) => Child[] = names => nameLinks(na
  */
 export const statusTag: (status: string | undefined) => HTMLSpanElement = status =>
 	buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing');
-/** the series' pages in external catalogs */
-export const seriesLinks: (info: Series) => Child[] = info => externalLinks(info.external, 'series').map(a => [' ', a]);
+/** the series' pages in external catalogs, then its other links (by their sites' names) */
+export const seriesLinks: (info: Series) => Child[] = info =>
+	[...externalLinks(info.external, 'series'), ...webLinks(info.links)].map(a => [' ', a]);
 /**
  * A series' released total as its info has it (as typed, should it not be a number).
  */

@@ -9,7 +9,7 @@ import {Cover} from './cover.js';
 import type {Unchecked} from './text.js';
 
 /** the keys of an edition as it is stored */
-export type EditionKey = 't' | 'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc' | 'img';
+export type EditionKey = 't' | 'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc' | 'links' | 'img';
 
 /** What a new Edition is made of; every part is optional. */
 export interface EditionInit {
@@ -28,6 +28,8 @@ export interface EditionInit {
 	minutes?: number;
 	/** your own description of the edition ("UK edition") */
 	description?: string;
+	/** web addresses of other pages about it (its publisher's page, say), in the order typed */
+	links?: string[];
 	/** the key of its cover by catalog: {"audiobookdb": "<the image's hash>"} */
 	covers?: Record<string, string>;
 	/** the id it is stored under in this browser, which never changes; a box set's copies share it */
@@ -39,7 +41,7 @@ export interface EditionInit {
 const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => def.family !== 'asin');
 const CATALOG_LABEL = `(?:${OTHER_CATALOGS.map(def => Text.escapeRegExp(def.name).replace(/ /g, '\\s+')).join('|')})(?:\\s+(?:book|edition))?(?:\\s+id)?`;
 const EDITION_PART = new RegExp(
-	`^(title|asin|${CATALOG_LABEL}|gr|isbns?|publishers?|released?|length|narrated\\s+by|narrators?|description)\\b:?\\s*(.*)$`,
+	`^(title|asin|${CATALOG_LABEL}|gr|isbns?|publishers?|released?|length|narrated\\s+by|narrators?|description|links?)\\b:?\\s*(.*)$`,
 	'i',
 );
 
@@ -56,7 +58,7 @@ const isAsinSite: (key: string) => boolean = key => ExternalCatalog.family(key) 
 /** An edition of a book. */
 export class Edition {
 	/** the keys of a stored edition, in order */
-	static KEYS: EditionKey[] = ['t', 'ext', 'isbn', 'n', 'p', 'd', 'len', 'desc', 'img'];
+	static KEYS: EditionKey[] = ['t', 'ext', 'isbn', 'n', 'p', 'd', 'len', 'desc', 'links', 'img'];
 	// The key a backup keeps the edition's id under, before the others; like Book.ID_KEY it is not one of KEYS.
 	// ("id" was an edition's ASIN before ASINs were kept by site; see fixIds.)
 	static ID_KEY = 'uid';
@@ -71,6 +73,7 @@ export class Edition {
 		['p', 'Publisher', 'Publishers'],
 		['d', 'Released', 'Released'],
 		['len', 'Length', 'Length'],
+		['links', 'Links', 'Links'],
 	];
 
 	/** the id it is stored under (CatalogRecords gives one to an edition that has none) */
@@ -85,6 +88,8 @@ export class Edition {
 	released: string | undefined;
 	minutes: number | undefined;
 	description: string | undefined;
+	/** web addresses of other pages about it, which name nothing imports match by */
+	links: string[];
 	/** the key of its cover by catalog (Cover.addresses() makes the address) */
 	covers: Record<string, string>;
 	/** what the stored edition holds that is not an edition's value (the Check reports it) */
@@ -99,6 +104,7 @@ export class Edition {
 		released,
 		minutes,
 		description,
+		links = [],
 		covers = {},
 		id,
 	}: EditionInit = {}) {
@@ -111,12 +117,13 @@ export class Edition {
 		this.released = released;
 		this.minutes = minutes;
 		this.description = description;
+		this.links = [...links];
 		this.covers = {...covers};
 		this.extra = {};
 	}
 
 	/**
-	 * An edition from the way it is stored (`{t, ext, isbn, n, p, d, len, desc, img}`), in the current format. A
+	 * An edition from the way it is stored (`{t, ext, isbn, n, p, d, len, desc, links, img}`), in the current format. A
 	 * value that is not what its key holds, and a key an edition has not, is kept aside as it is and written
 	 * back by toJSON(), so the Check still reports it. Throws when it is not an object.
 	 */
@@ -148,6 +155,10 @@ export class Edition {
 			this.publishers = [];
 			if (nameList(v)) this.publishers = [...v];
 			else if (v !== undefined) this.extra[key] = v;
+		} else if (key === 'links') {
+			this.links = [];
+			if (nameList(v)) this.links = [...v];
+			else if (v !== undefined) this.extra[key] = v;
 		} else if (key === 'img') {
 			this.covers = {};
 			if (Cover.isKeys(v)) this.covers = {...v};
@@ -174,6 +185,7 @@ export class Edition {
 		else if (key === 'n') v = this.narrators.length ? [...this.narrators] : undefined;
 		else if (key === 'p') v = this.publishers.length ? [...this.publishers] : undefined;
 		else if (key === 'len') v = this.minutes;
+		else if (key === 'links') v = this.links.length ? [...this.links] : undefined;
 		else if (key === 'img') v = Object.keys(this.covers).length ? {...this.covers} : undefined;
 		else if (Object.hasOwn(TEXT_FIELDS, key)) v = this[TEXT_FIELDS[key]];
 		return v === undefined ? this.extra[key] : v;
@@ -284,11 +296,19 @@ export class Edition {
 
 	/**
 	 * Give this edition (in place) what `from` has and it lacks, including the ids of catalogs it has none
-	 * in. Nothing it has is changed. Returns what it gained: its keys, and "ext:" and the catalog for each id.
+	 * in, and the links it hasn't. Nothing it has is changed. Returns what it gained: its keys, and "ext:" and the catalog for each id.
 	 */
 	fillFrom(from: Edition): string[] {
 		const gained: string[] = [];
 		for (const k of Edition.KEYS) {
+			if (k === 'links') {
+				// links are combined, each once
+				const more = from.links.filter(x => !this.links.includes(x));
+				if (!more.length || 'links' in this.extra) continue;
+				this.links = [...this.links, ...more];
+				gained.push(k);
+				continue;
+			}
 			if (k === 'ext') {
 				for (const [key, v] of from.externalList()) {
 					if (this.idOn(key) !== null || (this.value('ext') === undefined && 'ext' in this.extra)) continue;
@@ -344,6 +364,7 @@ export class Edition {
 		if (this.released) parts.push(['d', 'Released', this.released]);
 		if (this.minutes !== undefined && Number.isInteger(this.minutes))
 			parts.push(['len', 'Length', Text.formatLength(this.minutes)]);
+		if (this.links.length) parts.push(['links', this.links.length > 1 ? 'Links' : 'Link', this.links.join(' ')]);
 		return parts;
 	}
 
@@ -379,6 +400,8 @@ export class Edition {
 				.filter(([k]) => k !== 'asin' && !k.startsWith('ext:'))
 				.map(([k, , value]) => [k, value]),
 		);
+		// one per line, as the field shows them
+		if (this.links.length) fields.links = this.links.join('\n');
 		for (const [key, v] of this.externalList()) fields['ext:' + key] = v;
 		for (const [catalog, v] of Object.entries(this.covers)) fields['img:' + catalog] = v;
 		return fields;
@@ -534,6 +557,7 @@ export class Edition {
 				else if (label.startsWith('narrat'))
 					[field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
 				else if (label === 'description') [field, v] = ['desc', ed.desc ? null : value];
+				else if (label.startsWith('link')) [field, v] = ['links', Text.parseLinks(value)];
 				else if (label.startsWith('releas')) [field, v] = ['d', date];
 				else if (label === 'length') [field, v] = ['len', minutes];
 				else if (label.startsWith('isbn') || (!label && allIsbns))
@@ -546,6 +570,7 @@ export class Edition {
 					continue;
 				}
 				if (field === 'isbn') ed.isbn = [...new Set([...(ed.isbn || []), ...v])];
+				else if (field === 'links') ed.links = Text.tidyLinks([...(ed.links || []), ...v]);
 				else if (field) ed[field] = v;
 			}
 			if (Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);
@@ -602,6 +627,12 @@ export class Edition {
 			ext[found.catalog] = found.id;
 		}
 		for (const [k, label, shown] of Edition.FIELDS) {
+			// links one per line, each tidied as an address is, not spaced out as text
+			if (k === 'links') {
+				const links = Text.parseLinks(String(fields[k] || ''));
+				if (links.length) ed.links = links;
+				continue;
+			}
 			const value = Text.tidy(String(fields[k] || ''));
 			if (!value || k === 'ext') continue;
 			// a title or description is read as it is, a ';' and all
@@ -682,6 +713,10 @@ export class Edition {
 			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
 		}
 		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
+		if (Array.isArray(out.links)) {
+			out.links = Text.tidyLinks(out.links);
+			if (!out.links.length) delete out.links;
+		}
 		if (Array.isArray(out.n)) out.n = Text.tidyNames(out.n);
 		// a publisher's name is tidied, not spaced out as a person's initials are
 		if (Array.isArray(out.p)) out.p = Text.tidyList(out.p);

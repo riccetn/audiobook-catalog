@@ -22,6 +22,9 @@ the other catalogs you set up have for them ([Editing a series](editing-series.m
 
 **Add or edit the bio and links**: press **Edit** at the end of the author's page, after their books. The bio keeps its
 paragraphs (leave a blank line between them). The website must start with `https://` (or `http://`).
+_Other links_ takes any other pages about them, one address per line (an interview, their publisher's page of
+them); the page shows each by its site's name after their website and catalog pages. A catalog's page typed there
+goes to its field when that is empty.
 The Audible, Amazon, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata fields keep the author's id there: type it, or paste the
 address of their page from the browser's address bar (`https://www.audible.co.uk/author/Name/B0...` on any
 Audible store, `https://www.amazon.com/stores/author/B0...`, `https://www.goodreads.com/author/show/1234...`,

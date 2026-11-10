@@ -2579,7 +2579,7 @@ test('a version 2 backup that is not one is refused, saying why', () => {
 		spoil(b);
 		assert.throws(() => Backup.read(b), error);
 	}
-	assert.throws(() => Backup.read({...backup(), version: 5}), NewerBackup);
+	assert.throws(() => Backup.read({...backup(), version: Backup.VERSION + 1}), NewerBackup);
 	// a value that isn't what its field holds has no place in a record, so it is refused too
 	const odd = backup();
 	odd.books[id(odd)].number = 5;
@@ -6135,7 +6135,7 @@ test("editions' titles: stored and backed up (version 3), searched, and exported
 	assert.ok(CatalogRecords.searchMatches(records.books[0].search, 'keeper of lanterns'));
 	assert.deepEqual(json(CatalogRecords.toCatalog(records).books[0].editions[1]).t, 'The Keeper of Lanterns');
 	const backup = Backup.write(catalog);
-	assert.equal(backup.version, 4);
+	assert.equal(backup.version, Backup.VERSION);
 	assert.deepEqual(
 		Object.values(backup.editions).map(ed => ed.title),
 		[undefined, 'The Keeper of Lanterns'],
@@ -6535,4 +6535,138 @@ test("a book's editions are merged, split and removed", () => {
 	assert.deepEqual(json(b.removeEdition(2)), {uid: 'e3', ext: {'audible.com': 'B0SALT0002'}});
 	assert.equal(b.editions.length, 2);
 	assert.throws(() => b.removeEdition(5), /no edition 6/);
+});
+
+test('links: tidied, kept on books, editions and series, stored, backed up (version 5) and read from version 4', () => {
+	assert.equal(Text.tidyLink('  gullwing.example/lanterns '), 'https://gullwing.example/lanterns');
+	assert.equal(Text.tidyLink('http://gullwing.example/'), 'http://gullwing.example/');
+	assert.equal(Text.tidyLink('//gullwing.example/x'), 'https://gullwing.example/x');
+	assert.equal(Text.tidyLink('ftp://gullwing.example/x'), 'ftp://gullwing.example/x');
+	assert.deepEqual(Text.parseLinks('gullwing.example/a\n\n https://gullwing.example/a\nhttps://ann-vale.example'), [
+		'https://gullwing.example/a',
+		'https://ann-vale.example',
+	]);
+	assert.equal(Text.linkLabel('https://www.gullwing.example/a'), 'gullwing.example');
+	// tidied on the way in: no empty list is kept
+	assert.deepEqual(Book.tidyJSON({t: 'X', a: ['A'], links: ['  ', 'x.example']}).links, ['https://x.example']);
+	assert.equal('links' in Book.tidyJSON({t: 'X', a: ['A'], links: [' ']}), false);
+	assert.deepEqual(Edition.tidyJSON({desc: 'UK', links: ['x.example', 'https://x.example']}).links, [
+		'https://x.example',
+	]);
+
+	const book = B({
+		t: 'The Lantern Keeper',
+		a: ['Ann Vale'],
+		s: 'Lanterns',
+		sn: '1',
+		links: ['https://gullwing.example/lantern-keeper'],
+		e: [{ext: {'audible.com': 'B0LANT0001'}, links: ['https://gullwing.example/lantern-keeper/audio']}],
+	});
+	assert.deepEqual(json(book).links, ['https://gullwing.example/lantern-keeper']);
+	assert.deepEqual(Object.keys(json(book)), ['t', 'a', 's', 'sn', 'links', 'e']);
+	assert.equal(book.editions[0].fields().links, 'https://gullwing.example/lantern-keeper/audio');
+	// links name nothing imports match by
+	assert.ok(!book.keys().some(k => k.includes('gullwing')));
+	const catalog = new Catalog({
+		books: [book],
+		series: new Map([['Lanterns', Series.fromJSON('Lanterns', {links: ['https://gullwing.example/lanterns']})]]),
+	});
+	const records = CatalogRecords.fromCatalog(catalog);
+	assert.deepEqual(records.books[0].links, ['https://gullwing.example/lantern-keeper']);
+	assert.deepEqual(records.editions[0].links, ['https://gullwing.example/lantern-keeper/audio']);
+	assert.deepEqual(records.series[0].links, ['https://gullwing.example/lanterns']);
+	const back = CatalogRecords.toCatalog(records);
+	assert.deepEqual(json(back.books[0]), json(book));
+	assert.deepEqual(back.seriesInfo('Lanterns').links, ['https://gullwing.example/lanterns']);
+
+	const backup = Backup.write(catalog);
+	assert.equal(backup.version, 5);
+	assert.deepEqual(Object.values(backup.books)[0].links, ['https://gullwing.example/lantern-keeper']);
+	assert.deepEqual(Object.values(backup.editions)[0].links, ['https://gullwing.example/lantern-keeper/audio']);
+	assert.deepEqual(Object.values(backup.series)[0].links, ['https://gullwing.example/lanterns']);
+	const read = Backup.read(json(backup));
+	assert.deepEqual(json(read.books[0]), json(book));
+	assert.deepEqual(read.series.get('Lanterns').links, ['https://gullwing.example/lanterns']);
+	// a version 4 backup has none, and reads as it is
+	const v4 = json(backup);
+	v4.version = 4;
+	for (const store of ['books', 'editions', 'series']) for (const rec of Object.values(v4[store])) delete rec.links;
+	const old = Backup.read(v4);
+	assert.deepEqual(old.books[0].links, []);
+	assert.deepEqual(old.books[0].editions[0].links, []);
+	// a link that isn't text has no place in a record
+	const odd = json(backup);
+	Object.values(odd.books)[0].links = [5];
+	assert.throws(() => Backup.read(odd), /links is not a list of addresses/);
+	// the name-keyed shape (Catalog.toJSON) keeps them under `links` too
+	const byName = json(catalog);
+	assert.deepEqual(byName.seriesInfo.Lanterns.links, ['https://gullwing.example/lanterns']);
+	assert.deepEqual(json(Backup.read(byName).books[0]), json(book));
+});
+
+test("links: merging books, joining editions and taking in another tab's save combine them, each once", () => {
+	const a = B({
+		t: 'Salt Road',
+		a: ['Ann Vale'],
+		links: ['https://gullwing.example/salt-road'],
+		e: [{ext: {'audible.com': 'B0SALT0001'}, links: ['https://gullwing.example/a']}],
+	});
+	const b = B({
+		t: 'Salt Road',
+		a: ['Ann Vale'],
+		links: ['https://ann-vale.example/salt-road', 'https://gullwing.example/salt-road'],
+		e: [{ext: {goodreads: '4242'}, links: ['https://gullwing.example/a', 'https://gullwing.example/b']}],
+	});
+	const merged = Book.merge([a, b], {joinEditions: true});
+	assert.deepEqual(merged.links, ['https://gullwing.example/salt-road', 'https://ann-vale.example/salt-road']);
+	assert.deepEqual(merged.editions[0].links, ['https://gullwing.example/a', 'https://gullwing.example/b']);
+	const joined = Edition.join([a.editions[0], b.editions[0]]);
+	assert.deepEqual(joined.links, ['https://gullwing.example/a', 'https://gullwing.example/b']);
+	// splitting an edition leaves its links on the part kept
+	const c = B({t: 'X', a: ['A'], e: [{ext: {'audible.com': 'B0X', goodreads: '77'}, links: ['https://x.example']}]});
+	c.splitEdition(0, ['ext:goodreads']);
+	assert.deepEqual(json(c.editions), [
+		{ext: {'audible.com': 'B0X'}, links: ['https://x.example']},
+		{ext: {goodreads: '77'}},
+	]);
+
+	// another tab added a link to a book; this one changed another book
+	const base = CatalogRecords.fromCatalog(
+		new Catalog({books: [B({t: 'Salt Road', a: ['Ann Vale']}), B({t: 'Tide', a: ['Ann Vale']})]}),
+	);
+	const saved = CatalogRecords.snapshot(base);
+	const theirs = CatalogRecords.toCatalog(base),
+		mine = CatalogRecords.toCatalog(base);
+	theirs.books[0].links = ['https://gullwing.example/salt-road'];
+	mine.books[1].genres = ['Fantasy'];
+	const {records, conflicts} = CatalogRecords.merge(
+		saved,
+		CatalogRecords.fromCatalog(mine),
+		CatalogRecords.fromCatalog(theirs),
+	);
+	assert.deepEqual(conflicts, []);
+	const out = CatalogRecords.toCatalog(records).books;
+	assert.deepEqual([out[0].links, out[1].genres], [['https://gullwing.example/salt-road'], ['Fantasy']]);
+});
+
+test("links: the Check notes one that is no web address, one listed twice, and a catalog's page", () => {
+	const {errors, warnings} = Validator.validate(
+		[
+			{
+				t: 'Salt Road',
+				a: ['Ann Vale'],
+				links: ['mailto:ann@vale.example', 'https://gullwing.example/a', 'https://gullwing.example/a'],
+				e: [{desc: 'UK edition', links: ['https://www.goodreads.com/book/show/4242']}],
+			},
+			{t: 'Tide', a: ['Ann Vale'], links: []},
+		],
+		{Lanterns: {total: 3, status: 'ongoing', links: ['https://www.goodreads.com/series/1234']}},
+	);
+	assert.deepEqual(errors, ["book #1 ('Tide'): 'links' must be a non-empty list of web addresses"]);
+	assert.deepEqual(warnings, [
+		"book #0 ('Salt Road'): link 'mailto:ann@vale.example' is not a web address starting with http:// or https://",
+		"book #0 ('Salt Road'): lists the link 'https://gullwing.example/a' twice",
+		"book #0 ('Salt Road') edition #1: link 'https://www.goodreads.com/book/show/4242' is a page on Goodreads; keep its id '4242' instead",
+		"series-info['Lanterns']: link 'https://www.goodreads.com/series/1234' is a page on Goodreads; keep its id '1234' instead",
+	]);
 });

@@ -238,6 +238,40 @@ export class Text {
 		return m ? m[1].toLowerCase() : null;
 	}
 
+	/**
+	 * A typed web address as the catalog keeps it: trimmed, with https:// in front when it names no scheme
+	 * ("gullwing.example/books" -> "https://gullwing.example/books"); '' for nothing. Another scheme is kept, for the Check to note.
+	 */
+	static tidyLink(text: string): string {
+		const v = text.trim();
+		if (!v) return '';
+		if (v.startsWith('//')) return 'https:' + v;
+		return /^[a-z][a-z0-9+.-]*:(?:\/\/|[^\d])/i.test(v) ? v : 'https://' + v;
+	}
+
+	/**
+	 * Links as the catalog keeps them: each tidied (tidyLink()), once, in the order given, without empty ones;
+	 * anything that is not a text is kept, for the Check to report.
+	 */
+	static tidyLinks(links: unknown[]): unknown[] {
+		const out: unknown[] = [];
+		for (const x of links) {
+			const v = typeof x === 'string' ? Text.tidyLink(x) : x;
+			if (v !== '' && !out.includes(v)) out.push(v);
+		}
+		return out;
+	}
+
+	/** Links typed one per line (or parted by spaces), as the catalog keeps them (tidyLinks()). */
+	static parseLinks(text: string): string[] {
+		return Text.tidyLinks(text.split(/\s+/)) as string[];
+	}
+
+	/** What a link is shown as: its site, without a leading "www." ("gullwing.example"); the address when it is no web address. */
+	static linkLabel(href: string): string {
+		return (Text.webHost(href) || href).replace(/^www\./, '');
+	}
+
 	// ------------------------------------------------------------------ spelling and messages
 	/**
 	 * Whether the browser's languages (navigator.languages, most preferred first) ask for British spelling: the

@@ -8,11 +8,20 @@ filters and order. A book's title, anywhere, opens its own page (`book.html`).
 
 **A book's card and its page**: a book's card in a list shows only its title, series number, authors,
 narrators and dates read. Its title opens the book's page (`book.html#book=…`): its series and number, dates read,
-genres, its ids in external catalogs, and each of its editions with every part (description, narrators,
-ASINs, other catalogs' ids, ISBN, publisher, release date, length, and the other books of a box set it is on).
+genres, its ids in external catalogs, its links, and each of its editions with every part (description, narrators,
+ASINs, other catalogs' ids, ISBN, publisher, release date, length, links, and the other books of a box set it is on).
 Above it, the crumb links back to the book's series. The card has no buttons; the page ends with **Edit**
 and **Merge**. In the book form (**Edit**) the book's ids in other catalogs are
 folded under _The book in other catalogs_, which names the catalogs it has one in.
+
+**Links**: a book, each of its editions and a series can keep links to other pages about them (the publisher's
+page of the book, the author's page of the series, a page about the UK edition): one address per line in the
+book form's _Links_ field, an edition card's _Links_ and the _Edit series_ page's fields. Its page shows each by its
+site's name (`gullwing.example ↗`), after its ids in other catalogs, and opens it in a new tab; a book's card in a list
+leaves them out. `https://` is put in front of an address typed without it. An address that is a catalog's page
+the form has an id field for (a Goodreads book, an Open Library work, an Audible edition) goes to that field when
+you leave _Links_, if it is empty, as its id is what is kept and links it. Merging books or editions keeps the
+links of both; imports bring none, and never match a book by them.
 
 **Covers**: a book's card shows a small cover, and its details a larger one. First comes AudiobookDB's cover of
 an edition, when the edition has one: _Fill in from another catalog_ and AudiobookDB's **Compare** keep it with the
