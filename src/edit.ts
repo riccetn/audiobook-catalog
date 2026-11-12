@@ -1162,7 +1162,17 @@ export function render() {
 	const cards = [...DRAFTS.map((d, i) => ({book: d.before, card: bookCard(d, i)})), ...newCards()].sort((x, y) =>
 		bookOrder(x.book, y.book),
 	);
-	fillElement(byId('editBooks'), ...cards.map(c => c.card));
+	// a card opened or closed stays so when the books are drawn again (an id added to an edition, say)
+	const list = byId('editBooks');
+	const wasOpen = new Map(
+		[...list.querySelectorAll('details[id]')].map(el => [el.getAttribute('id'), el.hasAttribute('open')]),
+	);
+	fillElement(list, ...cards.map(c => c.card));
+	for (const el of list.querySelectorAll('details[id]')) {
+		const open = wasOpen.get(el.getAttribute('id'));
+		if (open === true) el.setAttribute('open', '');
+		else if (open === false) el.removeAttribute('open');
+	}
 	DRAFTS.forEach((d, k) => fillExternalFields(inputId(k, null, 'ext_'), 'book', d.book.external));
 	byId('bookCount').textContent = DRAFTS.length ? Text.plural(DRAFTS.length, 'book') : '';
 	showChangeCount();
