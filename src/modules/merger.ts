@@ -340,6 +340,22 @@ export class Merger {
 				let match = index.get(hit) as number,
 					book = existing[match];
 				report.matched++;
+				// A box set's edition is on each of its titles and on the set's own book, and its id finds the first
+				// of them, which is seldom the set (sorted last): the book is the one with the incoming book's id or
+				// title, else the set's own book.
+				const byEdition = book.editions.find(x => x.idKeys().some(id => Text.key('ext', id) === hit));
+				const holders = byEdition ? [...new Set([match, ...copiesOf(byEdition).map(([i]) => i)])] : [];
+				if (holders.length > 1) {
+					const ids = Object.entries(rec.external);
+					const pick =
+						holders.find(i => ids.some(([catalog, id]) => existing[i].idOn(catalog) === id)) ??
+						holders.find(i => existing[i].hasTitle(rec.title, shared)) ??
+						holders.find(i => existing[i].isCollection());
+					if (pick !== undefined) {
+						match = pick;
+						book = existing[pick];
+					}
+				}
 				// A book of another Hardcover book that finds a book by a box set's edition finds the book that is
 				// that Hardcover book, when there is one: the set kept as its own book, or another of its titles.
 				const hardcover = rec.idOn('hardcover');

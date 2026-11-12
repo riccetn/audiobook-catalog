@@ -121,7 +121,8 @@ export class BookReview {
 			const seen: Set<string> = new Set();
 			for (const b of result.comparison.books) {
 				if (b.boxSet) continue;
-				for (const mine of b.books) {
+				// the book it is (a box set's own book also gives its reads to its titles, which aren't it)
+				for (const mine of b.books.slice(0, 1)) {
 					const reviewed = mine.id === undefined ? undefined : books.get(mine.id);
 					if (!reviewed) continue;
 					seen.add(mine.id as string);

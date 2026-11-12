@@ -1441,6 +1441,29 @@ test('merge: a box set edition on several titles matches them, and is filled in 
 	assert.deepEqual(existing[0].e, [filled]);
 });
 
+test("merge: a book found by a box set's edition is the set's own book, unless it is one of its titles", () => {
+	const box = () => ed({ext: {'audible.com': 'BBOX'}});
+	const existing = [
+		book('One', 'Author', {s: 'S', sn: '1', ...box()}),
+		book('Two', 'Author', {s: 'S', sn: '2', ...box()}),
+		book('The S Collection', 'Author', {s: 'S', sn: '1-2', ...box()}),
+	];
+	// the book found first (a set's titles follow it, for its reads)
+	const found = incoming =>
+		merge(existing, [incoming])
+			.matches[0].books.map(b => b.t)
+			.slice(0, 1);
+	// a catalog's book of the set, with no range of its own, finds the set rather than the first title
+	assert.deepEqual(found(book('S Omnibus', 'Author', ed({ext: {'audible.com': 'BBOX'}, p: ['Gull Audio']}))), [
+		'The S Collection',
+	]);
+	assert.deepEqual(existing[0].e[0], {ext: {'audible.com': 'BBOX'}, p: ['Gull Audio']}, 'copies filled in alike');
+	// one of its titles finds that title, by its title or its own id
+	assert.deepEqual(found(book('Two', 'Author', ed({ext: {'audible.com': 'BBOX'}}))), ['Two']);
+	existing[0].ext = {goodreads: '11'};
+	assert.deepEqual(found(book('Book One', 'Author', {ext: {goodreads: '11'}, ...box()})), ['One']);
+});
+
 test('merge: a box set is kept as its own book and becomes its titles, each with the same edition', () => {
 	const existing = [
 		book('Spark', 'Ann Vale', {s: 'Ember', sn: '1', ...ed({ext: {'audible.com': 'B1'}, n: ['Tobias Frane']})}),

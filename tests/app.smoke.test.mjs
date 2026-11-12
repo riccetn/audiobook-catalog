@@ -5976,6 +5976,22 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	els.b1_r.listeners.change[0]();
 	assert.equal(els['book-1-error'].textContent, '');
 
+	// an id added to an edition draws the books again, and every card stays open or closed as it was
+	els['book-1-ed-1'].setAttribute('open', '');
+	els['book-0'].removeAttribute('open');
+	els.b1e1_more.value = 'https://www.goodreads.com/book/show/4242';
+	els.b1e1_more.listeners.change[0]();
+	assert.equal(get('DRAFTS[1].book.editions[1].external.goodreads'), '4242');
+	assert.equal(els['b1e1_ext-goodreads'].value, '4242', 'the new id has a field of its own');
+	assert.equal(els['book-1-ed-1'].hasAttribute('open'), true, 'the edition stays open');
+	assert.equal(els['book-1-ed-0'].hasAttribute('open'), false);
+	assert.equal(els['book-0'].hasAttribute('open'), false, 'a book closed stays closed');
+	assert.equal(els['book-1'].hasAttribute('open'), true);
+	els['book-0'].setAttribute('open', '');
+	els['b1e1_ext-goodreads'].value = '';
+	els['b1e1_ext-goodreads'].listeners.change[0]();
+	assert.equal(get("'goodreads' in DRAFTS[1].book.editions[1].external"), false);
+
 	// Merge with…: the two editions of Fern 1 become one
 	els['book-0-ed-0-merge'].listeners.click[0]();
 	els['book-0-ed-0-merge-1'].listeners.click[0]();
