@@ -1283,6 +1283,20 @@ test('owned: a box set counts the titles it covers, but a range too long for one
 	);
 });
 
+test('missing: a total far above any series is taken for a typo, not listed number by number, and Check warns', () => {
+	const books = Bs([book('One', 'Ida Venn', {s: 'Glass Harbor', sn: '1'})]);
+	assert.deepEqual(Series.missingNumbers(books, 3), [2, 3]);
+	assert.equal(Series.missingNumbers(books, Series.TOTAL_MAX).length, Series.TOTAL_MAX - 1);
+	const started = Date.now();
+	assert.equal(Series.missingNumbers(books, 3000000), null);
+	assert.ok(Date.now() - started < 100, 'not listed one number at a time');
+	const check = total => Validator.validate([], {'Glass Harbor': {total, status: 'ongoing'}});
+	const warned = check(3000000);
+	assert.deepEqual(warned.errors, []);
+	assert.ok(warned.warnings.join('\n').includes('total 3000000 is over 1000'), warned.warnings.join('\n'));
+	assert.ok(!check(12).warnings.join('\n').includes('is over'));
+});
+
 // ---------------------------------------------------------------- editions
 test('editions: a book from before editions gets its ids and ISBNs as its first edition', () => {
 	const [old] = BackupV1.fixBooks([{t: 'A', a: ['B'], id: 'B1', gr: '7', isbn: '978-0-00-000000-2', r: ['2024']}]);

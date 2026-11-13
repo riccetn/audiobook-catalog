@@ -58,6 +58,8 @@ export class Series {
 	// A box set's range of whole numbers, "1-3"; more than BOX_MAX titles is taken for a typo.
 	static BOX_RANGE = /^(\d+)-(\d+)$/;
 	static BOX_MAX = 30;
+	// A total released above TOTAL_MAX is taken for a typo ("3000000" for "3"): no missing numbers are listed for it.
+	static TOTAL_MAX = 1000;
 
 	name: string;
 	/** the number of books released so far */
@@ -266,10 +268,12 @@ export class Series {
 	/**
 	 * The series numbers from 1 to `total` that none of `books` covers, e.g. [3, 5]. A boxed set
 	 * ("4-6") covers each number in it; a novella such as "2.5" covers none, so it does not hide a
-	 * missing book 2. Returns null when `total` is not a count (e.g. "many" or no series info).
+	 * missing book 2. Returns null when `total` is not a count (e.g. "many" or no series info), or is over
+	 * TOTAL_MAX, which is taken for a typo (Check warns of it), so it never lists millions of numbers.
 	 */
 	static missingNumbers(books: Book[], total: unknown): number[] | null {
 		if (typeof total !== 'number' || !(Number.isInteger(total) && total > 0)) return null;
+		if (total > Series.TOTAL_MAX) return null;
 		const owned = new Set();
 		for (const b of books) {
 			const m = /^(\d+)(?:-(\d+))?$/.exec(String(b.number || '').trim());
