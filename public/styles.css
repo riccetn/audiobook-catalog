@@ -1685,6 +1685,17 @@ button:focus {
 	color: var(--ink);
 	font: inherit;
 }
+/* Another id: the catalog of a bare id above the id */
+.editAnotherId select {
+	width: 100%;
+	margin-bottom: 0.25rem;
+	padding: 0.3rem 0.4rem;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--paper);
+	color: var(--ink);
+	font: inherit;
+}
 .editField.changed input,
 .editField.changed textarea,
 .linksField.changed textarea {

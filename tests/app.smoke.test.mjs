@@ -5991,6 +5991,26 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	els['b1e1_ext-goodreads'].value = '';
 	els['b1e1_ext-goodreads'].listeners.change[0]();
 	assert.equal(get("'goodreads' in DRAFTS[1].book.editions[1].external"), false);
+	// a bare id is read as the catalog picked beside it, and needs one
+	els.b1e1_more.value = '4343';
+	els.b1e1_more.listeners.change[0]();
+	assert.match(
+		els['book-1-ed-1-error'].textContent,
+		/Not an edition's address: 4343\. For a bare id, pick its catalog/,
+	);
+	els['b1e1_more-catalog'].value = 'goodreads';
+	els.b1e1_more.listeners.change[0]();
+	assert.equal(els['book-1-ed-1-error'].textContent, '');
+	assert.equal(get('DRAFTS[1].book.editions[1].external.goodreads'), '4343');
+	assert.equal(els['b1e1_ext-goodreads'].value, '4343');
+	els.b1e1_more.value = '4444';
+	els['b1e1_more-catalog'].value = 'goodreads';
+	els.b1e1_more.listeners.change[0]();
+	assert.match(els['book-1-ed-1-error'].textContent, /It has an id on Goodreads already: 4444/);
+	els.b1e1_more.value = '';
+	els['b1e1_ext-goodreads'].value = '';
+	els['b1e1_ext-goodreads'].listeners.change[0]();
+	assert.equal(get("'goodreads' in DRAFTS[1].book.editions[1].external"), false);
 
 	// Merge with…: the two editions of Fern 1 become one
 	els['book-0-ed-0-merge'].listeners.click[0]();

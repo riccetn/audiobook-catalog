@@ -29,7 +29,8 @@ books of the series says so: a change to it changes it there too.
 Open an edition to edit its title (only when it was released under another title than the book's),
 narrators, publishers, release date, length, ISBN, description, links and each of its ids (an edition's page on a
 catalog typed among its links goes to its id, or to **Another id**). **Another id** takes
-the address of the edition's page on any catalog, and becomes a field of its own.
+the address of the edition's page on any catalog, or, with its catalog picked above it, the bare id, and becomes
+a field of its own.
 
 - **Merge with…** lists the book's other editions that can be one with it (none of their ids disagree:
   two ASINs on one site, or two ISBNs, are two editions) and makes them one, keeping what the first has.

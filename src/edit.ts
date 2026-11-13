@@ -348,11 +348,7 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 				onchange,
 			}),
 		),
-		field(inputId(i, j, 'more'), 'Another id', '', '', {
-			'data-key': 'more',
-			placeholder: "the edition's address on any catalog",
-			onchange,
-		}),
+		anotherIdField(i, j, onchange),
 	];
 	const panel = OPEN_PANEL && OPEN_PANEL.startsWith(`${i}:${j}:`) ? OPEN_PANEL.split(':')[2] : null;
 	return buildElement(
@@ -374,6 +370,38 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 		...(panel === 'merge' ? [mergePanel(i, j)] : []),
 		...(panel === 'split' ? [splitPanel(i, j)] : []),
 		...(panel === 'remove' ? [removePanel(i, j)] : []),
+	);
+}
+
+/**
+ * An edition's Another id: its address on any catalog, or a bare id with the catalog picked beside it (no
+ * address at hand).
+ */
+function anotherIdField(i: number, j: number, onchange: () => void): HTMLElement {
+	const id = inputId(i, j, 'more');
+	const catalogs = ExternalCatalog.ALL.filter(def => def.kinds.edition);
+	return buildElement(
+		'div',
+		{class: 'editField editAnotherId'},
+		buildElement('label', {for: id}, 'Another id'),
+		buildElement(
+			'select',
+			{id: inputId(i, j, 'more-catalog'), 'aria-label': 'Catalog of the id', onchange},
+			buildElement('option', {value: ''}, spell('Catalog: from the address')),
+			...catalogs.map(def =>
+				buildElement(
+					'option',
+					{value: def.key},
+					ExternalCatalog.family(def.key) === 'asin' ? `ASIN ${def.key}` : def.name,
+				),
+			),
+		),
+		buildElement('input', {
+			id,
+			'data-key': 'more',
+			placeholder: "the edition's address, or its id and catalog",
+			onchange,
+		}),
 	);
 }
 
@@ -1250,6 +1278,9 @@ function editionLinksToIds(i: number, j: number) {
 			);
 		if (found && into) {
 			into.value = into === input('more') ? line.trim() : found.id;
+			// an address names its own catalog
+			const catalog = document.getElementById(inputId(i, j, 'more-catalog')) as HTMLSelectElement | null;
+			if (into === input('more') && catalog) catalog.value = '';
 			moved = true;
 		} else kept.push(line);
 	}
@@ -1277,9 +1308,16 @@ export function readEditionFields(i: number, j: number) {
 		}
 		const text = Text.tidy(input.value);
 		if (!text) continue;
-		const found = ExternalCatalog.fromAddress(text, 'edition');
-		if (found && !Text.tidy(typed['ext:' + found.catalog] || '')) typed['ext:' + found.catalog] = text;
-		else problems.push(`Not an edition's address: ${text}.`);
+		// a bare id is read as the picked catalog's; without one, it must be an address
+		const catalog = (document.getElementById(inputId(i, j, 'more-catalog')) as HTMLSelectElement | null)?.value;
+		const found = catalog
+			? ExternalCatalog.readId(text, 'edition', catalog)
+			: ExternalCatalog.fromAddress(text, 'edition');
+		if (found && Text.tidy(typed['ext:' + found.catalog] || ''))
+			problems.push(`It has an id on ${ExternalCatalog.name(found.catalog)} already: ${text}.`);
+		else if (found) typed['ext:' + found.catalog] = found.id;
+		else if (catalog) problems.push(`Not an edition's id on ${ExternalCatalog.name(catalog)}: ${text}.`);
+		else problems.push(`Not an edition's address: ${text}. For a bare id, pick its catalog.`);
 	}
 	const read = Edition.fromFields(typed);
 	if (read.bad.length) problems.push(`Not understood: ${read.bad.join('; ')}.`);
