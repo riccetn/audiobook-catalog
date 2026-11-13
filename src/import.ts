@@ -1674,8 +1674,11 @@ async function applyShelfSync(compare: PendingCompare) {
 	if (JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books) || infoIds) {
 		takeBooks(copy, renamed);
 		if (picks.ids) sync.kind.setInfoIds(CATALOG, result.infoIds);
-		await persist(); // kept before anything is sent, so the ids found stay even if the catalog stops answering
+		// kept before anything is sent, so the ids found stay even if the catalog stops answering
+		const kept = await persist();
 		refreshPage();
+		// not kept: the status line says why, and nothing is sent for books this catalog may not hold after a reload
+		if (!kept) return;
 	}
 	if (!plan || !sending) {
 		showIoStatus(here + '.');
