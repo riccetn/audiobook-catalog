@@ -5337,6 +5337,14 @@ test('CatalogLookup reads the dates and series catalogs write', () => {
 	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle ; 2'), {name: 'Gull Isle', number: '2'});
 	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle -- book 2.5'), {name: 'Gull Isle', number: '2.5'});
 	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle'), {name: 'Gull Isle', number: null});
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle #2'), {name: 'Gull Isle', number: '2'});
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle, 2'), {name: 'Gull Isle', number: '2'});
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle Book 2'), {name: 'Gull Isle', number: '2'});
+	assert.deepEqual(OpenLibrarySource.seriesOf('Gull Isle vol. 2'), {name: 'Gull Isle', number: '2'});
+	// a number after a plain space is part of the series' name
+	assert.deepEqual(OpenLibrarySource.seriesOf('Harbor 9'), {name: 'Harbor 9', number: null});
+	assert.deepEqual(OpenLibrarySource.seriesOf('Harbor 9 ; 2'), {name: 'Harbor 9', number: '2'});
+	assert.deepEqual(OpenLibrarySource.seriesOf('Harbor 9 (2)'), {name: 'Harbor 9', number: '2'});
 	assert.equal(OpenLibrarySource.seriesOf(''), null);
 });
 

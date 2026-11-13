@@ -166,7 +166,11 @@ export class OpenLibrarySource extends BookSource {
 	static seriesOf(text: string): {name: string; number: string | null} | null {
 		const value = Text.tidy(text);
 		if (!value) return null;
-		const m = /^(.*?)[\s,;:(#-]+(?:(?:book|vol(?:ume)?|no|number)\.?\s*)?#?\s*(\d+(?:\.\d+)?)\)?$/i.exec(value);
+		// a number only after punctuation or a word such as "Book": "Harbor 9" is the series' own name, not its book 9
+		const m =
+			/^(.*?)(?:\s*[,;:(#-]+\s*(?:(?:book|vol(?:ume)?|no|number)\.?\s*)?|\s+(?:book|vol(?:ume)?|no|number)\.?\s*)#?\s*(\d+(?:\.\d+)?)\)?$/i.exec(
+				value,
+			);
 		if (m && Text.tidy(m[1])) return {name: Text.tidy(m[1]), number: m[2]};
 		return {name: value, number: null};
 	}
