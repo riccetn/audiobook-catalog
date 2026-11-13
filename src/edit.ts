@@ -1387,7 +1387,8 @@ export function readEditionFields(i: number, j: number) {
 		else if (catalog) problems.push(`Not an edition's id on ${ExternalCatalog.name(catalog)}: ${text}.`);
 		else problems.push(`Not an edition's address: ${text}. For a bare id, pick its catalog.`);
 	}
-	const read = Edition.fromFields(typed);
+	// a publisher the edition or the catalog has stays whole, though its name holds a comma
+	const read = Edition.fromFields(typed, [...ed.publishers, ...CATALOG.namesOf('publishers')]);
 	if (read.bad.length) problems.push(`Not understood: ${read.bad.join('; ')}.`);
 	if (!problems.length && !read.editions.length)
 		problems.push('An edition needs something, such as an id or a narrator. To take it off, press Remove edition.');

@@ -6358,6 +6358,26 @@ test('an edition may have several publishers: a list of names, typed with commas
 	assert.deepEqual(json(Edition.fromFields({p: ' Gull  Audio ,, Tern Press '}).editions), [
 		{p: ['Gull Audio', 'Tern Press']},
 	]);
+	// a publisher whose own name has a comma, known to the edition or the catalog, is kept whole
+	const known = ['Tern Press, Harbor Division'];
+	assert.deepEqual(Text.splitPublishers('Tern Press, Harbor Division, Gull Audio', known), [
+		'Tern Press, Harbor Division',
+		'Gull Audio',
+	]);
+	assert.deepEqual(Text.splitPublishers('Gull Audio, Tern Press', known), ['Gull Audio', 'Tern Press']);
+	const comma = E({ext: {'audible.com': 'B0X'}, p: ['Tern Press, Harbor Division']});
+	assert.deepEqual(json(Edition.fromFields(comma.fields(), comma.publishers).editions), [json(comma)]);
+	assert.deepEqual(Edition.parse(comma.format(), known).editions[0].publishers, known);
+	const split = Book.fromJSON({
+		t: 'A',
+		a: ['B'],
+		e: [{ext: {'audible.com': 'B0X'}, isbn: '9780000000002', p: ['Tern Press, Harbor Division']}],
+	});
+	split.splitEdition(0, ['isbn'], ['p']);
+	assert.deepEqual(
+		split.editions.map(e => e.publishers),
+		[known, known],
+	);
 	// the Check wants a list, tidy, of names
 	assert.deepEqual(json(Edition.tidyJSON({p: [' Gull  Audio', 'A.B. Sound', 'Gull Audio']})), {
 		p: ['Gull Audio', 'A.B. Sound'],

@@ -598,7 +598,7 @@ function newEntries(b: Book): string[] {
 			FORM_NAMES[kind],
 			Catalog.namesOn(named)(b).join(', '),
 			true,
-			kind === 'publisher' ? Text.splitPublishers : Text.splitNames,
+			kind === 'publisher' ? splitPublishers : Text.splitNames,
 		).map(name => `the ${NOUNS[kind][0]} ${name}`),
 	);
 }
@@ -953,7 +953,7 @@ function editionField(fields: Record<string, string>, i: number, k: string): HTM
 		names: () => FORM_NAMES[kind],
 		multiple: true,
 		// "&" and "and" are part of many a publisher's name, so only commas part them
-		split: k === 'p' ? Text.splitPublishers : undefined,
+		split: k === 'p' ? splitPublishers : undefined,
 		newNote: newNote(kind),
 		onPick: value => {
 			if (FORM_EDITIONS[i]) FORM_EDITIONS[i].fields[k] = value;
@@ -1108,6 +1108,16 @@ byId('addEditionBtn').addEventListener('click', () => {
 	if (input) input.focus();
 });
 
+/** The publishers the catalog has, which the form keeps whole though a name holds a comma. */
+function knownPublishers(): string[] {
+	return [...FORM_NAMES.publisher, ...CATALOG.namesOf('publishers')];
+}
+
+/** Publishers typed in the form: only commas part them, but a publisher the catalog has stays whole. */
+function splitPublishers(text: unknown): string[] {
+	return Text.splitPublishers(text, knownPublishers());
+}
+
 /**
  * The editions in the form, as {editions, bad (e.g. "edition 2: Released 2021-13"), book (the book's
  * external ids, from a book's address pasted in an edition's field)}.
@@ -1117,7 +1127,7 @@ function readFormEditions(): {editions: Edition[]; bad: string[]; book: Record<s
 	const bad: string[] = [];
 	const book: Record<string, string> = {};
 	FORM_EDITIONS.forEach(({fields, id}, i) => {
-		const read = Edition.fromFields(fields);
+		const read = Edition.fromFields(fields, knownPublishers());
 		// the edition keeps its id (several ISBNs make more editions, which are new)
 		if (read.editions.length) read.editions[0].id = id;
 		editions.push(...read.editions);
@@ -1289,7 +1299,7 @@ function fillFormEdition(ed: Edition): boolean {
 	const fields = ed.fields();
 	const has: (card: Record<string, string>, k: string) => string = (card, k) => Text.tidy(card[k] || '');
 	const editionOf: (c: {fields: Record<string, string>}) => Edition | undefined = c =>
-		Edition.fromFields(c.fields).editions[0];
+		Edition.fromFields(c.fields, knownPublishers()).editions[0];
 	let card =
 		FORM_EDITIONS.find(c => editionOf(c)?.sharesId(ed)) ||
 		FORM_EDITIONS.find(c => editionOf(c)?.sameAs(ed)) ||

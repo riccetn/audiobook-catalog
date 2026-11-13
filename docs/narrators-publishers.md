@@ -22,7 +22,8 @@ narrates the editions they narrate. A book is on the page when any of its editio
 with a US and a UK edition read by different narrators is on both narrators' pages. An edition two
 publishers released together names both (in the book form, separated by a comma: `Gullwing Audio, Tern &
 Pike Press`; only a comma or semicolon parts publishers, as many a publisher's name has an "&" or "and"
-in it), and the book is on both publishers' pages.
+in it, and a publisher the catalog already has stays whole even when its name has a comma, such as `Tern Press,
+Harbor Division`), and the book is on both publishers' pages.
 
 **Add or edit the bio and links**: press **Edit** at the end of their page, as on an author's page. Audible has
 no narrator or publisher pages, so its field keeps the name Audible searches for: type it, or paste the address

@@ -95,7 +95,8 @@ editions), or the address of its page (`https://www.goodreads.com/work/editions/
 Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address, and show just the id when you leave them. Several authors, or several narrators or publishers of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
 filter. Authors and narrators may also be parted by "&" or "and", but publishers only by commas, since
-many a publisher's name has an "&" in it (`Wren & Finch Sound`). As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
+many a publisher's name has an "&" in it (`Wren & Finch Sound`); a publisher the catalog already has is kept whole even
+when its name has a comma. As you type an author, a narrator or a publisher, the field lists the names the catalog already has that
 match the name you are typing (those starting with it first): click one, or pick it with the arrow keys and Enter,
 and it takes the place of what you typed (Escape closes the list); the series field does the same. A new name is simply
 typed out, and the field says so below it ("New author: ..., added to the catalog when this is saved"): saving
