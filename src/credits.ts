@@ -30,6 +30,8 @@ export type ListEntry = {
 	id: string;
 	name: string;
 	books: number;
+	/** box sets kept beside their titles, which `books` leaves out */
+	boxSets: number;
 	series: number;
 	bio: string;
 	topAuthors: string[];
@@ -60,8 +62,14 @@ export function render() {
 							buildElement(
 								'span',
 								{class: 'srow-owned'},
-								x.books
-									? `${Text.plural(x.books, 'book')}${x.series ? ', ' + Text.plural(x.series, 'series', 'series') : ''}`
+								x.books || x.boxSets
+									? [
+											x.books && Text.plural(x.books, 'book'),
+											x.boxSets && Text.plural(x.boxSets, 'box set'),
+										]
+											.filter(Boolean)
+											.join(' + ') +
+											(x.series ? ', ' + Text.plural(x.series, 'series', 'series') : '')
 									: 'no books yet',
 							),
 						),
@@ -114,6 +122,7 @@ async function readList(r: CatalogReader): Promise<{list: ListEntry[]; total: nu
 		id: c.id,
 		name: c.name,
 		books: c.bookCount,
+		boxSets: c.boxSetCount || 0,
 		series: c.seriesCount,
 		bio: c.bio || '',
 		topAuthors: (c.topAuthorIds || []).map(id => authorName.get(id)).filter(x => x !== undefined) as string[],

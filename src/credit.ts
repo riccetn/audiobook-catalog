@@ -123,6 +123,15 @@ function creditBookLine(b: Book, name: string): HTMLLIElement {
 	);
 }
 
+/** How many books: "3 books", with the box sets kept beside their titles apart, "3 books + 1 box set". */
+function booksText(books: Book[]): string {
+	const sets = books.filter(b => b.isCollection()).length;
+	const count = books.length - sets;
+	return [count || !sets ? Text.plural(count, 'book') : '', sets ? Text.plural(sets, 'box set') : '']
+		.filter(Boolean)
+		.join(' + ');
+}
+
 /**
  * The heading of a series on someone's page: on an author's, how many of it you own (of the released
  * total, with its status); otherwise how many of its books are theirs.
@@ -135,7 +144,7 @@ function seriesHeading(s: {name: string; books: Book[]}): HTMLParagraphElement {
 			{class: 'series-title'},
 			link,
 			' ',
-			buildElement('span', {class: 'n'}, Text.plural(s.books.length, 'book')),
+			buildElement('span', {class: 'n'}, booksText(s.books)),
 		);
 	const si = CATALOG.seriesInfo(s.name);
 	return buildElement(
@@ -165,10 +174,15 @@ function renderCreditPage(id: string) {
 	const name = nameOf(id);
 	const info = kept().get(id) || new Contributor(name);
 	const {series, titles} = CATALOG.works(KIND.infoKey, name);
-	const count = series.reduce((n, s) => n + s.books.length, 0) + titles.length;
-	byId('subtitle').textContent = count
-		? `${Text.plural(count, 'audiobook')}${series.length ? ' in ' + Text.plural(series.length, 'series', 'series') : ''}${series.length && titles.length ? ` and ${titles.length} outside a series` : ''}`
-		: spell(KIND.none);
+	// a box set is counted apart, as its titles are books of their own too
+	const all = [...series.flatMap(s => s.books), ...titles];
+	const sets = all.filter(b => b.isCollection()).length,
+		count = all.length - sets,
+		outside = titles.filter(b => !b.isCollection()).length;
+	byId('subtitle').textContent =
+		count || sets
+			? `${Text.plural(count, 'audiobook')}${series.length ? ' in ' + Text.plural(series.length, 'series', 'series') : ''}${series.length && outside ? ` and ${outside} outside a series` : ''}${sets ? `, and ${Text.plural(sets, 'box set')}` : ''}`
+			: spell(KIND.none);
 	const link: (href: string, text: string) => HTMLAnchorElement = (href, text) =>
 		buildElement('a', {class: 'authorlink', href, target: '_blank', rel: 'noopener'}, `${text} ↗`);
 	// their own site, their pages in external catalogs, then any other link (by its site's name)
@@ -210,7 +224,7 @@ function renderCreditPage(id: string) {
 					{class: 'series-title'},
 					series.length ? 'Outside a series' : 'Titles',
 					' ',
-					buildElement('span', {class: 'n'}, Text.plural(titles.length, 'book')),
+					buildElement('span', {class: 'n'}, booksText(titles)),
 				),
 				buildElement(
 					'ul',

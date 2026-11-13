@@ -118,7 +118,7 @@ export interface SeriesRecord {
 }
 export type CreditKind = 'author' | 'narrator' | 'publisher';
 /**
- * An author, narrator or publisher: an entry of their own, whether or not a book names them. `sortName`, `bookCount` and `externalKeys` are derived.
+ * An author, narrator or publisher: an entry of their own, whether or not a book names them. `sortName`, `bookCount`, `boxSetCount` and `externalKeys` are derived.
  * (Before ids were kept by external catalog, a record kept the addresses of their pages as `audible`,
  * `goodreads` and `hardcover`; toCatalog() still reads them.)
  */
@@ -133,7 +133,10 @@ export interface ContributorRecord {
 	/** other pages about them */
 	links?: string[];
 	sortName: string;
+	/** how many of their books there are, without the box sets kept beside their titles (boxSetCount) */
 	bookCount: number;
+	/** how many box sets they have, each kept as a book of its own beside the titles it holds */
+	boxSetCount: number;
 	/** how many series their books are in */
 	seriesCount: number;
 	/** their external ids, "audible.com B0…" */
@@ -279,7 +282,15 @@ export class CatalogRecords {
 		],
 		editions: ['bookIds', 'idKeys'],
 		series: ['sortName', 'bookCount', 'owned', 'missing', 'lastRead', 'externalKeys', 'authorIds'],
-		contributors: ['sortName', 'bookCount', 'seriesCount', 'externalKeys', 'topAuthorIds', 'authorCount'],
+		contributors: [
+			'sortName',
+			'bookCount',
+			'boxSetCount',
+			'seriesCount',
+			'externalKeys',
+			'topAuthorIds',
+			'authorCount',
+		],
 		credits: null,
 		marks: [],
 		exclusions: ['position'],
@@ -593,7 +604,9 @@ export class CatalogRecords {
 			kind,
 			name,
 			sortName: CatalogRecords.sortKey(name),
-			bookCount: books.length,
+			// a box set is counted apart, as its titles are books of their own too
+			bookCount: books.filter(b => !b.isCollection).length,
+			boxSetCount: books.filter(b => b.isCollection).length,
 			seriesCount: new Set(books.map(b => b.seriesId).filter(Boolean)).size,
 			externalKeys: externalKeys(info ? info.external : {}),
 		};
@@ -770,7 +783,8 @@ export class CatalogRecords {
 
 	/**
 	 * Whether records are in an older shape than fromCatalog() writes (from before ids were kept by external
-	 * catalog, or a series kept a site), so the page saves them again at once and their indexes find them.
+	 * catalog, or a series kept a site, or a person's box sets were counted among their books), so the page saves
+	 * them again at once and their indexes find them.
 	 */
 	static outdated(records: RecordSet): boolean {
 		return (
@@ -778,6 +792,7 @@ export class CatalogRecords {
 				rec => !Array.isArray(rec.externalKeys),
 			) ||
 			records.editions.some(ed => !ed.external || !Array.isArray(ed.publisherIds)) ||
+			records.contributors.some(rec => typeof rec.boxSetCount !== 'number') ||
 			records.series.some(rec => 'url' in rec)
 		);
 	}

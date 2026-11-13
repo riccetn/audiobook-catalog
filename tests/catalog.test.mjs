@@ -3915,12 +3915,15 @@ test('records: a catalog becomes records pointing at each other by id, and the s
 		records.series.map(x => [x.name, x.bookCount, x.owned, x.missing, x.total, x.lastRead, x.authorIds.length]),
 		[['Orchard Cycle', 3, 2, [3], 3, '2025-02-03', 2]],
 	);
-	// someone who writes one book and narrates another has a record for each
+	// someone who writes one book and narrates another has a record for each; a box set kept beside its titles
+	// is counted apart from their books
 	assert.deepEqual(
-		records.contributors.filter(c => c.name === 'Mira Tallis').map(c => [c.kind, c.bookCount, c.bio]),
+		records.contributors
+			.filter(c => c.name === 'Mira Tallis')
+			.map(c => [c.kind, c.bookCount, c.boxSetCount, c.bio]),
 		[
-			['author', 3, 'Writes about orchards.'],
-			['narrator', 1, undefined],
+			['author', 2, 1, 'Writes about orchards.'],
+			['narrator', 1, 0, undefined],
 		],
 	);
 	assert.deepEqual(
