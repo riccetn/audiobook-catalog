@@ -331,8 +331,8 @@ export class Book {
 			else kept[k] = v;
 			if (copy.includes(k)) moved[k] = kept[k] = v;
 		}
-		const [left] = Edition.fromFields(kept).editions,
-			[right] = Edition.fromFields(moved).editions;
+		const [left] = Edition.fromFields(kept, ed.publishers).editions,
+			[right] = Edition.fromFields(moved, ed.publishers).editions;
 		if (!left || !right) throw new Error('Each edition needs something of its own, such as an id or a narrator.');
 		// the edition keeps its stored id, and the new one is stored as a new edition
 		if (ed.id !== undefined) left.id = ed.id;

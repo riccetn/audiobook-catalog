@@ -476,8 +476,12 @@ export class Edition {
 	 * edition's page in an external catalog (hardcover.app/books/the-salt-road/editions/501, with or
 	 * without the label) gives its id, and the address of a book's page the book's.
 	 * Returns {editions, bad (the parts that could not be read), book (the book's external ids found)}.
+	 * @param known publishers' names kept whole though they hold a comma (Text.splitPublishers)
 	 */
-	static parse(text: unknown): {editions: Edition[]; bad: string[]; book: Record<string, string>} {
+	static parse(
+		text: unknown,
+		known: Iterable<string> = [],
+	): {editions: Edition[]; bad: string[]; book: Record<string, string>} {
 		const editions: Edition[] = [];
 		const bad: string[] = [];
 		const book: Record<string, string> = {};
@@ -554,7 +558,10 @@ export class Edition {
 				}
 				if (label === 'title') [field, v] = ['t', ed.t ? null : value];
 				else if (label.startsWith('publisher'))
-					[field, v] = ['p', Text.splitPublishers(value).length ? Text.splitPublishers(value) : null];
+					[field, v] = [
+						'p',
+						Text.splitPublishers(value, known).length ? Text.splitPublishers(value, known) : null,
+					];
 				else if (label.startsWith('narrat'))
 					[field, v] = ['n', Text.splitNames(value).length ? Text.splitNames(value) : null];
 				else if (label === 'description') [field, v] = ['desc', ed.desc ? null : value];
@@ -587,8 +594,12 @@ export class Edition {
 	 * Audible or Amazon page names its own site); the address of a book's page names the book. Several ISBNs
 	 * make that many editions (splitIsbns); the first keeps the covers' keys (`img:`, which the editor doesn't show). Returns {editions (none when every field is empty), bad (the
 	 * fields that could not be read, as "Label value"), book (the book's external ids found)}.
+	 * @param known publishers' names kept whole though they hold a comma (Text.splitPublishers): the edition's own, the catalog's
 	 */
-	static fromFields(fields: Record<string, string | undefined>): {
+	static fromFields(
+		fields: Record<string, string | undefined>,
+		known: Iterable<string> = [],
+	): {
 		editions: Edition[];
 		bad: string[];
 		book: Record<string, string>;
@@ -642,7 +653,7 @@ export class Edition {
 				continue;
 			}
 			if (k === 'n' || k === 'p') {
-				ed[k] = k === 'n' ? Text.splitNames(value) : Text.splitPublishers(value);
+				ed[k] = k === 'n' ? Text.splitNames(value) : Text.splitPublishers(value, known);
 				if (!ed[k].length) delete ed[k];
 				continue;
 			}

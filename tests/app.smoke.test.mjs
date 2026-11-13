@@ -1065,6 +1065,61 @@ test('back and forward step through series, searches and filters, and books', as
 	assert.match(book.els.results.innerHTML, /<h2 class="title">The Salt Road<\/h2>/);
 });
 
+test('saving a book keeps a publisher whose name has a comma, and still parts new names at commas', async () => {
+	const files = {
+		'books.json': JSON.stringify([
+			{
+				t: 'Pike Water',
+				a: ['Bo Reed'],
+				e: [{ext: {'audible.com': 'B0PIKE0001'}, p: ['Tern Press, Harbor Division']}],
+			},
+			{t: 'Pike Ford', a: ['Bo Reed'], e: [{ext: {'audible.com': 'B0PIKE0002'}}]},
+		]),
+	};
+	const {ctx, els, get, storage} = await bootBook('Pike Water', {files});
+	await ctx.openEditForm(get('BOOK_FILTER'));
+	await idle();
+	assert.equal(formEditions(get)[0].p, 'Tern Press, Harbor Division');
+	els.addForm.listeners.submit[0]({preventDefault() {}, target: els.addForm});
+	await idle();
+	assert.deepEqual((await kept(storage)).books[0].e[0].p, ['Tern Press, Harbor Division']);
+	// another book's form knows the name from the catalog, and new names typed beside it are parted
+	const ford = await bootBook('Pike Ford', {storage, files: null});
+	await ford.ctx.openEditForm(ford.get('BOOK_FILTER'));
+	await idle();
+	ford.run("FORM_EDITIONS[0].fields.p = 'Tern Press, Harbor Division, Gull Audio, Wren Sound'");
+	ford.els.addForm.listeners.submit[0]({preventDefault() {}, target: ford.els.addForm});
+	await idle();
+	assert.deepEqual((await kept(storage)).books[1].e[0].p, [
+		'Tern Press, Harbor Division',
+		'Gull Audio',
+		'Wren Sound',
+	]);
+});
+
+test('the Edit series page keeps a publisher whose name has a comma when another field of the edition changes', async () => {
+	const files = {
+		'books.json': JSON.stringify([
+			{
+				t: 'Pike 1',
+				a: ['Bo Reed'],
+				s: 'Pike Saga',
+				sn: '1',
+				e: [{ext: {'audible.com': 'B0PIKE0001'}, p: ['Tern Press, Harbor Division']}],
+			},
+		]),
+	};
+	const edit = await bootEdit('Pike Saga', {files});
+	edit.els.b0e0_n.value = 'Cy Hale';
+	edit.els.b0e0_n.listeners.change[0]();
+	assert.equal(await saveEdit(edit), true);
+	assert.deepEqual((await kept(edit.storage)).books[0].e[0], {
+		ext: {'audible.com': 'B0PIKE0001'},
+		n: ['Cy Hale'],
+		p: ['Tern Press, Harbor Division'],
+	});
+});
+
 test('editing a book keeps its editions, and their covers', async () => {
 	const {ctx, els, get, run} = await bootBook(SALT_ROAD);
 	const cover = 'e3'.repeat(32);

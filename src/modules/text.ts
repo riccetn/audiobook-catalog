@@ -133,16 +133,30 @@ export class Text {
 	 * Split publishers' names written as text into a list: "Gull Audio, Tern & Finch Press" -> ["Gull Audio",
 	 * "Tern & Finch Press"]. Only commas and semicolons separate them, as "&" and "and" are often part of a
 	 * publisher's name; a company's suffix stays with its name ("Gull Audio, Inc."). Names are trimmed, and
-	 * repeats and empty parts dropped.
+	 * repeats and empty parts dropped. A name in `known` is kept whole, commas and all ("Tern Press, Harbor
+	 * Division"), so a publisher the catalog has survives a form that shows it among others.
+	 * @param known publishers' names already known (the edition's own, the catalog's)
 	 */
-	static splitPublishers(text: unknown): string[] {
-		const names: string[] = [];
-		for (const part of String(text || '')
+	static splitPublishers(text: unknown, known: Iterable<string> = []): string[] {
+		const whole = new Set([...known].filter(name => name.includes(',')).map(name => Text.tidy(name)));
+		const parts = String(text || '')
 			.split(/[,;]/)
 			.map(x => Text.tidy(x))
-			.filter(Boolean)) {
-			if (COMPANY_SUFFIX.test(part) && names.length) names[names.length - 1] += ', ' + part;
-			else names.push(part);
+			.filter(Boolean);
+		const names: string[] = [];
+		for (let i = 0; i < parts.length; i++) {
+			// the longest run of parts that is a known name
+			let end = -1;
+			for (let j = parts.length - 1; j > i && whole.size; j--)
+				if (whole.has(parts.slice(i, j + 1).join(', '))) {
+					end = j;
+					break;
+				}
+			if (end >= 0) {
+				names.push(parts.slice(i, end + 1).join(', '));
+				i = end;
+			} else if (COMPANY_SUFFIX.test(parts[i]) && names.length) names[names.length - 1] += ', ' + parts[i];
+			else names.push(parts[i]);
 		}
 		return names.filter((x, i) => names.indexOf(x) === i);
 	}
