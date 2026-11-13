@@ -4406,13 +4406,26 @@ test("the Edit series page compares a series' books with Hardcover when it opens
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')), 'nothing is sent');
 	assert.equal(els.changeCount.textContent, 'No changes yet', 'nothing is picked at first');
 
-	// ticked, it is added on Save
+	// ticked, it shows the whole form, as Hardcover has it, and is added on Save as changed there
 	els['fresh-0-add'].checked = true;
 	els['fresh-0-add'].listeners.change[0]({target: els['fresh-0-add']});
 	assert.equal(els.changeCount.textContent, '1 change');
+	assert.equal(get('DRAFTS[1].added.kind'), 'fresh');
+	assert.ok(els['fresh-0'].querySelector('#book-1'), "the new book's card is in its Add card");
+	assert.equal(els.b1_t.value, 'Tidewater');
+	assert.equal(els.b1_a.value, 'Ann Vale');
+	assert.equal(els.bookCount.textContent, '1 book', 'your books only');
+	assert.doesNotMatch(els['book-1'].innerHTML, /The book's page/);
+	els.b1_t.value = 'Tidewater Rising';
+	els.b1_t.listeners.change[0]();
+	assert.equal(els.changeCount.textContent, '2 changes');
 	await els.reviewBtn.listeners.click[0]();
 	await idle();
-	assert.match(els.reviewList.textContent, /New book: Tidewater — Ann Vale {2}\[Gull Isle #1\], as Hardcover has it/);
+	assert.match(
+		els.reviewList.textContent,
+		/New book: Tidewater — Ann Vale {2}\[Gull Isle #1\], as Hardcover has it, changed here/,
+	);
+	assert.match(els.reviewList.textContent, /Tidewater Rising: Title: Tidewater → Tidewater Rising/);
 	await els.reviewSaveBtn.listeners.click[0]();
 	await idle();
 	assert.match(els.ioStatus.textContent, /^Added 1 book\./);
@@ -4421,7 +4434,7 @@ test("the Edit series page compares a series' books with Hardcover when it opens
 		[
 			['Lantern Hours', undefined, undefined],
 			['Brine Tide', 'Gull Isle', '2'],
-			['Tidewater', 'Gull Isle', '1'],
+			['Tidewater Rising', 'Gull Isle', '1'],
 		],
 	);
 	assert.equal(get('CATALOG.books.length'), 3);
@@ -4722,8 +4735,15 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	await idle();
 	assert.ok(abdb.sent.some(s => s.path.startsWith('books/GullSong0001')));
 	assert.match(els['missing-0'].textContent, /^Not in your catalog Add 3\. Gull Song by Ann Vale/);
+	// read, its whole form is shown to change before it is added
+	const at = get("DRAFTS.findIndex(d => d.added && d.added.kind === 'missing')");
+	assert.ok(els['missing-0'].querySelector(`#book-${at}`));
+	assert.equal(els[`b${at}_t`].value, 'Gull Song');
+	els[`b${at}_g`].value = 'Fantasy';
+	els[`b${at}_g`].listeners.change[0]();
 	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
+	assert.deepEqual(saved.books.find(b => b.t === 'Gull Song').g, ['Fantasy'], 'as changed on the page');
 	assert.deepEqual(
 		saved.books.map(b => [b.t, b.s, b.sn, b.ext, (b.e || []).map(e => e.ext)]),
 		[

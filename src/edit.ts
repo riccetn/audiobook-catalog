@@ -46,7 +46,14 @@ import type {CatalogEntry, FieldChoices} from './modules/book-review.js';
 import type {NotAudio} from './modules/shelf-sync.js';
 
 /** A book being edited: the book as loaded (`before`, as stored text) and the copy the page changes. */
-export type Draft = {id: string; before: Book; book: Book; error: string};
+export type Draft = {id: string; before: Book; book: Book; error: string; added?: NewPick};
+/**
+ * A new book picked to add (`kind` and its place in the review's fresh or missing books), drafted on the page
+ * as its catalog has it (`before`), so it can be changed before it is added.
+ */
+export type NewPick = {kind: 'fresh' | 'missing'; n: number};
+// the ids a new book's editions have on the page, so a field changed is told from the catalog's; never stored
+const NEW_EDITION = 'new-edition-';
 
 /** What the page edits: a series' books, or an author's. */
 export let KIND: 'series' | 'author' = 'series';
@@ -291,7 +298,7 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			buildElement(
 				'p',
 				{class: 'editBookLinks'},
-				buildElement('a', {href: bookPageHref(d.id)}, "The book's page"),
+				...(d.added ? [] : [buildElement('a', {href: bookPageHref(d.id)}, "The book's page")]),
 				...catalogLinks(d),
 			),
 			buildElement('div', {class: 'editFields'}, ...fields),
@@ -422,7 +429,9 @@ function buttonFor(label: string, onclick: () => void, id: string, cls: string =
 
 /** Which other books of the page have this edition too (a box set's), as a note; '' for none. */
 function sharedWith(d: Draft, ed: Edition): string {
-	const others = DRAFTS.filter(x => x !== d && x.book.editions.some(y => y.sameAs(ed))).map(x => x.book);
+	// (a new book's editions are its own copies until it is added)
+	if (d.added) return '';
+	const others = DRAFTS.filter(x => x !== d && !x.added && x.book.editions.some(y => y.sameAs(ed))).map(x => x.book);
 	if (!others.length) return '';
 	return `Also on ${others.map(b => b.title).join(', ')}: a change here changes it there too.`;
 }
@@ -987,6 +996,7 @@ async function pickMissing(n: number, source: number) {
 	const run = RUN;
 	if (!run) return;
 	MISSING_PICKS.set(n, {source, book: null});
+	dropNew({kind: 'missing', n});
 	drawNewBooks();
 	let book: Book | null = null,
 		problem = '';
@@ -999,8 +1009,10 @@ async function pickMissing(n: number, source: number) {
 	// unticked, or ticked as another catalog's, while it was read
 	const now = MISSING_PICKS.get(n);
 	if (RUN !== run || !now || now.source !== source || now.book) return;
-	if (book) MISSING_PICKS.set(n, {source, book});
-	else {
+	if (book) {
+		MISSING_PICKS.set(n, {source, book});
+		draftNew({kind: 'missing', n}, book);
+	} else {
 		MISSING_PICKS.delete(n);
 		showIoStatus(
 			spell(`Couldn't read ${run.review.missing[n].title} from ${run.labels[source]}: ${problem}`),
@@ -1009,6 +1021,47 @@ async function pickMissing(n: number, source: number) {
 	}
 	drawNewBooks();
 	showChangeCount();
+}
+
+/**
+ * Draft a new book picked to add, as its catalog has it (in place of a draft of it as another catalog had it),
+ * so its card shows every field.
+ */
+function draftNew(added: NewPick, theirs: Book) {
+	dropNew(added);
+	const book = theirs.clone();
+	book.id = undefined;
+	book.editions.forEach((ed, k) => (ed.id = NEW_EDITION + k));
+	DRAFTS.push({id: '', before: book.clone(), book, error: '', added});
+}
+
+/** The draft of a new book picked to add; undefined when it is not picked (or not read yet). */
+function newDraft(kind: NewPick['kind'], n: number): {d: Draft; i: number} | undefined {
+	const i = DRAFTS.findIndex(d => d.added && d.added.kind === kind && d.added.n === n);
+	return i < 0 ? undefined : {d: DRAFTS[i], i};
+}
+
+/** Drop the draft of a new book no longer picked (what the page has open on a draft after it, too). */
+function dropNew(added: NewPick) {
+	const found = newDraft(added.kind, added.n);
+	if (!found) return;
+	DRAFTS.splice(found.i, 1);
+	if (OPEN_PANEL && Number(OPEN_PANEL.split(':')[0]) >= found.i) OPEN_PANEL = null;
+}
+
+/** Drop the drafts of every new book picked (the catalogs are asked again, or none is). */
+function dropAllNew() {
+	if (!DRAFTS.some(d => d.added)) return;
+	DRAFTS = DRAFTS.filter(d => !d.added);
+	OPEN_PANEL = null;
+}
+
+/** A new book's draft as it is added: without the ids its editions have only on the page. */
+function addedBook(d: Draft): Book {
+	const book = d.book.clone();
+	book.id = undefined;
+	for (const ed of book.editions) if (ed.id && ed.id.startsWith(NEW_EDITION)) ed.id = undefined;
+	return book;
 }
 
 /** Draw the books again with the new ones among them, as a new book's tick or catalog changed. */
@@ -1033,11 +1086,15 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 			const picked = FRESH_PICKS.get(n);
 			const from = book.from.find(f => f.source === picked) || book.from[0];
 			const pick = (source: number) => {
+				const at = book.from.find(f => f.source === source);
+				if (!at) return;
 				FRESH_PICKS.set(n, source);
+				draftNew({kind: 'fresh', n}, run.sources[source].result.incoming[at.at]);
 				drawNewBooks();
 				showChangeCount();
 			};
 			const theirs = run.sources[from.source].result.incoming[from.at];
+			const drafted = newDraft('fresh', n);
 			const card = buildElement(
 				'div',
 				{class: picked === undefined ? 'editNew' : 'editNew picked', id: `fresh-${n}`},
@@ -1053,6 +1110,7 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 							if ((e.target as HTMLInputElement).checked) pick(from.source);
 							else {
 								FRESH_PICKS.delete(n);
+								dropNew({kind: 'fresh', n});
 								drawNewBooks();
 								showChangeCount();
 							}
@@ -1063,6 +1121,8 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 				book.from.length > 1
 					? sourceSelect(`fresh-${n}-from`, book.from, from.source, pick, run)
 					: buildElement('span', {class: 'hint'}, ` (${run.labels[from.source]})`),
+				// picked, the book's whole form, as the catalog has it, to change before it is added
+				...(drafted ? [bookCard(drafted.d, drafted.i)] : []),
 			);
 			return {book: theirs, card};
 		}),
@@ -1070,6 +1130,7 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 			const picked = MISSING_PICKS.get(n);
 			const from = entry.from.find(f => f.source === picked?.source) || entry.from[0];
 			const reading = !!picked && !picked.book;
+			const drafted = newDraft('missing', n);
 			const book = Book.fromJSON({
 				t: entry.title,
 				a: [],
@@ -1091,6 +1152,7 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 							if ((e.target as HTMLInputElement).checked) void pickMissing(n, from.source);
 							else {
 								MISSING_PICKS.delete(n);
+								dropNew({kind: 'missing', n});
 								drawNewBooks();
 								showChangeCount();
 							}
@@ -1111,6 +1173,7 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 				reading
 					? buildElement('span', {class: 'hint'}, spell(`Reading it from ${run.labels[from.source]}…`))
 					: null,
+				...(drafted ? [bookCard(drafted.d, drafted.i)] : []),
 			);
 			return {book, card};
 		}),
@@ -1131,6 +1194,7 @@ export function askCatalogs(): Promise<void> {
 		const asked = choices.filter(c => !c.cantAsk && !c.skipped);
 		if (!asked.length) {
 			RUN = null;
+			dropAllNew();
 			render();
 			drawCatalogFound();
 			if (KIND === 'series') drawSeriesChips();
@@ -1152,11 +1216,12 @@ export function askCatalogs(): Promise<void> {
 		RUN = await catalogs.runCatalogs(
 			KIND,
 			name,
-			DRAFTS.map(d => d.id),
+			DRAFTS.filter(d => !d.added).map(d => d.id),
 		);
 		FRESH_PICKS = new Map();
 		MISSING_PICKS = new Map();
 		INFO_PICKS = new Set();
+		dropAllNew();
 		drawCatalogFound();
 		render();
 		if (KIND === 'series') drawSeriesChips();
@@ -1187,9 +1252,11 @@ function drawSeriesChips() {
 export function render() {
 	// your books (where they were when the page opened, so a card doesn't move as its number is typed) and the
 	// new ones, in series order
-	const cards = [...DRAFTS.map((d, i) => ({book: d.before, card: bookCard(d, i)})), ...newCards()].sort((x, y) =>
-		bookOrder(x.book, y.book),
-	);
+	// (a new book picked is drawn in its new book's card)
+	const cards = [
+		...DRAFTS.flatMap((d, i) => (d.added ? [] : [{book: d.before, card: bookCard(d, i)}])),
+		...newCards(),
+	].sort((x, y) => bookOrder(x.book, y.book));
 	// a card opened or closed stays so when the books are drawn again (an id added to an edition, say)
 	const list = byId('editBooks');
 	const wasOpen = new Map(
@@ -1202,7 +1269,8 @@ export function render() {
 		else if (open === false) el.removeAttribute('open');
 	}
 	DRAFTS.forEach((d, k) => fillExternalFields(inputId(k, null, 'ext_'), 'book', d.book.external));
-	byId('bookCount').textContent = DRAFTS.length ? Text.plural(DRAFTS.length, 'book') : '';
+	const own = DRAFTS.filter(d => !d.added).length;
+	byId('bookCount').textContent = own ? Text.plural(own, 'book') : '';
 	showChangeCount();
 }
 
@@ -1474,19 +1542,24 @@ export function changes(): [string, string][] {
 	const out: [string, string][] = [];
 	const name = SERIES_ID === null ? undefined : CATALOG.nameOf('series', SERIES_ID);
 	if (name !== undefined) for (const line of seriesChanges(name)) out.push([name, line]);
-	for (const d of DRAFTS) for (const line of bookChanges(d.before, d.book, EXCLUDE)) out.push([d.book.title, line]);
+	for (const d of DRAFTS)
+		if (!d.added) for (const line of bookChanges(d.before, d.book, EXCLUDE)) out.push([d.book.title, line]);
 	const run = RUN;
 	if (run) {
+		// a new book, then what was changed on it before it is added
+		const added = (kind: NewPick['kind'], n: number, line: string) => {
+			const d = newDraft(kind, n)?.d;
+			const changed = d ? bookChanges(d.before, d.book, []) : [];
+			out.push([spell('New book'), changed.length ? `${line}, changed here` : line]);
+			if (d) for (const c of changed) out.push([d.book.title, c]);
+		};
 		for (const [n, source] of FRESH_PICKS) {
 			const from = run.review.fresh[n] && run.review.fresh[n].from.find(f => f.source === source);
-			if (from) out.push([spell('New book'), `${from.line}, as ${run.labels[source]} has it`]);
+			if (from) added('fresh', n, `${from.line}, as ${run.labels[source]} has it`);
 		}
 		for (const [n, {source, book}] of MISSING_PICKS)
 			if (book && run.review.missing[n])
-				out.push([
-					spell('New book'),
-					`${missingLine(run.review.missing[n], book)}, as ${run.labels[source]} has it`,
-				]);
+				added('missing', n, `${missingLine(run.review.missing[n], book)}, as ${run.labels[source]} has it`);
 		for (const source of INFO_PICKS)
 			out.push([run.labels[source], spell('Keep the ids it found for the series and people')]);
 	}
@@ -1659,22 +1732,33 @@ export async function save() {
 	const name = shownName();
 	if ((KIND === 'series' && !series) || name === undefined) return;
 	// a box set's edition changed here changes on its other books too, so they are loaded first
-	const keys = [...new Set(DRAFTS.flatMap(d => d.book.editions.flatMap(ed => ed.idAndIsbnKeys())))];
+	const keys = [
+		...new Set(DRAFTS.filter(d => !d.added).flatMap(d => d.book.editions.flatMap(ed => ed.idAndIsbnKeys()))),
+	];
 	if (keys.length) await loadRecords({editionKeys: keys});
 	let saved = 0,
 		others = 0;
 	for (const d of DRAFTS) {
-		if (d.book.text() === d.before.text()) continue;
+		if (d.added || d.book.text() === d.before.text()) continue;
 		if (!CATALOG.book(d.id)) continue; // removed in another tab meanwhile
 		others += CATALOG.saveBook(d.id, d.book.clone());
 		saved++;
 	}
 	const excluded = EXCLUDE.length ? CATALOG.addExclusions(EXCLUDE) : 0;
-	// the new books picked, as their catalog has them (the page holds the whole catalog once it asked one)
+	// the new books picked, as changed on the page from what their catalog has (the page holds the whole catalog
+	// once it asked one)
 	let added = 0;
 	const run = RUN;
-	if (run) for (const [n, source] of FRESH_PICKS) added += (run.addFresh(n, source)?.added || []).length;
-	if (run) for (const {book} of MISSING_PICKS.values()) if (book) added += run.addMissing(book).added.length;
+	if (run)
+		for (const [n, source] of FRESH_PICKS) {
+			const d = newDraft('fresh', n)?.d;
+			added += (run.addFresh(n, source, d && addedBook(d))?.added || []).length;
+		}
+	if (run)
+		for (const [n, {book}] of MISSING_PICKS) {
+			const d = newDraft('missing', n)?.d;
+			if (book) added += run.addMissing(d ? addedBook(d) : book).added.length;
+		}
 	const parts: string[] = [];
 	let newId: string | null = null;
 	if (series) {
