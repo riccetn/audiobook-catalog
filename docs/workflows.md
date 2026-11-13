@@ -66,7 +66,8 @@ _Editions_ has a card per edition, with a field for each part: title, descriptio
 site: audible.com's, and one for each site the edition has an ASIN on; _+ Another site_ adds a field for
 another Amazon or Audible site), Goodreads id, Hardcover edition (_+ Another catalog_ adds a field for its id on AudiobookDB, Open
 Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publishers,
-release date (`2021-05`) and length (`10h 42m`). The ASIN and other catalogs' edition fields also take the address of the book's
+release date (`2021-05`) and length (`10h 42m`). An ASIN is ten letters and digits, at least one of them a
+digit, so a word typed there by mistake (`none`) is refused. The ASIN and other catalogs' edition fields also take the address of the book's
 page on that site (`https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0…`, `https://www.amazon.com/dp/B0…`,
 `https://www.goodreads.com/book/show/4242-the-salt-road`, `https://hardcover.app/books/the-salt-road/editions/501`,
 `https://audiobookdb.org/releases/Kx7UDyK3gMqj`):
