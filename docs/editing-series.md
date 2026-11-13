@@ -70,7 +70,9 @@ Among your books, in series order, cards marked **Not in your catalog** are the 
 catalogs that have it: tick one to add it when you save (and pick whose, when several have it). The books a
 catalog only lists in the series (on AudiobookDB, those not on your shelves; on Audible, the numbers you have
 none of) are there too, with a link to their page. AudiobookDB's are read from it only when you tick one, so
-ticking may take a moment; one it can't read is unticked again, saying why. _Other catalogs_ offers to keep the
+ticking may take a moment; one it can't read is unticked again, saying why. A book ticked shows its whole form,
+filled in as the catalog has it, with its editions: change anything before you save, and it is added as you left
+it (picking another catalog's starts it again from theirs; unticking drops it). _Other catalogs_ offers to keep the
 ids the catalogs found for the series and its people where they have none.
 
 An edition you keep out of imports (an `Edition` entry, as **Remove edition** below puts) offers nothing: its

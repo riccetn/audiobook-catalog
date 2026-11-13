@@ -114,12 +114,24 @@ export class CatalogRun {
 		return BookReview.withIds(book, (books, found) => sync.kind.addIds(books, found), result.found);
 	}
 
-	/** Add to the catalog the new book `fresh` (its place in the review's) as `source` has it. */
-	addFresh(fresh: number, source: number): MergeReport | null {
+	/**
+	 * Add to the catalog the new book `fresh` (its place in the review's) as `source` has it, or as `book` (that
+	 * book changed on the page).
+	 */
+	addFresh(fresh: number, source: number, book?: Book): MergeReport | null {
 		const from = this.review.fresh[fresh] && this.review.fresh[fresh].from.find(f => f.source === source);
 		if (!from) return null;
 		const {result} = this.sources[source];
-		return Merger.into(CATALOG, [result.incoming[from.at]], result.opts);
+		const theirs = result.incoming[from.at];
+		if (!book) return Merger.into(CATALOG, [theirs], result.opts);
+		// whether it may be added, and with its editions, is the catalog's book's to say (the options know it by
+		// itself), not the copy's
+		const {addable, withEditions, ...opts} = result.opts || {};
+		return Merger.into(CATALOG, [book], {
+			...opts,
+			...(addable ? {addable: () => addable(theirs)} : {}),
+			...(withEditions ? {withEditions: () => withEditions(theirs)} : {}),
+		});
 	}
 
 	/**
