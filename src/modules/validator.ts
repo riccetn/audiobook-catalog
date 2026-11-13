@@ -219,6 +219,10 @@ export class Validator {
 			const total = entry.total;
 			if (!(Number.isInteger(total) && total > 0) && total !== 'many') {
 				errors.push(`series-info[${repr(name)}]: total must be a positive integer (or "many")`);
+			} else if (typeof total === 'number' && total > Series.TOTAL_MAX) {
+				warnings.push(
+					`series-info[${repr(name)}]: total ${total} is over ${Series.TOTAL_MAX}, which looks like a typo (no missing books are listed for it)`,
+				);
 			}
 			if ('ext' in entry) {
 				const found = ExternalCatalog.problems(entry.ext, 'series');

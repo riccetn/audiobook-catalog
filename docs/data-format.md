@@ -168,7 +168,8 @@ browser keeps the catalog in the current one.
 
 The series info (`seriesInfo`, `series-info.json` before) maps a series name (as `s` has it; a series no book is in has one too) to
 `{"total": 12, "status": "ongoing" | "complete", "note": "...", "ext": {...}, "links": [...]}`.
-`total` is the number of books released so far; `ext` (the
+`total` is the number of books released so far (a total over 1000 is taken for a typo: no missing books are listed
+for it, and Check warns); `ext` (the
 series' ids in [external catalogs](#external-catalogs), `{"audible.com": "B0…", "goodreads": "90001", "hardcover": "3101"}`) and `links`
 (other pages about the series, a list of web addresses) are optional.
 A book's, an edition's and a series' `links` are kept as typed, one per line in their forms, but trimmed, with
