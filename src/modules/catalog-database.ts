@@ -581,7 +581,9 @@ export class CatalogDatabase {
 	// author or publisher (Catalog.moveSeriesSites), the stores as they were.
 	// 5: an edition may have several publishers: `publisherId` became the list `publisherIds`, and its index
 	// a multi-entry one; records from before are saved again with the list.
-	static VERSION = 5;
+	// 6: a person's box sets are counted apart from their books (`boxSetCount`); records from before are saved
+	// again with it, the stores as they were.
+	static VERSION = 6;
 	/** every store, the records' and meta */
 	static ALL_STORES: (StoreName | 'meta')[] = [...CatalogRecords.STORE_NAMES, 'meta'];
 
@@ -638,8 +640,9 @@ export class CatalogDatabase {
 		}
 		if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath: 'key'});
 		// records from before version 3 lack the derived fields its indexes read, from before version 4
-		// a series may keep a site, and from before version 5 an edition has one publisher's id
-		if (oldVersion > 0 && oldVersion < 5) tx.objectStore('meta').put({key: 'reshape', value: oldVersion});
+		// a series may keep a site, from before version 5 an edition has one publisher's id, and from before
+		// version 6 a person's book count takes in their box sets
+		if (oldVersion > 0 && oldVersion < 6) tx.objectStore('meta').put({key: 'reshape', value: oldVersion});
 	}
 
 	/** @returns whether the records wait to be saved again in the current shape (see VERSION) */

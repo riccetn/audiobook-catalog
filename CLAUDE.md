@@ -334,8 +334,8 @@ IndexedDB (`CatalogRecords.STORES`, documented in `docs/data-format.md`): stores
 plain objects with descriptive fields, ids from `crypto.randomUUID()` that never change, references by id (a box set's edition is
 one record with `bookIds`), derived fields (sort keys, counts, `credits`) rewritten on every save and never read back, and every
 sorting index ending in the key so lists can be paged. There is no `extra`: a value a class keeps aside is not stored.
-The database is version 5 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`, and from versions 1 to 4
-puts meta `reshape`, so the next page loads all of it, moves the series' sites and saves every record again with the derived fields this version reads and editions' `publisherIds`); `toCatalog` still reads
+The database is version 6 (`CatalogDatabase.VERSION`; `upgrade` adds and drops indexes to match `STORES`, and from versions 1 to 5
+puts meta `reshape`, so the next page loads all of it, moves the series' sites and saves every record again with the derived fields this version reads (a person's `boxSetCount`) and editions' `publisherIds`); `toCatalog` still reads
 version 1's records (ids under fields of their own) and an edition's one `publisherId` from before version 5 (`CatalogRecords.publisherIdsOf`), and `startPage` saves them again at once (`CatalogRecords.outdated`).
 `excluded` lists ASINs, `ISBN 978…`, `Goodreads 12345`, `Hardcover 12345` or `Title | Author` entries that imports must never re-add, and `Edition <id>`
 entries for one edition (its book still matches); code only adds to it (Restore and Merge add a backup's to it too), but for Import & export's

@@ -2304,7 +2304,7 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	await first.saved();
 	// a book that lists an edition there is no record of
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 5);
+		const req = first.database.open('audiobook-catalog', 6);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	await new Promise(resolve => {
@@ -2327,7 +2327,7 @@ test("a series' site, from before authors kept their own, goes to its author whe
 	await first.saved();
 	// a database of version 3, whose series kept a site
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 5);
+		const req = first.database.open('audiobook-catalog', 6);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	const series = first.database.records('series').find(x => x.name === 'The Lantern Coast');
@@ -2362,7 +2362,7 @@ test('an edition stored with one publisher, from before database version 5, is s
 	const first = await boot({storage});
 	await first.saved();
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 5);
+		const req = first.database.open('audiobook-catalog', 6);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	const before = first.database.records('editions');
@@ -2387,6 +2387,31 @@ test('an edition stored with one publisher, from before database version 5, is s
 		false,
 	);
 	assert.deepEqual((await kept(storage)).books, demoBooks);
+});
+
+test('a person whose box sets were counted among their books, before database version 6, is counted again', async () => {
+	const storage = new Map();
+	const first = await boot({storage});
+	await first.saved();
+	const {db} = await new Promise(resolve => {
+		const req = first.database.open('audiobook-catalog', 6);
+		req.onsuccess = () => resolve({db: req.result});
+	});
+	const before = first.database.records('contributors');
+	await new Promise(resolve => {
+		const tx = db.transaction('contributors', 'readwrite');
+		for (const {boxSetCount, ...rec} of before)
+			tx.objectStore('contributors').put({...rec, bookCount: rec.bookCount + boxSetCount});
+		tx.oncomplete = resolve;
+	});
+	first.database.data.get('audiobook-catalog').version = 5;
+	const {database} = await boot({storage, page: 'authors.html'});
+	const after = database.records('contributors');
+	assert.deepEqual(
+		after.map(c => [c.id, c.bookCount, c.boxSetCount]),
+		before.map(c => [c.id, c.bookCount, c.boxSetCount]),
+	);
+	assert.ok(after.some(c => c.boxSetCount === 1));
 });
 
 test("a catalog this browser can't read is set aside, not overwritten", async () => {
@@ -5073,6 +5098,17 @@ test('the authors page lists every author, with their books and series, and a se
 		readable(els.creditBody.innerHTML),
 		/<a class="srow-title" href="author\.html#a=Priya\+Ostrander">Priya Ostrander<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/,
 	);
+	// a box set kept beside its titles is counted apart, not as one more book
+	const sets = demoBooks.filter(b => b.a.includes('Wendell Ashcombe') && /^\d+-\d+$/.test(b.sn || '')).length;
+	const titles = demoBooks.filter(b => b.a.includes('Wendell Ashcombe')).length - sets;
+	assert.equal(sets, 1);
+	assert.match(
+		readable(els.creditBody.innerHTML),
+		new RegExp(`Wendell Ashcombe</a>\\s*<span class="srow-owned">${titles} books \\+ 1 box set, 1 series</span>`),
+	);
+	const author = await boot({page: 'author.html', hash: '#a=Wendell+Ashcombe', storage: undefined});
+	await idle();
+	assert.equal(author.els.subtitle.textContent, `${titles} audiobooks in 1 series, and 1 box set`);
 	// the first line of a bio, when there is one
 	assert.match(readable(els.creditBody.innerHTML), /Priya Ostrander writes cozy mysteries/);
 	els.q.value = 'ferran';
@@ -5189,7 +5225,7 @@ test('the narrators page lists every narrator of the editions, with their bio or
 	);
 	assert.match(
 		readable(els.creditBody.innerHTML),
-		/<a class="srow-title" href="narrator\.html#n=Ingrid\+Voss">Ingrid Voss<\/a>\s*<span class="srow-owned">5 books, 1 series<\/span><\/div><p class="srow-note">Ingrid Voss narrates fantasy/,
+		/<a class="srow-title" href="narrator\.html#n=Ingrid\+Voss">Ingrid Voss<\/a>\s*<span class="srow-owned">4 books \+ 1 box set, 1 series<\/span><\/div><p class="srow-note">Ingrid Voss narrates fantasy/,
 		'the first line of a bio, when there is one',
 	);
 	// else the authors they read most, the most first
@@ -5251,13 +5287,17 @@ test("the publishers page lists the editions' publishers, and a publisher's page
 	assert.match(els.subtitle.textContent, new RegExp(`^3 publishers across ${demoBooks.length} audiobooks`));
 	assert.match(
 		readable(els.creditBody.innerHTML),
-		/<a class="srow-title" href="publisher\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a>\s*<span class="srow-owned">3 books, 1 series<\/span>/,
+		/<a class="srow-title" href="publisher\.html#p=Kestrel\+Row\+Audio">Kestrel Row Audio<\/a>\s*<span class="srow-owned">2 books \+ 1 box set, 1 series<\/span>/,
 	);
 	const pub = await boot({page: 'publisher.html', hash: '#p=Kestrel+Row+Audio', storage, files: null});
 	await idle();
 	assert.equal(pub.ctx.document.title, 'Kestrel Row Audio · Audiobook Catalog');
-	assert.equal(pub.els.subtitle.textContent, '3 audiobooks in 1 series');
-	assert.match(pub.readable(pub.els.creditBody.innerHTML), /The Orchard Cycle<\/a> <span class="n">3 books<\/span>/);
+	// the box set kept beside its titles is counted apart from them
+	assert.equal(pub.els.subtitle.textContent, '2 audiobooks in 1 series, and 1 box set');
+	assert.match(
+		pub.readable(pub.els.creditBody.innerHTML),
+		/The Orchard Cycle<\/a> <span class="n">2 books \+ 1 box set<\/span>/,
+	);
 	assert.doesNotMatch(
 		pub.readable(pub.els.creditBody.innerHTML),
 		/class="with">with/,
@@ -5535,8 +5575,11 @@ test('an author can be renamed from their form, on every book, keeping their id;
 	);
 
 	// renaming a narrator to one the catalog has takes a second Save, and joins them
-	const both = demoBooks.filter(b =>
-		(b.e || []).some(ed => (ed.n || []).some(n => n === 'Dana Whitlock' || n === 'Ingrid Voss')),
+	// a box set is counted apart from the books
+	const both = demoBooks.filter(
+		b =>
+			!/^\d+-\d+$/.test(b.sn || '') &&
+			(b.e || []).some(ed => (ed.n || []).some(n => n === 'Dana Whitlock' || n === 'Ingrid Voss')),
 	).length;
 	const narrator = await boot({page: 'narrator.html', hash: '#n=Dana+Whitlock', storage});
 	const ingrid = databaseOf(storage)
