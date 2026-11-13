@@ -216,7 +216,7 @@ export let SEEN_REVISION: number | null = null; // the revision of the stored ca
 let DATABASE: CatalogDatabase | null = null;
 let SAVED: Snapshot = new Map(); // the records as this page last read or wrote them, so a save writes only what changed
 let SAVE_REFUSED = ''; // why nothing can be saved in this browser, when nothing can
-let SAVING: Promise<void> = Promise.resolve(); // the saves asked for, one after another
+let SAVING: Promise<boolean> = Promise.resolve(true); // the saves asked for, one after another
 let COUNTING: Promise<void> = Promise.resolve(); // what waits for the saves: the Duplicates link's count, and pages drawn again (afterSaving)
 let READING = Promise.resolve(); // the reads pages wait on (see reading())
 let STARTUP_NOTICE = '';
@@ -601,19 +601,20 @@ async function takeInNamesTyped(): Promise<void> {
  * Keep the catalog as the page holds it now. Saves are made one after another, and each writes only the
  * records that changed. When another page or tab saved meanwhile, what it changed is taken in first
  * (catchUp), so edits of different entries in different tabs all stay; when both changed the same entry,
- * nothing is saved. Pages need not wait for it; it says on the status line when a save fails.
+ * nothing is saved. Pages need not wait for it; it says on the status line when a save fails. Resolves to
+ * whether the catalog was kept, so a page that goes on (sends to a catalog, leaves) can stop instead.
  */
-export function persist(): Promise<void> {
+export function persist(): Promise<boolean> {
 	CATALOG.assignIds(); // a book or name just added has its id before the page draws it again
 	SAVING = SAVING.then(saveNow);
 	updateNav();
 	return SAVING;
 }
 
-async function saveNow() {
+async function saveNow(): Promise<boolean> {
 	if (!DATABASE) {
 		showIoStatus(SAVE_REFUSED, true);
-		return;
+		return false;
 	}
 	const unstorable = CatalogRecords.unstorable(CATALOG);
 	if (unstorable.length) {
@@ -624,7 +625,7 @@ async function saveNow() {
 			),
 			true,
 		);
-		return;
+		return false;
 	}
 	// another tab may save again while this page takes in its last save, so this page tries a few times
 	for (let tries = 1; ; tries++) {
@@ -635,11 +636,11 @@ async function saveNow() {
 				spell('Not saved: the catalog kept in this browser could not be read. Reload the page.'),
 				true,
 			);
-			return;
+			return false;
 		}
 		const records = recordsNow();
 		const changes = CatalogRecords.changes(SAVED, records);
-		if (!changes.count && SEEN_REVISION !== null) return;
+		if (!changes.count && SEEN_REVISION !== null) return true;
 		try {
 			const first = SEEN_REVISION === null;
 			const saved = await DATABASE.save(changes, SEEN_REVISION);
@@ -657,7 +658,7 @@ async function saveNow() {
 			}
 			if (first) setAsideOldCatalog();
 			if (WHOLE) await DATABASE.keepDuplicateCount(saved.revision, duplicateCount(CATALOG)).catch(() => {});
-			return;
+			return true;
 		} catch (e) {
 			if (!(e instanceof CatalogConflict)) {
 				// nothing else holds this catalog, so say so instead of losing the edit quietly
@@ -667,7 +668,7 @@ async function saveNow() {
 					),
 					true,
 				);
-				return;
+				return false;
 			}
 			const both = tries < 3 ? await catchUp() : [];
 			if (both) {
@@ -679,7 +680,7 @@ async function saveNow() {
 					),
 					true,
 				);
-				return;
+				return false;
 			}
 		}
 	}

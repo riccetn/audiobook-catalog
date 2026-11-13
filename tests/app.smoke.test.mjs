@@ -3633,6 +3633,29 @@ test('edits of different books in two tabs are both saved, and the same book edi
 	assert.equal((await kept(storage)).books[1].t, 'Again Here');
 });
 
+test('a save that is refused says so and goes no further: the Edit page stays, with what was not saved', async () => {
+	const files = {
+		'books.json': JSON.stringify([
+			{t: 'Moss 1', a: ['Bo Reed'], s: 'Moss Saga', sn: '1'},
+			{t: 'Moss 2', a: ['Bo Reed'], s: 'Moss Saga', sn: '2'},
+		]),
+	};
+	const edit = await bootEdit('Moss Saga', {files});
+	const {els, storage, run} = edit;
+	assert.equal(await run('persist()'), true, 'a save that is kept says so');
+	els.b0_t.value = 'Moss One';
+	els.b0_t.listeners.change[0]();
+	// another tab changes the same book meanwhile
+	const other = await boot({page: 'books.html', files: null, storage});
+	await other.run("CATALOG.books[0].title = 'Moss First'; persist();");
+	assert.equal(await saveEdit(edit), true);
+	assert.match(els.ioStatus.textContent, /^Not saved: "Moss One" changed in another tab too/);
+	assert.equal(edit.ctx.location.assigned ?? null, null, 'the page stays');
+	assert.equal(els.changeCount.textContent, '1 change', 'with the change not saved');
+	assert.equal((await kept(storage)).books[0].t, 'Moss First');
+	assert.equal(await run('persist()'), false);
+});
+
 test('merging keeps editions apart when asked, and books merged that way can be joined later', async () => {
 	const mine = JSON.stringify([
 		{

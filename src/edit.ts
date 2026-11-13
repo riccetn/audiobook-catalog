@@ -1774,7 +1774,8 @@ export async function save() {
 	// after the series' own info, which the panel replaces: these fill in only what it lacks
 	let infoIds = 0;
 	if (run) for (const source of INFO_PICKS) infoIds += run.keepInfoIds(source);
-	await persist();
+	// not saved: the status line says why, and the page stays, so neither that nor the changes are lost
+	if (!(await persist())) return;
 	parts.push(
 		...[
 			saved ? `saved ${Text.plural(saved, 'book')}` : '',
@@ -1828,8 +1829,7 @@ async function removeSeries() {
 		return;
 	}
 	CATALOG.removeEntry('series', id);
-	await persist();
-	location.replace('index.html');
+	if (await persist()) location.replace('index.html');
 }
 
 // ------------------------------------------------------------------ loading
