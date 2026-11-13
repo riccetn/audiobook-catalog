@@ -145,15 +145,22 @@ export function startServer({root = PUBLIC, port = 8000, host = '127.0.0.1', env
 
 /**
  * The server's variables: .dev.vars, then the environment; with a new key made and kept when there is none.
+ * @param {string} file the .dev.vars file
+ * @param {Record<string, string | undefined>} environment
  * @returns {{env: Record<string, string>, made: boolean}}
  */
-function devEnv() {
-	const vars = fs.existsSync(DEV_VARS) ? readDevVars(fs.readFileSync(DEV_VARS, 'utf8')) : {};
-	for (const name of ['SERVER_KEY', 'PROXY_KEY', 'ALLOWED_ORIGINS'])
-		if (process.env[name]) vars[name] = process.env[name];
+export function devEnv(file = DEV_VARS, environment = process.env) {
+	const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+	const vars = readDevVars(text);
+	for (const name of ['SERVER_KEY', 'PROXY_KEY', 'ALLOWED_ORIGINS']) {
+		const value = environment[name];
+		if (value) vars[name] = value;
+	}
 	if (vars.SERVER_KEY || vars.PROXY_KEY) return {env: vars, made: false};
 	vars.SERVER_KEY = crypto.randomBytes(24).toString('base64url');
-	fs.appendFileSync(DEV_VARS, `SERVER_KEY=${vars.SERVER_KEY}\n`);
+	// editors often save the last line without a newline, and the key must not be glued onto it
+	const apart = text && !text.endsWith('\n') ? '\n' : '';
+	fs.appendFileSync(file, `${apart}SERVER_KEY=${vars.SERVER_KEY}\n`);
 	return {env: vars, made: true};
 }
 

@@ -349,7 +349,7 @@ test('server: pages and servers from before still work: catalogs at the root, th
 });
 
 test('make serve: the pages from public/, everything else the server, with sync in SQLite', async t => {
-	const {startServer, publicFile, readDevVars, memoryCache} = await import('../server/serve.mjs');
+	const {startServer, publicFile, readDevVars, devEnv, memoryCache} = await import('../server/serve.mjs');
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'serve-'));
 	fs.mkdirSync(path.join(root, 'modules'));
 	fs.writeFileSync(path.join(root, 'index.html'), '<p>the app</p>');
@@ -393,6 +393,21 @@ test('make serve: the pages from public/, everything else the server, with sync 
 		SERVER_KEY: 'abc',
 		ALLOWED_ORIGINS: 'http://127.0.0.1:8000',
 	});
+	// a key made for a .dev.vars whose last line has no newline goes on a line of its own, and is found next time
+	const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-vars-'));
+	const vars = path.join(folder, '.dev.vars');
+	fs.writeFileSync(vars, 'ALLOWED_ORIGINS=https://books.example');
+	try {
+		const first = devEnv(vars, {});
+		assert.equal(first.made, true);
+		assert.equal(first.env.ALLOWED_ORIGINS, 'https://books.example');
+		assert.deepEqual(readDevVars(fs.readFileSync(vars, 'utf8')), first.env);
+		const again = devEnv(vars, {});
+		assert.equal(again.made, false);
+		assert.equal(again.env.SERVER_KEY, first.env.SERVER_KEY);
+	} finally {
+		fs.rmSync(folder, {recursive: true, force: true});
+	}
 	const cache = memoryCache();
 	const request = new Request('https://catalog.example/x');
 	await cache.put(request, new Response('kept', {headers: {'Cache-Control': 'public, max-age=60'}}));
