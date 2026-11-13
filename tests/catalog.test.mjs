@@ -1805,6 +1805,20 @@ test('ASINs by site: read from text, an ASIN without a site is audible.com\'s, a
 	assert.deepEqual(Edition.parseAsins('audible.com B1, audible.com B2').bad, ['audible.com B2']);
 	assert.deepEqual(Edition.parseAsins('audible.com').bad, ['audible.com']);
 	assert.deepEqual(Edition.parseAsins('kobo.com B1').bad, ['kobo.com']);
+	// a word is no ASIN, typed in the text or in a site's field, nor is more than ten letters and digits
+	assert.deepEqual(Edition.parseAsins('audible'), {asins: null, bad: ['audible']});
+	assert.deepEqual(Edition.parseAsins('audible.com none').bad, ['audible.com', 'none']);
+	assert.deepEqual(Edition.parse('ASIN none; Narrated by Cy Hale').bad, ['ASIN none']);
+	assert.deepEqual(Edition.fromFields({'ext:audible.com': 'none', n: 'Cy Hale'}).bad, ['ASIN audible.com none']);
+	assert.deepEqual(Edition.fromFields({'ext:amazon.com': 'B0ABCDEFG12'}).bad, ['ASIN amazon.com B0ABCDEFG12']);
+	assert.equal(ExternalCatalog.readId('Audible', 'edition', 'audible'), null);
+	assert.deepEqual(ExternalCatalog.readId('b0abcdefg1', 'edition', 'audible'), {
+		catalog: 'audible.com',
+		id: 'B0ABCDEFG1',
+	});
+	// but one stored from before, a hand-made catalog's, is kept, and passes the Check
+	assert.ok(ExternalCatalog.isId('audible.com', 'edition', 'BBOX'));
+	assert.deepEqual(ExternalCatalog.problems({'audible.com': 'BBOX'}, 'edition'), {errors: [], warnings: []});
 	// shown with Audible's sites first
 	assert.equal(
 		E({ext: {'amazon.com': 'B2', 'audible.co.uk': 'B1'}}).format(),

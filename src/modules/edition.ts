@@ -432,8 +432,9 @@ export class Edition {
 			const s = t.toLowerCase().replace(/^www\./, '');
 			return ExternalCatalog.ASIN_SITE.test(s) ? s : null;
 		};
-		// an ASIN is ten letters and digits; a shorter one, from a hand-made catalog, is taken as it is
-		const isAsin = (t: string) => /^[A-Za-z0-9]+$/.test(t);
+		// an ASIN is ten letters and digits (a shorter one, from a hand-made catalog, is taken as it is), at least
+		// one a digit, so a word ("none", "audible") is none
+		const isAsin = (t: string) => /^(?=[A-Za-z]*[0-9])[A-Za-z0-9]{1,10}$/.test(t);
 		for (let i = 0; i < tokens.length; i++) {
 			const t = tokens[i],
 				s = siteOf(t);

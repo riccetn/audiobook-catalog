@@ -51,6 +51,9 @@ export type ExternalId = {catalog: string; id: string};
 // "www." or "m." or neither, and whatever follows the id (a "?ref=…", a "#…") may be there or not.
 // In a pattern, "*" is any text within one part of the path and "**/" any number of parts.
 const ASIN = '[A-Za-z0-9]{10}',
+	// an edition's ASIN as typed: up to ten letters and digits (hand-made catalogs kept shorter ones), at least
+	// one a digit, so a word ("none", "audible") is none; a stored one may be any letters and digits (ANY_ASIN)
+	EDITION_ASIN = '(?=[A-Za-z]*[0-9])[A-Za-z0-9]{1,10}',
 	ANY_ASIN = '[A-Za-z0-9]+';
 const NUMBER = '\\d+';
 const SLUG = '[A-Za-z0-9][A-Za-z0-9-]*';
@@ -100,7 +103,7 @@ function audible(site: string): CatalogDefinition {
 		description: `Audible's store at ${site}: an edition's, series' or author's ASIN; narrators and publishers by name (Audible searches for them)`,
 		kinds: {
 			edition: {
-				id: ASIN,
+				id: EDITION_ASIN,
 				upper: true,
 				stored: ANY_ASIN,
 				url: `${at}/pd/{id}`,
@@ -124,7 +127,7 @@ function amazon(site: string): CatalogDefinition {
 		description: `Amazon's store at ${site}: an edition's or author's ASIN`,
 		kinds: {
 			edition: {
-				id: ASIN,
+				id: EDITION_ASIN,
 				upper: true,
 				stored: ANY_ASIN,
 				url: `${at}/dp/{id}`,
@@ -357,6 +360,14 @@ function patternOf(pattern: KindPattern, id: string): KindPattern | null {
 	return null;
 }
 
+/**
+ * Whether an id is one as the catalog gives them (a kind's own pattern, or its fallback), not merely one
+ * kept from before (`stored`).
+ */
+function typedOf(pattern: KindPattern, id: string): boolean {
+	return [pattern, pattern.fallback].some(of => of && new RegExp(`^(?:${of.id})$`, of.upper ? 'i' : '').test(id));
+}
+
 /** each catalog's and kind's patterns, compiled once */
 const COMPILED: Map<string, {re: RegExp; query: boolean}[]> = new Map();
 
@@ -553,7 +564,8 @@ export class ExternalCatalog {
 			def = BY_KEY.get(key),
 			pattern = def && def.kinds[kind];
 		const id = pattern && pattern.upper ? value.toUpperCase() : value;
-		return ExternalCatalog.isId(key, kind, id) ? {catalog: key, id} : null;
+		// typed, it must be an id as the catalog gives them, not merely one a stored entry may keep (a short ASIN)
+		return pattern && typedOf(pattern, id) ? {catalog: key, id} : null;
 	}
 
 	/**
