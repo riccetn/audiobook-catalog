@@ -156,6 +156,10 @@ npm install   # once: also installs TypeDoc
 make docs     # write api-docs/out/ (make docs API_DOCS=<folder> for another one; .\make.ps1 docs -Out <folder>)
 ```
 
+`make clean` (`.\make.ps1 clean`) deletes what `make pages` and `make docs` wrote: the pages, the compiled scripts and
+their source maps, `public/sw-app.js`, `public/vendor/`, `api-docs/out/` and `public/api/`. The files committed in
+`public/` stay. A folder you gave `make docs` with `API_DOCS=` is yours to delete.
+
 - The settings are `api-docs/typedoc.json`: the entry points are `src/*.ts` (but `sw.ts`) and `src/modules/*.ts`,
   read with `tsconfig.json`. A comment shows up there as it is written, so the doc comments on exported functions and
   classes are what the documentation says about them.

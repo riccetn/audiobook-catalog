@@ -1,7 +1,7 @@
-# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, format, format-check, docs, serve, deploy-server or help.
+# The Makefile's commands for Windows, where make is usually missing: .\make.ps1 check, pages, test, typecheck, lint, format, format-check, docs, clean, serve, deploy-server or help.
 # Keep the two in step: a command added to one belongs in the other.
 param(
-	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'format', 'format-check', 'docs', 'serve', 'deploy-server')]
+	[ValidateSet('help', 'check', 'pages', 'test', 'typecheck', 'lint', 'format', 'format-check', 'docs', 'clean', 'serve', 'deploy-server')]
 	[string]$Command = 'help',
 	[int]$Port = 8000,
 	[string]$Bind = '127.0.0.1',
@@ -37,6 +37,7 @@ switch ($Command) {
 		'format        - format the code, JSON, Markdown and YAML with Prettier (the pre-commit hook does this to what you commit)'
 		'format-check  - check that everything is formatted as Prettier would (format fixes it)'
 		'docs          - write the API documentation from the code''s doc comments into api-docs/out/ with TypeDoc (run `npm install` once first; -Out for another folder)'
+		'clean         - delete what pages and docs write: the pages, the compiled scripts, public/vendor/ and the API docs (api-docs/out/, and public/api/ from the Pages workflow)'
 		'serve         - open the app at http://localhost:8000/ with its server: the catalog proxy and sync, kept in SQLite (-Port, -Bind 0.0.0.0 for your network)'
 		'deploy-server - deploy the app''s server to Cloudflare with its sync database, serving the pages too (npx wrangler login once first)'
 	}
@@ -93,6 +94,13 @@ switch ($Command) {
 			exit 1
 		}
 		Invoke-Native 'node' @($typedoc, '--options', 'api-docs/typedoc.json', '--out', $Out)
+	}
+	'clean' {
+		# What .gitignore lists as written by make pages and make docs; the committed files in public/ stay.
+		$written = @('public/*.html', 'public/*.js', 'public/*.js.map', 'public/modules', 'public/vendor', 'public/api', 'api-docs/out')
+		foreach ($path in $written) {
+			if (Test-Path $path) { Remove-Item $path -Recurse -Force }
+		}
 	}
 	'serve' {
 		& $PSCommandPath pages

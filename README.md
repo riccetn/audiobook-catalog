@@ -20,11 +20,12 @@ make typecheck   # check the types (TypeScript) without compiling
 make lint     # look for likely mistakes (ESLint, typescript-eslint)
 make check    # everything CI runs: test, typecheck, lint and the format check
 make docs     # the API documentation (TypeDoc) in api-docs/out/; published at <site>/api/ beside the app
+make clean    # delete what make pages and make docs wrote
 make serve    # the app at http://localhost:8000/, with your server (catalog proxy and sync) beside it
 make help
 ```
 
-On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `lint`, `docs`, `serve`, `help`) runs the same commands in PowerShell.
+On Windows without make, `.\make.ps1 test` (or `check`, `pages`, `typecheck`, `lint`, `docs`, `clean`, `serve`, `help`) runs the same commands in PowerShell.
 
 ## Start your own catalog
 

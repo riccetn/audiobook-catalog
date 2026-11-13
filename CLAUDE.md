@@ -55,13 +55,14 @@ make format     # prettier --write . (.prettierrc.json, .prettierignore); needs 
 make format-check  # prettier --check ., what make check runs
 make check      # test, typecheck, lint and format-check, what CI runs; run it before a PR
 make docs       # TypeDoc: the API documentation from the doc comments, into api-docs/out/ (git-ignored; API_DOCS=<folder> for another)
+make clean      # delete what make pages and make docs wrote (the git-ignored pages, scripts, public/vendor/, public/api/ and api-docs/out/)
 make deploy-server  # node server/deploy.mjs: deploy the server (proxy and sync) with its sync D1 database, found by name the first time; the id only in the git-ignored server/wrangler.deploy.toml, which later deploys read it from
 make serve      # make pages, then node server/serve.mjs: public/ and the server on http://127.0.0.1:8000/ (PORT=, HOST=; key in server/.dev.vars, sync in server/.local/sync.sqlite)
 node --test tests/catalog.test.mjs            # one suite (it runs the compiled public/, so make pages after editing src/ or a template) (the smoke test needs --experimental-vm-modules too)
 node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
 ```
 
-On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `serve` (`-Port`, `-Bind`), `deploy-server`, `help`) runs the same commands;
+On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `clean`, `serve` (`-Port`, `-Bind`), `deploy-server`, `help`) runs the same commands;
 keep `make.ps1` in step with the `Makefile` when a command changes.
 
 ESLint looks for mistakes, not formatting, with its recommended rules as they are: a catch that doesn't use the error is

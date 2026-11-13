@@ -7,7 +7,7 @@ PRETTIER ?= node_modules/.bin/prettier
 TYPEDOC ?= node_modules/.bin/typedoc
 API_DOCS ?= api-docs/out
 
-.PHONY: help check pages test typecheck lint format format-check docs serve deploy-server
+.PHONY: help check pages test typecheck lint format format-check docs clean serve deploy-server
 
 help:            ## list the available commands
 	@grep -E "^[a-z-]+:.*##" $(MAKEFILE_LIST) | sed "s/:.*##/ -/"
@@ -42,6 +42,9 @@ format-check:    ## check that everything is formatted as Prettier would (run `m
 docs:            ## write the API documentation from the code's doc comments into api-docs/out/ with TypeDoc (run `npm install` once first)
 	@test -x $(TYPEDOC) || { echo 'TypeDoc is not installed: run npm install first'; exit 1; }
 	$(TYPEDOC) --options api-docs/typedoc.json --out $(API_DOCS)
+
+clean:           ## delete what make pages and make docs write: the pages, the compiled scripts, public/vendor/ and the API docs (api-docs/out/, and public/api/ from the Pages workflow)
+	rm -rf public/*.html public/*.js public/*.js.map public/modules public/vendor public/api api-docs/out
 
 serve: pages     ## open the app at http://localhost:8000/ with its server: the catalog proxy and sync, kept in SQLite (server/serve.mjs; HOST=0.0.0.0 for your network)
 	PORT=$(PORT) HOST=$(HOST) $(NODE) --disable-warning=ExperimentalWarning server/serve.mjs
