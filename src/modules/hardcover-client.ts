@@ -6,6 +6,7 @@ import {Text, PhraseError} from './text.js';
 import {CatalogClient} from './catalog-client.js';
 import type {Unchecked, Phrase} from './text.js';
 import type {Step, CatalogFetch, Pause} from './catalog-client.js';
+import type {ExternalKind} from './external-catalog.js';
 /** your ids to find on Hardcover */
 export type HardcoverLookups = {hc?: unknown[]; asin?: unknown[]; isbn?: unknown[]; gr?: unknown[]};
 /**
@@ -32,6 +33,7 @@ export class HardcoverClient extends CatalogClient {
 	static LABEL = 'Hardcover';
 	static ID = HARDCOVER_ID;
 	static KEY_NAME = 'API token';
+	static KEY_WORD = 'token';
 	static KEY_STORAGE = 'audiobook-catalog-hardcover-token';
 	static KEY_HELP =
 		'Paste an API token from hardcover.app/account/api (scopes read:me, read:catalog, read:library and write:library) and save it; it is kept in this browser only (never in a backup).';
@@ -395,6 +397,22 @@ export class HardcoverClient extends CatalogClient {
 			.trim()
 			.replace(/^bearer\s+/i, '')
 			.trim();
+	}
+
+	/**
+	 * CatalogClient.lookupId for Hardcover: a book by the address of its page or of one of its editions' (bookId),
+	 * a series, author, narrator or publisher by the name in its page's address (idBySlug).
+	 */
+	static async lookupId(
+		client: CatalogClient,
+		kind: ExternalKind,
+		text: string,
+	): Promise<{id: string; name?: string} | null> {
+		const hardcover = client as HardcoverClient;
+		if (kind === 'edition') return null;
+		if (kind !== 'book') return HardcoverClient.idBySlug(hardcover, kind, text);
+		const found = await HardcoverClient.bookId(hardcover, text);
+		return {id: found.id, name: found.title};
 	}
 
 	/**

@@ -32,7 +32,7 @@ import {
 	linksField,
 	webLinks,
 } from './id-fields.js';
-import {lookupHardcoverField} from './connections.js';
+import {lookupIdFields} from './connections.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
 import {setAddress, nameLinks, authorLinks, statusTag, totalText} from './book-list.js';
 import type {CreditKind} from './credit-kinds.js';
@@ -332,13 +332,13 @@ const showFormError = (text: string) => {
 async function saveCreditForm() {
 	const id = EDITING;
 	if (id === null) return;
-	// a Hardcover address is looked up for its number first, unless the form is closed or moved meanwhile
-	const lookup = lookupHardcoverField('cf_ext_', KIND.one);
-	const hardcover = lookup ? await lookup : {error: '', note: ''};
+	// an address that holds a name is looked up on its catalog for the id first, unless the form is closed or moved meanwhile
+	const lookup = lookupIdFields('cf_ext_', KIND.one);
+	const looked = lookup ? await lookup : {error: '', note: ''};
 	if (EDITING !== id) return;
 	// they may have been renamed in another tab meanwhile, so their name is read now
 	const name = nameOf(id);
-	if (hardcover.error) return showFormError(hardcover.error);
+	if (looked.error) return showFormError(looked.error);
 	const newName = Text.tidy(fieldById('cf_name').value);
 	if (!newName) return showFormError(spell(KIND.texts.noName));
 	// the Edit page reads names as a list: a publisher's parted by commas alone, as "&" is part of many a name
@@ -405,7 +405,7 @@ async function saveCreditForm() {
 	const saved = renamed
 		? spell('Renamed {name} to {newName} on {books}.', {name, newName, books: plural(count, 'book')})
 		: spell('Saved {name}.', {name: newName});
-	showIoStatus(hardcover.note ? spell('{saved} {note}', {saved, note: hardcover.note}) : saved);
+	showIoStatus(looked.note ? spell('{saved} {note}', {saved, note: looked.note}) : saved);
 }
 
 /**

@@ -5,23 +5,47 @@ import type {Edition} from './edition.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
+import {ExternalCatalog} from './external-catalog.js';
+import type {FamilyDefinition} from './external-catalog.js';
 
-// "Goodreads 12345" (or "GR 12345"): a Goodreads book id, which needs its prefix to tell it from an ASIN.
-const GOODREADS_ENTRY = /^(?:goodreads|gr)(?:\s+id)?:?\s*(\d+)$/i;
-// "Hardcover 12345": a Hardcover edition id.
-const HARDCOVER_ENTRY = /^hardcover(?:\s+id)?:?\s*(\d+)$/i;
 // "Edition B0…", "Edition ISBN 978…", "Edition Goodreads 4242", "Edition Hardcover 601": one edition, not its book.
 const EDITION_ENTRY = /^edition:?\s+(.+)$/i;
-// An ASIN: letters and digits only (stored ones may be shorter than Amazon's ten), kept in capitals.
-const ASIN_ENTRY = /^[A-Za-z0-9]+$/;
+
+/** How the list reads the ids of one family of catalogs (ExternalCatalog.EXCLUDING). */
+interface EntryReader {
+	family: string;
+	/** what an entry writes before the id; '' when the id stands alone */
+	name: string;
+	/** reads a line (its first group the id) */
+	entry: RegExp;
+	/** reads what follows "Edition" */
+	edition: RegExp;
+	upper: boolean;
+}
+// An id with its catalog's name before it ("Goodreads 12345", or "GR 12345": the name tells it from an id that
+// stands alone), and an id alone on its line (an ASIN: letters and digits only, kept in capitals).
+const READERS: EntryReader[] = ExternalCatalog.EXCLUDING.map(family => {
+	const of = family.exclusion as NonNullable<FamilyDefinition['exclusion']>;
+	const before = of.name
+		? `(?:${[of.name, ...(of.also || [])].map(Text.escapeRegExp).join('|')})(?:\\s+id)?:?\\s*`
+		: '';
+	return {
+		family: family.key,
+		name: of.name,
+		entry: new RegExp(`^${before}(${of.id})$`, 'i'),
+		edition: new RegExp(`^${before}(${of.edition || of.id})$`, 'i'),
+		upper: !!of.upper,
+	};
+});
+const NAMED = READERS.filter(r => r.name),
+	ALONE = READERS.filter(r => !r.name);
 
 /** Books that imports must never re-add (because you removed them on purpose). */
 export class Exclusions {
-	ids: Set<string>;
+	/** the edition ids kept out, by their family (ExternalCatalog.family: "asin", "goodreads") */
+	ids: Map<string, Set<string>>;
 	titles: Set<string>;
 	isbns: Set<string>;
-	grs: Set<string>;
-	hcs: Set<string>;
 	/** the editions kept out, by Edition.idAndIsbnKeys() ("asin B0…", "isbn 978…", "goodreads 4242") */
 	editions: Set<string>;
 	lines: Map<string, string>;
@@ -29,11 +53,9 @@ export class Exclusions {
 	unreadable: Set<string>;
 
 	constructor() {
-		this.ids = new Set();
+		this.ids = new Map();
 		this.titles = new Set(); // key(norm(title), first author)
 		this.isbns = new Set(); // 13-digit ISBNs
-		this.grs = new Set(); // Goodreads book ids
-		this.hcs = new Set(); // Hardcover edition ids
 		this.editions = new Set();
 		this.lines = new Map(); // key -> the entry as written in the exclusions list
 		this.unreadable = new Set();
@@ -63,18 +85,13 @@ export class Exclusions {
 		if (edition && Exclusions.editionKey(edition[1])) return this.addEdition(edition[1]);
 		const bar = line.indexOf('|');
 		if (bar < 0) {
-			const gr = GOODREADS_ENTRY.exec(line);
-			if (gr) {
-				if (this.grs.has(gr[1])) return null;
-				this.grs.add(gr[1]);
-				this.lines.set(Text.key('gr', gr[1]), (line = `Goodreads ${gr[1]}`));
-				return line;
-			}
-			const hc = HARDCOVER_ENTRY.exec(line);
-			if (hc) {
-				if (this.hcs.has(hc[1])) return null;
-				this.hcs.add(hc[1]);
-				this.lines.set(Text.key('hc', hc[1]), (line = `Hardcover ${hc[1]}`));
+			for (const reader of NAMED) {
+				const m = reader.entry.exec(line);
+				if (!m) continue;
+				const id = reader.upper ? m[1].toUpperCase() : m[1];
+				if (this.has(reader.family, id)) return null;
+				this.idsOf(reader.family).add(id);
+				this.lines.set(Text.key('id', reader.family, id), (line = `${reader.name} ${id}`));
 				return line;
 			}
 			const isbn = Isbn.parse(line);
@@ -84,12 +101,13 @@ export class Exclusions {
 				this.lines.set(Text.key('isbn', isbn), (line = `ISBN ${isbn}`));
 				return line;
 			}
-			if (!ASIN_ENTRY.test(line)) return this.addUnreadable(line);
-			line = line.toUpperCase();
-			if (this.ids.has(line) && (!isbn || this.isbns.has(isbn))) return null;
-			this.ids.add(line);
+			const alone = ALONE.find(reader => reader.entry.test(line));
+			if (!alone) return this.addUnreadable(line);
+			if (alone.upper) line = line.toUpperCase();
+			if (this.has(alone.family, line) && (!isbn || this.isbns.has(isbn))) return null;
+			this.idsOf(alone.family).add(line);
 			if (isbn) this.isbns.add(isbn);
-			this.lines.set(Text.key('id', line), line);
+			this.lines.set(Text.key('id', alone.family, line), line);
 			return line;
 		}
 		const title = line.slice(0, bar).trim(),
@@ -102,6 +120,20 @@ export class Exclusions {
 		if (split && split[0]) this.titles.add(Text.key(Text.norm(split[0]), Book.firstAuthor(author)));
 		this.lines.set(k, (line = `${title} | ${author}`));
 		return line;
+	}
+
+	/** The ids of a family kept out, to add to. */
+	private idsOf(family: string): Set<string> {
+		let ids = this.ids.get(family);
+		if (!ids) this.ids.set(family, (ids = new Set()));
+		return ids;
+	}
+
+	/**
+	 * Whether an edition id of a family (ExternalCatalog.family) is kept out, as the list writes it.
+	 */
+	has(family: string, id: string): boolean {
+		return !!this.ids.get(family)?.has(id);
 	}
 
 	/**
@@ -121,14 +153,24 @@ export class Exclusions {
 	 * What follows "Edition" read: its key among `editions` and how the entry shows it; null when it is no id.
 	 */
 	static editionKey(id: string): {key: string; shown: string} | null {
-		const gr = GOODREADS_ENTRY.exec(id),
-			hc = HARDCOVER_ENTRY.exec(id),
-			isbn = Isbn.parse(id);
-		if (gr) return {key: `goodreads ${gr[1]}`, shown: `Goodreads ${gr[1]}`};
-		if (hc) return {key: `hardcover ${hc[1]}`, shown: `Hardcover ${hc[1]}`};
+		const isbn = Isbn.parse(id);
+		const read = (reader: EntryReader) => {
+			const m = reader.edition.exec(id),
+				value = m && (reader.upper ? m[1].toUpperCase() : m[1]);
+			return value
+				? {key: `${reader.family} ${value}`, shown: reader.name ? `${reader.name} ${value}` : value}
+				: null;
+		};
+		for (const reader of NAMED) {
+			const found = read(reader);
+			if (found) return found;
+		}
 		if (isbn && (/^isbn/i.test(id) || !/^[\dX]{10}$/i.test(id)))
 			return {key: `isbn ${isbn}`, shown: `ISBN ${isbn}`};
-		if (/^[\dA-Z]{10}$/i.test(id)) return {key: `asin ${id.toUpperCase()}`, shown: id.toUpperCase()};
+		for (const reader of ALONE) {
+			const found = read(reader);
+			if (found) return found;
+		}
 		return null;
 	}
 
@@ -148,12 +190,9 @@ export class Exclusions {
 	 */
 	static editionEntries(ed: Edition): string[] {
 		const out = new Exclusions();
-		const entries = [
-			...ed.ids('asin'),
-			...ed.isbns().map(isbn => `ISBN ${isbn}`),
-			...ed.ids('goodreads').map(gr => `Goodreads ${gr}`),
-			...ed.ids('hardcover').map(hc => `Hardcover ${hc}`),
-		];
+		const of = (readers: EntryReader[]) =>
+			readers.flatMap(r => ed.ids(r.family).map(id => (r.name ? `${r.name} ${id}` : id)));
+		const entries = [...of(ALONE), ...ed.isbns().map(isbn => `ISBN ${isbn}`), ...of(NAMED)];
 		return entries.map(id => out.addEdition(id)).filter((line): line is string => line !== null);
 	}
 
@@ -187,9 +226,7 @@ export class Exclusions {
 	 */
 	covers(book: Book): boolean {
 		return (
-			book.ids('asin').some(id => this.ids.has(id.toUpperCase())) ||
-			book.ids('goodreads').some(gr => this.grs.has(gr)) ||
-			book.ids('hardcover').some(hc => this.hcs.has(hc)) ||
+			READERS.some(r => book.ids(r.family).some(id => this.has(r.family, r.upper ? id.toUpperCase() : id))) ||
 			(Text.norm(book.title) !== '' && this.titles.has(Text.key(Text.norm(book.title), book.authorKey()))) ||
 			book.isbns().some(isbn => this.isbns.has(isbn))
 		);

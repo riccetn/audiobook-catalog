@@ -72,10 +72,17 @@ export class Validator {
 		// a test's catalog may be its books alone
 		for (const line of catalog.exclusions?.unreadable ?? [])
 			problems.warnings.push(
-				P(
-					'exclusions: {line} is not an ASIN, "ISBN 978…", "Goodreads 12345", "Hardcover 12345" or "Title | Author", so it keeps nothing out',
-					{line: repr(line)},
-				),
+				P('exclusions: {line} is not an id ({ids}) or "Title | Author", so it keeps nothing out', {
+					line: repr(line),
+					// as the list writes each: an id alone by what it is called, one with its catalog's name before it
+					ids: [
+						...ExternalCatalog.EXCLUDING.filter(f => !f.exclusion?.name).map(f => f.idName),
+						'"ISBN 978…"',
+						...ExternalCatalog.EXCLUDING.filter(f => f.exclusion?.name).map(
+							f => `"${f.exclusion?.name} 12345"`,
+						),
+					].join(', '),
+				}),
 			);
 		return problems;
 	}
@@ -100,9 +107,7 @@ export class Validator {
 		// an external id ("asin B0…", "goodreads 4242") -> the first edition seen with it; a box set is one edition on several titles
 		const seen = new Map();
 		const nameOf: (family: string, id: string) => Phrase = (family, id) =>
-			family === 'asin'
-				? P('ASIN {id}', {id})
-				: P('{catalog} id {id}', {catalog: ExternalCatalog.name(family), id});
+			P('{name} {id}', {name: ExternalCatalog.idName(family), id});
 		books.forEach((b, i) => {
 			const label = isObj(b)
 				? P('book #{i} ({title})', {i, title: repr(b.t === undefined ? '?' : b.t)})
@@ -189,7 +194,11 @@ export class Validator {
 						errors.push(
 							about(label, 'duplicate {id} (also {other})', {id: nameOf(family, v), other: other.label}),
 						);
-					else if (family === 'asin' || !ed.ids('asin').length || !other.ed.ids('asin').length) {
+					else if (
+						ExternalCatalog.familyOf(family).sites ||
+						!ed.siteIds().length ||
+						!other.ed.siteIds().length
+					) {
 						// a box set's edition on each of its titles: fine, as long as the copies agree (on more than their id)
 						const values: (x: Unchecked) => string = x => {
 							const rest = Edition.order(Edition.tidyJSON(x));
@@ -254,7 +263,7 @@ export class Validator {
 		for (const name of sortedSeries) {
 			if (new RegExp('\\(' + 'books?' + '(?![\\p{L}\\p{N}_])', 'iu').test(name)) {
 				warnings.push(
-					P('series name {name} looks like leftover Audible markup (several series joined together?)', {
+					P('series name {name} looks like leftover markup of an export (several series joined together?)', {
 						name: repr(name),
 					}),
 				);

@@ -88,9 +88,13 @@ key a token), `KEY_STORAGE` (where this browser keeps it), `KEY_HELP`, whether n
 and whether it is asked through the catalog proxy (`VIA_PROXY`); `connections.ts` reads and saves every key the same way
 (`savedKey`, `saveKey`, `catalogClient`). Besides the class:
 
-- its ids and addresses go in `ExternalCatalog` (as before), and a proxied API's route in `server/proxy.ts`;
-- an export file's or a shelf sync's panel goes in `templates/pages/import.liquid`, its ids starting with the class's
-  `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`; a shelf sync's panel is `{% render 'shelf-panel', ... %}`).
+- its ids and addresses go in `ExternalCatalog` (`external-catalog.ts`), with what its ids can do (below), and a
+  proxied API's route in `server/proxy.ts`;
+- its panel on Import & export is written by `make pages` from the classes themselves (`CatalogConnectors.panels()`,
+  which `build.mjs` hands `templates/pages/import.liquid`): an importer's `SITES`, `PANEL_TITLE` and `PANEL_NOTE`, an
+  exporter's `PANEL_TITLE` and `PANEL_NOTE`, a shelf sync's `PANEL_NOTE`, its client's `KEY_NAME` and `KEY_WORD`. The
+  panel's ids start with the class's `CATALOG` (`<catalog>ImportBtn`, `<catalog>ExportBtn`, `<catalog>CompareBtn`),
+  which is how `import.ts` finds them. No template names a catalog.
 - a catalog without shelves of yours can still compare a series: `AudibleSync` plans nothing (`plan` is null), its
   client has no `KEY_STORAGE` (so `CatalogConnectors.CLIENTS` leaves it out), `PARTS` says it compares only
   series, and `EVERY_BOOK` is false, so its panel on Import & export has no Compare row.
@@ -98,6 +102,30 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `connections.ts
   (`edit-catalogs.ts`, `BookReview`), with nothing more to write.
 
 `tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone.
+
+### What a catalog's ids can do
+
+Nothing outside `external-catalog.ts`, `catalog-connectors.ts` and a catalog's own classes (`*-client.ts`,
+`*-source.ts`, `*-importer.ts`, `*-exporter.ts`, `*-sync.ts`) names a catalog: the rest of the app asks
+`ExternalCatalog` what a catalog's ids can do, and the answer is data in its definition. So a catalog is added or
+removed by editing `external-catalog.ts`, and, when the app reads or writes it, its classes and their line in
+`catalog-connectors.ts` (a list of its own, as every page loads `external-catalog.ts` and only two load the classes).
+
+| In the definition                                         | What it says                                                                          | Asked with                                                | Used by                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------- |
+| a family's `sites` (`FAMILIES`)                           | its ids are one edition's on several sites (ASINs), shown as one part, a field a site | `siteFamily(key)`, `SITE_FAMILIES`, `Edition.siteIds()`   | `Edition`, `Validator`, `CatalogStats`   |
+| a family's `idName`                                       | what one of its ids is called ("ASIN", "Goodreads id")                                | `idName(family)`                                          | the merge report, Check, lookups         |
+| a family's `exclusion`                                    | its edition ids keep books out of imports, and how the list writes them               | `EXCLUDING`, `exclusionEntry(family, id)`                 | `Exclusions`, `Book.exclusionEntries`    |
+| a family's `mark`                                         | what a "Keep separate" mark writes before its ids                                     | `markPrefix(family)`                                      | `Duplicates`                             |
+| a catalog's `matchesBooks`                                | a book's own id there finds the book in an import                                     | `BOOK_MATCHING`                                           | `Merger`                                 |
+| a catalog's `lookups`                                     | the kinds whose id its client can be asked for (`CatalogClient.lookupId`)             | `looksUp(key, kind)`, `CatalogConnectors.client(catalog)` | `connections.ts`, the forms' id fields   |
+| a catalog's `cover`                                       | where its covers are: by an edition's id, by ISBN, or by a key the edition keeps      | `coverOf(key)`                                            | `Cover`                                  |
+| a catalog's `alias`                                       | another word an edition's text names it by ("gr")                                     | `byLabel(label)`                                          | `Edition.parse`                          |
+| a group's `mark`, `color`, `favicon`                      | its icon                                                                              | `groupOf(key)`                                            | the Edit page's `catalogIcon`            |
+| `oldField` (a catalog's, a family's), a group's `oldLink` | where records from before ids were kept by catalog had its ids                        | `oldIds(record)`, `OLD_LINKS`                             | `CatalogRecords`, `Contributor.fixLinks` |
+
+`BackupV1` (backups from before version 2) still names the catalogs of its time: it is the old format, kept apart
+so it can be dropped whole. The server's proxy routes (`server/proxy.ts`) are its own list, as it is deployed apart.
 
 ## Tests
 

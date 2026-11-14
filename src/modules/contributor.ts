@@ -17,9 +17,9 @@ export interface ContributorInit {
 	links?: string[];
 }
 
-// Before ids were kept by external catalog, an entry kept the address of its page on Audible, Goodreads
-// and Hardcover under keys of their own; fixLinks() reads the id out of each.
-const OLD_LINKS: Record<string, string> = {audible: 'audible', goodreads: 'goodreads', hardcover: 'hardcover'};
+// Before ids were kept by external catalog, an entry kept the address of its page in some catalogs (Audible,
+// Goodreads and Hardcover) under keys of their own, the catalogs' groups'; fixLinks() reads the id out of each.
+const OLD_LINKS = ExternalCatalog.OLD_LINKS;
 
 /** An author, narrator or publisher and what you keep about them. */
 export class Contributor {
@@ -141,7 +141,7 @@ export class Contributor {
 	 * one `ext` has, is not lost: it goes on the entry's other links.
 	 */
 	static fixLinks(entry: Unchecked, kind: ContributorKind): Unchecked {
-		if (!Text.isObject(entry) || !Object.keys(OLD_LINKS).some(k => k in entry)) return entry;
+		if (!Text.isObject(entry) || !OLD_LINKS.some(k => k in entry)) return entry;
 		if (
 			(entry.ext !== undefined && !Text.isObject(entry.ext)) ||
 			(entry.links !== undefined && !Array.isArray(entry.links))
@@ -151,7 +151,7 @@ export class Contributor {
 		const ext: Record<string, unknown> = {...(entry.ext || {})};
 		const links: unknown[] = [...(entry.links || [])];
 		for (const [k, v] of Object.entries(entry)) {
-			if (!(k in OLD_LINKS)) {
+			if (!OLD_LINKS.includes(k)) {
 				if (k !== 'ext' && k !== 'links') out[k] = v;
 				continue;
 			}
@@ -160,7 +160,7 @@ export class Contributor {
 				continue;
 			}
 			if (!v.trim()) continue;
-			const found = ExternalCatalog.fromAddress(v, Contributor.ONE[kind], ExternalCatalog.keysOf(OLD_LINKS[k]));
+			const found = ExternalCatalog.fromAddress(v, Contributor.ONE[kind], ExternalCatalog.keysOf(k));
 			if (found && (ext[found.catalog] === undefined || ext[found.catalog] === found.id))
 				ext[found.catalog] = found.id;
 			else if (!links.includes(v.trim())) links.push(v.trim());

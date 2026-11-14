@@ -183,14 +183,13 @@ const idLink: (catalog: string, kind: 'book' | 'edition', id: string) => Child =
 };
 
 /**
- * An edition's parts as a details list's rows (Edition.parts()), with each ASIN linking to the book on its
- * site, and its other external ids to the book there (Hardcover's links by id keep working when it renames
- * the book); its description heads it instead.
+ * An edition's parts as a details list's rows (Edition.parts()), with each id several sites share (an ASIN) linking
+ * to the book on its site, and its other external ids to the book there; its description heads it instead.
  */
 function editionRows(ed: Edition): [string, Child][] {
-	const asins = () =>
+	const siteIds = (family: string) =>
 		joined(
-			ed.asinList().map(([site, asin]) => [site + ' ', idLink(site, 'edition', asin)]),
+			ed.siteIds(family).map(([site, id]) => [site + ' ', idLink(site, 'edition', id)]),
 			', ',
 		);
 	return ed
@@ -198,8 +197,8 @@ function editionRows(ed: Edition): [string, Child][] {
 		.filter(([k]) => k !== 'desc')
 		.map(([k, label, value]) => [
 			spell(label),
-			k === 'asin'
-				? asins()
+			k.startsWith('sites:')
+				? siteIds(k.slice(6))
 				: k === 'n'
 					? narratorLinks(ed.narrators)
 					: k === 'p'

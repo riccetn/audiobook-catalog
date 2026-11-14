@@ -19,6 +19,9 @@ export class GoodreadsImporter extends FileImporter {
 	// a Goodreads book is an edition, with the title it was published under
 	static EDITION_TITLES = true;
 	static AUDIO_BINDINGS = AUDIO_BINDINGS;
+	static PANEL_TITLE = 'Compare the read audiobooks in a Goodreads library export CSV with this catalog';
+	static PANEL_NOTE =
+		"Shows the read audiobooks in a Goodreads library export beside this catalog's, to pick what to take.";
 
 	readRow(row: CsvRow, result: ReadResult) {
 		if (!AUDIO_BINDINGS.has(cell(row, 'Binding'))) return;

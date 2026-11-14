@@ -142,7 +142,7 @@ export function render() {
 				'p',
 				{class: 'hint'},
 				spell(
-					'How many have an id in each catalog. A book counts its editions’ ids too, and every Audible or Amazon site counts as one.',
+					'How many have an id in each catalog. A book counts its editions’ ids too, and the sites of one catalog count as one.',
 				),
 			),
 			catalogTable(stats.byCatalog(), sections),

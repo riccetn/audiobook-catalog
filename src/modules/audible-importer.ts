@@ -24,6 +24,11 @@ export class AudibleImporter extends FileImporter {
 	static EDITIONS_YOURS = true;
 	static EDITION_TITLES = true;
 	static SAMPLE_ASINS = SAMPLE_ASINS;
+	static SITES = Object.values(ExternalCatalog.AUDIBLE_STORES);
+	static PANEL_TITLE = 'Compare the finished books in an Audible Library Extractor CSV with this catalog';
+	static PANEL_NOTE =
+		"Shows the finished books in an Audible Library Extractor CSV beside this catalog's, to pick what to take. " +
+		"Pick the Audible site the export is from first: its ASINs are that site's. (Audible can't import a list of books, so there is no export.)";
 
 	/** @param site the Audible site whose ASINs the export has (audible.com unless said) */
 	constructor(site?: string) {

@@ -12,6 +12,7 @@ import type {NameIds} from './modules/catalog.js';
 import {Backup, NewerBackup, UnreadableBackup} from './modules/backup.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
+import {ExternalCatalog} from './modules/external-catalog.js';
 import {Comparison} from './modules/comparison.js';
 import {WrongPassphrase, UnrelatedCatalogs} from './modules/catalog-sync.js';
 import {DeviceSetup} from './modules/device-setup.js';
@@ -963,9 +964,11 @@ function appliedText(
 	infoIds: number = 0,
 ): string {
 	const filled: [Book[], (n: number) => string][] = [
-		[report.backfilled, n => spell('filled in {asins}', {asins: plural(n, 'ASIN')})],
-		[report.goodreadsFilled, n => spell('filled in {ids}', {ids: plural(n, 'Goodreads id')})],
-		[report.hardcoverFilled, n => spell('filled in Hardcover ids on {books}', {books: plural(n, 'book')})],
+		// the ids filled in, by what each catalog's are called ("2 ASINs", "1 Goodreads id")
+		...Object.entries(report.idsFilled).map(([family, list]): [Book[], (n: number) => string] => [
+			list,
+			n => spell('filled in {ids}', {ids: plural(n, ExternalCatalog.idName(family))}),
+		]),
 		[report.datesFilled, n => spell('filled in dates read on {books}', {books: plural(n, 'book')})],
 		[report.isbnsFilled, n => spell('added ISBNs to {books}', {books: plural(n, 'book')})],
 		[report.editionsAdded, n => spell('added editions to {books}', {books: plural(n, 'book')})],
@@ -2049,7 +2052,7 @@ for (const Sync of CatalogConnectors.SYNCS) {
 	const Client = Sync.CLIENT,
 		prefix = Client.CATALOG;
 	if (Sync.EVERY_BOOK) byId(`${prefix}CompareBtn`).addEventListener('click', () => compareShelfSync(Sync));
-	if (!Client.KEY_STORAGE) continue; // asked without a key (Audible)
+	if (!Client.KEY_STORAGE) continue; // asked without a key
 	byId(`${prefix}KeySave`).addEventListener('click', () => saveKeyOf(Client, false));
 	byId(`${prefix}KeyRemove`).addEventListener('click', () => saveKeyOf(Client, true));
 }

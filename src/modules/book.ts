@@ -432,19 +432,19 @@ export class Book {
 	}
 
 	/**
-	 * The exclusions list entries that keep it out of later imports once removed: the ASINs, Goodreads book
-	 * ids and Hardcover edition ids of its editions, and "Title | Author" for each of its titles (its own and
+	 * The exclusions list entries that keep it out of later imports once removed: the ids of its editions that
+	 * the list keeps (ExternalCatalog.EXCLUDING: ASINs, Goodreads and Hardcover edition ids), and "Title | Author" for each of its titles (its own and
 	 * its editions', alternativeTitles() with `shared`; for books with no ids). '#' and '|' would break the
 	 * line, and matching ignores punctuation anyway, so they are dropped.
 	 */
 	exclusionEntries(shared?: (ed: Edition) => boolean): string[] {
 		const clean: (v: unknown) => string = v => Text.tidy(String(v || '').replace(/[#|]/g, ' '));
 		const entries = [];
-		for (const id of this.ids('asin')) if (clean(id)) entries.push(clean(id));
-		for (const gr of this.ids('goodreads'))
-			if (ExternalCatalog.isId('goodreads', 'edition', gr.trim())) entries.push(`Goodreads ${gr.trim()}`);
-		for (const hc of this.ids('hardcover'))
-			if (ExternalCatalog.isId('hardcover', 'edition', hc.trim())) entries.push(`Hardcover ${hc.trim()}`);
+		for (const family of ExternalCatalog.EXCLUDING)
+			for (const id of this.ids(family.key)) {
+				const entry = ExternalCatalog.exclusionEntry(family.key, id);
+				if (entry) entries.push(entry);
+			}
 		const authors = clean(Text.namesText(this.authors));
 		for (const title of [this.title, ...this.alternativeTitles(shared)])
 			if (clean(title) && authors) entries.push(`${clean(title)} | ${authors}`);

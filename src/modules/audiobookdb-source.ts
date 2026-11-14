@@ -5,7 +5,6 @@ import {Text, PhraseError} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
-import {Cover} from './cover.js';
 import {BookSource} from './book-source.js';
 import {AudiobookdbClient} from './audiobookdb-client.js';
 import type {Unchecked} from './text.js';
@@ -164,7 +163,7 @@ export class AudiobookdbSource extends BookSource {
 			if (released) ed.d = released;
 			const minutes = AudiobookdbSource.minutes(release);
 			if (minutes) ed.len = minutes;
-			const cover = Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(book.images);
+			const cover = AudiobookdbClient.coverKey(release.images) || AudiobookdbClient.coverKey(book.images);
 			if (Object.keys(ed).length && cover) ed.img = {audiobookdb: cover};
 			if (Object.keys(ed).length) rec.e = [ed];
 		}

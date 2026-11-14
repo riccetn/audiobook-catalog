@@ -4563,14 +4563,14 @@ test("the Edit series page compares a series' books with Hardcover when it opens
 	// every catalog set up is asked, each with its site's favicon for an icon; those that can't be say why
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/<span class="catIcon cat-hardcover favicon" data-mark="Hc" aria-hidden="true"><img src="https:\/\/assets\.hardcover\.app\/static\/favicon\.ico" alt="" referrerpolicy="no-referrer" decoding="async"><\/span>/,
+		/<span class="catIcon cat-hardcover favicon" data-mark="Hc" style="--cat: #4f46b5" aria-hidden="true"><img src="https:\/\/assets\.hardcover\.app\/static\/favicon\.ico" alt="" referrerpolicy="no-referrer" decoding="async"><\/span>/,
 	);
 	// a favicon that can't be loaded leaves the catalog's mark, which CSS draws
 	const hcIcon = els.catalogPicks.querySelector('.cat-hardcover');
 	hcIcon.querySelector('img').listeners.error[0]();
 	assert.match(
 		els.catalogPicks.innerHTML,
-		/<span class="catIcon cat-hardcover" data-mark="Hc" aria-hidden="true"><\/span>/,
+		/<span class="catIcon cat-hardcover" data-mark="Hc" style="--cat: #4f46b5" aria-hidden="true"><\/span>/,
 	);
 	assert.match(
 		els.catalogPicks.innerHTML,
@@ -5669,7 +5669,7 @@ test("a Hardcover address in the series or info form is looked up for its number
 	assert.deepEqual(get("CATALOG.infoByName('authors').get('Wendell Ashcombe').external"), {hardcover: 'nobody-here'});
 	assert.match(
 		els.ioStatus.textContent,
-		/Kept Hardcover's author by the name in its address, as Hardcover couldn't be asked for its number \(Hardcover refused your token/,
+		/Kept Hardcover's author by the name in its address, as Hardcover couldn't be asked for its id \(Hardcover refused your token/,
 	);
 	assert.match(els.creditBody.innerHTML, /href="https:\/\/hardcover\.app\/authors\/nobody-here"/);
 

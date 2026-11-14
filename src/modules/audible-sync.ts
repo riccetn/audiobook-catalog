@@ -33,6 +33,7 @@ export class AudibleSync extends ShelfSync {
 	static PARTS = ['series'] as readonly ('series' | 'author')[];
 	static EVERY_BOOK = false;
 	static FOUND = 'ids and book counts';
+	static PANEL_NOTE = "A series' books are compared with Audible on the series' Edit page.";
 
 	// The client is its own catalog's, with what that catalog asks.
 	declare client: AudibleClient;

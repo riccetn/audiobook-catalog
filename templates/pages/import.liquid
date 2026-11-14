@@ -60,63 +60,65 @@
 	<p class="hint">Each import shows the other catalog's books beside yours first, and takes only what you tick: new books, what it has that
 		yours lack, and, where both have a value that differs, the values you pick. Nothing is ever removed.</p>
 
-	<section class="panel" id="audiblePanel">
-		<h2>Audible <span class="via">CSV file</span></h2>
+	{%- comment -%}
+		A panel per external catalog the app imports from, exports to or compares shelves with: `panels` is
+		CatalogConnectors.panels(), which make pages (build.mjs) reads from the catalogs' classes, so no catalog is
+		named here. A panel's ids start with its catalog (import.js finds them by it).
+	{%- endcomment %}
+	{%- for panel in panels %}
+	<section class="panel" id="{{ panel.catalog }}Panel">
+		<h2>{{ panel.label }} <span class="via">{{ panel.via }}</span></h2>
+		{%- if panel.importer %}
 		<div class="ioRow">
 			<span class="ioLabel">Import</span>
 			<div class="rowbtns">
+				{%- if panel.importer.sites.size > 0 %}
 				<label>From
-					<select id="audibleImportSite" title="The Audible site your library export is from">
-						<option value="audible.com">audible.com</option>
-						<option value="audible.co.uk">audible.co.uk</option>
-						<option value="audible.de">audible.de</option>
-						<option value="audible.fr">audible.fr</option>
-						<option value="audible.it">audible.it</option>
-						<option value="audible.es">audible.es</option>
-						<option value="audible.ca">audible.ca</option>
-						<option value="audible.com.au">audible.com.au</option>
-						<option value="audible.in">audible.in</option>
-						<option value="audible.co.jp">audible.co.jp</option>
+					<select id="{{ panel.catalog }}ImportSite" title="The {{ panel.label }} site your library export is from">
+						{%- for site in panel.importer.sites %}
+						<option value="{{ site }}">{{ site }}</option>
+						{%- endfor %}
 					</select></label>
-				<button class="iconbtn2" id="audibleImportBtn" title="Compare the finished books in an Audible Library Extractor CSV with this catalog">Import CSV</button>
+				{%- endif %}
+				<button class="iconbtn2" id="{{ panel.catalog }}ImportBtn" title="{{ panel.importer.title }}">Import CSV</button>
 			</div>
-			<p class="ioNote">Shows the finished books in an Audible Library Extractor CSV beside this catalog's, to pick what to take.
-				Pick the Audible site the export is from first: its ASINs are that site's. (Audible can't import a list of books, so there is no export.)</p>
+			<p class="ioNote">{{ panel.importer.note }}</p>
 		</div>
-		<p class="ioNote">A series' books are compared with Audible on the series' Edit page.</p>
-	</section>
-
-	<section class="panel" id="goodreadsPanel">
-		<h2>Goodreads <span class="via">CSV file</span></h2>
-		<div class="ioRow">
-			<span class="ioLabel">Import</span>
-			<div class="rowbtns">
-				<button class="iconbtn2" id="goodreadsImportBtn" title="Compare the read audiobooks in a Goodreads library export CSV with this catalog">Import CSV</button>
-			</div>
-			<p class="ioNote">Shows the read audiobooks in a Goodreads library export beside this catalog's, to pick what to take.</p>
-		</div>
+		{%- endif %}
+		{%- if panel.exporter %}
 		<div class="ioRow">
 			<span class="ioLabel">Export</span>
 			<div class="rowbtns">
-				<button class="iconbtn2" id="goodreadsExportBtn" title="Download a CSV for Goodreads' import">Download CSV</button>
+				<button class="iconbtn2" id="{{ panel.catalog }}ExportBtn" title="{{ panel.exporter.title }}">Download {{ panel.exporter.format }}</button>
 			</div>
-			<p class="ioNote">A CSV of every book for Goodreads' <a href="https://www.goodreads.com/review/import" target="_blank" rel="noopener">import page</a>: on the <em>read</em> shelf, with the latest date read, genres as shelves, and the Goodreads id and ISBN of an edition so Goodreads picks that edition.</p>
+			<p class="ioNote">{{ panel.exporter.note }}</p>
 		</div>
+		{%- endif %}
+		{%- if panel.compare %}
+		<div class="ioRow">
+			<span class="ioLabel">Compare</span>
+			<div class="rowbtns">
+				<button class="iconbtn2" id="{{ panel.catalog }}CompareBtn" title="Compare your {{ panel.label }} shelves with this catalog">Compare</button>
+			</div>
+			<p class="ioNote">{{ panel.compare.note }}</p>
+		</div>
+		{%- endif %}
+		{%- if panel.key %}
+		<div class="ioRow">
+			<span class="ioLabel">{{ panel.key.name }}</span>
+			<div class="rowbtns">
+				<input type="password" id="{{ panel.catalog }}Key" placeholder="{{ panel.label }} {{ panel.key.name }}" autocomplete="off" spellcheck="false">
+				<button class="iconbtn2" id="{{ panel.catalog }}KeySave" title="Keep this {{ panel.key.word }} in this browser">Save {{ panel.key.word }}</button>
+				<button class="iconbtn2" id="{{ panel.catalog }}KeyRemove" title="Forget the {{ panel.key.word }} in this browser">Remove {{ panel.key.word }}</button>
+			</div>
+			<p class="ioNote" id="{{ panel.catalog }}KeyState"></p>
+		</div>
+		{%- endif %}
+		{%- if panel.note != '' %}
+		<p class="ioNote">{{ panel.note }}</p>
+		{%- endif %}
 	</section>
-
-	{%- capture hardcover_note -%}
-		Shows the books on your Hardcover <em>Read</em> shelf beside this catalog's, to pick what to take from Hardcover,
-				and which of your books and dates read to put on your Read shelf there. A series' or an author's books are compared on their Edit page.
-				Nothing on Hardcover is changed or removed.
-	{%- endcapture %}
-	{% render 'shelf-panel', catalog: 'hardcover', label: 'Hardcover', via: 'Online', note: hardcover_note, key_label: 'Token', key_name: 'API token', key_word: 'token' %}
-
-	{%- capture audiobookdb_note -%}
-		Finds your books on AudiobookDB and shows the books on your AudiobookDB <em>Read</em> shelf beside this catalog's,
-				to pick what to take from AudiobookDB, and which of your books to put on your Read shelf there. A series' or an author's books are compared on their
-				Edit page. Asked through your server's catalog proxy (below). Nothing on AudiobookDB is changed or removed.
-	{%- endcapture %}
-	{% render 'shelf-panel', catalog: 'audiobookdb', label: 'AudiobookDB', via: 'Through the proxy', note: audiobookdb_note, key_label: 'API key', key_name: 'API key', key_word: 'key' %}
+	{%- endfor %}
 
 	<section class="panel" id="serverPanel">
 		<h2>Your server <span class="via">Optional</span></h2>
@@ -130,7 +132,7 @@
 				<button class="iconbtn2" id="serverRemove" title="Forget the server in this browser">Remove server</button>
 			</div>
 			<p class="ioNote">A server of your own does two things for this app: its catalog proxy asks the catalogs that don't answer
-				web pages (AudiobookDB, Audible, BookBrainz, ISFDB), and it keeps the copy your devices sync with. It is a small
+				web pages, and it keeps the copy your devices sync with. It is a small
 				Cloudflare Worker, free, or <code>make serve</code> on your computer; the app's docs (<em>Your server</em>) show how to
 				set it up. Everything else works without it.</p>
 			<p class="ioNote" id="serverState"></p>

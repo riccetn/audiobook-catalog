@@ -5,7 +5,7 @@ import {ExternalCatalog} from './modules/external-catalog.js';
 import type {ExternalKind, ExternalId} from './modules/external-catalog.js';
 import {buildElement, fieldById, showIoStatus, spell} from './dom.js';
 import type {FormField} from './dom.js';
-import {lookupHardcoverField} from './connections.js';
+import {lookupIdField} from './connections.js';
 
 // A form has a field per group of external catalogs (Audible, Amazon, Goodreads, Hardcover) that has pages
 // for what the form edits; each takes an id or the address of the page there, and the catalog keeps the id.
@@ -25,12 +25,13 @@ export function externalFields(prefix: string, kind: ExternalKind, except: strin
 					: ((ExternalCatalog.url(sites[0].key, kind, 'x') || '')
 							.replace(/^https?:\/\/(www\.)?/, '')
 							.split('/')[0] as string);
-			// Hardcover's address of a series or person is looked up for its number as soon as the field is left
+			// where the catalog can be asked (Hardcover), the address of a series or person, which holds a name, is
+			// looked up for its id as soon as the field is left
 			const lookup =
-				g.key === 'hardcover' && kind !== 'book' && kind !== 'edition'
+				ExternalCatalog.looksUp(g.key, kind) && kind !== 'book' && kind !== 'edition'
 					? {
 							onchange: async () => {
-								const found = await lookupHardcoverField(prefix, kind);
+								const found = await lookupIdField(prefix, kind, g.key);
 								if (found && found.note) showIoStatus(found.note);
 							},
 						}

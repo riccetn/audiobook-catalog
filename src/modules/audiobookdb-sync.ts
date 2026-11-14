@@ -9,7 +9,6 @@ import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
 import {Comparison} from './comparison.js';
-import {Cover} from './cover.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {AudiobookdbSource} from './audiobookdb-source.js';
 import {AudiobookdbClient} from './audiobookdb-client.js';
@@ -68,6 +67,10 @@ export class AudiobookdbSync extends ShelfSync {
 	static NOT_FOUND =
 		'No ASIN AudiobookDB knows: give the book its AudiobookDB id in its edit form, or add it on audiobookdb.org.';
 	static FOUND = 'ids and covers';
+	static PANEL_NOTE =
+		"Finds your books on AudiobookDB and shows the books on your AudiobookDB <em>Read</em> shelf beside this catalog's, " +
+		"to pick what to take from AudiobookDB, and which of your books to put on your Read shelf there. A series' or an author's books are compared on their " +
+		"Edit page. Asked through your server's catalog proxy (below). Nothing on AudiobookDB is changed or removed.";
 
 	// The client is its own catalog's, with what that catalog asks.
 	declare client: AudiobookdbClient;
@@ -479,7 +482,8 @@ export class AudiobookdbSync extends ShelfSync {
 						}
 					if (ed.covers.audiobookdb) continue;
 					const cover =
-						release && (Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(detail.images));
+						release &&
+						(AudiobookdbClient.coverKey(release.images) || AudiobookdbClient.coverKey(detail.images));
 					if (!cover) continue;
 					for (const x of [ed, ...copiesOf(ed).filter(y => !y.covers.audiobookdb)])
 						x.covers = {...x.covers, audiobookdb: cover};

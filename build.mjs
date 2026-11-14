@@ -1,6 +1,6 @@
 // Builds public/ (make pages): it compiles the app's TypeScript in src/ into public/ with tsc (tsconfig.json, and
 // tsconfig.sw.json for the service worker), each .js with a source map beside it, and writes the pages from the Liquid
-// templates in templates/: each page in templates/pages/ fills in templates/layout.liquid, which holds what every page
+// templates in templates/ (with what the compiled catalog classes say of the external catalogs): each page in templates/pages/ fills in templates/layout.liquid, which holds what every page
 // shares (the <head>, the title and the nav bar). What it writes is not committed (.gitignore), so build before serving
 // or testing. It copies the one library the app loads (the QR code's) into public/vendor/, and then it writes
 // public/sw-app.js, the files the service worker caches and the version it names its cache by (sw.js).
@@ -44,13 +44,26 @@ async function build() {
 	const {Liquid} = await import('liquidjs');
 	const engine = new Liquid({root: templates, extname: '.liquid', strictVariables: true, strictFilters: true});
 
+	// What the pages say of the external catalogs comes from the catalogs' own classes, as just compiled, so no
+	// template names one: Import & export's panels, and the catalogs the Edit page's Fill in reads addresses of
+	// and searches by title.
+	const {CatalogConnectors} = await import(pathToFileURL(path.join(site, 'modules', 'catalog-connectors.js')).href);
+	const listed = names => [...new Set(names)].join(', ').replace(/, ([^,]*)$/, ' or $1');
+	const catalogs = {
+		panels: CatalogConnectors.panels(),
+		lookup_catalogs: listed(CatalogConnectors.SOURCES.flatMap(Source => Source.NAMES)),
+		search_catalogs: listed(
+			CatalogConnectors.SOURCES.filter(Source => Source.SEARCHES).map(Source => Source.LABEL),
+		),
+	};
+
 	for (const file of fs
 		.readdirSync(pages)
 		.filter(f => f.endsWith('.liquid'))
 		.sort()) {
 		const page = file.replace(/\.liquid$/, '.html');
 		// The layout gets the page's file name, to mark its own link in the nav bar.
-		const html = await engine.renderFile(path.join('pages', file), {page, title: ''});
+		const html = await engine.renderFile(path.join('pages', file), {page, title: '', ...catalogs});
 		fs.writeFileSync(path.join(site, page), html);
 	}
 

@@ -127,7 +127,11 @@ export class CatalogStats {
 			]),
 			section('editions', this.editions, [
 				external,
-				['asin', 'No ASIN', x => Boolean(x.value.ids('asin').length)],
+				...ExternalCatalog.SITE_FAMILIES.map((family): [string, string, (x: Counted<any>) => boolean] => [
+					family.key,
+					`No ${family.idName}`,
+					x => Boolean(x.value.ids(family.key).length),
+				]),
 				['isbn', 'No ISBN', x => Boolean(x.value.isbn)],
 				['narrators', 'No narrators', x => x.value.narrators.length > 0],
 				['publisher', 'No publisher', x => x.value.publishers.length > 0],

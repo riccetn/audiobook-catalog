@@ -20,6 +20,10 @@ export class GoodreadsExporter extends FileExporter {
 	static CATALOG = 'goodreads';
 	static LABEL = 'Goodreads';
 	static FILE_NAME = 'goodreads-import';
+	static PANEL_TITLE = "Download a CSV for Goodreads' import";
+	static PANEL_NOTE =
+		'A CSV of every book for Goodreads\' <a href="https://www.goodreads.com/review/import" target="_blank" rel="noopener">import page</a>: ' +
+		'on the <em>read</em> shelf, with the latest date read, genres as shelves, and the Goodreads id and ISBN of an edition so Goodreads picks that edition.';
 	// The columns of a Goodreads library export, which is also what goodreads.com/review/import takes.
 	static COLUMNS = [
 		'Book Id',

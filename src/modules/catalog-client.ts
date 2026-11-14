@@ -4,6 +4,7 @@
 // and the Import & export page shows its field by the class's KEY_NAME and KEY_HELP, so no page names a catalog.
 import {Text} from './text.js';
 import type {Phrase} from './text.js';
+import type {ExternalKind} from './external-catalog.js';
 
 /** reports a run's progress */
 export type Step = (text: Phrase, done?: number, total?: number) => void;
@@ -38,6 +39,8 @@ export class CatalogClient {
 	static ID = /^$/;
 	/** What the catalog calls your key ('API token' on Hardcover). */
 	static KEY_NAME = 'API key';
+	/** What the buttons of the key's row on Import & export call it ('token'). */
+	static KEY_WORD = 'key';
 	/** Where this browser keeps your key (localStorage). */
 	static KEY_STORAGE = '';
 	/** What the page says where no key is saved: where to make one, and what it is for. */
@@ -54,6 +57,21 @@ export class CatalogClient {
 	 */
 	static cleanKey(key: unknown): string {
 		return Text.tidy(String(key || ''));
+	}
+
+	/**
+	 * The id of the `kind` of thing that `text` names without holding it, asked of the catalog through `client`: the
+	 * address of a book's page by its name, or for a series or person the fallback id it is kept by (the name in
+	 * its page's address). Returns {id, name (what the catalog calls it)}, or null when the catalog has none; throws
+	 * with a short reason when it can't be asked. The pages call it only for the kinds the catalog's definition
+	 * lists (CatalogDefinition.lookups), so a client of a catalog that lists none leaves it as it is.
+	 */
+	static async lookupId(
+		_client: CatalogClient,
+		_kind: ExternalKind,
+		_text: string,
+	): Promise<{id: string; name?: string} | null> {
+		return null;
 	}
 
 	get: CatalogFetch;
