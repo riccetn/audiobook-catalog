@@ -12,10 +12,38 @@ const BRITISH = (() => {
 })();
 
 /**
- * The page's own text in the spelling this browser prefers (see BRITISH); never a book's title or other data.
+ * The page's own text in the spelling this browser prefers (see BRITISH). Every text a page shows goes through
+ * it but a book's title, a name or other data, which is never respelled: a sentence holding one is a template,
+ * with a `{marker}` where each value goes and the values in `values`, filled in as they are (Text.filled). Never
+ * piece a sentence together from parts around a value: the whole sentence is one template. Without `values`
+ * the text is only respelled, braces and all (a message a module wrote, which may hold data).
  */
-export function spell(text: string): string {
-	return Text.spelled(text, BRITISH);
+export function spell(template: string, values?: Record<string, string | number>): string {
+	return values ? Text.filled(template, BRITISH, values) : Text.spelled(template, BRITISH);
+}
+
+/**
+ * A template's sentence as children for buildElement() or fillElement() (see spell), where a value may be an
+ * element too: spellParts('No books yet. {add} or import some.', {add: buildElement('a', {href}, spell('Add one'))}).
+ */
+export function spellParts(template: string, values: Record<string, Child>): Child[] {
+	return Text.templateParts<Child>(template, BRITISH, values);
+}
+
+/**
+ * The first three of `items`, saying how many more there are: "a, b, c and 2 more", spelled (see spell):
+ * Text.firstThree for the page.
+ */
+export function firstThree(items: string[], separator: string = ', '): string {
+	const shown = items.slice(0, 3).join(separator);
+	return items.length > 3 ? spell('{items} and {count} more', {items: shown, count: items.length - 3}) : shown;
+}
+
+/**
+ * A count with its word, "1 book", "3 books", spelled (see spell): Text.plural for the page.
+ */
+export function plural(n: number, word: string, many?: string): string {
+	return spell(Text.plural(n, word, many));
 }
 
 // Attributes of the page's own elements that hold text a reader sees.
@@ -129,10 +157,10 @@ export function showIoStatus(msg: string, isErr?: boolean, undo?: () => void) {
 						undo();
 					},
 				},
-				'Undo',
+				spell('Undo'),
 			),
 		],
-		isErr && [' ', buildElement('button', {type: 'button', class: 'dismiss', onclick: clear}, 'Dismiss')],
+		isErr && [' ', buildElement('button', {type: 'button', class: 'dismiss', onclick: clear}, spell('Dismiss'))],
 	);
 	el.classList.toggle('err', !!isErr);
 	clearTimeout(ioStatusTimer);

@@ -14,7 +14,7 @@ import type {NamedKind} from './modules/catalog.js';
 import type {ContributorKind} from './modules/contributor.js';
 import type {Unchecked} from './modules/text.js';
 import type {SyncPrefer} from './modules/catalog-sync.js';
-import {spell, buildElement, fillElement, byId, showIoStatus} from './dom.js';
+import {spell, plural, firstThree, buildElement, fillElement, byId, showIoStatus} from './dom.js';
 import {fetchFromServer} from './connections.js';
 
 /**
@@ -186,12 +186,11 @@ export async function backupAge(now: number = Date.now()): Promise<{days: number
  * The backup's age as the Backups panel says it.
  */
 export function backupAgeText({days, changes}: {days: number | null; changes: number}): string {
-	if (days === null) return 'No backup downloaded in this browser yet.';
-	const when = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
-	return (
-		`Last backup ${when}; ` +
-		(changes ? `${Text.plural(changes, 'change')} saved since.` : 'nothing changed since.')
-	);
+	if (days === null) return spell('No backup downloaded in this browser yet.');
+	const when = days === 0 ? spell('today') : days === 1 ? spell('yesterday') : spell('{days} days ago', {days});
+	return changes
+		? spell('Last backup {when}; {changes} saved since.', {when, changes: plural(changes, 'change')})
+		: spell('Last backup {when}; nothing changed since.', {when});
 }
 
 /**
@@ -250,7 +249,9 @@ export function afterSaving(task: () => Promise<void> | void): Promise<void> {
 		.then(task)
 		.catch(e =>
 			showIoStatus(
-				spell(`Couldn't read the catalog kept in this browser: ${Text.errorText(e)}. Reload the page.`),
+				spell("Couldn't read the catalog kept in this browser: {error}. Reload the page.", {
+					error: spell(Text.errorText(e)),
+				}),
 				true,
 			),
 		);
@@ -525,8 +526,8 @@ async function saveNow(): Promise<boolean> {
 	if (unstorable.length) {
 		showIoStatus(
 			spell(
-				`Not saved: these values can't be kept, as they aren't what their field holds: ${Text.firstThree(unstorable, '; ')}. ` +
-					'Export a backup, fix them there (Check lists them) and Restore it.',
+				"Not saved: these values can't be kept, as they aren't what their field holds: {values}. Export a backup, fix them there (Check lists them) and Restore it.",
+				{values: firstThree(unstorable, '; ')},
 			),
 			true,
 		);
@@ -578,11 +579,14 @@ async function saveNow(): Promise<boolean> {
 			const both = tries < 3 ? await catchUp() : [];
 			if (both) {
 				showIoStatus(
-					spell(
-						both.length
-							? `Not saved: ${Text.firstThree(both)} changed in another tab too. Reload this page to see that, then make this change again.`
-							: 'The catalog was changed in another tab. Reload this page to see that; this change was not saved.',
-					),
+					both.length
+						? spell(
+								'Not saved: {entries} changed in another tab too. Reload this page to see that, then make this change again.',
+								{entries: firstThree(both)},
+							)
+						: spell(
+								'The catalog was changed in another tab. Reload this page to see that; this change was not saved.',
+							),
 					true,
 				);
 				return false;
@@ -834,11 +838,11 @@ export type SyncOutcome = {taken: number; sent: boolean; conflicts: string[]};
  * The server's answer to a sync request, or a plain error saying what is wrong.
  */
 async function syncAnswer(res: Response): Promise<{revision: number; data?: string | null}> {
-	if (res.status === 401) throw new Error('your server refused the key');
-	if (res.status === 501) throw new Error('sync is not set up on your server (see Your server in the docs)');
-	if (res.status === 404) throw new Error('your server is from before sync: deploy it again');
-	if (res.status === 413) throw new Error('the catalog is too big to sync');
-	if (!res.ok) throw new Error(`your server answered ${res.status}`);
+	if (res.status === 401) throw new Error(spell('your server refused the key'));
+	if (res.status === 501) throw new Error(spell('sync is not set up on your server (see Your server in the docs)'));
+	if (res.status === 404) throw new Error(spell('your server is from before sync: deploy it again'));
+	if (res.status === 413) throw new Error(spell('the catalog is too big to sync'));
+	if (!res.ok) throw new Error(spell('your server answered {status}', {status: res.status}));
 	return (await res.json()) as {revision: number; data?: string | null};
 }
 
@@ -849,9 +853,9 @@ async function syncAnswer(res: Response): Promise<{revision: number; data?: stri
  * WrongPassphrase, UnrelatedCatalogs, or NewerBackup) when it can't.
  */
 export async function syncCatalog(prefer?: SyncPrefer): Promise<SyncOutcome> {
-	if (!DATABASE) throw new Error(SAVE_REFUSED || 'this browser keeps no catalog to sync');
+	if (!DATABASE) throw new Error(SAVE_REFUSED || spell('this browser keeps no catalog to sync'));
 	const passphrase = savedPassphrase();
-	if (!passphrase) throw new Error('save a sync passphrase first');
+	if (!passphrase) throw new Error(spell('save a sync passphrase first'));
 	// only Import & export syncs, so only it loads what syncing needs
 	const [{Backup}, {CatalogSync}] = await Promise.all([
 		import('./modules/backup.js'),
@@ -882,7 +886,7 @@ export async function syncCatalog(prefer?: SyncPrefer): Promise<SyncOutcome> {
 			CATALOG.replaceWith(CatalogRecords.toCatalog(result.records));
 			await persist();
 			if (CatalogRecords.changes(SAVED, recordsNow()).count)
-				throw new Error('what the other devices changed could not be saved here, so nothing was sent');
+				throw new Error(spell('what the other devices changed could not be saved here, so nothing was sent'));
 			if (redrawPage) redrawPage(before);
 		}
 		const copy = opened ? opened.copy || Catalog.newId() : Catalog.newId();
@@ -904,15 +908,15 @@ export async function syncCatalog(prefer?: SyncPrefer): Promise<SyncOutcome> {
 		await DATABASE.keepSyncBase({revision: sent.revision, copy, backup: now, at: new Date().toISOString()});
 		return {taken: result.taken, sent: true, conflicts: result.conflicts};
 	}
-	throw new Error('other devices kept syncing meanwhile; try again');
+	throw new Error(spell('other devices kept syncing meanwhile; try again'));
 }
 
 // ------------------------------------------------------------ runs on a catalog's shelves
 // Comparing with a catalog's shelves (Hardcover, AudiobookDB), or sending to it, can take minutes, a request or two a second. The
 // page running it shows it on top while it goes (#bgTask), and hands each update to the page's onCatalogJob.
 const JOB_VERBS: Record<CatalogJob['mode'], (catalog: string) => string> = {
-	compare: catalog => `Comparing with ${catalog}`,
-	send: catalog => `Updating your ${catalog} shelves`,
+	compare: catalog => spell('Comparing with {catalog}', {catalog}),
+	send: catalog => spell('Updating your {catalog} shelves', {catalog}),
 };
 
 export const minutes: (ms: number) => string = ms => {
@@ -940,9 +944,10 @@ export function showCatalogJob(job: CatalogJob | null) {
 					' ',
 					buildElement('span', {class: 'bgTaskTime'}, minutes(job.elapsed)),
 					buildElement('br'),
-					job.step || '',
+					// (a step a module names)
+					job.step ? spell(job.step) : '',
 					counted && [
-						`: ${job.done} of ${job.total} `,
+						spell(': {done} of {total} ', {done: job.done ?? 0, total: job.total ?? 0}),
 						buildElement('progress', {max: job.total, value: job.done}),
 					],
 					!job.dryRun && [

@@ -18,7 +18,7 @@ import {
 	seriesPageHref,
 	editPageHref,
 } from './store.js';
-import {showIoStatus, byId, spell, buildElement, fillElement, joined} from './dom.js';
+import {showIoStatus, byId, spell, spellParts, buildElement, fillElement, joined} from './dom.js';
 import {webLinks} from './id-fields.js';
 import type {Child} from './dom.js';
 import {
@@ -87,14 +87,14 @@ export function render() {
 	const shown = CATALOG.book(BOOK_FILTER);
 	// a book in a series links back to it
 	const series = shown && shown.series && CATALOG.idFor('series', shown.series);
-	const label = shown ? shown.title : 'No such book';
+	const label = shown ? shown.title : spell('No such book');
 	fillElement(
 		byId('crumbLabel'),
 		shown && series
 			? [buildElement('a', {href: seriesPageHref(series)}, shown.series as string), ' › ', label]
 			: label,
 	);
-	document.title = label + ' — ' + spell('Audiobook Catalog');
+	document.title = spell('{page} — Audiobook Catalog', {page: label});
 	SHARED = sharedEditions();
 	fillElement(
 		byId('results'),
@@ -103,8 +103,9 @@ export function render() {
 			: buildElement(
 					'p',
 					{class: 'empty'},
-					spell('This book is not in the catalog. '),
-					buildElement('a', {href: 'books.html'}, 'All books'),
+					spellParts('This book is not in the catalog. {all}', {
+						all: buildElement('a', {href: 'books.html'}, spell('All books')),
+					}),
 				),
 	);
 }
@@ -200,7 +201,7 @@ function editionRows(ed: Edition): [string, Child][] {
 		.parts()
 		.filter(([k]) => k !== 'desc')
 		.map(([k, label, value]) => [
-			label,
+			spell(label),
 			k === 'asin'
 				? asins()
 				: k === 'n'
@@ -239,7 +240,7 @@ function bookActions(id: string): Child[] {
 		buildElement(
 			'div',
 			{class: 'book-actions'},
-			buildElement('a', {class: 'edit', href: editPageHref(id, 'book')}, 'Edit'),
+			buildElement('a', {class: 'edit', href: editPageHref(id, 'book')}, spell('Edit')),
 			buildElement(
 				'button',
 				{
@@ -248,7 +249,7 @@ function bookActions(id: string): Child[] {
 					'aria-expanded': String(searching),
 					onclick: () => toggleMergeSearch(id),
 				},
-				'Merge',
+				spell('Merge'),
 			),
 		),
 		searching && mergeSearch(id),
@@ -265,12 +266,12 @@ function mergeSearch(id: string): HTMLDivElement {
 	return buildElement(
 		'div',
 		{class: 'mergeSearch'},
-		buildElement('label', {for: 'mergeQuery'}, 'Find the book to merge it with'),
+		buildElement('label', {for: 'mergeQuery'}, spell('Find the book to merge it with')),
 		buildElement('input', {
 			type: 'search',
 			id: 'mergeQuery',
 			value: q,
-			placeholder: 'Title, author, series or ISBN',
+			placeholder: spell('Title, author, series or ISBN'),
 			autocomplete: 'off',
 			oninput: (e: Event) => findMergeBooks(id, (e.currentTarget as HTMLInputElement).value),
 		}),
@@ -285,7 +286,7 @@ function mergeSearch(id: string): HTMLDivElement {
 function mergeFoundItems(id: string): Child[] {
 	if (!MERGE_SEARCH || !MERGE_SEARCH.q.trim()) return [];
 	const found = MERGE_SEARCH.found.map(other => CATALOG.book(other)).filter(Boolean) as Book[];
-	if (!found.length) return [buildElement('li', {class: 'none'}, 'No other book matches.')];
+	if (!found.length) return [buildElement('li', {class: 'none'}, spell('No other book matches.'))];
 	return [
 		...found.map(b =>
 			buildElement(
@@ -303,7 +304,11 @@ function mergeFoundItems(id: string): Child[] {
 			),
 		),
 		MERGE_SEARCH.more > 0 &&
-			buildElement('li', {class: 'none'}, `and ${MERGE_SEARCH.more} more; type more to narrow it down.`),
+			buildElement(
+				'li',
+				{class: 'none'},
+				spell('and {count} more; type more to narrow it down.', {count: MERGE_SEARCH.more}),
+			),
 	];
 }
 
@@ -366,10 +371,10 @@ function bookDetails(b: Book): HTMLDivElement {
 			buildElement(
 				'h3',
 				{},
-				b.editions.length > 1 ? `Edition ${i + 1}` : 'Edition',
+				b.editions.length > 1 ? spell('Edition {n}', {n: i + 1}) : spell('Edition'),
 				ed.description && ': ' + ed.description,
 			),
-			detailList([...editionRows(ed), ['Also in this edition', also.length > 0 && joined(also, ', ')]]),
+			detailList([...editionRows(ed), [spell('Also in this edition'), also.length > 0 && joined(also, ', ')]]),
 		);
 	});
 	return buildElement(
@@ -393,26 +398,26 @@ function bookDetails(b: Book): HTMLDivElement {
 			{class: 'info'},
 			detailList([
 				[
-					'Series',
+					spell('Series'),
 					series && [
 						buildElement('a', {href: seriesPageHref(series)}, b.series),
 						b.number && ` #${b.number}`,
 					],
 				],
 				[
-					'Read',
+					spell('Read'),
 					[
 						b.read.length > 0 && b.read.join(', ') + ' ',
 						!b.read.includes(today()) &&
 							buildElement(
 								'button',
 								{type: 'button', class: 'readToday', onclick: () => readToday(id)},
-								'+ Read today',
+								spell('+ Read today'),
 							),
 					],
 				],
 				[
-					'Genres',
+					spell('Genres'),
 					b.genres.length > 0 &&
 						buildElement(
 							'span',
@@ -422,10 +427,13 @@ function bookDetails(b: Book): HTMLDivElement {
 				],
 				...Object.entries(ExternalCatalog.order(b.external) || {}).map(
 					([key, value]) =>
-						[`${ExternalCatalog.name(key)} book`, idLink(key, 'book', value)] as [string, Child],
+						[spell('{site} book', {site: ExternalCatalog.name(key)}), idLink(key, 'book', value)] as [
+							string,
+							Child,
+						],
 				),
 				[
-					b.links.length > 1 ? 'Links' : 'Link',
+					spell(b.links.length > 1 ? 'Links' : 'Link'),
 					b.links.length > 0 && joined(webLinks(b.links, 'weblink'), ' '),
 				],
 			]),
@@ -447,7 +455,7 @@ export function readToday(id: string) {
 	render();
 	persist();
 	refreshView();
-	showIoStatus(`Read ${b.title} today.`, false, () => {
+	showIoStatus(spell('Read {title} today.', {title: b.title}), false, () => {
 		const now = CATALOG.book(id);
 		if (!now) return;
 		now.read = before;

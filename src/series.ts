@@ -140,10 +140,14 @@ export function render() {
 	}
 	const name = shownSeriesName();
 	const label =
-		SERIES_FILTER === null ? null : SERIES_FILTER === STANDALONE ? 'Standalone books' : name || 'No such series';
+		SERIES_FILTER === null
+			? null
+			: SERIES_FILTER === STANDALONE
+				? spell('Standalone books')
+				: name || spell('No such series');
 	byId('crumb').classList.toggle('show', label !== null);
 	byId('crumbLabel').textContent = label || '';
-	document.title = (label ? label + ' — ' : '') + spell('Audiobook Catalog');
+	document.title = label ? spell('{page} — Audiobook Catalog', {page: label}) : spell('Audiobook Catalog');
 	// books are added to a series shown, starting in it
 	byId('toggleAdd').style.display = SERIES_FILTER === null ? 'none' : '';
 	byId('toggleAdd').setAttribute(
@@ -160,7 +164,7 @@ export function render() {
 	}
 
 	const books = LIST.books().filter(b => (SERIES_FILTER === STANDALONE ? !b.series : b.series === name));
-	byId('subtitle').textContent = spell(`${TOTAL_BOOKS} audiobooks in the catalog`);
+	byId('subtitle').textContent = spell('{count} audiobooks in the catalog', {count: TOTAL_BOOKS});
 	byId('resultCount').textContent = '';
 	fillElement(
 		byId('results'),
@@ -175,7 +179,9 @@ export function render() {
 					buildElement(
 						'p',
 						{class: 'empty'},
-						name === null ? 'No books in this series.' : `No books in ${name} yet.`,
+						name === null
+							? spell('No books in this series.')
+							: spell('No books in {series} yet.', {series: name}),
 					),
 					SERIES_FILTER !== STANDALONE && name !== null && seriesEditButton(SERIES_FILTER),
 				],
@@ -215,9 +221,11 @@ function renderOverview() {
 	const onlyMissing = fieldById('missingFilter').value === 'missing';
 	if (onlyMissing) rows = rows.filter(({rec}) => (rec.missing || []).length);
 
-	byId('subtitle').textContent =
-		`${OVERVIEW.series.length} series across ${TOTAL_BOOKS} audiobooks — tap a series to see its titles`;
-	byId('resultCount').textContent = `${rows.length} series shown`;
+	byId('subtitle').textContent = spell('{series} series across {books} audiobooks — tap a series to see its titles', {
+		series: OVERVIEW.series.length,
+		books: TOTAL_BOOKS,
+	});
+	byId('resultCount').textContent = spell('{count} series shown', {count: rows.length});
 
 	const out: Child[] = [];
 	const showStandalone = !onlyMissing && (!q || 'standalone'.includes(q));
@@ -226,7 +234,7 @@ function renderOverview() {
 			buildElement(
 				'p',
 				{class: 'empty'},
-				onlyMissing ? 'No series with missing books.' : 'No series match your search.',
+				spell(onlyMissing ? 'No series with missing books.' : 'No series match your search.'),
 			),
 		);
 	}
@@ -246,8 +254,12 @@ function renderOverview() {
 						'span',
 						{class: 'srow-owned'},
 						rec.bookCount
-							? `${rec.owned} owned${totalText(info) ? ' of ' + totalText(info) : ''}`
-							: `no books yet${totalText(info) ? ', ' + totalText(info) + ' released' : ''}`,
+							? totalText(info)
+								? spell('{owned} owned of {total}', {owned: rec.owned, total: totalText(info)})
+								: spell('{owned} owned', {owned: rec.owned})
+							: totalText(info)
+								? spell('no books yet, {total} released', {total: totalText(info)})
+								: spell('no books yet'),
 					),
 				),
 				buildElement(
@@ -265,7 +277,11 @@ function renderOverview() {
 					missing &&
 						missing.length > 0 && [
 							' ',
-							buildElement('span', {class: 'missing'}, `missing ${Series.numberList(missing)}`),
+							buildElement(
+								'span',
+								{class: 'missing'},
+								spell('missing {numbers}', {numbers: Series.numberList(missing)}),
+							),
 						],
 				),
 				info && info.note && buildElement('p', {class: 'srow-note'}, info.note),
@@ -281,9 +297,9 @@ function renderOverview() {
 				buildElement(
 					'div',
 					{class: 'srow-head'},
-					buildElement('a', {class: 'srow-title', href: standalonePageHref()}, 'Standalone'),
+					buildElement('a', {class: 'srow-title', href: standalonePageHref()}, spell('Standalone')),
 					' ',
-					buildElement('span', {class: 'srow-owned'}, `${OVERVIEW.standalone} owned`),
+					buildElement('span', {class: 'srow-owned'}, spell('{owned} owned', {owned: OVERVIEW.standalone})),
 				),
 			),
 		);
@@ -390,7 +406,7 @@ function seriesEditButton(id: string): HTMLDivElement {
 	return buildElement(
 		'div',
 		{class: 'page-actions'},
-		buildElement('a', {class: 'sedit', 'data-series': id, href: editPageHref(id)}, 'Edit'),
+		buildElement('a', {class: 'sedit', 'data-series': id, href: editPageHref(id)}, spell('Edit')),
 	);
 }
 

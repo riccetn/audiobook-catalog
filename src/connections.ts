@@ -2,6 +2,7 @@
 // your server (its catalog proxy and the sync's copy).
 import {Text} from './modules/text.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
+import {spell} from './dom.js';
 import type {Unchecked} from './modules/text.js';
 import type {CatalogClient, ClientClass, CatalogFetch} from './modules/catalog-client.js';
 
@@ -42,7 +43,12 @@ function fetchDirect(label: string): CatalogFetch {
 			return await fetch(url, opts);
 		} catch (e) {
 			throw new Error(
-				`this browser could not reach ${label} (offline, or ${label} refused a request from a web page)`,
+				spell(
+					'this browser could not reach {catalog} (offline, or {catalog} refused a request from a web page)',
+					{
+						catalog: label,
+					},
+				),
 				{cause: e},
 			);
 		}
@@ -81,7 +87,9 @@ export async function lookupHardcoverBook(text: string): Promise<{id: string; ti
 	if (!url || url.book) return HardcoverClient.bookId(null, text);
 	const token = savedKey(HardcoverClient);
 	if (!token)
-		throw new Error('to look it up on Hardcover, save your Hardcover API token on the Import & export page first');
+		throw new Error(
+			spell('to look it up on Hardcover, save your Hardcover API token on the Import & export page first'),
+		);
 	return HardcoverClient.bookId(catalogClient(HardcoverClient, token), text);
 }
 
@@ -114,24 +122,43 @@ export function lookupHardcoverField(
 	// the same name, as an address or alone (leaving the field turns its address into the name)
 	if (onItsWay && onItsWay.slug === slug) return onItsWay;
 	const address = ExternalCatalog.url('hardcover', kind, slug);
-	const kept = (why: string) => ({
-		error: '',
-		note: `Kept Hardcover's ${kind} by the name in its address, as ${why}.`,
-	});
+	const kept = (note: string) => ({error: '', note});
 	const lookup: HardcoverFieldLookupOnItsWay = (async () => {
 		const {HardcoverClient} = await import('./modules/hardcover-client.js');
 		const token = savedKey(HardcoverClient);
-		if (!token) return kept('no Hardcover API token is saved on the Import & export page to look up its number');
+		if (!token)
+			return kept(
+				spell(
+					"Kept Hardcover's {kind} by the name in its address, as no Hardcover API token is saved on the Import & export page to look up its number.",
+					{kind: spell(kind)},
+				),
+			);
 		let row: {id: string; name: string} | null;
 		try {
 			row = await HardcoverClient.idBySlug(catalogClient(HardcoverClient, token), kind, slug);
 		} catch (err) {
-			return kept(`Hardcover couldn't be asked for its number (${Text.errorText(err)})`);
+			return kept(
+				spell(
+					"Kept Hardcover's {kind} by the name in its address, as Hardcover couldn't be asked for its number ({error}).",
+					{kind: spell(kind), error: spell(Text.errorText(err))},
+				),
+			);
 		}
-		if (!row) return {error: `Hardcover has no ${kind} at ${address}.`, note: ''};
+		if (!row)
+			return {
+				error: spell('Hardcover has no {kind} at {address}.', {kind: spell(kind), address: address ?? slug}),
+				note: '',
+			};
 		const now = ExternalCatalog.readId((field as HTMLInputElement).value, kind, 'hardcover');
 		if (now && now.id === slug) (field as HTMLInputElement).value = row.id;
-		return {error: '', note: `Found on Hardcover: ${row.name || slug} (${kind} ${row.id}).`};
+		return {
+			error: '',
+			note: spell('Found on Hardcover: {name} ({kind} {id}).', {
+				name: row.name || slug,
+				kind: spell(kind),
+				id: row.id,
+			}),
+		};
 	})();
 	lookup.slug = slug;
 	HARDCOVER_FIELD_LOOKUPS.set(field, lookup);
@@ -194,7 +221,7 @@ export async function fetchFromServer(
 	server: ServerSettings | null = savedServer(),
 	init: {body?: string; key?: string} = {},
 ): Promise<Response> {
-	if (!server) throw new Error('save your server on the Import & export page');
+	if (!server) throw new Error(spell('save your server on the Import & export page'));
 	const headers: Record<string, string> = {[SERVER_KEY_HEADER]: server.key};
 	if (init.key) headers[CATALOG_KEY_HEADER] = init.key;
 	if (init.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -203,7 +230,9 @@ export async function fetchFromServer(
 		return await fetch(`${server.url}/${path.replace(/^\/+/, '')}`, ask);
 	} catch (e) {
 		throw new Error(
-			'this browser could not reach your server (check its address, and that it allows this page in ALLOWED_ORIGINS)',
+			spell(
+				'this browser could not reach your server (check its address, and that it allows this page in ALLOWED_ORIGINS)',
+			),
 			{cause: e},
 		);
 	}

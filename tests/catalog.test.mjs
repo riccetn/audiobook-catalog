@@ -3971,6 +3971,26 @@ test("British spelling: the first English language decides, and spelled() respel
 	assert.equal(Text.spelled('Check the catalog', false), 'Check the catalog');
 });
 
+test('a template is respelled whole, and its values are filled in as they are', () => {
+	assert.equal(
+		Text.filled('Added {title} to the catalog.', true, {title: 'The Catalog of Stars'}),
+		'Added The Catalog of Stars to the catalogue.',
+	);
+	assert.equal(
+		Text.filled('{count} catalogs, {count} again', false, {count: 2}),
+		'2 catalogs, 2 again',
+		'a marker may be used twice',
+	);
+	// a value is put in whatever it is (the pages put elements in), and the text around it is respelled
+	const link = {element: 'a'};
+	assert.deepEqual(Text.templateParts('See {link} in the catalog', true, {link}), [
+		'See ',
+		link,
+		' in the catalogue',
+	]);
+	assert.throws(() => Text.filled('Removed {name}.', false, {}), /No value for \{name\}/);
+});
+
 // ------------------------------------------------------------------ IndexedDB records
 // Numbered ids, so tests can name them.
 const numbered = () => {

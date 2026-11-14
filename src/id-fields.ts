@@ -3,7 +3,7 @@
 import {Text} from './modules/text.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
 import type {ExternalKind, ExternalId} from './modules/external-catalog.js';
-import {buildElement, fieldById, showIoStatus} from './dom.js';
+import {buildElement, fieldById, showIoStatus, spell} from './dom.js';
 import type {FormField} from './dom.js';
 import {lookupHardcoverField} from './connections.js';
 
@@ -42,7 +42,7 @@ export function externalFields(prefix: string, kind: ExternalKind, except: strin
 				buildElement('input', {
 					id: prefix + g.key,
 					'data-group': g.key,
-					placeholder: `id, or its address on ${example}`,
+					placeholder: spell('id, or its address on {site}', {site: example}),
 					...lookup,
 					onfocusout: () => externalFieldToId(prefix, kind, g.key),
 				}),
@@ -103,7 +103,7 @@ export function linksField(
 	kind: ExternalKind,
 	fieldFor: (group: string) => FormField | null,
 	{
-		label = 'Links, one per line',
+		label = spell('Links, one per line'),
 		value = '',
 		onMoved,
 		attrs = {},
@@ -112,7 +112,7 @@ export function linksField(
 	const textarea = buildElement('textarea', {
 		id,
 		rows: 2,
-		placeholder: "https://… a page about it, such as its publisher's",
+		placeholder: spell("https://… a page about it, such as its publisher's"),
 		...attrs,
 		onfocusout: () => {
 			const now = moveCatalogLinks(textarea.value, kind, fieldFor);

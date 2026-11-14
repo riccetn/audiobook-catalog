@@ -63,19 +63,19 @@ function populateFilters() {
 		buildElement('option', {value}, text);
 	fillElement(
 		aSel,
-		option('', 'All authors'),
+		option('', spell('All authors')),
 		authors.map(a => option(a, a)),
 	);
 	fillElement(
 		gSel,
-		option('', 'All genres'),
+		option('', spell('All genres')),
 		genres.map(g => option(g, g)),
 	);
 	fillElement(
 		rSel,
-		option('', 'Read any time'),
-		years.map(y => option(y, `Read in ${y}`)),
-		option(UNDATED, 'No date read'),
+		option('', spell('Read any time')),
+		years.map(y => option(y, spell('Read in {year}', {year: y}))),
+		option(UNDATED, spell('No date read')),
 	);
 	aSel.value = aCur;
 	gSel.value = gCur;
@@ -181,9 +181,11 @@ export function render() {
 	}
 	const books = LIST.books();
 	const more = LIST.rest;
-	byId('subtitle').textContent = spell(`${TOTAL_BOOKS} audiobooks in the catalog`);
+	byId('subtitle').textContent = spell('{count} audiobooks in the catalog', {count: TOTAL_BOOKS});
 	byId('resultCount').textContent =
-		more > 0 ? `${books.length} of ${books.length + more} shown` : `${books.length} shown`;
+		more > 0
+			? spell('{count} of {total} shown', {count: books.length, total: books.length + more})
+			: spell('{count} shown', {count: books.length});
 	fillElement(
 		byId('results'),
 		books.length
@@ -193,7 +195,7 @@ export function render() {
 					onMore: () => showMore(),
 					q: fieldById('q').value.trim(),
 				})
-			: buildElement('p', {class: 'empty'}, 'No books match. Try clearing a filter.'),
+			: buildElement('p', {class: 'empty'}, spell('No books match. Try clearing a filter.')),
 	);
 }
 

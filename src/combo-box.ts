@@ -4,7 +4,7 @@
 // cursor is in, and picking one puts it in place of what was typed there. A name the catalog doesn't have yet
 // is said to be new under the field, as saving adds it as a series or person of its own. The Edit page's
 // author, series, narrator and publisher fields are ones (edit.ts).
-import {buildElement, fillElement} from './dom.js';
+import {buildElement, fillElement, spell} from './dom.js';
 import {Text} from './modules/text.js';
 
 // How many names the list shows at most; typing more narrows it down.
@@ -43,8 +43,11 @@ function namePart(text: string, at: number): [number, number] {
 	return [start, stop < 0 ? text.length : at + stop];
 }
 
-/** What a field says is new: which kind (its noun, and its plural) and whether the names are read yet. */
-export type NewNote = {nouns: [string, string]; ready: () => boolean};
+/**
+ * What a field says is new: its note for one new name and for several, as spell() templates with the names
+ * at {names}, and whether the names are read yet.
+ */
+export type NewNote = {texts: [string, string]; ready: () => boolean};
 
 /**
  * The names in a field (one, or several separated by commas) that are not among `names`, as they will be saved.
@@ -171,7 +174,7 @@ export function comboBox(
 		const added = newNote.ready() ? newNames(names(), input.value, multiple, split) : [];
 		note.hidden = !added.length;
 		note.textContent = added.length
-			? `New ${newNote.nouns[added.length > 1 ? 1 : 0]}: ${added.join(', ')}, added to the catalog when this is saved.`
+			? spell(newNote.texts[added.length > 1 ? 1 : 0], {names: added.join(', ')})
 			: '';
 	}
 	if (note && newNote) {
