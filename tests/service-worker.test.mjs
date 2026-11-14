@@ -7,6 +7,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {compiledBefore} from '../build.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const site = path.join(root, 'public');
@@ -143,6 +144,16 @@ test('on this computer the network goes first, and the cache answers offline', a
 	assert.equal(sw.asked.length, fetched + 1);
 	sw.goOffline();
 	assert.equal(await sw.get('store.js'), 'fresh /app/store.js');
+});
+
+test('make pages clears the scripts it compiled before, never the vendored library or the API docs beside them', () => {
+	for (const file of ['store.js', 'store.js.map', 'modules/book.js', 'modules/book.js.map', 'sw.js', 'sw-app.js'])
+		assert.equal(compiledBefore(file), true, file);
+	// the server's workflow writes the API docs into public/api/ before its deploy builds again
+	for (const file of ['api/assets/main.js', 'api/assets/search.js', 'vendor/qrcode.mjs', 'vendor/qrcode.js'])
+		assert.equal(compiledBefore(file), false, file);
+	for (const file of ['index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg'])
+		assert.equal(compiledBefore(file), false, file);
 });
 
 test('make pages writes the files to cache, every file served but the source maps and the API docs, and the version, a hash of them', () => {

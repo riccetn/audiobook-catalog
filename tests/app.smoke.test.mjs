@@ -2376,6 +2376,55 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	assert.equal(database.records('books').length, 0);
 });
 
+test('a catalog another tab saves while this page saves it again in a new shape is read again, never set aside', async () => {
+	// A browser whose stored catalog waits to be saved again (a database of version 3), where another tab's save
+	// lands just before each of this page's first `saves` saves: the stored revision moves on under it.
+	const open = async saves => {
+		const storage = new Map();
+		const first = await boot({storage});
+		await first.saved();
+		const {db} = await new Promise(resolve => {
+			const req = first.database.open('audiobook-catalog', 6);
+			req.onsuccess = () => resolve({db: req.result});
+		});
+		first.database.data.get('audiobook-catalog').version = 3;
+		const fake = Object.getPrototypeOf(db),
+			transaction = fake.transaction;
+		let left = saves;
+		fake.transaction = function (storeNames, mode) {
+			if (left > 0 && mode === 'readwrite' && Array.isArray(storeNames) && storeNames.includes('books')) {
+				left--;
+				for (const rec of this.data.stores.get('meta').records.values())
+					if (rec.key === 'revision') rec.value = {...rec.value, value: rec.value.value + 1};
+			}
+			return transaction.call(this, storeNames, mode);
+		};
+		try {
+			const page = await boot({storage, page: 'books.html'});
+			await page.saved();
+			return page;
+		} finally {
+			fake.transaction = transaction;
+		}
+	};
+	const has = (database, key) => database.records('meta').some(m => m.key === key);
+
+	// once: the page reads what the other tab saved, and saves that
+	const once = await open(1);
+	assert.equal(once.database.records('books').length, demoBooks.length);
+	assert.equal(has(once.database, 'unreadable'), false);
+	assert.equal(has(once.database, 'reshape'), false, 'saved again in the new shape');
+	assert.equal(once.els.ioStatus.textContent, '');
+	assert.deepEqual((await kept(once.storage)).books, demoBooks);
+
+	// every time: the page gives up saving, says so, and still shows the catalog, which stays stored
+	const always = await open(Infinity);
+	assert.equal(always.database.records('books').length, demoBooks.length);
+	assert.equal(has(always.database, 'unreadable'), false);
+	assert.match(always.els.ioStatus.textContent, /^The catalog was changed in another tab while this page opened/);
+	assert.equal(always.get('CATALOG.books.length'), demoBooks.length);
+});
+
 test("a series' site, from before authors kept their own, goes to its author when the page opens", async () => {
 	const storage = new Map();
 	const first = await boot({storage});
@@ -2884,6 +2933,46 @@ test('Export includes series and author info, and Import brings them back', asyn
 	assert.deepEqual(legacy.get('CATALOG.toJSON().seriesInfo'), JSON.parse(DEMO_INFO));
 	assert.deepEqual(legacy.get('CATALOG.toJSON().authors'), JSON.parse(DEMO_AUTHORS));
 	assert.deepEqual(legacy.get('CATALOG.toJSON().narrators'), JSON.parse(DEMO_NARRATORS));
+});
+
+test('Restore takes a backup of a catalog made apart from this one, with its series and people under other ids', async () => {
+	const {els, database, storage, run, saved} = await boot({page: 'import.html'});
+	await saved();
+	run(`CATALOG.addExclusions(['BGONE'])`);
+	await run('persist()');
+	// this catalog's backup as another browser would have written it: the same names, each under an id of its own
+	const other = id => 'other-' + id;
+	const backup = {version: 5, exclusions: [], marks: {}};
+	for (const store of ['books', 'editions', 'series', 'contributors']) {
+		backup[store] = {};
+		// (a book's place in a backup is its place in the catalog)
+		for (const rec of database.records(store).sort((x, y) => (x.position ?? 0) - (y.position ?? 0))) {
+			const own = Object.fromEntries(
+				Backup.FIELDS[store].filter(f => rec[f] !== undefined).map(f => [f, rec[f]]),
+			);
+			if (own.seriesId) own.seriesId = other(own.seriesId);
+			for (const f of ['authorIds', 'narratorIds', 'publisherIds']) if (own[f]) own[f] = own[f].map(other);
+			backup[store][store === 'series' || store === 'contributors' ? other(rec.id) : rec.id] = own;
+		}
+	}
+	const before = await kept(storage);
+	await els.importFile.listeners.change[0]({
+		target: {files: [{name: 'backup.json', text: JSON.stringify(backup)}], value: ''},
+	});
+	await idle();
+	assert.match(els.ioStatus.textContent, /^Restored 13 books/);
+	// stored, under the backup's ids, with nothing left of the ids before
+	assert.deepEqual(await kept(storage), before);
+	for (const store of ['series', 'contributors'])
+		assert.ok(
+			database.records(store).every(rec => rec.id.startsWith('other-')),
+			store,
+		);
+	assert.deepEqual(
+		database.records('exclusions').map(x => x.entry),
+		['BGONE'],
+		'the exclusions stay',
+	);
 });
 
 test('Restore takes the data files of a catalog from before it lived in the browser, picked together', async () => {

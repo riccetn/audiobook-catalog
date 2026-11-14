@@ -1,6 +1,8 @@
 # Merge a backup from another device
 
-**Restore** replaces the catalog with the backup, which loses any edits made here since. When both
+**Restore** replaces the catalog with the backup, which loses any edits made here since; a backup of a
+catalog made apart from this one (the same export imported on two devices) is restored too, under the
+backup's ids. When both
 sides have changed (books added, read or removed on the phone _and_ on the PC), merge instead: **Merge**
 on the _Import & export_ page previews the result first, and changes nothing until you confirm it.
 

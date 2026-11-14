@@ -52,7 +52,9 @@ backup (below), and combine two that both changed with **Merge** ([Merge a backu
 The first time the app opens somewhere, the catalog is empty. The app asks the browser to keep its
 storage when space runs low, but clearing the site's data (or the browser deciding to) deletes it.
 If the stored catalog can't be read, it is set aside (in the database's `meta` store, under `unreadable`)
-and the catalog starts empty; restore a backup. A browser that keeps no IndexedDB for the page (some
+and the catalog starts empty; restore a backup. A catalog that was read is never set aside: when a new
+version of the app can't save it again in its own shape (another tab saved first, or the storage is full),
+the page shows it and says so. A browser that keeps no IndexedDB for the page (some
 private windows) shows the catalog but saves nothing, and says so: export a backup before you leave.
 
 **From localStorage**: until 2026-10 the catalog was kept in `localStorage`, under the key

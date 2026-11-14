@@ -19,7 +19,7 @@ imported under (`store.js` is `src/store.ts`, `modules/book.js` is `src/modules/
 
 `make pages` (`build.mjs`) builds `public/`: it compiles `src/` with `tsc` (`tsconfig.json`, and `tsconfig.sw.json` for `sw.ts`
 with the worker's globals) into `public/*.js` and `public/modules/*.js`, each with a source map (`.js.map`, the TypeScript inside
-it, so DevTools shows `src/`; never cached by `sw.js`), after clearing out the scripts compiled before; a type error stops it.
+it, so DevTools shows `src/`; never cached by `sw.js`), after clearing out the scripts compiled before (`compiledBefore`: not `vendor/` or the API docs' own in `api/`); a type error stops it.
 Then it renders `templates/pages/<name>.liquid` with
 [Liquid](https://liquidjs.com/) into `public/<name>.html`, each filling in `templates/layout.liquid` (the `<head>`, the title and the
 nav bar, whose links are `nav-link.liquid` includes). The written pages and scripts are in `.gitignore`: **edit the templates and `src/`, never `public/*.html` or `public/*.js`**.
@@ -323,7 +323,7 @@ identifier (`sameAs`), and also a book of its own numbered with its range (`"1-3
 migrated on load by `BackupV1.fixBooks`, and so are authors and narrators written as one comma separated
 string, and an edition's one publisher as text (`BackupV1.fixPeople`/`Text.splitNames`; a publisher's name is never split; `namesText` joins a list back for display). Matching and "Not duplicates"
 keys use the first author (`Book.firstAuthor`/`firstName`). A missing `r` means the read date is unknown, not unread. `seriesInfo` maps a series
-name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, ext, links}` (an old `url` is moved, `Catalog.moveSeriesSites`). `authors` (optional;
+name (must equal `s` exactly) to `{total, status: "ongoing"|"complete", note, ext, links}` (each optional: a series may be kept by an id alone; an old `url` is moved, `Catalog.moveSeriesSites`). `authors` (optional;
 missing means `{}`) maps an author's name (as in `a`) to `{bio, url, ext, links}` (ids by catalog, and other addresses; the old `audible`/`goodreads`/`hardcover`
 addresses are read into `ext` by `Contributor.fixLinks`), and `narrators` and `publishers` (likewise optional) map a narrator's name (as in an edition's `n`) or
 a publisher's (as in `p`) to the same; they travel like series info.

@@ -212,12 +212,13 @@ export class Validator {
 				errors.push(`series-info[${repr(name)}]: not an object`);
 				continue;
 			}
-			if (!Series.STATUSES.includes(entry.status))
+			// a series may have neither yet (one kept only by its id on another catalog): Stats lists what it lacks
+			if (entry.status !== undefined && !Series.STATUSES.includes(entry.status))
 				errors.push(
 					`series-info[${repr(name)}]: status must be one of ${repr(Series.STATUSES.slice().sort())}`,
 				);
 			const total = entry.total;
-			if (!(Number.isInteger(total) && total > 0) && total !== 'many') {
+			if (total !== undefined && !(Number.isInteger(total) && total > 0) && total !== 'many') {
 				errors.push(`series-info[${repr(name)}]: total must be a positive integer (or "many")`);
 			} else if (typeof total === 'number' && total > Series.TOTAL_MAX) {
 				warnings.push(

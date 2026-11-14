@@ -771,14 +771,33 @@ async function loadCatalog(whole: boolean) {
 			SEEN_REVISION = revision;
 			return;
 		}
-		stored = await DATABASE.load();
-		if (!stored) return;
-		CATALOG.replaceWith(CatalogRecords.toCatalog(stored.records));
-		SEEN_REVISION = stored.revision;
-		SAVED = CatalogRecords.snapshot(stored.records);
-		WHOLE = true;
-		CATALOG.moveSeriesSites();
-		if (reshape || CatalogRecords.outdated(stored.records)) await saveAll();
+		for (let tries = 1; ; tries++) {
+			stored = await DATABASE.load();
+			if (!stored) return;
+			CATALOG.replaceWith(CatalogRecords.toCatalog(stored.records));
+			SEEN_REVISION = stored.revision;
+			SAVED = CatalogRecords.snapshot(stored.records);
+			WHOLE = true;
+			CATALOG.moveSeriesSites();
+			if (!((await DATABASE.needsReshape()) || CatalogRecords.outdated(stored.records))) break;
+			// Saving them again may fail though they were read: that is no reason to set the catalog aside.
+			try {
+				await saveAll();
+				break;
+			} catch (e) {
+				// another tab saved meanwhile (most likely it opened with this one, and saved them again too): read what it saved
+				const conflict = e instanceof CatalogConflict;
+				if (conflict && tries < 3) continue;
+				// shown as it was read, all of it; when the browser refused the save, the next one writes every record again
+				if (!conflict) SAVED = new Map();
+				STARTUP_NOTICE = spell(
+					conflict
+						? 'The catalog was changed in another tab while this page opened. Reload the page.'
+						: "Couldn't update the catalog kept in this browser for this version of the app (is its storage full?). Export a backup.",
+				);
+				return;
+			}
+		}
 		if (!whole) holdNothing();
 	} catch (e) {
 		try {

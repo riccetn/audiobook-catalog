@@ -7,6 +7,7 @@
 // catalog. Loading and saving live in store.ts.
 import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
+import type {NameIds} from './modules/catalog.js';
 import {Backup, NewerBackup, UnreadableBackup} from './modules/backup.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
@@ -200,6 +201,18 @@ function readFiles(files: Iterable<File>): Promise<{name: string; text: string}[
 }
 
 /**
+ * Whether `theirs` has a series or person of `ours` (by name) under another id.
+ */
+function namedUnderOtherIds(ours: NameIds, theirs: NameIds): boolean {
+	return Catalog.NAMED_KINDS.some(kind =>
+		[...theirs[kind]].some(([name, id]) => {
+			const mine = ours[kind].get(name);
+			return mine !== undefined && mine !== id;
+		}),
+	);
+}
+
+/**
  * Restore: a backup, or the data files of a catalog from before it lived in the browser
  * (books.json, series-info.json, ... picked together; Backup.readFiles), replaces the catalog.
  */
@@ -233,6 +246,20 @@ async function importBackup(files: File[]) {
 		);
 		// and the marks are taken as text, to point them at the books restored
 		const keptMarks = CATALOG.markTexts();
+		// A backup of a catalog made apart from this one (the same export imported on two devices) has this one's
+		// series and people under other ids, which can't be stored beside this one's names, as each name is stored
+		// once: this catalog goes first, as when a sync replaces it (syncCatalog).
+		if (nameIds && namedUnderOtherIds(CATALOG.nameIds, nameIds)) {
+			const had = new Catalog();
+			had.replaceWith(CATALOG);
+			const emptied = new Catalog();
+			emptied.addExclusions(CATALOG.exclusions.entries); // only ever added to
+			CATALOG.replaceWith(emptied);
+			if (!(await persist())) {
+				CATALOG.replaceWith(had); // persist said why; the catalog is as it was
+				return;
+			}
+		}
 		CATALOG.books = books;
 		CATALOG.marks = new Map();
 		if (nameIds) CATALOG.nameIds = nameIds; // the ids series and people were stored under, when the backup has them
