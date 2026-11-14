@@ -1511,8 +1511,9 @@ button:focus {
 		min-height: 2.5rem;
 	}
 }
-/* the status line's Undo, and a book's Read today */
+/* the status line's Undo and Dismiss, and a book's Read today */
 .ioStatus .undo,
+.ioStatus .dismiss,
 .book-details .readToday {
 	padding: 0.15rem 0.6rem;
 	border-radius: 6px;
@@ -1524,6 +1525,7 @@ button:focus {
 	cursor: pointer;
 }
 .ioStatus .undo:hover,
+.ioStatus .dismiss:hover,
 .book-details .readToday:hover {
 	background: var(--moss);
 	color: #fff;

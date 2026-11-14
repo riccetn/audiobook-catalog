@@ -899,8 +899,9 @@ let ioStatusTimer: ReturnType<typeof setTimeout> | undefined;
 export const STATUS_TIME = 5000;
 
 /**
- * Say something on the status line for a few seconds; `isErr` shows it as an error. With `undo`, the line
- * has an Undo button that runs it and clears the line.
+ * Say something on the status line for a few seconds; `isErr` shows it as an error, which stays (with a
+ * Dismiss button) until the next message, as it may say something wasn't saved. With `undo`, the line has
+ * an Undo button that runs it and clears the line.
  */
 export function showIoStatus(msg: string, isErr?: boolean, undo?: () => void) {
 	const el = byId('ioStatus');
@@ -926,10 +927,11 @@ export function showIoStatus(msg: string, isErr?: boolean, undo?: () => void) {
 				'Undo',
 			),
 		],
+		isErr && [' ', buildElement('button', {type: 'button', class: 'dismiss', onclick: clear}, 'Dismiss')],
 	);
 	el.classList.toggle('err', !!isErr);
 	clearTimeout(ioStatusTimer);
-	ioStatusTimer = setTimeout(clear, STATUS_TIME);
+	if (!isErr) ioStatusTimer = setTimeout(clear, STATUS_TIME);
 }
 
 /**

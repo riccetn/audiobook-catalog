@@ -12,6 +12,8 @@ const GOODREADS_ENTRY = /^(?:goodreads|gr)(?:\s+id)?:?\s*(\d+)$/i;
 const HARDCOVER_ENTRY = /^hardcover(?:\s+id)?:?\s*(\d+)$/i;
 // "Edition B0…", "Edition ISBN 978…", "Edition Goodreads 4242", "Edition Hardcover 601": one edition, not its book.
 const EDITION_ENTRY = /^edition:?\s+(.+)$/i;
+// An ASIN: letters and digits only (stored ones may be shorter than Amazon's ten), kept in capitals.
+const ASIN_ENTRY = /^[A-Za-z0-9]+$/;
 
 /** Books that imports must never re-add (because you removed them on purpose). */
 export class Exclusions {
@@ -23,6 +25,8 @@ export class Exclusions {
 	/** the editions kept out, by Edition.idAndIsbnKeys() ("asin B0…", "isbn 978…", "goodreads 4242") */
 	editions: Set<string>;
 	lines: Map<string, string>;
+	/** the lines that are none of the entries above (a title without its author), kept as written but matching nothing */
+	unreadable: Set<string>;
 
 	constructor() {
 		this.ids = new Set();
@@ -32,6 +36,7 @@ export class Exclusions {
 		this.hcs = new Set(); // Hardcover edition ids
 		this.editions = new Set();
 		this.lines = new Map(); // key -> the entry as written in the exclusions list
+		this.unreadable = new Set();
 	}
 
 	/**
@@ -55,7 +60,7 @@ export class Exclusions {
 		let line = Text.tidy(String(entry).split('#')[0]);
 		if (!line) return null;
 		const edition = EDITION_ENTRY.exec(line);
-		if (edition) return this.addEdition(edition[1]);
+		if (edition && Exclusions.editionKey(edition[1])) return this.addEdition(edition[1]);
 		const bar = line.indexOf('|');
 		if (bar < 0) {
 			const gr = GOODREADS_ENTRY.exec(line);
@@ -79,6 +84,8 @@ export class Exclusions {
 				this.lines.set(Text.key('isbn', isbn), (line = `ISBN ${isbn}`));
 				return line;
 			}
+			if (!ASIN_ENTRY.test(line)) return this.addUnreadable(line);
+			line = line.toUpperCase();
 			if (this.ids.has(line) && (!isbn || this.isbns.has(isbn))) return null;
 			this.ids.add(line);
 			if (isbn) this.isbns.add(isbn);
@@ -102,22 +109,36 @@ export class Exclusions {
 	 * or "Hardcover 601". Returns the entry as written, or null when it is not one or is there already.
 	 */
 	addEdition(id: string): string | null {
+		const found = Exclusions.editionKey(id);
+		if (!found || this.editions.has(found.key)) return null;
+		this.editions.add(found.key);
+		const line = `Edition ${found.shown}`;
+		this.lines.set(Text.key('edition', found.key), line);
+		return line;
+	}
+
+	/**
+	 * What follows "Edition" read: its key among `editions` and how the entry shows it; null when it is no id.
+	 */
+	static editionKey(id: string): {key: string; shown: string} | null {
 		const gr = GOODREADS_ENTRY.exec(id),
 			hc = HARDCOVER_ENTRY.exec(id),
 			isbn = Isbn.parse(id);
-		const [key, shown] = gr
-			? [`goodreads ${gr[1]}`, `Goodreads ${gr[1]}`]
-			: hc
-				? [`hardcover ${hc[1]}`, `Hardcover ${hc[1]}`]
-				: isbn && (/^isbn/i.test(id) || !/^[\dX]{10}$/i.test(id))
-					? [`isbn ${isbn}`, `ISBN ${isbn}`]
-					: /^[\dA-Z]{10}$/.test(id)
-						? [`asin ${id}`, id]
-						: [null, null];
-		if (key === null || this.editions.has(key)) return null;
-		this.editions.add(key);
-		const line = `Edition ${shown}`;
-		this.lines.set(Text.key('edition', key), line);
+		if (gr) return {key: `goodreads ${gr[1]}`, shown: `Goodreads ${gr[1]}`};
+		if (hc) return {key: `hardcover ${hc[1]}`, shown: `Hardcover ${hc[1]}`};
+		if (isbn && (/^isbn/i.test(id) || !/^[\dX]{10}$/i.test(id)))
+			return {key: `isbn ${isbn}`, shown: `ISBN ${isbn}`};
+		if (/^[\dA-Z]{10}$/i.test(id)) return {key: `asin ${id.toUpperCase()}`, shown: id.toUpperCase()};
+		return null;
+	}
+
+	/**
+	 * Keep a line that is no entry as it was written, so it isn't lost and the Check can name it; it keeps nothing out.
+	 */
+	addUnreadable(line: string): string | null {
+		if (this.unreadable.has(line)) return null;
+		this.unreadable.add(line);
+		this.lines.set(Text.key('unreadable', line), line);
 		return line;
 	}
 
@@ -166,7 +187,7 @@ export class Exclusions {
 	 */
 	covers(book: Book): boolean {
 		return (
-			book.ids('asin').some(id => this.ids.has(id)) ||
+			book.ids('asin').some(id => this.ids.has(id.toUpperCase())) ||
 			book.ids('goodreads').some(gr => this.grs.has(gr)) ||
 			book.ids('hardcover').some(hc => this.hcs.has(hc)) ||
 			(Text.norm(book.title) !== '' && this.titles.has(Text.key(Text.norm(book.title), book.authorKey()))) ||

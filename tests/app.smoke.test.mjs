@@ -2342,6 +2342,28 @@ test('a catalog with values that are not what their field holds is shown but not
 	assert.match(els.ioStatus.textContent, /^Not saved: these values can't be kept.*book #0 \('Odd'\): 'g', 'x'/);
 });
 
+test('the status line clears a message after a while, but keeps an error until it is dismissed', async () => {
+	const timers = [];
+	const setTimeout = (fn, ms) => (timers.push({fn, ms}), timers.length);
+	const {els, ctx} = await boot({setTimeout});
+	assert.equal(els.ioStatus.getAttribute('role'), 'status', 'screen readers read it out');
+	timers.length = 0;
+	ctx.showIoStatus('Saved.');
+	assert.deepEqual(
+		timers.map(t => t.ms),
+		[ctx.STATUS_TIME],
+	);
+	timers[0].fn();
+	assert.equal(els.ioStatus.textContent, '');
+	timers.length = 0;
+	ctx.showIoStatus('Not saved: the disk is full.', true);
+	assert.deepEqual(timers, [], 'no timer clears an error');
+	assert.match(els.ioStatus.textContent, /^Not saved: the disk is full\. Dismiss$/);
+	assert.ok(els.ioStatus.classList.contains('err'));
+	els.ioStatus.querySelector('.dismiss').listeners.click[0]();
+	assert.equal(els.ioStatus.textContent, '');
+});
+
 test('without IndexedDB the page shows the catalog localStorage has, and says nothing is saved', async () => {
 	const storage = new Map();
 	databaseOf(storage).broken = true;
@@ -2922,7 +2944,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 		target: {files: [{name: 'b.json', text: JSON.stringify(broken)}], value: ''},
 	});
 	await idle();
-	assert.equal(other.els.ioStatus.textContent, 'Not restored: no author is stored under nobody.');
+	assert.equal(other.els.ioStatus.textContent, 'Not restored: no author is stored under nobody. Dismiss');
 	assert.equal(other.get('CATALOG.books.length'), demoBooks.length);
 
 	// an older backup (a plain list of books) still imports and keeps the current series and author info
@@ -3036,7 +3058,7 @@ test('Restore takes the data files of a catalog from before it lived in the brow
 	await idle();
 	assert.equal(
 		els.ioStatus.textContent,
-		"Not restored: fix these values in the backup first (they aren't what their field holds): book #0 ('Odd'): 'g'.",
+		"Not restored: fix these values in the backup first (they aren't what their field holds): book #0 ('Odd'): 'g'. Dismiss",
 	);
 	assert.equal(get('CATALOG.books.length'), 2);
 });
@@ -3170,7 +3192,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 		target: {files: [{name: 'b.json', text: JSON.stringify(backup)}], value: ''},
 	});
 	await idle();
-	assert.deepEqual(other.get('CATALOG.exclusions.entries'), ['BOLD', 'Other', 'BGONE2', 'Gone | Ann Vale']);
+	assert.deepEqual(other.get('CATALOG.exclusions.entries'), ['BOLD', 'OTHER', 'BGONE2', 'Gone | Ann Vale']);
 	assert.match(other.els.ioStatus.textContent, /2 more excluded from imports/);
 });
 
@@ -4229,7 +4251,7 @@ test('your server is kept in this browser, checked when saved, and only ever sen
 	els.serverUrl.value = 'https://catalog-proxy.example.workers.dev/';
 	els.serverKey.value = 'wrong-key';
 	await els.serverSave.listeners.click[0]();
-	assert.match(els.ioStatus.textContent, /^Server saved; your server refused the key\.$/);
+	assert.match(els.ioStatus.textContent, /^Server saved; your server refused the key\. Dismiss$/);
 
 	els.serverUrl.value = 'https://catalog-proxy.example.workers.dev/';
 	els.serverKey.value = ' right-key ';
@@ -4270,7 +4292,7 @@ test('your server is kept in this browser, checked when saved, and only ever sen
 		storage: new Map([SERVER_SAVED]),
 	});
 	await before.els.serverCheck.listeners.click[0]();
-	assert.equal(before.els.ioStatus.textContent, 'Your server is from before this version: deploy it again.');
+	assert.equal(before.els.ioStatus.textContent, 'Your server is from before this version: deploy it again. Dismiss');
 });
 
 test('another device is set up from a QR code of the settings saved here, and asks before saving them', async () => {
@@ -4370,7 +4392,7 @@ test('another device is set up from a QR code of the settings saved here, and as
 	// nothing ticked, nothing shown; nothing saved, nothing to show
 	alone.els['setupPick-hardcover'].checked = false;
 	await alone.els.setupShowBtn.listeners.click[0]();
-	assert.equal(alone.els.ioStatus.textContent, 'Tick a setting to hand over first.');
+	assert.equal(alone.els.ioStatus.textContent, 'Tick a setting to hand over first. Dismiss');
 	const empty = await boot({page: 'import.html', files: null});
 	assert.equal(empty.els.setupShowBtn.style.display, 'none');
 	assert.match(empty.els.setupState.textContent, /^Nothing to hand over yet/);
@@ -4440,7 +4462,7 @@ test('devices sync through your server: encrypted, taking in what the others cha
 	phone.run(`CATALOG.books.find(b => b.id === '${id}').title = 'Retitled on the phone'; persist()`);
 	await idle();
 	await sync(pc);
-	assert.equal(await sync(phone), 'Not synced: another device changed these too.');
+	assert.equal(await sync(phone), 'Not synced: another device changed these too. Dismiss');
 	assert.equal(phone.els.syncChoice.style.display, '');
 	assert.match(phone.els.syncChoiceText.textContent, /"Retitled on the phone"\. Keep which\?$/);
 	assert.equal(phone.els.syncReplace.style.display, 'none');
@@ -4461,7 +4483,10 @@ test('devices sync through your server: encrypted, taking in what the others cha
 	assert.equal(row().revision, before);
 	// a catalog made apart from the synced one can only be replaced by it
 	const apart = await device(DEMO, 'sea glass lantern', 'apart');
-	assert.equal(await sync(apart), 'Not synced: this catalog and the synced one were not made from the same catalog.');
+	assert.equal(
+		await sync(apart),
+		'Not synced: this catalog and the synced one were not made from the same catalog. Dismiss',
+	);
 	assert.equal(apart.els.syncReplace.style.display, '');
 	assert.match(await sync(apart, 'syncReplace'), /^Synced: /);
 	assert.ok((await titles(apart.storage)).includes('Retitled on the PC'));
@@ -4470,7 +4495,7 @@ test('devices sync through your server: encrypted, taking in what the others cha
 
 	// without a passphrase, or with sync not set up on the proxy, it says so
 	const bare = await device(DEMO, '');
-	assert.match(await sync(bare), /^Not synced: save a sync passphrase first\.$/);
+	assert.match(await sync(bare), /^Not synced: save a sync passphrase first\. Dismiss$/);
 	bare.els.syncPassphrase.value = 'sea glass lantern';
 	bare.els.syncPassphraseSave.listeners.click[0]();
 	assert.equal(bare.storage.get('audiobook-catalog-sync-passphrase'), 'sea glass lantern');

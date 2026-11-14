@@ -122,15 +122,24 @@ export class CatalogSync {
 	static async squeeze(bytes: Uint8Array, pack: boolean): Promise<Uint8Array<ArrayBuffer>> {
 		const stream = pack ? new CompressionStream('gzip') : new DecompressionStream('gzip');
 		const writer = stream.writable.getWriter();
-		writer.write(bytes as Uint8Array<ArrayBuffer>);
-		writer.close();
+		// written while it is read, as the stream holds only so much; data it can't unpack fails both sides,
+		// and the reading side's error is the one thrown
+		const written = writer.write(bytes as Uint8Array<ArrayBuffer>).then(() => writer.close());
 		const parts: Uint8Array[] = [];
 		const reader = stream.readable.getReader();
-		for (;;) {
-			const {done, value} = await reader.read();
-			if (done) break;
-			parts.push(value);
+		try {
+			for (;;) {
+				const {done, value} = await reader.read();
+				if (done) break;
+				parts.push(value);
+			}
+		} catch (exc) {
+			await written.catch(() => {
+				/* the reading side's error says it */
+			});
+			throw exc;
 		}
+		await written;
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let at = 0;
 		for (const p of parts) {

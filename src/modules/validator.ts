@@ -40,6 +40,11 @@ export class Validator {
 				problems.warnings.push(...found.warnings);
 			}
 		}
+		// a test's catalog may be its books alone
+		for (const line of catalog.exclusions?.unreadable ?? [])
+			problems.warnings.push(
+				`exclusions: ${repr(line)} is not an ASIN, "ISBN 978…", "Goodreads 12345", "Hardcover 12345" or "Title | Author", so it keeps nothing out`,
+			);
 		return problems;
 	}
 

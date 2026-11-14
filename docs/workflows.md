@@ -157,6 +157,9 @@ the _Series_ page and the series' own page list the numbers you don't own (for e
 novella such as `"2.5"` doesn't count for book 2. Pick **Series with missing books** on _Series_ to see only
 those series. Series whose total is `"many"`, or that have no release info, are left out.
 
+The status line says what an action did for a few seconds; an error (one starting _Not saved_, say) stays
+until the next message or until you press **Dismiss** beside it. Screen readers read it out.
+
 **Remove a book for good**: press **Edit** on the book's details, then **Remove book** in the form. It leaves the list at once, and the status line
 offers **Undo** for a few seconds; once that is gone (or you leave the page), the page takes it out and adds it to
 the import exclusion list, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
@@ -165,6 +168,8 @@ import brings it back. Backups carry the list (`excluded`), one entry per line: 
 `Goodreads 4242` (a bare number is read as an ASIN), `Hardcover 501` or `Title | Author`. An entry
 `ISBN 978-0-00-000000-2` (or just the ISBN-13) skips every imported book that carries that ISBN, in any of its editions' forms (so
 an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN counts as both an ASIN and an ISBN.
+An ASIN is read in any case (`b0…` is `B0…`). A line that is none of these (a title without `| Author`) is kept
+as written but keeps nothing out, and **Check** names it.
 Removing a book in the page does not add its ISBNs, since another book may share them. An edition removed
 on the _Edit series_ page can be kept out too, with entries that start with `Edition` (`Edition B0…`,
 `Edition ISBN 978…`, `Edition Goodreads 4242`, `Edition Hardcover 501`): imports leave that edition out, but its book
