@@ -210,8 +210,9 @@ export class AudiobookdbSync extends ShelfSync {
 		const book = AudiobookdbSource.book(detail, releases.length === 1 ? releases[0] : null);
 		if (!book.title || !book.authors.length) return null;
 		if (part.kind === 'series' && book.series !== part.name) {
+			// its number in its own series isn't its number in this one: only the series' listing gives that
 			book.series = part.name;
-			if (missing.number) book.number = missing.number;
+			book.number = missing.number || undefined;
 		}
 		return book;
 	}

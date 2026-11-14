@@ -3684,6 +3684,19 @@ test("AudiobookDB's release links name each ASIN's site, and an edition gains it
 	});
 });
 
+test("AudiobookdbSync.missingBook numbers a book of another series as this series lists it, never by its own series' number", async () => {
+	const {books} = audiobookdbState();
+	const sync = new AudiobookdbSync({book: async id => books[id] || null});
+	const part = {kind: 'series', name: 'Harbor Lights'};
+	// Tidewater is book 1 of Gull Isle on AudiobookDB
+	const unnumbered = await sync.missingBook({title: 'Tidewater', id: 'Tidewater001'}, part);
+	assert.deepEqual([unnumbered.series, unnumbered.number], ['Harbor Lights', undefined]);
+	const numbered = await sync.missingBook({title: 'Tidewater', number: '3', id: 'Tidewater001'}, part);
+	assert.deepEqual([numbered.series, numbered.number], ['Harbor Lights', '3']);
+	const own = await sync.missingBook({title: 'Tidewater', id: 'Tidewater001'}, {kind: 'series', name: 'Gull Isle'});
+	assert.deepEqual([own.series, own.number], ['Gull Isle', '1'], 'in its own series it keeps its number');
+});
+
 test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids found (never a box set's book on a title)", () => {
 	const {books} = audiobookdbState();
 	const shelves = audiobookdbState().shelves;
