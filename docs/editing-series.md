@@ -14,9 +14,10 @@ among its fields, and `+ Add a book` (on _Books_ and on a series' page) for a ne
 ## The series
 
 Its name (a new name renames it on every book in it), how many books are released, whether it is ongoing or
-complete, a note, its ids in other catalogs, and links to other pages about it, one per line (a catalog's page among
+complete (or unknown), a note, its ids in other catalogs, and links to other pages about it, one per line (a catalog's page among
 them goes to its id field when that is empty). **Remove series** takes it off its books and removes it; it
-asks you to save or discard your changes first. See [Everyday workflows](workflows.md).
+asks you to save or discard your changes first. Any of these may be left empty: a series without a total or a
+status shows neither on its pages, rather than guessing. See [Everyday workflows](workflows.md).
 
 ## A book
 

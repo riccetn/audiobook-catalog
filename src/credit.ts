@@ -33,7 +33,7 @@ import {
 } from './id-fields.js';
 import {lookupHardcoverField} from './connections.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
-import {setAddress, nameLinks, authorLinks, statusTag} from './book-list.js';
+import {setAddress, nameLinks, authorLinks, statusTag, totalText} from './book-list.js';
 import type {CreditKind} from './credit-kinds.js';
 import type {Book} from './modules/book.js';
 import type {Child, FormField} from './dom.js';
@@ -148,8 +148,12 @@ function seriesHeading(s: {name: string; books: Book[]}): HTMLParagraphElement {
 		{class: 'series-title'},
 		link,
 		' ',
-		buildElement('span', {class: 'n'}, `${Series.owned(s.books)} owned${si ? ' of ' + si.total : ''}`),
-		si && [' ', statusTag(si.status)],
+		buildElement(
+			'span',
+			{class: 'n'},
+			`${Series.owned(s.books)} owned${totalText(si) ? ' of ' + totalText(si) : ''}`,
+		),
+		si && statusTag(si.status),
 	);
 }
 

@@ -3414,6 +3414,16 @@ test('a series is edited on its Edit series page, and removed from its books', a
 		note: 'finished',
 	});
 
+	// a status left unknown, or a total left empty, is kept out
+	Object.assign(edit.els.sf_status, {value: ''});
+	assert.ok(await saveEdit(edit));
+	assert.deepEqual(edit.get(`CATALOG.infoByName('series').get(${JSON.stringify(bare)})`), {
+		total: 'many',
+		note: 'finished',
+	});
+	edit = await bootEdit(bare, {storage});
+	assert.equal(edit.els.sf_status.value, '', 'unknown, not ongoing');
+
 	// emptying every field keeps nothing about it, and the series stays
 	for (const field of [edit.els.sf_total, edit.els.sf_note]) field.value = '';
 	assert.ok(await saveEdit(edit));
@@ -3452,6 +3462,26 @@ test('a series is edited on its Edit series page, and removed from its books', a
 			.some(x => x.id === id),
 		false,
 	);
+});
+
+test('a series kept by an id alone shows no total or status', async () => {
+	const books = JSON.stringify([
+		{t: 'Fern 1', a: ['Bo Reed'], s: 'Fern Saga', sn: '1'},
+		{t: 'Fern 2', a: ['Bo Reed'], s: 'Fern Saga', sn: '2'},
+	]);
+	const files = {'books.json': books, 'series-info.json': JSON.stringify({'Fern Saga': {ext: {goodreads: '90009'}}})};
+	const {ctx, els, get, storage} = await boot({files});
+	assert.match(els.results.innerHTML, /Fern Saga<\/a> <span class="srow-owned">2 owned<\/span>/);
+	ctx.openSeries(seriesIdOf(get, 'Fern Saga'));
+	await idle();
+	assert.match(els.results.innerHTML, /<span class="n">[^<]*<\/span> <a [^>]*goodreads/);
+	const author = await boot({page: 'author.html', hash: '#a=Bo+Reed', storage, files: null});
+	assert.match(
+		author.readable(author.els.creditBody.innerHTML),
+		/Fern Saga<\/a> <span class="n">2 owned<\/span><\/p>/,
+	);
+	for (const html of [els.results.innerHTML, author.els.creditBody.innerHTML])
+		assert.doesNotMatch(html, /undefined|released total|owned of|class="status/);
 });
 
 test('a series no book is in any more stays, and can be removed', async () => {
@@ -6379,8 +6409,6 @@ test("links: a series', a book's and an edition's, edited on the Edit series pag
 	const stored = await kept(storage);
 	assert.deepEqual(stored.seriesInfo.Lanterns, {
 		total: 3,
-		status: 'ongoing',
-		note: '',
 		ext: {goodreads: '1234'},
 		links: ['https://gullwing.example/lanterns'],
 	});

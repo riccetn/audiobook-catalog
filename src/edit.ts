@@ -1804,8 +1804,8 @@ function seriesChanges(name: string): string[] {
 		wasTotal = info ? totalText(info) : '';
 	if (total !== wasTotal) out.push(`Books released: ${total || '(empty)'}`);
 	const status = fieldById('sf_status').value,
-		wasStatus = (info && String(info.toJSON().status ?? '')) || 'ongoing'; // as the panel shows it
-	if (status !== wasStatus && (total || wasTotal || info)) out.push(`Status: ${status}`);
+		wasStatus = info ? String(info.toJSON().status ?? '') : '';
+	if (status !== wasStatus) out.push(`Status: ${status || 'unknown'}`);
 	const note = Text.tidy(fieldById('sf_note').value);
 	if (note !== (info ? info.note || '' : '')) out.push(`Note: ${note || '(empty)'}`);
 	const ext = readExternalFields('sf_ext_', 'series', info ? info.external : {});
@@ -1844,14 +1844,15 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
 	if (external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
 	const links = Text.parseLinks(fieldById('sf_links').value);
+	const status = fieldById('sf_status').value;
 	// a series needs none of these; with all of them empty, it keeps none
-	if (!(totalTyped || note || Object.keys(external.ids).length || links.length))
+	if (!(totalTyped || status || note || Object.keys(external.ids).length || links.length))
 		return {newName, entry: null, note: hardcover.note};
-	// unchecked as typed: the Check below says what is wrong with the total or status
+	// unchecked as typed: the Check below says what is wrong with the total or status; what is left empty is unknown
 	const typed: Record<string, unknown> = {
 		...(totalTyped ? {total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase()} : {}),
-		status: fieldById('sf_status').value,
-		note,
+		...(status ? {status} : {}),
+		...(note ? {note} : {}),
 	};
 	if (Object.keys(external.ids).length) typed.ext = ExternalCatalog.order(external.ids);
 	if (links.length) typed.links = links;
@@ -2304,7 +2305,7 @@ export async function loadSeries() {
 	byId('backLink').textContent = '← ' + name;
 	fieldById('sf_name').value = name;
 	fieldById('sf_total').value = info ? totalText(info) : '';
-	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') || 'ongoing' : 'ongoing';
+	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') : '';
 	fieldById('sf_note').value = info ? info.note || '' : '';
 	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
 	fieldById('sf_links').value = info ? info.links.join('\n') : '';
