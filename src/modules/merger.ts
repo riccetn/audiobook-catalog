@@ -149,9 +149,34 @@ export class Merger {
 		const indexKey = (k: string, i: number) => {
 			if (!index.has(k)) index.set(k, i);
 		};
+		// Every edition by its ids and ISBN (Edition.idAndIsbnKeys), and the books by their Hardcover ids, so
+		// finding an edition's copies or a Hardcover book doesn't read every book for each incoming one (which
+		// made an import take time in the square of the catalog's size). Entries are only ever added: an
+		// edition only gains ids, and one a book no longer has is checked for where it is used.
+		const editionsByKey: Map<string, Set<Edition>> = new Map();
+		const bookOf: Map<Edition, number> = new Map();
+		const byHardcover: Map<string, Set<number>> = new Map();
+		// the books by title (their own) and first author, as a box set is found by its title
+		const byTitle: Map<string, Set<number>> = new Map();
+		const titleKey = (b: Book) => Text.key('title', Text.norm(b.title), b.authorKey());
+		const addTo: <T>(map: Map<string, Set<T>>, key: string, value: T) => void = (map, key, value) => {
+			const set = map.get(key);
+			if (set) set.add(value);
+			else map.set(key, new Set([value]));
+		};
 		// a box set's edition is on each of its titles, and its title is the set's (Book.alternativeTitles)
 		const shared = Book.sharedEditionTest(existing);
-		const indexBook = (i: number) => existing[i].keys(shared).forEach(k => indexKey(k, i));
+		const indexBook = (i: number) => {
+			const book = existing[i];
+			book.keys(shared).forEach(k => indexKey(k, i));
+			for (const ed of book.editions) {
+				bookOf.set(ed, i);
+				for (const k of ed.idAndIsbnKeys()) addTo(editionsByKey, k, ed);
+			}
+			const hardcover = book.idOn('hardcover');
+			if (hardcover) addTo(byHardcover, hardcover, i);
+			addTo(byTitle, titleKey(book), i);
+		};
 		existing.forEach((b, i) => indexBook(i));
 
 		// a name of only punctuation, or just "Series", has an empty key, which no other name may be folded onto
@@ -161,13 +186,38 @@ export class Merger {
 			if (b.series && k && !canonical.has(k)) canonical.set(k, b.series);
 		}
 
-		// [book index, edition] of every copy of an edition, on any book, other than the edition itself
-		const copiesOf: (ed: Edition) => [number, Edition][] = ed =>
-			existing.flatMap((b, i) =>
-				b.editions.filter(x => x !== ed && x.sameAs(ed)).map(x => [i, x] as [number, Edition]),
+		// [book index, edition] of every edition on any book that is the same as `ed` (Edition.sameAs, which
+		// needs an id or ISBN in common), in the books' order and each book's editions' order
+		const holdersOf: (ed: Edition) => [number, Edition][] = ed => {
+			const found: Set<Edition> = new Set();
+			for (const k of ed.idAndIsbnKeys()) for (const x of editionsByKey.get(k) || []) found.add(x);
+			const out: [number, Edition][] = [];
+			for (const x of found) {
+				const i = bookOf.get(x) as number;
+				if (existing[i].editions.includes(x) && x.sameAs(ed)) out.push([i, x]);
+			}
+			return out.sort(
+				([i, x], [j, y]) => i - j || existing[i].editions.indexOf(x) - existing[j].editions.indexOf(y),
 			);
+		};
+		// [book index, edition] of every copy of an edition, on any book, other than the edition itself
+		const copiesOf: (ed: Edition) => [number, Edition][] = ed => holdersOf(ed).filter(([, x]) => x !== ed);
+		// the books on each report list, so noting one is quick however many there are
+		const noted: Map<Book[], Set<Book>> = new Map();
+		const onList: (list: Book[]) => Set<Book> = list => {
+			let set = noted.get(list);
+			if (!set) noted.set(list, (set = new Set(list)));
+			return set;
+		};
+		const addToReport: (book: Book) => void = book => {
+			report.added.push(book);
+			onList(report.added).add(book);
+		};
 		const note: (list: Book[], book: Book) => void = (list, book) => {
-			if (!list.includes(book) && !report.added.includes(book)) list.push(book);
+			const set = onList(list);
+			if (set.has(book) || onList(report.added).has(book)) return;
+			list.push(book);
+			set.add(book);
 		};
 		const giveDates: (reader: Book, rec: Book) => void = (reader, rec) => {
 			if (rec.read.length && reader.value('r') === undefined) {
@@ -225,6 +275,11 @@ export class Merger {
 			const author = rec.authorKey(),
 				series = Series.norm(rec.series);
 			const ownsSet = (b: Book) => b.editions.some(x => editions.some(ed => x.sharesId(ed) && x.sameAs(ed)));
+			// the books holding one of the set's editions (the only ones ownsSet() may be true of), in order
+			const owners = () =>
+				[...new Set(editions.flatMap(ed => holdersOf(ed).map(([i]) => i)))]
+					.sort((i, j) => i - j)
+					.filter(i => ownsSet(existing[i]));
 			const titleNumber = (b: Book) =>
 				b.authorKey() === author &&
 				Series.norm(b.series || '') === series &&
@@ -245,7 +300,7 @@ export class Merger {
 					return false;
 				}
 				existing.push(book);
-				report.added.push(book);
+				addToReport(book);
 				indexBook(existing.length - 1);
 				return true;
 			};
@@ -256,16 +311,16 @@ export class Merger {
 				return book;
 			};
 			const rangeKey = Text.key('series', author, series, String(rec.number).trim());
-			let setIndex = existing.findIndex(
-				b =>
-					(ownsSet(b) && titleNumber(b) === null) ||
-					(Text.norm(b.title) === Text.norm(rec.title) && b.authorKey() === author),
+			const named = [...(byTitle.get(titleKey(rec)) || [])].filter(
+				i => Text.norm(existing[i].title) === Text.norm(rec.title) && existing[i].authorKey() === author,
 			);
+			const setAt = [...owners().filter(i => titleNumber(existing[i]) === null), ...named];
+			let setIndex = setAt.length ? Math.min(...setAt) : -1;
 			const atRange = index.get(rangeKey);
 			if (setIndex < 0 && atRange !== undefined) setIndex = atRange;
 			const setFound = setIndex >= 0;
 			for (let n = lo; n <= hi; n++) {
-				let i = existing.findIndex(b => ownsSet(b) && titleNumber(b) === n);
+				let i = owners().find(i => titleNumber(existing[i]) === n) ?? -1;
 				if (i < 0) i = index.get(Text.key('series', author, series, String(n))) ?? -1;
 				if (i >= 0 && i !== setIndex) {
 					titles.push(i);
@@ -296,9 +351,7 @@ export class Merger {
 			}
 			// every copy of the set's edition ends up with all it is known by
 			for (const ed of editions) {
-				const copies = existing.flatMap((b, i) =>
-					b.editions.filter(x => x.sameAs(ed)).map(x => [i, x] as [number, Edition]),
-				);
+				const copies = holdersOf(ed);
 				for (const [, x] of copies) for (const [, y] of copies) x.fillFrom(y);
 				copies.forEach(([i]) => indexBook(i));
 			}
@@ -364,13 +417,15 @@ export class Merger {
 				// that Hardcover book, when there is one: the set kept as its own book, or another of its titles.
 				const hardcover = rec.idOn('hardcover');
 				if (hardcover && book.idOn('hardcover') !== hardcover) {
-					const set = existing.findIndex(
-						(b, i) =>
-							i !== match &&
-							b.idOn('hardcover') === hardcover &&
-							b.editions.some(x => rec.editions.some(ed => x.sameAs(ed))),
-					);
-					if (set >= 0) {
+					const set = [...(byHardcover.get(hardcover) || [])]
+						.sort((i, j) => i - j)
+						.find(
+							i =>
+								i !== match &&
+								existing[i].idOn('hardcover') === hardcover &&
+								existing[i].editions.some(x => rec.editions.some(ed => x.sameAs(ed))),
+						);
+					if (set !== undefined) {
 						match = set;
 						book = existing[set];
 					}
@@ -432,7 +487,7 @@ export class Merger {
 					else if (opts.addable && !opts.addable(original)) report.notAdded.push(set);
 					else {
 						existing.push(set);
-						report.added.push(set);
+						addToReport(set);
 						indexBook(existing.length - 1);
 						report.boxSets.push({title: set.title, authors: set.authors, titles: titles.length, added: 0});
 					}
@@ -444,7 +499,7 @@ export class Merger {
 			else if (opts.addable && !opts.addable(original)) report.notAdded.push(rec);
 			else {
 				existing.push(rec);
-				report.added.push(rec);
+				addToReport(rec);
 				indexBook(existing.length - 1);
 			}
 			record([], false);
@@ -464,12 +519,29 @@ export class Merger {
 		exclusions = exclusions || new Exclusions();
 		const report = new Merger(books, exclusions).merge(books.filter(b => b.isCollection()));
 		const done = new Set();
+		// every edition by its ids and ISBN, in the books' order, so its copies are found without reading every book
+		const byKey: Map<string, [Book, Edition][]> = new Map();
+		const place: Map<Book, number> = new Map();
+		const keep = (x: Book) => {
+			place.set(x, place.size);
+			for (const y of x.editions)
+				for (const k of y.idAndIsbnKeys()) {
+					const list = byKey.get(k);
+					if (list) list.push([x, y]);
+					else byKey.set(k, [[x, y]]);
+				}
+		};
+		books.forEach(keep);
 		for (const b of [...books]) {
 			for (const ed of b.editions) {
 				if (done.has(ed) || !ed.idKeys().length) continue;
-				const copies = books.flatMap(x =>
-					x.editions.filter(y => y.sameAs(ed)).map(y => [x, y] as [Book, Edition]),
-				);
+				const copies = [...new Set(ed.idAndIsbnKeys().flatMap(k => byKey.get(k) || []))]
+					.filter(([, y]) => y.sameAs(ed))
+					.sort(
+						([x, y], [z, w]) =>
+							(place.get(x) as number) - (place.get(z) as number) ||
+							x.editions.indexOf(y) - z.editions.indexOf(w),
+					);
 				copies.forEach(([, y]) => done.add(y));
 				const holders = [...new Set(copies.map(([x]) => x))];
 				const number = holders.some(x => x.isCollection()) ? null : Merger.collectionNumber(holders);
@@ -491,6 +563,7 @@ export class Merger {
 					continue;
 				}
 				books.push(set);
+				keep(set);
 				report.added.push(set);
 				report.boxSets.push({title: set.title, authors: set.authors, titles: holders.length, added: 0});
 			}

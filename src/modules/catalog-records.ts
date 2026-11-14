@@ -383,7 +383,11 @@ export class CatalogRecords {
 
 		const seriesBooks: Map<string, BookRecord[]> = new Map();
 		for (const rec of books)
-			if (rec.seriesId) seriesBooks.set(rec.seriesId, [...(seriesBooks.get(rec.seriesId) || []), rec]);
+			if (rec.seriesId) {
+				const list = seriesBooks.get(rec.seriesId);
+				if (list) list.push(rec);
+				else seriesBooks.set(rec.seriesId, [rec]);
+			}
 		const series = [...ids.series].map(([name, id]) =>
 			CatalogRecords.seriesRecord(id, name, catalog.series.get(id), seriesBooks.get(id) || []),
 		);
@@ -391,11 +395,12 @@ export class CatalogRecords {
 		const credits = books.flatMap(rec => CatalogRecords.creditsOf(rec, editionsOf(rec)));
 		const creditedBooks: Map<string, BookRecord[]> = new Map();
 		const byId = new Map(books.map(rec => [rec.id, rec]));
-		for (const c of credits)
-			creditedBooks.set(c.contributorId, [
-				...(creditedBooks.get(c.contributorId) || []),
-				byId.get(c.bookId) as BookRecord,
-			]);
+		for (const c of credits) {
+			const book = byId.get(c.bookId) as BookRecord,
+				list = creditedBooks.get(c.contributorId);
+			if (list) list.push(book);
+			else creditedBooks.set(c.contributorId, [book]);
+		}
 		const authorNames: Map<string, string> = new Map([...ids.authors].map(([name, id]) => [id, name]));
 		const contributors = Contributor.KINDS.flatMap(kind =>
 			[...ids[kind]].map(([name, id]) =>
