@@ -14,7 +14,7 @@
 	padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 @media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
+	:root {
 		--paper: #1b1712;
 		--ink: #efe9db;
 		--ink-soft: #b7ad97;
@@ -26,18 +26,6 @@
 		--error: #e8837b;
 		--on-moss: #1b1712;
 	}
-}
-:root[data-theme='dark'] {
-	--paper: #1b1712;
-	--ink: #efe9db;
-	--ink-soft: #b7ad97;
-	--moss: #7fae93;
-	--moss-dark: #93bfa5;
-	--gold: #d9b968;
-	--line: #3a3226;
-	--card: #242019;
-	--error: #e8837b;
-	--on-moss: #1b1712;
 }
 html {
 	scroll-padding-top: env(safe-area-inset-top, 0px);

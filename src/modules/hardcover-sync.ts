@@ -13,10 +13,9 @@ import {Comparison} from './comparison.js';
 import type {Unchecked, Phrase, PhraseValue} from './text.js';
 import type {HardcoverLookups, HardcoverFound, HardcoverHit} from './hardcover-client.js';
 import type {Step} from './catalog-client.js';
-import type {ShelfPart, PlanEntry, Sent, PlanGroup, InfoId, NotAudio} from './shelf-sync.js';
+import type {ShelfPart, PlanEntry, Sent, PlanGroup, InfoId, NotAudio, ShelfComparison} from './shelf-sync.js';
 import type {Catalog} from './catalog.js';
 import type {MergeOptions} from './merger.js';
-import type {ComparisonResult} from './comparison.js';
 
 /** What an export to Hardcover would do (HardcoverSync.planExport()). */
 export interface HardcoverPlan {
@@ -28,28 +27,17 @@ export interface HardcoverPlan {
 	inexact: [Book, string][];
 }
 /** Your Hardcover shelves beside the catalog (HardcoverSync.compare()). */
-export interface HardcoverComparison {
-	/** the books on your Read shelf beside the catalog's */
-	comparison: ComparisonResult;
-	/** the books on your Read shelf compared (those in the scope asked for) */
-	incoming: Book[];
-	/** how they are imported (Comparison.apply() takes them) */
-	opts: MergeOptions;
-	warnings: Phrase[];
+export interface HardcoverComparison extends ShelfComparison {
 	/** how many of your Hardcover books are on other shelves */
 	otherShelves: number;
 	/** the Hardcover ids of your editions' ids (addIds() gives them) */
 	found: HardcoverFound;
-	/** the books that gain a Hardcover id from them, in the comparison's merged copy */
-	idsFound: Book[];
 	/** none: Hardcover's series and people ids are found in their forms */
 	infoIds: InfoId[];
 	/** what putting your books on Hardcover would do */
 	plan: HardcoverPlan;
 	/** none */
 	missing: never[];
-	/** your editions Hardcover has as print books or ebooks, and the books on your Read shelf read as one */
-	notAudio: NotAudio[];
 }
 /**
  * Your Read shelf as books (HardcoverSync.read()), and those read as a print book or an ebook (`notAudio`).

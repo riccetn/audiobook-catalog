@@ -8,7 +8,15 @@ import {CatalogRecords} from './modules/catalog-records.js';
 import {Contributor} from './modules/contributor.js';
 import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-database.js';
 import type {CatalogReader} from './modules/catalog-database.js';
-import type {RecordSet, Snapshot, StoreName, BookRecord, EditionRecord} from './modules/catalog-records.js';
+import type {
+	RecordSet,
+	Snapshot,
+	StoreName,
+	BookRecord,
+	EditionRecord,
+	ContributorRecord,
+	CreditKind,
+} from './modules/catalog-records.js';
 import type {Book} from './modules/book.js';
 import type {NamedKind} from './modules/catalog.js';
 import type {ContributorKind} from './modules/contributor.js';
@@ -429,6 +437,31 @@ export function queryCatalog<T>(ask: (reader: CatalogReader) => Promise<T>): Pro
 			return ask(new MemoryReader(recordsNow()) as unknown as CatalogReader);
 		})(),
 	);
+}
+
+/**
+ * The id of the book an address names: by its id, or by its title from a link from before addresses had
+ * ids. Null when no book is stored under either.
+ */
+export function storedBookId(value: string): Promise<string | null> {
+	return queryCatalog(async r => {
+		if (await r.count('books', undefined, value)) return value;
+		const found: BookRecord[] = await r.under('books', 'byTitle', [CatalogRecords.sortKey(value)]);
+		return found.find(b => b.title === value)?.id ?? null;
+	});
+}
+
+/**
+ * The id of the author, narrator or publisher (`kind`) an address names: by their id, or by their name
+ * from a link from before addresses had ids. Null when no one of that kind is stored under either.
+ */
+export function storedContributorId(kind: CreditKind, value: string): Promise<string | null> {
+	return queryCatalog(async r => {
+		const [rec]: ContributorRecord[] = await r.get('contributors', [value]);
+		if (rec && rec.kind === kind) return rec.id;
+		const [named]: ContributorRecord[] = await r.all('contributors', 'kindName', [kind, value]);
+		return named ? named.id : null;
+	});
 }
 
 /**

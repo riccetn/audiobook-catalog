@@ -268,7 +268,7 @@ export class AudibleSync extends ShelfSync {
 	 * A series number as it compares: "02" and "2.0" are "2", a range "1-3"; '' for none.
 	 */
 	static numberKey(number: string): string {
-		const m = /^(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?$/.exec(Text.tidy(number));
+		const m = Series.NUMBER.exec(Text.tidy(number));
 		if (!m) return '';
 		return [m[1], m[2]]
 			.filter(Boolean)

@@ -231,4 +231,30 @@ export class AudiobookdbClient extends CatalogClient {
 		}
 		return ExternalCatalog.family(host) === 'asin' && ExternalCatalog.get(host) ? host : null;
 	}
+
+	// ------------------------------------------------------------ reading answers
+	/**
+	 * The entries of an AudiobookDB answer's people or roles list ({role: {name}, person} or {role: {name}, book})
+	 * that are in `role` ("Author", "Narrator").
+	 */
+	static withRole(entries: unknown, role: string): Unchecked[] {
+		return Array.isArray(entries)
+			? entries.filter(e => Text.isObject(e) && Text.isObject(e.role) && e.role.name === role)
+			: [];
+	}
+
+	/** The people of an AudiobookDB people list that are in `role`, as it answers them ({id, name}). */
+	static peopleIn(people: unknown, role: string): Unchecked[] {
+		return AudiobookdbClient.withRole(people, role)
+			.map(p => p.person)
+			.filter(Text.isObject);
+	}
+
+	/** The names of the people of an AudiobookDB people list that are in `role`, tidied, each once. */
+	static namesIn(people: unknown, role: string): string[] {
+		const names = AudiobookdbClient.peopleIn(people, role).map(p =>
+			typeof p.name === 'string' ? Text.tidy(p.name) : '',
+		);
+		return [...new Set(names.filter(Boolean))];
+	}
 }

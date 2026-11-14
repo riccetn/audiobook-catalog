@@ -1,5 +1,6 @@
 // Audible as a source of the Edit page's Fill in: its catalog API doesn't answer web pages, so it is asked
 // through the user's own catalog proxy (server/proxy.ts), by an Audible or Amazon ASIN, on the site of the ASIN.
+import {Series} from './series.js';
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
@@ -79,12 +80,12 @@ export class AudibleSource extends BookSource {
 		const series = (Array.isArray(product.series) ? product.series : []).filter(
 			(s: unknown) => Text.isObject(s) && text(s.title),
 		);
-		const numbered = series.find((s: Unchecked) => /^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(s.sequence)));
+		const numbered = series.find((s: Unchecked) => Series.NUMBER.test(text(s.sequence)));
 		const asked = seriesAsin ? series.find((s: Unchecked) => s.asin === seriesAsin) : undefined;
 		const inSeries = asked || numbered || (series.length === 1 ? series[0] : null);
 		if (inSeries) {
 			rec.s = text(inSeries.title);
-			if (/^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/.test(text(inSeries.sequence))) rec.sn = text(inSeries.sequence);
+			if (Series.NUMBER.test(text(inSeries.sequence))) rec.sn = text(inSeries.sequence);
 		}
 		const genres = (Array.isArray(product.category_ladders) ? product.category_ladders : [])
 			.filter((l: unknown) => Text.isObject(l) && l.root === 'Genres' && Array.isArray(l.ladder))
