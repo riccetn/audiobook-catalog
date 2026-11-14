@@ -598,6 +598,14 @@ export class ExternalCatalog {
 	}
 
 	/**
+	 * The id under one catalog ("hardcover", "audible.com") of an entry's ids, or null.
+	 */
+	static idIn(ids: Record<string, string>, catalog: string): string | null {
+		const v = Object.hasOwn(ids, catalog) ? ids[catalog] : null;
+		return typeof v === 'string' && v ? v : null;
+	}
+
+	/**
 	 * Whether stored ids are what an entry keeps: an object of catalog -> non-empty text.
 	 */
 	static isIds(v: unknown): v is Record<string, string> {

@@ -4,17 +4,8 @@
 // every count goes through all of it, and changes nothing.
 import {Text} from './modules/text.js';
 import {CatalogStats} from './modules/catalog-stats.js';
-import {
-	CATALOG,
-	startPage,
-	spell,
-	byId,
-	buildElement,
-	fillElement,
-	bookPageHref,
-	seriesPageHref,
-	creditPageHref,
-} from './store.js';
+import {CATALOG, startPage, bookPageHref, seriesPageHref, creditPageHref} from './store.js';
+import {spell, byId, buildElement, fillElement} from './dom.js';
 import type {StatKind, StatSection, StatRow, CatalogCount} from './modules/catalog-stats.js';
 
 // How many entries a line lists when opened; the rest are counted.

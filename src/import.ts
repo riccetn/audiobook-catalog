@@ -22,35 +22,32 @@ import {
 	storedRevision,
 	whenSaved,
 	persist,
-	showIoStatus,
 	minutes,
 	showCatalogJob,
-	SERVER_STORAGE_KEY,
-	savedServer,
-	serverAddress,
-	fetchFromServer,
 	SYNC_STORAGE_KEY,
 	savedPassphrase,
 	lastSync,
 	syncCatalog,
-	savedKey,
-	saveKey,
-	catalogClient,
 	startPage,
 	afterSaving,
 	queryCatalog,
 	wholeCatalog,
-	byId,
-	fieldById,
-	spell,
-	buildElement,
-	fillElement,
 	noteBackup,
 	backupAge,
 	backupAgeText,
 	bookPageHref,
 } from './store.js';
-import type {Child} from './store.js';
+import {showIoStatus, byId, fieldById, spell, buildElement, fillElement} from './dom.js';
+import {
+	SERVER_STORAGE_KEY,
+	savedServer,
+	serverAddress,
+	fetchFromServer,
+	savedKey,
+	saveKey,
+	catalogClient,
+} from './connections.js';
+import type {Child} from './dom.js';
 import type {Book} from './modules/book.js';
 import type {FileImporter} from './modules/file-importer.js';
 import type {FileExporter} from './modules/file-exporter.js';
@@ -160,7 +157,7 @@ function download(text: string, type: string, name: string) {
 }
 
 function exportBackup() {
-	// version 2: the stored records by store and id (Backup.write)
+	// the stored records by store and id (Backup.write, Backup.VERSION)
 	download(JSON.stringify(Backup.write(CATALOG), null, '\t'), 'application/json', 'audiobook-catalog-backup');
 	showIoStatus('Backup downloaded.');
 	noteBackup().then(refreshPage);
@@ -269,7 +266,7 @@ async function importBackup(files: File[]) {
 			CATALOG.replaceInfo(kind, restored || had);
 		}
 		const newlyExcluded = CATALOG.addExclusions(excluded || []); // added to, never replaced: removing one is a hand edit
-		// likewise the pairs marked "Not duplicates": a version 2 backup's by the ids of its books, an older one's as text
+		// likewise the pairs marked "Not duplicates": a backup's from version 2 on by the ids of its books, an older one's as text
 		CATALOG.addMarkTexts([...keptMarks, ...(marks ? [] : notDuplicates || [])]);
 		if (marks) {
 			CATALOG.addMarks(marks.map(m => ({...m})));

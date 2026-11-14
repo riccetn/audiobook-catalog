@@ -2,17 +2,8 @@
 // The book cards and lists are book-list.ts's; loading and saving live in store.ts.
 import {CatalogRecords} from './modules/catalog-records.js';
 import type {CatalogReader} from './modules/catalog-database.js';
-import {
-	CATALOG,
-	queryCatalog,
-	afterSaving,
-	startPage,
-	byId,
-	fieldById,
-	spell,
-	buildElement,
-	fillElement,
-} from './store.js';
+import {CATALOG, queryCatalog, afterSaving, startPage} from './store.js';
+import {byId, fieldById, spell, buildElement, fillElement} from './dom.js';
 import {
 	BookList,
 	bookGroups,
@@ -25,6 +16,7 @@ import {
 	hashOf,
 	setAddress,
 	watchSearchAndFilters,
+	showFilterCount,
 } from './book-list.js';
 
 // The page holds only what it shows, read from the stored catalog by loadView(): the ids of the books the
@@ -149,7 +141,7 @@ async function loadView(showing: number = 0): Promise<void> {
  * @returns once it is drawn
  */
 function showView(): Promise<void> {
-	showFilterCount();
+	showFilterCount(FILTERS);
 	return afterSaving(async () => {
 		await loadView();
 		render();
@@ -170,12 +162,7 @@ export function refreshView(): Promise<void> {
 }
 
 // The Show more button at the end of the list.
-export function showMore() {
-	return afterSaving(async () => {
-		await LIST.more();
-		render();
-	});
-}
+export const showMore = () => LIST.showMore(render);
 
 export function render() {
 	const author = fieldById('authorFilter').value;
@@ -251,12 +238,6 @@ FILTERS.forEach(id =>
 		showView();
 	}),
 );
-
-// On a phone the filters fold away behind a button (styles.css), which says how many are on.
-function showFilterCount() {
-	const on = FILTERS.filter(id => fieldById(id).value).length;
-	byId('filtersBtn').textContent = on ? `Filters · ${on}` : 'Filters';
-}
 watchSearchAndFilters(addressNow, showView);
 watchCoversBox(() => render());
 

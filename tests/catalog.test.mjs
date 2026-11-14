@@ -320,11 +320,7 @@ test('demo data validates without errors or warnings', () => {
 	);
 	for (const kind of ['authors', 'narrators', 'publishers']) {
 		assert.deepEqual(
-			Validator.validateContributors(
-				loadBooks(path.join(DATA, 'books.json')),
-				kind,
-				loadContributors(path.join(DATA, `${kind}.json`)),
-			),
+			Validator.validateContributors(kind, loadContributors(path.join(DATA, `${kind}.json`))),
 			{errors: [], warnings: []},
 			kind,
 		);
@@ -2891,12 +2887,11 @@ test('merging a backup: author info only the backup has is added; where both dif
 });
 
 // ------------------------------------------------------------------ authors
-test('author info: validated against the books, ids checked against their catalogs', () => {
-	const books = [book('Lantern Road', 'Ann Vale')];
-	assert.deepEqual(Validator.validateContributors(books, 'authors', {}), {errors: [], warnings: []});
-	assert.deepEqual(Validator.validateContributors(books, 'authors', undefined), {errors: [], warnings: []});
+test('author info: validated, ids checked against their catalogs', () => {
+	assert.deepEqual(Validator.validateContributors('authors', {}), {errors: [], warnings: []});
+	assert.deepEqual(Validator.validateContributors('authors', undefined), {errors: [], warnings: []});
 	assert.deepEqual(
-		Validator.validateContributors(books, 'authors', {
+		Validator.validateContributors('authors', {
 			'Ann Vale': {
 				bio: 'Hi.\n\nMore.',
 				url: 'https://example.com/',
@@ -2906,7 +2901,7 @@ test('author info: validated against the books, ids checked against their catalo
 		}),
 		{errors: [], warnings: []},
 	);
-	const {errors, warnings} = Validator.validateContributors(books, 'authors', {
+	const {errors, warnings} = Validator.validateContributors('authors', {
 		'Ann Vale': {
 			bio: '',
 			url: 'example.com',
@@ -2928,12 +2923,12 @@ test('author info: validated against the books, ids checked against their catalo
 		"authors['Ann Vale']: 'kobo.com' is not an external catalog this app knows",
 		"authors['Ann Vale']: link 'https://www.goodreads.com/author/show/7.Ann_Vale' is a page on Goodreads; keep its id '7' instead",
 	]);
-	assert.deepEqual(Validator.validateContributors(books, 'authors', []).errors, [
+	assert.deepEqual(Validator.validateContributors('authors', []).errors, [
 		'authors: must map author names to their info',
 	]);
 	// a publisher has no page on Goodreads
 	assert.deepEqual(
-		Validator.validateContributors([book('A', 'B', ed({p: ['Gull Audio']}))], 'publishers', {
+		Validator.validateContributors('publishers', {
 			'Gull Audio': {ext: {goodreads: '1'}},
 		}).errors,
 		["publishers['Gull Audio']: Goodreads has no publisher pages, so no publisher id"],
@@ -2975,15 +2970,15 @@ test("author info from before ids: the address of each page becomes its id, and 
 test('narrator and publisher info: names come from the editions, and backups carry and merge it', () => {
 	const books = [book('Lantern Road', 'Ann Vale', {e: [{n: ['Cy Hale'], p: ['Gull Audio']}]})];
 	assert.deepEqual(
-		Validator.validateContributors(books, 'narrators', {'Cy Hale': {bio: 'Reads.'}, 'Ann Vale': {bio: 'Writes.'}}),
+		Validator.validateContributors('narrators', {'Cy Hale': {bio: 'Reads.'}, 'Ann Vale': {bio: 'Writes.'}}),
 		{errors: [], warnings: []},
 		'a narrator no edition has is an entry of their own',
 	);
-	assert.deepEqual(Validator.validateContributors(books, 'publishers', {'Gull Audio': {ext: {hardcover: 'gull'}}}), {
+	assert.deepEqual(Validator.validateContributors('publishers', {'Gull Audio': {ext: {hardcover: 'gull'}}}), {
 		errors: [],
 		warnings: [],
 	});
-	assert.deepEqual(Validator.validateContributors(books, 'publishers', {'Gull Audio': {url: 'gull'}}).errors, [
+	assert.deepEqual(Validator.validateContributors('publishers', {'Gull Audio': {url: 'gull'}}).errors, [
 		"publishers['Gull Audio']: 'url' must be a web address starting with http:// or https://",
 	]);
 	// the Check looks at all three
@@ -6858,4 +6853,38 @@ test("links: the Check notes one that is no web address, one listed twice, and a
 		"book #0 ('Salt Road') edition #1: link 'https://www.goodreads.com/book/show/4242' is a page on Goodreads; keep its id '4242' instead",
 		"series-info['Lanterns']: link 'https://www.goodreads.com/series/1234' is a page on Goodreads; keep its id '1234' instead",
 	]);
+});
+
+test('series numbers are read one way: a number, a range, and a box set of whole numbers', () => {
+	assert.deepEqual(Series.bounds('3'), [3, 3]);
+	assert.deepEqual(Series.bounds(' 4-6 '), [4, 6]);
+	assert.deepEqual(Series.bounds('2.5'), [2.5, 2.5]);
+	assert.equal(Series.bounds('one'), null);
+	assert.deepEqual(Series.range('1.5-3'), [1.5, 3]);
+	assert.equal(Series.range('3-1'), null);
+	assert.equal(Series.range('3'), null);
+	assert.deepEqual(Series.wholeRange('1-3'), [1, 3]);
+	assert.equal(Series.wholeRange('1.5-3'), null);
+	assert.deepEqual(
+		Series.missingNumbers(
+			[book('A', 'B', {s: 'S', sn: '1-2'}), book('C', 'B', {s: 'S', sn: '3.5'})].map(b => Book.fromJSON(b)),
+			4,
+		),
+		[3, 4],
+	);
+});
+
+test('a stored value that is not what its key holds is kept aside, for books and editions alike', () => {
+	assert.ok(Text.nonEmpty(' x') && !Text.nonEmpty(' ') && !Text.nonEmpty(3));
+	assert.ok(Text.isNameList(['Ann']) && !Text.isNameList([]) && !Text.isNameList(['Ann', '']));
+	const b = Book.fromJSON({t: 'Lantern Road', a: 'Ann Vale', sn: 3, x: 1});
+	assert.deepEqual(b.authors, []);
+	assert.equal(b.number, undefined);
+	assert.deepEqual(b.extra, {a: 'Ann Vale', sn: 3, x: 1});
+	b.set('a', ['Ann Vale']);
+	assert.deepEqual(JSON.parse(JSON.stringify(b)), {t: 'Lantern Road', a: ['Ann Vale'], sn: 3, x: 1});
+	const ed = Edition.fromJSON({n: [], len: '10h', d: '2021'});
+	assert.deepEqual(ed.toJSON(), {n: [], d: '2021', len: '10h'});
+	assert.equal(ed.released, '2021');
+	assert.deepEqual(Object.keys(ed.extra), ['n', 'len']);
 });

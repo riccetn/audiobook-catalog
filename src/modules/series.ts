@@ -53,10 +53,9 @@ export class Series {
 	static STATUSES: SeriesStatus[] = ['ongoing', 'complete'];
 	// The keys of a series' entry in the stored series info, in order.
 	static KEYS = ['total', 'status', 'note', 'ext', 'links'];
-	// A series number: "3", "2.5", or a box set's range "4-6".
-	static NUMBER = /^\d+(\.\d+)?(-\d+(\.\d+)?)?$/;
-	// A box set's range of whole numbers, "1-3"; more than BOX_MAX titles is taken for a typo.
-	static BOX_RANGE = /^(\d+)-(\d+)$/;
+	// A series number: "3", "2.5", or a box set's range "4-6" (bounds() reads one).
+	static NUMBER = /^(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?$/;
+	// A box set of more than BOX_MAX titles is taken for a typo.
 	static BOX_MAX = 30;
 	// A total released above TOTAL_MAX is taken for a typo ("3000000" for "3"): no missing numbers are listed for it.
 	static TOTAL_MAX = 1000;
@@ -223,8 +222,24 @@ export class Series {
 	 * [first, last] of a series number that is a range ("4-6" -> [4, 6]), or null for one number or none.
 	 */
 	static range(number: unknown): [number, number] | null {
-		const m = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(String(number || '').trim());
-		return m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : null;
+		const b = Series.bounds(number);
+		return b && b[0] < b[1] ? b : null;
+	}
+
+	/**
+	 * [first, last] of a series number ("4-6" -> [4, 6], "2.5" -> [2.5, 2.5]), or null when it is none.
+	 */
+	static bounds(number: unknown): [number, number] | null {
+		const m = Series.NUMBER.exec(String(number || '').trim());
+		return m ? [Number(m[1]), Number(m[2] ?? m[1])] : null;
+	}
+
+	/**
+	 * [first, last] of a range of whole numbers ("1-3" -> [1, 3]), a box set's; null for anything else.
+	 */
+	static wholeRange(number: unknown): [number, number] | null {
+		const r = Series.range(number);
+		return r && Number.isInteger(r[0]) && Number.isInteger(r[1]) ? r : null;
 	}
 
 	/**
@@ -276,11 +291,9 @@ export class Series {
 		if (total > Series.TOTAL_MAX) return null;
 		const owned = new Set();
 		for (const b of books) {
-			const m = /^(\d+)(?:-(\d+))?$/.exec(String(b.number || '').trim());
-			if (!m) continue;
-			const from = parseInt(m[1], 10),
-				to = Math.min(m[2] ? parseInt(m[2], 10) : from, total);
-			for (let n = from; n <= to; n++) owned.add(n);
+			const range = Series.bounds(b.number);
+			if (!range || !range.every(Number.isInteger)) continue;
+			for (let n = range[0]; n <= Math.min(range[1], total); n++) owned.add(n);
 		}
 		const missing = [];
 		for (let n = 1; n <= total; n++) if (!owned.has(n)) missing.push(n);

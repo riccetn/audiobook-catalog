@@ -23,6 +23,9 @@ src/                  the app's TypeScript, which make pages compiles into publi
                         (author.ts, narrator.ts and publisher.ts start credit.ts with their kind; credit-kinds.ts holds
                         what differs between the kinds)
   store.ts            shared by the pages: loads from IndexedDB what the page shows, and saves every edit there
+  dom.ts              what every page draws with: elements, the page's own spelling, the status line
+  id-fields.ts        the forms' fields for external ids and links
+  connections.ts      your keys for the catalogs and their clients, and your server
   sw.ts               the service worker, which makes the app installable (on a phone) and usable offline
   modules/            the pipeline as classes, one per module: Catalog, Book, Edition, Series, Contributor, the external
                         catalogs (see below), merge, validation (no browser APIs, so the tests run them in Node)
@@ -82,7 +85,7 @@ thing it does and listing it there:
 
 A `CatalogClient` subclass asks the catalog's API and says what your key for it is: `KEY_NAME` (Hardcover calls its
 key a token), `KEY_STORAGE` (where this browser keeps it), `KEY_HELP`, whether nothing works without it (`KEY_NEEDED`),
-and whether it is asked through the catalog proxy (`VIA_PROXY`); `store.ts` reads and saves every key the same way
+and whether it is asked through the catalog proxy (`VIA_PROXY`); `connections.ts` reads and saves every key the same way
 (`savedKey`, `saveKey`, `catalogClient`). Besides the class:
 
 - its ids and addresses go in `ExternalCatalog` (as before), and a proxied API's route in `server/proxy.ts`;
@@ -143,7 +146,7 @@ make typecheck    # check src/ and server/ without writing anything (tsconfig.se
 - The checker only knows what the code says. A catalog read from the old localStorage, a backup or a CSV is
   `Unchecked` (any) until the code has checked it: `Backup.read()` (with `BackupV1`, for a backup
   from before version 2 and the old localStorage catalog) brings it to the current format, and `Validator.validate()` is what makes sure it describes `Book`s before `Book.fromJSON()` makes them.
-- `byId(id)` and `fieldById(id)` in `store.ts` get the page's elements; they throw when the page lacks
+- `byId(id)` and `fieldById(id)` in `dom.ts` get the page's elements; they throw when the page lacks
   one, so a typo in an id fails at once with its name.
 - CI runs `make typecheck` as part of `make check` (below), and `make pages` checks the app again as it compiles it.
 
@@ -206,7 +209,7 @@ every pull request, so running it first catches what CI would.
 The code, its comments and these docs use American spelling. The pages are written that way too, and
 are shown in British spelling to a browser whose first English language is a British one
 (`Text.prefersBritish` in `modules/text.ts`, from `navigator.languages`; `en-GB`, `en-AU`, `en-IE`, `en-CA`, ...).
-`store.ts` respells the page's own HTML as it loads, and text the code puts on the page goes through
+`dom.ts` respells the page's own HTML as it loads, and text the code puts on the page goes through
 `spell()`; book titles and other data never do. `spelled()` knows only the words in `BRITISH_WORDS`
 (now just catalog/catalogue), so a page that starts using another such word adds it there. Stored keys and
 file names (`audiobook-catalog-device`, the backup's file name) are names, not text, and never change.

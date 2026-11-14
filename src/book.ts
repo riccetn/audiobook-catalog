@@ -12,20 +12,15 @@ import {
 	loadRecords,
 	queryCatalog,
 	afterSaving,
-	showIoStatus,
 	startPage,
-	byId,
-	spell,
-	buildElement,
-	fillElement,
-	joined,
 	publisherPageHref,
-	webLinks,
 	bookPageHref,
 	seriesPageHref,
 	editPageHref,
 } from './store.js';
-import type {Child} from './store.js';
+import {showIoStatus, byId, spell, buildElement, fillElement, joined} from './dom.js';
+import {webLinks} from './id-fields.js';
+import type {Child} from './dom.js';
 import {
 	authorLinks,
 	nameLinks,

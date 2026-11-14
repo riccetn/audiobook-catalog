@@ -136,7 +136,7 @@ export class AudibleImporter extends FileImporter {
 	static cleanTitle(title: string, number: string | null): string {
 		title = title.trim();
 		// a box set's range stays: "Ember: Books 1-3" is the set's name, which the merge keeps on its edition
-		if (number && !Series.BOX_RANGE.test(number)) {
+		if (number && !Series.wholeRange(number)) {
 			const stripped = title.replace(new RegExp('[\\s:,\\-]+' + Text.escapeRegExp(number.trim()) + '\\s*$'), '');
 			if (stripped) return stripped;
 		}

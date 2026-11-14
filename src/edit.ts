@@ -24,21 +24,6 @@ import {
 	persist,
 	queryCatalog,
 	wholeCatalog,
-	spell,
-	byId,
-	fieldById,
-	buildElement,
-	fillElement,
-	showIoStatus,
-	externalFields,
-	linksField,
-	fillExternalFields,
-	readExternalFields,
-	lookupHardcoverField,
-	lookupHardcoverBook,
-	keyedClients,
-	savedServer,
-	fetchViaProxy,
 	valueFromPageHash,
 	idFromAddress,
 	bookPageHref,
@@ -47,10 +32,13 @@ import {
 	openWithStatus,
 	hashValue,
 } from './store.js';
+import {spell, byId, fieldById, buildElement, fillElement, showIoStatus} from './dom.js';
+import {externalFields, linksField, fillExternalFields, readExternalFields} from './id-fields.js';
+import {lookupHardcoverField, lookupHardcoverBook, keyedClients, savedServer, fetchViaProxy} from './connections.js';
 import {coverImage, totalText, setAddress, hashParts, hashText} from './book-list.js';
 import {comboField, newNames, refreshNewNotes} from './combo-box.js';
 import type {NewNote} from './combo-box.js';
-import type {Child, FormField} from './store.js';
+import type {Child, FormField} from './dom.js';
 import type {NamedKind} from './modules/catalog.js';
 import type {CatalogRun, CatalogChoice} from './edit-catalogs.js';
 import type {CatalogEntry, FieldChoices} from './modules/book-review.js';

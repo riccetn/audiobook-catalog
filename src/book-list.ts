@@ -14,20 +14,16 @@ import {
 	backupAge,
 	needsBackup,
 	loadRecords,
-	byId,
-	spell,
-	buildElement,
-	fillElement,
-	joined,
+	afterSaving,
 	authorPageHref,
 	narratorPageHref,
-	externalLinks,
-	webLinks,
 	bookPageHref,
 	seriesPageHref,
 	hashValue,
 } from './store.js';
-import type {Child} from './store.js';
+import {byId, fieldById, spell, buildElement, fillElement, joined} from './dom.js';
+import {externalLinks, webLinks} from './id-fields.js';
+import type {Child} from './dom.js';
 
 // How many books a list draws at a time; Show more draws more.
 const PAGE_SIZE = 50;
@@ -302,6 +298,17 @@ export class BookList {
 		this.showing = end;
 	}
 
+	/**
+	 * The Show more button's: load more of the books listed, once the saves asked for are done, then draw.
+	 * @returns once it is drawn
+	 */
+	showMore(render: () => void): Promise<void> {
+		return afterSaving(async () => {
+			await this.more();
+			render();
+		});
+	}
+
 	/** @returns how many books listed are not shown yet */
 	get rest(): number {
 		return this.ids.length - this.showing;
@@ -466,15 +473,24 @@ export async function showBackupNudge() {
  * @param showView shows what the search says
  */
 export function watchSearchAndFilters(addressNow: () => string, showView: () => unknown) {
+	byId('filtersBtn').addEventListener('click', () => {
+		const open = byId('controls').classList.toggle('filtersOpen');
+		byId('filtersBtn').setAttribute('aria-expanded', String(open));
+	});
 	byId('q').addEventListener('input', () => {
 		const typing = !!(history.state && history.state.search);
 		setAddress(typing ? 'replace' : 'push', addressNow(), {search: true});
 		showView();
 	});
-	byId('filtersBtn').addEventListener('click', () => {
-		const open = byId('controls').classList.toggle('filtersOpen');
-		byId('filtersBtn').setAttribute('aria-expanded', String(open));
-	});
+}
+
+/**
+ * On a phone the filters fold away behind a button (styles.css), which says how many of them are on.
+ * @param filters the ids of the filters' fields
+ */
+export function showFilterCount(filters: string[]) {
+	const on = filters.filter(id => fieldById(id).value).length;
+	byId('filtersBtn').textContent = on ? `Filters · ${on}` : 'Filters';
 }
 
 /**

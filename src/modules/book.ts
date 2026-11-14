@@ -6,7 +6,7 @@ import {Text} from './text.js';
 import {Edition} from './edition.js';
 import {Series} from './series.js';
 import {ExternalCatalog} from './external-catalog.js';
-import type {Unchecked} from './text.js';
+import type {Unchecked, StoredField} from './text.js';
 
 /** What a new Book is made of; all but the title and authors is optional. */
 export interface BookInit {
@@ -41,15 +41,28 @@ const SEVERAL = new RegExp(
 	Text.WORD_START + '(?:books|volumes|vols|collection|box(?:ed)?\\s*set|omnibus|trilogy|series|complete|\\d)',
 	'iu',
 );
-// The stored keys that hold a text, and the field each is kept in.
-const TEXT_FIELDS: Record<string, 'title' | 'series' | 'number'> = {t: 'title', s: 'series', sn: 'number'};
+// The stored keys that hold a text that may be missing, and the field each is kept in (a title is always there).
+const TEXT_FIELDS: Record<string, 'series' | 'number'> = {s: 'series', sn: 'number'};
 
-function nonEmpty(v: unknown): v is string {
-	return typeof v === 'string' && v.trim() !== '';
-}
-function textList(v: unknown): v is string[] {
-	return Array.isArray(v) && v.every(nonEmpty);
-}
+// How each stored key is read onto a book's field (Text.setStored).
+const BOOK_FIELDS: Record<string, StoredField<Book>> = {
+	uid: [Text.nonEmpty, (b, v) => (b.id = v)],
+	t: [Text.nonEmpty, (b, v) => (b.title = v ?? '')],
+	a: [Text.isNameList, (b, v) => (b.authors = v ? [...v] : [])],
+	s: [Text.nonEmpty, (b, v) => (b.series = v)],
+	sn: [Text.nonEmpty, (b, v) => (b.number = v)],
+	g: [v => Array.isArray(v) && v.every(Text.nonEmpty), (b, v) => (b.genres = v ? [...v] : [])],
+	r: [
+		v => Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'),
+		(b, v) => (b.read = v ? [...v] : []),
+	],
+	ext: [ExternalCatalog.isIds, (b, v) => (b.external = v ? {...v} : {})],
+	links: [Text.isNameList, (b, v) => (b.links = v ? [...v] : [])],
+	e: [
+		v => Array.isArray(v) && v.length > 0 && v.every(Text.isObject),
+		(b, v) => (b.editions = v ? v.map(Edition.fromJSON) : []),
+	],
+};
 
 /** A title in the catalog. */
 export class Book {
@@ -133,105 +146,7 @@ export class Book {
 	 * Set the value of one of the stored book's keys (as fromJSON() reads it).
 	 */
 	set(key: string, v: unknown) {
-		delete this.extra[key];
-		const put: (ok: boolean, apply: () => void, reset: () => void) => void = (ok, apply, reset) => {
-			reset();
-			if (ok) apply();
-			else if (v !== undefined) this.extra[key] = v;
-		};
-		if (key === Book.ID_KEY)
-			put(
-				nonEmpty(v),
-				() => {
-					this.id = v as string;
-				},
-				() => {
-					this.id = undefined;
-				},
-			);
-		else if (key === 't')
-			put(
-				nonEmpty(v),
-				() => {
-					this.title = v as string;
-				},
-				() => {
-					this.title = '';
-				},
-			);
-		else if (key === 'a')
-			put(
-				textList(v) && v.length > 0,
-				() => {
-					this.authors = [...(v as string[])];
-				},
-				() => {
-					this.authors = [];
-				},
-			);
-		else if (key === 'g')
-			put(
-				textList(v),
-				() => {
-					this.genres = [...(v as string[])];
-				},
-				() => {
-					this.genres = [];
-				},
-			);
-		else if (key === 'r')
-			put(
-				Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'),
-				() => {
-					this.read = [...(v as string[])];
-				},
-				() => {
-					this.read = [];
-				},
-			);
-		else if (key === 'ext')
-			put(
-				ExternalCatalog.isIds(v),
-				() => {
-					this.external = {...(v as Record<string, string>)};
-				},
-				() => {
-					this.external = {};
-				},
-			);
-		else if (key === 'links')
-			put(
-				textList(v) && v.length > 0,
-				() => {
-					this.links = [...(v as string[])];
-				},
-				() => {
-					this.links = [];
-				},
-			);
-		else if (key === 'e') {
-			put(
-				Array.isArray(v) && v.length > 0 && v.every(Text.isObject),
-				() => {
-					this.editions = (v as unknown[]).map(Edition.fromJSON);
-				},
-				() => {
-					this.editions = [];
-				},
-			);
-		} else if (Object.hasOwn(TEXT_FIELDS, key)) {
-			const field = TEXT_FIELDS[key];
-			put(
-				nonEmpty(v),
-				() => {
-					this[field] = v as string;
-				},
-				() => {
-					if (field === 'title') this.title = '';
-					else this[field] = undefined;
-				},
-			);
-		} else if (v !== undefined) this.extra[key] = v;
+		Text.setStored(this, BOOK_FIELDS, key, v);
 	}
 
 	/**
@@ -362,8 +277,7 @@ export class Book {
 	 * Its own id in an external catalog ("hardcover"), or null; its editions have ids of their own.
 	 */
 	idOn(catalog: string): string | null {
-		const v = Object.hasOwn(this.external, catalog) ? this.external[catalog] : null;
-		return typeof v === 'string' && v ? v : null;
+		return ExternalCatalog.idIn(this.external, catalog);
 	}
 
 	/**
@@ -397,11 +311,8 @@ export class Book {
 	 * [first, last] of a box set's series range ("1-3" -> [1, 3]), or null for a single title or no series.
 	 */
 	boxRange(): [number, number] | null {
-		const m = this.series && Series.BOX_RANGE.exec(String(this.number || '').trim());
-		if (!m) return null;
-		const lo = Number(m[1]),
-			hi = Number(m[2]);
-		return lo < hi && hi - lo < Series.BOX_MAX ? [lo, hi] : null;
+		const range = this.series ? Series.wholeRange(this.number) : null;
+		return range && range[1] - range[0] < Series.BOX_MAX ? range : null;
 	}
 
 	/**
