@@ -1312,6 +1312,25 @@ test('merge: ISBNs fill in the matching edition, another ISBN is another edition
 	);
 });
 
+test('exclusions read an ASIN in any case, and keep a line that is no entry without matching anything', () => {
+	const ex = Exclusions.parse('b012345678\nThe Lost Voyage\nEdition b0abcdefgh\n');
+	assert.deepEqual(ex.entries, ['B012345678', 'The Lost Voyage', 'Edition B0ABCDEFGH']);
+	assert.ok(ex.covers(B({t: 'x', a: ['y'], ...ed({ext: {'audible.com': 'B012345678'}})})));
+	assert.ok(ex.coversEdition(Edition.fromJSON({ext: {'audible.com': 'B0ABCDEFGH'}})));
+	// a title without its author is no ASIN, and keeps out neither a book of that title nor one with that "id"
+	assert.deepEqual([...ex.unreadable], ['The Lost Voyage']);
+	assert.ok(!ex.covers(B({t: 'The Lost Voyage', a: ['Mira Holloway']})));
+	assert.equal(ex.ids.size, 1);
+	assert.equal(ex.add('the lost voyage'), 'the lost voyage', 'kept as written');
+	assert.equal(ex.add('The Lost Voyage'), null, 'once');
+	// the Check names it
+	const catalog = Backup.toCatalog({books: [{t: 'Kept', a: ['Ann Vale']}], excluded: ['The Lost Voyage']});
+	assert.ok(
+		Validator.check(catalog).warnings.some(w => /^exclusions: 'The Lost Voyage' is not an ASIN/.test(w)),
+		'Check warns',
+	);
+});
+
 test('exclusions by ISBN', () => {
 	const ex = Exclusions.parse(`ISBN 978-0-00-000000-2  # read the paperback\n${ISBN_BOX}\n0306406152\nB012345678\n`);
 	assert.deepEqual(ex.entries, [`ISBN ${ISBN_A}`, `ISBN ${ISBN_BOX}`, '0306406152', 'B012345678']);
@@ -6302,6 +6321,14 @@ test("editions' titles: stored and backed up (version 3), searched, and exported
 
 test('sync: the copy is the backup compressed and encrypted with the passphrase, which alone opens it', async () => {
 	const backup = Backup.write(v2Catalog());
+	// data that isn't gzip fails the unpacking, and only that: no rejection is left unhandled
+	const unhandled = [];
+	const onUnhandled = reason => unhandled.push(reason);
+	process.on('unhandledRejection', onUnhandled);
+	await assert.rejects(CatalogSync.squeeze(new TextEncoder().encode('not gzip at all'), false));
+	await new Promise(resolve => setImmediate(resolve));
+	process.off('unhandledRejection', onUnhandled);
+	assert.deepEqual(unhandled, []);
 	const key = await CatalogSync.keyFor('a long passphrase');
 	const sealed = await CatalogSync.seal(backup, key, 'copy-1');
 	assert.ok(!sealed.includes('Tide'), 'nothing of the catalog shows');
@@ -6624,7 +6651,8 @@ test("an edition's exclusion keeps out that edition only, by any of its ids, and
 	// it never keeps out a book, as a book's own entry does
 	assert.ok(!ex.covers(B({t: 'The Salt Road', a: ['Ann Vale'], e: [{ext: {'audible.com': 'B0EXCL0001'}}]})));
 	assert.equal(ex.add('Edition B0EXCL0001'), null, 'already there');
-	assert.equal(ex.add('Edition nothing here'), null, 'not an id');
+	assert.equal(ex.add('Edition nothing here'), 'Edition nothing here', 'not an id: kept as written');
+	assert.ok(ex.unreadable.has('Edition nothing here'));
 	// the entries that keep an edition out, one per id
 	assert.deepEqual(
 		Exclusions.editionEntries(E({ext: {'audible.com': 'B0NEW00001', hardcover: '77'}, isbn: '9780000000019'})),
@@ -6634,7 +6662,7 @@ test("an edition's exclusion keeps out that edition only, by any of its ids, and
 	assert.ok(ex.remove('Edition B0EXCL0001'));
 	assert.equal(ex.remove('Edition B0EXCL0001'), false);
 	assert.ok(!ex.coversEdition(E({ext: {'audible.com': 'B0EXCL0001'}})));
-	assert.equal(ex.size, 3);
+	assert.equal(ex.size, 4, 'the three ids left, and the line that is none');
 	const catalog = new Catalog({exclusions: Exclusions.parse('B0GONE0001\nGone | Ann Vale')});
 	assert.ok(catalog.removeExclusion('Gone | Ann Vale'));
 	assert.deepEqual(catalog.exclusions.entries, ['B0GONE0001']);
