@@ -1015,6 +1015,41 @@ test('merge: new books are appended and the merge is idempotent', () => {
 	assert.equal(existing.length, 2);
 });
 
+test('merge: an edition is compared only with the editions sharing an id, not with every book', () => {
+	// before, each edition an import found was compared with every edition in the catalog, so an import took
+	// time in the square of the catalog's size; now the comparisons grow with the books, not their square
+	const titles = (n, from = 0) =>
+		Array.from({length: n}, (_, i) =>
+			Book.fromJSON({
+				t: `Lantern ${from + i}`,
+				a: [`Wren Calder ${(from + i) % 7}`],
+				s: `Lantern Road ${(from + i) % 11}`,
+				sn: String(from + i),
+				e: [{ext: {'audible.com': 'B0' + String(from + i).padStart(8, '0')}, n: ['Ivo Marsh']}],
+			}),
+		);
+	const sameAs = Edition.prototype.sameAs;
+	let calls = 0;
+	Edition.prototype.sameAs = function (other) {
+		calls++;
+		return sameAs.call(this, other);
+	};
+	try {
+		const comparisons = n => {
+			calls = 0;
+			const report = new Merger(titles(n)).merge(titles(n, n / 2));
+			assert.deepEqual([report.matched, report.added.length], [n / 2, n / 2]);
+			Merger.boxSets(titles(n));
+			return calls;
+		};
+		const small = comparisons(200),
+			large = comparisons(800);
+		assert.ok(large < small * 6, `${small} comparisons for 200 books, ${large} for 800`);
+	} finally {
+		Edition.prototype.sameAs = sameAs;
+	}
+});
+
 test('merge: hand edits win but a missing id is filled in', () => {
 	const existing = [book('A Spark of Dawn', 'Ilse Marlowe', {s: 'A Crown of Embers', sn: '5', g: ['Mine']})];
 	const report = merge(existing, [
