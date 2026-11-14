@@ -246,8 +246,8 @@ function renderOverview() {
 						'span',
 						{class: 'srow-owned'},
 						rec.bookCount
-							? `${rec.owned} owned${info ? ' of ' + totalText(info) : ''}`
-							: `no books yet${info ? ', ' + totalText(info) + ' released' : ''}`,
+							? `${rec.owned} owned${totalText(info) ? ' of ' + totalText(info) : ''}`
+							: `no books yet${totalText(info) ? ', ' + totalText(info) + ' released' : ''}`,
 					),
 				),
 				buildElement(
@@ -261,7 +261,7 @@ function renderOverview() {
 							', ',
 						),
 					),
-					info && [' ', statusTag(info.status), seriesLinks(info)],
+					info && [statusTag(info.status), seriesLinks(info)],
 					missing &&
 						missing.length > 0 && [
 							' ',

@@ -47,17 +47,19 @@ export const authorLinks: (names: string[]) => Child[] = names => nameLinks(name
  */
 export const narratorLinks: (names: string[]) => Child[] = names => nameLinks(names, narratorPageHref);
 /**
- * A series' status, as a tag.
+ * A series' status, as a tag after a space; nothing when the status is unknown.
  */
-export const statusTag: (status: string | undefined) => HTMLSpanElement = status =>
-	buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing');
+export const statusTag = (status: string | undefined): Child[] =>
+	status
+		? [' ', buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing')]
+		: [];
 /** the series' pages in external catalogs, then its other links (by their sites' names) */
 export const seriesLinks: (info: Series) => Child[] = info =>
 	[...externalLinks(info.external, 'series'), ...webLinks(info.links)].map(a => [' ', a]);
 /**
  * A series' released total as its info has it (as typed, should it not be a number).
  */
-export const totalText = (info: Series): string => String(info.toJSON().total ?? '');
+export const totalText = (info: Series | undefined): string => String(info?.toJSON().total ?? '');
 
 /**
  * A series' books by number, unnumbered ones first, and its collections (box sets, "1-3") last.
@@ -374,7 +376,7 @@ export function bookGroups(
 				const note: string[] = [];
 				if (info) {
 					const missing = CATALOG.missing(name);
-					note.push(`${totalText(info)} released total`);
+					if (totalText(info)) note.push(`${totalText(info)} released total`);
 					if (missing && missing.length) note.push(`missing ${Series.numberList(missing)}`);
 					if (info.note) note.push(info.note);
 				}
@@ -389,7 +391,7 @@ export function bookGroups(
 							buildElement('a', {href: seriesPageHref(id)}, name),
 							' ',
 							buildElement('span', {class: 'n'}, ownedText(group)),
-							info && [' ', statusTag(info.status), seriesLinks(info)],
+							info && [statusTag(info.status), seriesLinks(info)],
 							heading(id),
 						),
 						note.length > 0 && buildElement('p', {class: 'series-note'}, note.join(' — ')),

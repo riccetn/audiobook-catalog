@@ -136,7 +136,7 @@ book's **Edit** for that book. See [Editing books and series](editing-series.md)
 splitting and removing editions there.
 Nothing is saved until you press **Review & save**, which lists every change, and then **Save**.
 
-The series' own fields are how many books are released, whether it is ongoing or complete, the note and
+The series' own fields are how many books are released, whether it is ongoing or complete (or unknown), the note and
 the series' ids on Audible, Goodreads, Hardcover, AudiobookDB, ISFDB, BookBrainz and Wikidata (the id, or the address of the series'
 page there, `https://www.audible.com/series/…/B0…`, `https://www.goodreads.com/series/90001`,
 `https://hardcover.app/series/the-lantern-coast`, which Hardcover is asked to turn into the series' number; the series links to each).
