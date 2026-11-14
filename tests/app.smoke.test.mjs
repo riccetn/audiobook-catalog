@@ -1900,7 +1900,7 @@ test('dates read: shown on the card, edited on its Edit page, and filterable by 
 	const f = again.els;
 	f['b0_r-today'].listeners.click[0]();
 	f['b0_r-today'].listeners.click[0]();
-	const today = again.get('today()');
+	const today = again.get('Text.today()');
 	assert.equal(f.b0_r.value, `2021, 2026-09-01, ${today}`);
 	assert.deepEqual(again.get('DRAFTS[0].book.read'), ['2021', '2026-09-01', today]);
 
@@ -3074,11 +3074,11 @@ test("Remove book on a book's Edit page asks once more, then removes it and open
 });
 
 test("Read today on a book's details adds today to its dates read, and Undo takes it off", async () => {
-	const {ctx, els, get, storage} = await bootBook('The Salt Road');
+	const {els, get, storage} = await bootBook('The Salt Road');
 	const id = get('BOOK_FILTER');
 	els.results.querySelector('.readToday').dispatch('click');
 	await idle();
-	const today = ctx.today();
+	const today = get('Text.today()');
 	assert.deepEqual(get(`CATALOG.book(${JSON.stringify(id)}).read`), ['2023-06-02', '2025-11-20', today].sort());
 	assert.ok((await kept(storage)).books.find(b => b.t === 'The Salt Road').r.includes(today));
 	assert.doesNotMatch(els.results.innerHTML, /readToday/, 'read today already');

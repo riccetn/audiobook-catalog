@@ -36,6 +36,16 @@ const needed = (needs: (Phrase | null)[]): Phrase[] => {
 	return out;
 };
 
+/** What CatalogLookup.fill filled in: a field of the book, its id or ids in other catalogs, or an edition. */
+export type Filled = 'title' | 'authors' | 'series' | 'number' | 'genres' | 'id' | 'ids' | 'edition';
+
+/**
+ * How CatalogLookup.fill fills a book in: `publishers`, the publishers' names the catalog has, which an
+ * edition's publishers aren't split in; `answer`, whether the book is a lookup's answer (Found.book), whose
+ * edition keeps the title it was sold under.
+ */
+export type FillOptions = {publishers?: Iterable<string>; answer?: boolean};
+
 /** Looks books up in the external catalogs a page may read. */
 export class CatalogLookup {
 	sources: BookSource[];
@@ -110,7 +120,7 @@ export class CatalogLookup {
 		const asked: Set<BookSource> = new Set();
 		const take: (source: BookSource, book: Book | null) => void = (source, book) => {
 			if (!book) return;
-			CatalogLookup.fill(found.book, book);
+			CatalogLookup.fill(found.book, book, {answer: true});
 			if (!found.sources.includes(source.label)) found.sources.push(source.label);
 		};
 		const ask: (source: BookSource, what: Pasted, noted: boolean) => Promise<void> = async (
@@ -255,22 +265,79 @@ export class CatalogLookup {
 	}
 
 	/**
-	 * Fill `book` in (in place) from `from`: its title, authors, series and number,
-	 * genres where it has none; ids in catalogs it has none in; the edition where it has none, else the
-	 * edition's gaps when the two don't disagree.
+	 * Fill `book` in (in place) from `from`, gaps only: its title, authors, series, number (only with its own
+	 * series) and genres where it has none, and ids in catalogs it has none in; and `from`'s first edition
+	 * (CatalogLookup.fillEdition). Returns what was filled in.
 	 */
-	static fill(book: Book, from: Book) {
-		if (!book.title) book.title = from.title;
-		if (!book.authors.length) book.authors = [...from.authors];
+	static fill(book: Book, from: Book, opts: FillOptions = {}): Filled[] {
+		const filled: Filled[] = [];
+		if (!book.title && from.title) {
+			book.title = from.title;
+			filled.push('title');
+		}
+		if (!book.authors.length && from.authors.length) {
+			book.authors = [...from.authors];
+			filled.push('authors');
+		}
 		if (!book.series && from.series) {
 			book.series = from.series;
-			if (from.number) book.number = from.number;
-		} else if (book.series && !book.number && from.number && from.series === book.series) book.number = from.number;
-		if (!book.genres.length) book.genres = [...from.genres];
-		for (const [key, id] of Object.entries(from.external)) if (!book.external[key]) book.external[key] = id;
+			filled.push('series');
+		}
+		if (book.series === from.series && !book.number && from.number) {
+			book.number = from.number;
+			filled.push('number');
+		}
+		if (!book.genres.length && from.genres.length) {
+			book.genres = [...from.genres];
+			filled.push('genres');
+		}
+		const ids = Object.entries(from.external).filter(([key]) => !book.external[key]);
+		if (ids.length) {
+			book.external = {...book.external, ...Object.fromEntries(ids)};
+			filled.push(ids.length === 1 ? 'id' : 'ids');
+		}
 		const [ed] = from.editions;
-		if (!ed) return;
-		if (!book.editions.length) book.editions = [ed];
-		else if (!book.editions[0].conflictsWith(ed)) book.editions[0].fillFrom(ed);
+		if (ed && CatalogLookup.fillEdition(book, ed, opts)) filled.push('edition');
+		return filled;
+	}
+
+	/**
+	 * Put an edition in a book (in place): in the gaps of the edition that is the same (it shares an id with it,
+	 * an ASIN on any site, or its ISBN), else of the first one whose fields it fills without changing any, else
+	 * as an edition of its own. Returns whether anything was filled in.
+	 */
+	static fillEdition(book: Book, ed: Edition, opts: FillOptions = {}): boolean {
+		const fields = ed.fields();
+		// the title it was released under is no title of its own when it is the book's (but an answer keeps it,
+		// for the book it fills in, which may have another)
+		if (!opts.answer && fields.t && Book.sameTitle(fields.t, book.title)) delete fields.t;
+		const has = (card: Record<string, string>, k: string) => Text.tidy(card[k] || '');
+		const at = [
+			book.editions.findIndex(x => x.sharesId(ed)),
+			book.editions.findIndex(x => x.sameAs(ed)),
+			book.editions.findIndex(x => {
+				const mine = x.fields();
+				return Object.entries(fields).every(([k, v]) => !has(mine, k) || has(mine, k) === Text.tidy(v));
+			}),
+		].find(j => j >= 0);
+		const mine = at === undefined ? {} : book.editions[at].fields();
+		let gained = false;
+		for (const [k, v] of Object.entries(fields))
+			if (v && !has(mine, k)) {
+				mine[k] = v;
+				gained = true;
+			}
+		if (!gained) return false;
+		// the publishers either edition names stay whole, as the catalog's do
+		const known = [...(opts.publishers || []), ...ed.publishers, ...book.editions.flatMap(x => x.publishers)];
+		const [first, ...more] = Edition.fromFields(mine, known).editions;
+		if (!first) return false;
+		if (at === undefined) {
+			book.editions = [...book.editions, first, ...more];
+			return true;
+		}
+		first.id = book.editions[at].id;
+		book.editions = [...book.editions.slice(0, at), first, ...more, ...book.editions.slice(at + 1)];
+		return true;
 	}
 }

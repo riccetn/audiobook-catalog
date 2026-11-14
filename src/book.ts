@@ -11,6 +11,7 @@ import {
 	persist,
 	loadRecords,
 	queryCatalog,
+	storedBookId,
 	afterSaving,
 	startPage,
 	publisherPageHref,
@@ -71,12 +72,7 @@ async function loadView(): Promise<void> {
 async function resolveAddress(): Promise<void> {
 	if (BOOK_FILTER === null) return;
 	const text = BOOK_FILTER;
-	const id = await queryCatalog(async r => {
-		if (await r.count('books', undefined, text)) return text;
-		const found = await r.under('books', 'byTitle', [CatalogRecords.sortKey(text)]);
-		const book = found.find(b => b.title === text);
-		return book ? book.id : text;
-	});
+	const id = (await storedBookId(text)) ?? text;
 	if (id !== text) {
 		BOOK_FILTER = id;
 		setAddress('replace', addressNow());
@@ -408,7 +404,7 @@ function bookDetails(b: Book): HTMLDivElement {
 					spell('Read'),
 					[
 						b.read.length > 0 && b.read.join(', ') + ' ',
-						!b.read.includes(today()) &&
+						!b.read.includes(Text.today()) &&
 							buildElement(
 								'button',
 								{type: 'button', class: 'readToday', onclick: () => readToday(id)},
@@ -449,9 +445,9 @@ function bookDetails(b: Book): HTMLDivElement {
  */
 export function readToday(id: string) {
 	const b = CATALOG.book(id);
-	if (!b || b.read.includes(today())) return;
+	if (!b || b.read.includes(Text.today())) return;
 	const before = b.read;
-	b.read = [...b.read, today()].sort();
+	b.read = [...b.read, Text.today()].sort();
 	render();
 	persist();
 	refreshView();
@@ -463,12 +459,6 @@ export function readToday(id: string) {
 		persist();
 		refreshView();
 	});
-}
-
-// Today in the viewer's time zone, as YYYY-MM-DD.
-export function today() {
-	const d = new Date();
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** After a save took in what another tab changed (store.ts): the page shows the book as stored now. */

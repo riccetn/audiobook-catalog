@@ -1,5 +1,5 @@
 // What every importer of an export file (a CSV) shares: it reads the file a row at a time into books, tidied
-// the way the catalog keeps them. The merge into the catalog is not an importer's: see Catalog.merge. The
+// the way the catalog keeps them. The merge into the catalog is not an importer's: see Merger.into. The
 // Import & export page knows only this class: a subclass says what its export is (CATALOG, LABEL) and how
 // to read one of its rows (readRow).
 import {Csv} from './csv.js';

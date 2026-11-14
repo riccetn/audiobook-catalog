@@ -128,23 +128,7 @@ export class AudiobookdbSource extends BookSource {
 	 * length, cover (the release's, else the book's), and its ASINs, each under the site its link names.
 	 */
 	static book(book: Unchecked, release: Unchecked | null): Book {
-		const people: (x: unknown, role: string) => string[] = (x, role) =>
-			Array.isArray(x)
-				? [
-						...new Set(
-							x
-								.filter(
-									p =>
-										Text.isObject(p) &&
-										Text.isObject(p.role) &&
-										p.role.name === role &&
-										Text.isObject(p.person),
-								)
-								.map(p => tidyText(p.person.name))
-								.filter(Boolean),
-						),
-					]
-				: [];
+		const people = AudiobookdbClient.namesIn;
 		const rec: Record<string, any> = {
 			t: tidyText(book.title) || (release ? tidyText(release.title) : ''),
 			a: people(book.people, 'Author'),

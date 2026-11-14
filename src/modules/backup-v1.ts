@@ -53,7 +53,7 @@ export class BackupV1 {
 	/**
 	 * The parts of a version 1 backup: the files Restore was given, several picked together (fromFiles()), or {books: [...], seriesInfo: {...}, authors: {...}, narrators: {...},
 	 * publishers: {...}, excluded: [...], notDuplicates: [...], ids: {...}}, or a plain array of books from
-	 * before series info was exported. The books are brought to the current format (Book.fixBooks). Series
+	 * before series info was exported. The books are brought to the current format (BackupV1.fixBooks). Series
 	 * info, author, narrator and publisher info, the exclusions list entries and the "Not duplicates" marks
 	 * are null when the backup predates them, so callers leave theirs alone. Throws when it is neither, or a
 	 * part of it is not what it should be.

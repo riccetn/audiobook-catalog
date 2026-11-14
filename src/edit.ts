@@ -17,13 +17,14 @@ import {Catalog} from './modules/catalog.js';
 import {Exclusions} from './modules/exclusions.js';
 import {Validator} from './modules/validator.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
-import {CatalogRecords} from './modules/catalog-records.js';
 import {
 	CATALOG,
 	startPage,
 	loadRecords,
 	persist,
 	queryCatalog,
+	storedBookId,
+	storedContributorId,
 	wholeCatalog,
 	valueFromPageHash,
 	idFromAddress,
@@ -44,6 +45,7 @@ import type {NamedKind} from './modules/catalog.js';
 import type {CatalogRun, CatalogChoice} from './edit-catalogs.js';
 import type {CatalogEntry, FieldChoices} from './modules/book-review.js';
 import type {NotAudio} from './modules/shelf-sync.js';
+import type {Filled} from './modules/catalog-lookup.js';
 
 /** A book being edited: the book as loaded (`before`, as stored text) and the copy the page changes. */
 export type Draft = {id: string; before: Book; book: Book; error: string; added?: NewPick};
@@ -200,12 +202,6 @@ function newEntries(b: Book): string[] {
 	);
 }
 
-/** Today in the viewer's time zone, as YYYY-MM-DD. */
-export function today(): string {
-	const d = new Date();
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 // ------------------------------------------------------------------ what a book and an edition show
 /**
  * A book's field as the page shows it in its input.
@@ -308,10 +304,10 @@ function readTodayButton(input: string, onchange: () => void): HTMLElement {
 				now
 					.split(/[,;]/)
 					.map(x => x.trim())
-					.includes(today())
+					.includes(Text.today())
 			)
 				return;
-			field.value = now ? now.replace(/[,;\s]*$/, '') + ', ' + today() : today();
+			field.value = now ? now.replace(/[,;\s]*$/, '') + ', ' + Text.today() : Text.today();
 			onchange();
 		},
 		input + '-today',
@@ -786,6 +782,8 @@ function catalogLinks(d: Draft): Child[] {
  * edition), else the ids and covers it found for it (`entry` null). `key` names it on the page.
  */
 type Offer = {key: string; source: number; entry: CatalogEntry | null; after: Book};
+/** The offers last worked out for each draft, with the run and the book (as text) they were worked out from. */
+const OFFERS: WeakMap<Draft, {run: CatalogRun; text: string; offers: Offer[]}> = new WeakMap();
 
 /**
  * What the other catalogs would add to the book now, each once: each catalog's book of yours, else (for a
@@ -796,8 +794,11 @@ function offersFor(d: Draft): Offer[] {
 	const run = RUN;
 	const reviewed = run && run.review.books.get(d.id);
 	if (!run || !reviewed) return [];
-	const out: Offer[] = [];
+	// a card asks once for the book and once for each edition: the catalogs' books are merged in once per change
 	const now = d.book.text();
+	const kept = OFFERS.get(d);
+	if (kept && kept.run === run && kept.text === now) return kept.offers;
+	const out: Offer[] = [];
 	for (const entry of reviewed.entries) {
 		const after = run.take(d.book, entry, true);
 		if (after && after.text() !== now)
@@ -809,6 +810,7 @@ function offersFor(d: Draft): Offer[] {
 		const after = run.idsFor(d.book, source);
 		if (after && after.text() !== now) out.push({key: `${source}-ids`, source, entry: null, after});
 	}
+	OFFERS.set(d, {run, text: now, offers: out});
 	return out;
 }
 
@@ -2278,6 +2280,18 @@ async function removeBook() {
 // nothing typed is lost. The lookup and the catalogs it asks are loaded only when it is used.
 let FILLING: string | null = null; // what is being looked up, so pressing again doesn't ask twice
 
+/** What Fill in says it filled in, by what CatalogLookup.fill names. */
+const FILLED: Record<Filled, string> = {
+	title: 'title',
+	authors: 'authors',
+	series: 'series',
+	number: 'number in the series',
+	genres: 'genres',
+	id: "the book's id in another catalog",
+	ids: "the book's ids in other catalogs",
+	edition: 'an edition',
+};
+
 /** Fill in: look up what is typed in its field, and fill the book's gaps from it. */
 export async function fillFromCatalog() {
 	const field = fieldById('fillFrom'),
@@ -2299,7 +2313,11 @@ export async function fillFromCatalog() {
 		).find(text, d.book.authors);
 		// the page started again meanwhile (another tab's save)
 		if (DRAFTS[0] !== d) return;
-		const filled = fillBook(d, found.book);
+		const b = d.book.clone();
+		const filled = CatalogLookup.fill(b, found.book, {publishers: knownPublishers()}).map(what =>
+			spell(FILLED[what]),
+		);
+		d.book = b;
 		byId('bookFormError').textContent = '';
 		const values = {
 			catalogs: found.sources.join(spell(' and ')),
@@ -2331,79 +2349,6 @@ export async function fillFromCatalog() {
 	} finally {
 		if (FILLING === text) FILLING = null;
 	}
-}
-
-/** Put what a catalog has for a book in the draft's gaps; returns what was filled in ("title", "an edition"). */
-function fillBook(d: Draft, from: Book): string[] {
-	const b = d.book.clone();
-	const filled: string[] = [];
-	if (!b.title && from.title) {
-		b.title = from.title;
-		filled.push(spell('title'));
-	}
-	if (!b.authors.length && from.authors.length) {
-		b.authors = [...from.authors];
-		filled.push(spell('authors'));
-	}
-	// the number only goes with its own series
-	if (!b.series && from.series) {
-		b.series = from.series;
-		filled.push(spell('series'));
-	}
-	if (b.series === from.series && !b.number && from.number) {
-		b.number = from.number;
-		filled.push(spell('number in the series'));
-	}
-	if (!b.genres.length && from.genres.length) {
-		b.genres = [...from.genres];
-		filled.push(spell('genres'));
-	}
-	const ids = Object.entries(from.external).filter(([key]) => !b.external[key]);
-	if (ids.length) {
-		b.external = {...b.external, ...Object.fromEntries(ids)};
-		filled.push(spell(ids.length === 1 ? "the book's id in another catalog" : "the book's ids in other catalogs"));
-	}
-	const [ed] = from.editions;
-	if (ed && fillEdition(b, ed)) filled.push(spell('an edition'));
-	d.book = b;
-	return filled;
-}
-
-/**
- * Put an edition in a book: in the gaps of the edition that is the same (it shares an id with it, an ASIN on any
- * site, or its ISBN), else of the first one whose fields it fills without changing any, else as an edition of its
- * own. Returns whether anything was filled in.
- */
-function fillEdition(b: Book, ed: Edition): boolean {
-	const fields = ed.fields();
-	// the title it was released under is no title of its own when it is the book's
-	if (fields.t && Book.sameTitle(fields.t, b.title)) delete fields.t;
-	const has = (card: Record<string, string>, k: string) => Text.tidy(card[k] || '');
-	const at = [
-		b.editions.findIndex(x => x.sharesId(ed)),
-		b.editions.findIndex(x => x.sameAs(ed)),
-		b.editions.findIndex(x => {
-			const mine = x.fields();
-			return Object.entries(fields).every(([k, v]) => !has(mine, k) || has(mine, k) === Text.tidy(v));
-		}),
-	].find(j => j >= 0);
-	const mine = at === undefined ? {} : b.editions[at].fields();
-	let gained = false;
-	for (const [k, v] of Object.entries(fields))
-		if (v && !has(mine, k)) {
-			mine[k] = v;
-			gained = true;
-		}
-	if (!gained) return false;
-	const [first, ...more] = Edition.fromFields(mine, knownPublishers()).editions;
-	if (!first) return false;
-	if (at === undefined) {
-		b.editions = [...b.editions, first, ...more];
-		return true;
-	}
-	first.id = b.editions[at].id;
-	b.editions = [...b.editions.slice(0, at), first, ...more, ...b.editions.slice(at + 1)];
-	return true;
 }
 
 // ------------------------------------------------------------------ loading
@@ -2597,12 +2542,7 @@ export const READY = startPage(
 			} else {
 				const asked = book as string;
 				// by its id, or by its title from an older link
-				BOOK_ID = await queryCatalog(async r => {
-					if (await r.count('books', undefined, asked)) return asked;
-					const found = await r.under('books', 'byTitle', [CatalogRecords.sortKey(asked)]);
-					const titled = found.find(b => b.title === asked);
-					return titled ? (titled.id as string) : null;
-				});
+				BOOK_ID = await storedBookId(asked);
 				if (BOOK_ID === null) {
 					byId('subtitle').textContent = spell('There is no such book in the catalog.');
 					byId('bookPanel').hidden = true;
@@ -2616,12 +2556,7 @@ export const READY = startPage(
 			byId('seriesPanel').hidden = true;
 			byId('eyebrow').textContent = spell("Edit an author's books");
 			// by its id, or by name from an older link
-			AUTHOR_ID = await queryCatalog(async r => {
-				const [rec] = await r.get('contributors', [author]);
-				if (rec && rec.kind === 'author') return rec.id as string;
-				const [named] = await r.all('contributors', 'kindName', ['author', author]);
-				return named ? (named.id as string) : null;
-			});
+			AUTHOR_ID = await storedContributorId('author', author);
 			if (AUTHOR_ID === null) {
 				byId('subtitle').textContent = spell('No author to edit: open one from their page.');
 				return;

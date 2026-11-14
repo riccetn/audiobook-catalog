@@ -130,7 +130,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     - `CatalogClient` (fetch, key and pause passed in, `waitTurn` between requests, `each` for progress; your key: `KEY_NAME` (Hardcover's is a token,
       no other difference), `KEY_STORAGE`, `KEY_HELP`, `KEY_NEEDED`, `cleanKey`; `VIA_PROXY`, `PAUSE_MS`, `ID`) with `HardcoverClient` (GraphQL `ask`;
       queries, `parseUrl`/`bookId`, `idBySlug`) and `AudiobookdbClient` (through the catalog proxy; the key goes only with `keyed` asks (`whoAmI`, `shelves`,
-      `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release).
+      `addToShelf`); waits on a 429's `Retry-After`; `book`, `byAsin`, `series`, `person`, `asins` of a release; `withRole`/`peopleIn`/`namesIn` read an answer's people by role).
     - `ShelfSync` (your shelves on a catalog: `CLIENT`, `PARTS` (the kinds the Edit page compares it for), `EVERY_BOOK` (it compares the whole catalog: a Compare row on Import & export; not `AudibleSync`), `compare(catalog, step, part)` gives a `ShelfComparison` with a `SyncPlan` (`name`, `add`, `reads`,
       `otherShelf`, `unknown`, `inexact`), `summary`, `push` (the plan's entries in turn, each by the subclass's `send`; stops after `STOP_AFTER` failures in a row), `FOUND` (what Apply saves besides books: AudiobookDB's "ids and covers"),
       `part` (a series' or author's id there), `addIds`/`setInfoIds`, `notAdded`, `NOT_FOUND`, `SENDS_READS`, `inScope`, `sameName`; the comparison's `notAudio`, editions yours or on your shelves there the catalog has as something else, shown as _Maybe not audiobooks_) with `HardcoverSync`
@@ -155,7 +155,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
       sources, with the fetch, the clients whose key is saved and the catalog proxy passed in: the candidates in order own, also, fallback (a fallback only when
       none found it; one asked beside others has its failure noted, not thrown), then the `FILLS_IN` ones by the edition; `unavailable` says what to save;
-      `fill` (gaps only), `editionIds`).
+      `fill` (gaps only; `fillEdition`), `editionIds`).
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
     Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`; a series' name picked renames the series on all its books when the other
@@ -174,7 +174,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     others bring them in with `import type {MergeReport} from './merger.js'`. A class declares its fields, with their types and doc comments, above its constructor.
 - `store.js`: shared by the pages: the one `CATALOG` (a `Catalog`, exported; pages change its fields or call `replaceWith`),
   loading (`startPage(init, page)`: a page holds **only what it shows**: `CATALOG` starts empty, `loadRecords(want)` brings in books
-  (and what they need) by id, series or edition key, `queryCatalog(ask)` asks the database with a `CatalogReader`, and
+  (and what they need) by id, series or edition key, `queryCatalog(ask)` asks the database with a `CatalogReader` (`storedBookId`, `storedContributorId`: what an address names, by id or an older link's title or name), and
   `wholeCatalog()` (or `startPage`'s `{whole: true}`, the Duplicates page) holds every record from then on (`WHOLE`); `afterSaving(task)`
   runs a read once the saves are done, and `whenSaved` waits for those reads too. Reading all of it (`CatalogDatabase`, `CatalogRecords.toCatalog`); with none
   it starts **empty**, never with the demo data; one that can't be read is set aside (meta `unreadable`); when nothing was saved
@@ -226,7 +226,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   An address from when it added books (`#add...`) goes to `edit.html#add...` (`movedAddress`, `location.replace`).
 - `edit.js` (`edit.html#series=<id>`, _Edit series_, `docs/editing-series.md`; `#author=<id>` (or a name), every book by an author, `KIND`, `AUTHOR_ID`, with
   each book's series and number among its fields and no series panel; `#book=<id>` (or a title), one book, `BOOK_ID`, and `#add` (with `&series=<id>` or `&author=<name>`, `ADDING`, `loadNew`),
-  a new book, `oneBook()`: no series panel but the book panel, _Fill in from another catalog_ (`fillFromCatalog`, `fillBook`/`fillEdition`: gaps only; it loads
+  a new book, `oneBook()`: no series panel but the book panel, _Fill in from another catalog_ (`fillFromCatalog`, with `CatalogLookup.fill`: gaps only; it loads
   `CatalogLookup` and `CatalogConnectors` with `import()`) and Remove book (`removeBook`, pressed twice; it excludes the book and opens its series' page or Books);
   a book is compared by its series, else its first author (`comparedPart`), without the new books (`newCards`); a new book with none, and Save adds it (`saveNew`) and opens its page;
   `+ Add a book` on the series and books pages links there): a series and its books on one page: the series' fields (what its form had:

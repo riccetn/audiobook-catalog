@@ -16,6 +16,7 @@ import {
 	afterSaving,
 	loadRecords,
 	queryCatalog,
+	storedContributorId,
 	valueFromPageHash,
 	idFromAddress,
 	editPageHref,
@@ -461,12 +462,7 @@ function removeCredit() {
 async function shownInAddress(): Promise<string | null> {
 	const value = valueFromPageHash(location.hash, KIND.hashKey);
 	if (value === null) return null;
-	const stored = await queryCatalog(async r => {
-		const [rec]: ContributorRecord[] = await r.get('contributors', [value]);
-		if (rec && rec.kind === KIND.one) return rec.id;
-		const [named]: ContributorRecord[] = await r.all('contributors', 'kindName', [KIND.one, value]);
-		return named ? named.id : null;
-	});
+	const stored = await storedContributorId(KIND.one, value);
 	return stored ?? idFromAddress(KIND.infoKey, value) ?? CATALOG.idFor(KIND.infoKey, value);
 }
 

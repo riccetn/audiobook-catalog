@@ -251,6 +251,12 @@ export class Text {
 	}
 
 	// ------------------------------------------------------------------ dates and lengths
+	/** Today in the viewer's time zone, as YYYY-MM-DD (a date read, as the pages add it). */
+	static today(): string {
+		const d = new Date();
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	}
+
 	/**
 	 * A date as the catalog keeps it (a date read, a release date): "2024-03-15", or just "2024-03" /
 	 * "2024" when that is all you remember. Also accepts Goodreads' "2024/03/15" and single-digit

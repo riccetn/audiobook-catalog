@@ -18,12 +18,11 @@ import {PhraseError} from './text.js';
 import type {Unchecked, Phrase, PhraseValue} from './text.js';
 import type {Edition} from './edition.js';
 import type {Step} from './catalog-client.js';
-import type {ShelfPart, InfoId, PlanEntry, Sent, MissingBook} from './shelf-sync.js';
+import type {ShelfPart, InfoId, PlanEntry, Sent, MissingBook, ShelfComparison} from './shelf-sync.js';
 import type {AudiobookdbShelf} from './audiobookdb-client.js';
 import {Catalog} from './catalog.js';
 import type {NamedKind} from './catalog.js';
 import type {MergeOptions} from './merger.js';
-import type {ComparisonResult} from './comparison.js';
 
 /**
  * What AudiobookDB has for your books: by ASIN, the AudiobookDB book and release it is; by AudiobookDB
@@ -49,26 +48,13 @@ export interface AudiobookdbPlan {
 	inexact: never[];
 }
 /** Your AudiobookDB shelves beside the catalog (AudiobookdbSync.compare()). */
-export interface AudiobookdbComparison {
-	/** the books on your Read shelf beside the catalog's */
-	comparison: ComparisonResult;
-	/** the books on your Read shelf compared (those in the scope asked for) */
-	incoming: Book[];
-	/** how they are imported (Comparison.apply() takes them) */
-	opts: MergeOptions;
-	warnings: Phrase[];
+export interface AudiobookdbComparison extends ShelfComparison {
 	/** what AudiobookDB has for your books (addIds() gives their ids) */
 	found: AudiobookdbFound;
-	/** the books that gain an AudiobookDB id or cover, in the comparison's merged copy */
-	idsFound: Book[];
-	/** the series and people that gain an AudiobookDB id */
-	infoIds: InfoId[];
 	/** what putting your books on AudiobookDB would do; null without your key */
 	plan: AudiobookdbPlan | null;
 	/** how many books your Read shelf has (in the scope asked for); null without your key */
 	onShelf: number | null;
-	/** the series' books on AudiobookDB that aren't in the catalog (a series only), read when added (missingBook()) */
-	missing: MissingBook[];
 	/** none: AudiobookDB lists only audiobooks */
 	notAudio: never[];
 }
@@ -130,11 +116,7 @@ export class AudiobookdbSync extends ShelfSync {
 				const answer = part.kind === 'series' ? await client.series(id) : await client.person(id);
 				if (answer && part.kind === 'series') listed = list(answer.books).filter(x => Text.isObject(x.book));
 				theirs = answer
-					? list(
-							part.kind === 'series'
-								? answer.books
-								: list(answer.roles).filter(r => Text.isObject(r.role) && r.role.name === 'Author'),
-						)
+					? list(part.kind === 'series' ? answer.books : AudiobookdbClient.withRole(answer.roles, 'Author'))
 							.map(x => x.book)
 							.filter(Text.isObject)
 					: [];
@@ -146,7 +128,7 @@ export class AudiobookdbSync extends ShelfSync {
 					myIds.has(sb.id) ||
 					inPart.has(sb.id) ||
 					(part.kind === 'author' &&
-						AudiobookdbSync.people(sb.people, 'Author').some(n => Text.norm(n) === author)),
+						AudiobookdbClient.namesIn(sb.people, 'Author').some(n => Text.norm(n) === author)),
 			);
 			if (part.kind === 'series') {
 				const shelved = new Set(wanted.map(sb => sb.id));
@@ -324,20 +306,6 @@ export class AudiobookdbSync extends ShelfSync {
 
 	// ------------------------------------------------------------ reading answers
 	/**
-	 * Names from an AudiobookDB people list ({role: {name}, person: {name}}), those with `role`.
-	 */
-	static people(people: unknown, role: string): string[] {
-		return [
-			...new Set(
-				list(people)
-					.filter(p => Text.isObject(p.role) && p.role.name === role && Text.isObject(p.person))
-					.map(p => tidyText(p.person.name))
-					.filter(Boolean),
-			),
-		];
-	}
-
-	/**
 	 * Your Read shelf among your shelves: AudiobookDB's own shelf named Read (or Finished, or Listened).
 	 */
 	static readShelf(shelves: AudiobookdbShelf[]): AudiobookdbShelf {
@@ -372,10 +340,7 @@ export class AudiobookdbSync extends ShelfSync {
 							.map(s => s.series)
 							.filter(Text.isObject)
 							.map(s => ({id: s.id, name: s.title}))
-					: list(detail.people)
-							.filter(p => Text.isObject(p.role) && p.role.name === 'Author')
-							.map(p => p.person)
-							.filter(Text.isObject);
+					: AudiobookdbClient.peopleIn(detail.people, 'Author');
 			for (const row of rows) {
 				const named = tidyText(row.name);
 				if (typeof row.id === 'string' && same(named)) return row.id;
@@ -557,15 +522,11 @@ export class AudiobookdbSync extends ShelfSync {
 			);
 			if (row) ids.set(`${kind}\n${name}`, {kind, name, id: row.id});
 		};
-		const persons: (people: unknown, role: string) => Unchecked[] = (people, role) =>
-			list(people)
-				.filter(p => Text.isObject(p.role) && p.role.name === role)
-				.map(p => p.person)
-				.filter(Text.isObject);
 		for (const b of books) {
 			const detail = found.books.get(b.idOn('audiobookdb') || '');
 			if (!detail) continue;
-			for (const a of b.authors) take('authors', a, persons(detail.people, 'Author'), Text.norm);
+			for (const a of b.authors)
+				take('authors', a, AudiobookdbClient.peopleIn(detail.people, 'Author'), Text.norm);
 			take(
 				'series',
 				b.series || undefined,
@@ -578,7 +539,8 @@ export class AudiobookdbSync extends ShelfSync {
 			for (const ed of b.editions) {
 				const release = list(detail.releases).find(r => r.id === ed.idOn('audiobookdb'));
 				if (!release) continue;
-				for (const n of ed.narrators) take('narrators', n, persons(release.people, 'Narrator'), Text.norm);
+				for (const n of ed.narrators)
+					take('narrators', n, AudiobookdbClient.peopleIn(release.people, 'Narrator'), Text.norm);
 				for (const p of ed.publishers)
 					take('publishers', p, Text.isObject(release.publisher) ? [release.publisher] : [], Text.norm);
 			}
