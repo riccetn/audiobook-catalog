@@ -4,7 +4,7 @@
 // cursor is in, and picking one puts it in place of what was typed there. A name the catalog doesn't have yet
 // is said to be new under the field, as saving adds it as a series or person of its own. The Edit page's
 // author, series, narrator and publisher fields are ones (edit.ts).
-import {buildElement, fillElement} from './store.js';
+import {buildElement, fillElement} from './dom.js';
 import {Text} from './modules/text.js';
 
 // How many names the list shows at most; typing more narrows it down.

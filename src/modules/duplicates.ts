@@ -30,7 +30,8 @@ export interface Mark {
 /** Finds duplicates among books. */
 export class Duplicates {
 	books: Book[];
-	marks: Map<any, any>;
+	/** the marks by their id */
+	marks: Map<string, Mark>;
 
 	/**
 	 * @param marks the marks by their id: pairs that are different books, and books whose editions are different

@@ -9,6 +9,12 @@
  */
 export type Unchecked = any;
 
+/**
+ * How a class reads one stored key (Text.setStored): whether a value is what the key holds, and how it is put on
+ * its field (given undefined, the field is cleared).
+ */
+export type StoredField<T> = [(v: unknown) => boolean, (into: T, v: any) => void];
+
 // JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
 const WORD_START = '(?<![\\p{L}\\p{N}_])';
 const RUN_TOGETHER_INITIALS = new RegExp(WORD_START + '([A-Z])\\.(?=[A-Z]\\.)', 'gu');
@@ -33,6 +39,34 @@ export class Text {
 
 	static isObject(v: unknown): v is Record<string, any> {
 		return v !== null && typeof v === 'object' && !Array.isArray(v);
+	}
+
+	/** Whether a stored value is a text with something in it. */
+	static nonEmpty(v: unknown): v is string {
+		return typeof v === 'string' && v.trim() !== '';
+	}
+
+	/** Whether a stored value is a list of names as books and editions keep them: not empty, each a text with something in it. */
+	static isNameList(v: unknown): v is string[] {
+		return Array.isArray(v) && v.length > 0 && v.every(Text.nonEmpty);
+	}
+
+	/**
+	 * Set one stored key's value on a class that keeps what it can't read aside in `extra` (Book, Edition):
+	 * `fields[key]` says whether the value is what the key holds and puts it on its field (undefined clears it);
+	 * a value that isn't, and a key it doesn't know, is kept in `extra` as it is.
+	 */
+	static setStored<T extends {extra: Record<string, unknown>}>(
+		into: T,
+		fields: Record<string, StoredField<T>>,
+		key: string,
+		v: unknown,
+	) {
+		delete into.extra[key];
+		const field = Object.hasOwn(fields, key) ? fields[key] : null;
+		const ok = !!field && field[0](v);
+		if (field) field[1](into, ok ? v : undefined);
+		if (!ok && v !== undefined) into.extra[key] = v;
 	}
 
 	/**

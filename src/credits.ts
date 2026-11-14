@@ -4,18 +4,8 @@
 // script (authors.ts, narrators.ts, publishers.ts) starts this one with its kind. The list reads only the
 // kind's records (each keeps how many books and series they have). Loading lives in store.ts.
 import {Text} from './modules/text.js';
-import {
-	startPage,
-	afterSaving,
-	queryCatalog,
-	byId,
-	fieldById,
-	spell,
-	buildElement,
-	fillElement,
-	creditPageHref,
-	valueFromPageHash,
-} from './store.js';
+import {startPage, afterSaving, queryCatalog, creditPageHref, valueFromPageHash} from './store.js';
+import {byId, fieldById, spell, buildElement, fillElement} from './dom.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
 import type {CreditKind} from './credit-kinds.js';
 import type {CatalogReader} from './modules/catalog-database.js';

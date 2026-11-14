@@ -11,9 +11,10 @@ import {Text} from './modules/text.js';
 import {Edition} from './modules/edition.js';
 import {Book} from './modules/book.js';
 import {Validator} from './modules/validator.js';
-import {CATALOG, persist, showIoStatus, startPage, byId, spell, buildElement, fillElement} from './store.js';
+import {CATALOG, persist, startPage} from './store.js';
+import {showIoStatus, byId, spell, buildElement, fillElement} from './dom.js';
 import type {Picks} from './modules/book.js';
-import type {Child} from './store.js';
+import type {Child} from './dom.js';
 
 // Books are known by the ids they are stored under, in the order CATALOG.books has them.
 export let DUP_GROUPS: string[][] = []; // groups of books shown

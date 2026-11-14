@@ -6,7 +6,7 @@ import {Text} from './text.js';
 import {Isbn} from './isbn.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Cover} from './cover.js';
-import type {Unchecked} from './text.js';
+import type {Unchecked, StoredField} from './text.js';
 
 /** the keys of an edition as it is stored */
 export type EditionKey = 't' | 'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc' | 'links' | 'img';
@@ -45,13 +45,20 @@ const EDITION_PART = new RegExp(
 	'i',
 );
 
-// A list of names, as the narrators and publishers are kept.
-function nameList(v: unknown): v is string[] {
-	return Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string' && x.trim() !== '');
-}
-function nonEmpty(v: unknown): v is string {
-	return typeof v === 'string' && v.trim() !== '';
-}
+// How each stored key is read onto an edition's field (Text.setStored).
+const EDITION_FIELDS: Record<string, StoredField<Edition>> = {
+	uid: [Text.nonEmpty, (ed, v) => (ed.id = v)],
+	t: [Text.nonEmpty, (ed, v) => (ed.title = v)],
+	ext: [ExternalCatalog.isIds, (ed, v) => (ed.external = v ? {...v} : {})],
+	isbn: [Text.nonEmpty, (ed, v) => (ed.isbn = v)],
+	n: [Text.isNameList, (ed, v) => (ed.narrators = v ? [...v] : [])],
+	p: [Text.isNameList, (ed, v) => (ed.publishers = v ? [...v] : [])],
+	d: [Text.nonEmpty, (ed, v) => (ed.released = v)],
+	len: [v => typeof v === 'number', (ed, v) => (ed.minutes = v)],
+	desc: [Text.nonEmpty, (ed, v) => (ed.description = v)],
+	links: [Text.isNameList, (ed, v) => (ed.links = v ? [...v] : [])],
+	img: [Cover.isKeys, (ed, v) => (ed.covers = v ? {...v} : {})],
+};
 /** whether a catalog's ids are ASINs */
 const isAsinSite: (key: string) => boolean = key => ExternalCatalog.family(key) === 'asin';
 
@@ -138,41 +145,7 @@ export class Edition {
 	 * Set the value of one of the stored edition's keys (as fromJSON() reads it).
 	 */
 	set(key: string, v: unknown) {
-		delete this.extra[key];
-		if (key === Edition.ID_KEY) {
-			this.id = undefined;
-			if (nonEmpty(v)) this.id = v;
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (key === 'ext') {
-			this.external = {};
-			if (ExternalCatalog.isIds(v)) this.external = {...v};
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (key === 'n') {
-			this.narrators = [];
-			if (nameList(v)) this.narrators = [...v];
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (key === 'p') {
-			this.publishers = [];
-			if (nameList(v)) this.publishers = [...v];
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (key === 'links') {
-			this.links = [];
-			if (nameList(v)) this.links = [...v];
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (key === 'img') {
-			this.covers = {};
-			if (Cover.isKeys(v)) this.covers = {...v};
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (key === 'len') {
-			this.minutes = undefined;
-			if (typeof v === 'number') this.minutes = v;
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (Object.hasOwn(TEXT_FIELDS, key)) {
-			const field = TEXT_FIELDS[key];
-			this[field] = undefined;
-			if (nonEmpty(v)) this[field] = v;
-			else if (v !== undefined) this.extra[key] = v;
-		} else if (v !== undefined) this.extra[key] = v;
+		Text.setStored(this, EDITION_FIELDS, key, v);
 	}
 
 	/**
@@ -219,8 +192,7 @@ export class Edition {
 	 * Its id in one external catalog ("audible.com", "goodreads"), or null.
 	 */
 	idOn(catalog: string): string | null {
-		const v = Object.hasOwn(this.external, catalog) ? this.external[catalog] : null;
-		return typeof v === 'string' && v ? v : null;
+		return ExternalCatalog.idIn(this.external, catalog);
 	}
 
 	/**

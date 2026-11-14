@@ -10,19 +10,14 @@ import {
 	queryCatalog,
 	afterSaving,
 	startPage,
-	byId,
-	fieldById,
-	spell,
-	buildElement,
-	fillElement,
-	joined,
 	creditPageHref,
 	idFromAddress,
 	seriesPageHref,
 	standalonePageHref,
 	editPageHref,
 } from './store.js';
-import type {Child} from './store.js';
+import {byId, fieldById, spell, buildElement, fillElement, joined} from './dom.js';
+import type {Child} from './dom.js';
 import {
 	BookList,
 	STANDALONE,
@@ -39,6 +34,7 @@ import {
 	hashOf,
 	setAddress,
 	watchSearchAndFilters,
+	showFilterCount,
 } from './book-list.js';
 
 // Series are known by the ids they are stored under, so a series renamed (here or in another tab) is still the one shown.
@@ -51,6 +47,7 @@ export let SERIES_FILTER: string | null = null; // the id of the series shown, S
  */
 export type Overview = {series: SeriesRecord[]; authors: Map<string, string>; standalone: number};
 let OVERVIEW: Overview = {series: [], authors: new Map(), standalone: 0};
+const FILTERS = ['missingFilter']; // what folds away on a phone
 const LIST = new BookList(() => true);
 export let TOTAL_BOOKS = 0;
 
@@ -68,7 +65,7 @@ function shownSeriesName(): string | null {
 function showView(): Promise<void> {
 	// a series shown on its own has nothing to search
 	byId('controls').style.display = SERIES_FILTER === null ? '' : 'none';
-	showFilterCount();
+	showFilterCount(FILTERS);
 	return afterSaving(async () => {
 		await loadView();
 		render();
@@ -134,12 +131,7 @@ export function refreshView(): Promise<void> {
 }
 
 // The Show more button at the end of a series' books.
-export function showMore() {
-	return afterSaving(async () => {
-		await LIST.more();
-		render();
-	});
-}
+export const showMore = () => LIST.showMore(render);
 
 export function render() {
 	if (!TOTAL_BOOKS && !CATALOG.books.length) {
@@ -385,10 +377,6 @@ byId('missingFilter').addEventListener('change', () => {
 	setAddress('push', addressNow());
 	showView();
 });
-// On a phone the filter folds away behind a button (styles.css), which says when it is on.
-function showFilterCount() {
-	byId('filtersBtn').textContent = fieldById('missingFilter').value ? 'Filters · 1' : 'Filters';
-}
 watchSearchAndFilters(addressNow, showView);
 watchCoversBox(() => render());
 

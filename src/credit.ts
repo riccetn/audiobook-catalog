@@ -12,35 +12,31 @@ import {Validator} from './modules/validator.js';
 import {
 	CATALOG,
 	persist,
-	showIoStatus,
 	startPage,
 	afterSaving,
 	loadRecords,
 	queryCatalog,
-	byId,
-	fieldById,
-	spell,
-	buildElement,
-	fillElement,
-	joined,
 	valueFromPageHash,
 	idFromAddress,
+	editPageHref,
+	bookPageHref,
+	seriesPageHref,
+} from './store.js';
+import {showIoStatus, byId, fieldById, spell, buildElement, fillElement, joined} from './dom.js';
+import {
 	externalFields,
 	fillExternalFields,
 	readExternalFields,
 	externalLinks,
 	linksField,
 	webLinks,
-	lookupHardcoverField,
-	editPageHref,
-	bookPageHref,
-	seriesPageHref,
-} from './store.js';
+} from './id-fields.js';
+import {lookupHardcoverField} from './connections.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
 import {setAddress, nameLinks, authorLinks, statusTag} from './book-list.js';
 import type {CreditKind} from './credit-kinds.js';
 import type {Book} from './modules/book.js';
-import type {Child, FormField} from './store.js';
+import type {Child, FormField} from './dom.js';
 import type {ContributorRecord} from './modules/catalog-records.js';
 
 let KIND: CreditKind = CREDIT_KINDS.author;
@@ -332,11 +328,7 @@ async function saveCreditForm() {
 	// the same rules as Check, applied to this entry alone (under the name their books have now); an id in
 	// a catalog this app doesn't know is only a warning there, but here it is most likely a mistake
 	if (entry) {
-		const {errors, warnings} = Validator.validateContributors(
-			JSON.parse(JSON.stringify(CATALOG.books)),
-			KIND.infoKey,
-			{[name]: entry.toJSON()},
-		);
+		const {errors, warnings} = Validator.validateContributors(KIND.infoKey, {[name]: entry.toJSON()});
 		const problems = [...errors, ...warnings.filter(w => !/is a page on/.test(w))].map(e =>
 			e.replace(/^\w+\[[^\]]*\]: /, ''),
 		);

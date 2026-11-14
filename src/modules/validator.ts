@@ -17,12 +17,8 @@ import type {Catalog} from './catalog.js';
 export type Problems = {errors: string[]; warnings: string[]};
 
 const repr = Text.repr;
-function nonEmpty(v: unknown): v is string {
-	return typeof v === 'string' && v.trim() !== '';
-}
-// A list of names, as authors and narrators are kept.
-const nameList: (v: unknown) => boolean = v =>
-	Array.isArray(v) && v.length > 0 && v.every(x => typeof x === 'string' && x.trim() !== '');
+const nonEmpty = Text.nonEmpty;
+const nameList = Text.isNameList;
 
 /** Checks a stored catalog; every method is static. */
 export class Validator {
@@ -35,7 +31,7 @@ export class Validator {
 		const problems = Validator.validate(json.books, json.seriesInfo);
 		if (contributors) {
 			for (const kind of Contributor.KINDS) {
-				const found = Validator.validateContributors(json.books, kind, json[kind]);
+				const found = Validator.validateContributors(kind, json[kind]);
 				problems.errors.push(...found.errors);
 				problems.warnings.push(...found.warnings);
 			}
@@ -328,7 +324,7 @@ export class Validator {
 	 * doesn't know is a warning. An entry for a name no book has is fine: they are entries of their own.
 	 * @param _books the stored books, which entries no longer have to match
 	 */
-	static validateContributors(_books: Unchecked, kind: ContributorKind, entries: Unchecked): Problems {
+	static validateContributors(kind: ContributorKind, entries: Unchecked): Problems {
 		const errors: string[] = [];
 		const warnings: string[] = [];
 		const one = Contributor.ONE[kind];

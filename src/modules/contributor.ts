@@ -1,7 +1,7 @@
 // An author, narrator or publisher, by their name as the books write it, with what you keep about them:
 // a short bio, their own site, their ids in external catalogs (Audible, Amazon, Goodreads, Hardcover; see
 // ExternalCatalog) and any other links. Their series and titles are not kept here: they come from the
-// books (Catalog.authorWorks, narratorWorks, publisherWorks).
+// books (Catalog.works).
 import {Text} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
 import type {Unchecked} from './text.js';

@@ -307,11 +307,6 @@ export class CatalogRecords {
 		contributors: ['bio', 'url', 'external', 'links'],
 	};
 
-	/** @returns a new id */
-	static newId(): string {
-		return crypto.randomUUID();
-	}
-
 	/**
 	 * A text as lists sort it: Text.norm(), without a leading "the", "a" or "an".
 	 */
@@ -342,24 +337,17 @@ export class CatalogRecords {
 	}
 
 	/**
-	 * Give an id to whatever in the catalog has none (Catalog.assignIds).
-	 */
-	static assignIds(catalog: Catalog, newId: () => string = CatalogRecords.newId) {
-		catalog.assignIds(newId);
-	}
-
-	/**
-	 * The records of a catalog. Gives ids first (assignIds), so the catalog keeps them for the next save.
+	 * The records of a catalog. Gives ids first (Catalog.assignIds), so the catalog keeps them for the next save.
 	 * A page that holds only some of the catalog passes `positionOf`, the place each book has among all of
 	 * them (NEW_POSITION for one it adds); otherwise a book's place is its place in catalog.books. Derived
 	 * fields that depend on records it may not hold (a series' counts) are worked out again by the save.
 	 */
 	static fromCatalog(
 		catalog: Catalog,
-		newId: () => string = CatalogRecords.newId,
+		newId: () => string = Catalog.newId,
 		positionOf?: (b: Book, index: number) => number,
 	): RecordSet {
-		CatalogRecords.assignIds(catalog, newId);
+		catalog.assignIds(newId);
 		const ids = catalog.nameIds;
 		const idOf: IdOf = (kind, name) => ids[kind].get(name) as string;
 
