@@ -1218,7 +1218,7 @@ function checkCatalog() {
 				{
 					books: CATALOG.books.length,
 					series: CATALOG.nameIds.series.size,
-					totals: CATALOG.series.size,
+					totals: [...CATALOG.series.values()].filter(info => info.total !== undefined).length,
 					authors: plural(CATALOG.nameIds.authors.size, 'author'),
 					narrators: plural(CATALOG.nameIds.narrators.size, 'narrator'),
 					publishers: plural(CATALOG.nameIds.publishers.size, 'publisher'),

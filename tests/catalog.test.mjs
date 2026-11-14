@@ -925,7 +925,8 @@ test('Goodreads export: only read audio editions, with tidy names', () => {
 			'11,Paperback,Bob,,Paperback,read,\n' +
 			'12,Unread audio,Cy,,Audiobook,to-read,\n' +
 			'"=""77""",Some Book,A.B.  Quill,R.T. Hale,Audiobook,read,\n' +
-			',No Id,Dee,,Audiobook,read,\n',
+			',No Id,Dee,,Audiobook,read,\n' +
+			'13,Nobody Wrote,,,Audiobook,read,\n',
 	);
 	assert.deepEqual(json(result.books), [
 		{
@@ -941,6 +942,11 @@ test('Goodreads export: only read audio editions, with tidy names', () => {
 		{t: 'No Id', a: ['Dee']},
 	]);
 	assert.equal(result.skippedUnfinished, 1);
+	assert.deepEqual(
+		result.warnings.map(en),
+		["'Nobody Wrote': no author in the export, skipped"],
+		'as the Audible importer says',
+	);
 });
 
 test("Goodreads CSV: every book on the read shelf, one own edition's ids, the latest full date read", () => {
@@ -3371,8 +3377,17 @@ test('HardcoverSync.read: the Read shelf as books, with every finished date and 
 		{t: 'The Paper Fen', a: ['R. T. Hale', 'Bo Reed'], ext: {hardcover: '78'}},
 	]);
 	assert.deepEqual(
-		result.notAudio.map(n => [n.book.title, n.yours, n.edition, en(n.said), n.url]),
-		[['The Paper Fen', false, 'Hardcover edition 601', 'a print book', 'https://hardcover.app/id/edition/601']],
+		result.notAudio.map(n => [n.book.title, n.yours, n.edition, n.key, en(n.said), n.url]),
+		[
+			[
+				'The Paper Fen',
+				false,
+				'Hardcover edition 601',
+				'hardcover 601',
+				'a print book',
+				'https://hardcover.app/id/edition/601',
+			],
+		],
 		'a print edition read is listed, and fills nothing in',
 	);
 	assert.deepEqual(
@@ -3435,13 +3450,25 @@ test('HardcoverSync.yourNotAudio lists your editions Hardcover has as print book
 		HardcoverSync.yourNotAudio(books, found, new Map([['601', 'an ebook']])).map(n => [
 			n.book.title,
 			n.edition,
+			n.key,
 			en(n.said),
 			n.url,
 		]),
 		[
-			['Tidewater', 'Hardcover edition 601', 'an ebook', 'https://hardcover.app/id/edition/601'],
-			['Fen', 'ISBN 9780000000019', 'a print book', 'https://hardcover.app/id/edition/602'],
+			['Tidewater', 'Hardcover edition 601', 'hardcover 601', 'an ebook', 'https://hardcover.app/id/edition/601'],
+			['Fen', 'ISBN 9780000000019', 'isbn 9780000000019', 'a print book', 'https://hardcover.app/id/edition/602'],
 		],
+	);
+	// a note names its edition by catalog and id, so a Goodreads edition 601 is not Hardcover's edition 601
+	assert.ok(
+		E({ext: {hardcover: '601'}})
+			.idAndIsbnKeys()
+			.includes('hardcover 601'),
+	);
+	assert.ok(
+		!E({ext: {goodreads: '601'}})
+			.idAndIsbnKeys()
+			.includes('hardcover 601'),
 	);
 });
 
@@ -3512,6 +3539,8 @@ test('HardcoverSync.planExport adds what is missing on Hardcover and leaves ever
 		book('Single Three', 'Ann Vale', {ext: {hardcover: '72'}, ...ed({ext: {hardcover: '700'}})}),
 		book('Wanted', 'Ann Vale', {ext: {hardcover: '79'}}),
 		book('Nowhere', 'Ann Vale'),
+		// a Hardcover id that isn't a number, as only a hand-edited backup has, is never sent (as null)
+		book('Typo', 'Ann Vale', {ext: {hardcover: 'abc'}}),
 	];
 	const shelf = [
 		{id: 1, book_id: 77, status_id: 3, user_book_reads: [{finished_at: '2024-03-15'}]},
@@ -3534,7 +3563,7 @@ test('HardcoverSync.planExport adds what is missing on Hardcover and leaves ever
 	);
 	assert.deepEqual(
 		plan.unknown.map(r => r.t),
-		['Nowhere'],
+		['Nowhere', 'Typo'],
 	);
 	assert.deepEqual(
 		plan.inexact.map(([r, d]) => [r.t, d]),
@@ -3709,6 +3738,20 @@ test("AudiobookdbSync.missingBook numbers a book of another series as this serie
 	assert.deepEqual([numbered.series, numbered.number], ['Harbor Lights', '3']);
 	const own = await sync.missingBook({title: 'Tidewater', id: 'Tidewater001'}, {kind: 'series', name: 'Gull Isle'});
 	assert.deepEqual([own.series, own.number], ['Gull Isle', '1'], 'in its own series it keeps its number');
+});
+
+test('AudiobookdbSync names the book on your Read shelf it could not read, past one without an id', async () => {
+	const shelf = {
+		isDefault: true,
+		slug: 'read',
+		name: 'Read',
+		books: [{title: 'No Id Here'}, {id: 'Gone00000001', title: 'Gone Book'}],
+	};
+	const sync = new AudiobookdbSync({key: 'k', shelves: async () => [shelf], book: async () => null});
+	const result = await sync.compare(new Catalog(), () => {});
+	assert.deepEqual(result.warnings.map(en), [
+		'AudiobookDB book Gone00000001 (Gone Book): not found, or no title or author, skipped',
+	]);
 });
 
 test("AudiobookdbSync: your Read shelf, the release that is yours, and the ids found (never a box set's book on a title)", () => {

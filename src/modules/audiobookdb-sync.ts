@@ -165,8 +165,10 @@ export class AudiobookdbSync extends ShelfSync {
 						});
 			}
 		}
+		// the shelf's books with an id, which the warnings below name by place
+		const asked = wanted.filter(sb => typeof sb.id === 'string');
 		const details = await AudiobookdbClient.each(
-			wanted.filter(sb => typeof sb.id === 'string'),
+			asked,
 			Text.phrase('Reading the books on your Read shelf'),
 			step,
 			async sb => found.books.get(sb.id) || (await client.book(sb.id)),
@@ -180,13 +182,13 @@ export class AudiobookdbSync extends ShelfSync {
 			if (book) incoming.push(book);
 			else
 				warnings.push(
-					tidyText(wanted[i].title)
+					tidyText(asked[i].title)
 						? Text.phrase('AudiobookDB book {id} ({title}): not found, or no title or author, skipped', {
-								id: wanted[i].id,
-								title: tidyText(wanted[i].title),
+								id: asked[i].id,
+								title: tidyText(asked[i].title),
 							})
 						: Text.phrase('AudiobookDB book {id}: not found, or no title or author, skipped', {
-								id: wanted[i].id,
+								id: asked[i].id,
 							}),
 				);
 		});

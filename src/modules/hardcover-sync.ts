@@ -283,19 +283,45 @@ export class HardcoverSync extends ShelfSync {
 						book,
 						yours: true,
 						edition: `Hardcover edition ${hc}`,
+						key: `hardcover ${hc}`,
 						said: Text.phrase(byId),
 						url: url(hc),
 					});
 					continue;
 				}
-				const hits: [string, HardcoverHit | undefined][] = [
-					...ed.ids('asin').map(a => [`ASIN ${a}`, found.asin.get(a)] as [string, HardcoverHit | undefined]),
-					...ed.isbns().map(i => [`ISBN ${i}`, found.isbn.get(i)] as [string, HardcoverHit | undefined]),
+				const hits: [string, string, HardcoverHit | undefined][] = [
+					...ed
+						.ids('asin')
+						.map(
+							a =>
+								[`ASIN ${a}`, `asin ${a}`, found.asin.get(a)] as [
+									string,
+									string,
+									HardcoverHit | undefined,
+								],
+						),
+					...ed
+						.isbns()
+						.map(
+							i =>
+								[`ISBN ${i}`, `isbn ${i}`, found.isbn.get(i)] as [
+									string,
+									string,
+									HardcoverHit | undefined,
+								],
+						),
 				];
-				const hit = hits.find(([, h]) => h && h.other);
-				const other = hit && hit[1] && hit[1].other;
+				const hit = hits.find(([, , h]) => h && h.other);
+				const other = hit && hit[2] && hit[2].other;
 				if (hit && other)
-					out.push({book, yours: true, edition: hit[0], said: Text.phrase(other.said), url: url(other.id)});
+					out.push({
+						book,
+						yours: true,
+						edition: hit[0],
+						key: hit[1],
+						said: Text.phrase(other.said),
+						url: url(other.id),
+					});
 			}
 		return out;
 	}
@@ -492,6 +518,7 @@ export class HardcoverSync extends ShelfSync {
 					book: read,
 					yours: false,
 					edition: `Hardcover edition ${ub.edition_id}`,
+					key: `hardcover ${ub.edition_id}`,
 					said: Text.phrase(said),
 					url: ExternalCatalog.url('hardcover', 'edition', String(ub.edition_id)),
 				});
@@ -603,11 +630,12 @@ export class HardcoverSync extends ShelfSync {
 		const wanted: Map<string, {edition: string | null; dates: Set<string>; books: Book[]}> = new Map(); // Hardcover book id -> {edition, dates, books}
 		for (const b of books) {
 			const hcb = b.idOn('hardcover');
-			if (!hcb) {
+			// a Hardcover book id that isn't a number (only a hand-edited backup has one) can't be sent
+			if (!hcb || !HardcoverClient.ID.test(hcb)) {
 				plan.unknown.push(b);
 				continue;
 			}
-			const editions = b.editions.filter(ed => ed.idOn('hardcover'));
+			const editions = b.editions.filter(ed => HardcoverClient.ID.test(ed.idOn('hardcover') || ''));
 			const ed = editionBooks
 				? editions.find(x => editionBooks.get(x.idOn('hardcover') || '') === hcb)
 				: editions.find(x => !shared(x)) ||
