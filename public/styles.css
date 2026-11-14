@@ -7,6 +7,8 @@
 	--gold: #b08d3e;
 	--line: #ded5c0;
 	--card: #fffefb;
+	--error: #b0453f;
+	--on-moss: #fff;
 	box-sizing: border-box;
 	padding-top: env(safe-area-inset-top, 0px);
 	padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -17,10 +19,12 @@
 		--ink: #efe9db;
 		--ink-soft: #b7ad97;
 		--moss: #7fae93;
-		--moss-dark: #5c8973;
+		--moss-dark: #93bfa5;
 		--gold: #d9b968;
 		--line: #3a3226;
 		--card: #242019;
+		--error: #e8837b;
+		--on-moss: #1b1712;
 	}
 }
 :root[data-theme='dark'] {
@@ -28,10 +32,12 @@
 	--ink: #efe9db;
 	--ink-soft: #b7ad97;
 	--moss: #7fae93;
-	--moss-dark: #5c8973;
+	--moss-dark: #93bfa5;
 	--gold: #d9b968;
 	--line: #3a3226;
 	--card: #242019;
+	--error: #e8837b;
+	--on-moss: #1b1712;
 }
 html {
 	scroll-padding-top: env(safe-area-inset-top, 0px);
@@ -314,7 +320,7 @@ button:focus {
 	min-height: 1em;
 }
 .ioStatus.err {
-	color: #b0453f;
+	color: var(--error);
 }
 /* a Hardcover run going on in the background (store.js) */
 .bgTask {
@@ -376,7 +382,7 @@ button:focus {
 }
 .addbtn {
 	background: var(--moss);
-	color: #fff;
+	color: var(--on-moss);
 	border: none;
 	padding: 0.55rem 1rem;
 	border-radius: 8px;
@@ -588,7 +594,7 @@ button:focus {
 }
 .formError {
 	font-size: 0.8rem;
-	color: #b0453f;
+	color: var(--error);
 	margin: 0.5rem 0 0;
 	overflow-wrap: anywhere;
 }
@@ -748,7 +754,7 @@ button:focus {
 }
 .formbtns .removeBook {
 	margin-left: auto;
-	color: #b0453f;
+	color: var(--error);
 }
 .importPreview {
 	display: none;
@@ -779,7 +785,7 @@ button:focus {
 	overflow-wrap: anywhere;
 }
 .importPreview .warn {
-	color: #b0453f;
+	color: var(--error);
 }
 .importPreview pre {
 	margin: 0.3rem 0 0.6rem;
@@ -1007,7 +1013,7 @@ button:focus {
 }
 .formbtns button.save {
 	background: var(--moss);
-	color: #fff;
+	color: var(--on-moss);
 	border-color: var(--moss);
 }
 .series-group {
@@ -1342,7 +1348,7 @@ button:focus {
 .ioStatus .dismiss:hover,
 .book-details .readToday:hover {
 	background: var(--moss);
-	color: #fff;
+	color: var(--on-moss);
 }
 
 /* the titles a book's editions were released under besides its own */
@@ -1704,12 +1710,12 @@ button:focus {
 .editReview button.save {
 	background: var(--moss);
 	border-color: var(--moss);
-	color: var(--paper);
+	color: var(--on-moss);
 	font-weight: 600;
 }
 .editBook button.removeBook,
 .editPanel button.removeBook {
-	color: #b0453f;
+	color: var(--error);
 }
 .editBook .extFields {
 	display: grid;
