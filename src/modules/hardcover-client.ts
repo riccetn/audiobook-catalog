@@ -2,9 +2,9 @@
 // API answers with open CORS headers), so the page asks it itself, with your personal token, which the
 // page keeps in this browser only. The client only ever reaches Hardcover through the fetch it is given,
 // so the tests give it a fake. Queries stay within three levels of nesting, which Hardcover plans to enforce.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {CatalogClient} from './catalog-client.js';
-import type {Unchecked} from './text.js';
+import type {Unchecked, Phrase} from './text.js';
 import type {Step, CatalogFetch, Pause} from './catalog-client.js';
 /** your ids to find on Hardcover */
 export type HardcoverLookups = {hc?: unknown[]; asin?: unknown[]; isbn?: unknown[]; gr?: unknown[]};
@@ -171,11 +171,18 @@ export class HardcoverClient extends CatalogClient {
 			throw new Error(
 				'Hardcover refused your token (expired, or missing a scope? make a new one at hardcover.app/account/api)',
 			);
-		if (res.status === 429) throw new Error("Hardcover's rate limit was reached; try again later");
+		if (res.status === 429) throw new PhraseError("Hardcover's rate limit was reached; try again later");
 		if (!res.ok || !json)
-			throw new Error(`Hardcover answered ${res.status}${json && json.error ? ` (${json.error})` : ''}`);
+			throw json && json.error
+				? new PhraseError('Hardcover answered {status} ({error})', {
+						status: res.status,
+						error: String(json.error),
+					})
+				: new PhraseError('Hardcover answered {status}', {status: res.status});
 		if (Array.isArray(json.errors) && json.errors.length)
-			throw new Error(`Hardcover: ${json.errors.map((e: any) => e && e.message).join('; ')}`);
+			throw new PhraseError('Hardcover: {errors}', {
+				errors: json.errors.map((e: any) => e && e.message).join('; '),
+			});
 		return json.data || {};
 	}
 
@@ -216,7 +223,7 @@ export class HardcoverClient extends CatalogClient {
 	async bookParts(ids: number[], step: Step): Promise<Unchecked[]> {
 		const rows: Unchecked[] = [];
 		for (let i = 0; i < ids.length; i += BATCH) {
-			step('Finding the series or author on Hardcover', i, ids.length);
+			step(Text.phrase('Finding the series or author on Hardcover'), i, ids.length);
 			const books = (await this.ask(HardcoverClient.QUERIES.bookParts, {ids: ids.slice(i, i + BATCH)})).books;
 			if (Array.isArray(books)) rows.push(...books.filter(Text.isObject));
 		}
@@ -246,14 +253,14 @@ export class HardcoverClient extends CatalogClient {
 		if (this.user === undefined) {
 			const me = await this.ask(HardcoverClient.QUERIES.me);
 			const user = Array.isArray(me.me) && me.me[0] && me.me[0].id;
-			if (!Number.isInteger(user)) throw new Error('Hardcover did not say who the token belongs to');
+			if (!Number.isInteger(user)) throw new PhraseError('Hardcover did not say who the token belongs to');
 			this.user = user;
 		}
 		const shelf = [];
 		for (let offset = 0; ; offset += PAGE) {
 			const page = (await this.ask(query, {...variables, user: this.user, offset})).user_books || [];
 			shelf.push(...page);
-			step(`Reading your Hardcover shelves: ${shelf.length} books`);
+			step(Text.phrase('Reading your Hardcover shelves: {count} books', {count: shelf.length}));
 			if (page.length < PAGE) return shelf;
 		}
 	}
@@ -265,11 +272,20 @@ export class HardcoverClient extends CatalogClient {
 		kind: 'books' | 'editions',
 		ids: unknown[],
 		step: Step,
-		doing?: string,
+		doing?: Phrase,
 	): Promise<Map<unknown, Unchecked>> {
 		const rows = new Map();
 		for (let i = 0; i < ids.length; i += BATCH) {
-			step(doing || `Reading the ${kind} on your Read shelf`, i, ids.length);
+			step(
+				doing ||
+					Text.phrase(
+						kind === 'books'
+							? 'Reading the books on your Read shelf'
+							: 'Reading the editions on your Read shelf',
+					),
+				i,
+				ids.length,
+			);
 			for (const row of (await this.ask(HardcoverClient.QUERIES[kind], {ids: ids.slice(i, i + BATCH)}))[kind] ||
 				[])
 				rows.set(row.id, row);
@@ -284,7 +300,7 @@ export class HardcoverClient extends CatalogClient {
 		const found: HardcoverFound = {hc: new Map(), asin: new Map(), isbn: new Map(), gr: new Map()};
 		const longest = Math.max(0, ...Object.values(lookups).map(l => l.length));
 		for (let i = 0; i < longest; i += BATCH) {
-			step('Finding your books on Hardcover', i, longest);
+			step(Text.phrase('Finding your books on Hardcover'), i, longest);
 			const slice = Object.fromEntries(Object.entries(lookups).map(([k, l]) => [k, l.slice(i, i + BATCH)]));
 			const q = HardcoverClient.findQuery(slice);
 			if (!q) continue;
@@ -417,14 +433,15 @@ export class HardcoverClient extends CatalogClient {
 		const value = String(text || '').trim();
 		if (HARDCOVER_ID.test(value)) return {id: value};
 		const url = HardcoverClient.parseUrl(value);
-		if (!url) throw new Error('not a Hardcover book id, or the address of a book or edition on hardcover.app');
+		if (!url)
+			throw new PhraseError('not a Hardcover book id, or the address of a book or edition on hardcover.app');
 		if (url.book) return {id: url.book};
-		if (!client) throw new Error('finding the book of this address needs Hardcover');
+		if (!client) throw new PhraseError('finding the book of this address needs Hardcover');
 		if (url.edition) {
 			const [edition] =
 				(await client.ask(HardcoverClient.QUERIES.editionBook, {id: Number(url.edition)})).editions || [];
 			if (!Text.isObject(edition) || !Number.isInteger(edition.book_id))
-				throw new Error(`Hardcover has no edition ${url.edition}`);
+				throw new PhraseError('Hardcover has no edition {id}', {id: url.edition});
 			return {
 				id: String(edition.book_id),
 				title: Text.isObject(edition.book) && typeof edition.book.title === 'string' ? edition.book.title : '',
@@ -432,7 +449,7 @@ export class HardcoverClient extends CatalogClient {
 		}
 		const [book] = (await client.ask(HardcoverClient.QUERIES.bookBySlug, {slug: url.slug})).books || [];
 		if (!Text.isObject(book) || !Number.isInteger(book.id))
-			throw new Error(`Hardcover has no book at hardcover.app/books/${url.slug}`);
+			throw new PhraseError('Hardcover has no book at {address}', {address: `hardcover.app/books/${url.slug}`});
 		// a book merged into another one lives on as that one
 		return {
 			id: String(Number.isInteger(book.canonical_id) ? book.canonical_id : book.id),

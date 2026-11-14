@@ -13,6 +13,29 @@ export type Unchecked = any;
  * How a class reads one stored key (Text.setStored): whether a value is what the key holds, and how it is put on
  * its field (given undefined, the field is cleared).
  */
+/**
+ * A message a module hands a page: a template the app wrote, with a `{marker}` where each value goes, and the
+ * values, which are data (a title, a name, a count) put in as they are, or Phrases of their own. The page spells
+ * it (dom.ts spell()), so a title with "Catalog" in it is never respelled; `Text.filled(phrase, false)` is its
+ * American English.
+ */
+export type Phrase = {template: string; values: Record<string, PhraseValue>};
+
+/** what fills a Phrase's marker */
+export type PhraseValue = string | number | Phrase;
+
+/** An error whose message is a Phrase (see Text.errorPhrase); its `message` is the American English. */
+export class PhraseError extends Error {
+	/** the message as a Phrase */
+	phrase: Phrase;
+
+	constructor(template: string | Phrase, values: Record<string, PhraseValue> = {}, options?: ErrorOptions) {
+		const phrase = typeof template === 'string' ? {template, values} : template;
+		super(Text.filled(phrase, false), options);
+		this.phrase = phrase;
+	}
+}
+
 export type StoredField<T> = [(v: unknown) => boolean, (into: T, v: any) => void];
 
 // JavaScript's \b is ASCII-only, so "é" would count as a word boundary; this is the Unicode "no word char before".
@@ -217,6 +240,16 @@ export class Text {
 		return items.slice(0, 3).join(separator) + (items.length > 3 ? ` and ${items.length - 3} more` : '');
 	}
 
+	/**
+	 * firstThree() as a Phrase, for a module's message: the items are data, "and 2 more" the app's text.
+	 */
+	static firstThreePhrase(items: string[], separator: string = ', '): PhraseValue {
+		const shown = items.slice(0, 3).join(separator);
+		return items.length > 3
+			? Text.phrase('{items} and {count} more', {items: shown, count: items.length - 3})
+			: shown;
+	}
+
 	// ------------------------------------------------------------------ dates and lengths
 	/**
 	 * A date as the catalog keeps it (a date read, a release date): "2024-03-15", or just "2024-03" /
@@ -352,26 +385,71 @@ export class Text {
 	}
 
 	/**
-	 * A template the app wrote, respelled (see spelled), with its `{marker}`s filled in from `values` as they are:
-	 * a value is a title, a name or other data, or text already spelled, and is never respelled. A template's
-	 * whole sentence stays one text, so another language can put the values where its own sentence needs them.
-	 * A marker without a value throws, as it is a mistake in the code.
+	 * A message the app wrote (see Phrase) with `values` beside it.
 	 */
-	static filled(template: string, british: boolean, values: Record<string, string | number> = {}): string {
+	static phrase(template: string, values: Record<string, PhraseValue> = {}): Phrase {
+		return {template, values};
+	}
+
+	/** Whether `v` is a Phrase (a page's values may also be elements, which are not). */
+	static isPhrase(v: unknown): v is Phrase {
+		return Text.isObject(v) && typeof v.template === 'string' && Text.isObject(v.values);
+	}
+
+	/**
+	 * A count with its word as a Phrase, "{count} book" or "{count} books" (see plural), so a page spells the word.
+	 * @param many the word for any other count than one
+	 */
+	static counted(n: number, word: string, many: string = word + 's'): Phrase {
+		return Text.phrase(n === 1 ? `{count} ${word}` : `{count} ${many}`, {count: n});
+	}
+
+	/**
+	 * Phrases as one, `separator` between them: ["a", "b"] -> "{p0}; {p1}".
+	 */
+	static joinPhrases(phrases: Phrase[], separator: string = '; '): Phrase {
+		const values: Record<string, Phrase> = {};
+		phrases.forEach((p, i) => (values['p' + i] = p));
+		return Text.phrase(phrases.map((_p, i) => `{p${i}}`).join(separator), values);
+	}
+
+	/**
+	 * A template the app wrote, respelled (see spelled), with its `{marker}`s filled in from `values` as they are:
+	 * a value is a title, a name or other data, or text already spelled, and is never respelled; a value that is
+	 * a Phrase is the app's own text, filled in the same way. A template's whole sentence stays one text, so
+	 * another language can put the values where its own sentence needs them. A marker without a value throws,
+	 * as it is a mistake in the code. `Text.filled(phrase, false)` is a module's message in American English.
+	 */
+	static filled(template: string | Phrase, british: boolean, values: Record<string, PhraseValue> = {}): string {
 		return Text.templateParts(template, british, values).map(String).join('');
 	}
 
 	/**
 	 * A template's parts in order (see filled): its own text respelled, and in place of each `{marker}` its
-	 * value from `values`, whatever that is (a page puts elements in), as it is.
+	 * value from `values`, whatever that is (a page puts elements in), as it is, but a Phrase filled in.
 	 */
-	static templateParts<T>(template: string, british: boolean, values: Record<string, T>): (string | T)[] {
+	static templateParts<T>(
+		template: string | Phrase,
+		british: boolean,
+		values: Record<string, T | PhraseValue> = {},
+	): (string | T | number)[] {
+		if (typeof template !== 'string') return Text.templateParts<T>(template.template, british, template.values);
 		return template.split(/(\{\w+\})/).map((part, i) => {
 			if (i % 2 === 0) return Text.spelled(part, british);
 			const key = part.slice(1, -1);
 			if (!Object.hasOwn(values, key)) throw new Error(`No value for ${part} in "${template}"`);
-			return values[key];
+			const value = values[key];
+			return Text.isPhrase(value) ? Text.filled(value, british) : (value as T | string | number);
 		});
+	}
+
+	/**
+	 * What went wrong, from what a `catch` caught, as a Phrase: a PhraseError's own, else the error's message (or
+	 * what was thrown) as a value, which is not the app's text (a browser's, a catalog's) and is never respelled.
+	 */
+	static errorPhrase(exc: unknown): Phrase {
+		if (exc !== null && typeof exc === 'object' && 'phrase' in exc && Text.isPhrase(exc.phrase)) return exc.phrase;
+		return Text.phrase('{error}', {error: Text.errorText(exc)});
 	}
 
 	/**

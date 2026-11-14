@@ -3,9 +3,10 @@
 // kept in this browser only, never in a backup; store.ts reads and saves it by the client class's KEY_STORAGE,
 // and the Import & export page shows its field by the class's KEY_NAME and KEY_HELP, so no page names a catalog.
 import {Text} from './text.js';
+import type {Phrase} from './text.js';
 
 /** reports a run's progress */
-export type Step = (text: string, done?: number, total?: number) => void;
+export type Step = (text: Phrase, done?: number, total?: number) => void;
 /**
  * Asks a catalog: `address` is its API's address, or for a catalog asked through the catalog proxy the route
  * (`audiobookdb/<path>`). Through the proxy, `init.key` is your key for the catalog, and `init.body` makes it a POST.
@@ -92,7 +93,7 @@ export class CatalogClient {
 	/**
 	 * Step `step` through `items`, asking `ask` of each, with how far it has got.
 	 */
-	static async each<T, U>(items: T[], text: string, step: Step, ask: (item: T) => Promise<U>): Promise<U[]> {
+	static async each<T, U>(items: T[], text: Phrase, step: Step, ask: (item: T) => Promise<U>): Promise<U[]> {
 		const out: U[] = [];
 		for (let i = 0; i < items.length; i++) {
 			step(text, i, items.length);

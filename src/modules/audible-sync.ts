@@ -11,7 +11,8 @@ import {Comparison} from './comparison.js';
 import {ShelfSync} from './shelf-sync.js';
 import {AudibleClient} from './audible-client.js';
 import {AudibleSource} from './audible-source.js';
-import type {Unchecked} from './text.js';
+import {PhraseError} from './text.js';
+import type {Unchecked, Phrase, PhraseValue} from './text.js';
 import type {Book} from './book.js';
 import type {Catalog} from './catalog.js';
 import type {MergeOptions} from './merger.js';
@@ -48,7 +49,8 @@ export class AudibleSync extends ShelfSync {
 	 * `step(text, done, total)` hears how far it has got.
 	 */
 	async compare(catalog: Catalog, step: Step, part?: ShelfPart): Promise<AudibleComparison> {
-		if (!part || part.kind !== 'series') throw new Error('Audible compares one series at a time: pick a series');
+		if (!part || part.kind !== 'series')
+			throw new PhraseError('Audible compares one series at a time: pick a series');
 		const client = this.client;
 		const mine = catalog.books.filter(Comparison.scope('series', part.name));
 		const id = catalog.nameIds.series.get(part.name);
@@ -57,12 +59,13 @@ export class AudibleSync extends ShelfSync {
 		const saved = info && info.external[site];
 		const asin = saved && AudibleClient.ID.test(saved) ? saved : await this.findSeries(mine, site, part, step);
 		if (!asin)
-			throw new Error(
-				`${site} lists none of your books in the series ${part.name}; paste the series' address on ${site} in its form`,
+			throw new PhraseError(
+				"{site} lists none of your books in the series {name}; paste the series' address on {site} in its form",
+				{site, name: part.name},
 			);
-		step(`Reading the series ${part.name} on ${site}`);
+		step(Text.phrase('Reading the series {name} on {site}', {name: part.name, site}));
 		const series = await client.series(site, asin, 'relationships,product_desc');
-		if (!series) throw new Error(`${site} has no series ${asin}`);
+		if (!series) throw new PhraseError('{site} has no series {asin}', {site, asin});
 		const children = (Array.isArray(series.relationships) ? series.relationships : []).filter(
 			(r: unknown) =>
 				Text.isObject(r) &&
@@ -75,7 +78,7 @@ export class AudibleSync extends ShelfSync {
 			children.map((c: Unchecked) => c.asin),
 			AudibleSource.GROUPS,
 			step,
-			"Reading the series' books",
+			Text.phrase("Reading the series' books"),
 		);
 		// each book there by its number in the series, editions in Audible's order (sort)
 		const byNumber: Map<string, {number: string; products: Unchecked[]}> = new Map();
@@ -112,7 +115,7 @@ export class AudibleSync extends ShelfSync {
 		};
 		const incoming: Book[] = [];
 		const missing: MissingBook[] = [];
-		const warnings: string[] = [];
+		const warnings: Phrase[] = [];
 		const editionsYours: Book[] = [];
 		for (const [key, {number, products: editions}] of byNumber) {
 			const yours = editions.filter(p => byAsin.has(p.asin));
@@ -129,7 +132,10 @@ export class AudibleSync extends ShelfSync {
 				incoming.push(incomingOf(best, unmatched[0], number, editions.length === 1));
 				if (editions.length > 1)
 					warnings.push(
-						`${unmatched[0].title}: ${site} has ${editions.length} editions of book ${number} and none has an ASIN of yours; give yours its ASIN to fill it in`,
+						Text.phrase(
+							'{title}: {site} has {count} editions of book {number} and none has an ASIN of yours; give yours its ASIN to fill it in',
+							{title: unmatched[0].title, site, count: editions.length, number},
+						),
 					);
 			}
 			// a box set of books there isn't one to have
@@ -192,7 +198,7 @@ export class AudibleSync extends ShelfSync {
 			[...new Set(asins.map(([, a]) => a))],
 			'product_desc',
 			step,
-			'Checking your ASINs on Audible',
+			Text.phrase('Checking your ASINs on Audible'),
 		);
 		return asins
 			.filter(([, a]) => !found.has(a))
@@ -200,7 +206,7 @@ export class AudibleSync extends ShelfSync {
 				book,
 				yours: true,
 				edition: `ASIN ${a}`,
-				said: `not sold on ${site}: maybe another site's ASIN, or not an audiobook`,
+				said: Text.phrase("not sold on {site}: maybe another site's ASIN, or not an audiobook", {site}),
 				url: ExternalCatalog.url(key, 'edition', a),
 				maybe: true,
 			}));
@@ -236,7 +242,7 @@ export class AudibleSync extends ShelfSync {
 			[...byAsin.keys()],
 			'series,product_desc', // the title comes with product_desc
 			step,
-			'Finding the series on Audible',
+			Text.phrase('Finding the series on Audible'),
 		);
 		const same = ShelfSync.sameName(part);
 		const byNumber: Map<string, number> = new Map();
@@ -275,10 +281,16 @@ export class AudibleSync extends ShelfSync {
 	summary(
 		result: AudibleComparison,
 		catalog: Catalog,
-		scope: {kind: 'series' | 'author'; name: string; label: string} | null,
-	): string {
-		const here = ShelfSync.inScope(catalog, scope).length;
-		return `${scope ? `Only ${scope.label}: ` : ''}${Text.plural(here, 'book')} in this catalog, ${Text.plural(result.numbers, 'book')} in the series on ${result.site}`;
+		scope: {kind: 'series' | 'author'; name: string; label: PhraseValue} | null,
+	): Phrase {
+		return ShelfSync.scoped(
+			scope,
+			Text.phrase('{here} in this catalog, {there} in the series on {site}', {
+				here: Text.counted(ShelfSync.inScope(catalog, scope).length, 'book'),
+				there: Text.counted(result.numbers, 'book'),
+				site: result.site,
+			}),
+		);
 	}
 
 	/**
@@ -314,7 +326,7 @@ export class AudibleSync extends ShelfSync {
 		return n;
 	}
 
-	static notAdded(count: number): string {
-		return `Not matched with a book of yours, so left out: ${count}`;
+	static notAdded(count: number): Phrase {
+		return Text.phrase('Not matched with a book of yours, so left out: {count}', {count});
 	}
 }

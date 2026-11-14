@@ -1,7 +1,7 @@
 // Hardcover as a source of the Edit page's Fill in: its API answers web pages, with the token saved in this
 // browser. Besides its own books and editions, it knows the ASINs, ISBNs and Goodreads editions of its
 // editions, which is how Amazon's and Goodreads' ids are looked up, as those can't be read from a web page.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {BookSource} from './book-source.js';
@@ -57,12 +57,12 @@ export class HardcoverSource extends BookSource {
 		if (pasted.catalog !== HardcoverSource.CATALOG) return this.by('asin', pasted.id);
 		if (pasted.kind === 'edition') {
 			const book = await this.book(null, pasted.id);
-			if (!book) throw new Error(`Hardcover has no edition ${pasted.id}`);
+			if (!book) throw new PhraseError('Hardcover has no edition {id}', {id: pasted.id});
 			return book;
 		}
 		const id = pasted.id || (await HardcoverClient.bookId(this.hardcover, `hardcover.app/books/${pasted.slug}`)).id;
 		const book = await this.book(id, null);
-		if (!book) throw new Error(`Hardcover has no book ${id}`);
+		if (!book) throw new PhraseError('Hardcover has no book {id}', {id});
 		return book;
 	}
 

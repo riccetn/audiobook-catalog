@@ -3,9 +3,9 @@
 // (lookup), and what it needs to be asked (a key, the catalog proxy). CatalogLookup knows only this class, so
 // a catalog is added by writing its source and listing it in CatalogConnectors.SOURCES. Nothing here changes
 // the catalog; the requests are passed in, so the tests run it offline.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {CatalogClient} from './catalog-client.js';
-import type {Unchecked} from './text.js';
+import type {Unchecked, Phrase} from './text.js';
 import type {Book} from './book.js';
 
 /** a fetch of an address */
@@ -19,7 +19,7 @@ export type Pasted = {catalog: string; kind: 'book' | 'edition' | 'isbn'; id: st
  * What a lookup found: the book (with one edition at most), the catalogs that gave it, and what could not be
  * asked and why.
  */
-export type Found = {book: Book; sources: string[]; notes: string[]};
+export type Found = {book: Book; sources: string[]; notes: Phrase[]};
 /**
  * What a lookup asks through: `get` for catalogs that answer web pages, `clients` (those of catalogs whose key is
  * saved: Hardcover's with your token), and `proxy`, the catalog proxy given a route
@@ -92,19 +92,22 @@ export class BookSource {
 	}
 
 	/** @returns what to save to ask it ('save your server') */
-	get needsText(): string {
+	get needsText(): Phrase | null {
 		return BookSource.needing(this.kind);
 	}
 
 	/**
-	 * What to save to ask a source of `kind` ('save your server'); '' when it needs nothing.
+	 * What to save to ask a source of `kind` ('save your server'); null when it needs nothing.
 	 */
-	static needing(kind: typeof BookSource): string {
+	static needing(kind: typeof BookSource): Phrase | null {
 		return kind.NEEDS === 'proxy'
-			? 'save your server'
+			? Text.phrase('save your server')
 			: kind.NEEDS === 'key'
-				? `save your ${kind.LABEL} ${kind.CLIENT.KEY_NAME}`
-				: '';
+				? Text.phrase('save your {catalog} {key}', {
+						catalog: kind.LABEL,
+						key: Text.phrase(kind.CLIENT.KEY_NAME),
+					})
+				: null;
 	}
 
 	/**
@@ -137,7 +140,7 @@ export class BookSource {
 	 * Throws, with a short reason, when there is none or there are several.
 	 */
 	async search(_title: string, _authors: string[]): Promise<string> {
-		throw new Error(`${this.label} can't be searched by title`);
+		throw new PhraseError("{catalog} can't be searched by title", {catalog: this.label});
 	}
 
 	// ------------------------------------------------------------------ asking
@@ -150,7 +153,11 @@ export class BookSource {
 		try {
 			res = await this.context.get(url);
 		} catch (e) {
-			throw new Error(`this browser could not reach ${this.label} (offline?)`, {cause: e});
+			throw new PhraseError(
+				'this browser could not reach {catalog} (offline?)',
+				{catalog: this.label},
+				{cause: e},
+			);
 		}
 		return BookSource.answer(this.label, res);
 	}
@@ -162,19 +169,22 @@ export class BookSource {
 	async proxied(route: string, list: boolean = false): Promise<Unchecked | null> {
 		const proxy = this.context.proxy;
 		if (!proxy)
-			throw new Error(
-				`${this.label} can't be read from a web page; ${this.needsText} on the Import & export page`,
-			);
+			throw new PhraseError("{catalog} can't be read from a web page; {needs} on the Import & export page", {
+				catalog: this.label,
+				needs: this.needsText || '',
+			});
 		let res;
 		try {
 			res = await proxy(route);
 		} catch (e) {
-			throw new Error(
+			throw new PhraseError(
 				'this browser could not reach your server (offline, or check it on the Import & export page)',
+				{},
 				{cause: e},
 			);
 		}
-		if (res.status === 401) throw new Error('your server refused its key (check it on the Import & export page)');
+		if (res.status === 401)
+			throw new PhraseError('your server refused its key (check it on the Import & export page)');
 		return BookSource.answer(this.label, res, list);
 	}
 
@@ -188,10 +198,15 @@ export class BookSource {
 		list: boolean = false,
 	): Promise<Unchecked | null> {
 		if (res.status === 404) return null;
-		if (!res.ok) throw new Error(`${source} answered ${res.status}`);
+		if (!res.ok) throw new PhraseError('{catalog} answered {status}', {catalog: source, status: res.status});
 		const json = await res.json().catch(() => null);
 		if (list ? !Array.isArray(json) : !Text.isObject(json))
-			throw new Error(`${source} sent something that isn't ${list ? 'a list of books' : 'a book'}`);
+			throw new PhraseError(
+				list
+					? "{catalog} sent something that isn't a list of books"
+					: "{catalog} sent something that isn't a book",
+				{catalog: source},
+			);
 		return json;
 	}
 

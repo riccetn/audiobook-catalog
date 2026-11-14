@@ -4,7 +4,8 @@
 // (narrators, length) by the edition found. What each needs (a token, the catalog proxy) the sources say, so
 // nothing here names a catalog. Nothing here changes the catalog; the requests are passed in, so the tests run
 // it offline.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
+import type {Phrase, PhraseValue} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {Edition} from './edition.js';
@@ -14,13 +15,26 @@ import {CatalogConnectors} from './catalog-connectors.js';
 import type {Get, Pasted, Found} from './book-source.js';
 import type {CatalogClient} from './catalog-client.js';
 
-const ON_THE_PAGE = 'on the Import & export page';
-
 /**
- * "A, B or C".
+ * "A, B or C", as a Phrase whose items are its values.
  */
-const listed = (items: string[], last: string): string =>
-	items.length > 1 ? `${items.slice(0, -1).join(', ')} ${last} ${items[items.length - 1]}` : items.join('');
+const listed = (items: PhraseValue[], last: 'and' | 'or'): PhraseValue => {
+	if (items.length < 2) return items.length ? items[0] : '';
+	const values: Record<string, PhraseValue> = {};
+	items.forEach((item, i) => (values['i' + i] = item));
+	const head = items
+		.slice(0, -1)
+		.map((_item, i) => `{i${i}}`)
+		.join(', ');
+	return Text.phrase(`${head} ${last} {i${items.length - 1}}`, values);
+};
+
+/** the different texts of `needs` (BookSource.needsText), once each */
+const needed = (needs: (Phrase | null)[]): Phrase[] => {
+	const out: Phrase[] = [];
+	for (const n of needs) if (n && !out.some(x => Text.filled(x, false) === Text.filled(n, false))) out.push(n);
+	return out;
+};
 
 /** Looks books up in the external catalogs a page may read. */
 export class CatalogLookup {
@@ -65,7 +79,7 @@ export class CatalogLookup {
 	}
 
 	/** @returns the catalogs whose addresses can be pasted: "Open Library, Wikidata or Audible" */
-	get pastable(): string {
+	get pastable(): PhraseValue {
 		return listed([...new Set(this.sources.flatMap(s => s.kind.NAMES))], 'or');
 	}
 
@@ -86,8 +100,11 @@ export class CatalogLookup {
 		if (!pasted && searcher && typed.length >= 3)
 			pasted = {catalog: searcher.kind.CATALOG, kind: 'book', id: await searcher.search(typed, authors)};
 		if (!pasted)
-			throw new Error(
-				`paste the address of a book or edition on ${this.pastable}, or an ISBN${searcher ? ', or type its title' : ''}`,
+			throw new PhraseError(
+				searcher
+					? 'paste the address of a book or edition on {catalogs}, or an ISBN, or type its title'
+					: 'paste the address of a book or edition on {catalogs}, or an ISBN',
+				{catalogs: this.pastable},
 			);
 		const found: Found = {book: new Book(), sources: [], notes: []};
 		const asked: Set<BookSource> = new Set();
@@ -109,7 +126,12 @@ export class CatalogLookup {
 			try {
 				take(source, await source.lookup(what, found));
 			} catch (err) {
-				found.notes.push(`${source.label} couldn't be asked: ${Text.errorText(err)}`);
+				found.notes.push(
+					Text.phrase("{catalog} couldn't be asked: {error}", {
+						catalog: source.label,
+						error: Text.errorPhrase(err),
+					}),
+				);
 			}
 		};
 		const answering = (how: 'own' | 'also' | 'fallback') =>
@@ -117,10 +139,14 @@ export class CatalogLookup {
 		const candidates = [...answering('own'), ...answering('also'), ...answering('fallback')];
 		const usable = candidates.filter(s => s.available);
 		if (!candidates.length)
-			throw new Error(
-				`${ExternalCatalog.name(pasted.catalog)} can't be read from a web page; paste an address on ${this.pastable}, or an ISBN`,
+			throw new PhraseError(
+				"{catalog} can't be read from a web page; paste an address on {catalogs}, or an ISBN",
+				{
+					catalog: ExternalCatalog.name(pasted.catalog),
+					catalogs: this.pastable,
+				},
 			);
-		if (!usable.length) throw new Error(CatalogLookup.unavailable(candidates));
+		if (!usable.length) throw new PhraseError(CatalogLookup.unavailable(candidates));
 		// a catalog asked beside others doesn't stop the lookup when it can't be asked
 		const noted = usable.length > 1;
 		for (const source of usable.filter(s => s.answers(pasted as Pasted) !== 'fallback'))
@@ -133,19 +159,25 @@ export class CatalogLookup {
 		if (!found.sources.length) {
 			const where =
 				pasted.kind === 'isbn'
-					? `with ISBN ${pasted.id}`
+					? Text.phrase('with ISBN {id}', {id: pasted.id})
 					: ExternalCatalog.family(pasted.catalog) === 'asin'
-						? `with ASIN ${pasted.id}`
+						? Text.phrase('with ASIN {id}', {id: pasted.id})
 						: pasted.id;
 			const unasked = candidates.filter(s => !s.available);
-			throw new Error(
-				`no catalog has a book ${where}${found.notes.length ? ` (${found.notes.join('; ')})` : ''}` +
-					(unasked.length
-						? ` (to ask ${listed(
-								unasked.map(s => s.label),
-								'and',
-							)} too, ${listed([...new Set(unasked.map(s => s.needsText))], 'and')} ${ON_THE_PAGE})`
-						: ''),
+			// a template for each case: with what the others said, and with what to save to ask the rest
+			throw new PhraseError(
+				'no catalog has a book {where}' +
+					(found.notes.length ? ' ({notes})' : '') +
+					(unasked.length ? ' (to ask {unasked} too, {needs} on the Import & export page)' : ''),
+				{
+					where,
+					notes: Text.joinPhrases(found.notes),
+					unasked: listed(
+						unasked.map(s => s.label),
+						'and',
+					),
+					needs: listed(needed(unasked.map(s => s.needsText)), 'and'),
+				},
 			);
 		}
 		if (pasted.kind === 'edition') {
@@ -166,7 +198,13 @@ export class CatalogLookup {
 			// a key is saved in a moment; a server is set up once, and so not asked for each book
 			else if (source.kind.NEEDS === 'key' && (!ed.narrators.length || !ed.minutes))
 				found.notes.push(
-					`to fill in narrators and length from ${source.label} too, ${source.needsText} ${ON_THE_PAGE}`,
+					Text.phrase(
+						'to fill in narrators and length from {catalog} too, {needs} on the Import & export page',
+						{
+							catalog: source.label,
+							needs: source.needsText || '',
+						},
+					),
 				);
 		}
 		return found;
@@ -175,17 +213,31 @@ export class CatalogLookup {
 	/**
 	 * Why none of `sources` can be asked (each needs what isn't saved), and what to save.
 	 */
-	static unavailable(sources: BookSource[]): string {
+	static unavailable(sources: BookSource[]): Phrase {
 		const proxied = sources.filter(s => s.kind.NEEDS === 'proxy').map(s => s.label);
 		const keyed = sources.filter(s => s.kind.NEEDS !== 'proxy');
-		const proxy = `${listed(proxied, 'and')} can't be read from a web page; `;
+		const values = {
+			proxied: listed(proxied, 'and'),
+			keyed: listed(
+				keyed.map(s => s.label),
+				'or',
+			),
+			needs: listed(needed(keyed.map(s => s.needsText)), 'or'),
+		};
+		// a whole template for each case
 		if (!keyed.length)
-			return `${proxy}to ask ${proxied.length > 1 ? 'them' : 'it'} through a server of your own, save your server ${ON_THE_PAGE} first`;
-		const ask = `to look it up on ${listed(
-			keyed.map(s => s.label),
-			'or',
-		)}, ${listed([...new Set(keyed.map(s => s.needsText))], 'or')} ${ON_THE_PAGE} first`;
-		return proxied.length ? `${proxy}${ask}, or save your server there to ask ${listed(proxied, 'and')}` : ask;
+			return Text.phrase(
+				proxied.length > 1
+					? "{proxied} can't be read from a web page; to ask them through a server of your own, save your server on the Import & export page first"
+					: "{proxied} can't be read from a web page; to ask it through a server of your own, save your server on the Import & export page first",
+				values,
+			);
+		return Text.phrase(
+			proxied.length
+				? "{proxied} can't be read from a web page; to look it up on {keyed}, {needs} on the Import & export page first, or save your server there to ask {proxied}"
+				: 'to look it up on {keyed}, {needs} on the Import & export page first',
+			values,
+		);
 	}
 
 	/**

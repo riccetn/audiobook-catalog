@@ -7,7 +7,7 @@
 // it as the next copy (store.ts, syncCatalog). Only web APIs (WebCrypto, CompressionStream), so it runs in Node too.
 import {Backup, NewerBackup} from './backup.js';
 import {CatalogRecords} from './catalog-records.js';
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import type {BackupJSON} from './backup.js';
 import type {RecordSet} from './catalog-records.js';
 
@@ -28,9 +28,9 @@ export type SyncResult = {records: RecordSet; conflicts: string[]; taken: number
 export type SyncPrefer = 'mine' | 'theirs' | 'replace';
 
 /** The synced copy is not one this passphrase opens: another passphrase, or not this app's. */
-export class WrongPassphrase extends Error {}
+export class WrongPassphrase extends PhraseError {}
 /** The synced copy and this device's catalog weren't made from one catalog: they name a series or person under other ids. */
-export class UnrelatedCatalogs extends Error {}
+export class UnrelatedCatalogs extends PhraseError {}
 
 export class CatalogSync {
 	// What the sealed text says it is, so another app's text isn't taken for a catalog.
@@ -178,7 +178,7 @@ export class CatalogSync {
 			try {
 				Backup.checkNames(merged.records);
 			} catch (e) {
-				throw new UnrelatedCatalogs(Text.errorText(e), {cause: e});
+				throw new UnrelatedCatalogs(Text.errorPhrase(e), {}, {cause: e});
 			}
 		}
 		const {records, conflicts} = merged;

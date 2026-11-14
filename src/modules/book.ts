@@ -2,7 +2,7 @@
 // in external catalogs (Hardcover's and Goodreads' book, which every edition of it is an edition of) and
 // its editions. What makes two records one book (the keys imports match by), and
 // how books stored in an older format are read.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Edition} from './edition.js';
 import {Series} from './series.js';
 import {ExternalCatalog} from './external-catalog.js';
@@ -128,7 +128,7 @@ export class Book {
 	 * not an object.
 	 */
 	static fromJSON(json: Unchecked): Book {
-		if (!Text.isObject(json)) throw new Error('a book is not an object');
+		if (!Text.isObject(json)) throw new PhraseError('a book is not an object');
 		const book = new Book();
 		for (const [k, v] of Object.entries(json)) book.set(k, v);
 		return book;
@@ -221,7 +221,7 @@ export class Book {
 	mergeEditions(places: number[]): Edition {
 		const picked = [...new Set(places)].sort((a, b) => a - b).map(at => this.editionAt(at));
 		if (!Edition.joinable(picked))
-			throw new Error('These editions have different ids, so they are not one edition.');
+			throw new PhraseError('These editions have different ids, so they are not one edition.');
 		const joined = Edition.join(picked);
 		const first = picked[0];
 		this.editions = this.editions
@@ -248,7 +248,8 @@ export class Book {
 		}
 		const [left] = Edition.fromFields(kept, ed.publishers).editions,
 			[right] = Edition.fromFields(moved, ed.publishers).editions;
-		if (!left || !right) throw new Error('Each edition needs something of its own, such as an id or a narrator.');
+		if (!left || !right)
+			throw new PhraseError('Each edition needs something of its own, such as an id or a narrator.');
 		// the edition keeps its stored id, and the new one is stored as a new edition
 		if (ed.id !== undefined) left.id = ed.id;
 		this.editions = [...this.editions.slice(0, at), left, right, ...this.editions.slice(at + 1)];
@@ -268,7 +269,7 @@ export class Book {
 	/** The edition at `at`; throws when there is none. */
 	editionAt(at: number): Edition {
 		const ed = this.editions[at];
-		if (!ed) throw new Error(`${this.title} has no edition ${at + 1}`);
+		if (!ed) throw new PhraseError('{title} has no edition {n}', {title: this.title, n: at + 1});
 		return ed;
 	}
 
