@@ -20,7 +20,7 @@ from before, `narrators.html#n=…` and `publishers.html#p=…`):
 Each book shows its authors, linked to their author pages; on a narrator's page it also names who else
 narrates the editions they narrate. A book is on the page when any of its editions names them, so a book
 with a US and a UK edition read by different narrators is on both narrators' pages. An edition two
-publishers released together names both (in the book form, separated by a comma: `Gullwing Audio, Tern &
+publishers released together names both (on the _Edit_ page, separated by a comma: `Gullwing Audio, Tern &
 Pike Press`; only a comma or semicolon parts publishers, as many a publisher's name has an "&" or "and"
 in it, and a publisher the catalog already has stays whole even when its name has a comma, such as `Tern Press,
 Harbor Division`), and the book is on both publishers' pages.

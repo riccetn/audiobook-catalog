@@ -1,4 +1,4 @@
-// Hardcover as a source of the book form's Fill in: its API answers web pages, with the token saved in this
+// Hardcover as a source of the Edit page's Fill in: its API answers web pages, with the token saved in this
 // browser. Besides its own books and editions, it knows the ASINs, ISBNs and Goodreads editions of its
 // editions, which is how Amazon's and Goodreads' ids are looked up, as those can't be read from a web page.
 import {Text} from './text.js';

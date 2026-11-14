@@ -156,7 +156,7 @@ export function render() {
 	byId('toggleAdd').style.display = SERIES_FILTER === null ? 'none' : '';
 	byId('toggleAdd').setAttribute(
 		'href',
-		'book.html' +
+		'edit.html' +
 			hashOf([
 				['add', true],
 				['series', (name !== null && SERIES_FILTER) || ''],

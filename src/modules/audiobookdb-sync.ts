@@ -216,7 +216,7 @@ export class AudiobookdbSync extends ShelfSync {
 	}
 
 	static notAdded(count: number): string {
-		return `Not added, as AudiobookDB has several releases of them and none is yours: ${count}. Add them from the book form with your release's address.`;
+		return `Not added, as AudiobookDB has several releases of them and none is yours: ${count}. Add them with + Add a book, filled in from your release's address.`;
 	}
 
 	/**

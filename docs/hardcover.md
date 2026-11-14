@@ -12,7 +12,7 @@ shares one site, so host the app on its own (sub)domain if you publish other pag
 
 **Compare** reads your Hardcover shelves (it changes nothing, here or on Hardcover) and shows them beside the
 catalog, the way an import does ([the comparison](imports.md#the-comparison)).
-A series' or an author's books are compared with Hardcover on their _Edit_ page ([Editing a series](editing-series.md#other-catalogs)),
+A series' or an author's books are compared with Hardcover on their _Edit_ page ([Editing books and series](editing-series.md#other-catalogs)),
 which reads only that part of your shelves, so it is quicker: the books there of the series or author, and the
 Hardcover books your books of it are found to be (so a book Hardcover files under another spelling, or a series
 spelled `Gull Isle Series`, still counts). Hardcover finds a series or author by its number, which comes from the
@@ -37,13 +37,13 @@ the app, stops it, so the browser asks first. Stopping early loses nothing. The 
 Hardcover, and comparing again shows what is still missing, since nothing already there is added twice. If the
 browser can't reach Hardcover at all (offline, or Hardcover refusing a request from a web page), it says so.
 
-**A book's Hardcover id from its address.** The Hardcover app doesn't show ids. In a book's edit form,
-paste the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages into the _Hardcover book_ field (under _The book in other catalogs_ in the book form), and the page asks Hardcover for the
-book's id with the same token. An edition's
+**A book's Hardcover id from its address.** The Hardcover app doesn't show ids. On a book's _Edit_ page,
+paste the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages into the book's _Hardcover_ field, and the page asks Hardcover for the
+book's id with the same token when you leave it. An edition's
 address in an edition's _Hardcover edition_ field needs no lookup: it holds the edition's id.
 
-**Filling in a new book.** The book form's _Fill in from another catalog_ takes a book's or edition's page on
-hardcover.app, an Audible or Amazon page, a Goodreads edition's page or an ISBN, and fills in the form from
+**Filling in a book.** The _Edit_ page's _Fill in from another catalog_ (a book's, or a new one's) takes a book's or edition's page on
+hardcover.app, an Audible or Amazon page, a Goodreads edition's page or an ISBN, and fills in the book from
 Hardcover with the same token: the title, authors, series and number, and an edition (the one named, or the
 book's audiobook edition) with its narrators, ASIN, ISBN, publisher, release date and length. See
 [Edit in the app](workflows.md).
@@ -51,10 +51,10 @@ book's audiobook edition) with its narrators, ASIN, ISBN, publisher, release dat
 **A series', author's, narrator's or publisher's Hardcover id.** These are kept by their number on Hardcover too
 (linked as `https://hardcover.app/id/author/4101`, which keeps working when Hardcover renames the page). Their pages'
 addresses have a name in them instead (`https://hardcover.app/authors/marisol-quenby`), so when you paste one, or
-the name alone, into the Hardcover field of the series or info form, the page asks Hardcover for the number as
+the name alone, into the Hardcover field of a series or a person, the page asks Hardcover for the number as
 soon as you leave the field (or when you save), with the same token; meanwhile the field shows the name alone. If Hardcover can't be asked (no token saved,
 offline, the token refused), the name is kept instead and the status line says so; it links to the page by its
-address until Hardcover renames it. Saving the form again later, with Hardcover reachable, swaps it for the
+address until Hardcover renames it. Saving it again later, with Hardcover reachable, swaps it for the
 number. A name Hardcover has no page for is refused. Entries saved before Hardcover ids were numbers keep their
 names until their form is saved.
 

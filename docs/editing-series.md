@@ -1,4 +1,4 @@
-# Editing a series
+# Editing books and series
 
 **Edit** at the end of a series' page opens the _Edit series_ page (`edit.html#series=<id>`): the series and
 every book in it on one page, a card for each book, with what the other catalogs have for them. Everything is
@@ -6,6 +6,10 @@ edited in place, and nothing is saved until you press **Review & save** and then
 
 **Edit their books** on an author's page opens the same page for every book by them (`edit.html#author=<id>`),
 each with its series and number among its fields; the author's own name, bio and links stay in their form.
+
+**Edit** at the end of a book's page opens it for that book alone (`edit.html#book=<id>`), with its series and number
+among its fields, and `+ Add a book` (on _Books_ and on a series' page) for a new one (`edit.html#add`). See
+[One book](#one-book).
 
 ## The series
 
@@ -42,9 +46,33 @@ a field of its own.
   export_ lists every entry, and **Remove** takes one off.
 - **+ Add an edition** adds an empty one to fill in.
 
+## One book
+
+A book's _Edit_ page has the book's card, open, and above it:
+
+- **Fill in from another catalog**: paste the address of the book's page on a catalog (Open Library, Wikidata,
+  Hardcover, Audible, Amazon, Goodreads, AudiobookDB), its ISBN, or (with your server saved) its title, and press
+  **Fill in** (or Enter). The book's empty fields are filled in from it, and its edition goes into the edition
+  that is the same, else in the gaps of one it fits, else becomes an edition of its own; nothing you typed is
+  replaced. [Everyday workflows](workflows.md) says which catalogs answer what.
+- **Remove book**: the first press says what it does, the second takes the book out of the catalog and adds it to
+  the exclusion list, so imports skip it, and opens its series' page (or _Books_).
+
+A new book (`+ Add a book`) starts with the series and author of where you were, and no editions: **+ Add an
+edition** adds one. It needs a title and an author. No other catalog is asked about it until it is saved; Save
+adds it and opens its page. **Discard** goes back to the series or the books.
+
+The other catalogs are asked about a book by its series (or, in none, by its first author), as they would be on that
+series' page, but only the book itself is shown: the books it lacks are on its series' page.
+
+Everywhere on the page, the author, series, narrator and publisher fields list the names the catalog has as
+you type, and say which names are new; **+ Read today** under _Read_ adds today's date; and an edition released
+under another title than the book's (its _Released as_) has **Use as the book's title**, which makes that title the
+book's and gives the book's title before to its other editions.
+
 ## Other catalogs
 
-When the page opens it asks every catalog you have set up for the series' (or author's) books: Hardcover with
+When the page opens it asks every catalog you have set up for the series' (or author's, or book's) books: Hardcover with
 your token, AudiobookDB through your server's catalog proxy, and Audible through it too (a series only). Each is
 read as its **Compare** on _Import & export_ would read it, but only for these books, and nothing is sent to any
 catalog. Untick one under _Other catalogs_ to leave it out: it stays left out in this browser until you tick it
@@ -86,4 +114,4 @@ values aren't shown beside the fields and taking its book leaves it out. A book 
 While the list is open the fields can't be changed, so **Save** saves just what it lists; **Back** goes on
 editing. When a field can't be read, Review & save says so and scrolls to it instead. **Save** saves the
 books, adds the new books ticked, and keeps the ids picked for the series and people, then returns to the
-series' (or author's) page, which says what was saved; **Discard** returns to it without saving anything.
+series' (or author's, or book's) page, which says what was saved, with any name new to the catalog; **Discard** returns to it without saving anything.

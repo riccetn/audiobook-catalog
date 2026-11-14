@@ -1,4 +1,4 @@
-// Audible as a source of the book form's Fill in: its catalog API doesn't answer web pages, so it is asked
+// Audible as a source of the Edit page's Fill in: its catalog API doesn't answer web pages, so it is asked
 // through the user's own catalog proxy (server/proxy.ts), by an Audible or Amazon ASIN, on the site of the ASIN.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
@@ -20,7 +20,7 @@ export class AudibleSource extends BookSource {
 	static FILLS_IN = true;
 
 	/**
-	 * A bare ASIN, as audible.com's (the book form takes a bare one).
+	 * A bare ASIN, as audible.com's (Fill in takes a bare one).
 	 */
 	static read(value: string): Pasted | null {
 		return /^B0[A-Z0-9]{8}$/i.test(value)
@@ -41,7 +41,7 @@ export class AudibleSource extends BookSource {
 	 */
 	async lookup(pasted: Pasted): Promise<Book | null> {
 		const book = await this.product(pasted.catalog, pasted.id);
-		// the title is the site's, the one this edition was released under there: the book form keeps it on the
+		// the title is the site's, the one this edition was released under there: the Edit page keeps it on the
 		// edition when the book has another
 		if (book && book.editions[0]) book.editions[0].title = book.title;
 		return book;

@@ -40,7 +40,7 @@ unknown variable or filter fails it). `make test` and `make serve` build first, 
   its own script with `<script type="module">`; that imports `store.js` and the classes in `modules/`.
 - A page loads only the modules it needs. `store.js` and `Catalog` (which every page loads) import no connector, `Backup`, `Merger`
   or `Validator`; what only Import & export uses stays there (the smoke test's `IMPORT_PAGE_ONLY` checks it), and what a page
-  needs only for one action is loaded with `import()` when used (the book form's _Fill in_, the Hardcover lookups, the old
+  needs only for one action is loaded with `import()` when used (the Edit page's _Fill in_ and other catalogs, the Hardcover lookups, the old
   localStorage catalog's move). `modules/` imports stay static.
 - Node 22.18+ for the tests and `make serve` (`node:sqlite`, and the server's TypeScript run as it is; CI uses 24).
 
@@ -94,8 +94,8 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     its errors but the series info's, which stop an import, a merge or the box sets), so pages that only show the catalog don't load them.
   - `Book` (`id title authors series number genres read external links editions`; `links` other pages about it, which name nothing imports match by): `idOn`/`ids`, `exclusionEntries`, `isCollection`/`boxRange`, `static storedEditions` (a stored book's editions that are objects),
     `lookupKeys`, `alternativeTitles(shared)` (its editions' own titles; a box set's edition's, which `shared` (`sharedEditionTest`) tells, only on the set's own book), `hasTitle`/`static sameTitle`/`titleForms` (a title's short forms: Audible's series part, "Book 2", a subtitle but "Books 1-3"), `useTitle` (an edition's title made the book's, the old one going to the others; `keys`, `lookupKeys` and `exclusionEntries` take `shared` too), `static bySeriesNumber`/`merge`, `tidyJSON` (tidy text, one edition per ISBN), `sortEditions` (by release date, earliest first, undated last; `Catalog.assignIds` runs it on every load and before every save), `mergeEditions`/`splitEdition`/`removeEdition` (the Edit series page's) and `fixSeriesTitle` (imports' titles with the series in them).
-  - `Edition` (`id title external isbn narrators publishers released minutes description links`; `publishers` a list like `narrators`, parted only by commas in the form (`Text.splitPublishers`, as "&" is part of many a name); `title` only when it was released under another title than the book's): `idOn`/`ids`/`idKeys`/`idAndIsbnKeys` (its ids and "isbn 978…", what finds it and its box set's copies), `sameAs`/`conflictsWith`/`fillFrom`,
-    `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the book form's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`.
+  - `Edition` (`id title external isbn narrators publishers released minutes description links`; `publishers` a list like `narrators`, parted only by commas in a field (`Text.splitPublishers`, as "&" is part of many a name); `title` only when it was released under another title than the book's): `idOn`/`ids`/`idKeys`/`idAndIsbnKeys` (its ids and "isbn 978…", what finds it and its box set's copies), `sameAs`/`conflictsWith`/`fillFrom`,
+    `joinable`/`join`, `format`/`parse` and `fields`/`fromFields` (the Edit page's edition cards; both also return the book's ids found), `parseAsins`/`asinsText`, `idFromAddress`, `splitIsbns`.
   - `ExternalCatalog` (the external catalogs as plain data, `ALL`: each Audible and Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata, with a
     description and, per kind (`book edition series author narrator publisher`), the id's pattern and its page's address; `GROUPS` (one form
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
@@ -146,11 +146,11 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       ASIN (`yours`, ticked at first), else its number's only one; placeholders, box sets and unnumbered ones aren't missing books; `setInfoIds`
       keeps the series' ASIN under the site and its `total`; `unsold`: your ASINs under that Audible site it doesn't sell, as maybe not audiobooks; `siteOf` and both count only Audible sites' ASINs). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
       `products`). Comparing only reads the catalog; sending only adds.
-    - `BookSource` (a catalog the book form's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
+    - `BookSource` (a catalog the Edit page's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
       (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the
       proxy, by an Audible site's ASIN on that site, `isSite`; an Amazon site's ASIN is that site's alone, so never asked of Audible; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
-      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the form's authors; a release's ASINs under the sites its links name (`category.url`, `AudiobookdbClient.asinsBySite`);
+      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the book's authors; a release's ASINs under the sites its links name (`category.url`, `AudiobookdbClient.asinsBySite`);
       `book`, `minutes`), `HardcoverSource` (with the token: its books, and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
       `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
       sources, with the fetch, the clients whose key is saved and the catalog proxy passed in: the candidates in order own, also, fallback (a fallback only when
@@ -210,26 +210,30 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   and the address helpers `hashParts`/`hashText`/`hashOf` (with `store.js`'s `hashValue`)/`setAddress`.
 - `combo-box.js`: a search combo box (`comboBox(input, list, {names, multiple, onPick})`, `comboField` builds one): an
   `<input>` listing the names matching what is typed (`matchingNames`; in a field of several names, the one the cursor is in, `namePart`),
-  picked with a click or the arrow keys and Enter, and a note below it naming what is new (`newNames`, `refreshNewNotes`). The book form's
-  authors and series (`#f_aList`/`#f_aNew`, `#f_sList`/`#f_sNew` in the template) and each edition's narrators and
-  publisher use it, over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` and the series' `name` index, when the form opens).
+  picked with a click or the arrow keys and Enter, and a note below it naming what is new (`newNames`, `refreshNewNotes`). The Edit page's
+  authors and series fields and each edition's narrators and publishers use it (`NAME_FIELDS`; `comboField` gives the list `<id>List`
+  and the note `<id>New`), over `FORM_NAMES` (`loadFormNames`, from the contributors' `kindName` and the series' `name` index, when the page opens).
 - `series.js` (`index.html`, _Series_): every series (from the series records alone, `#q=...&missing`), and a series' page
   (`#series=<id>`, `#standalone`: its books, and Edit, a link to `edit.html`, `editPageHref`); `SERIES_FILTER`, `openSeries`.
   Addresses from when this page showed all books and each book (`#books...`, `#book=<id>`) go to `books.html` and `book.html`
   (`movedAddress`, with `location.replace`).
 - `books.js` (`books.html`, _Books_): every book, 50 at a time (`showMore`), searched, filtered and sorted (`#q=&author=&genre=&read=&sort=`).
 - `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`; `bookDetails`, with the other books of its box set
-  loaded), Read today, Edit and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`),
-  and the book form (`openEditForm`; Remove book is in it; _Fill in from another catalog_, `fillFromCatalog`, fills its empty fields; it loads `CatalogLookup` and `CatalogConnectors` with `import()`), which also adds a book (`#add`, with `&series=<id>` or `&author=<name>`;
-  `ADDING`; saved, the page shows the new book). `+ Add a book` on the series and books pages links here.
+  loaded), Read today, Edit (a link to `edit.html#book=<id>`, `editPageHref(id, 'book')`) and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`).
+  An address from when it added books (`#add...`) goes to `edit.html#add...` (`movedAddress`, `location.replace`).
 - `edit.js` (`edit.html#series=<id>`, _Edit series_, `docs/editing-series.md`; `#author=<id>` (or a name), every book by an author, `KIND`, `AUTHOR_ID`, with
-  each book's series and number among its fields and no series panel): a series and its books on one page: the series' fields (what its form had:
+  each book's series and number among its fields and no series panel; `#book=<id>` (or a title), one book, `BOOK_ID`, and `#add` (with `&series=<id>` or `&author=<name>`, `ADDING`, `loadNew`),
+  a new book, `oneBook()`: no series panel but the book panel, _Fill in from another catalog_ (`fillFromCatalog`, `fillBook`/`fillEdition`: gaps only; it loads
+  `CatalogLookup` and `CatalogConnectors` with `import()`) and Remove book (`removeBook`, pressed twice; it excludes the book and opens its series' page or Books);
+  a book is compared by its series, else its first author (`comparedPart`), without the new books (`newCards`); a new book with none, and Save adds it (`saveNew`) and opens its page;
+  `+ Add a book` on the series and books pages links there): a series and its books on one page: the series' fields (what its form had:
   name, total, status, note, ids; Remove series), and a card per book with its fields and an edition card each (`editionName` tells it apart:
-  its description, else narrators, else ids), whose inputs are `Edition.fields()` keys; Merge with…, Split and Remove edition (with "Don't let imports
-  add it again", `EXCLUDE`) change the book's copy (`DRAFTS`, `Draft`). A field is read on change (`readBookFields`, `readEditionFields`,
+  its description, else narrators, else ids), whose inputs are `Edition.fields()` keys; Merge with…, Split, Remove edition (with "Don't let imports
+  add it again", `EXCLUDE`) and Use as the book's title (`useEditionTitle`, `Book.useTitle`) change the book's copy (`DRAFTS`, `Draft`). + Read today
+  under Read (`readTodayButton`); a Hardcover book's address in the book's Hardcover field is looked up (`readBookIds`, `HARDCOVER_LOOKUPS`, which Review & save awaits). A field is read on change (`readBookFields`, `readEditionFields`,
   `Edition.fromFields`); one that can't be read is named and changes nothing. Review & save lists the changes (`changes`, `bookChanges`; the fields are `inert` while it is open,
   and a field that can't be read is scrolled to instead) and Save `saveBook`s each changed book, adds `EXCLUDE`, then renames the series and saves its info,
-  and goes back to the series' page with what it saved in its status line (`openWithStatus` in `store.js`, sessionStorage `audiobook-catalog-status`); Discard goes back too.
+  and goes back to the series' (author's, book's) page with what it saved, and the names new to the catalog (`newEntries`), in its status line (`openWithStatus` in `store.js`, sessionStorage `audiobook-catalog-status`); Discard goes back too.
   The other catalogs: on open `askCatalogs` (`ASKING`, which tests await) loads `edit-catalogs.js` with `import()` (only it loads the connectors) and,
   holding the whole catalog, `runCatalogs(kind, name, ids)` compares every `CatalogConnectors.SYNCS` whose `PARTS` has the kind, can be asked
   (`cantAsk`) and isn't unticked (`catalogChoices`, `setSkipped`, localStorage `audiobook-catalog-edit-skip`), giving a `CatalogRun` (`RUN`: `review`, a
@@ -249,7 +253,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   and _Set up another device_ (`showSetupPicks`, the saved settings ticked; `setupLink` (this page's address, or the server's on `make serve`); `showSetupCode`,
   hidden after `SETUP_SHOWN_MS`; the device that opens the link: `takeSettingsFromAddress` clears the address at once and shows `#setupReceived`,
   `saveReceivedSettings` only on its Save).
-  Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the book form does, through the catalog proxy).
+  Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the Edit page does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
   (`infoKey`, `hashKey`, `list`, `page`, labels, `href`).
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
@@ -313,7 +317,7 @@ later version adds a step from 5 (version 4 is 5 without `links`, read as it is;
 and the tests) is `{books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}`. `books` is a list of titles with short keys `uid t a s sn g r ext links e` (the id it is stored under, title, list of authors, series,
 series number as text, genres, dates read, its own external ids (`{"hardcover": "77", "goodreads": "99"}`), web addresses of other pages about it, editions). Each edition in `e` has `uid t ext isbn n p d len desc links img`
 (its stored id (a box set's copies share it), the title it was released under when not the book's (a box set's: the set's other title), its ids by external catalog, `{"audible.com": "B0…", "amazon.com": "B0…", "goodreads": "4242", "hardcover": "501"}`, one ISBN, list of narrators, list of publishers, release date,
-length in minutes, free-text description, links to other pages about it, and its cover's key by catalog, `{"audiobookdb": "<the image's hash>"}`, filled in by Fill in and AudiobookDB's Compare (`AudiobookdbSync.addIds`), kept through the form as hidden `img:` fields) and must not be empty (a cover alone is empty). Entries keep only ids, never addresses: `ExternalCatalog` makes the link
+length in minutes, free-text description, links to other pages about it, and its cover's key by catalog, `{"audiobookdb": "<the image's hash>"}`, filled in by Fill in and AudiobookDB's Compare (`AudiobookdbSync.addIds`), kept through the Edit page's edition fields, which show none) and must not be empty (a cover alone is empty). Entries keep only ids, never addresses: `ExternalCatalog` makes the link
 from an id and reads the id out of a pasted address. An edition's `ext` names it
 (`idKeys`, `"asin B0…"` for any site's ASIN; `ids('asin')` gives an ASIN of any site, and only another id under the same key disagrees) and matches books; the ISBN names an edition too (`conflictsWith`: another ISBN is another
 edition) but never matches books. Editions with an ISBN list or an `hcb`, from before, are split and the

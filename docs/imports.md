@@ -46,7 +46,7 @@ longer differs is left alone), checks the result first and changes nothing when 
 A series' or an author's books are compared on their _Edit_ page, with every catalog set up at once (Hardcover,
 AudiobookDB and, for a series, Audible): each catalog's values beside your fields, what its book would add, and
 its books none of yours are, to pick on the page and save with your other changes. See
-[Editing a series](editing-series.md#other-catalogs). Nothing is sent to any catalog from there: putting books on
+[Editing books and series](editing-series.md#other-catalogs). Nothing is sent to any catalog from there: putting books on
 your shelves stays with each catalog's own **Compare** on _Import & export_. Old links to a series' or author's
 comparison on _Import & export_ open their _Edit_ page.
 

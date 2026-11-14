@@ -1,6 +1,6 @@
 // Every external catalog the app reads or writes, by what it does: the export files it imports, the files it
 // writes for another catalog's import, the catalogs whose shelves it compares and sends to, and the catalogs
-// the book form looks books up in. The pages and CatalogLookup go through these lists and the base classes
+// the Edit page looks books up in. The pages and CatalogLookup go through these lists and the base classes
 // alone (FileImporter, FileExporter, ShelfSync, BookSource, CatalogClient), so a catalog is added by writing its
 // classes and listing them here (and its ids in ExternalCatalog, as before).
 import {AudibleImporter} from './audible-importer.js';
@@ -34,7 +34,7 @@ export class CatalogConnectors {
 		Client => Client.KEY_STORAGE,
 	);
 	/**
-	 * The catalogs the book form looks books up in, in the order they are asked: the store's own catalog first
+	 * The catalogs the Edit page looks books up in, in the order they are asked: the store's own catalog first
 	 * for an ASIN (Audible, then AudiobookDB, then Hardcover only when neither has it), Hardcover before Open
 	 * Library for an ISBN, as it knows audiobooks best.
 	 */

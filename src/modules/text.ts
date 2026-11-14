@@ -235,7 +235,7 @@ export class Text {
 	}
 
 	/**
-	 * 642 -> "10h 42m"; the form parseLength() reads back.
+	 * 642 -> "10h 42m"; what parseLength() reads back.
 	 */
 	static formatLength(minutes: number): string {
 		const h = Math.floor(minutes / 60),

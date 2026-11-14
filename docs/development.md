@@ -9,9 +9,11 @@ templates/            the pages' HTML as Liquid templates, which make pages (bui
 src/                  the app's TypeScript, which make pages compiles into public/ (series.ts becomes public/series.js)
   series.ts           Series (index.html): every series, and a series' own page (its books, and its form)
   books.ts            Books: every book, searched, filtered and sorted
-  book.ts             a book's page: everything about it, Read today, Merge, and the book form (also for a new book)
-  combo-box.ts        the book form's search combo boxes: the author, narrator and publisher names the catalog has, as they are typed
+  book.ts             a book's page: everything about it, Read today, Merge, and Edit (the Edit page)
+  combo-box.ts        the Edit page's search combo boxes: the author, series, narrator and publisher names the catalog has, as they are typed
   book-list.ts        what those three share: book cards, covers, the lists grouped by series, the address helpers
+  edit.ts             the Edit page: a series and its books, an author's books, one book or a new one, edited in place,
+                        with what the other catalogs have (edit-catalogs.ts, loaded when asked) and Fill in
   import.ts           export file imports (Audible, Goodreads) and exports (Goodreads), catalogs' shelves (Hardcover, AudiobookDB), Check / Box sets, backups (Export / Restore / Merge)
   duplicates.ts       find and merge books entered twice
   stats.ts            how complete the catalog is: what lacks each value, and ids per external catalog (modules/catalog-stats.ts counts)
@@ -67,7 +69,7 @@ The build is strict, so a misspelled variable fails it. Nothing is rendered in t
 
 ## External catalogs
 
-The pages and the book form's lookup know the external catalogs only through four base classes in `modules/`, and
+The pages and the Edit page's lookup know the external catalogs only through four base classes in `modules/`, and
 the lists of them in `CatalogConnectors` (`catalog-connectors.ts`), so a catalog is added by writing a class for each
 thing it does and listing it there:
 
@@ -76,7 +78,7 @@ thing it does and listing it there:
 | `FileImporter`                       | an export file to import (a CSV)                      | `AudibleImporter`, `GoodreadsImporter`                                                         | `CATALOG`, `LABEL`, `readRow`                    |
 | `FileExporter`                       | a file for another catalog's import                   | `GoodreadsExporter`                                                                            | `CATALOG`, `LABEL`, `FILE_NAME`, `write`         |
 | `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync`, `AudibleSync`                                              | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
-| `BookSource`                         | a catalog the book form's _Fill in_ asks              | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
+| `BookSource`                         | a catalog the Edit page's _Fill in_ asks              | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
 
 A `CatalogClient` subclass asks the catalog's API and says what your key for it is: `KEY_NAME` (Hardcover calls its
 key a token), `KEY_STORAGE` (where this browser keeps it), `KEY_HELP`, whether nothing works without it (`KEY_NEEDED`),

@@ -389,17 +389,6 @@ button:focus {
 .addbtn:hover {
 	background: var(--moss-dark);
 }
-#addForm {
-	display: none;
-	background: var(--card);
-	border: 1px solid var(--line);
-	border-radius: 10px;
-	padding: 1rem;
-	margin-bottom: 1.5rem;
-}
-#addForm.open {
-	display: block;
-}
 /* a search combo box (combo-box.js): the names matching what is typed, in a list over what follows the field */
 .combo {
 	position: relative;
@@ -441,36 +430,6 @@ button:focus {
 .comboList li.active {
 	background: var(--paper);
 	color: var(--moss-dark);
-}
-#results #addForm {
-	margin: 0 0 0.45rem;
-}
-.book.editing {
-	display: none;
-}
-#addForm h3 {
-	margin: 0 0 0.3rem;
-	font-family: 'Lora', Georgia, serif;
-	font-size: 0.98rem;
-	font-weight: 600;
-}
-#addForm label {
-	display: block;
-	font-size: 0.78rem;
-	color: var(--ink-soft);
-	margin: 0.5rem 0 0.2rem;
-}
-#addForm input,
-#addForm textarea {
-	width: 100%;
-	font-family: inherit;
-	resize: vertical;
-	padding: 0.5rem 0.6rem;
-	border: 1px solid var(--line);
-	border-radius: 6px;
-	background: var(--paper);
-	color: var(--ink);
-	font-size: 0.9rem;
 }
 #seriesForm {
 	display: none;
@@ -720,6 +679,7 @@ button:focus {
 	margin: 0.9rem 0 0;
 }
 .book-details .book-actions button,
+.book-details .book-actions a.edit,
 .page-actions button,
 .page-actions a.sedit {
 	padding: 0.35rem 0.9rem;
@@ -731,11 +691,16 @@ button:focus {
 	cursor: pointer;
 }
 .book-details .book-actions button:hover,
+.book-details .book-actions a.edit:hover,
 .page-actions button:hover,
 .page-actions a.sedit:hover,
 .book-details .book-actions button[aria-expanded='true'] {
 	color: var(--moss);
 	border-color: var(--moss);
+}
+.book-details .book-actions a.edit {
+	display: inline-block;
+	text-decoration: none;
 }
 .mergeSearch {
 	margin-top: 0.6rem;
@@ -991,137 +956,6 @@ button:focus {
 	font-weight: 600;
 	margin: 1.5rem 0 0.3rem;
 }
-.editionsEditor {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-}
-.editionCard {
-	border: 1px solid var(--line);
-	border-radius: 8px;
-	padding: 0.5rem 0.65rem 0.65rem;
-	background: var(--paper);
-}
-.editionCardHead {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	font-size: 0.82rem;
-	font-weight: 600;
-}
-.editionAlso {
-	margin: 0.25rem 0 0;
-	font-size: 0.75rem;
-	font-style: italic;
-	color: var(--ink-soft);
-}
-.editionFields {
-	display: grid;
-	grid-template-columns: repeat(6, minmax(0, 1fr));
-	gap: 0 0.5rem;
-}
-.editionFields > div {
-	grid-column: span 2;
-}
-.editionFields > .ef-desc,
-.editionFields > .ef-n {
-	grid-column: span 3;
-}
-/* the title it was released under, and the button that makes it the book's; its links */
-.editionFields > .ef-links,
-.editionFields > .ef-t {
-	grid-column: 1 / -1;
-}
-.ef-titleRow {
-	display: flex;
-	gap: 0.5rem;
-	align-items: center;
-}
-.ef-titleRow input {
-	flex: 1;
-	min-width: 0;
-}
-.useTitle {
-	padding: 0.3rem 0.7rem;
-	border-radius: 6px;
-	border: 1px solid var(--line);
-	cursor: pointer;
-	font-size: 0.8rem;
-	background: var(--paper);
-	color: var(--ink);
-	white-space: nowrap;
-}
-.useTitle:hover {
-	border-color: var(--moss);
-}
-.editionFields > .ef-asin {
-	grid-column: 1 / -1;
-}
-.editionFields > .ef-d,
-.editionFields > .ef-len {
-	grid-column: span 1;
-}
-/* one field per site the edition has an ASIN on, and the list that adds another */
-.asinSites {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-	gap: 0 0.5rem;
-}
-.asinSites label {
-	font-weight: normal;
-}
-#addForm .asinSites select,
-#addForm .ef-more select {
-	width: 100%;
-	padding: 0.5rem 0.6rem;
-	border: 1px solid var(--line);
-	border-radius: 6px;
-	background: var(--card);
-	color: var(--ink-soft);
-	font-family: inherit;
-	font-size: 0.9rem;
-}
-#addForm .editionFields input,
-#addForm .editionFields textarea {
-	background: var(--card);
-}
-.removeEdition,
-.addEdition {
-	padding: 0.3rem 0.7rem;
-	border-radius: 6px;
-	border: 1px solid var(--line);
-	cursor: pointer;
-	font-size: 0.8rem;
-	background: var(--paper);
-	color: var(--ink);
-}
-.removeEdition {
-	padding: 0.2rem 0.55rem;
-	font-weight: normal;
-}
-.addEdition {
-	margin-top: 0.5rem;
-}
-.removeEdition:hover,
-.addEdition:hover {
-	border-color: var(--moss);
-}
-@media (max-width: 600px) {
-	.editionFields {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-	.editionFields > div,
-	.editionFields > .ef-d,
-	.editionFields > .ef-len {
-		grid-column: span 1;
-	}
-	.editionFields > .ef-t,
-	.editionFields > .ef-desc,
-	.editionFields > .ef-n,
-	.editionFields > .ef-asin {
-		grid-column: span 2;
-	}
-}
 .formrow {
 	display: flex;
 	gap: 0.6rem;
@@ -1131,25 +965,6 @@ button:focus {
 }
 .formrow > .narrow {
 	flex: 0 1 9rem;
-}
-/* fields most books leave empty, folded away: the book's ids in other catalogs */
-.moreFields {
-	margin: 0.7rem 0 0.2rem;
-	border: 1px solid var(--line);
-	border-radius: 8px;
-	padding: 0.4rem 0.65rem;
-}
-.moreFields summary {
-	cursor: pointer;
-	font-size: 0.82rem;
-	font-weight: 600;
-	color: var(--ink-soft);
-}
-.moreFields[open] summary {
-	margin-bottom: 0.2rem;
-}
-.moreFields .summaryNote {
-	font-weight: normal;
 }
 .formrow > .formrow-btn {
 	flex: 0 0 auto;
@@ -1501,12 +1316,11 @@ button:focus {
 		justify-content: center;
 	}
 	.book-details .book-actions button,
+	.book-details .book-actions a.edit,
 	.page-actions button,
 	.formbtns .removeBook {
 		min-height: 2.5rem;
 	}
-	.removeEdition,
-	.addEdition,
 	.formrow-btn button {
 		min-height: 2.5rem;
 	}
@@ -1686,6 +1500,11 @@ button:focus {
 	background: var(--paper);
 	color: var(--ink);
 	font: inherit;
+}
+/* + Read today, under a book's dates read */
+.editField .editReadToday {
+	margin-top: 0.3rem;
+	font-size: 0.8rem;
 }
 /* Another id: the catalog of a bare id above the id */
 .editAnotherId select {

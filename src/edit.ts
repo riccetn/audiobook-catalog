@@ -1,18 +1,22 @@
-// The Edit series page (edit.html#series=<id>, or #author=<id> for an author's books): a series and every
-// book in it on one page, each book with its fields and its editions, edited in place. Editions are merged,
-// split and removed here too (a removed one may be excluded from imports, Exclusions.editionEntries). The
+// The Edit page (edit.html#series=<id>; #author=<id> for an author's books; #book=<id> for one book; #add for a
+// new book, with &series=<id> or &author=<name> to start it with): a series and every book in it on one page (or
+// an author's books, or one book), each book with its fields and its editions, edited in place. Editions are
+// merged, split and removed here too (a removed one may be excluded from imports, Exclusions.editionEntries). The
 // other catalogs are asked when the page opens (edit-catalogs.ts, loaded with import()): what they have that
-// differs is shown on each book to pick, with what they would add and the books none of yours are. Nothing is
-// saved until Review & save lists every change and Save is pressed: the books are edited as copies (`DRAFTS`),
-// and Save puts them in the catalog with saveBook(), as the book form does, then adds the new books picked,
-// renames the series and saves its info, as its form did.
+// differs is shown on each book to pick, with what they would add and the books none of yours are. One book also
+// fills in from a catalog's page (Fill in, catalog-lookup.ts, loaded with import()), and is removed here. Nothing
+// is saved until Review & save lists every change and Save is pressed: the books are edited as copies (`DRAFTS`),
+// and Save puts them in the catalog with saveBook(), then adds the new books picked, renames the series and saves
+// its info.
 import {Text} from './modules/text.js';
 import {Book} from './modules/book.js';
 import {Edition} from './modules/edition.js';
 import {Series} from './modules/series.js';
+import {Catalog} from './modules/catalog.js';
 import {Exclusions} from './modules/exclusions.js';
 import {Validator} from './modules/validator.js';
 import {ExternalCatalog} from './modules/external-catalog.js';
+import {CatalogRecords} from './modules/catalog-records.js';
 import {
 	CATALOG,
 	startPage,
@@ -31,6 +35,10 @@ import {
 	fillExternalFields,
 	readExternalFields,
 	lookupHardcoverField,
+	lookupHardcoverBook,
+	keyedClients,
+	savedServer,
+	fetchViaProxy,
 	valueFromPageHash,
 	idFromAddress,
 	bookPageHref,
@@ -39,8 +47,11 @@ import {
 	openWithStatus,
 	hashValue,
 } from './store.js';
-import {coverImage, totalText, setAddress} from './book-list.js';
+import {coverImage, totalText, setAddress, hashParts, hashText} from './book-list.js';
+import {comboField, newNames, refreshNewNotes} from './combo-box.js';
+import type {NewNote} from './combo-box.js';
 import type {Child, FormField} from './store.js';
+import type {NamedKind} from './modules/catalog.js';
 import type {CatalogRun, CatalogChoice} from './edit-catalogs.js';
 import type {CatalogEntry, FieldChoices} from './modules/book-review.js';
 import type {NotAudio} from './modules/shelf-sync.js';
@@ -55,12 +66,16 @@ export type NewPick = {kind: 'fresh' | 'missing'; n: number};
 // the ids a new book's editions have on the page, so a field changed is told from the catalog's; never stored
 const NEW_EDITION = 'new-edition-';
 
-/** What the page edits: a series' books, or an author's. */
-export let KIND: 'series' | 'author' = 'series';
+/** What the page edits: a series' books, an author's, one book, or a new book being added. */
+export let KIND: 'series' | 'author' | 'book' | 'add' = 'series';
 /** The series' id, from the address (null on an author's page). */
 export let SERIES_ID: string | null = null;
 /** The author's id, from the address (null on a series' page). */
 export let AUTHOR_ID: string | null = null;
+/** The book's id, from the address (#book=...), on one book's page. */
+export let BOOK_ID: string | null = null;
+/** What a new book starts with (#add): the id of the series it is added to, and an author's name, or ''. */
+export let ADDING: {series: string; author: string} | null = null;
 /** What the other catalogs said, once asked; null before (or when none can be). */
 export let RUN: CatalogRun | null = null;
 /** Resolves once the other catalogs have been asked (each time the page asks them). */
@@ -81,9 +96,12 @@ export let EXCLUDE: string[] = [];
 // what an edition's Merge, Split or Remove has open: "<book place>:<edition place>:<what>"
 let OPEN_PANEL: string | null = null;
 let REMOVING_SERIES = false; // Remove series was pressed once; the second press removes it
+let REMOVING_BOOK = false; // Remove book was pressed once; the second press removes it
+/** Whether the page edits books of the catalog by themselves (one book, or a new one), not a series' or author's. */
+const oneBook = (): boolean => KIND === 'book' || KIND === 'add';
 
 // The fields of a book the page edits, besides its ids: [key, label]. The series is edited on an author's
-// page; on a series' page it is the series' own name.
+// page and a book's; on a series' page it is the series' own name.
 const BOOK_FIELDS: [string, string][] = [
 	['t', 'Title'],
 	['a', 'Authors'],
@@ -93,7 +111,7 @@ const BOOK_FIELDS: [string, string][] = [
 	['r', 'Read'],
 ];
 /** The book fields with an input on this page. */
-const bookFields = (): [string, string][] => BOOK_FIELDS.filter(([k]) => k !== 's' || KIND === 'author');
+const bookFields = (): [string, string][] => BOOK_FIELDS.filter(([k]) => k !== 's' || KIND !== 'series');
 // The fields of an edition the page edits, besides its ids: [Edition.fields() key, label].
 const EDITION_FIELDS: [string, string][] = [
 	['t', 'Released as'],
@@ -105,6 +123,80 @@ const EDITION_FIELDS: [string, string][] = [
 	['desc', 'Description'],
 	['links', 'Links'],
 ];
+
+// ------------------------------------------------------------------ the names the catalog has
+/** The kinds of name a field offers the catalog's names of as it is typed in (combo-box.ts). */
+type NameKind = 'series' | 'author' | 'narrator' | 'publisher';
+// The names the catalog has for series, authors, narrators and publishers, which the fields offer as they are
+// typed in, and say a name is new when it isn't one of them; read when the page opens, from the series' and
+// contributors' indexes alone.
+export const FORM_NAMES: Record<NameKind, string[]> = {series: [], author: [], narrator: [], publisher: []};
+let FORM_NAMES_READ = false; // whether FORM_NAMES holds the names, so a name not among them is new
+const NOUNS: Record<NameKind, [string, string]> = {
+	series: ['series', 'series'],
+	author: ['author', 'authors'],
+	narrator: ['narrator', 'narrators'],
+	publisher: ['publisher', 'publishers'],
+};
+// The book fields and edition fields that offer names: the kind, and whether they hold several
+const NAME_FIELDS: Record<string, [NameKind, boolean]> = {
+	a: ['author', true],
+	s: ['series', false],
+	n: ['narrator', true],
+	p: ['publisher', true],
+};
+const newNote = (kind: NameKind): NewNote => ({nouns: NOUNS[kind], ready: () => FORM_NAMES_READ});
+
+/** @returns once FORM_NAMES holds the stored names, and the ones this page holds */
+export async function loadFormNames(): Promise<void> {
+	FORM_NAMES_READ = false;
+	refreshNewNotes();
+	const [keys, series] = await queryCatalog(r =>
+		Promise.all([r.keys('contributors', 'kindName'), r.keys('series', 'name')]),
+	);
+	for (const kind of ['author', 'narrator', 'publisher'] as const) {
+		const stored = keys.filter(k => Array.isArray(k) && k[0] === kind).map(k => String((k as IDBValidKey[])[1]));
+		FORM_NAMES[kind] = [...new Set([...stored, ...CATALOG.namesOf(`${kind}s`)])];
+	}
+	FORM_NAMES.series = [...new Set([...series.map(k => String(k)), ...CATALOG.namesOf('series')])];
+	FORM_NAMES_READ = true;
+	refreshNewNotes();
+}
+
+/** The publishers the catalog has, which the fields keep whole though a name holds a comma. */
+function knownPublishers(): string[] {
+	return [...FORM_NAMES.publisher, ...CATALOG.namesOf('publishers')];
+}
+
+/** Publishers typed in a field: only commas part them, but a publisher the catalog has stays whole. */
+function splitPublishers(text: unknown): string[] {
+	return Text.splitPublishers(text, knownPublishers());
+}
+
+/** What saving `b` adds to the catalog: the names on it the catalog doesn't have yet, as "the author X". */
+function newEntries(b: Book): string[] {
+	if (!FORM_NAMES_READ) return [];
+	const kinds: [NameKind, NamedKind][] = [
+		['series', 'series'],
+		['author', 'authors'],
+		['narrator', 'narrators'],
+		['publisher', 'publishers'],
+	];
+	return kinds.flatMap(([kind, named]) =>
+		newNames(
+			FORM_NAMES[kind],
+			Catalog.namesOn(named)(b).join(', '),
+			true,
+			kind === 'publisher' ? splitPublishers : Text.splitNames,
+		).map(name => `the ${NOUNS[kind][0]} ${name}`),
+	);
+}
+
+/** Today in the viewer's time zone, as YYYY-MM-DD. */
+export function today(): string {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // ------------------------------------------------------------------ what a book and an edition show
 /**
@@ -160,7 +252,8 @@ function editionBefore(d: Draft, ed: Edition): Edition | null {
 // ------------------------------------------------------------------ drawing
 /**
  * A labeled input, marked when it differs from the book as loaded, with the other catalogs' values for it
- * (`choices`) to fill it in with.
+ * (`choices`) to fill it in with. With `names` (a key of NAME_FIELDS), it offers the catalog's names as they
+ * are typed, and says which are new; `extra` follows the input (a button of its own).
  */
 function field(
 	id: string,
@@ -169,17 +262,52 @@ function field(
 	was: string,
 	attrs: Record<string, any> = {},
 	choices: FieldChoices[] = [],
+	{names, extra = []}: {names?: string; extra?: HTMLElement[]} = {},
 ): HTMLElement {
 	// links one per line
 	const input = buildElement(attrs['data-key'] === 'links' ? 'textarea' : 'input', {id, ...attrs});
 	(input as HTMLInputElement).value = value;
-	const onchange = attrs.onchange as (() => void) | undefined;
+	const onchange = (attrs.onchange as (() => void) | undefined) || (() => {});
+	const named = names === undefined ? undefined : NAME_FIELDS[names];
 	return buildElement(
 		'div',
 		{class: value === was ? 'editField' : 'editField changed'},
 		buildElement('label', {for: id}, spell(label)),
-		input,
-		...choiceChips(id, value, choices, onchange || (() => {})),
+		named
+			? comboField(input as HTMLInputElement, {
+					names: () => FORM_NAMES[named[0]],
+					multiple: named[1],
+					// "&" and "and" are part of many a publisher's name, so only commas part them
+					split: named[0] === 'publisher' ? splitPublishers : undefined,
+					newNote: newNote(named[0]),
+					// a name picked is read as if typed
+					onPick: onchange,
+				})
+			: input,
+		...extra,
+		...choiceChips(id, value, choices, onchange),
+	);
+}
+
+/** + Read today beside a book's dates read: today's date added to the field, which is then read. */
+function readTodayButton(input: string, onchange: () => void): HTMLElement {
+	return buttonFor(
+		'+ Read today',
+		() => {
+			const field = fieldById(input);
+			const now = field.value.trim();
+			if (
+				now
+					.split(/[,;]/)
+					.map(x => x.trim())
+					.includes(today())
+			)
+				return;
+			field.value = now ? now.replace(/[,;\s]*$/, '') + ', ' + today() : today();
+			onchange();
+		},
+		input + '-today',
+		'editReadToday',
 	);
 }
 
@@ -240,19 +368,24 @@ function bookCard(d: Draft, i: number): HTMLElement {
 	const b = d.book;
 	const changed = b.text() !== d.before.text();
 	const cover = coverImage(b, 'small');
+	const onchange = () => readBookFields(i);
 	const fields = bookFields().map(([k, label]) =>
 		field(
 			inputId(i, null, k),
 			label,
 			bookFieldText(b, k),
 			bookFieldText(d.before, k),
-			{'data-book': String(i), onchange: () => readBookFields(i)},
+			{'data-book': String(i), onchange},
 			choicesFor(d, null, null, k),
+			{
+				...(k in NAME_FIELDS ? {names: k} : {}),
+				...(k === 'r' ? {extra: [readTodayButton(inputId(i, null, k), onchange)]} : {}),
+			},
 		),
 	);
 	const ids = buildElement(
 		'div',
-		{class: 'formrow extFields', id: inputId(i, null, 'ext'), onchange: () => readBookFields(i)},
+		{class: 'formrow extFields', id: inputId(i, null, 'ext'), onchange: () => readBookIds(i)},
 		...externalFields(inputId(i, null, 'ext_'), 'book'),
 	);
 	// a catalog's page typed among the links goes to its id field
@@ -277,7 +410,11 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			buildElement(
 				'span',
 				{class: 'editBookHead'},
-				buildElement('span', {class: 'editBookTitle'}, (b.number ? b.number + ' · ' : '') + b.title),
+				buildElement(
+					'span',
+					{class: 'editBookTitle'},
+					(b.number ? b.number + ' · ' : '') + (b.title || spell('A new book')),
+				),
 				buildElement(
 					'span',
 					{class: 'editBookMeta'},
@@ -298,7 +435,7 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			buildElement(
 				'p',
 				{class: 'editBookLinks'},
-				...(d.added ? [] : [buildElement('a', {href: bookPageHref(d.id)}, "The book's page")]),
+				...(d.added || !d.id ? [] : [buildElement('a', {href: bookPageHref(d.id)}, "The book's page")]),
 				...catalogLinks(d),
 			),
 			buildElement('div', {class: 'editFields'}, ...fields),
@@ -347,6 +484,7 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 						: {}),
 				},
 				choicesFor(d, ed, j, k),
+				k === 'n' || k === 'p' ? {names: k} : {},
 			),
 		),
 		...ext.map(k =>
@@ -368,6 +506,10 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 		buildElement(
 			'div',
 			{class: 'formbtns'},
+			// the title it was released under made the book's (the others keep theirs, Book.useTitle)
+			...(ed.title && !Book.sameTitle(ed.title, d.book.title)
+				? [buttonFor("Use as the book's title", () => useEditionTitle(i, j), `book-${i}-ed-${j}-use-title`)]
+				: []),
 			...(d.book.editions.length > 1
 				? [buttonFor('Merge with…', () => openPanel(i, j, 'merge'), `book-${i}-ed-${j}-merge`)]
 				: []),
@@ -431,7 +573,12 @@ function buttonFor(label: string, onclick: () => void, id: string, cls: string =
 function sharedWith(d: Draft, ed: Edition): string {
 	// (a new book's editions are its own copies until it is added)
 	if (d.added) return '';
-	const others = DRAFTS.filter(x => x !== d && !x.added && x.book.editions.some(y => y.sameAs(ed))).map(x => x.book);
+	const drafted = new Set(DRAFTS.map(x => x.id));
+	const others = [
+		...DRAFTS.filter(x => x !== d && !x.added && x.book.editions.some(y => y.sameAs(ed))).map(x => x.book),
+		// the box set's other books not on the page (one book's), which the page loaded with it
+		...CATALOG.books.filter(b => !drafted.has(b.id as string) && b.editions.some(y => y.sameAs(ed))),
+	];
 	if (!others.length) return '';
 	return `Also on ${others.map(b => b.title).join(', ')}: a change here changes it there too.`;
 }
@@ -1079,7 +1226,8 @@ const newTag = () => buildElement('span', {class: 'editNewTag'}, spell('Not in y
  */
 function newCards(): {book: Book; card: HTMLElement}[] {
 	const run = RUN;
-	if (!run) return [];
+	// one book's page adds no others
+	if (!run || oneBook()) return [];
 	const name = KIND === 'series' ? shownName() : undefined;
 	return [
 		...run.review.fresh.map((book, n) => {
@@ -1186,10 +1334,10 @@ function newCards(): {book: Book; card: HTMLElement}[] {
  */
 export function askCatalogs(): Promise<void> {
 	ASKING = (async () => {
-		const name = shownName();
-		if (name === undefined) return;
+		const part = comparedPart();
+		if (part === undefined) return;
 		const catalogs = await import('./edit-catalogs.js');
-		const choices = catalogs.catalogChoices(KIND);
+		const choices = catalogs.catalogChoices(part.kind);
 		drawCatalogPicks(choices, catalogs.setSkipped);
 		const asked = choices.filter(c => !c.cantAsk && !c.skipped);
 		if (!asked.length) {
@@ -1214,8 +1362,8 @@ export function askCatalogs(): Promise<void> {
 		}
 		await wholeCatalog();
 		RUN = await catalogs.runCatalogs(
-			KIND,
-			name,
+			part.kind,
+			part.name,
 			DRAFTS.filter(d => !d.added).map(d => d.id),
 		);
 		FRESH_PICKS = new Map();
@@ -1290,9 +1438,46 @@ function showChangeCount() {
 }
 
 // ------------------------------------------------------------------ reading what is typed
+/** The Hardcover books being looked up, by the place of the book they are for: Review & save waits for them. */
+const HARDCOVER_LOOKUPS: Map<number, Promise<void>> = new Map();
+
+/**
+ * Read a book's ids: the address of a Hardcover book's page (or of one of its editions'), which holds no id, is
+ * looked up on Hardcover for the book's id first, which then takes its place.
+ */
+export async function readBookIds(i: number): Promise<void> {
+	const input = document.getElementById(inputId(i, null, 'ext_') + 'hardcover') as HTMLInputElement | null;
+	const text = input ? Text.tidy(input.value) : '';
+	if (!input || !/hardcover\.app\//i.test(text) || ExternalCatalog.readId(text, 'book', 'hardcover'))
+		return readBookFields(i);
+	// declared first, as its own finally compares with it (which runs after an await, once it is assigned)
+	let lookup: Promise<void> | null = null;
+	lookup = (async () => {
+		try {
+			const found = await lookupHardcoverBook(text);
+			if (Text.tidy(input.value) === text) input.value = found.id;
+			if (found.title) showIoStatus(`Found on Hardcover: ${found.title} (book ${found.id}).`);
+			readBookFields(i);
+		} catch (err) {
+			readBookFields(i);
+			const d = DRAFTS[i];
+			if (!d) return;
+			d.error =
+				`Couldn't find the Hardcover book: ${Text.errorText(err)}. ` +
+				'Paste the address of its page, or of one of its editions, on hardcover.app, or the number in hardcover.app/id/book/12345.';
+			byId(`book-${i}-error`).textContent = d.error;
+		} finally {
+			if (HARDCOVER_LOOKUPS.get(i) === lookup) HARDCOVER_LOOKUPS.delete(i);
+		}
+	})();
+	HARDCOVER_LOOKUPS.set(i, lookup);
+	return lookup;
+}
+
 /**
  * Read a book's fields into its draft; a field that can't be read is named on the book, and leaves the
- * draft as it was.
+ * draft as it was. A book without a title or an author says so, but what is typed is read (a new book's
+ * Fill in looks it up by its authors before it has a title).
  */
 export function readBookFields(i: number) {
 	const d = DRAFTS[i];
@@ -1302,17 +1487,18 @@ export function readBookFields(i: number) {
 	const authors = Text.splitNames(value('a'));
 	if (!title) problems.push('A book needs a title.');
 	if (!authors.length) problems.push('A book needs an author.');
+	const needs = problems.length;
 	const {dates, bad} = Text.parseDates(value('r'));
 	if (bad.length) problems.push(`Not a date: ${bad.join(', ')}. Use YYYY-MM-DD, or YYYY-MM / YYYY.`);
 	const external = readExternalFields(inputId(i, null, 'ext_'), 'book', d.book.external);
 	if (external.bad.length) problems.push(`Not a book's id or address there: ${external.bad.join('; ')}.`);
 	d.error = problems.join(' ');
 	byId(`book-${i}-error`).textContent = d.error;
-	if (problems.length) return showChangeCount();
+	if (problems.length > needs) return showChangeCount();
 	const b = d.book;
 	b.title = title;
 	b.authors = authors;
-	if (KIND === 'author') b.series = Text.tidy(value('s')) || undefined;
+	if (KIND !== 'series') b.series = Text.tidy(value('s')) || undefined;
 	const number = Text.tidy(value('sn'));
 	b.number = number || undefined;
 	b.genres = value('g')
@@ -1388,7 +1574,7 @@ export function readEditionFields(i: number, j: number) {
 		else problems.push(`Not an edition's address: ${text}. For a bare id, pick its catalog.`);
 	}
 	// a publisher the edition or the catalog has stays whole, though its name holds a comma
-	const read = Edition.fromFields(typed, [...ed.publishers, ...CATALOG.namesOf('publishers')]);
+	const read = Edition.fromFields(typed, [...ed.publishers, ...knownPublishers()]);
 	if (read.bad.length) problems.push(`Not understood: ${read.bad.join('; ')}.`);
 	if (!problems.length && !read.editions.length)
 		problems.push('An edition needs something, such as an id or a narrator. To take it off, press Remove edition.');
@@ -1410,7 +1596,10 @@ export function readEditionFields(i: number, j: number) {
 	const shown = Object.fromEntries(
 		[...card.querySelectorAll('[data-key]')].map(el => [el.getAttribute('data-key'), 'x']),
 	) as Record<string, string>;
-	if (more.length || typed.more || idKeys(first.fields()) !== idKeys(shown)) renderBook(i);
+	// (and an id field that held an address shows the id)
+	const read_ = first.fields();
+	const addressed = Object.keys(typed).some(k => k.startsWith('ext:') && Text.tidy(typed[k]) !== (read_[k] || ''));
+	if (more.length || typed.more || addressed || idKeys(read_) !== idKeys(shown)) renderBook(i);
 	else {
 		fillElement(card.querySelector('summary') as HTMLElement, ...editionSummary(d, first));
 		markFields(i);
@@ -1474,6 +1663,19 @@ export function removeEdition(i: number, j: number) {
 	const ed = DRAFTS[i].book.removeEdition(j);
 	if (box && box.checked) EXCLUDE = [...new Set([...EXCLUDE, ...Exclusions.editionEntries(ed)])];
 	OPEN_PANEL = null;
+	renderBook(i);
+}
+
+/**
+ * Use as the book's title: the title edition `j` was released under made the book's, and the book's before
+ * given to its other editions without one of their own, so each keeps the title it was released under (a box
+ * set's edition keeps the set's).
+ */
+export function useEditionTitle(i: number, j: number) {
+	const d = DRAFTS[i];
+	const title = d && d.book.editions[j] ? d.book.editions[j].title : undefined;
+	if (!title) return;
+	d.book.useTitle(title, ed => sharedWith(d, ed) !== '');
 	renderBook(i);
 }
 
@@ -1544,7 +1746,9 @@ export function changes(): [string, string][] {
 	const name = SERIES_ID === null ? undefined : CATALOG.nameOf('series', SERIES_ID);
 	if (name !== undefined) for (const line of seriesChanges(name)) out.push([name, line]);
 	for (const d of DRAFTS)
-		if (!d.added) for (const line of bookChanges(d.before, d.book, EXCLUDE)) out.push([d.book.title, line]);
+		if (!d.added)
+			for (const line of bookChanges(d.before, d.book, EXCLUDE))
+				out.push([d.id ? d.book.title : spell('New book'), line]);
 	const run = RUN;
 	if (run) {
 		// a new book, then what was changed on it before it is added
@@ -1567,15 +1771,38 @@ export function changes(): [string, string][] {
 	return out;
 }
 
-/** The name of the series or author whose books are shown; undefined when there is none. */
+/**
+ * The name of the series or author whose books are shown, or the book's title (a new book's, '' until it has
+ * one); undefined when there is none.
+ */
 function shownName(): string | undefined {
 	if (KIND === 'author') return AUTHOR_ID === null ? undefined : CATALOG.nameOf('authors', AUTHOR_ID);
+	if (KIND === 'book') return CATALOG.book(BOOK_ID)?.title;
+	if (KIND === 'add') return DRAFTS.length ? DRAFTS[0].book.title : undefined;
 	return SERIES_ID === null ? undefined : CATALOG.nameOf('series', SERIES_ID);
 }
 
-/** The page the Edit page came from: the series', or the author's. */
+/**
+ * What the other catalogs are asked for: the series or the author shown, or one book's series (else its first
+ * author), whose books they compare; undefined for a new book, which no catalog has yet.
+ */
+function comparedPart(): {kind: 'series' | 'author'; name: string} | undefined {
+	if (KIND === 'add') return undefined;
+	if (KIND === 'book') {
+		const b = CATALOG.book(BOOK_ID);
+		if (!b) return undefined;
+		if (b.series) return {kind: 'series', name: b.series};
+		return b.authors.length ? {kind: 'author', name: b.authors[0]} : undefined;
+	}
+	const name = shownName();
+	return name === undefined ? undefined : {kind: KIND, name};
+}
+
+/** The page the Edit page came from: the series', the author's, the book's, or (adding one) its series' or Books. */
 function returnHref(): string | null {
 	if (KIND === 'author') return AUTHOR_ID === null ? null : creditPageHref('authors', AUTHOR_ID);
+	if (KIND === 'book') return BOOK_ID === null ? null : bookPageHref(BOOK_ID);
+	if (KIND === 'add') return ADDING && ADDING.series ? seriesPageHref(ADDING.series) : 'books.html';
 	return SERIES_ID === null ? null : seriesPageHref(SERIES_ID);
 }
 
@@ -1650,6 +1877,11 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 
 /** The problems that stop a book from being saved, as Check finds them on its editions. */
 function bookProblems(b: Book): string[] {
+	const needs = [
+		...(b.title ? [] : ['A book needs a title.']),
+		...(b.authors.length ? [] : ['A book needs an author.']),
+	];
+	if (needs.length) return needs;
 	if (b.editions.some(ed => !ed.format())) return ['An edition is empty: fill it in, or remove it.'];
 	const editions = b.editions.length ? {e: JSON.parse(JSON.stringify(b.editions))} : {}; // a book may have none
 	return Validator.validate([{t: b.title, a: b.authors, ...editions}], {}).errors.map(e =>
@@ -1662,6 +1894,7 @@ function bookProblems(b: Book): string[] {
 export async function review() {
 	const panel = byId('reviewPanel');
 	setReviewing(false);
+	await Promise.all(HARDCOVER_LOOKUPS.values());
 	const unread = unreadField();
 	if (unread) return showProblem(unread, 'Some fields are not understood: they are marked on their books.');
 	for (const [i, d] of DRAFTS.entries()) {
@@ -1702,7 +1935,7 @@ export async function review() {
  */
 function setReviewing(open: boolean) {
 	byId('reviewPanel').classList.toggle('open', open);
-	for (const part of ['seriesPanel', 'catalogPanel', 'editBooks', 'saveBar']) {
+	for (const part of ['seriesPanel', 'bookPanel', 'catalogPanel', 'editBooks', 'saveBar']) {
 		if (open) byId(part).setAttribute('inert', '');
 		else byId(part).removeAttribute('inert');
 	}
@@ -1729,6 +1962,8 @@ function showProblem(at: HTMLElement, status?: string) {
 /** Save: the books, the exclusions, then the series' rename and info. */
 export async function save() {
 	setReviewing(false);
+	await Promise.all(HARDCOVER_LOOKUPS.values());
+	if (KIND === 'add') return saveNew();
 	const series = KIND === 'series' ? await readSeriesPanel() : null;
 	const name = shownName();
 	if ((KIND === 'series' && !series) || name === undefined) return;
@@ -1739,6 +1974,9 @@ export async function save() {
 	if (keys.length) await loadRecords({editionKeys: keys});
 	let saved = 0,
 		others = 0;
+	const news = [
+		...new Set(DRAFTS.filter(d => d.added || d.book.text() !== d.before.text()).flatMap(d => newEntries(d.book))),
+	];
 	for (const d of DRAFTS) {
 		if (d.added || d.book.text() === d.before.text()) continue;
 		if (!CATALOG.book(d.id)) continue; // removed in another tab meanwhile
@@ -1779,7 +2017,7 @@ export async function save() {
 	if (!(await persist())) return;
 	parts.push(
 		...[
-			saved ? `saved ${Text.plural(saved, 'book')}` : '',
+			saved ? (KIND === 'book' ? `saved ${name}` : `saved ${Text.plural(saved, 'book')}`) : '',
 			others ? `updated the shared edition on ${Text.plural(others, 'other book')}` : '',
 			added ? `added ${Text.plural(added, 'book')}` : '',
 			excluded ? `kept ${Text.plural(excluded, 'edition id')} out of imports` : '',
@@ -1794,13 +2032,46 @@ export async function save() {
 	const status =
 		(parts.length
 			? parts.join(', ').replace(/^./, c => c.toUpperCase()) + '.'
-			: `Saved ${series ? series.newName : name}.`) + (series && series.note ? ' ' + series.note : '');
+			: `Saved ${series ? series.newName : name}.`) +
+		(series && series.note ? ' ' + series.note : '') +
+		(news.length ? ` New in the catalog: ${news.join(', ')}.` : '');
 	showIoStatus(status);
 	const back = returnHref();
 	if (back) openWithStatus(back, status);
 }
 
-/** Discard: nothing is saved, and the series' (or author's) page opens again. */
+/**
+ * Save a new book: it is added to the catalog (with saveBook(), so a box set's edition typed on it fills in
+ * from its other books, and changes there too), and its page opens. The page edits it from then on, so a save
+ * refused leaves it to save again, not to add twice.
+ */
+async function saveNew() {
+	const d = DRAFTS[0];
+	if (KIND !== 'add' || !d) return;
+	const book = d.book.clone();
+	book.id = undefined;
+	const keys = [...new Set(book.editions.flatMap(ed => ed.idAndIsbnKeys()))];
+	if (keys.length) await loadRecords({editionKeys: keys});
+	const news = newEntries(book);
+	const others = CATALOG.saveBook(null, book);
+	// saveBook gave it its id
+	const id = String(book.id);
+	KIND = 'book';
+	BOOK_ID = id;
+	d.id = id;
+	d.book = book.clone();
+	d.before = book.clone();
+	setAddress('replace', '#book=' + hashValue(id));
+	if (!(await persist())) return render();
+	const status =
+		`Added ${book.title}.` +
+		(others ? ` Also updated the shared edition on ${Text.plural(others, 'other book')}.` : '') +
+		(news.length ? ` New in the catalog: ${news.join(', ')}.` : '');
+	showIoStatus(status);
+	openWithStatus(bookPageHref(id), status);
+}
+
+/** Discard: nothing is saved, and the series' (or author's, or book's) page opens again. */
 function discard() {
 	const back = returnHref();
 	if (back === null) return;
@@ -1833,16 +2104,179 @@ async function removeSeries() {
 	if (await persist()) location.replace('index.html');
 }
 
+/**
+ * Remove book: the first press says what it does, the second takes the book out of the catalog and adds it to
+ * the exclusions, so imports skip it, then goes to its series' page (or to Books).
+ */
+async function removeBook() {
+	const id = BOOK_ID;
+	const b = KIND === 'book' && id !== null ? CATALOG.book(id) : undefined;
+	if (id === null || !b) return;
+	if (!REMOVING_BOOK) {
+		REMOVING_BOOK = true;
+		byId('bookFormError').textContent =
+			`This takes ${b.title} out of the catalog, and imports will skip it` +
+			(changes().length ? ' (your changes here are dropped)' : '') +
+			'. Press Remove book again to do it.';
+		return;
+	}
+	const series = b.series ? CATALOG.nameIds.series.get(b.series) : undefined;
+	// a box set's edition is on its titles too (loaded with it), and its title is the set's (Book.alternativeTitles)
+	const shared = Book.sharedEditionTest(CATALOG.books);
+	const [removed] = CATALOG.books.splice(
+		CATALOG.books.findIndex(x => x.id === id),
+		1,
+	);
+	CATALOG.addExclusions(removed.exclusionEntries(shared)); // so the next import does not bring it back
+	if (!(await persist())) return;
+	openWithStatus(
+		series === undefined ? 'books.html' : seriesPageHref(series),
+		`Removed ${removed.title}; imports will skip it.`,
+	);
+}
+
+// ------------------------------------------------------------------ Fill in from another catalog
+// One book's Fill in: the book a pasted address, id or ISBN names (or a title typed, found on AudiobookDB),
+// looked up in the catalogs a page may read (catalog-lookup.ts), fills in the book's empty fields only, so
+// nothing typed is lost. The lookup and the catalogs it asks are loaded only when it is used.
+let FILLING: string | null = null; // what is being looked up, so pressing again doesn't ask twice
+
+/** Fill in: look up what is typed in its field, and fill the book's gaps from it. */
+export async function fillFromCatalog() {
+	const field = fieldById('fillFrom'),
+		text = field.value.trim();
+	const d = DRAFTS[0];
+	if (!text || FILLING === text || !oneBook() || !d) return;
+	FILLING = text;
+	showIoStatus('Looking it up…');
+	try {
+		const [{CatalogLookup}, {CatalogConnectors}] = await Promise.all([
+			import('./modules/catalog-lookup.js'),
+			import('./modules/catalog-connectors.js'),
+		]);
+		const server = savedServer();
+		const found = await new CatalogLookup(
+			url => fetch(url),
+			keyedClients(CatalogConnectors.CLIENTS),
+			server ? route => fetchViaProxy(route, server) : null,
+		).find(text, d.book.authors);
+		// the page started again meanwhile (another tab's save)
+		if (DRAFTS[0] !== d) return;
+		const filled = fillBook(d, found.book);
+		byId('bookFormError').textContent = '';
+		const from = found.sources.join(' and ');
+		const notes = found.notes.length ? ` (${found.notes.join('; ')}.)` : '';
+		showIoStatus(
+			spell(
+				filled.length
+					? `Filled in from ${from}: ${filled.join(', ')}.${notes}`
+					: `Found on ${from}, but the book already has all it gives.${notes}`,
+			),
+		);
+		if (field.value.trim() === text) field.value = '';
+		if (!filled.length) return;
+		renderBook(0);
+		// read again as drawn, so what it said the book lacked goes
+		readBookFields(0);
+	} catch (err) {
+		showIoStatus('');
+		byId('bookFormError').textContent = `Couldn't fill in the book: ${Text.errorText(err)}.`;
+	} finally {
+		if (FILLING === text) FILLING = null;
+	}
+}
+
+/** Put what a catalog has for a book in the draft's gaps; returns what was filled in ("title", "an edition"). */
+function fillBook(d: Draft, from: Book): string[] {
+	const b = d.book.clone();
+	const filled: string[] = [];
+	if (!b.title && from.title) {
+		b.title = from.title;
+		filled.push('title');
+	}
+	if (!b.authors.length && from.authors.length) {
+		b.authors = [...from.authors];
+		filled.push('authors');
+	}
+	// the number only goes with its own series
+	if (!b.series && from.series) {
+		b.series = from.series;
+		filled.push('series');
+	}
+	if (b.series === from.series && !b.number && from.number) {
+		b.number = from.number;
+		filled.push('number in the series');
+	}
+	if (!b.genres.length && from.genres.length) {
+		b.genres = [...from.genres];
+		filled.push('genres');
+	}
+	const ids = Object.entries(from.external).filter(([key]) => !b.external[key]);
+	if (ids.length) {
+		b.external = {...b.external, ...Object.fromEntries(ids)};
+		filled.push(ids.length === 1 ? "the book's id in another catalog" : "the book's ids in other catalogs");
+	}
+	const [ed] = from.editions;
+	if (ed && fillEdition(b, ed)) filled.push('an edition');
+	d.book = b;
+	return filled;
+}
+
+/**
+ * Put an edition in a book: in the gaps of the edition that is the same (it shares an id with it, an ASIN on any
+ * site, or its ISBN), else of the first one whose fields it fills without changing any, else as an edition of its
+ * own. Returns whether anything was filled in.
+ */
+function fillEdition(b: Book, ed: Edition): boolean {
+	const fields = ed.fields();
+	// the title it was released under is no title of its own when it is the book's
+	if (fields.t && Book.sameTitle(fields.t, b.title)) delete fields.t;
+	const has = (card: Record<string, string>, k: string) => Text.tidy(card[k] || '');
+	const at = [
+		b.editions.findIndex(x => x.sharesId(ed)),
+		b.editions.findIndex(x => x.sameAs(ed)),
+		b.editions.findIndex(x => {
+			const mine = x.fields();
+			return Object.entries(fields).every(([k, v]) => !has(mine, k) || has(mine, k) === Text.tidy(v));
+		}),
+	].find(j => j >= 0);
+	const mine = at === undefined ? {} : b.editions[at].fields();
+	let gained = false;
+	for (const [k, v] of Object.entries(fields))
+		if (v && !has(mine, k)) {
+			mine[k] = v;
+			gained = true;
+		}
+	if (!gained) return false;
+	const [first, ...more] = Edition.fromFields(mine, knownPublishers()).editions;
+	if (!first) return false;
+	if (at === undefined) {
+		b.editions = [...b.editions, first, ...more];
+		return true;
+	}
+	first.id = b.editions[at].id;
+	b.editions = [...b.editions.slice(0, at), first, ...more, ...b.editions.slice(at + 1)];
+	return true;
+}
+
 // ------------------------------------------------------------------ loading
+/** Mark the nav bar's link to the list the page edits from as current: Books for a book, Authors for an author's. */
+function markNav(href: string) {
+	for (const link of document.querySelectorAll('nav.pages a'))
+		link.classList.toggle('current', link.getAttribute('href') === href);
+}
+
 /** Load the series' or the author's books, and draw them as stored. */
 export async function loadShown() {
 	if (KIND === 'author') await loadAuthor();
+	else if (KIND === 'book') await loadBook();
+	else if (KIND === 'add') await loadNew();
 	else await loadSeries();
 }
 
 /** The order of the books shown: by series number (an author's by series first, then number). */
 function bookOrder(x: Book, y: Book): number {
-	if (KIND === 'series') return Book.bySeriesNumber(x, y);
+	if (KIND !== 'author') return Book.bySeriesNumber(x, y);
 	return (
 		(x.series || '\uffff').localeCompare(y.series || '\uffff') ||
 		Book.bySeriesNumber(x, y) ||
@@ -1912,6 +2346,60 @@ export async function loadAuthor() {
 	startDrafts(CATALOG.booksOf('authors', id).slice().sort(bookOrder));
 }
 
+/**
+ * Load the book, and the other books its editions are on (a box set's, which a change to the edition changes
+ * too), and draw it as stored.
+ */
+export async function loadBook() {
+	const id = BOOK_ID;
+	if (id === null) return;
+	await loadRecords({books: [id]});
+	const had = CATALOG.book(id);
+	const keys = had ? [...new Set(had.editions.flatMap(ed => ed.idAndIsbnKeys()))] : [];
+	if (keys.length) await loadRecords({editionKeys: keys});
+	const b = CATALOG.book(id);
+	if (!b) {
+		byId('subtitle').textContent = spell('There is no such book in the catalog.');
+		byId('bookPanel').hidden = true;
+		DRAFTS = [];
+		render();
+		return;
+	}
+	document.title = `Edit ${b.title}` + spell(' · Audiobook Catalog');
+	byId('subtitle').textContent = b.title;
+	byId('backLink').setAttribute('href', bookPageHref(id));
+	byId('backLink').textContent = '← ' + b.title;
+	byId('bookFormError').textContent = '';
+	REMOVING_BOOK = false;
+	startDrafts([b]);
+}
+
+/**
+ * Start a new book, with what the address says: in the series named, by the author named, else by the authors
+ * every book of the series has (its co-authors on some books left out).
+ */
+export async function loadNew() {
+	const start = ADDING || {series: '', author: ''};
+	if (start.series) await loadRecords({seriesBooks: [start.series], series: [start.series]});
+	const series = start.series ? CATALOG.nameOf('series', start.series) || '' : '';
+	const books = series ? CATALOG.books.filter(b => b.series === series) : [];
+	const authors = start.author
+		? [start.author]
+		: books.length
+			? books[0].authors.filter(a => books.every(b => b.authors.includes(a)))
+			: [];
+	document.title = 'Add a book' + spell(' · Audiobook Catalog');
+	byId('subtitle').textContent = 'A new book';
+	byId('backLink').setAttribute('href', returnHref() || 'books.html');
+	byId('backLink').textContent = series ? '← ' + series : '← All books';
+	byId('bookFormError').textContent = '';
+	startDrafts([]);
+	const book = new Book({title: '', authors});
+	if (series) book.series = series;
+	DRAFTS = [{id: '', before: new Book({title: '', authors: []}), book, error: ''}];
+	render();
+}
+
 for (const field of ['sf_name', 'sf_total', 'sf_status', 'sf_note'])
 	byId(field).addEventListener('change', showChangeCount);
 fillElement(byId('sf_ext'), ...externalFields('sf_ext_', 'series'));
@@ -1924,6 +2412,14 @@ fillElement(
 	}),
 );
 byId('seriesRemoveBtn').addEventListener('click', removeSeries);
+byId('bookRemoveBtn').addEventListener('click', removeBook);
+byId('fillFromBtn').addEventListener('click', () => void fillFromCatalog());
+// Enter looks it up
+byId('fillFrom').addEventListener('keydown', e => {
+	if ((e as KeyboardEvent).key !== 'Enter') return;
+	e.preventDefault();
+	void fillFromCatalog();
+});
 byId('reviewBtn').addEventListener('click', review);
 byId('reviewSaveBtn').addEventListener('click', save);
 byId('reviewBackBtn').addEventListener('click', () => setReviewing(false));
@@ -1938,8 +2434,38 @@ function refresh() {
 export const READY = startPage(
 	async () => {
 		const author = valueFromPageHash(location.hash, 'author');
-		if (author !== null) {
+		const book = valueFromPageHash(location.hash, 'book');
+		const parts = hashParts(location.hash);
+		if (parts.has('add') || book !== null) {
+			KIND = parts.has('add') ? 'add' : 'book';
+			markNav('books.html');
+			byId('seriesPanel').hidden = true;
+			byId('bookPanel').hidden = false;
+			byId('eyebrow').textContent = KIND === 'add' ? 'Add a book' : 'Edit book';
+			byId('editBooksHead').hidden = true;
+			if (KIND === 'add') {
+				ADDING = {series: hashText(parts, 'series'), author: hashText(parts, 'author')};
+				byId('catalogPanel').hidden = true;
+				byId('bookRemoveBtn').hidden = true;
+			} else {
+				const asked = book as string;
+				// by its id, or by its title from an older link
+				BOOK_ID = await queryCatalog(async r => {
+					if (await r.count('books', undefined, asked)) return asked;
+					const found = await r.under('books', 'byTitle', [CatalogRecords.sortKey(asked)]);
+					const titled = found.find(b => b.title === asked);
+					return titled ? (titled.id as string) : null;
+				});
+				if (BOOK_ID === null) {
+					byId('subtitle').textContent = spell('There is no such book in the catalog.');
+					byId('bookPanel').hidden = true;
+					return;
+				}
+				if (BOOK_ID !== asked) setAddress('replace', '#book=' + hashValue(BOOK_ID));
+			}
+		} else if (author !== null) {
 			KIND = 'author';
+			markNav('authors.html');
 			byId('seriesPanel').hidden = true;
 			byId('eyebrow').textContent = spell("Edit an author's books");
 			// by its id, or by name from an older link
@@ -1963,6 +2489,7 @@ export const READY = startPage(
 			}
 		}
 		await loadShown();
+		void loadFormNames();
 		void askCatalogs();
 	},
 	{refresh},
