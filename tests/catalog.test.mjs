@@ -351,6 +351,40 @@ test('series names: spelling variants are one series, different series stay apar
 	assert.notEqual(Series.norm('The Harbor Guild'), Series.norm('The Ridge Guild'));
 });
 
+test('series names without a key ("Series", only punctuation) are never folded onto each other', () => {
+	assert.deepEqual(['Series', 'The Series', '!!!'].map(Series.norm), ['', '', '']);
+	// an import keeps the name it came with
+	const books = [book('One', 'Ann Vale', {s: 'Series', sn: '1'})];
+	const report = merge(books, [book('Two', 'Bo Reed', {s: '!!!', sn: '1'})]);
+	assert.deepEqual(
+		report.added.map(b => b.s),
+		['!!!'],
+	);
+	assert.deepEqual(
+		books.map(b => b.s),
+		['Series', '!!!'],
+	);
+	// and a comparison doesn't spell one as the other
+	assert.equal(Comparison.seriesSpellings(Bs(books)).size, 0);
+	// a name with a key still takes the spelling in use
+	const coast = [book('Low Tide', 'Ann Vale', {s: 'Ember Coast', sn: '1'})];
+	merge(coast, [book('High Tide', 'Ann Vale', {s: 'The Ember-Coast series', sn: '2'})]);
+	assert.deepEqual(
+		coast.map(b => b.s),
+		['Ember Coast', 'Ember Coast'],
+	);
+});
+
+test('filling in an edition leaves ids that were kept aside as they are, for the Check', () => {
+	const kept = E({ext: {goodreads: 5}, n: ['Ann Vale']});
+	assert.deepEqual(kept.fillFrom(E({ext: {'audible.com': 'B0BBBBBBBB'}, d: '2021'})), ['d']);
+	assert.deepEqual(json(kept), {ext: {goodreads: 5}, n: ['Ann Vale'], d: '2021'});
+	// ids that are ids gain the catalogs they lack
+	const fine = E({ext: {goodreads: '5'}});
+	assert.deepEqual(fine.fillFrom(E({ext: {'audible.com': 'B0BBBBBBBB', goodreads: '6'}})), ['ext:audible.com']);
+	assert.deepEqual(json(fine), {ext: {'audible.com': 'B0BBBBBBBB', goodreads: '5'}});
+});
+
 test('titles, authors and series in other scripts are told apart, and accents are forgiven', () => {
 	assert.notEqual(Text.norm('Серый маяк'), Text.norm('Тихая гавань'));
 	assert.equal(Text.norm('Тихая  Гавань!'), 'тихая гавань');
@@ -594,6 +628,16 @@ test('validation: series-info must be well formed, and may be for a series no bo
 		Validator.validate([{t: 't', a: ['a'], s: 'S'}], {S: {total: 'many', status: 'ongoing', note: 'n'}}).errors,
 		[],
 	);
+	// a series may lack its total and status: one kept only by the id a catalog found for it
+	assert.deepEqual(
+		Validator.validate([{t: 't', a: ['a'], s: 'S'}], {S: {ext: {'audible.com': 'B0SERIES01'}}}).errors,
+		[],
+	);
+	const catalog = new Catalog({books: [B({t: 't', a: ['a'], s: 'S', sn: '1'})]});
+	catalog.assignIds();
+	assert.equal(AudibleSync.setInfoIds(catalog, [{kind: 'series', name: 'S', id: 'B0SERIES01'}]), 1);
+	assert.equal(AudiobookdbSync.setInfoIds(catalog, [{kind: 'series', name: 'S', id: 'SrsLantern01'}]), 1);
+	assert.deepEqual(Validator.check(catalog, {contributors: true}).errors, []);
 });
 
 test('validation: warnings for lookalike series, leftover markup, odd numbers, untidy values (once each)', () => {

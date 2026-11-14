@@ -311,7 +311,8 @@ export class Edition {
 			}
 			if (k === 'ext') {
 				for (const [key, v] of from.externalList()) {
-					if (this.idOn(key) !== null || (this.value('ext') === undefined && 'ext' in this.extra)) continue;
+					// ids kept aside because they aren't ids stay as they are, for the Check to report
+					if (this.idOn(key) !== null || 'ext' in this.extra) continue;
 					this.external = {...this.external, [key]: v};
 					gained.push('ext:' + key);
 				}

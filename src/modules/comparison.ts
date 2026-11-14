@@ -197,8 +197,11 @@ export class Comparison {
 	 */
 	static seriesSpellings(books: Book[]): Map<string, string> {
 		const out: Map<string, string> = new Map();
-		for (const b of books)
-			if (b.series && !out.has(Series.norm(b.series))) out.set(Series.norm(b.series), b.series);
+		for (const b of books) {
+			// a name with an empty key ("Series", "!!!") is no spelling of any other
+			const k = b.series ? Series.norm(b.series) : '';
+			if (b.series && k && !out.has(k)) out.set(k, b.series);
+		}
 		return out;
 	}
 

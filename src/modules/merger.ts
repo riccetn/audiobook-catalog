@@ -154,9 +154,11 @@ export class Merger {
 		const indexBook = (i: number) => existing[i].keys(shared).forEach(k => indexKey(k, i));
 		existing.forEach((b, i) => indexBook(i));
 
+		// a name of only punctuation, or just "Series", has an empty key, which no other name may be folded onto
 		const canonical: Map<string, string> = new Map();
 		for (const b of existing) {
-			if (b.series && !canonical.has(Series.norm(b.series))) canonical.set(Series.norm(b.series), b.series);
+			const k = b.series ? Series.norm(b.series) : '';
+			if (b.series && k && !canonical.has(k)) canonical.set(k, b.series);
 		}
 
 		// [book index, edition] of every copy of an edition, on any book, other than the edition itself
@@ -325,8 +327,10 @@ export class Merger {
 			const allExcluded = editionCount > 0 && !rec.editions.length;
 			if (rec.series) {
 				const k = Series.norm(rec.series);
-				if (!canonical.has(k)) canonical.set(k, rec.series);
-				rec.series = canonical.get(k);
+				if (k) {
+					if (!canonical.has(k)) canonical.set(k, rec.series);
+					rec.series = canonical.get(k);
+				}
 			}
 			const range = rec.boxRange();
 			const inSet = range && mergeBoxSet(rec, original, range);
