@@ -182,7 +182,7 @@ export function render() {
 	// a new book starts with the author picked
 	byId('toggleAdd').setAttribute(
 		'href',
-		'book.html' +
+		'edit.html' +
 			hashOf([
 				['add', true],
 				['author', author],

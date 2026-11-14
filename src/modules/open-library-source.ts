@@ -1,4 +1,4 @@
-// Open Library as a source of the book form's Fill in: it answers any web page (open CORS, no key), by its
+// Open Library as a source of the Edit page's Fill in: it answers any web page (open CORS, no key), by its
 // works (OL…W), editions (OL…M) and ISBNs. It has no narrators, and seldom a series.
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';

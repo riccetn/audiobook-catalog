@@ -21,7 +21,7 @@ Audible's catalog doesn't let a web page ask it about books, so it is asked thro
 No Audible account is needed, and nothing is sent to Audible.
 
 1. Press **Edit** at the end of a series' page (on _Series_): its _Edit series_ page asks Audible when it opens
-   ([Editing a series](editing-series.md#other-catalogs)), unless you untick Audible there.
+   ([Editing books and series](editing-series.md#other-catalogs)), unless you untick Audible there.
 2. The series is read on the Audible site most of its books' Audible ASINs are from, as each site has its own
    ASINs. An Amazon site's ASIN is that site's alone (Goodreads and Hardcover list amazon.com's, often a Kindle or
    print edition's), so it is never asked of Audible. It is found by the ASIN in the series' Audible field, else from what

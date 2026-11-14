@@ -6,7 +6,7 @@ with each other beyond living in one place:
 - **The catalog proxy** (`/proxy/...`). Some catalogs don't answer requests from web pages: their APIs send no
   CORS headers, so the browser refuses to hand their answers to the app. AudiobookDB, Audible's catalog API,
   BookBrainz and ISFDB are like that. Open Library, Wikidata and Hardcover aren't, and the app asks them itself.
-  Through the proxy, the book form's _Fill in from another catalog_ looks Audible pages, ASINs and AudiobookDB books
+  Through the proxy, the _Edit_ page's _Fill in from another catalog_ looks Audible pages, ASINs and AudiobookDB books
   and releases up ([Everyday workflows](workflows.md)), the AudiobookDB panel on _Import & export_ compares the
   catalog with your AudiobookDB shelves ([AudiobookDB](audiobookdb.md)), and a series' _Edit_ page compares its books
   with AudiobookDB and Audible ([Audible](audible.md#fill-in-a-series-books-from-audible)).

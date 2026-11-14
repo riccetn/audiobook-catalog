@@ -1,4 +1,4 @@
-// What every external catalog the book form's *Fill in from another catalog* asks shares (CatalogLookup asks
+// What every external catalog the Edit page's *Fill in from another catalog* asks shares (CatalogLookup asks
 // them): what it reads out of a pasted address (read), which pasted ids it can look up (answers), the lookup
 // (lookup), and what it needs to be asked (a key, the catalog proxy). CatalogLookup knows only this class, so
 // a catalog is added by writing its source and listing it in CatalogConnectors.SOURCES. Nothing here changes

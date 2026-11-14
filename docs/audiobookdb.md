@@ -31,7 +31,7 @@ the way an import does ([the comparison](imports.md#the-comparison)):
    is offered as **New from AudiobookDB**, with its title, authors, series and number, genres, and its release
    as an edition (its AudiobookDB id, ISBN, narrators, publisher, release date, length and cover). AudiobookDB shelves
    books, not releases: a book with several releases is only added when one of them is yours (by its ASIN),
-   otherwise it is listed as not added: add it from the book form with your release's address.
+   otherwise it is listed as not added: add it with `+ Add a book`, filled in from your release's address.
 3. The comparison has more groups for AudiobookDB:
    - **Not on your AudiobookDB Listened shelf**: your books AudiobookDB has that aren't on _Listened_ there.
      Everything in the catalog counts as read, with a date or without. Unticked: tick a book to put it on
@@ -49,7 +49,7 @@ AudiobookDB doesn't keep dates read, ratings or reviews, so none are compared or
 AudiobookDB lists only audiobooks, so unlike Hardcover and Audible its comparison has no _Maybe not audiobooks_
 lists.
 
-**A series or an author.** Their _Edit_ page ([Editing a series](editing-series.md#other-catalogs)) compares only
+**A series or an author.** Their _Edit_ page ([Editing books and series](editing-series.md#other-catalogs)) compares only
 the books of that series, or by that author, with AudiobookDB. The series or author is found on AudiobookDB by the
 AudiobookDB id in its form, else from your books of it there. For a series, the books AudiobookDB lists in it that
 aren't in the catalog are named too, to look through.
@@ -80,7 +80,7 @@ release's id (as Amazon's is from an ASIN), so an edition keeps its key once Aud
 _Fill in from another catalog_ fills in an AudiobookDB release, and when **Compare** finds your book there (the
 release's cover, else the book's; ticked under **Save the AudiobookDB ids and covers found**). A cover already kept
 is never replaced. The book's card and details then show AudiobookDB's cover before any other, loaded from
-AudiobookDB's image server without the proxy; _Covers_ off turns it off with the others. The form shows no field
+AudiobookDB's image server without the proxy; _Covers_ off turns it off with the others. The _Edit_ page shows no field
 for it: removing the release from the edition doesn't remove the cover, but removing the edition does.
 
 ## When something is wrong

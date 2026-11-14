@@ -18,7 +18,7 @@ written by two authors is on both pages, with a link to the other one. Each titl
 to it in the catalog.
 
 **Edit their books**, beside **Edit** at the end of the page, opens every book by them on one page, with what
-the other catalogs you set up have for them ([Editing a series](editing-series.md)).
+the other catalogs you set up have for them ([Editing books and series](editing-series.md)).
 
 **Add or edit the bio and links**: press **Edit** at the end of the author's page, after their books. The bio keeps its
 paragraphs (leave a blank line between them). The website must start with `https://` (or `http://`).
@@ -36,13 +36,13 @@ form refuses what is neither an id nor an address there (a Hardcover address in 
 Clearing every field keeps nothing about them; the author stays. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
 
 An author is an entry of their own, under the name exactly as the books write it: they stay in the catalog,
-and on _Authors_ ("no books yet"), when no book names them any more, until you remove them. The book form
-says when a name you type is new (see [Everyday workflows](workflows.md#editing)).
+and on _Authors_ ("no books yet"), when no book names them any more, until you remove them. The _Edit_ page
+says when a name you type is new (see [Everyday workflows](workflows.md)).
 
 **Rename an author**: change the **Name** in the form and save; every book that credits them gets the new
 name, and they keep their bio, links and page (its address follows). Narrators and publishers are renamed the
 same way, on the editions they read or publish. An author's or narrator's name can't hold a comma, a semicolon,
-`&` or `and`, which the book form reads as between names. Renaming them to someone the catalog already has
+`&` or `and`, which the _Edit_ page reads as between names. Renaming them to someone the catalog already has
 joins the two, which is how to tidy up one person kept under two spellings: the first Save says so, the second
 does it. Every book of either then credits the one name, which keeps what the form has and, where the form is
 empty, what the other had (their ids in other catalogs and their other links are put together).

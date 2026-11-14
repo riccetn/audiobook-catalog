@@ -458,7 +458,7 @@ export class Edition {
 	}
 
 	/**
-	 * The id a pasted address names, and the book form's field it belongs in: {field: 'ext:audible.co.uk',
+	 * The id a pasted address names, and the edition's field it belongs in: {field: 'ext:audible.co.uk',
 	 * id: 'B0X'} for a book's page on an Audible or Amazon site (each site has a field of its own), {field:
 	 * 'ext:goodreads', id: '12345'} for its page on Goodreads, {field: 'ext:hardcover', id: '501'} for an
 	 * edition's page on Hardcover. null for anything else: an id, or a Hardcover book's address, which names

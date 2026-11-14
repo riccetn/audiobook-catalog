@@ -2,8 +2,8 @@
 // match it, to pick with the mouse or the arrow keys and Enter. The field stays a text field, so a new name is
 // typed as before. A field of several names (authors, narrators: separated by commas) looks up the name the
 // cursor is in, and picking one puts it in place of what was typed there. A name the catalog doesn't have yet
-// is said to be new under the field, as saving adds it as a series or person of its own. The book form's
-// author, series, narrator and publisher fields are ones (book.ts).
+// is said to be new under the field, as saving adds it as a series or person of its own. The Edit page's
+// author, series, narrator and publisher fields are ones (edit.ts).
 import {buildElement, fillElement} from './store.js';
 import {Text} from './modules/text.js';
 
@@ -63,7 +63,7 @@ export function newNames(
 // The notes of the fields on the page, by the field's id, so refreshNewNotes() can redraw them.
 const NOTES: Map<string, () => void> = new Map();
 
-// Redraw every field's note: once the names are read, or after the form filled its fields in.
+// Redraw every field's note: once the names are read, or after the page filled its fields in.
 export function refreshNewNotes() {
 	for (const draw of NOTES.values()) draw();
 }
@@ -193,7 +193,7 @@ export function comboBox(
 			active = key === 'ArrowDown' ? (active + 1) % shown.length : active <= 0 ? shown.length - 1 : active - 1;
 			draw();
 		} else if (key === 'Enter' && active >= 0 && shown[active]) {
-			e.preventDefault(); // not the form's Save
+			e.preventDefault(); // nothing else is done with it
 			pick(shown[active]);
 		} else if (key === 'Escape' && shown.length) {
 			e.preventDefault();

@@ -177,8 +177,8 @@ export const bookPageHref: (id: string) => string = id => pageHref('book.html', 
  * The address of a series' page (its books), by the id it is stored under.
  */
 export const seriesPageHref: (id: string) => string = id => pageHref('index.html', '#series=' + hashValue(id));
-/** The Edit series page of the series stored under `id`. */
-export const editPageHref: (id: string, kind?: 'series' | 'author') => string = (id, kind = 'series') =>
+/** The Edit page of the series stored under `id` (or the author's books, or the book). */
+export const editPageHref: (id: string, kind?: 'series' | 'author' | 'book') => string = (id, kind = 'series') =>
 	pageHref('edit.html', `#${kind}=` + hashValue(id));
 /** The address of the page of the books in no series. */
 export const standalonePageHref = () => pageHref('index.html', '#standalone');

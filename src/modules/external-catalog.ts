@@ -381,7 +381,7 @@ export class ExternalCatalog {
 	static AMAZON_SITE = 'amazon.com';
 	static ASIN_SITE = ASIN_SITE;
 	// The sites an edition may have an ASIN field for (each Audible store's, and Amazon's).
-	// The sites the book form offers an ASIN field for: each Audible store's site and its Amazon twin, then
+	// In order: each Audible store's site and its Amazon twin, then
 	// the Amazon sites without an Audible store.
 	static ASIN_SITES = [
 		...new Set([

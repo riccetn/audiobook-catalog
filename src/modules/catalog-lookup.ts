@@ -1,4 +1,4 @@
-// A book looked up in the external catalogs a web page may read, to fill in the book form. Each catalog is a
+// A book looked up in the external catalogs a web page may read, to fill in a book on the Edit page. Each catalog is a
 // BookSource (CatalogConnectors.SOURCES); this asks them in turn, by what was pasted: the catalog whose id it
 // is, the others that know such an id (an ISBN, an ASIN), and then those that fill in what the rest lack
 // (narrators, length) by the edition found. What each needs (a token, the catalog proxy) the sources say, so
@@ -74,7 +74,7 @@ export class CatalogLookup {
 	 * id too, or when it has none), then those that fill in what the first lacks, by the edition's ASIN or ISBN.
 	 * What the first has wins; the others only fill in what it lacks. Throws with a short reason when `text`
 	 * names nothing this can look up, or no catalog has it. Text that is no address, id or ISBN is a title,
-	 * searched on the source that SEARCHES (by `authors` too, when the form has them).
+	 * searched on the source that SEARCHES (by `authors` too, when the book has them).
 	 */
 	async find(text: unknown, authors: string[] = []): Promise<Found> {
 		const typed = Text.tidy(String(text || ''));

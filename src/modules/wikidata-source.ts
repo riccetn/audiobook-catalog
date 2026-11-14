@@ -1,4 +1,4 @@
-// Wikidata as a source of the book form's Fill in: it answers any web page (open CORS, no key), by its items
+// Wikidata as a source of the Edit page's Fill in: it answers any web page (open CORS, no key), by its items
 // (Q…), with a book's title, authors, series and genres, and its ids in other catalogs. It has no editions.
 import {Text} from './text.js';
 import {Book} from './book.js';

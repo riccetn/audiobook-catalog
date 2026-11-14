@@ -433,7 +433,7 @@ export function showEmptyCatalog() {
 			'p',
 			{class: 'empty'},
 			'No books yet. ',
-			buildElement('a', {href: 'book.html#add'}, 'Add one'),
+			buildElement('a', {href: 'edit.html#add'}, 'Add one'),
 			', import your Audible, Goodreads or Hardcover library on ',
 			buildElement('a', {href: 'import.html'}, 'Import & export'),
 			', or restore a backup there.',

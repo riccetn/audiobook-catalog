@@ -7,42 +7,4 @@
 	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
 	<p id="ioStatus" class="ioStatus" role="status"></p>
 
-	<form id="addForm">
-		<h3 id="formTitle">Add a book</h3>
-		<div class="formrow fillFrom">
-			<div><label for="f_from">Fill in from another catalog</label><input id="f_from" placeholder="its address, id, ISBN or title" title="A book's address on Open Library, Wikidata, Hardcover, Audible, Amazon, Goodreads or AudiobookDB, or its ISBN; with your server saved, its title, found on AudiobookDB"></div>
-			<div class="formrow-btn"><button type="button" id="fillFromBtn" title="Fill in the empty fields from the catalog">Fill in</button></div>
-		</div>
-		<div class="formrow">
-			<div><label for="f_t">Title</label><input id="f_t" required></div>
-			<div><label for="f_a">Authors, separated by commas</label><div class="combo"><input id="f_a" required><ul id="f_aList"></ul><p id="f_aNew"></p></div></div>
-		</div>
-		<div class="formrow">
-			<div><label for="f_s">Series</label><div class="combo"><input id="f_s"><ul id="f_sList"></ul><p id="f_sNew"></p></div></div>
-			<div class="narrow"><label for="f_sn">Book # in series</label><input id="f_sn"></div>
-		</div>
-		<div class="formrow">
-			<div><label for="f_r">Date(s) read, comma separated</label><input id="f_r" placeholder="e.g. 2024-03-15, 2026-01"></div>
-			<div class="formrow-btn"><button type="button" id="readTodayBtn" title="Add today's date">+ Read today</button></div>
-		</div>
-		<div><label for="f_g">Genres (comma separated)</label><input id="f_g"></div>
-		<details class="moreFields" id="f_ids">
-			<summary>The book in other catalogs <span class="summaryNote" id="f_idsNote"></span></summary>
-			<div class="formrow">
-				<div><label for="f_hcb">Hardcover book</label><input id="f_hcb" placeholder="its id, or paste its hardcover.app address"></div>
-			</div>
-			<div class="formrow extFields" id="f_bookExt"></div>
-		</details>
-		<div id="f_linksBox"></div>
-		<label>Editions (another ISBN is another edition; a box set is the same edition on each of its books)</label>
-		<div id="f_editions" class="editionsEditor"></div>
-		<button type="button" id="addEditionBtn" class="addEdition">+ Add an edition</button>
-		<p id="formError" class="formError"></p>
-		<div class="formbtns">
-			<button type="submit" class="save" id="formSaveBtn">Add book</button>
-			<button type="button" id="cancelAdd">Cancel</button>
-			<button type="button" id="formRemoveBtn" class="removeBook" title="Take the book out of the catalog; imports will skip it">Remove book</button>
-		</div>
-	</form>
-
 	<div id="results"></div>

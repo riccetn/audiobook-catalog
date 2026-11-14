@@ -19,6 +19,16 @@
 		<div class="panelbtns"><button type="button" id="seriesRemoveBtn" class="removeBook">Remove series</button></div>
 	</section>
 
+	<section class="editPanel" id="bookPanel" aria-labelledby="bookPanelTitle" hidden>
+		<h2 id="bookPanelTitle">Fill in from another catalog</h2>
+		<div class="formrow fillFrom">
+			<div><label for="fillFrom">Its address, id, ISBN or title</label><input id="fillFrom" placeholder="e.g. its Audible, Goodreads or Open Library address" title="A book's address on Open Library, Wikidata, Hardcover, Audible, Amazon, Goodreads or AudiobookDB, or its ISBN; with your server saved, its title, found on AudiobookDB"></div>
+			<div class="formrow-btn"><button type="button" id="fillFromBtn" title="Fill in the book's empty fields from the catalog">Fill in</button></div>
+		</div>
+		<p id="bookFormError" class="formError"></p>
+		<div class="panelbtns"><button type="button" id="bookRemoveBtn" class="removeBook" title="Take the book out of the catalog; imports will skip it">Remove book</button></div>
+	</section>
+
 	<section class="editPanel" id="catalogPanel" aria-labelledby="catalogPanelTitle">
 		<h2 id="catalogPanelTitle">Other catalogs</h2>
 		<p class="hint">Each catalog ticked is asked when the page opens. What it has that differs from your books is shown on them, to
@@ -29,7 +39,7 @@
 		<div id="catalogFound"></div>
 	</section>
 
-	<h2 class="editBooksTitle">Books <span class="editCount" id="bookCount"></span></h2>
+	<h2 class="editBooksTitle" id="editBooksHead">Books <span class="editCount" id="bookCount"></span></h2>
 	<div id="editBooks" class="editBooks"></div>
 
 	<section class="editReview" id="reviewPanel" aria-labelledby="reviewTitle">

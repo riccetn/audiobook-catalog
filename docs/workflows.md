@@ -10,17 +10,16 @@ filters and order. A book's title, anywhere, opens its own page (`book.html`).
 narrators and dates read. Its title opens the book's page (`book.html#book=…`): its series and number, dates read,
 genres, its ids in external catalogs, its links, and each of its editions with every part (description, narrators,
 ASINs, other catalogs' ids, ISBN, publisher, release date, length, links, and the other books of a box set it is on).
-Above it, the crumb links back to the book's series. The card has no buttons; the page ends with **Edit**
-and **Merge**. In the book form (**Edit**) the book's ids in other catalogs are
-folded under _The book in other catalogs_, which names the catalogs it has one in.
+Above it, the crumb links back to the book's series. The card has no buttons; the page ends with **Edit** (its
+_Edit_ page) and **Merge**.
 
 **Links**: a book, each of its editions and a series can keep links to other pages about them (the publisher's
 page of the book, the author's page of the series, a page about the UK edition): one address per line in the
-book form's _Links_ field, an edition card's _Links_ and the _Edit series_ page's fields. Its page shows each by its
+_Links_ fields of a book, an edition card and a series on the _Edit_ page. Its page shows each by its
 site's name (`gullwing.example ↗`), after its ids in other catalogs, and opens it in a new tab; a book's card in a list
 leaves them out. `https://` is put in front of an address typed without it. An address that is a catalog's page
-the form has an id field for (a Goodreads book, an Open Library work, an Audible edition) goes to that field when
-you leave _Links_, if it is empty, as its id is what is kept and links it. Merging books or editions keeps the
+the page has an id field for (a Goodreads book, an Open Library work, an Audible edition) goes to that field when
+you leave _Links_, if it is empty (an edition's otherwise to its _Another id_), as its id is what is kept and links it. Merging books or editions keeps the
 links of both; imports bring none, and never match a book by them.
 
 **Covers**: a book's card shows a small cover, and its details a larger one. First comes AudiobookDB's cover of
@@ -35,13 +34,15 @@ from Open Library when it has one.
 
 **Edit in the app**
 
-Edit books in the page (**Edit** at the end of a book's page, `+ Add a book`). **Edit** opens the form in place of the book's
-details. `+ Add a book`, on _Books_ and on a series' page, opens the form for a new book on a page of its own
-(`book.html#add`), with the series and author filled in from where you were: the series you were looking at,
-and the author picked in the author filter (else the author of every book in the series). Saving shows the new
-book's page; _Cancel_ goes back to the series or the books.
+Edit books on the _Edit_ page ([Editing books and series](editing-series.md)). **Edit** at the end of a book's page
+opens it for that book (`edit.html#book=…`): the book's fields and a card per edition, edited in place, with what
+the other catalogs you set up have for it. `+ Add a book`, on _Books_ and on a series' page, opens it for a new book
+(`edit.html#add`), with the series and author filled in from where you were: the series you were looking at, and
+the author picked in the author filter (else the author of every book in the series). Nothing is saved until you
+press **Review & save** (**Save** in the list it opens); then the book's page opens, saying what was saved.
+**Discard** goes back to the book, or (adding one) to the series or the books, without saving anything.
 
-_Fill in from another catalog_, at the top of the form, looks a book up and fills in the form's empty fields
+_Fill in from another catalog_, at the top of the page, looks a book up and fills in the book's empty fields
 (nothing you typed is replaced): paste the address of its page and press _Fill in_ (or Enter). These work
 without an account, as their catalogs let a web page read them: an Open Library work or edition
 (`https://openlibrary.org/books/OL…M`, or the bare `OL…M`/`OL…W`), a Wikidata item (`Q…`), or an ISBN, which is
@@ -54,44 +55,41 @@ token their addresses can't be looked up, unless you have [your server](server.m
 an Audible page (or a bare ASIN, as audible.com's) is looked up on that Audible site's catalog and on AudiobookDB, and
 an Amazon page on AudiobookDB only, as an ASIN is one site's alone (an Amazon one is often a Kindle or print edition's); an AudiobookDB book or release (`audiobookdb.org/releases/…`) is looked
 up there (a book of several releases comes without an edition: paste your release's address); a title typed instead
-of an address is searched on AudiobookDB (by the authors in the form too, when AudiobookDB has several books of that
+of an address is searched on AudiobookDB (by the book's authors too, when AudiobookDB has several books of that
 title: type the author first, or paste the address of the one you mean); and an edition found
 elsewhere with an Audible site's ASIN is looked up on Audible for what it lacks. Hardcover is still asked for what those lack. It fills in the title, authors, series and number, genres (from Wikidata, Audible and AudiobookDB), the
 book's ids in those catalogs, and an edition (narrators, ASIN, Goodreads, Hardcover, Open Library and AudiobookDB ids, ISBN,
-publisher, release date, length): in the gaps of the card that is the same edition (it has one of its ids, an
-ASIN on any site, or its ISBN), else of the first card that has nothing else in its fields, else on a card of its own. The status line says what was filled in and from where; look it over before saving. It is in
-the form while editing a book too, where it fills in only what the book lacks.
+publisher, release date, length): in the gaps of the edition that is the same (it has one of its ids, an
+ASIN on any site, or its ISBN), else of the first edition it fills without changing anything, else as an edition of its own. The status line says what was filled in and from where; look it over before saving.
 
-_Editions_ has a card per edition, with a field for each part: title, description, narrators, ASINs (a field per
-site: audible.com's, and one for each site the edition has an ASIN on; _+ Another site_ adds a field for
-another Amazon or Audible site), Goodreads id, Hardcover edition (_+ Another catalog_ adds a field for its id on AudiobookDB, Open
-Library, ISFDB or BookBrainz, shown from then on), ISBN (hyphens and ISBN-10s are fine), publishers,
-release date (`2021-05`) and length (`10h 42m`). An ASIN is ten letters and digits, at least one of them a
-digit, so a word typed there by mistake (`none`) is refused. The ASIN and other catalogs' edition fields also take the address of the book's
-page on that site (`https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0…`, `https://www.amazon.com/dp/B0…`,
+Each edition has a card with a field for each part: the title it was released under, narrators, publishers, release
+date (`2021-05`), length (`10h 42m`), ISBN (hyphens and ISBN-10s are fine), description, links, and a field for each
+id it has (an ASIN per site, Goodreads, Hardcover, ...). **Another id** adds one: paste the address of the edition's
+page on any catalog (`https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0…`, `https://www.amazon.com/dp/B0…`,
 `https://www.goodreads.com/book/show/4242-the-salt-road`, `https://hardcover.app/books/the-salt-road/editions/501`,
-`https://audiobookdb.org/releases/Kx7UDyK3gMqj`):
-when you leave the field it shows just the id, and an Audible or Amazon page's ASIN moves to the field for
-its site, and another catalog's id to its field (added when the card has none). Leave a field empty when you don't know it; `+ Add an edition`
-adds a card and _Remove_ drops one. A card that is an edition of a box set says which other books it is on,
-since a change to it changes it there too. A field the page can't read is named when you save, and nothing changes.
+`https://audiobookdb.org/releases/Kx7UDyK3gMqj`), or its bare id with its catalog picked above it. An id field takes
+its catalog's address too, and shows just the id. An ASIN is ten letters and digits, at least one of them a
+digit, so a word typed there by mistake (`none`) is refused. Leave a field empty when you don't know it;
+`+ Add an edition` adds a card, and **Merge with…**, **Split** and **Remove edition** change the book's editions.
+A card that is an edition of a box set says which other books it is on, since a change to it changes it there too.
+A field the page can't read is named under it, and changes nothing until it is fixed.
 
 **A book released under another title** (_The Lantern Keeper_ in the UK, _The Keeper of Lanterns_ in the US) is one
 book: its title is the work's own, usually the first edition's, and an edition released under another title has that
-title in its card's _Title_ (left empty, an edition was released under the book's title; one that is the book's, a
+title in its card's _Released as_ (left empty, an edition was released under the book's title; one that is the book's, a
 subtitle aside, is dropped when you save). The book's details say _Also published as_ under its title, and the
-search finds it by either; a book found by another title says so on its card. _Use as the book's title_ beside an
-edition's Title makes it the book's, and gives the book's title before to the other editions without one of their
+search finds it by either; a book found by another title says so on its card. **Use as the book's title** on an
+edition's card makes its title the book's, and gives the book's title before to the other editions without one of their
 own, so every edition keeps the title it was released under. A box set's edition may have a title too: the set's
 other title, never its books'. _Fill in from another catalog_ by an Audible or Amazon page puts the title that site
 sells it under on the edition when the book has another. Imports find the book by any of its titles
 ([Matching](imports.md#matching)), and removing it keeps every one of them out of later imports.
 
-The Hardcover book has its own field, which takes the book's id or, since the Hardcover app doesn't show
-it, the address of the book's page (`https://hardcover.app/books/the-salt-road`) or of one of its editions'
-pages: the page looks the book up on Hardcover and puts its id in the field (when you leave the field, or
-when you save). That needs your Hardcover API token, saved on the _Import & export_ page (see
-[Hardcover](hardcover.md)). The Goodreads book field takes the id of the book's work on Goodreads (all its
+The book's ids in other catalogs each have a field, which takes the id or the address of the book's page there. The
+Hardcover book field takes, since the Hardcover app doesn't show the id, the address of the book's page
+(`https://hardcover.app/books/the-salt-road`) or of one of its editions' pages: the page looks the book up on Hardcover
+and puts its id in the field when you leave it. That needs your Hardcover API token, saved on the _Import & export_
+page (see [Hardcover](hardcover.md)). The Goodreads book field takes the id of the book's work on Goodreads (all its
 editions), or the address of its page (`https://www.goodreads.com/work/editions/99`); the AudiobookDB, Open Library, ISFDB, BookBrainz and
 Wikidata book fields likewise take the id of the book's work (title, item) there or its page's address, and show just the id when you leave them. Several authors, or several narrators or publishers of an
 edition, are written separated by commas (`Ann Vale, Bo Reed`); each is its own entry in the author
@@ -108,7 +106,7 @@ its titles, give the edition the same ASIN (or Goodreads or Hardcover id) on eac
 are copied to the others. In a book's details, each of an edition's ASINs links to the book on its site
 (`audible.co.uk/pd/…`, `amazon.com/dp/…`), its Goodreads id to the book on Goodreads, and its Hardcover ids
 to the edition and the book on Hardcover (`hardcover.app/id/edition/501`, an address that keeps working
-when Hardcover renames the book). Every change is saved in the browser as you make it (see
+when Hardcover renames the book). Every save is kept in the browser (see
 [Running the app and keeping your catalog](saving.md)).
 
 **Back up and move the catalog**: **Export** on the _Import & export_ page downloads a backup with the
@@ -133,8 +131,9 @@ each with a page of their bio, links, series and titles; their names on the book
 **Edit a series and its books**: press **Edit** at the end of a series' page (open it from _Series_). The
 _Edit series_ page shows the series and every book in it, each book with its fields (title, authors, number,
 genres, dates read and its ids) and its editions, all of them editable in place, and what the other catalogs
-you set up have for them, to pick. **Edit their books** on an author's page does the same for their books. See
-[Editing a series](editing-series.md) for the page, and for merging, splitting and removing editions there.
+you set up have for them, to pick. **Edit their books** on an author's page does the same for their books, and a
+book's **Edit** for that book. See [Editing books and series](editing-series.md) for the page, and for merging,
+splitting and removing editions there.
 Nothing is saved until you press **Review & save**, which lists every change, and then **Save**.
 
 The series' own fields are how many books are released, whether it is ongoing or complete, the note and
@@ -160,8 +159,9 @@ those series. Series whose total is `"many"`, or that have no release info, are 
 The status line says what an action did for a few seconds; an error (one starting _Not saved_, say) stays
 until the next message or until you press **Dismiss** beside it. Screen readers read it out.
 
-**Remove a book for good**: press **Edit** on the book's details, then **Remove book** in the form. It leaves the list at once, and the status line
-offers **Undo** for a few seconds; once that is gone (or you leave the page), the page takes it out and adds it to
+**Remove a book for good**: press **Edit** at the end of the book's page, then **Remove book** at the top of its
+_Edit_ page; the first press says what it does, the second takes it out of the catalog (with any changes not saved
+yet), opens its series' page (or _Books_) and adds it to
 the import exclusion list, as the ASINs, Goodreads ids (`Goodreads 4242`) and Hardcover
 ids (`Hardcover 501`) of its editions, and as `Title | Author`, so no later Audible, Goodreads or Hardcover
 import brings it back. Backups carry the list (`excluded`), one entry per line: an ASIN,
@@ -171,7 +171,7 @@ an ISBN shared by a boxed set skips all its books); a bare 10-character ISBN cou
 An ASIN is read in any case (`b0…` is `B0…`). A line that is none of these (a title without `| Author`) is kept
 as written but keeps nothing out, and **Check** names it.
 Removing a book in the page does not add its ISBNs, since another book may share them. An edition removed
-on the _Edit series_ page can be kept out too, with entries that start with `Edition` (`Edition B0…`,
+on the _Edit_ page can be kept out too, with entries that start with `Edition` (`Edition B0…`,
 `Edition ISBN 978…`, `Edition Goodreads 4242`, `Edition Hardcover 501`): imports leave that edition out, but its book
 still matches and gains everything else. To let an import add something again, press **Show** beside
 _Excluded_ on _Import & export_, which lists every entry, and **Remove** it there.
@@ -229,13 +229,13 @@ when one page showed it all (`index.html#books…` opens _Books_, `index.html#bo
 a narrator's or a publisher's page is `author.html#a=…`, `narrator.html#n=…` or `publisher.html#p=…`; the addresses
 from when their lists showed them too (`authors.html#a=…` and the like) open it as well.
 
-**Keep track of when you read a book**: edit the book in the page and fill in _Date(s) read_
+**Keep track of when you read a book**: edit the book and fill in _Read_
 (`2024-03-15`, or `2024-03` / `2024` if you don't remember the day; several dates, comma separated,
-for a re-read), or press **+ Read today** in the form. Quicker: open the book (its title) and press **+ Read today**
+for a re-read), or press **+ Read today** under it. Quicker: open the book (its title) and press **+ Read today**
 beside its dates read, which saves at once and offers **Undo** for a few seconds. The date shows on the book, and on **Books** the
 _Read in_ filter picks the books read in a given year, or those with no date yet. The order list beside the filters sorts
 **Books** by _Recently read_ (the latest date read first; books without one follow in series order) or _Recently added_
-(the books an import or the form added last first) instead of by series; the address keeps it (`books.html#sort=read`). A Goodreads import
+(the books an import or _+ Add a book_ added last first) instead of by series; the address keeps it (`books.html#sort=read`). A Goodreads import
 fills in its _Date Read_ on books that have no dates yet (Goodreads keeps only the latest one); it never
 changes dates you already have. Audible imports do not set dates read.
 
