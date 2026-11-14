@@ -2,9 +2,10 @@
 // file to download. The Import & export page knows only this class: a subclass says what the file is
 // (CATALOG, LABEL, FORMAT, FILE_NAME, TYPE) and writes it (write).
 import type {Book} from './book.js';
+import type {Phrase} from './text.js';
 
 /** the file's text, how many books are in it, and what the page says of them */
-export type ExportResult = {text: string; books: number; notes: string[]};
+export type ExportResult = {text: string; books: number; notes: Phrase[]};
 
 /** Writes books into another catalog's import file; a subclass says how (write). */
 export class FileExporter {

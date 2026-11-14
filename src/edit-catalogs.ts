@@ -201,7 +201,7 @@ export async function runCatalogs(kind: 'series' | 'author', name: string, ids: 
 			);
 		} catch (e) {
 			notes.push(
-				spell("{catalog}: couldn't compare: {error}", {catalog: Client.LABEL, error: spell(Text.errorText(e))}),
+				spell("{catalog}: couldn't compare: {error}", {catalog: Client.LABEL, error: Text.errorPhrase(e)}),
 			);
 		}
 	}

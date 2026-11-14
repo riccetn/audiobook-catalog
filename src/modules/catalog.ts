@@ -12,7 +12,8 @@ import {Contributor} from './contributor.js';
 import {Edition} from './edition.js';
 import {Exclusions} from './exclusions.js';
 import {Duplicates} from './duplicates.js';
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
+import type {Phrase} from './text.js';
 import type {ContributorKind} from './contributor.js';
 import type {Backup} from './backup.js';
 import type {Mark} from './duplicates.js';
@@ -573,7 +574,7 @@ export class Catalog {
 	 */
 	removeEntry(kind: NamedKind, id: string): Book[] {
 		const problem = this.removeProblem(kind, id);
-		if (problem) throw new Error(problem);
+		if (problem) throw new PhraseError(problem);
 		const name = this.nameOf(kind, id);
 		const changed: Book[] = [];
 		if (name !== undefined) {
@@ -607,15 +608,19 @@ export class Catalog {
 	}
 
 	/**
-	 * Why removeEntry() can't remove an entry (an author who is the only author of some books), or ''.
+	 * Why removeEntry() can't remove an entry (an author who is the only author of some books), or null.
 	 */
-	removeProblem(kind: NamedKind, id: string): string {
+	removeProblem(kind: NamedKind, id: string): Phrase | null {
 		const name = this.nameOf(kind, id);
-		if (kind !== 'authors' || name === undefined) return '';
+		if (kind !== 'authors' || name === undefined) return null;
 		const alone = this.books.filter(b => b.authors.length === 1 && b.authors[0] === name);
-		if (!alone.length) return '';
-		const titles = Text.firstThree(alone.map(b => b.title));
-		return `${name} is the only author of ${Text.plural(alone.length, 'book')} (${titles}): give ${alone.length > 1 ? 'them' : 'it'} another author first, or remove ${alone.length > 1 ? 'them' : 'it'}.`;
+		if (!alone.length) return null;
+		return Text.phrase(
+			alone.length > 1
+				? '{name} is the only author of {books} ({titles}): give them another author first, or remove them.'
+				: '{name} is the only author of {books} ({titles}): give it another author first, or remove it.',
+			{name, books: Text.counted(alone.length, 'book'), titles: Text.firstThreePhrase(alone.map(b => b.title))},
+		);
 	}
 
 	/**

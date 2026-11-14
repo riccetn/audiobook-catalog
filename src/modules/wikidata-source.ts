@@ -1,6 +1,6 @@
 // Wikidata as a source of the Edit page's Fill in: it answers any web page (open CORS, no key), by its items
 // (Q…), with a book's title, authors, series and genres, and its ids in other catalogs. It has no editions.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Book} from './book.js';
 import {BookSource} from './book-source.js';
 import type {Unchecked} from './text.js';
@@ -62,7 +62,7 @@ export class WikidataSource extends BookSource {
 	 */
 	async item(id: string): Promise<Book> {
 		const item = (await this.items([id], true))[id];
-		if (!Text.isObject(item) || 'missing' in item) throw new Error(`Wikidata has no item ${id}`);
+		if (!Text.isObject(item) || 'missing' in item) throw new PhraseError('Wikidata has no item {id}', {id});
 		const claims = Text.isObject(item.claims) ? item.claims : {};
 		const of: (prop: string) => Unchecked[] = prop =>
 			Array.isArray(claims[prop])
@@ -89,7 +89,7 @@ export class WikidataSource extends BookSource {
 		const authors = items(P.author),
 			series = items(P.series),
 			genres = items(P.genre).slice(0, 5);
-		if (!authors.length) throw new Error(`Wikidata's ${id} names no author, so it is not a book`);
+		if (!authors.length) throw new PhraseError("Wikidata's {id} names no author, so it is not a book", {id});
 		const labels = await this.items([...new Set([...authors, ...series.slice(0, 1), ...genres])], false);
 		const label: (x: string) => string = x => {
 			const l = labels[x] && Text.isObject(labels[x].labels) ? labels[x].labels.en : null;
@@ -103,7 +103,7 @@ export class WikidataSource extends BookSource {
 			t: Text.tidy(Text.isObject(title) ? title.text : typeof own === 'string' ? own : ''),
 			a: authors.map(label).filter(Boolean),
 		};
-		if (!rec.t || !rec.a.length) throw new Error(`Wikidata's ${id} has no title or author in English`);
+		if (!rec.t || !rec.a.length) throw new PhraseError("Wikidata's {id} has no title or author in English", {id});
 		const [inSeries] = of(P.series);
 		if (inSeries && label(series[0])) {
 			rec.s = label(series[0]);

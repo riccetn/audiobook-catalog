@@ -4,7 +4,7 @@
 // files picked together), and the old shapes of books and editions they may hold, brought to the current
 // one. The localStorage catalog from before IndexedDB is a version 1 backup too. Backup.read() hands such a
 // backup here, and nothing else uses this module, so support for version 1 goes with this file and that call.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Isbn} from './isbn.js';
 import {Edition} from './edition.js';
 import {ExternalCatalog} from './external-catalog.js';
@@ -43,7 +43,7 @@ function readBooks(list: Unchecked[]): Book[] {
 		try {
 			return Book.fromJSON(b);
 		} catch (exc) {
-			throw new Error(`book #${i}: ${Text.errorText(exc)}`, {cause: exc});
+			throw new PhraseError('book #{i}: {error}', {i, error: Text.errorPhrase(exc)}, {cause: exc});
 		}
 	});
 }
@@ -63,9 +63,10 @@ export class BackupV1 {
 		if (Array.isArray(data)) return {books: readBooks(BackupV1.fixBooks(data))};
 		if (data && typeof data === 'object' && Array.isArray(data.books)) {
 			const {seriesInfo: info, excluded, notDuplicates} = data;
-			if (info !== undefined && !Text.isObject(info)) throw new Error('seriesInfo is not an object');
+			if (info !== undefined && !Text.isObject(info)) throw new PhraseError('seriesInfo is not an object');
 			for (const kind of Contributor.KINDS)
-				if (data[kind] !== undefined && !Text.isObject(data[kind])) throw new Error(`${kind} is not an object`);
+				if (data[kind] !== undefined && !Text.isObject(data[kind]))
+					throw new PhraseError('{kind} is not an object', {kind});
 			const people: (kind: ContributorKind) => Map<string, Contributor> | null = kind =>
 				data[kind] === undefined
 					? null
@@ -80,7 +81,7 @@ export class BackupV1 {
 				['notDuplicates', notDuplicates],
 			]) {
 				if (list !== undefined && !(Array.isArray(list) && list.every(x => typeof x === 'string'))) {
-					throw new Error(`${name} is not a list of strings`);
+					throw new PhraseError('{name} is not a list of strings', {name});
 				}
 			}
 			const parts = {
@@ -100,7 +101,7 @@ export class BackupV1 {
 			if (parts.series) Series.moveSites(parts.series, parts.books, parts, (_kind, name) => name);
 			return parts;
 		}
-		throw new Error('expected a list of books or {books, seriesInfo, excluded}');
+		throw new PhraseError('expected a list of books or {shape}', {shape: '{books, seriesInfo, excluded}'});
 	}
 
 	/**
@@ -109,13 +110,13 @@ export class BackupV1 {
 	 */
 	static readIds(ids: unknown): NameIds | null {
 		if (ids === undefined) return null;
-		if (!Text.isObject(ids)) throw new Error('ids is not an object');
+		if (!Text.isObject(ids)) throw new PhraseError('ids is not an object');
 		const out: NameIds = {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()};
 		for (const kind of ['series', ...Contributor.KINDS] as NamedKind[]) {
 			const named = ids[kind];
 			if (named === undefined) continue;
 			if (!Text.isObject(named) || !Object.values(named).every(v => typeof v === 'string' && v.trim()))
-				throw new Error(`ids.${kind} must map names to ids`);
+				throw new PhraseError('ids.{kind} must map names to ids', {kind});
 			out[kind] = new Map(Object.entries(named) as [string, string][]);
 		}
 		return out;
@@ -137,7 +138,7 @@ export class BackupV1 {
 			if (base.endsWith('.txt')) {
 				if (base.includes('not-duplicates')) picked.notDuplicates = Duplicates.parseMarks(text);
 				else if (base.includes('excluded')) picked.excluded = Exclusions.parse(text).entries;
-				else throw new Error(`${name}: not one of the catalog's files`);
+				else throw new PhraseError("{name}: not one of the catalog's files", {name});
 				continue;
 			}
 			const json = JSON.parse(text);
@@ -147,10 +148,10 @@ export class BackupV1 {
 			else if (base.startsWith('publishers')) picked.publishers = json;
 			else if (Array.isArray(json)) picked.books = json;
 			else if (Text.isObject(json) && Array.isArray(json.books)) backup = json;
-			else throw new Error(`${name}: not one of the catalog's files`);
+			else throw new PhraseError("{name}: not one of the catalog's files", {name});
 		}
 		const all = {...backup, ...picked};
-		if (!Array.isArray(all.books)) throw new Error('no books.json or backup among the files');
+		if (!Array.isArray(all.books)) throw new PhraseError('no books.json or backup among the files');
 		return all;
 	}
 

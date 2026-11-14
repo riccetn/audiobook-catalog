@@ -1,9 +1,9 @@
 // Audible's catalog API (api.audible.<site>/1.0/catalog/...), which needs no account but doesn't answer web
 // pages, so the page asks it through the catalog proxy (the fetch it is given: route in, Response out), and the
 // tests give it a fake. Each Audible site has its own catalog: its own ASINs for books and series.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {CatalogClient} from './catalog-client.js';
-import type {Unchecked} from './text.js';
+import type {Unchecked, Phrase} from './text.js';
 import type {Step} from './catalog-client.js';
 
 /** Asks Audible's catalog API of one site or another through the catalog proxy, one request at a time. */
@@ -29,15 +29,24 @@ export class AudibleClient extends CatalogClient {
 		await this.waitTurn();
 		const res = await this.get(`audible/${site}/catalog/${path}`);
 		if (res.status === 404) return null;
-		if (res.status === 401) throw new Error('your server refused its key (check it on the Import & export page)');
+		if (res.status === 401)
+			throw new PhraseError('your server refused its key (check it on the Import & export page)');
 		let json: unknown = null;
 		try {
 			json = await res.json();
 		} catch {
 			/* reported below */
 		}
-		const said = Text.isObject(json) && typeof json.message === 'string' ? ` (${Text.tidy(json.message)})` : '';
-		if (!res.ok || !Text.isObject(json)) throw new Error(`Audible (${site}) answered ${res.status}${said}`);
+		const said = Text.isObject(json) && typeof json.message === 'string' ? Text.tidy(json.message) : '';
+		if (!res.ok || !Text.isObject(json))
+			throw new PhraseError(
+				said ? 'Audible ({site}) answered {status} ({said})' : 'Audible ({site}) answered {status}',
+				{
+					site,
+					status: res.status,
+					said,
+				},
+			);
 		return json;
 	}
 
@@ -73,7 +82,7 @@ export class AudibleClient extends CatalogClient {
 		asins: string[],
 		groups: string,
 		step: Step,
-		text: string,
+		text: Phrase,
 	): Promise<Map<string, Unchecked>> {
 		const found: Map<string, Unchecked> = new Map();
 		const batches = [];

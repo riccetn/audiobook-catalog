@@ -8,6 +8,7 @@ import {Csv} from './csv.js';
 import {FileImporter} from './file-importer.js';
 import type {CsvRow} from './csv.js';
 import type {ReadResult} from './file-importer.js';
+import type {Phrase} from './text.js';
 
 // Audible's built-in "Your First Listen" sample appears in every library.
 const SAMPLE_ASINS = new Set(['B002V8N37Q']);
@@ -37,7 +38,9 @@ export class AudibleImporter extends FileImporter {
 			return;
 		}
 		if (!book.authors.length) {
-			result.warnings.push(`${Text.repr(book.title)}: no author in the export, skipped`);
+			result.warnings.push(
+				Text.phrase('{title}: no author in the export, skipped', {title: Text.repr(book.title)}),
+			);
 			return;
 		}
 		result.books.push(book);
@@ -47,7 +50,7 @@ export class AudibleImporter extends FileImporter {
 	/**
 	 * Convert one row: [book, or null when it is not a finished book; a warning, or null].
 	 */
-	rowToBook(row: CsvRow): [Book | null, string | null] {
+	rowToBook(row: CsvRow): [Book | null, Phrase | null] {
 		if (cell(row, 'Progress') !== 'Finished') return [null, null];
 		const asin = cell(row, 'ASIN');
 		if (SAMPLE_ASINS.has(asin)) return [null, null];
@@ -91,7 +94,11 @@ export class AudibleImporter extends FileImporter {
 		const book = Book.fromRecord(Book.fixSeriesTitle(rec));
 
 		const warning = ambiguous
-			? `${Text.repr(book.title)}: belongs to several series (${row.Series}); using ${Text.repr(series)}`
+			? Text.phrase('{title}: belongs to several series ({all}); using {series}', {
+					title: Text.repr(book.title),
+					all: row.Series || '',
+					series: Text.repr(series),
+				})
 			: null;
 		return [book, warning];
 	}

@@ -11,6 +11,7 @@ import type {Catalog} from './catalog.js';
 import type {MergeOptions, MergeReport} from './merger.js';
 import type {ComparedBook, Difference, SeriesRename} from './comparison.js';
 import type {ShelfComparison} from './shelf-sync.js';
+import type {Phrase} from './text.js';
 
 /** One catalog compared: its name as the page says it, and its comparison. */
 export type ComparedSource = {label: string; result: ShelfComparison};
@@ -39,7 +40,7 @@ export type NewBook = {from: {source: number; at: number; line: string}[]};
  * What a catalog's book would fill in on yours (and the box set's titles it would add); `edition` is what its
  * edition fills in, which is picked apart, as the edition picked there may not be yours.
  */
-export type Gain = {source: number; at: number; book: Book; gains: string[]; edition: string[]};
+export type Gain = {source: number; at: number; book: Book; gains: Phrase[]; edition: Phrase[]};
 export interface MultiResult {
 	differing: DifferingBook[];
 	fresh: NewBook[];
@@ -158,7 +159,10 @@ export class MultiComparison {
 					source,
 					at: b.at,
 					book: b.books[0] || b.theirs,
-					gains: [...b.gains, ...b.added.map(a => `adds ${Comparison.bookLine(a)}`)],
+					gains: [
+						...b.gains,
+						...b.added.map(a => Text.phrase('adds {book}', {book: Comparison.bookLine(a)})),
+					],
 					edition: b.editionGains,
 				})),
 		);

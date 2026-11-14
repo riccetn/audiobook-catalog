@@ -2,7 +2,7 @@
 // a short bio, their own site, their ids in external catalogs (Audible, Amazon, Goodreads, Hardcover; see
 // ExternalCatalog) and any other links. Their series and titles are not kept here: they come from the
 // books (Catalog.works).
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
 import type {Unchecked} from './text.js';
 
@@ -61,7 +61,7 @@ export class Contributor {
 	 * written back by toJSON(), so the Check still reports it. Throws when the entry is not an object.
 	 */
 	static fromJSON(name: string, json: Unchecked): Contributor {
-		if (!Text.isObject(json)) throw new Error(`the info of ${Text.repr(name)} is not an object`);
+		if (!Text.isObject(json)) throw new PhraseError('the info of {name} is not an object', {name: Text.repr(name)});
 		const info = new Contributor(name);
 		for (const [k, v] of Object.entries(json)) {
 			if ((k === 'bio' || k === 'url') && typeof v === 'string') info[k] = v;

@@ -360,11 +360,10 @@ async function saveCreditForm() {
 	// a catalog this app doesn't know is only a warning there, but here it is most likely a mistake
 	if (entry) {
 		const {errors, warnings} = Validator.validateContributors(KIND.infoKey, {[name]: entry.toJSON()});
-		const problems = [...errors, ...warnings.filter(w => !/is a page on/.test(w))].map(e =>
-			e.replace(/^\w+\[[^\]]*\]: /, ''),
-		);
-		// Check's messages, which a module writes
-		if (problems.length) return showFormError(spell(problems.join('; ')));
+		const problems = [...errors, ...warnings]
+			.map(Validator.unlabeled)
+			.filter(p => p.template !== Validator.PAGE_ON_CATALOG);
+		if (problems.length) return showFormError(spell(Text.joinPhrases(problems)));
 	}
 	// the one the new name is, with their books, which join these
 	if (renamed) {
@@ -418,7 +417,7 @@ function removeCredit() {
 	const name = nameOf(id);
 	const problem = CATALOG.removeProblem(KIND.infoKey, id);
 	if (problem) {
-		byId('creditFormError').textContent = spell(problem); // the catalog's (a module's) message
+		byId('creditFormError').textContent = spell(problem);
 		return;
 	}
 	const count = CATALOG.booksOf(KIND.infoKey, id).length;

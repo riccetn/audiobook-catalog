@@ -1,6 +1,7 @@
 // What every page draws with: its own text in the spelling the browser prefers, elements built with the DOM API
 // (never HTML strings), the page's elements by id, and the status line.
 import {Text} from './modules/text.js';
+import type {Phrase, PhraseValue} from './modules/text.js';
 
 // British spelling ("catalogue") when the browser's first English language is a British one, else American.
 const BRITISH = (() => {
@@ -15,18 +16,21 @@ const BRITISH = (() => {
  * The page's own text in the spelling this browser prefers (see BRITISH). Every text a page shows goes through
  * it but a book's title, a name or other data, which is never respelled: a sentence holding one is a template,
  * with a `{marker}` where each value goes and the values in `values`, filled in as they are (Text.filled). Never
- * piece a sentence together from parts around a value: the whole sentence is one template. Without `values`
- * the text is only respelled, braces and all (a message a module wrote, which may hold data).
+ * piece a sentence together from parts around a value: the whole sentence is one template. A module's message
+ * is a Phrase, its template and values together (Text.phrase), spelled the same way; a value may be one too.
+ * Without `values` a text is only respelled, braces and all (the page's own HTML).
  */
-export function spell(template: string, values?: Record<string, string | number>): string {
-	return values ? Text.filled(template, BRITISH, values) : Text.spelled(template, BRITISH);
+export function spell(template: string | Phrase, values?: Record<string, PhraseValue>): string {
+	return values || typeof template !== 'string'
+		? Text.filled(template, BRITISH, values)
+		: Text.spelled(template, BRITISH);
 }
 
 /**
  * A template's sentence as children for buildElement() or fillElement() (see spell), where a value may be an
  * element too: spellParts('No books yet. {add} or import some.', {add: buildElement('a', {href}, spell('Add one'))}).
  */
-export function spellParts(template: string, values: Record<string, Child>): Child[] {
+export function spellParts(template: string | Phrase, values: Record<string, Child | Phrase> = {}): Child[] {
 	return Text.templateParts<Child>(template, BRITISH, values);
 }
 

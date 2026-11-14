@@ -2,11 +2,11 @@
 // Hardcover, Open Library, ...; see ExternalCatalog), its ISBN, narrators, publishers, release date, length and your own
 // description of it ("UK edition"), and the key of its cover in a catalog that keeps one (Cover). A box set is one edition on each of its titles, linked by the ids the
 // copies share (sameAs).
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Isbn} from './isbn.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Cover} from './cover.js';
-import type {Unchecked, StoredField} from './text.js';
+import type {Unchecked, StoredField, Phrase} from './text.js';
 
 /** the keys of an edition as it is stored */
 export type EditionKey = 't' | 'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc' | 'links' | 'img';
@@ -135,7 +135,7 @@ export class Edition {
 	 * back by toJSON(), so the Check still reports it. Throws when it is not an object.
 	 */
 	static fromJSON(json: Unchecked): Edition {
-		if (!Text.isObject(json)) throw new Error('an edition is not an object');
+		if (!Text.isObject(json)) throw new PhraseError('an edition is not an object');
 		const ed = new Edition();
 		for (const [k, v] of Object.entries(json)) ed.set(k, v);
 		return ed;
@@ -566,7 +566,7 @@ export class Edition {
 	 * hold a ';'. An external catalog's field holds an id or the address of the edition's page there (an
 	 * Audible or Amazon page names its own site); the address of a book's page names the book. Several ISBNs
 	 * make that many editions (splitIsbns); the first keeps the covers' keys (`img:`, which the editor doesn't show). Returns {editions (none when every field is empty), bad (the
-	 * fields that could not be read, as "Label value"), book (the book's external ids found)}.
+	 * fields that could not be read, as "Label {value}" with the value typed), book (the book's external ids found)}.
 	 * @param known publishers' names kept whole though they hold a comma (Text.splitPublishers): the edition's own, the catalog's
 	 */
 	static fromFields(
@@ -574,13 +574,13 @@ export class Edition {
 		known: Iterable<string> = [],
 	): {
 		editions: Edition[];
-		bad: string[];
+		bad: Phrase[];
 		book: Record<string, string>;
 	} {
 		// a stored edition once splitIsbns() has made one per ISBN: until then `isbn` is a list
 		const ed: Record<string, any> = {};
 		const ext: Record<string, string> = {};
-		const bad: string[] = [];
+		const bad: Phrase[] = [];
 		const book: Record<string, string> = {};
 		const img: Record<string, string> = {};
 		for (const [k, text] of Object.entries(fields)) {
@@ -606,7 +606,7 @@ export class Edition {
 				continue;
 			}
 			if (!found || (ext[found.catalog] && ext[found.catalog] !== found.id)) {
-				bad.push(`${label} ${value}`);
+				bad.push(Text.phrase(`${label} {value}`, {value}));
 				continue;
 			}
 			ext[found.catalog] = found.id;
@@ -635,7 +635,7 @@ export class Edition {
 			const got: any[] = read.editions.flatMap(x =>
 				k === 'isbn' ? x.isbns() : x.value(k) !== undefined ? [x.value(k)] : [],
 			);
-			if (read.bad.length || !got.length) bad.push(`${shown} ${value}`);
+			if (read.bad.length || !got.length) bad.push(Text.phrase(`${shown} {value}`, {value}));
 			else ed[k] = k === 'isbn' ? got : got[0];
 		}
 		if (Object.keys(ext).length) ed.ext = ExternalCatalog.order(ext);

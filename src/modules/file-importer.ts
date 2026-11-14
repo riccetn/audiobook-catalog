@@ -5,9 +5,10 @@
 import {Csv} from './csv.js';
 import type {Book} from './book.js';
 import type {CsvRow} from './csv.js';
+import type {Phrase} from './text.js';
 
 /** what an importer found in an export */
-export type ReadResult = {books: Book[]; warnings: string[]; skippedUnfinished: number};
+export type ReadResult = {books: Book[]; warnings: Phrase[]; skippedUnfinished: number};
 
 /** Reads an export file into books; a subclass says how to read one of its rows (readRow). */
 export class FileImporter {

@@ -1,7 +1,7 @@
 // A series: what you keep about it (its series info: how many books are out, whether it is complete, a
 // note, its ids in external catalogs and links to other pages about it), and what goes for every series: names that are spelled differently but are one
 // series, numbers and box sets' ranges ("4-6"), and a series written into a title ("Title (Series, #3)").
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Contributor} from './contributor.js';
 import type {Book} from './book.js';
@@ -103,7 +103,8 @@ export class Series {
 	 * is not an object.
 	 */
 	static fromJSON(name: string, json: Unchecked): Series {
-		if (!Text.isObject(json)) throw new Error(`the series info of ${Text.repr(name)} is not an object`);
+		if (!Text.isObject(json))
+			throw new PhraseError('the series info of {name} is not an object', {name: Text.repr(name)});
 		const series = new Series(name);
 		for (const [k, v] of Object.entries(json)) {
 			if (k === 'total' && (typeof v === 'number' || v === 'many')) series.total = v;
