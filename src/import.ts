@@ -37,7 +37,17 @@ import {
 	backupAgeText,
 	bookPageHref,
 } from './store.js';
-import {showIoStatus, byId, fieldById, spell, buildElement, fillElement} from './dom.js';
+import {
+	showIoStatus,
+	byId,
+	fieldById,
+	spell,
+	spellParts,
+	plural,
+	firstThree,
+	buildElement,
+	fillElement,
+} from './dom.js';
 import {
 	SERVER_STORAGE_KEY,
 	savedServer,
@@ -67,7 +77,7 @@ export type SyncClass = typeof ShelfSync;
 function refreshPage() {
 	return afterSaving(async () => {
 		const count = await queryCatalog(r => r.count('books'));
-		byId('subtitle').textContent = spell(`${count} audiobooks in the catalog`);
+		byId('subtitle').textContent = spell('{count} audiobooks in the catalog', {count});
 		byId('backupState').textContent = backupAgeText(await backupAge());
 	});
 }
@@ -81,7 +91,9 @@ async function holdWholeCatalog(): Promise<boolean> {
 		return true;
 	} catch (e) {
 		showIoStatus(
-			spell(`Couldn't read the catalog kept in this browser: ${Text.errorText(e)}. Reload the page.`),
+			spell("Couldn't read the catalog kept in this browser: {error}. Reload the page.", {
+				error: spell(Text.errorText(e)),
+			}),
 			true,
 		);
 		return false;
@@ -119,12 +131,12 @@ export function showExclusions() {
 									'data-entry': entry,
 									onclick: () => removeExclusion(entry),
 								},
-								'Remove',
+								spell('Remove'),
 							),
 						),
 					),
 				)
-			: buildElement('p', {class: 'ioNote'}, 'Imports skip nothing: no book or edition is excluded.'),
+			: buildElement('p', {class: 'ioNote'}, spell('Imports skip nothing: no book or edition is excluded.')),
 	);
 }
 
@@ -133,7 +145,7 @@ function removeExclusion(entry: string) {
 	if (!CATALOG.removeExclusion(entry)) return;
 	persist();
 	showExclusions();
-	showIoStatus(`Imports may add ${entry} again.`, false, () => {
+	showIoStatus(spell('Imports may add {entry} again.', {entry}), false, () => {
 		CATALOG.addExclusions([entry]);
 		persist();
 		showExclusions();
@@ -159,7 +171,7 @@ function download(text: string, type: string, name: string) {
 function exportBackup() {
 	// the stored records by store and id (Backup.write, Backup.VERSION)
 	download(JSON.stringify(Backup.write(CATALOG), null, '\t'), 'application/json', 'audiobook-catalog-backup');
-	showIoStatus('Backup downloaded.');
+	showIoStatus(spell('Backup downloaded.'));
 	noteBackup().then(refreshPage);
 }
 
@@ -170,8 +182,12 @@ function exportFile(exporter: FileExporter) {
 	const {LABEL, FORMAT, FILE_NAME, TYPE} = exporter.kind;
 	const out = exporter.write(CATALOG.books);
 	download(out.text, TYPE, FILE_NAME);
+	// (its notes are the exporter's, a module's)
+	const values = {catalog: LABEL, format: spell(FORMAT), count: out.books, notes: spell(out.notes.join('; '))};
 	showIoStatus(
-		`${LABEL} ${FORMAT} with ${out.books} books downloaded${out.notes.length ? ' (' + out.notes.join('; ') + ')' : ''}.`,
+		out.notes.length
+			? spell('{catalog} {format} with {count} books downloaded ({notes}).', values)
+			: spell('{catalog} {format} with {count} books downloaded.', values),
 	);
 }
 
@@ -190,7 +206,7 @@ function readFiles(files: Iterable<File>): Promise<{name: string; text: string}[
 							name: file.name,
 							text: (e.target as FileReader).result as string,
 						});
-					reader.onerror = () => reject(new Error(`couldn't read ${file.name}`));
+					reader.onerror = () => reject(new Error(spell("couldn't read {file}", {file: file.name})));
 					reader.readAsText(file);
 				}) as Promise<{name: string; text: string}>,
 		),
@@ -232,7 +248,12 @@ async function importBackup(files: File[]) {
 		);
 		if (unstorable.length) {
 			showIoStatus(
-				`Not restored: fix these values in the backup first (they aren't what their field holds): ${Text.firstThree(unstorable, '; ')}.`,
+				spell(
+					"Not restored: fix these values in the backup first (they aren't what their field holds): {values}.",
+					{
+						values: firstThree(unstorable, '; '),
+					},
+				),
 				true,
 			);
 			return;
@@ -274,17 +295,23 @@ async function importBackup(files: File[]) {
 		}
 		persist();
 		noteBackup().then(refreshPage); // what was restored is in that backup
-		showIoStatus(
-			`Restored ${books.length} books` +
-				(series ? ` and the release details of ${series.size} series` : '') +
-				(newlyExcluded ? `; ${newlyExcluded} more excluded from imports.` : '.'),
-		);
+		// one whole sentence for each case, as spell() wants
+		const restored = series
+			? newlyExcluded
+				? 'Restored {books} books and the release details of {series} series; {excluded} more excluded from imports.'
+				: 'Restored {books} books and the release details of {series} series.'
+			: newlyExcluded
+				? 'Restored {books} books; {excluded} more excluded from imports.'
+				: 'Restored {books} books.';
+		showIoStatus(spell(restored, {books: books.length, series: series ? series.size : 0, excluded: newlyExcluded}));
 	} catch (exc) {
 		showIoStatus(
 			exc instanceof NewerBackup
-				? 'Not restored: a newer version of the catalog made that backup. Reload the page to update it, then try again.'
+				? spell(
+						'Not restored: a newer version of the catalog made that backup. Reload the page to update it, then try again.',
+					)
 				: exc instanceof UnreadableBackup
-					? `Not restored: ${exc.message}.`
+					? spell('Not restored: {problem}.', {problem: spell(exc.message)})
 					: spell(
 							"Couldn't read that — pick a catalog backup JSON, or your books.json with the other data files.",
 						),
@@ -361,7 +388,7 @@ function pendingCompare(compare: Omit<PendingCompare, 'picks'>): PendingCompare 
 }
 
 /**
- * A paragraph of the preview.
+ * A paragraph of the preview: `text` as given, spelled by the caller (see spell).
  */
 const para = (text: string, className?: string): HTMLParagraphElement => buildElement('p', {class: className}, text);
 
@@ -374,7 +401,7 @@ function messageList(items: string[], limit: number = Infinity): HTMLUListElemen
 		'ul',
 		{},
 		items.slice(0, limit).map(m => buildElement('li', {}, m)),
-		items.length > limit && buildElement('li', {}, `…and ${items.length - limit} more`),
+		items.length > limit && buildElement('li', {}, spell('…and {count} more', {count: items.length - limit})),
 	);
 }
 
@@ -410,7 +437,7 @@ function showPreviewButtons(confirm: string) {
 	const confirmBtn = byId('importConfirm');
 	confirmBtn.style.display = confirm ? '' : 'none';
 	confirmBtn.textContent = confirm;
-	byId('importCancel').textContent = confirm ? 'Cancel' : 'Close';
+	byId('importCancel').textContent = spell(confirm ? 'Cancel' : 'Close');
 }
 
 /**
@@ -427,7 +454,7 @@ function showPreview(title: string, body: Child[], confirm: string, panelId?: st
 /** @returns the comparison's Apply button's label, for the changes ticked; '' for none */
 function applyLabel(): string {
 	const n = PENDING_COMPARE ? pickedCount(PENDING_COMPARE) : 0;
-	return n ? `Apply ${Text.plural(n, 'change')}` : '';
+	return n ? spell('Apply {changes}', {changes: plural(n, 'change')}) : '';
 }
 
 function updateApplyButton() {
@@ -483,13 +510,17 @@ function compareGroup(
 		buildElement(
 			'h4',
 			{},
-			`${heading} (${rows.length})`,
+			spell('{heading} ({count})', {heading, count: rows.length}),
 			group &&
 				keys.length > 1 && [
 					' ',
-					buildElement('button', {type: 'button', class: 'cmpTick', onclick: tick(true)}, 'Tick all'),
+					buildElement('button', {type: 'button', class: 'cmpTick', onclick: tick(true)}, spell('Tick all')),
 					' ',
-					buildElement('button', {type: 'button', class: 'cmpTick', onclick: tick(false)}, 'Tick none'),
+					buildElement(
+						'button',
+						{type: 'button', class: 'cmpTick', onclick: tick(false)},
+						spell('Tick none'),
+					),
 				],
 		),
 		note && para(note, 'cmpNote'),
@@ -510,11 +541,13 @@ function differenceRow(d: Difference, name: string, renames: Map<string, string>
 		'li',
 		{},
 		pickBox('patch', d.key, [
-			`${d.label}: `,
-			buildElement('span', {class: 'cmpHere'}, d.here || 'none'),
-			spell(' here, '),
-			buildElement('span', {class: 'cmpThere'}, d.there),
-			` on ${name}`,
+			spellParts('{field}: {here} here, {there} on {catalog}', {
+				// the field's label is Comparison's, a module's
+				field: spell(d.label),
+				here: buildElement('span', {class: 'cmpHere'}, d.here || spell('none')),
+				there: buildElement('span', {class: 'cmpThere'}, d.there),
+				catalog: name,
+			}),
 			d.field === 's' && renames.has(d.here) ? renameNote(d.here) : '',
 		]),
 	);
@@ -524,7 +557,7 @@ function differenceRow(d: Difference, name: string, renames: Map<string, string>
  * What picking a series' new name does: " (renames the series, on its 4 books)".
  */
 function renameNote(series: string): string {
-	return ` (renames the series, on ${Text.plural(CATALOG.seriesBooks(series).length, 'book')})`;
+	return ' ' + spell('(renames the series, on {books})', {books: plural(CATALOG.seriesBooks(series).length, 'book')});
 }
 
 /** Draw the comparison open (PENDING_COMPARE) in the preview. */
@@ -542,7 +575,8 @@ function drawCompare() {
 	out.push(
 		para(
 			spell(
-				`${fresh.length} new, ${gains.length} with more to give, ${differing.length} with values that differ, ${same.length} the same as in this catalog.`,
+				'{fresh} new, {gains} with more to give, {differing} with values that differ, {same} the same as in this catalog.',
+				{fresh: fresh.length, gains: gains.length, differing: differing.length, same: same.length},
 			),
 		),
 	);
@@ -550,7 +584,7 @@ function drawCompare() {
 	// a new book as it would be added, in the series spelling in use
 	out.push(
 		compareGroup(
-			`New from ${name}`,
+			spell('New from {catalog}', {catalog: name}),
 			fresh.map(b => [
 				pickBox('take', b.at, [Comparison.bookLine(b.added[0] || b.theirs)]),
 				b.added.length > 1 && messageList(b.added.map(Comparison.bookLine)),
@@ -567,18 +601,27 @@ function drawCompare() {
 					buildElement(
 						'li',
 						{},
-						pickBox('editions', b.at, [`the ${name} edition: ${b.editionGains.join('; ')}`]),
+						pickBox('editions', b.at, [
+							// what the edition gains is Comparison's, a module's
+							spell('the {catalog} edition: {gains}', {
+								catalog: name,
+								gains: spell(b.editionGains.join('; ')),
+							}),
+						]),
 					),
 				)
 			: null;
 	out.push(
 		compareGroup(
-			`${name} has more`,
+			spell('{catalog} has more', {catalog: name}),
 			gains.map(b =>
 				b.gains.length || b.added.length
 					? [
 							pickBox('take', b.at, [Comparison.bookLine(b.books[0] || b.theirs)]),
-							messageList([...b.gains, ...b.added.map(a => `adds ${Comparison.bookLine(a)}`)]),
+							messageList([
+								...b.gains.map(g => spell(g)),
+								...b.added.map(a => spell('adds {book}', {book: Comparison.bookLine(a)})),
+							]),
 							fromEdition(b),
 						]
 					: [buildElement('span', {class: 'cmpBook'}, Comparison.bookLine(b.books[0])), fromEdition(b)],
@@ -588,13 +631,14 @@ function drawCompare() {
 			spell(
 				compare.editionsYours
 					? 'Ticked, importing fills in what this catalog lacks, and changes nothing it has.'
-					: `Ticked, importing fills in what this catalog lacks, and changes nothing it has. The ${name} edition is left out unless you tick it, as it may have been picked there for want of yours.`,
+					: 'Ticked, importing fills in what this catalog lacks, and changes nothing it has. The {catalog} edition is left out unless you tick it, as it may have been picked there for want of yours.',
+				{catalog: name},
 			),
 		),
 	);
 	out.push(
 		compareGroup(
-			'Different in both',
+			spell('Different in both'),
 			differing.map(b => [
 				buildElement('span', {class: 'cmpBook'}, Comparison.bookLine(b.books[0])),
 				buildElement(
@@ -606,10 +650,10 @@ function drawCompare() {
 			'patch',
 			differing.flatMap(b => b.differences.map(d => d.key)),
 			spell(
-				`Tick a value to use the one on ${name} in place of this catalog's.` +
-					(compare.editionsYours
-						? ''
-						: ` An edition's values are those of the edition picked on ${name}, which may not be yours.`),
+				compare.editionsYours
+					? "Tick a value to use the one on {catalog} in place of this catalog's."
+					: "Tick a value to use the one on {catalog} in place of this catalog's. An edition's values are those of the edition picked on {catalog}, which may not be yours.",
+				{catalog: name},
 			),
 		),
 	);
@@ -620,7 +664,11 @@ function drawCompare() {
 			buildElement(
 				'details',
 				{class: 'cmpOnlyHere'},
-				buildElement('summary', {}, spell(`Only in this catalog: ${comparison.onlyHere.length}`)),
+				buildElement(
+					'summary',
+					{},
+					spell('Only in this catalog: {count}', {count: comparison.onlyHere.length}),
+				),
 				messageList(comparison.onlyHere.map(Comparison.bookLine), 100),
 			),
 		);
@@ -629,7 +677,7 @@ function drawCompare() {
 		notAdded = of('notAdded');
 	if (excluded.length)
 		out.push(
-			para(`Skipped (excluded from imports): ${excluded.length}`),
+			para(spell('Skipped (excluded from imports): {count}', {count: excluded.length})),
 			messageList(
 				excluded.map(b => Comparison.bookLine(b.theirs)),
 				10,
@@ -645,7 +693,10 @@ function drawCompare() {
 		);
 	}
 	if (compare.warnings.length)
-		out.push(para(`Needs a look (${compare.warnings.length}):`, 'warn'), messageList(compare.warnings));
+		out.push(
+			para(spell('Needs a look ({count}):', {count: compare.warnings.length}), 'warn'),
+			messageList(compare.warnings.map(w => spell(w))),
+		);
 	const plan = online && online.result.plan;
 	if (
 		!pickedCount(compare) &&
@@ -656,7 +707,7 @@ function drawCompare() {
 	) {
 		out.push(para(spell('Nothing to take or send: both have the same.')));
 	}
-	showPreview(spell(`Compare with ${name}`), out, applyLabel());
+	showPreview(spell('Compare with {catalog}', {catalog: name}), out, applyLabel());
 }
 
 /**
@@ -668,39 +719,51 @@ function shelfSections(compare: PendingCompare, sync: ShelfSync, result: ShelfCo
 		{plan, idsFound, infoIds} = result;
 	const out: Child[] = [];
 	if (plan) {
-		const dates = (d: string[] | undefined) => (d && d.length ? `: read ${d.join(', ')}` : '');
+		const dates = (d: string[] | undefined) =>
+			d && d.length ? spell(': read {dates}', {dates: d.join(', ')}) : '';
 		out.push(
 			compareGroup(
-				`Not on your ${label} ${plan.name} shelf`,
+				spell('Not on your {catalog} {shelf} shelf', {catalog: label, shelf: plan.name}),
 				plan.add.map((a, i) =>
 					pickBox('add', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)]),
 				),
 				'add',
 				plan.add.map((a, i) => i),
-				`Tick a book to put it on your ${plan.name} shelf on ${label}${sync.kind.SENDS_READS ? ', with its dates read' : ''}.`,
+				spell(
+					sync.kind.SENDS_READS
+						? 'Tick a book to put it on your {shelf} shelf on {catalog}, with its dates read.'
+						: 'Tick a book to put it on your {shelf} shelf on {catalog}.',
+					{shelf: plan.name, catalog: label},
+				),
 			),
 		);
 		out.push(
 			compareGroup(
-				`Reads ${label} lacks`,
+				spell('Reads {catalog} lacks', {catalog: label}),
 				plan.reads.map((a, i) =>
 					pickBox('reads', i, [a.books.map(Comparison.bookLine).join('; '), dates(a.dates)]),
 				),
 				'reads',
 				plan.reads.map((a, i) => i),
-				`Tick a book to add these reads to it on ${label}.`,
+				spell('Tick a book to add these reads to it on {catalog}.', {catalog: label}),
 			),
 		);
 	} else if (sync.kind.CLIENT.KEY_STORAGE)
 		out.push(
 			para(
-				`Save your ${label} ${sync.kind.CLIENT.KEY_NAME} (below the buttons) to compare your shelves too, and to put books on them.`,
+				spell(
+					'Save your {catalog} {key} (below the buttons) to compare your shelves too, and to put books on them.',
+					{
+						catalog: label,
+						key: spell(sync.kind.CLIENT.KEY_NAME),
+					},
+				),
 			),
 		);
 	if (idsFound.length || infoIds.length) {
 		const saving = [
-			idsFound.length && Text.plural(idsFound.length, 'book'),
-			infoIds.length && Text.plural(infoIds.length, 'series or person', 'series and people'),
+			idsFound.length && plural(idsFound.length, 'book'),
+			infoIds.length && plural(infoIds.length, 'series or person', 'series and people'),
 		]
 			.filter(Boolean)
 			.join(', ');
@@ -717,24 +780,42 @@ function shelfSections(compare: PendingCompare, sync: ShelfSync, result: ShelfCo
 						updateApplyButton();
 					},
 				}),
-				` Save the ${label} ${sync.kind.FOUND} found for ${saving}`,
+				' ',
+				spell('Save the {catalog} {found} found for {saving}', {
+					catalog: label,
+					found: spell(sync.kind.FOUND),
+					saving,
+				}),
 			),
 		);
 	}
 	if (plan) {
 		out.push(
 			compareGroup(
-				`On another ${label} shelf, left alone`,
+				spell('On another {catalog} shelf, left alone', {catalog: label}),
 				plan.otherShelf.map(([b, shelf]) => `${Comparison.bookLine(b)}: ${shelf}`),
 				null,
 				[],
 			),
 		);
 		out.push(
-			compareGroup(`Not found on ${label}`, plan.unknown.map(Comparison.bookLine), null, [], sync.kind.NOT_FOUND),
+			compareGroup(
+				spell('Not found on {catalog}', {catalog: label}),
+				plan.unknown.map(Comparison.bookLine),
+				null,
+				[],
+				spell(sync.kind.NOT_FOUND),
+			),
 		);
 		if (plan.inexact.length)
-			out.push(para(`Dates read without a day, which ${label} can't take: ${plan.inexact.length}`));
+			out.push(
+				para(
+					spell("Dates read without a day, which {catalog} can't take: {count}", {
+						catalog: label,
+						count: plan.inexact.length,
+					}),
+				),
+			);
 	}
 	out.push(...notAudioSections(result.notAudio, label));
 	if (result.missing.length) {
@@ -745,7 +826,10 @@ function shelfSections(compare: PendingCompare, sync: ShelfSync, result: ShelfCo
 				buildElement(
 					'summary',
 					{},
-					spell(`In the series on ${label}, not in this catalog: ${result.missing.length}`),
+					spell('In the series on {catalog}, not in this catalog: {count}', {
+						catalog: label,
+						count: result.missing.length,
+					}),
 				),
 				messageList(
 					result.missing.map(m => (m.number ? `${m.number}. ${m.title}` : m.title)),
@@ -767,7 +851,12 @@ function notAudioSections(notAudio: NotAudio[], label: string): Child[] {
 		n.yours && n.book.id
 			? buildElement('a', {href: bookPageHref(n.book.id)}, Comparison.bookLine(n.book))
 			: Comparison.bookLine(n.book),
-		n.yours ? `: ${n.edition} is ${n.said}${n.maybe ? '' : ` on ${label}`}` : `: read as ${n.said} (${n.edition})`,
+		// what the catalog said it is, in the sync's (a module's) words
+		n.yours
+			? n.maybe
+				? spell(': {edition} is {said}', {edition: n.edition, said: spell(n.said)})
+				: spell(': {edition} is {said} on {catalog}', {edition: n.edition, said: spell(n.said), catalog: label})
+			: spell(': read as {said} ({edition})', {said: spell(n.said), edition: n.edition}),
 		n.url && [
 			' ',
 			buildElement(
@@ -779,20 +868,21 @@ function notAudioSections(notAudio: NotAudio[], label: string): Child[] {
 	];
 	return [
 		compareGroup(
-			'Maybe not audiobooks, in this catalog',
+			spell('Maybe not audiobooks, in this catalog'),
 			notAudio.filter(n => n.yours).map(row),
 			null,
 			[],
 			spell(
-				`By what ${label} says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form.`,
+				'By what {catalog} says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form.',
+				{catalog: label},
 			),
 		),
 		compareGroup(
-			`Maybe not audiobooks, on your ${label} shelves`,
+			spell('Maybe not audiobooks, on your {catalog} shelves', {catalog: label}),
 			notAudio.filter(n => !n.yours).map(row),
 			null,
 			[],
-			spell(`You read these on ${label} as something else: pick the audiobook edition there.`),
+			spell('You read these on {catalog} as something else: pick the audiobook edition there.', {catalog: label}),
 		),
 	];
 }
@@ -814,9 +904,12 @@ function openCompare(compare: Omit<PendingCompare, 'picks'>) {
 function compareExport(Importer: ImporterClass, text: string, fileName: string) {
 	const importer = importerOf(Importer);
 	const result = importer.read(text);
-	const notes = [`${Text.plural(result.books.length, 'finished book')} read from ${fileName}`];
+	const notes = [
+		spell('{books} read from {file}', {books: plural(result.books.length, 'finished book'), file: fileName}),
+	];
 	const opts: MergeOptions = {editionTitles: Importer.EDITION_TITLES};
-	if (result.skippedUnfinished) notes.push(`Not finished yet, skipped: ${result.skippedUnfinished}`);
+	if (result.skippedUnfinished)
+		notes.push(spell('Not finished yet, skipped: {count}', {count: result.skippedUnfinished}));
 	openCompare({
 		source: Importer.CATALOG,
 		name: importer.label,
@@ -861,7 +954,7 @@ function applyIntoCopy(compare: PendingCompare) {
 /**
  * What applying a comparison did here, as the status line says it: "Added 2 books, filled in 1 ASIN, changed 1 value".
  * @param idsFound books that got an id (or a cover) found for them on the catalog compared
- * @param found where, and what was found ("AudiobookDB ids and covers")
+ * @param found where, and what was found ("AudiobookDB ids and covers"), spelled
  * @param infoIds series and people that got an id found there
  */
 function appliedText(
@@ -872,26 +965,30 @@ function appliedText(
 	infoIds: number = 0,
 ): string {
 	const filled: [Book[], (n: number) => string][] = [
-		[report.backfilled, n => `filled in ${Text.plural(n, 'ASIN')}`],
-		[report.goodreadsFilled, n => `filled in ${Text.plural(n, 'Goodreads id')}`],
-		[report.hardcoverFilled, n => `filled in Hardcover ids on ${Text.plural(n, 'book')}`],
-		[report.datesFilled, n => `filled in dates read on ${Text.plural(n, 'book')}`],
-		[report.isbnsFilled, n => `added ISBNs to ${Text.plural(n, 'book')}`],
-		[report.editionsAdded, n => `added editions to ${Text.plural(n, 'book')}`],
-		[report.detailsFilled, n => `filled in edition details on ${Text.plural(n, 'book')}`],
+		[report.backfilled, n => spell('filled in {asins}', {asins: plural(n, 'ASIN')})],
+		[report.goodreadsFilled, n => spell('filled in {ids}', {ids: plural(n, 'Goodreads id')})],
+		[report.hardcoverFilled, n => spell('filled in Hardcover ids on {books}', {books: plural(n, 'book')})],
+		[report.datesFilled, n => spell('filled in dates read on {books}', {books: plural(n, 'book')})],
+		[report.isbnsFilled, n => spell('added ISBNs to {books}', {books: plural(n, 'book')})],
+		[report.editionsAdded, n => spell('added editions to {books}', {books: plural(n, 'book')})],
+		[report.detailsFilled, n => spell('filled in edition details on {books}', {books: plural(n, 'book')})],
 	];
+	const saved = {
+		found,
+		books: plural(idsFound, 'book'),
+		people: plural(infoIds, 'series or person', 'series and people'),
+	};
 	return [
-		`Added ${Text.plural(report.added.length, 'book')}`,
+		spell('Added {books}', {books: plural(report.added.length, 'book')}),
 		...filled.filter(([list]) => list.length).map(([list, say]) => say(list.length)),
-		(idsFound || infoIds) &&
-			`saved ${found} found for ` +
-				[
-					idsFound && Text.plural(idsFound, 'book'),
-					infoIds && Text.plural(infoIds, 'series or person', 'series and people'),
-				]
-					.filter(Boolean)
-					.join(' and '),
-		patched && `changed ${Text.plural(patched, 'value')}`,
+		idsFound && infoIds
+			? spell('saved {found} found for {books} and {people}', saved)
+			: idsFound
+				? spell('saved {found} found for {books}', saved)
+				: infoIds
+					? spell('saved {found} found for {people}', saved)
+					: '',
+		patched && spell('changed {values}', {values: plural(patched, 'value')}),
 	]
 		.filter(Boolean)
 		.join(', ');
@@ -911,7 +1008,7 @@ function applyCompare() {
 	takeBooks(copy, renamed);
 	refreshPage();
 	persist();
-	showIoStatus(appliedText(report, patched) + '.');
+	showIoStatus(spell('{done}.', {done: appliedText(report, patched)}));
 }
 
 // ------------------------------------------------------------ Merge a backup from another device
@@ -959,67 +1056,92 @@ function previewMerge() {
 	const {backup, fileName} = PENDING_MERGE;
 	const {m, errors, changes} = mergeIntoCatalog(backup);
 	const list = (books: Book[]) => messageList(books.map(Comparison.bookLine));
-	const out: Child[] = [para(`${backup.books.length} books in ${fileName}; ${m.books.length} after merging.`)];
-	out.push(para(`New from the backup: ${m.added.length}`), list(m.added));
+	const out: Child[] = [
+		para(
+			spell('{count} books in {file}; {merged} after merging.', {
+				count: backup.books.length,
+				file: fileName,
+				merged: m.books.length,
+			}),
+		),
+	];
+	out.push(para(spell('New from the backup: {count}', {count: m.added.length})), list(m.added));
 	out.push(
 		para(
-			`Gaining genres, dates read or editions${m.conflicts.length ? ', or the version kept below' : ''}: ${m.updated.length}`,
+			spell(
+				m.conflicts.length
+					? 'Gaining genres, dates read or editions, or the version kept below: {count}'
+					: 'Gaining genres, dates read or editions: {count}',
+				{count: m.updated.length},
+			),
 		),
 	);
-	out.push(para(`Removed (removed on the other device): ${m.removed.length}`), list(m.removed));
-	if (m.skipped.length) out.push(para(`Not added back (removed here): ${m.skipped.length}`));
+	out.push(para(spell('Removed (removed on the other device): {count}', {count: m.removed.length})), list(m.removed));
+	if (m.skipped.length) out.push(para(spell('Not added back (removed here): {count}', {count: m.skipped.length})));
+	const keeping = (backups: boolean) => spell(backups ? "the backup's" : "this catalog's");
 	if (m.conflicts.length) {
-		const kept = fieldById('mergePreferSelect').value === 'backup' ? "the backup's" : spell("this catalog's");
+		const kept = keeping(fieldById('mergePreferSelect').value === 'backup');
 		out.push(
-			para(`Title, author or series differ, keeping ${kept}: ${m.conflicts.length}`),
+			para(spell('Title, author or series differ, keeping {kept}: {count}', {kept, count: m.conflicts.length})),
 			messageList(
-				m.conflicts.map(c => `${Comparison.bookLine(c.mine)} / backup: ${Comparison.bookLine(c.theirs)}`),
+				m.conflicts.map(c =>
+					spell('{mine} / backup: {theirs}', {
+						mine: Comparison.bookLine(c.mine),
+						theirs: Comparison.bookLine(c.theirs),
+					}),
+				),
 			),
 		);
 	}
+	// what was added, and what differs and which was kept, of series' and people's info
+	const infoLine = (label: string, added: number, differ: number, backups: boolean) =>
+		spell(differ ? '{label}: {added} added, {differ} differing (keeping {kept})' : '{label}: {added} added', {
+			label: spell(label),
+			added,
+			differ,
+			kept: keeping(backups),
+		});
 	const infoDiffer = m.infoChanged.length + m.infoKept.length;
-	if (m.infoAdded.length || infoDiffer) {
+	if (m.infoAdded.length || infoDiffer)
 		out.push(
 			para(
-				`Series' totals, status, notes and links: ${m.infoAdded.length} added` +
-					(infoDiffer
-						? `, ${infoDiffer} differing (keeping ${m.infoChanged.length ? "the backup's" : spell("this catalog's")})`
-						: ''),
+				infoLine(
+					"Series' totals, status, notes and links",
+					m.infoAdded.length,
+					infoDiffer,
+					!!m.infoChanged.length,
+				),
 			),
 		);
-	}
 	for (const [label, added, changed, kept] of [
 		["Authors' bios and links", m.authorsAdded, m.authorsChanged, m.authorsKept],
 		["Narrators' bios and links", m.narratorsAdded, m.narratorsChanged, m.narratorsKept],
 		["Publishers' bios and links", m.publishersAdded, m.publishersChanged, m.publishersKept],
 	] as [string, string[], string[], string[]][]) {
 		const differ = changed.length + kept.length;
-		if (added.length || differ) {
-			out.push(
-				para(
-					`${label}: ${added.length} added` +
-						(differ
-							? `, ${differ} differing (keeping ${changed.length ? "the backup's" : spell("this catalog's")})`
-							: ''),
-				),
-			);
-		}
+		if (added.length || differ) out.push(para(infoLine(label, added.length, differ, !!changed.length)));
 	}
 	if (m.renamed.length) {
 		out.push(
-			para(`Renamed as in the backup: ${m.renamed.length}`),
+			para(spell('Renamed as in the backup: {count}', {count: m.renamed.length})),
 			messageList(m.renamed.map(r => `${r.from} \u2192 ${r.to}`)),
 		);
 	}
-	if (m.excluded.length) out.push(para(`More books excluded from imports: ${m.excluded.length}`));
-	if (m.notDuplicates.length) out.push(para(`More books marked "Not duplicates": ${m.notDuplicates.length}`));
+	if (m.excluded.length)
+		out.push(para(spell('More books excluded from imports: {count}', {count: m.excluded.length})));
+	if (m.notDuplicates.length)
+		out.push(para(spell('More books marked "Not duplicates": {count}', {count: m.notDuplicates.length})));
 	if (errors.length) {
-		out.push(para('Validation failed, nothing will be changed:', 'warn'), messageList(errors.slice(0, 10)));
+		// Check's messages, which a module writes
+		out.push(
+			para(spell('Validation failed, nothing will be changed:'), 'warn'),
+			messageList(errors.slice(0, 10).map(e => spell(e))),
+		);
 	} else if (!changes) {
 		out.push(para(spell('Nothing to merge: this catalog already has everything in the backup.')));
 	}
 	byId('mergePrefer').classList.add('show');
-	showPreview('Merge a backup', out, !errors.length && changes ? 'Merge' : '', 'backupPanel');
+	showPreview(spell('Merge a backup'), out, !errors.length && changes ? spell('Merge') : '', 'backupPanel');
 }
 
 function applyMerge() {
@@ -1039,7 +1161,13 @@ function applyMerge() {
 	CATALOG.addMarkTexts(m.notDuplicates);
 	refreshPage();
 	persist();
-	showIoStatus(`Merged: ${m.added.length} added, ${m.updated.length} updated, ${m.removed.length} removed.`);
+	showIoStatus(
+		spell('Merged: {added} added, {updated} updated, {removed} removed.', {
+			added: m.added.length,
+			updated: m.updated.length,
+			removed: m.removed.length,
+		}),
+	);
 }
 
 /**
@@ -1059,9 +1187,11 @@ async function mergeBackupFile(file: File) {
 		closeImportPreview();
 		showIoStatus(
 			exc instanceof NewerBackup
-				? 'Not merged: a newer version of the catalog made that backup. Reload the page to update it, then try again.'
+				? spell(
+						'Not merged: a newer version of the catalog made that backup. Reload the page to update it, then try again.',
+					)
 				: exc instanceof UnreadableBackup
-					? `Not merged: ${exc.message}.`
+					? spell('Not merged: {problem}.', {problem: spell(exc.message)})
 					: spell("Couldn't read that file \u2014 make sure it's a catalog backup JSON."),
 			true,
 		);
@@ -1084,21 +1214,40 @@ function showTidyPreview(title: string, body: Child[], confirm: string) {
 
 function checkCatalog() {
 	const {errors, warnings} = Validator.check(CATALOG, {contributors: true});
-	const people = [
-		Text.plural(CATALOG.nameIds.authors.size, 'author'),
-		Text.plural(CATALOG.nameIds.narrators.size, 'narrator'),
-		Text.plural(CATALOG.nameIds.publishers.size, 'publisher'),
-	];
-	const described = CATALOG.authors.size + CATALOG.narrators.size + CATALOG.publishers.size;
 	const out: Child[] = [
 		para(
-			`${CATALOG.books.length} books; ${CATALOG.nameIds.series.size} series, ${CATALOG.series.size} with a released total; ` +
-				`${people.join(', ')}, ${described} with a bio or links.`,
+			spell(
+				'{books} books; {series} series, {totals} with a released total; {authors}, {narrators}, {publishers}, {described} with a bio or links.',
+				{
+					books: CATALOG.books.length,
+					series: CATALOG.nameIds.series.size,
+					totals: CATALOG.series.size,
+					authors: plural(CATALOG.nameIds.authors.size, 'author'),
+					narrators: plural(CATALOG.nameIds.narrators.size, 'narrator'),
+					publishers: plural(CATALOG.nameIds.publishers.size, 'publisher'),
+					described: CATALOG.authors.size + CATALOG.narrators.size + CATALOG.publishers.size,
+				},
+			),
 		),
 	];
-	if (errors.length) out.push(para(`Errors (${errors.length}):`, 'warn'), messageList(errors, 100));
-	if (warnings.length) out.push(para(`Needs a look (${warnings.length}):`, 'warn'), messageList(warnings, 100));
-	if (!errors.length && !warnings.length) out.push(para('No problems found.'));
+	// Check's messages, which a module writes
+	if (errors.length)
+		out.push(
+			para(spell('Errors ({count}):', {count: errors.length}), 'warn'),
+			messageList(
+				errors.map(e => spell(e)),
+				100,
+			),
+		);
+	if (warnings.length)
+		out.push(
+			para(spell('Needs a look ({count}):', {count: warnings.length}), 'warn'),
+			messageList(
+				warnings.map(w => spell(w)),
+				100,
+			),
+		);
+	if (!errors.length && !warnings.length) out.push(para(spell('No problems found.')));
 	PENDING_TIDY = null;
 	showTidyPreview(spell('Check the catalog'), out, '');
 }
@@ -1114,15 +1263,23 @@ function boxSetsIntoCopy() {
 function previewBoxSets() {
 	const {report, errors} = boxSetsIntoCopy();
 	const out: Child[] = [
-		para(`Box sets: ${report.boxSets.length}`),
+		para(spell('Box sets: {count}', {count: report.boxSets.length})),
 		messageList(
-			report.boxSets.map(
-				b => `${b.title} \u2014 ${Text.namesText(b.authors)}: ${Text.plural(b.titles, 'title')} already here`,
+			report.boxSets.map(b =>
+				spell('{title} \u2014 {authors}: {titles} already here', {
+					title: b.title,
+					authors: Text.namesText(b.authors),
+					titles: plural(b.titles, 'title'),
+				}),
 			),
 		),
 	];
-	if (report.excluded.length) out.push(para(`Skipped (excluded from imports): ${report.excluded.length}`));
-	out.push(para(`New: ${report.added.length}`), messageList(report.added.map(Comparison.bookLine)));
+	if (report.excluded.length)
+		out.push(para(spell('Skipped (excluded from imports): {count}', {count: report.excluded.length})));
+	out.push(
+		para(spell('New: {count}', {count: report.added.length})),
+		messageList(report.added.map(Comparison.bookLine)),
+	);
 	if (report.boxSets.some(b => b.added)) {
 		out.push(
 			para(
@@ -1133,12 +1290,18 @@ function previewBoxSets() {
 		);
 	}
 	if (errors.length) {
-		out.push(para('Validation failed, nothing will be changed:', 'warn'), messageList(errors, 10));
+		out.push(
+			para(spell('Validation failed, nothing will be changed:'), 'warn'),
+			messageList(
+				errors.map(e => spell(e)),
+				10,
+			),
+		);
 	} else if (!report.added.length) {
-		out.push(para('Every box set is already kept both as its own book and as its titles.'));
+		out.push(para(spell('Every box set is already kept both as its own book and as its titles.')));
 	}
 	PENDING_TIDY = errors.length || !report.added.length ? null : 'box-sets';
-	showTidyPreview('Box sets', out, `Add ${Text.plural(report.added.length, 'book')}`);
+	showTidyPreview(spell('Box sets'), out, spell('Add {books}', {books: plural(report.added.length, 'book')}));
 }
 
 function applyTidy() {
@@ -1153,7 +1316,7 @@ function applyTidy() {
 	refreshPage();
 	persist();
 	const added = report.added.length;
-	showIoStatus(`Added ${Text.plural(added, 'book')} for box sets.`);
+	showIoStatus(spell('Added {books} for box sets.', {books: plural(added, 'book')}));
 }
 
 // ------------------------------------------------------------ the catalogs' shelves, and your keys for them
@@ -1170,8 +1333,11 @@ function showKey(Client: ClientClass) {
 	const saved = Boolean(savedKey(Client)),
 		prefix = Client.CATALOG;
 	byId(`${prefix}KeyState`).textContent = saved
-		? `Your ${Client.LABEL} ${Client.KEY_NAME} is saved in this browser only (never in a backup).`
-		: Client.KEY_HELP;
+		? spell('Your {catalog} {key} is saved in this browser only (never in a backup).', {
+				catalog: Client.LABEL,
+				key: spell(Client.KEY_NAME),
+			})
+		: spell(Client.KEY_HELP);
 	byId(`${prefix}KeyRemove`).style.display = saved ? '' : 'none';
 }
 
@@ -1179,19 +1345,24 @@ function showKey(Client: ClientClass) {
  * Save the key pasted in `Client`'s panel in this browser, or `remove` the saved one.
  */
 function saveKeyOf(Client: ClientClass, remove: boolean) {
-	const input = fieldById(`${Client.CATALOG}Key`),
-		name = `${Client.LABEL} ${Client.KEY_NAME}`;
+	const input = fieldById(`${Client.CATALOG}Key`);
+	const values = {catalog: Client.LABEL, key: spell(Client.KEY_NAME)};
 	if (!remove && !Client.cleanKey(input.value)) {
-		showIoStatus(`Paste your ${name} first.`, true);
+		showIoStatus(spell('Paste your {catalog} {key} first.', values), true);
 		return;
 	}
 	try {
 		saveKey(Client, remove ? '' : input.value);
 		input.value = '';
-		showIoStatus(remove ? `${name} removed.` : `${name} saved.`);
+		showIoStatus(spell(remove ? '{catalog} {key} removed.' : '{catalog} {key} saved.', values));
 	} catch {
 		showIoStatus(
-			`Couldn't ${remove ? 'remove' : 'save'} the ${Client.KEY_NAME}: this browser refused to store it.`,
+			spell(
+				remove
+					? "Couldn't remove the {key}: this browser refused to store it."
+					: "Couldn't save the {key}: this browser refused to store it.",
+				values,
+			),
 			true,
 		);
 	}
@@ -1204,8 +1375,10 @@ function saveKeyOf(Client: ClientClass, remove: boolean) {
 function showServer() {
 	const server = savedServer();
 	byId('serverState').textContent = server
-		? `Saved in this browser only (never in a backup): ${server.url}`
-		: "Paste your server's address and key and save them; they are kept in this browser only (never in a backup).";
+		? spell('Saved in this browser only (never in a backup): {url}', {url: server.url})
+		: spell(
+				"Paste your server's address and key and save them; they are kept in this browser only (never in a backup).",
+			);
 	byId('serverCheck').style.display = server ? '' : 'none';
 	byId('serverRemove').style.display = server ? '' : 'none';
 }
@@ -1219,11 +1392,11 @@ async function saveServer(remove: boolean) {
 	const address = serverAddress(url.value);
 	if (!remove) {
 		if (!address) {
-			showIoStatus("Paste the server's address first (https://…workers.dev).", true);
+			showIoStatus(spell("Paste the server's address first (https://…workers.dev)."), true);
 			return;
 		}
 		if (!key.value.trim()) {
-			showIoStatus("Paste the server's key first.", true);
+			showIoStatus(spell("Paste the server's key first."), true);
 			return;
 		}
 	}
@@ -1233,37 +1406,67 @@ async function saveServer(remove: boolean) {
 		url.value = '';
 		key.value = '';
 	} catch {
-		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the server: this browser refused to store it.`, true);
+		showIoStatus(
+			spell(
+				remove
+					? "Couldn't remove the server: this browser refused to store it."
+					: "Couldn't save the server: this browser refused to store it.",
+			),
+			true,
+		);
 		return;
 	}
 	showServer();
 	showSetupPicks();
-	if (remove) showIoStatus('Server removed.');
-	else await checkServer('Server saved');
+	if (remove) showIoStatus(spell('Server removed.'));
+	else await checkServer(spell('Server saved'));
 }
 
 /**
  * Ask the saved server whether it answers this page with its key, and what it does, and say so.
- * @param saved what the status line starts with, after a save
+ * @param saved what the status line starts with, after a save (spelled)
  */
 async function checkServer(saved?: string) {
+	// what the server said, after what was saved, else as a sentence of its own
 	const say: (text: string, error?: boolean) => void = (text, error = false) =>
-		showIoStatus(saved ? `${saved}; ${text}` : text.charAt(0).toUpperCase() + text.slice(1), error);
+		showIoStatus(
+			saved ? spell('{saved}; {text}', {saved, text}) : text.charAt(0).toUpperCase() + text.slice(1),
+			error,
+		);
 	try {
 		const res = await fetchFromServer('ping');
 		if (res.ok) {
 			const ping = (await res.json()) as {proxy?: string[]; sync?: boolean};
 			// a server from before the proxy moved under /proxy/ lists its catalogs as `catalogs`
-			if (!ping.proxy) say('your server is from before this version: deploy it again.', true);
-			else
+			if (!ping.proxy) say(spell('your server is from before this version: deploy it again.'), true);
+			else {
+				const catalogs = {catalogs: ping.proxy.join(', ')};
 				say(
-					`${saved ? 'it' : 'your server'} answers: its catalog proxy asks ${ping.proxy.join(', ')}, and ` +
-						(ping.sync ? 'it keeps the copy devices sync with.' : 'sync is not set up on it.'),
+					saved
+						? ping.sync
+							? spell(
+									'it answers: its catalog proxy asks {catalogs}, and it keeps the copy devices sync with.',
+									catalogs,
+								)
+							: spell(
+									'it answers: its catalog proxy asks {catalogs}, and sync is not set up on it.',
+									catalogs,
+								)
+						: ping.sync
+							? spell(
+									'your server answers: its catalog proxy asks {catalogs}, and it keeps the copy devices sync with.',
+									catalogs,
+								)
+							: spell(
+									'your server answers: its catalog proxy asks {catalogs}, and sync is not set up on it.',
+									catalogs,
+								),
 				);
-		} else if (res.status === 401) say('your server refused the key.', true);
-		else say(`your server answered ${res.status}.`, true);
+			}
+		} else if (res.status === 401) say(spell('your server refused the key.'), true);
+		else say(spell('your server answered {status}.', {status: res.status}), true);
 	} catch (e) {
-		say(`${Text.errorText(e)}.`, true);
+		say(spell('{error}.', {error: spell(Text.errorText(e))}), true);
 	}
 }
 
@@ -1272,12 +1475,12 @@ async function checkServer(saved?: string) {
 async function showSync() {
 	const saved = Boolean(savedPassphrase());
 	byId('syncPassphraseState').textContent = saved
-		? 'A passphrase is saved in this browser only (never in a backup).'
-		: 'Save the passphrase your devices sync with; the first device to sync sets it.';
+		? spell('A passphrase is saved in this browser only (never in a backup).')
+		: spell('Save the passphrase your devices sync with; the first device to sync sets it.');
 	byId('syncPassphraseRemove').style.display = saved ? '' : 'none';
 	const last = await lastSync();
 	byId('syncState').textContent = last
-		? `Last synced ${new Date(last.at).toLocaleString()}.`
+		? spell('Last synced {when}.', {when: new Date(last.at).toLocaleString()})
 		: spell('Not synced from this browser yet.');
 }
 
@@ -1287,7 +1490,7 @@ async function showSync() {
 function saveSyncPassphrase(remove: boolean) {
 	const field = fieldById('syncPassphrase');
 	if (!remove && !field.value) {
-		showIoStatus('Type the sync passphrase first.', true);
+		showIoStatus(spell('Type the sync passphrase first.'), true);
 		return;
 	}
 	try {
@@ -1295,12 +1498,19 @@ function saveSyncPassphrase(remove: boolean) {
 		else localStorage.setItem(SYNC_STORAGE_KEY, field.value);
 		field.value = '';
 	} catch {
-		showIoStatus(`Couldn't ${remove ? 'remove' : 'save'} the passphrase: this browser refused to store it.`, true);
+		showIoStatus(
+			spell(
+				remove
+					? "Couldn't remove the passphrase: this browser refused to store it."
+					: "Couldn't save the passphrase: this browser refused to store it.",
+			),
+			true,
+		);
 		return;
 	}
 	showSync();
 	showSetupPicks();
-	showIoStatus(remove ? 'Sync passphrase removed.' : 'Sync passphrase saved.');
+	showIoStatus(spell(remove ? 'Sync passphrase removed.' : 'Sync passphrase saved.'));
 }
 
 /**
@@ -1319,45 +1529,60 @@ function showSyncChoice(text: string, which: ('syncKeepMine' | 'syncKeepTheirs' 
 async function runSync(prefer?: SyncPrefer) {
 	showSyncChoice('', []);
 	if (!savedServer()) {
-		showIoStatus('Syncing goes through your server: save it first (above).', true);
+		showIoStatus(spell('Syncing goes through your server: save it first (above).'), true);
 		return;
 	}
 	const button = byId('syncBtn') as HTMLButtonElement;
 	button.disabled = true;
-	showIoStatus('Syncing…');
+	showIoStatus(spell('Syncing…'));
 	try {
 		const {taken, sent, conflicts} = await syncCatalog(prefer);
 		if (conflicts.length && !prefer) {
-			showIoStatus('Not synced: another device changed these too.', true);
-			showSyncChoice(`Changed on this device and another: ${Text.firstThree(conflicts)}. Keep which?`, [
-				'syncKeepMine',
-				'syncKeepTheirs',
-			]);
+			showIoStatus(spell('Not synced: another device changed these too.'), true);
+			showSyncChoice(
+				spell('Changed on this device and another: {entries}. Keep which?', {entries: firstThree(conflicts)}),
+				['syncKeepMine', 'syncKeepTheirs'],
+			);
 		} else {
-			const parts = [
-				taken
-					? `${Text.plural(taken, 'change')} taken in from your other devices`
-					: 'nothing new from your other devices',
-				sent ? "this device's catalog sent" : 'nothing to send',
-			];
-			showIoStatus(`Synced: ${parts.join('; ')}.`);
+			const values = {changes: plural(taken, 'change')};
+			showIoStatus(
+				spell(
+					taken
+						? sent
+							? "Synced: {changes} taken in from your other devices; this device's catalog sent."
+							: 'Synced: {changes} taken in from your other devices; nothing to send.'
+						: sent
+							? "Synced: nothing new from your other devices; this device's catalog sent."
+							: 'Synced: nothing new from your other devices; nothing to send.',
+					values,
+				),
+			);
 		}
 	} catch (e) {
 		if (e instanceof UnrelatedCatalogs) {
-			showIoStatus('Not synced: this catalog and the synced one were not made from the same catalog.', true);
+			showIoStatus(
+				spell('Not synced: this catalog and the synced one were not made from the same catalog.'),
+				true,
+			);
 			showSyncChoice(
 				spell(
-					`Both have ${e.message.replace(/^two \S+ are named /, '')} under other ids. Use the synced catalog here (this one is replaced; Export a backup first), or see the docs to join them.`,
+					'Both have {names} under other ids. Use the synced catalog here (this one is replaced; Export a backup first), or see the docs to join them.',
+					// the names, from the module's message
+					{names: e.message.replace(/^two \S+ are named /, '')},
 				),
 				['syncReplace'],
 			);
 		} else
 			showIoStatus(
 				e instanceof WrongPassphrase
-					? `Not synced: ${e.message}. Use the passphrase your other devices sync with.`
+					? spell('Not synced: {problem}. Use the passphrase your other devices sync with.', {
+							problem: spell(e.message),
+						})
 					: e instanceof NewerBackup
-						? 'Not synced: a newer version of the app synced last. Reload the page to update it, then sync again.'
-						: `Not synced: ${Text.errorText(e)}.`,
+						? spell(
+								'Not synced: a newer version of the app synced last. Reload the page to update it, then sync again.',
+							)
+						: spell('Not synced: {problem}.', {problem: spell(Text.errorText(e))}),
 				true,
 			);
 	} finally {
@@ -1383,15 +1608,15 @@ let RECEIVED_SETTINGS: DeviceSettings | null = null;
 function savedDeviceSettings(): {id: string; label: string; settings: DeviceSettings}[] {
 	const saved = [];
 	const server = savedServer();
-	if (server) saved.push({id: 'server', label: `Your server (${server.url})`, settings: {server}});
+	if (server) saved.push({id: 'server', label: spell('Your server ({url})', {url: server.url}), settings: {server}});
 	const passphrase = savedPassphrase();
-	if (passphrase) saved.push({id: 'passphrase', label: 'The sync passphrase', settings: {passphrase}});
+	if (passphrase) saved.push({id: 'passphrase', label: spell('The sync passphrase'), settings: {passphrase}});
 	for (const Client of CatalogConnectors.CLIENTS) {
 		const key = savedKey(Client);
 		if (key)
 			saved.push({
 				id: Client.CATALOG,
-				label: `Your ${Client.LABEL} ${Client.KEY_NAME}`,
+				label: spell('Your {catalog} {key}', {catalog: Client.LABEL, key: spell(Client.KEY_NAME)}),
 				settings: {keys: {[Client.CATALOG]: key}},
 			});
 	}
@@ -1409,14 +1634,15 @@ function showSetupPicks() {
 				'label',
 				{},
 				buildElement('input', {type: 'checkbox', id: `setupPick-${s.id}`, checked: true}),
-				` ${s.label}`,
+				' ',
+				s.label,
 			),
 		),
 	);
 	byId('setupShowBtn').style.display = saved.length ? '' : 'none';
 	byId('setupState').textContent = saved.length
 		? ''
-		: 'Nothing to hand over yet: save your server, the sync passphrase or a key on this page first.';
+		: spell('Nothing to hand over yet: save your server, the sync passphrase or a key on this page first.');
 }
 
 /**
@@ -1438,12 +1664,13 @@ export function setupLink(): {link: string} | {problem: string} {
 		if (!(byId(`setupPick-${id}`) as HTMLInputElement).checked) continue;
 		Object.assign(settings, one, one.keys ? {keys: {...settings.keys, ...one.keys}} : {});
 	}
-	if (DeviceSetup.isEmpty(settings)) return {problem: 'Tick a setting to hand over first.'};
+	if (DeviceSetup.isEmpty(settings)) return {problem: spell('Tick a setting to hand over first.')};
 	const page = setupPageAddress();
 	if (!page)
 		return {
-			problem:
+			problem: spell(
 				"This page is on this computer only, so a phone can't open the link: open the app at the address your phone uses (GitHub Pages, or your server) and show the code there.",
+			),
 		};
 	return {link: DeviceSetup.link(page, settings)};
 }
@@ -1494,22 +1721,29 @@ function takeSettingsFromAddress() {
 	const url = brought.server && serverAddress(brought.server.url);
 	if (brought.server && url) {
 		settings.server = {url, key: brought.server.key};
-		lines.push(`Your server, ${url}${savedServer() ? ' (in place of the one saved here)' : ''}`);
+		lines.push(
+			spell(savedServer() ? 'Your server, {url} (in place of the one saved here)' : 'Your server, {url}', {url}),
+		);
 	}
 	if (brought.passphrase) {
 		settings.passphrase = brought.passphrase;
-		lines.push(`The sync passphrase${savedPassphrase() ? ' (in place of the one saved here)' : ''}`);
+		lines.push(
+			spell(savedPassphrase() ? 'The sync passphrase (in place of the one saved here)' : 'The sync passphrase'),
+		);
 	}
 	for (const Client of CatalogConnectors.CLIENTS) {
 		const key = brought.keys?.[Client.CATALOG];
 		if (!key) continue;
 		settings.keys = {...settings.keys, [Client.CATALOG]: key};
 		lines.push(
-			`Your ${Client.LABEL} ${Client.KEY_NAME}${savedKey(Client) ? ' (in place of the one saved here)' : ''}`,
+			spell(savedKey(Client) ? 'Your {catalog} {key} (in place of the one saved here)' : 'Your {catalog} {key}', {
+				catalog: Client.LABEL,
+				key: spell(Client.KEY_NAME),
+			}),
 		);
 	}
 	if (DeviceSetup.isEmpty(settings)) {
-		showIoStatus("The link's settings can't be used here, so nothing was saved.", true);
+		showIoStatus(spell("The link's settings can't be used here, so nothing was saved."), true);
 		return;
 	}
 	RECEIVED_SETTINGS = settings;
@@ -1529,7 +1763,7 @@ async function saveReceivedSettings() {
 			if (key) saveKey(Client, key);
 		}
 	} catch {
-		showIoStatus("Couldn't save the settings: this browser refused to store them.", true);
+		showIoStatus(spell("Couldn't save the settings: this browser refused to store them."), true);
 		return;
 	}
 	closeReceivedSettings();
@@ -1537,8 +1771,8 @@ async function saveReceivedSettings() {
 	showSync();
 	for (const Client of CatalogConnectors.CLIENTS) showKey(Client);
 	showSetupPicks();
-	if (settings.server) await checkServer('Settings saved');
-	else showIoStatus('Settings saved.');
+	if (settings.server) await checkServer(spell('Settings saved'));
+	else showIoStatus(spell('Settings saved.'));
 }
 
 /** Forget the settings the link brought, saved or not. */
@@ -1613,11 +1847,22 @@ async function compareShelfSync(Sync: SyncClass) {
 		prefix = Client.CATALOG;
 	const key = savedKey(Client);
 	if (Client.VIA_PROXY && !savedServer()) {
-		showIoStatus(`${label} is asked through your server's catalog proxy: save your server first (below).`, true);
+		showIoStatus(
+			spell("{catalog} is asked through your server's catalog proxy: save your server first (below).", {
+				catalog: label,
+			}),
+			true,
+		);
 		return;
 	}
 	if (Client.KEY_NEEDED && !key) {
-		showIoStatus(`Save your ${label} ${Client.KEY_NAME} first (below the buttons).`, true);
+		showIoStatus(
+			spell('Save your {catalog} {key} first (below the buttons).', {
+				catalog: label,
+				key: spell(Client.KEY_NAME),
+			}),
+			true,
+		);
 		return;
 	}
 	if (!(await holdWholeCatalog())) return;
@@ -1629,14 +1874,20 @@ async function compareShelfSync(Sync: SyncClass) {
 	const result = run.value;
 	if (!result) {
 		showPreview(
-			spell(`Compare with ${label}`),
-			[para(`Couldn't compare: ${Text.errorText(run.error)}`, 'warn')],
+			spell('Compare with {catalog}', {catalog: label}),
+			[para(spell("Couldn't compare: {error}", {error: spell(Text.errorText(run.error))}), 'warn')],
 			'',
 			`${prefix}Panel`,
 		);
 		return;
 	}
-	const notes = [spell(`${sync.summary(result, CATALOG, null)} (took ${minutes(run.elapsed)})`)];
+	// (the summary is the sync's words, a module's)
+	const notes = [
+		spell('{summary} (took {time})', {
+			summary: spell(sync.summary(result, CATALOG, null)),
+			time: minutes(run.elapsed),
+		}),
+	];
 	openCompare({
 		source: prefix,
 		name: label,
@@ -1670,7 +1921,13 @@ async function applyShelfSync(compare: PendingCompare) {
 	const sending = Boolean(plan && (plan.add.length || plan.reads.length));
 	if (PAGE_RUN) return;
 	if (sending && !key) {
-		showIoStatus(`Save your ${label} ${Client.KEY_NAME} first (below the buttons).`, true);
+		showIoStatus(
+			spell('Save your {catalog} {key} first (below the buttons).', {
+				catalog: label,
+				key: spell(Client.KEY_NAME),
+			}),
+			true,
+		);
 		return;
 	}
 	closeImportPreview();
@@ -1678,7 +1935,8 @@ async function applyShelfSync(compare: PendingCompare) {
 	if ((await storedRevision()) !== SEEN_REVISION) {
 		showIoStatus(
 			spell(
-				`The catalog was edited in another tab since you compared; nothing was changed, nothing sent to ${label}. Compare again.`,
+				'The catalog was edited in another tab since you compared; nothing was changed, nothing sent to {catalog}. Compare again.',
+				{catalog: label},
 			),
 			true,
 		);
@@ -1688,13 +1946,15 @@ async function applyShelfSync(compare: PendingCompare) {
 	if (errors.length) {
 		showIoStatus(
 			spell(
-				`The catalog changed and the import no longer validates; nothing was changed, nothing sent to ${label}.`,
+				'The catalog changed and the import no longer validates; nothing was changed, nothing sent to {catalog}.',
+				{catalog: label},
 			),
 			true,
 		);
 		return;
 	}
-	const here = appliedText(report, patched, idsFound, `${label} ${sync.kind.FOUND}`, infoIds);
+	const found = spell('{catalog} {found}', {catalog: label, found: spell(sync.kind.FOUND)});
+	const here = appliedText(report, patched, idsFound, found, infoIds);
 	if (JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books) || infoIds) {
 		takeBooks(copy, renamed);
 		if (picks.ids) sync.kind.setInfoIds(CATALOG, result.infoIds);
@@ -1705,7 +1965,7 @@ async function applyShelfSync(compare: PendingCompare) {
 		if (!kept) return;
 	}
 	if (!plan || !sending) {
-		showIoStatus(here + '.');
+		showIoStatus(spell('{done}.', {done: here}));
 		return;
 	}
 	const lines: string[] = [];
@@ -1714,15 +1974,21 @@ async function applyShelfSync(compare: PendingCompare) {
 	};
 	const run = await withCatalogJob(label, 'send', step => sync.push(plan, say, say, step));
 	if (!run) return;
-	if (run.error) lines.push(`error: ${Text.errorText(run.error)}`);
+	if (run.error) lines.push(spell('error: {error}', {error: spell(Text.errorText(run.error))}));
 	const ok = !run.error && run.value === 0;
 	showPreview(
-		`${label} updated (took ${minutes(run.elapsed)})`,
-		[para(here + ' here.'), buildElement('pre', {}, lines.join('\n'))],
+		spell('{catalog} updated (took {time})', {catalog: label, time: minutes(run.elapsed)}),
+		// (what was sent, line by line, in the sync's words, a module's)
+		[para(spell('{done} here.', {done: here})), buildElement('pre', {}, spell(lines.join('\n')))],
 		'',
 		`${Client.CATALOG}Panel`,
 	);
-	showIoStatus(ok ? `${here}; ${label} updated.` : `Not everything went through on ${label}; see the details.`, !ok);
+	showIoStatus(
+		ok
+			? spell('{done}; {catalog} updated.', {done: here, catalog: label})
+			: spell('Not everything went through on {catalog}; see the details.', {catalog: label}),
+		!ok,
+	);
 }
 
 // Leaving the page stops sending to a catalog's shelves: the browser asks first. (Nothing is lost by stopping
@@ -1770,7 +2036,7 @@ async function importCsv(Importer: ImporterClass, file: File) {
 		compareExport(Importer, text, file.name);
 	} catch {
 		closeImportPreview();
-		showIoStatus(`Couldn't read that file as a ${Importer.LABEL} export.`, true);
+		showIoStatus(spell("Couldn't read that file as a {catalog} export.", {catalog: Importer.LABEL}), true);
 	}
 }
 
@@ -1824,7 +2090,7 @@ byId('setupHideBtn').addEventListener('click', hideSetupCode);
 byId('setupReceivedSave').addEventListener('click', saveReceivedSettings);
 byId('setupReceivedSkip').addEventListener('click', () => {
 	closeReceivedSettings();
-	showIoStatus('Nothing saved.');
+	showIoStatus(spell('Nothing saved.'));
 });
 
 byId('checkBtn').addEventListener('click', () => withWholeCatalog(checkCatalog));

@@ -209,7 +209,20 @@ every pull request, so running it first catches what CI would.
 The code, its comments and these docs use American spelling. The pages are written that way too, and
 are shown in British spelling to a browser whose first English language is a British one
 (`Text.prefersBritish` in `modules/text.ts`, from `navigator.languages`; `en-GB`, `en-AU`, `en-IE`, `en-CA`, ...).
-`dom.ts` respells the page's own HTML as it loads, and text the code puts on the page goes through
-`spell()`; book titles and other data never do. `spelled()` knows only the words in `BRITISH_WORDS`
+`dom.ts` respells the page's own HTML as it loads, and every text the code puts on the page goes through
+`spell()`; book titles, names and other data never do. A sentence that holds such a value is one template,
+with a marker where the value goes, and the values beside it:
+
+```ts
+spell('Removed {title}; imports will skip it.', {title: book.title});
+spellParts('No books yet. {add} or restore a backup.', {add: buildElement('a', {href}, spell('Add one'))});
+plural(count, 'book'); // "3 books", spelled
+```
+
+The template is respelled and the values are put in as they are, so a title with "Catalog" in it stays as
+it is. Never build a sentence from pieces around a value (`'Removed ' + title + '.'`): a sentence that
+changes with a count or a choice is a template for each case, so the whole sentence can one day be put in
+another language. A value that is the app's own text (a count with its word, a module's message) is spelled
+on its own first. `spelled()` knows only the words in `BRITISH_WORDS`
 (now just catalog/catalogue), so a page that starts using another such word adds it there. Stored keys and
 file names (`audiobook-catalog-device`, the backup's file name) are names, not text, and never change.

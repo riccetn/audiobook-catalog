@@ -5937,6 +5937,45 @@ test('a browser that prefers British English sees "catalogue"; any other sees "c
 	assert.match(us.ctx.document.body.innerHTML, /<h1>Audiobook Catalog<\/h1>/);
 });
 
+test('the Edit and credit pages respell their notes and confirmations, but never the names in them', async () => {
+	const books = JSON.stringify([
+		{t: 'Catalog One', a: ['Catalog Vale'], s: 'Catalog Saga', sn: '1', e: [{n: ['Catalog Reed']}]},
+		{t: 'Catalog Two', a: ['Catalog Vale'], s: 'Catalog Saga', sn: '2'},
+	]);
+	const options = {languages: ['en-GB'], files: {'books.json': books}};
+	// the note under a names field, and the status after saving
+	const edit = await bootEditBook('Catalog One', options);
+	edit.els.b0_a.value = 'Catalog Vale, Catalog Wen';
+	edit.els.b0_a.dispatch('input');
+	assert.equal(edit.els.b0_aNew.textContent, 'New author: Catalog Wen, added to the catalogue when this is saved.');
+	typeIn(edit.els, 'b0_a', 'Catalog Vale, Catalog Wen');
+	assert.equal(await saveEdit(edit), true);
+	assert.match(edit.els.ioStatus.textContent, / New in the catalogue: the author Catalog Wen\.$/);
+	// Remove book and Remove series
+	const book = await bootEditBook('Catalog Two', {...options, storage: edit.storage});
+	book.els.bookRemoveBtn.listeners.click[0]();
+	assert.equal(
+		book.els.bookFormError.textContent,
+		'This takes Catalog Two out of the catalogue, and imports will skip it. Press Remove book again to do it.',
+	);
+	const series = await bootEdit('Catalog Saga', {...options, storage: edit.storage});
+	series.els.seriesRemoveBtn.listeners.click[0]();
+	assert.equal(
+		series.els.seriesFormError.textContent,
+		'This takes Catalog Saga off its 2 books, which stay in the catalogue without a series or a number in it, and removes the series. Press Remove series again to do it.',
+	);
+	// Remove narrator
+	const narrator = await boot({...options, page: 'narrator.html', hash: '#n=Catalog+Reed', storage: edit.storage});
+	await idle();
+	narrator.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	await idle();
+	narrator.els.creditRemoveBtn.listeners.click[0]();
+	assert.equal(
+		narrator.els.creditFormError.textContent,
+		"This takes Catalog Reed off 1 book' editions, which stay in the catalogue, and removes them. Press Remove narrator again to do it.",
+	);
+});
+
 // ------------------------------------------------------------------ a page holds only what it shows
 const SAGAS = JSON.stringify([
 	...['1', '2', '3'].map(n => ({t: `Gull ${n}`, a: ['Ann Vale'], s: 'Gull Isle', sn: n, e: [{n: ['Cy Hale']}]})),

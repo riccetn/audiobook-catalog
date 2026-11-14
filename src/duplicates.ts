@@ -12,7 +12,8 @@ import {Edition} from './modules/edition.js';
 import {Book} from './modules/book.js';
 import {Validator} from './modules/validator.js';
 import {CATALOG, persist, startPage} from './store.js';
-import {showIoStatus, byId, spell, buildElement, fillElement} from './dom.js';
+import {editionText} from './book-list.js';
+import {showIoStatus, byId, spell, plural, buildElement, fillElement} from './dom.js';
 import type {Picks} from './modules/book.js';
 import type {Child} from './dom.js';
 
@@ -112,20 +113,22 @@ function groupPicks(g: number): Picks & {joinable: boolean; joinEditions: boolea
 	return {...picks, joinable, joinEditions: joinable && picks.joinEditions !== false};
 }
 
-const editionLines = (b: Book) => b.editions.map(ed => buildElement('div', {class: 'dup-extra'}, ed.format()));
+const editionLines = (b: Book) => b.editions.map(ed => buildElement('div', {class: 'dup-extra'}, editionText(ed)));
 const fieldLine: (label: string, value: string) => Child[] = (label, value) => [
-	buildElement('span', {class: 'dup-label'}, label),
+	buildElement('span', {class: 'dup-label'}, spell(label)),
 	' ' + value,
 ];
 
 function renderSplit(): Child[] {
 	if (!SPLIT.length) return [];
 	return [
-		buildElement('h2', {class: 'dup-heading'}, 'Editions that look like one'),
+		buildElement('h2', {class: 'dup-heading'}, spell('Editions that look like one')),
 		buildElement(
 			'p',
 			{class: 'hint'},
-			"These books have editions that don't disagree on an ASIN or Goodreads id, such as one from Audible and one from Goodreads.",
+			spell(
+				"These books have editions that don't disagree on an ASIN or Goodreads id, such as one from Audible and one from Goodreads.",
+			),
 		),
 		SPLIT.map(id => {
 			const b = CATALOG.book(id) as Book;
@@ -144,19 +147,23 @@ function renderSplit(): Child[] {
 						editionLines(b),
 					),
 				),
-				buildElement('p', {class: 'dup-result'}, 'Becomes one edition: ' + joined.format()),
+				buildElement(
+					'p',
+					{class: 'dup-result'},
+					spell('Becomes one edition: {edition}', {edition: editionText(joined)}),
+				),
 				buildElement(
 					'div',
 					{class: 'formbtns'},
 					buildElement(
 						'button',
 						{type: 'button', class: 'save split-join', 'data-id': id, onclick: () => joinBookEditions(id)},
-						'Make one edition',
+						spell('Make one edition'),
 					),
 					buildElement(
 						'button',
 						{type: 'button', class: 'split-apart', 'data-id': id, onclick: () => keepEditionsApart(id)},
-						'Keep separate',
+						spell('Keep separate'),
 					),
 				),
 			);
@@ -165,11 +172,19 @@ function renderSplit(): Child[] {
 }
 
 export function renderDuplicates() {
-	byId('subtitle').textContent =
-		(DUP_FOUND
-			? `${Text.plural(DUP_FOUND, 'possible duplicate')} among ${CATALOG.books.length} audiobooks`
-			: `No duplicates among ${CATALOG.books.length} audiobooks`) +
-		(SPLIT.length ? `; ${Text.plural(SPLIT.length, 'book')} with editions that look like one` : '');
+	// one whole sentence for each case, as spell() wants
+	const template = DUP_FOUND
+		? SPLIT.length
+			? '{found} among {books} audiobooks; {split} with editions that look like one'
+			: '{found} among {books} audiobooks'
+		: SPLIT.length
+			? 'No duplicates among {books} audiobooks; {split} with editions that look like one'
+			: 'No duplicates among {books} audiobooks';
+	byId('subtitle').textContent = spell(template, {
+		found: plural(DUP_FOUND, 'possible duplicate'),
+		books: CATALOG.books.length,
+		split: plural(SPLIT.length, 'book'),
+	});
 	fillElement(
 		byId('dupBody'),
 		!DUP_GROUPS.length &&
@@ -200,7 +215,7 @@ function duplicateGroup(ids: string[], g: number): HTMLDivElement {
 		buildElement(
 			'div',
 			{class: 'dup-book'},
-			buildElement('div', {class: 'dup-label'}, `Entry ${k + 1}`),
+			buildElement('div', {class: 'dup-label'}, spell('Entry {n}', {n: k + 1})),
 			DUP_FIELDS.map(([f, label]) => {
 				const value = dupValue(b, f);
 				if (!value || shared.some(([x]) => x === f)) return null;
@@ -228,8 +243,8 @@ function duplicateGroup(ids: string[], g: number): HTMLDivElement {
 			}),
 			[
 				b.genres.join(', '),
-				b.read.length ? 'Read ' + b.read.join(', ') : '',
-				...b.editions.map(ed => ed.format()),
+				b.read.length ? spell('Read {dates}', {dates: b.read.join(', ')}) : '',
+				...b.editions.map(editionText),
 			]
 				.filter(Boolean)
 				.map(x => buildElement('div', {class: 'dup-extra'}, x)),
@@ -241,7 +256,7 @@ function duplicateGroup(ids: string[], g: number): HTMLDivElement {
 		DUP_MANUAL &&
 			g === 0 &&
 			DUP_MANUAL.join() === ids.join() &&
-			buildElement('p', {class: 'dup-note'}, 'Picked by hand'),
+			buildElement('p', {class: 'dup-note'}, spell('Picked by hand')),
 		shared.length > 0 &&
 			buildElement(
 				'p',
@@ -252,10 +267,13 @@ function duplicateGroup(ids: string[], g: number): HTMLDivElement {
 		buildElement(
 			'p',
 			{class: 'dup-result'},
-			`Becomes: ${merged.title} — ${Text.namesText(merged.authors)}` +
-				(merged.series ? ` — ${dupValue(merged, 'series')}` : '') +
-				(editions ? `, ${Text.plural(editions, 'edition')}` : '') +
-				(merged.read.length ? `, read ${merged.read.join(', ')}` : ''),
+			// what it becomes, part by part: its title, then a list of what it has
+			[
+				spell('Becomes: {title} — {authors}', {title: merged.title, authors: Text.namesText(merged.authors)}),
+				merged.series ? ` — ${dupValue(merged, 'series')}` : '',
+				editions ? ', ' + plural(editions, 'edition') : '',
+				merged.read.length ? ', ' + spell('read {dates}', {dates: merged.read.join(', ')}) : '',
+			].join(''),
 		),
 		// the editions are those above, unless they are made one
 		picks.joinEditions && editionLines(merged),
@@ -273,7 +291,8 @@ function duplicateGroup(ids: string[], g: number): HTMLDivElement {
 						renderDuplicates();
 					},
 				}),
-				" Make the editions one edition (they don't disagree on an ASIN or Goodreads id)",
+				' ',
+				spell("Make the editions one edition (they don't disagree on an ASIN or Goodreads id)"),
 			),
 		buildElement(
 			'div',
@@ -281,12 +300,12 @@ function duplicateGroup(ids: string[], g: number): HTMLDivElement {
 			buildElement(
 				'button',
 				{type: 'button', class: 'save dup-merge', 'data-g': g, onclick: () => mergeGroup(g)},
-				'Merge into one',
+				spell('Merge into one'),
 			),
 			buildElement(
 				'button',
 				{type: 'button', class: 'dup-apart', 'data-g': g, onclick: () => keepApart(g)},
-				'Not duplicates',
+				spell('Not duplicates'),
 			),
 		),
 	);
@@ -307,14 +326,14 @@ export function mergeGroup(g: number) {
 	copy.books = copy.books.filter(b => b.id === keep || !ids.includes(b.id as string));
 	const errors = Validator.bookErrors(copy);
 	if (errors.length) {
-		showIoStatus(`Couldn't merge ${merged.title}: ${errors[0]}`, true);
+		showIoStatus(spell("Couldn't merge {title}: {error}", {title: merged.title, error: spell(errors[0])}), true);
 		return;
 	}
 	CATALOG.books = copy.books;
 	forgetManualPair(); // one of its books is gone now
 	refreshPage();
 	persist();
-	showIoStatus(`Merged ${ids.length} entries into ${merged.title}.`);
+	showIoStatus(spell('Merged {count} entries into {title}.', {count: ids.length, title: merged.title}));
 }
 
 /**
@@ -339,14 +358,17 @@ export function joinBookEditions(id: string) {
 	copy.saveBook(id, joined);
 	const errors = Validator.bookErrors(copy);
 	if (errors.length) {
-		showIoStatus(`Couldn't join the editions of ${b.title}: ${errors[0]}`, true);
+		showIoStatus(
+			spell("Couldn't join the editions of {title}: {error}", {title: b.title, error: spell(errors[0])}),
+			true,
+		);
 		return;
 	}
 	CATALOG.books = copy.books;
 	forgetManualPair();
 	refreshPage();
 	persist();
-	showIoStatus(`${b.title} now has one edition.`);
+	showIoStatus(spell('{title} now has one edition.', {title: b.title}));
 }
 
 /**

@@ -3,9 +3,8 @@
 // each linking to their own page (author.html, narrator.html, publisher.html: credit.ts). Each list's own
 // script (authors.ts, narrators.ts, publishers.ts) starts this one with its kind. The list reads only the
 // kind's records (each keeps how many books and series they have). Loading lives in store.ts.
-import {Text} from './modules/text.js';
 import {startPage, afterSaving, queryCatalog, creditPageHref, valueFromPageHash} from './store.js';
-import {byId, fieldById, spell, buildElement, fillElement} from './dom.js';
+import {byId, fieldById, spell, plural, buildElement, fillElement} from './dom.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
 import type {CreditKind} from './credit-kinds.js';
 import type {CatalogReader} from './modules/catalog-database.js';
@@ -31,12 +30,14 @@ let LIST: ListEntry[] = []; // the list
 let TOTAL_BOOKS = 0; // how many books the catalog has, for the list's subtitle
 
 export function render() {
-	document.title = KIND.title + spell(' · Audiobook Catalog');
+	document.title = spell('{page} · Audiobook Catalog', {page: spell(KIND.title)});
 	const q = fieldById('q').value.trim().toLowerCase();
 	const all = LIST;
 	const shown = q ? all.filter(x => x.name.toLowerCase().includes(q)) : all;
-	byId('subtitle').textContent =
-		`${Text.plural(all.length, KIND.one)} across ${Text.plural(TOTAL_BOOKS, 'audiobook')}`;
+	byId('subtitle').textContent = spell('{people} across {books}', {
+		people: plural(all.length, KIND.one, KIND.many),
+		books: plural(TOTAL_BOOKS, 'audiobook'),
+	});
 	fillElement(
 		byId('creditBody'),
 		shown.length
@@ -53,28 +54,16 @@ export function render() {
 								'span',
 								{class: 'srow-owned'},
 								x.books || x.boxSets
-									? [
-											x.books && Text.plural(x.books, 'book'),
-											x.boxSets && Text.plural(x.boxSets, 'box set'),
-										]
+									? [x.books && plural(x.books, 'book'), x.boxSets && plural(x.boxSets, 'box set')]
 											.filter(Boolean)
-											.join(' + ') +
-											(x.series ? ', ' + Text.plural(x.series, 'series', 'series') : '')
-									: 'no books yet',
+											.join(' + ') + (x.series ? ', ' + plural(x.series, 'series', 'series') : '')
+									: spell('no books yet'),
 							),
 						),
 						bioLine(x) || (KIND !== CREDIT_KINDS.author && topAuthorsLine(x)),
 					),
 				)
-			: buildElement(
-					'p',
-					{class: 'empty'},
-					all.length
-						? `No ${KIND.many} match your search.`
-						: KIND === CREDIT_KINDS.author
-							? 'No books yet.'
-							: `No ${KIND.many} yet: they come from the books' editions.`,
-				),
+			: buildElement('p', {class: 'empty'}, spell(all.length ? KIND.texts.noMatch : KIND.texts.noneYet)),
 	);
 }
 
@@ -93,7 +82,9 @@ function topAuthorsLine(x: ListEntry): HTMLParagraphElement | null {
 		? buildElement(
 				'p',
 				{class: 'srow-note'},
-				(x.authorCount > x.topAuthors.length ? 'Mostly ' : 'Books by ') + x.topAuthors.join(', '),
+				spell(x.authorCount > x.topAuthors.length ? 'Mostly {authors}' : 'Books by {authors}', {
+					authors: x.topAuthors.join(', '),
+				}),
 			)
 		: null;
 }

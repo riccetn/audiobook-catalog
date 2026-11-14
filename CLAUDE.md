@@ -101,7 +101,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
     field each), families (every ASIN is family `asin`, so they match across sites)): `url` (id to address), `fromAddress`/`readId` (address or
     typed text to id), `siteOf`, `fieldText`, `order`, `tidy`, `problems` (Check's errors and warnings), `ASIN_SITES`.
   - `Series` (series info `total status note external links`, and series numbers, all read by `NUMBER`: `bounds`, `range`, `wholeRange` (a box set's), `owned`, `missingNumbers`, `parseTitle`; `moveSites` gives an old series' site (`url`) to its one author or publisher, else its note), `Contributor` (an author's, narrator's or publisher's info, `bio url external links`: `KEYS`, `ONE`, `KINDS`, `tidy`, `fixLinks`),
-    `Exclusions` (`parse`, `covers`, `entries`; `Edition …` entries keep out one edition, not its book: `coversEdition`, `editionEntries`, which `Merger` drops from an incoming book before matching; `remove`, `Catalog.removeExclusion`, Import & export's _Excluded_ list), `Text` (tidying, names, the stored values' checks `nonEmpty`/`isNameList` and `setStored` (`Book.set` and `Edition.set` read a stored key by a table of `StoredField`s), dates, links (`tidyLink`/`tidyLinks`: trimmed, `https://` added, each once; `parseLinks` one per line; `linkLabel` the site), `spelled`/`prefersBritish`/`BRITISH_WORDS`, `errorText`, `plural` for a count with its word, `firstThree` for a long list),
+    `Exclusions` (`parse`, `covers`, `entries`; `Edition …` entries keep out one edition, not its book: `coversEdition`, `editionEntries`, which `Merger` drops from an incoming book before matching; `remove`, `Catalog.removeExclusion`, Import & export's _Excluded_ list), `Text` (tidying, names, the stored values' checks `nonEmpty`/`isNameList` and `setStored` (`Book.set` and `Edition.set` read a stored key by a table of `StoredField`s), dates, links (`tidyLink`/`tidyLinks`: trimmed, `https://` added, each once; `parseLinks` one per line; `linkLabel` the site), `spelled`/`prefersBritish`/`BRITISH_WORDS`, `filled`/`templateParts` (a `{marker}` template respelled, its values put in as they are), `errorText`, `plural` for a count with its word, `firstThree` for a long list),
     `Cover` (`addresses`: a book's cover addresses, first its editions' AudiobookDB cover keys (`img`, `Edition.covers`; `CATALOGS`, `isKeys`, `audiobookdbKey` reads one from an answer's `images`), then from their ASINs, Open Library ids and ISBNs, nothing stored; `isCover`), `Isbn`, `Csv`, `Validator` (`validate`, `validateContributors`, `checkLinks`), `Merger` (the matching order below), `Duplicates` (`groups`, `splitEditions`),
     `Backup` (`write` (version 5; 4 is 5 without books', editions' and series' `links`; 3 had one `publisherId` on an edition, which `records` reads as a list of one; 2 is 3 without editions' titles), `read` (any version), `readRecords`, `readFiles` for Restore of a backup or the old `data/` files, `mergeInto`, which matches series and people by uid too: `renamed`; `NewerBackup`),
     `BackupV1` (everything about backups before version 2, which `Backup.read` hands anything without a `version`: `read` (the catalog by name, a plain list of books, or several
@@ -194,7 +194,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   addresses (`index.html#series=<id>`, `book.html#book=<id>`, `#a=<id>`, `#merge=<id>,<id>`); an address with a name or title still opens it.
   Pairs marked "Not duplicates" (and editions marked "Keep separate") are `CATALOG.marks` by book (and edition) ids, so they
   survive a retitle; backups carry them as text (`markTexts`/`addMarkTexts`), and a text that matches no book stays a text mark.
-- `dom.js`: what every page draws with: `spell` (and respelling the page's own HTML as it loads), the status line (`showIoStatus`, with an optional Undo for `STATUS_TIME`), `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below).
+- `dom.js`: what every page draws with: `spell(template, values)` (and respelling the page's own HTML as it loads), `spellParts` (a template whose values may be elements), `plural`/`firstThree` (`Text`'s, spelled), the status line (`showIoStatus`, with an optional Undo for `STATUS_TIME`), `byId`/`fieldById` (the page's elements; they throw on a missing id), `buildElement`/`fillElement`/`joined` (building elements, below).
 - `id-fields.js`: the external id fields of the book, series and info forms (`externalFields`/`fillExternalFields`/`readExternalFields`, one per
   `ExternalCatalog` group; `externalFieldToId` turns a pasted address into its id, or moves it to its catalog's field, on focusout) and `externalLinks`, the links fields (`linksField`, a textarea, one per line; on focusout `moveCatalogLinks` moves a catalog's page to its empty id field) and `webLinks` (shown by site).
 - `connections.js`: what reaches beyond the browser: your key for each catalog (Hardcover's token, localStorage `audiobook-catalog-hardcover-token`, only ever sent to
@@ -258,7 +258,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   `saveReceivedSettings` only on its Save).
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the Edit page does, through the catalog proxy).
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
-  (`infoKey`, `hashKey`, `list`, `page`, labels, `href`).
+  (`infoKey`, `hashKey`, `list`, `page`, labels, `texts`: the sentences that name the kind, as `spell()` templates, `href`).
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
   `publishers.js` with `startCreditsPage(kind)`): the list of authors, narrators or publishers (read from the contributors
   records alone, `LIST`). An address from when the list also showed one's page (`authors.html#a=<id>`) goes to their page
@@ -380,9 +380,14 @@ The repo is public; the user's library is not.
 - Pages draw with the DOM API, never HTML strings: `buildElement(tag, attrs, ...children)` from `store.js` makes an element
   (children are elements or text, always put in as text; an `on...` function in `attrs` is a listener), `fillElement(el, ...children)`
   replaces what an element holds, and `joined(items, ', ')` puts a separator between children. No `innerHTML`.
-- American spelling everywhere in code, comments and docs. Text the page shows (status lines, previews, titles set
-  from code) goes through `spell()` from `store.js`, which gives British spelling to a browser that prefers it
-  (`prefersBritish`/`spelled`/`BRITISH_WORDS` in `modules/text.js`); the static HTML is respelled on load. Never respell data.
+- American spelling everywhere in code, comments and docs. Every text a page shows (status lines, previews, labels,
+  buttons, titles set from code) goes through `spell()` from `dom.js`, which gives British spelling to a browser that
+  prefers it (`prefersBritish`/`spelled`/`BRITISH_WORDS` in `modules/text.js`); the static HTML is respelled on load.
+  Never respell data: a sentence holding a title, a name or other data is one template with `{markers}` and its
+  values, `spell('Removed {title} from {books}.', {title, books: plural(n, 'book')})` (`spellParts` when a value is an
+  element), never pieces joined around the value; a sentence that changes with a count or a choice is a whole template
+  per case, so it can be put in another language. Per-kind sentences live with the kind (`CreditKind.texts`, the Edit
+  page's `NEW_NOTES`). A module's message (Check's, a sync's summary) is passed through `spell()` whole for now.
 - The catalog is stored as compact `JSON.stringify` output (backups are indented for reading).
 - Every function has its parameters' types (and its return type where it isn't plain), a variable that starts empty its type
   (`const out: string[] = []`), and `make typecheck` passes; a cast (`value as X`) only where the code knows more than the checker, with

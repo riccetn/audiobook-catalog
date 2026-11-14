@@ -2,10 +2,9 @@
 // lack each value (CatalogStats.sections), each line opening to the ones without it, linked to their pages;
 // and how many have an id in each external catalog (CatalogStats.byCatalog). It holds the whole catalog, as
 // every count goes through all of it, and changes nothing.
-import {Text} from './modules/text.js';
 import {CatalogStats} from './modules/catalog-stats.js';
 import {CATALOG, startPage, bookPageHref, seriesPageHref, creditPageHref} from './store.js';
-import {spell, byId, buildElement, fillElement} from './dom.js';
+import {spell, plural, byId, buildElement, fillElement} from './dom.js';
 import type {StatKind, StatSection, StatRow, CatalogCount} from './modules/catalog-stats.js';
 
 // How many entries a line lists when opened; the rest are counted.
@@ -36,7 +35,11 @@ function statRow(section: StatSection, row: StatRow): HTMLElement {
 	const n = row.missing.length;
 	const head = [
 		buildElement('span', {class: 'statLabel'}, spell(row.label)),
-		buildElement('span', {class: 'statCount'}, n ? `${n} (${percent(n, section.total)})` : 'none'),
+		buildElement(
+			'span',
+			{class: 'statCount'},
+			n ? spell('{count} ({share})', {count: n, share: percent(n, section.total)}) : spell('none'),
+		),
 	];
 	if (!n) return buildElement('div', {class: 'statRow statDone'}, ...head);
 	const shown = row.missing.slice(0, LISTED);
@@ -48,7 +51,9 @@ function statRow(section: StatSection, row: StatRow): HTMLElement {
 			'ul',
 			{class: 'statList'},
 			...shown.map(x => buildElement('li', {}, buildElement('a', {href: entryHref(section.kind, x.id)}, x.name))),
-			...(n > shown.length ? [buildElement('li', {class: 'statMore'}, `and ${n - shown.length} more`)] : []),
+			...(n > shown.length
+				? [buildElement('li', {class: 'statMore'}, spell('and {count} more', {count: n - shown.length}))]
+				: []),
 		),
 	);
 }
@@ -72,7 +77,7 @@ function catalogTable(counts: CatalogCount[], sections: StatSection[]): HTMLElem
 					'tr',
 					{},
 					buildElement('th', {}, spell('Catalog')),
-					...sections.map(s => buildElement('th', {}, s.label)),
+					...sections.map(s => buildElement('th', {}, spell(s.label))),
 				),
 			),
 			buildElement(
@@ -102,7 +107,10 @@ export function render() {
 	const sections = stats.sections();
 	const books = sections[0].total;
 	byId('subtitle').textContent = books
-		? `${Text.plural(books, 'audiobook')}, ${Text.plural(sections[1].total, 'edition')}`
+		? spell('{books}, {editions}', {
+				books: plural(books, 'audiobook'),
+				editions: plural(sections[1].total, 'edition'),
+			})
 		: spell('The catalog is empty.');
 	if (!books) {
 		fillElement(byId('statsBody'));
@@ -114,8 +122,16 @@ export function render() {
 			buildElement(
 				'section',
 				{class: 'statSection', id: `stats-${s.kind}`},
-				buildElement('h2', {}, s.label, ' ', buildElement('span', {class: 'statTotal'}, String(s.total))),
-				...(s.total ? s.rows.map(row => statRow(s, row)) : [buildElement('p', {class: 'hint'}, 'None yet.')]),
+				buildElement(
+					'h2',
+					{},
+					spell(s.label),
+					' ',
+					buildElement('span', {class: 'statTotal'}, String(s.total)),
+				),
+				...(s.total
+					? s.rows.map(row => statRow(s, row))
+					: [buildElement('p', {class: 'hint'}, spell('None yet.'))]),
 			),
 		),
 		buildElement(

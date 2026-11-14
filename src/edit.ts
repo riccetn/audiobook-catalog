@@ -32,10 +32,10 @@ import {
 	openWithStatus,
 	hashValue,
 } from './store.js';
-import {spell, byId, fieldById, buildElement, fillElement, showIoStatus} from './dom.js';
+import {spell, plural, byId, fieldById, buildElement, fillElement, showIoStatus} from './dom.js';
 import {externalFields, linksField, fillExternalFields, readExternalFields} from './id-fields.js';
 import {lookupHardcoverField, lookupHardcoverBook, keyedClients, savedServer, fetchViaProxy} from './connections.js';
-import {coverImage, totalText, setAddress, hashParts, hashText} from './book-list.js';
+import {coverImage, editionText, totalText, setAddress, hashParts, hashText} from './book-list.js';
 import {comboField, newNames, refreshNewNotes} from './combo-box.js';
 import type {NewNote} from './combo-box.js';
 import type {Child, FormField} from './dom.js';
@@ -120,11 +120,23 @@ type NameKind = 'series' | 'author' | 'narrator' | 'publisher';
 // contributors' indexes alone.
 export const FORM_NAMES: Record<NameKind, string[]> = {series: [], author: [], narrator: [], publisher: []};
 let FORM_NAMES_READ = false; // whether FORM_NAMES holds the names, so a name not among them is new
-const NOUNS: Record<NameKind, [string, string]> = {
-	series: ['series', 'series'],
-	author: ['author', 'authors'],
-	narrator: ['narrator', 'narrators'],
-	publisher: ['publisher', 'publishers'],
+const NEW_NOTES: Record<NameKind, [string, string]> = {
+	series: [
+		'New series: {names}, added to the catalog when this is saved.',
+		'New series: {names}, added to the catalog when this is saved.',
+	],
+	author: [
+		'New author: {names}, added to the catalog when this is saved.',
+		'New authors: {names}, added to the catalog when this is saved.',
+	],
+	narrator: [
+		'New narrator: {names}, added to the catalog when this is saved.',
+		'New narrators: {names}, added to the catalog when this is saved.',
+	],
+	publisher: [
+		'New publisher: {names}, added to the catalog when this is saved.',
+		'New publishers: {names}, added to the catalog when this is saved.',
+	],
 };
 // The book fields and edition fields that offer names: the kind, and whether they hold several
 const NAME_FIELDS: Record<string, [NameKind, boolean]> = {
@@ -133,7 +145,14 @@ const NAME_FIELDS: Record<string, [NameKind, boolean]> = {
 	n: ['narrator', true],
 	p: ['publisher', true],
 };
-const newNote = (kind: NameKind): NewNote => ({nouns: NOUNS[kind], ready: () => FORM_NAMES_READ});
+// a name new to the catalog, in Save's status line
+const NEW_ENTRY: Record<NameKind, string> = {
+	series: 'the series {name}',
+	author: 'the author {name}',
+	narrator: 'the narrator {name}',
+	publisher: 'the publisher {name}',
+};
+const newNote = (kind: NameKind): NewNote => ({texts: NEW_NOTES[kind], ready: () => FORM_NAMES_READ});
 
 /** @returns once FORM_NAMES holds the stored names, and the ones this page holds */
 export async function loadFormNames(): Promise<void> {
@@ -176,7 +195,7 @@ function newEntries(b: Book): string[] {
 			Catalog.namesOn(named)(b).join(', '),
 			true,
 			kind === 'publisher' ? splitPublishers : Text.splitNames,
-		).map(name => `the ${NOUNS[kind][0]} ${name}`),
+		).map(name => spell(NEW_ENTRY[kind], {name})),
 	);
 }
 
@@ -207,16 +226,16 @@ export function bookFieldText(b: Book, key: string): string {
 export function editionName(ed: Edition): {name: string; meta: string[]} {
 	const desc = Text.tidy(ed.description || '');
 	const ids = [
-		...ed.externalList().map(([key, v]) => `${Edition.fieldLabel(key)} ${v}`),
-		...(ed.isbn ? [`ISBN ${ed.isbn}`] : []),
+		...ed.externalList().map(([key, v]) => `${spell(Edition.fieldLabel(key))} ${v}`),
+		...(ed.isbn ? [`${spell('ISBN')} ${ed.isbn}`] : []),
 	];
 	const name = desc
 		? desc.length > 90
 			? desc.slice(0, 88).replace(/\s+\S*$/, '') + '…'
 			: desc
 		: ed.narrators.length
-			? `Narrated by ${Text.namesText(ed.narrators)}`
-			: ed.title || ids[0] || 'An edition with nothing to tell it by';
+			? spell('Narrated by {narrators}', {narrators: Text.namesText(ed.narrators)})
+			: ed.title || ids[0] || spell('An edition with nothing to tell it by');
 	const meta = [
 		...(desc && ed.narrators.length ? [Text.namesText(ed.narrators)] : []),
 		...(ed.publishers.length ? [Text.namesText(ed.publishers)] : []),
@@ -317,7 +336,7 @@ function choiceChips(id: string, value: string, choices: FieldChoices[], onchang
 						type: 'button',
 						class: Text.norm(c.text) === Text.norm(value) ? 'editChip picked' : 'editChip',
 						id: `${id}-pick-${n}`,
-						title: spell(`Use ${c.labels.join(' and ')}'s value`),
+						title: spell("Use {catalogs}'s value", {catalogs: c.labels.join(spell(' and '))}),
 						onclick: () => {
 							fieldById(id).value = c.text;
 							onchange();
@@ -408,14 +427,14 @@ function bookCard(d: Draft, i: number): HTMLElement {
 					{class: 'editBookMeta'},
 					[
 						Text.namesText(b.authors),
-						b.read.length ? `read ${b.read.join(', ')}` : '',
-						Text.plural(b.editions.length, 'edition'),
+						b.read.length ? spell('read {dates}', {dates: b.read.join(', ')}) : '',
+						plural(b.editions.length, 'edition'),
 					]
 						.filter(Boolean)
 						.join(' · '),
 				),
 			),
-			...(changed ? [buildElement('span', {class: 'editPill'}, 'changed')] : []),
+			...(changed ? [buildElement('span', {class: 'editPill'}, spell('changed'))] : []),
 		),
 		buildElement(
 			'div',
@@ -423,7 +442,7 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			buildElement(
 				'p',
 				{class: 'editBookLinks'},
-				...(d.added || !d.id ? [] : [buildElement('a', {href: bookPageHref(d.id)}, "The book's page")]),
+				...(d.added || !d.id ? [] : [buildElement('a', {href: bookPageHref(d.id)}, spell("The book's page"))]),
 				...catalogLinks(d),
 			),
 			buildElement('div', {class: 'editFields'}, ...fields),
@@ -431,15 +450,15 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			links,
 			buildElement('p', {class: 'formError', id: `book-${i}-error`}, d.error),
 			...catalogFinds(d, i),
-			buildElement('h3', {class: 'editEditionsTitle'}, 'Editions'),
+			buildElement('h3', {class: 'editEditionsTitle'}, spell('Editions')),
 			...b.editions.map((ed, j) => editionCard(d, i, j)),
-			...(b.editions.length ? [] : [buildElement('p', {class: 'hint'}, 'No editions yet.')]),
+			...(b.editions.length ? [] : [buildElement('p', {class: 'hint'}, spell('No editions yet.'))]),
 			...newEditionOffers(d, i),
 			...excludedEditions(d),
 			buildElement(
 				'button',
 				{type: 'button', class: 'editAddEdition', onclick: () => addEdition(i)},
-				'+ Add an edition',
+				spell('+ Add an edition'),
 			),
 		),
 	);
@@ -464,11 +483,11 @@ function editionCard(d: Draft, i: number, j: number): HTMLElement {
 					'data-key': k,
 					onchange,
 					// a short name for it, as the book form's: "UK edition", "Full cast"
-					...(k === 'desc' ? {placeholder: 'e.g. UK edition'} : {}),
-					...(k === 't' ? {placeholder: 'the same as the book'} : {}),
+					...(k === 'desc' ? {placeholder: spell('e.g. UK edition')} : {}),
+					...(k === 't' ? {placeholder: spell('the same as the book')} : {}),
 					// an edition's page on a catalog typed among its links goes to its id
 					...(k === 'links'
-						? {placeholder: 'https://… one per line', onfocusout: () => editionLinksToIds(i, j)}
+						? {placeholder: spell('https://… one per line'), onfocusout: () => editionLinksToIds(i, j)}
 						: {}),
 				},
 				choicesFor(d, ed, j, k),
@@ -520,23 +539,23 @@ function anotherIdField(i: number, j: number, onchange: () => void): HTMLElement
 	return buildElement(
 		'div',
 		{class: 'editField editAnotherId'},
-		buildElement('label', {for: id}, 'Another id'),
+		buildElement('label', {for: id}, spell('Another id')),
 		buildElement(
 			'select',
-			{id: inputId(i, j, 'more-catalog'), 'aria-label': 'Catalog of the id', onchange},
+			{id: inputId(i, j, 'more-catalog'), 'aria-label': spell('Catalog of the id'), onchange},
 			buildElement('option', {value: ''}, spell('Catalog: from the address')),
 			...catalogs.map(def =>
 				buildElement(
 					'option',
 					{value: def.key},
-					ExternalCatalog.family(def.key) === 'asin' ? `ASIN ${def.key}` : def.name,
+					ExternalCatalog.family(def.key) === 'asin' ? `${spell('ASIN')} ${def.key}` : def.name,
 				),
 			),
 		),
 		buildElement('input', {
 			id,
 			'data-key': 'more',
-			placeholder: "the edition's address, or its id and catalog",
+			placeholder: spell("the edition's address, or its id and catalog"),
 			onchange,
 		}),
 	);
@@ -549,7 +568,7 @@ function editionSummary(d: Draft, ed: Edition): HTMLElement[] {
 	return [
 		buildElement('span', {class: ed.description ? 'editEdName editEdDesc' : 'editEdName'}, name),
 		buildElement('span', {class: 'editEdMeta'}, meta.join(' · ')),
-		...(shared ? [buildElement('span', {class: 'editEdShared'}, spell(shared))] : []),
+		...(shared ? [buildElement('span', {class: 'editEdShared'}, shared)] : []),
 	];
 }
 
@@ -568,7 +587,9 @@ function sharedWith(d: Draft, ed: Edition): string {
 		...CATALOG.books.filter(b => !drafted.has(b.id as string) && b.editions.some(y => y.sameAs(ed))),
 	];
 	if (!others.length) return '';
-	return `Also on ${others.map(b => b.title).join(', ')}: a change here changes it there too.`;
+	return spell('Also on {titles}: a change here changes it there too.', {
+		titles: others.map(b => b.title).join(', '),
+	});
 }
 
 /** Merge with…: the book's other editions this one can be one with (none disagree on an id). */
@@ -581,7 +602,7 @@ function mergePanel(i: number, j: number): HTMLElement {
 		'div',
 		{class: 'editInline', id: `book-${i}-ed-${j}-panel`},
 		others.length
-			? buildElement('p', {}, 'Merge this edition with:')
+			? buildElement('p', {}, spell('Merge this edition with:'))
 			: buildElement(
 					'p',
 					{},
@@ -607,12 +628,12 @@ function splitPanel(i: number, j: number): HTMLElement {
 	const keys = Object.keys(fields).filter(k => !k.startsWith('img:') && k !== 'links');
 	const label = (k: string) =>
 		k.startsWith('ext:')
-			? Edition.fieldLabel(k.slice(4))
-			: (EDITION_FIELDS.find(([key]) => key === k) || [k, k])[1];
+			? spell(Edition.fieldLabel(k.slice(4)))
+			: spell((EDITION_FIELDS.find(([key]) => key === k) || [k, k])[1]);
 	return buildElement(
 		'div',
 		{class: 'editInline', id: `book-${i}-ed-${j}-panel`},
-		buildElement('p', {}, 'Move to a new edition, or copy onto both:'),
+		buildElement('p', {}, spell('Move to a new edition, or copy onto both:')),
 		...keys.map(k =>
 			buildElement(
 				'div',
@@ -621,9 +642,9 @@ function splitPanel(i: number, j: number): HTMLElement {
 				buildElement(
 					'select',
 					{id: `book-${i}-ed-${j}-split-${k.replace(/[^\w.-]/g, '-')}`, 'data-split': k},
-					buildElement('option', {value: 'keep'}, 'keep here'),
-					buildElement('option', {value: 'move'}, 'move'),
-					buildElement('option', {value: 'copy'}, 'copy onto both'),
+					buildElement('option', {value: 'keep'}, spell('keep here')),
+					buildElement('option', {value: 'move'}, spell('move')),
+					buildElement('option', {value: 'copy'}, spell('copy onto both')),
 				),
 			),
 		),
@@ -640,14 +661,15 @@ function removePanel(i: number, j: number): HTMLElement {
 	return buildElement(
 		'div',
 		{class: 'editInline', id: `book-${i}-ed-${j}-panel`},
-		buildElement('p', {}, 'Take this edition off the book? Its ids go with it.'),
+		buildElement('p', {}, spell('Take this edition off the book? Its ids go with it.')),
 		...(entries.length
 			? [
 					buildElement(
 						'label',
 						{class: 'editCheck'},
 						buildElement('input', {type: 'checkbox', id: `book-${i}-ed-${j}-exclude`}),
-						" Don't let imports add it again (the book still matches)",
+						' ',
+						spell("Don't let imports add it again (the book still matches)"),
 					),
 				]
 			: []),
@@ -663,7 +685,7 @@ function outLink(href: string, text: string, catalog: string): HTMLAnchorElement
 		'a',
 		{href, target: '_blank', rel: 'noopener', class: 'editOut'},
 		catalogIcon(catalog),
-		`${text} ↗`,
+		spell('{text} ↗', {text}),
 	);
 }
 
@@ -747,7 +769,14 @@ function catalogLinks(d: Draft): Child[] {
 		else if (reviewed.notFound.includes(source)) missing.push(labels[source]);
 	});
 	if (missing.length)
-		links.push(' · ', buildElement('span', {class: 'editNotFound'}, `not found on ${missing.join(', ')}`));
+		links.push(
+			' · ',
+			buildElement(
+				'span',
+				{class: 'editNotFound'},
+				spell('not found on {catalogs}', {catalogs: missing.join(', ')}),
+			),
+		);
 	return links;
 }
 
@@ -842,7 +871,12 @@ function offerRow(id: string, source: number, text: string, take: () => void, ex
 	return buildElement(
 		'div',
 		{class: 'editTake', id},
-		buildElement('span', {}, catalogIcon(run.keys[source]), spell(`${run.labels[source]}: ${text}`)),
+		buildElement(
+			'span',
+			{},
+			catalogIcon(run.keys[source]),
+			spell('{catalog}: {changes}', {catalog: run.labels[source], changes: text}),
+		),
 		...extra,
 		buttonFor('Take', take, `${id}-do`),
 	);
@@ -881,9 +915,13 @@ function notAudioNote(source: number, note: NotAudio): HTMLElement {
 		'p',
 		{class: 'editNotAudio'},
 		catalogIcon(run.keys[source]),
-		spell(
-			`Maybe not an audiobook: ${note.edition} is ${note.said}${note.maybe ? '' : ` on ${run.labels[source]}`}.`,
-		),
+		note.maybe
+			? spell('Maybe not an audiobook: {edition} is {said}.', {edition: note.edition, said: spell(note.said)})
+			: spell('Maybe not an audiobook: {edition} is {said} on {catalog}.', {
+					edition: note.edition,
+					said: spell(note.said),
+					catalog: run.labels[source],
+				}),
 		...(note.url ? [' ', outLink(note.url, run.labels[source], run.keys[source])] : []),
 	);
 }
@@ -904,8 +942,11 @@ function newEditionOffers(d: Draft, i: number): HTMLElement[] {
 						'span',
 						{},
 						catalogIcon(run.keys[offer.source]),
-						spell(`${run.labels[offer.source]} has another edition: ${editionName(ed).name}`),
-						buildElement('span', {class: 'editEdMeta'}, ` ${ed.format()}`),
+						spell('{catalog} has another edition: {edition}', {
+							catalog: run.labels[offer.source],
+							edition: editionName(ed).name,
+						}),
+						buildElement('span', {class: 'editEdMeta'}, ' ', editionText(ed)),
 					),
 					...coverPreviews(d.book, Book.fromJSON({t: d.book.title, a: d.book.authors, e: [ed.toJSON()]})),
 					buttonFor(
@@ -933,7 +974,7 @@ function editionFinds(d: Draft, i: number, j: number): HTMLElement[] {
 			offerRow(
 				`book-${i}-ed-${j}-take-${offer.key}`,
 				offer.source,
-				lines.join('; ') || 'a cover',
+				lines.join('; ') || spell('a cover'),
 				() => {
 					d.book = withEditionOf(d, j, now);
 					renderBook(i);
@@ -963,7 +1004,7 @@ function editionMarks(d: Draft, j: number): HTMLElement[] {
 				'span',
 				{
 					class: 'editPill review',
-					title: spell(`${sources.map(s => run.labels[s]).join(', ')} would change it`),
+					title: spell('{catalogs} would change it', {catalogs: sources.map(s => run.labels[s]).join(', ')}),
 				},
 				...sources.map(s => catalogIcon(run.keys[s])),
 				spell('to review'),
@@ -1006,7 +1047,7 @@ function excludedEditions(d: Draft): HTMLElement[] {
 	const rows: HTMLElement[] = [];
 	for (const entry of reviewed.entries)
 		for (const ed of entry.excluded) {
-			const text = ed.format();
+			const text = editionText(ed);
 			if (seen.has(text)) continue;
 			seen.add(text);
 			const [site, id] = ed.externalList()[0] || [];
@@ -1015,7 +1056,7 @@ function excludedEditions(d: Draft): HTMLElement[] {
 				buildElement(
 					'li',
 					{},
-					`${text} (${labels[entry.source]})`,
+					spell('{edition} ({catalog})', {edition: text, catalog: labels[entry.source]}),
 					...(url ? [' ', outLink(url, ExternalCatalog.name(site as string), site as string)] : []),
 				),
 			);
@@ -1025,7 +1066,7 @@ function excludedEditions(d: Draft): HTMLElement[] {
 		buildElement(
 			'details',
 			{class: 'editExcluded'},
-			buildElement('summary', {}, Text.plural(rows.length, 'excluded edition')),
+			buildElement('summary', {}, plural(rows.length, 'excluded edition')),
 			buildElement(
 				'p',
 				{class: 'hint'},
@@ -1048,7 +1089,7 @@ function drawCatalogPicks(choices: CatalogChoice[], setSkipped: (catalog: string
 				'label',
 				{
 					class: c.cantAsk ? 'editCheck cant' : 'editCheck',
-					title: c.cantAsk ? spell(`${c.label} ${c.cantAsk}`) : '',
+					title: c.cantAsk ? spell('{catalog} {why}', {catalog: c.label, why: c.cantAsk}) : '',
 				},
 				buildElement('input', {
 					type: 'checkbox',
@@ -1060,7 +1101,9 @@ function drawCatalogPicks(choices: CatalogChoice[], setSkipped: (catalog: string
 				' ',
 				catalogIcon(c.catalog),
 				c.label,
-				...(c.cantAsk ? [buildElement('span', {class: 'editWhy'}, spell(` (${c.cantAsk})`))] : []),
+				...(c.cantAsk
+					? [buildElement('span', {class: 'editWhy'}, ' ', spell('({why})', {why: c.cantAsk}))]
+					: []),
 			),
 		),
 	);
@@ -1069,7 +1112,7 @@ function drawCatalogPicks(choices: CatalogChoice[], setSkipped: (catalog: string
 /** What the catalogs read, and the ids they found. */
 function drawCatalogFound() {
 	const run = RUN;
-	fillElement(byId('catalogNotes'), ...(run ? run.notes.map(n => buildElement('li', {}, spell(n))) : []));
+	fillElement(byId('catalogNotes'), ...(run ? run.notes.map(n => buildElement('li', {}, n)) : []));
 	if (!run) return fillElement(byId('catalogFound'));
 	fillElement(
 		byId('catalogFound'),
@@ -1087,9 +1130,11 @@ function drawCatalogFound() {
 						showChangeCount();
 					},
 				}),
-				spell(
-					` Keep the ids ${run.labels[source]} found for ${[...new Set(ids.map(x => x.name))].join(', ')} (where they have none)`,
-				),
+				' ',
+				spell('Keep the ids {catalog} found for {names} (where they have none)', {
+					catalog: run.labels[source],
+					names: [...new Set(ids.map(x => x.name))].join(', '),
+				}),
 			),
 		),
 	);
@@ -1110,7 +1155,7 @@ function sourceSelect(
 			buildElement(
 				'option',
 				{value: String(f.source), selected: f.source === picked},
-				`as ${run.labels[f.source]} has it`,
+				spell('as {catalog} has it', {catalog: run.labels[f.source]}),
 			),
 		),
 	);
@@ -1120,7 +1165,17 @@ function sourceSelect(
 function missingLine(entry: {title: string; number?: string}, book: Book | null): string {
 	const title = book ? book.title : entry.title;
 	const number = book ? book.number || entry.number : entry.number;
-	return `${number ? `${number}. ` : ''}${title}${book && book.authors.length ? ` by ${book.authors.join(', ')}` : ''}`;
+	const authors = book && book.authors.length ? book.authors.join(', ') : '';
+	return spell(
+		number
+			? authors
+				? '{number}. {title} by {authors}'
+				: '{number}. {title}'
+			: authors
+				? '{title} by {authors}'
+				: '{title}',
+		{number: number || '', title, authors},
+	);
 }
 
 /**
@@ -1137,7 +1192,7 @@ async function pickMissing(n: number, source: number) {
 		problem = '';
 	try {
 		book = await run.missingBook(n, source);
-		if (!book) problem = `${run.labels[source]} doesn't have it after all`;
+		if (!book) problem = spell("{catalog} doesn't have it after all", {catalog: run.labels[source]});
 	} catch (exc) {
 		problem = Text.errorText(exc);
 	}
@@ -1150,7 +1205,11 @@ async function pickMissing(n: number, source: number) {
 	} else {
 		MISSING_PICKS.delete(n);
 		showIoStatus(
-			spell(`Couldn't read ${run.review.missing[n].title} from ${run.labels[source]}: ${problem}`),
+			spell("Couldn't read {title} from {catalog}: {problem}", {
+				title: run.review.missing[n].title,
+				catalog: run.labels[source],
+				problem: spell(problem),
+			}),
 			true,
 		);
 	}
@@ -1252,11 +1311,17 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 							}
 						},
 					}),
-					` Add ${from.line}`,
+					' ',
+					spell('Add {book}', {book: from.line}),
 				),
 				book.from.length > 1
 					? sourceSelect(`fresh-${n}-from`, book.from, from.source, pick, run)
-					: buildElement('span', {class: 'hint'}, ` (${run.labels[from.source]})`),
+					: buildElement(
+							'span',
+							{class: 'hint'},
+							' ',
+							spell('({catalog})', {catalog: run.labels[from.source]}),
+						),
 				// picked, the book's whole form, as the catalog has it, to change before it is added
 				...(drafted ? [bookCard(drafted.d, drafted.i)] : []),
 			);
@@ -1294,7 +1359,8 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 							}
 						},
 					}),
-					` Add ${missingLine(entry, picked?.book || null)}`,
+					' ',
+					spell('Add {book}', {book: missingLine(entry, picked?.book || null)}),
 				),
 				entry.from.length > 1
 					? sourceSelect(
@@ -1307,7 +1373,11 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 					: null,
 				from.url ? outLink(from.url, run.labels[from.source], run.keys[from.source]) : null,
 				reading
-					? buildElement('span', {class: 'hint'}, spell(`Reading it from ${run.labels[from.source]}…`))
+					? buildElement(
+							'span',
+							{class: 'hint'},
+							spell('Reading it from {catalog}…', {catalog: run.labels[from.source]}),
+						)
 					: null,
 				...(drafted ? [bookCard(drafted.d, drafted.i)] : []),
 			);
@@ -1406,7 +1476,7 @@ export function render() {
 	}
 	DRAFTS.forEach((d, k) => fillExternalFields(inputId(k, null, 'ext_'), 'book', d.book.external));
 	const own = DRAFTS.filter(d => !d.added).length;
-	byId('bookCount').textContent = own ? Text.plural(own, 'book') : '';
+	byId('bookCount').textContent = own ? plural(own, 'book') : '';
 	showChangeCount();
 }
 
@@ -1422,7 +1492,7 @@ function renderBook(i: number) {
 
 function showChangeCount() {
 	const n = changes().length;
-	byId('changeCount').textContent = n ? Text.plural(n, 'change') : 'No changes yet';
+	byId('changeCount').textContent = n ? plural(n, 'change') : spell('No changes yet');
 }
 
 // ------------------------------------------------------------------ reading what is typed
@@ -1444,15 +1514,17 @@ export async function readBookIds(i: number): Promise<void> {
 		try {
 			const found = await lookupHardcoverBook(text);
 			if (Text.tidy(input.value) === text) input.value = found.id;
-			if (found.title) showIoStatus(`Found on Hardcover: ${found.title} (book ${found.id}).`);
+			if (found.title)
+				showIoStatus(spell('Found on Hardcover: {title} (book {id}).', {title: found.title, id: found.id}));
 			readBookFields(i);
 		} catch (err) {
 			readBookFields(i);
 			const d = DRAFTS[i];
 			if (!d) return;
-			d.error =
-				`Couldn't find the Hardcover book: ${Text.errorText(err)}. ` +
-				'Paste the address of its page, or of one of its editions, on hardcover.app, or the number in hardcover.app/id/book/12345.';
+			d.error = spell(
+				"Couldn't find the Hardcover book: {error}. Paste the address of its page, or of one of its editions, on hardcover.app, or the number in hardcover.app/id/book/12345.",
+				{error: spell(Text.errorText(err))},
+			);
 			byId(`book-${i}-error`).textContent = d.error;
 		} finally {
 			if (HARDCOVER_LOOKUPS.get(i) === lookup) HARDCOVER_LOOKUPS.delete(i);
@@ -1473,13 +1545,15 @@ export function readBookFields(i: number) {
 	const problems: string[] = [];
 	const title = Text.tidy(value('t'));
 	const authors = Text.splitNames(value('a'));
-	if (!title) problems.push('A book needs a title.');
-	if (!authors.length) problems.push('A book needs an author.');
+	if (!title) problems.push(spell('A book needs a title.'));
+	if (!authors.length) problems.push(spell('A book needs an author.'));
 	const needs = problems.length;
 	const {dates, bad} = Text.parseDates(value('r'));
-	if (bad.length) problems.push(`Not a date: ${bad.join(', ')}. Use YYYY-MM-DD, or YYYY-MM / YYYY.`);
+	if (bad.length)
+		problems.push(spell('Not a date: {dates}. Use YYYY-MM-DD, or YYYY-MM / YYYY.', {dates: bad.join(', ')}));
 	const external = readExternalFields(inputId(i, null, 'ext_'), 'book', d.book.external);
-	if (external.bad.length) problems.push(`Not a book's id or address there: ${external.bad.join('; ')}.`);
+	if (external.bad.length)
+		problems.push(spell("Not a book's id or address there: {bad}.", {bad: external.bad.join('; ')}));
 	d.error = problems.join(' ');
 	byId(`book-${i}-error`).textContent = d.error;
 	if (problems.length > needs) return showChangeCount();
@@ -1556,16 +1630,27 @@ export function readEditionFields(i: number, j: number) {
 			? ExternalCatalog.readId(text, 'edition', catalog)
 			: ExternalCatalog.fromAddress(text, 'edition');
 		if (found && Text.tidy(typed['ext:' + found.catalog] || ''))
-			problems.push(`It has an id on ${ExternalCatalog.name(found.catalog)} already: ${text}.`);
+			problems.push(
+				spell('It has an id on {catalog} already: {text}.', {
+					catalog: ExternalCatalog.name(found.catalog),
+					text,
+				}),
+			);
 		else if (found) typed['ext:' + found.catalog] = found.id;
-		else if (catalog) problems.push(`Not an edition's id on ${ExternalCatalog.name(catalog)}: ${text}.`);
-		else problems.push(`Not an edition's address: ${text}. For a bare id, pick its catalog.`);
+		else if (catalog)
+			problems.push(
+				spell("Not an edition's id on {catalog}: {text}.", {catalog: ExternalCatalog.name(catalog), text}),
+			);
+		else problems.push(spell("Not an edition's address: {text}. For a bare id, pick its catalog.", {text}));
 	}
 	// a publisher the edition or the catalog has stays whole, though its name holds a comma
 	const read = Edition.fromFields(typed, [...ed.publishers, ...knownPublishers()]);
-	if (read.bad.length) problems.push(`Not understood: ${read.bad.join('; ')}.`);
+	// (what Edition.fromFields couldn't read, in its words)
+	if (read.bad.length) problems.push(spell('Not understood: {bad}.', {bad: spell(read.bad.join('; '))}));
 	if (!problems.length && !read.editions.length)
-		problems.push('An edition needs something, such as an id or a narrator. To take it off, press Remove edition.');
+		problems.push(
+			spell('An edition needs something, such as an id or a narrator. To take it off, press Remove edition.'),
+		);
 	const error = byId(`book-${i}-ed-${j}-error`);
 	error.textContent = problems.join(' ');
 	if (problems.length) return;
@@ -1677,45 +1762,61 @@ function addEdition(i: number) {
 }
 
 // ------------------------------------------------------------------ what Save would do
+/** A value's change, "was → now", or the new value when there was none. */
+const changedFrom = (was: string, now: string): string =>
+	was ? spell('{was} → {now}', {was, now: now || spell('(empty)')}) : now;
+/** A field's change in Review & save's list: its label (spelled here) and what changed. */
+const fieldChange = (label: string, change: string): string =>
+	spell('{field}: {change}', {field: spell(label), change});
+
 /**
  * What changed on a book, one line each: its fields, and each edition's (added, removed or changed).
  */
 export function bookChanges(before: Book, after: Book, excluded: string[] = []): string[] {
 	const out: string[] = [];
-	const from = (was: string, now: string) => (was ? `${was} → ${now || '(empty)'}` : now);
 	for (const [k, label] of BOOK_FIELDS) {
 		const was = bookFieldText(before, k),
 			now = bookFieldText(after, k);
-		if (was !== now) out.push(`${label}: ${from(was, now)}`);
+		if (was !== now) out.push(fieldChange(label, changedFrom(was, now)));
 	}
 	const ids = (b: Book) =>
 		Object.entries(b.external)
 			.map(([k, v]) => `${ExternalCatalog.name(k)} ${v}`)
 			.join(', ');
-	if (ids(before) !== ids(after)) out.push(`Ids: ${from(ids(before), ids(after))}`);
+	if (ids(before) !== ids(after)) out.push(fieldChange('Ids', changedFrom(ids(before), ids(after))));
 	if (before.links.join(' ') !== after.links.join(' '))
-		out.push(`Links: ${from(before.links.join(' '), after.links.join(' '))}`);
+		out.push(fieldChange('Links', changedFrom(before.links.join(' '), after.links.join(' '))));
 	const kept = new Set(after.editions.map(ed => ed.id).filter(id => id !== undefined));
 	for (const ed of before.editions) {
 		if (ed.id !== undefined && kept.has(ed.id)) continue;
-		const out_ = Exclusions.editionEntries(ed).some(e => excluded.includes(e)) ? ', and kept out of imports' : '';
-		out.push(`Removed edition: ${editionName(ed).name}${out_}`);
+		out.push(
+			spell(
+				Exclusions.editionEntries(ed).some(e => excluded.includes(e))
+					? 'Removed edition: {edition}, and kept out of imports'
+					: 'Removed edition: {edition}',
+				{edition: editionName(ed).name},
+			),
+		);
 	}
 	for (const ed of after.editions) {
 		const was = ed.id === undefined ? undefined : before.editions.find(x => x.id === ed.id);
 		if (!was) {
-			out.push(`New edition: ${ed.format() || '(empty)'}`);
+			out.push(spell('New edition: {edition}', {edition: editionText(ed) || spell('(empty)')}));
 			continue;
 		}
 		if (was.format() === ed.format()) continue;
-		out.push(`Edition ${editionName(was).name}: ${editionFieldChanges(was, ed).join('; ') || 'a cover'}`);
+		out.push(
+			spell('Edition {edition}: {changes}', {
+				edition: editionName(was).name,
+				changes: editionFieldChanges(was, ed).join('; ') || spell('a cover'),
+			}),
+		);
 	}
 	return out;
 }
 
 /** What changed on an edition, one line per field (a cover alone, none). */
 function editionFieldChanges(was: Edition, ed: Edition): string[] {
-	const from = (x: string, now: string) => (x ? `${x} → ${now || '(empty)'}` : now);
 	const a = was.fields(),
 		b = ed.fields();
 	return [...new Set([...Object.keys(a), ...Object.keys(b)])]
@@ -1724,7 +1825,7 @@ function editionFieldChanges(was: Edition, ed: Edition): string[] {
 			const label = k.startsWith('ext:')
 				? Edition.fieldLabel(k.slice(4))
 				: (EDITION_FIELDS.find(([key]) => key === k) || [k, k])[1];
-			return `${label}: ${from(a[k] || '', b[k] || '')}`;
+			return fieldChange(label, changedFrom(a[k] || '', b[k] || ''));
 		});
 }
 
@@ -1743,16 +1844,24 @@ export function changes(): [string, string][] {
 		const added = (kind: NewPick['kind'], n: number, line: string) => {
 			const d = newDraft(kind, n)?.d;
 			const changed = d ? bookChanges(d.before, d.book, []) : [];
-			out.push([spell('New book'), changed.length ? `${line}, changed here` : line]);
+			out.push([spell('New book'), changed.length ? spell('{book}, changed here', {book: line}) : line]);
 			if (d) for (const c of changed) out.push([d.book.title, c]);
 		};
 		for (const [n, source] of FRESH_PICKS) {
 			const from = run.review.fresh[n] && run.review.fresh[n].from.find(f => f.source === source);
-			if (from) added('fresh', n, `${from.line}, as ${run.labels[source]} has it`);
+			if (from)
+				added('fresh', n, spell('{book}, as {catalog} has it', {book: from.line, catalog: run.labels[source]}));
 		}
 		for (const [n, {source, book}] of MISSING_PICKS)
 			if (book && run.review.missing[n])
-				added('missing', n, `${missingLine(run.review.missing[n], book)}, as ${run.labels[source]} has it`);
+				added(
+					'missing',
+					n,
+					spell('{book}, as {catalog} has it', {
+						book: missingLine(run.review.missing[n], book),
+						catalog: run.labels[source],
+					}),
+				);
 		for (const source of INFO_PICKS)
 			out.push([run.labels[source], spell('Keep the ids it found for the series and people')]);
 	}
@@ -1799,20 +1908,21 @@ function seriesChanges(name: string): string[] {
 	const info = SERIES_ID === null ? undefined : CATALOG.series.get(SERIES_ID);
 	const out: string[] = [];
 	const newName = Text.tidy(fieldById('sf_name').value);
-	if (newName && newName !== name) out.push(`Renamed to ${newName}`);
+	if (newName && newName !== name) out.push(spell('Renamed to {name}', {name: newName}));
 	const total = fieldById('sf_total').value.trim(),
 		wasTotal = info ? totalText(info) : '';
-	if (total !== wasTotal) out.push(`Books released: ${total || '(empty)'}`);
+	if (total !== wasTotal) out.push(fieldChange('Books released', total || spell('(empty)')));
 	const status = fieldById('sf_status').value,
 		wasStatus = info ? String(info.toJSON().status ?? '') : '';
-	if (status !== wasStatus) out.push(`Status: ${status || 'unknown'}`);
+	if (status !== wasStatus) out.push(fieldChange('Status', spell(status || 'unknown')));
 	const note = Text.tidy(fieldById('sf_note').value);
-	if (note !== (info ? info.note || '' : '')) out.push(`Note: ${note || '(empty)'}`);
+	if (note !== (info ? info.note || '' : '')) out.push(fieldChange('Note', note || spell('(empty)')));
 	const ext = readExternalFields('sf_ext_', 'series', info ? info.external : {});
 	const shown = (ids: Record<string, string>) => JSON.stringify(ExternalCatalog.order(ids) || {});
-	if (ext.bad.length || shown(ext.ids) !== shown(info ? info.external : {})) out.push('Its ids in other catalogs');
+	if (ext.bad.length || shown(ext.ids) !== shown(info ? info.external : {}))
+		out.push(spell('Its ids in other catalogs'));
 	const links = Text.parseLinks(fieldById('sf_links').value).join(' ');
-	if (links !== (info ? info.links.join(' ') : '')) out.push(`Links: ${links || '(empty)'}`);
+	if (links !== (info ? info.links.join(' ') : '')) out.push(fieldChange('Links', links || spell('(empty)')));
 	return out;
 }
 
@@ -1829,7 +1939,7 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 		return null;
 	};
 	byId('seriesFormError').textContent = '';
-	if (!Text.tidy(fieldById('sf_name').value)) return showError('Give the series a name.');
+	if (!Text.tidy(fieldById('sf_name').value)) return showError(spell('Give the series a name.'));
 	// unchanged, it is kept as it is (Check may find fault with what it had: that is Check's to say)
 	if (!seriesChanges(name).length) return {newName: name, entry: CATALOG.series.get(id) ?? null, note: ''};
 	// a Hardcover address is looked up for its number first
@@ -1837,12 +1947,13 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 	const hardcover = lookup ? await lookup : {error: '', note: ''};
 	if (hardcover.error) return showError(hardcover.error);
 	const newName = Text.tidy(fieldById('sf_name').value);
-	if (!newName) return showError('Give the series a name.');
+	if (!newName) return showError(spell('Give the series a name.'));
 	const totalTyped = fieldById('sf_total').value.trim();
 	const note = Text.tidy(fieldById('sf_note').value);
 	const had = CATALOG.series.get(id);
 	const external = readExternalFields('sf_ext_', 'series', had ? had.external : {});
-	if (external.bad.length) return showError(`Not an id or address there: ${external.bad.join('; ')}.`);
+	if (external.bad.length)
+		return showError(spell('Not an id or address there: {bad}.', {bad: external.bad.join('; ')}));
 	const links = Text.parseLinks(fieldById('sf_links').value);
 	const status = fieldById('sf_status').value;
 	// a series needs none of these; with all of them empty, it keeps none
@@ -1860,21 +1971,23 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 	const problems = errors
 		.filter(e => e.startsWith('series-info'))
 		.map(e => e.replace(/^series-info(\[[^\]]*\])?: /, ''));
-	if (problems.length) return showError(problems.join('; '));
+	// Check's messages, which a module writes
+	if (problems.length) return showError(spell(problems.join('; ')));
 	return {newName, entry: Series.fromJSON(newName, typed), note: hardcover.note};
 }
 
 /** The problems that stop a book from being saved, as Check finds them on its editions. */
 function bookProblems(b: Book): string[] {
 	const needs = [
-		...(b.title ? [] : ['A book needs a title.']),
-		...(b.authors.length ? [] : ['A book needs an author.']),
+		...(b.title ? [] : [spell('A book needs a title.')]),
+		...(b.authors.length ? [] : [spell('A book needs an author.')]),
 	];
 	if (needs.length) return needs;
-	if (b.editions.some(ed => !ed.format())) return ['An edition is empty: fill it in, or remove it.'];
+	if (b.editions.some(ed => !ed.format())) return [spell('An edition is empty: fill it in, or remove it.')];
 	const editions = b.editions.length ? {e: JSON.parse(JSON.stringify(b.editions))} : {}; // a book may have none
+	// Check's messages, which a module writes
 	return Validator.validate([{t: b.title, a: b.authors, ...editions}], {}).errors.map(e =>
-		e.includes(' edition #') ? e.slice(e.indexOf(' edition #') + 1) : e,
+		spell(e.includes(' edition #') ? e.slice(e.indexOf(' edition #') + 1) : e),
 	);
 }
 
@@ -1885,11 +1998,15 @@ export async function review() {
 	setReviewing(false);
 	await Promise.all(HARDCOVER_LOOKUPS.values());
 	const unread = unreadField();
-	if (unread) return showProblem(unread, 'Some fields are not understood: they are marked on their books.');
+	if (unread) return showProblem(unread, spell('Some fields are not understood: they are marked on their books.'));
 	for (const [i, d] of DRAFTS.entries()) {
 		const problems = bookProblems(d.book);
 		byId(`book-${i}-error`).textContent = problems.join('; ');
-		if (problems.length) return showProblem(byId(`book-${i}-error`), `${d.book.title}: ${problems.join('; ')}`);
+		if (problems.length)
+			return showProblem(
+				byId(`book-${i}-error`),
+				spell('{title}: {problems}', {title: d.book.title, problems: problems.join('; ')}),
+			);
 	}
 	const series = KIND === 'series' ? await readSeriesPanel() : null;
 	if (KIND === 'series' && !series) return showProblem(byId('seriesFormError'));
@@ -1901,17 +2018,19 @@ export async function review() {
 		if (CATALOG.nameIds.series.has(series.newName))
 			lines.unshift([
 				name,
-				`There is already a series called ${series.newName}: these books move into it` +
-					(series.entry && CATALOG.seriesInfo(series.newName)
-						? ', and its total, status, note and ids are replaced by these.'
-						: '.'),
+				spell(
+					series.entry && CATALOG.seriesInfo(series.newName)
+						? 'There is already a series called {name}: these books move into it, and its total, status, note and ids are replaced by these.'
+						: 'There is already a series called {name}: these books move into it.',
+					{name: series.newName},
+				),
 			]);
 	}
 	fillElement(
 		byId('reviewList'),
 		...(lines.length
 			? lines.map(([on, line]) => buildElement('li', {}, buildElement('b', {}, on), ': ', line))
-			: [buildElement('li', {}, 'Nothing changed.')]),
+			: [buildElement('li', {}, spell('Nothing changed.'))]),
 	);
 	(byId('reviewSaveBtn') as HTMLButtonElement).disabled = !lines.length;
 	setReviewing(true);
@@ -1997,7 +2116,14 @@ export async function save() {
 		newId = CATALOG.idFor('series', series.newName);
 		if (series.entry) CATALOG.series.set(newId, series.entry);
 		else if (!joins) CATALOG.series.delete(newId);
-		if (renamed) parts.push(`Renamed ${name} to ${series.newName} on ${Text.plural(count, 'book')}`);
+		if (renamed)
+			parts.push(
+				spell('Renamed {name} to {newName} on {books}', {
+					name,
+					newName: series.newName,
+					books: plural(count, 'book'),
+				}),
+			);
 	}
 	// after the series' own info, which the panel replaces: these fill in only what it lacks
 	let infoIds = 0;
@@ -2006,11 +2132,19 @@ export async function save() {
 	if (!(await persist())) return;
 	parts.push(
 		...[
-			saved ? (KIND === 'book' ? `saved ${name}` : `saved ${Text.plural(saved, 'book')}`) : '',
-			others ? `updated the shared edition on ${Text.plural(others, 'other book')}` : '',
-			added ? `added ${Text.plural(added, 'book')}` : '',
-			excluded ? `kept ${Text.plural(excluded, 'edition id')} out of imports` : '',
-			infoIds ? `kept ids found for ${Text.plural(infoIds, 'series or person', 'series and people')}` : '',
+			saved
+				? KIND === 'book'
+					? spell('saved {name}', {name})
+					: spell('saved {books}', {books: plural(saved, 'book')})
+				: '',
+			others ? spell('updated the shared edition on {books}', {books: plural(others, 'other book')}) : '',
+			added ? spell('added {books}', {books: plural(added, 'book')}) : '',
+			excluded ? spell('kept {ids} out of imports', {ids: plural(excluded, 'edition id')}) : '',
+			infoIds
+				? spell('kept ids found for {entries}', {
+						entries: plural(infoIds, 'series or person', 'series and people'),
+					})
+				: '',
 		].filter(Boolean),
 	);
 	if (newId !== null && newId !== SERIES_ID) {
@@ -2018,12 +2152,16 @@ export async function save() {
 		setAddress('replace', '#series=' + hashValue(newId));
 	}
 	await loadShown();
-	const status =
-		(parts.length
-			? parts.join(', ').replace(/^./, c => c.toUpperCase()) + '.'
-			: `Saved ${series ? series.newName : name}.`) +
-		(series && series.note ? ' ' + series.note : '') +
-		(news.length ? ` New in the catalog: ${news.join(', ')}.` : '');
+	// its sentences: what was saved (a list of what was done), the series' Hardcover note, the names new to the catalog
+	const status = [
+		parts.length
+			? spell('{done}.', {done: parts.join(', ').replace(/^./, c => c.toUpperCase())})
+			: spell('Saved {name}.', {name: series ? series.newName : name}),
+		series ? series.note : '',
+		news.length ? spell('New in the catalog: {names}.', {names: news.join(', ')}) : '',
+	]
+		.filter(Boolean)
+		.join(' ');
 	showIoStatus(status);
 	const back = returnHref();
 	if (back) openWithStatus(back, status);
@@ -2052,10 +2190,13 @@ async function saveNew() {
 	d.before = book.clone();
 	setAddress('replace', '#book=' + hashValue(id));
 	if (!(await persist())) return render();
-	const status =
-		`Added ${book.title}.` +
-		(others ? ` Also updated the shared edition on ${Text.plural(others, 'other book')}.` : '') +
-		(news.length ? ` New in the catalog: ${news.join(', ')}.` : '');
+	const status = [
+		spell('Added {title}.', {title: book.title}),
+		others ? spell('Also updated the shared edition on {books}.', {books: plural(others, 'other book')}) : '',
+		news.length ? spell('New in the catalog: {names}.', {names: news.join(', ')}) : '',
+	]
+		.filter(Boolean)
+		.join(' ');
 	showIoStatus(status);
 	openWithStatus(bookPageHref(id), status);
 }
@@ -2077,16 +2218,18 @@ async function removeSeries() {
 		name = id === null ? undefined : CATALOG.nameOf('series', id);
 	if (id === null || name === undefined) return;
 	if (changes().length) {
-		byId('seriesFormError').textContent = 'Save or discard the changes first.';
+		byId('seriesFormError').textContent = spell('Save or discard the changes first.');
 		return;
 	}
 	const count = CATALOG.booksOf('series', id).length;
 	if (!REMOVING_SERIES) {
 		REMOVING_SERIES = true;
-		byId('seriesFormError').textContent =
-			(count
-				? `This takes ${name} off its ${Text.plural(count, 'book')}, which stay in the catalog without a series or a number in it, and removes the series.`
-				: `This removes ${name}, which no book is in.`) + ' Press Remove series again to do it.';
+		byId('seriesFormError').textContent = count
+			? spell(
+					'This takes {name} off its {books}, which stay in the catalog without a series or a number in it, and removes the series. Press Remove series again to do it.',
+					{name, books: plural(count, 'book')},
+				)
+			: spell('This removes {name}, which no book is in. Press Remove series again to do it.', {name});
 		return;
 	}
 	CATALOG.removeEntry('series', id);
@@ -2103,10 +2246,12 @@ async function removeBook() {
 	if (id === null || !b) return;
 	if (!REMOVING_BOOK) {
 		REMOVING_BOOK = true;
-		byId('bookFormError').textContent =
-			`This takes ${b.title} out of the catalog, and imports will skip it` +
-			(changes().length ? ' (your changes here are dropped)' : '') +
-			'. Press Remove book again to do it.';
+		byId('bookFormError').textContent = spell(
+			changes().length
+				? 'This takes {title} out of the catalog, and imports will skip it (your changes here are dropped). Press Remove book again to do it.'
+				: 'This takes {title} out of the catalog, and imports will skip it. Press Remove book again to do it.',
+			{title: b.title},
+		);
 		return;
 	}
 	const series = b.series ? CATALOG.nameIds.series.get(b.series) : undefined;
@@ -2120,7 +2265,7 @@ async function removeBook() {
 	if (!(await persist())) return;
 	openWithStatus(
 		series === undefined ? 'books.html' : seriesPageHref(series),
-		`Removed ${removed.title}; imports will skip it.`,
+		spell('Removed {title}; imports will skip it.', {title: removed.title}),
 	);
 }
 
@@ -2137,7 +2282,7 @@ export async function fillFromCatalog() {
 	const d = DRAFTS[0];
 	if (!text || FILLING === text || !oneBook() || !d) return;
 	FILLING = text;
-	showIoStatus('Looking it up…');
+	showIoStatus(spell('Looking it up…'));
 	try {
 		const [{CatalogLookup}, {CatalogConnectors}] = await Promise.all([
 			import('./modules/catalog-lookup.js'),
@@ -2153,13 +2298,22 @@ export async function fillFromCatalog() {
 		if (DRAFTS[0] !== d) return;
 		const filled = fillBook(d, found.book);
 		byId('bookFormError').textContent = '';
-		const from = found.sources.join(' and ');
-		const notes = found.notes.length ? ` (${found.notes.join('; ')}.)` : '';
+		// the catalogs' names, and their notes, which a module writes
+		const values = {
+			catalogs: found.sources.join(spell(' and ')),
+			filled: filled.join(', '),
+			notes: spell(found.notes.join('; ')),
+		};
 		showIoStatus(
 			spell(
 				filled.length
-					? `Filled in from ${from}: ${filled.join(', ')}.${notes}`
-					: `Found on ${from}, but the book already has all it gives.${notes}`,
+					? found.notes.length
+						? 'Filled in from {catalogs}: {filled}. ({notes}.)'
+						: 'Filled in from {catalogs}: {filled}.'
+					: found.notes.length
+						? 'Found on {catalogs}, but the book already has all it gives. ({notes}.)'
+						: 'Found on {catalogs}, but the book already has all it gives.',
+				values,
 			),
 		);
 		if (field.value.trim() === text) field.value = '';
@@ -2169,7 +2323,9 @@ export async function fillFromCatalog() {
 		readBookFields(0);
 	} catch (err) {
 		showIoStatus('');
-		byId('bookFormError').textContent = `Couldn't fill in the book: ${Text.errorText(err)}.`;
+		byId('bookFormError').textContent = spell("Couldn't fill in the book: {error}.", {
+			error: spell(Text.errorText(err)),
+		});
 	} finally {
 		if (FILLING === text) FILLING = null;
 	}
@@ -2181,32 +2337,32 @@ function fillBook(d: Draft, from: Book): string[] {
 	const filled: string[] = [];
 	if (!b.title && from.title) {
 		b.title = from.title;
-		filled.push('title');
+		filled.push(spell('title'));
 	}
 	if (!b.authors.length && from.authors.length) {
 		b.authors = [...from.authors];
-		filled.push('authors');
+		filled.push(spell('authors'));
 	}
 	// the number only goes with its own series
 	if (!b.series && from.series) {
 		b.series = from.series;
-		filled.push('series');
+		filled.push(spell('series'));
 	}
 	if (b.series === from.series && !b.number && from.number) {
 		b.number = from.number;
-		filled.push('number in the series');
+		filled.push(spell('number in the series'));
 	}
 	if (!b.genres.length && from.genres.length) {
 		b.genres = [...from.genres];
-		filled.push('genres');
+		filled.push(spell('genres'));
 	}
 	const ids = Object.entries(from.external).filter(([key]) => !b.external[key]);
 	if (ids.length) {
 		b.external = {...b.external, ...Object.fromEntries(ids)};
-		filled.push(ids.length === 1 ? "the book's id in another catalog" : "the book's ids in other catalogs");
+		filled.push(spell(ids.length === 1 ? "the book's id in another catalog" : "the book's ids in other catalogs"));
 	}
 	const [ed] = from.editions;
-	if (ed && fillEdition(b, ed)) filled.push('an edition');
+	if (ed && fillEdition(b, ed)) filled.push(spell('an edition'));
 	d.book = b;
 	return filled;
 }
@@ -2299,10 +2455,10 @@ export async function loadSeries() {
 		return;
 	}
 	const info = CATALOG.series.get(id);
-	document.title = `Edit ${name}` + spell(' · Audiobook Catalog');
+	document.title = spell('Edit {name} · Audiobook Catalog', {name});
 	byId('subtitle').textContent = name;
 	byId('backLink').setAttribute('href', seriesPageHref(id));
-	byId('backLink').textContent = '← ' + name;
+	byId('backLink').textContent = spell('← {name}', {name});
 	fieldById('sf_name').value = name;
 	fieldById('sf_total').value = info ? totalText(info) : '';
 	fieldById('sf_status').value = info ? String(info.toJSON().status ?? '') : '';
@@ -2328,10 +2484,10 @@ export async function loadAuthor() {
 		render();
 		return;
 	}
-	document.title = `Edit ${name}'s books` + spell(' · Audiobook Catalog');
+	document.title = spell("Edit {name}'s books · Audiobook Catalog", {name});
 	byId('subtitle').textContent = name;
 	byId('backLink').setAttribute('href', creditPageHref('authors', id));
-	byId('backLink').textContent = '← ' + name;
+	byId('backLink').textContent = spell('← {name}', {name});
 	startDrafts(CATALOG.booksOf('authors', id).slice().sort(bookOrder));
 }
 
@@ -2354,10 +2510,10 @@ export async function loadBook() {
 		render();
 		return;
 	}
-	document.title = `Edit ${b.title}` + spell(' · Audiobook Catalog');
+	document.title = spell('Edit {title} · Audiobook Catalog', {title: b.title});
 	byId('subtitle').textContent = b.title;
 	byId('backLink').setAttribute('href', bookPageHref(id));
-	byId('backLink').textContent = '← ' + b.title;
+	byId('backLink').textContent = spell('← {name}', {name: b.title});
 	byId('bookFormError').textContent = '';
 	REMOVING_BOOK = false;
 	startDrafts([b]);
@@ -2377,10 +2533,10 @@ export async function loadNew() {
 		: books.length
 			? books[0].authors.filter(a => books.every(b => b.authors.includes(a)))
 			: [];
-	document.title = 'Add a book' + spell(' · Audiobook Catalog');
-	byId('subtitle').textContent = 'A new book';
+	document.title = spell('Add a book · Audiobook Catalog');
+	byId('subtitle').textContent = spell('A new book');
 	byId('backLink').setAttribute('href', returnHref() || 'books.html');
-	byId('backLink').textContent = series ? '← ' + series : '← All books';
+	byId('backLink').textContent = series ? spell('← {name}', {name: series}) : spell('← All books');
 	byId('bookFormError').textContent = '';
 	startDrafts([]);
 	const book = new Book({title: '', authors});
@@ -2430,7 +2586,7 @@ export const READY = startPage(
 			markNav('books.html');
 			byId('seriesPanel').hidden = true;
 			byId('bookPanel').hidden = false;
-			byId('eyebrow').textContent = KIND === 'add' ? 'Add a book' : 'Edit book';
+			byId('eyebrow').textContent = spell(KIND === 'add' ? 'Add a book' : 'Edit book');
 			byId('editBooksHead').hidden = true;
 			if (KIND === 'add') {
 				ADDING = {series: hashText(parts, 'series'), author: hashText(parts, 'author')};

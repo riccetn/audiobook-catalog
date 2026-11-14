@@ -21,7 +21,7 @@ import {
 	seriesPageHref,
 	hashValue,
 } from './store.js';
-import {byId, fieldById, spell, buildElement, fillElement, joined} from './dom.js';
+import {byId, fieldById, spell, spellParts, plural, buildElement, fillElement, joined} from './dom.js';
 import {externalLinks, webLinks} from './id-fields.js';
 import type {Child} from './dom.js';
 
@@ -51,7 +51,14 @@ export const narratorLinks: (names: string[]) => Child[] = names => nameLinks(na
  */
 export const statusTag = (status: string | undefined): Child[] =>
 	status
-		? [' ', buildElement('span', {class: `status ${status}`}, status === 'complete' ? 'complete' : 'ongoing')]
+		? [
+				' ',
+				buildElement(
+					'span',
+					{class: `status ${status}`},
+					spell(status === 'complete' ? 'complete' : 'ongoing'),
+				),
+			]
 		: [];
 /** the series' pages in external catalogs, then its other links (by their sites' names) */
 export const seriesLinks: (info: Series) => Child[] = info =>
@@ -78,7 +85,19 @@ function seriesOrder(a: Book, b: Book): number {
  */
 function ownedText(books: Book[]): string {
 	const sets = books.filter(b => b.isCollection()).length;
-	return `${Series.owned(books)} owned` + (sets ? ` + ${Text.plural(sets, 'box set')}` : '');
+	return sets
+		? spell('{owned} owned + {sets}', {owned: Series.owned(books), sets: plural(sets, 'box set')})
+		: spell('{owned} owned', {owned: Series.owned(books)});
+}
+
+/**
+ * An edition as one line, as Edition.format() writes it but with its labels spelled for the page.
+ */
+export function editionText(ed: Edition): string {
+	return ed
+		.parts()
+		.map(([, label, value]) => (label ? `${spell(label)} ${value}` : value))
+		.join('; ');
 }
 
 /**
@@ -90,7 +109,10 @@ export function bookNarrators(b: Book): Child {
 			b.editions.filter(ed => ed.narrators.length).map(ed => [Text.namesText(ed.narrators), ed.narrators]),
 		).values(),
 	];
-	return narrators.length > 0 && ['narr. ', joined(narrators.map(narratorLinks), ' / ')];
+	return (
+		narrators.length > 0 &&
+		spellParts('narr. {narrators}', {narrators: joined(narrators.map(narratorLinks), ' / ')})
+	);
 }
 
 // Covers come from Amazon and Open Library, which then learn the ids asked for, so they can be turned off;
@@ -159,11 +181,12 @@ export function alsoPublishedAs(titles: string[]): HTMLDivElement | false {
 		buildElement(
 			'div',
 			{class: 'alsoTitled'},
-			'Also published as ',
-			joined(
-				titles.map(t => buildElement('cite', {}, t)),
-				', ',
-			),
+			spellParts('Also published as {titles}', {
+				titles: joined(
+					titles.map(t => buildElement('cite', {}, t)),
+					', ',
+				),
+			}),
 		)
 	);
 }
@@ -211,7 +234,8 @@ function bookCard(
 				{class: 'meta'},
 				joined([authorLinks(b.authors), bookNarrators(b)].filter(Boolean), ' — '),
 			),
-			b.read.length > 0 && buildElement('div', {class: 'read'}, 'Read ' + b.read.join(', ')),
+			b.read.length > 0 &&
+				buildElement('div', {class: 'read'}, spell('Read {dates}', {dates: b.read.join(', ')})),
 		),
 	);
 }
@@ -376,8 +400,9 @@ export function bookGroups(
 				const note: string[] = [];
 				if (info) {
 					const missing = CATALOG.missing(name);
-					if (totalText(info)) note.push(`${totalText(info)} released total`);
-					if (missing && missing.length) note.push(`missing ${Series.numberList(missing)}`);
+					if (totalText(info)) note.push(spell('{total} released total', {total: totalText(info)}));
+					if (missing && missing.length)
+						note.push(spell('missing {numbers}', {numbers: Series.numberList(missing)}));
 					if (info.note) note.push(info.note);
 				}
 				const id = CATALOG.idFor('series', name);
@@ -409,8 +434,9 @@ export function bookGroups(
 					buildElement(
 						'p',
 						{class: 'series-title'},
-						'Standalone ',
-						buildElement('span', {class: 'n'}, Text.plural(standalone.length, 'book')),
+						spellParts('Standalone {count}', {
+							count: buildElement('span', {class: 'n'}, plural(standalone.length, 'book')),
+						}),
 					),
 					standalone.map(b => card(b)),
 				),
@@ -425,7 +451,7 @@ export function bookGroups(
 				buildElement(
 					'button',
 					{type: 'button', id: 'showMore', onclick: onMore},
-					`Show ${Math.min(more, PAGE_SIZE)} more`,
+					spell('Show {count} more', {count: Math.min(more, PAGE_SIZE)}),
 				),
 			),
 		);
@@ -441,11 +467,13 @@ export function showEmptyCatalog() {
 		buildElement(
 			'p',
 			{class: 'empty'},
-			'No books yet. ',
-			buildElement('a', {href: 'edit.html#add'}, 'Add one'),
-			', import your Audible, Goodreads or Hardcover library on ',
-			buildElement('a', {href: 'import.html'}, 'Import & export'),
-			', or restore a backup there.',
+			spellParts(
+				'No books yet. {add}, import your Audible, Goodreads or Hardcover library on {import}, or restore a backup there.',
+				{
+					add: buildElement('a', {href: 'edit.html#add'}, spell('Add one')),
+					import: buildElement('a', {href: 'import.html'}, spell('Import & export')),
+				},
+			),
 		),
 	);
 }
@@ -455,15 +483,17 @@ export async function showBackupNudge() {
 	const age = await backupAge();
 	fillElement(
 		byId('backupNudge'),
-		needsBackup(age) && [
-			spell(
+		needsBackup(age) &&
+			spellParts(
 				age.days === null
-					? `No backup of this catalog yet, and ${Text.plural(age.changes, 'change')} saved: `
-					: `Last backup ${age.days} days ago, and ${Text.plural(age.changes, 'change')} saved since: `,
+					? 'No backup of this catalog yet, and {changes} saved: {download}.'
+					: 'Last backup {days} days ago, and {changes} saved since: {download}.',
+				{
+					days: age.days,
+					changes: plural(age.changes, 'change'),
+					download: buildElement('a', {href: 'import.html'}, spell('download one on Import & export')),
+				},
 			),
-			buildElement('a', {href: 'import.html'}, 'download one on Import & export'),
-			'.',
-		],
 	);
 }
 
@@ -492,7 +522,7 @@ export function watchSearchAndFilters(addressNow: () => string, showView: () => 
  */
 export function showFilterCount(filters: string[]) {
 	const on = filters.filter(id => fieldById(id).value).length;
-	byId('filtersBtn').textContent = on ? `Filters · ${on}` : 'Filters';
+	byId('filtersBtn').textContent = on ? spell('Filters · {count}', {count: on}) : spell('Filters');
 }
 
 /**

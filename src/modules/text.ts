@@ -352,6 +352,29 @@ export class Text {
 	}
 
 	/**
+	 * A template the app wrote, respelled (see spelled), with its `{marker}`s filled in from `values` as they are:
+	 * a value is a title, a name or other data, or text already spelled, and is never respelled. A template's
+	 * whole sentence stays one text, so another language can put the values where its own sentence needs them.
+	 * A marker without a value throws, as it is a mistake in the code.
+	 */
+	static filled(template: string, british: boolean, values: Record<string, string | number> = {}): string {
+		return Text.templateParts(template, british, values).map(String).join('');
+	}
+
+	/**
+	 * A template's parts in order (see filled): its own text respelled, and in place of each `{marker}` its
+	 * value from `values`, whatever that is (a page puts elements in), as it is.
+	 */
+	static templateParts<T>(template: string, british: boolean, values: Record<string, T>): (string | T)[] {
+		return template.split(/(\{\w+\})/).map((part, i) => {
+			if (i % 2 === 0) return Text.spelled(part, british);
+			const key = part.slice(1, -1);
+			if (!Object.hasOwn(values, key)) throw new Error(`No value for ${part} in "${template}"`);
+			return values[key];
+		});
+	}
+
+	/**
 	 * What went wrong, from what a `catch` caught: an error's message, or what was thrown as text. (An error
 	 * from another realm, like a test's, is no `instanceof Error` here, so this goes by its message.)
 	 */

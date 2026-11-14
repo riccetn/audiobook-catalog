@@ -22,7 +22,7 @@ import {
 	bookPageHref,
 	seriesPageHref,
 } from './store.js';
-import {showIoStatus, byId, fieldById, spell, buildElement, fillElement, joined} from './dom.js';
+import {showIoStatus, byId, fieldById, spell, spellParts, plural, buildElement, fillElement, joined} from './dom.js';
 import {
 	externalFields,
 	fillExternalFields,
@@ -68,7 +68,7 @@ function bioParagraphs(bio: string): HTMLParagraphElement[] {
 export function render() {
 	homeCreditForm();
 	if (SHOWN === null) return;
-	document.title = nameOf(SHOWN) + spell(' · Audiobook Catalog');
+	document.title = spell('{page} · Audiobook Catalog', {page: nameOf(SHOWN)});
 	renderCreditPage(SHOWN);
 }
 
@@ -114,8 +114,14 @@ function creditBookLine(b: Book, name: string): HTMLLIElement {
 		b.number && [buildElement('span', {class: 'num'}, '#' + b.number), ' '],
 		buildElement('a', {href: bookHref(b)}, b.title),
 		!isAuthor &&
-			b.authors.length > 0 && [' ', buildElement('span', {class: 'with'}, 'by ', authorLinks(b.authors))],
-		others.length > 0 && [' ', buildElement('span', {class: 'with'}, 'with ', nameLinks(others, KIND.href))],
+			b.authors.length > 0 && [
+				' ',
+				buildElement('span', {class: 'with'}, spellParts('by {authors}', {authors: authorLinks(b.authors)})),
+			],
+		others.length > 0 && [
+			' ',
+			buildElement('span', {class: 'with'}, spellParts('with {others}', {others: nameLinks(others, KIND.href)})),
+		],
 	);
 }
 
@@ -123,7 +129,7 @@ function creditBookLine(b: Book, name: string): HTMLLIElement {
 function booksText(books: Book[]): string {
 	const sets = books.filter(b => b.isCollection()).length;
 	const count = books.length - sets;
-	return [count || !sets ? Text.plural(count, 'book') : '', sets ? Text.plural(sets, 'box set') : '']
+	return [count || !sets ? plural(count, 'book') : '', sets ? plural(sets, 'box set') : '']
 		.filter(Boolean)
 		.join(' + ');
 }
@@ -151,7 +157,9 @@ function seriesHeading(s: {name: string; books: Book[]}): HTMLParagraphElement {
 		buildElement(
 			'span',
 			{class: 'n'},
-			`${Series.owned(s.books)} owned${totalText(si) ? ' of ' + totalText(si) : ''}`,
+			totalText(si)
+				? spell('{owned} owned of {total}', {owned: Series.owned(s.books), total: totalText(si)})
+				: spell('{owned} owned', {owned: Series.owned(s.books)}),
 		),
 		si && statusTag(si.status),
 	);
@@ -166,7 +174,7 @@ function missingNote(s: {name: string; books: Book[]}): HTMLParagraphElement | f
 	return (
 		!!missing &&
 		missing.length > 0 &&
-		buildElement('p', {class: 'series-note'}, `missing ${Series.numberList(missing)}`)
+		buildElement('p', {class: 'series-note'}, spell('missing {numbers}', {numbers: Series.numberList(missing)}))
 	);
 }
 
@@ -179,15 +187,33 @@ function renderCreditPage(id: string) {
 	const sets = all.filter(b => b.isCollection()).length,
 		count = all.length - sets,
 		outside = titles.filter(b => !b.isCollection()).length;
+	// one whole sentence for each case, as spell() wants
+	const counted = !series.length
+		? ['{books}', '{books}, and {sets}']
+		: !outside
+			? ['{books} in {series}', '{books} in {series}, and {sets}']
+			: [
+					'{books} in {series} and {outside} outside a series',
+					'{books} in {series} and {outside} outside a series, and {sets}',
+				];
 	byId('subtitle').textContent =
 		count || sets
-			? `${Text.plural(count, 'audiobook')}${series.length ? ' in ' + Text.plural(series.length, 'series', 'series') : ''}${series.length && outside ? ` and ${outside} outside a series` : ''}${sets ? `, and ${Text.plural(sets, 'box set')}` : ''}`
+			? spell(counted[sets ? 1 : 0], {
+					books: plural(count, 'audiobook'),
+					series: plural(series.length, 'series', 'series'),
+					outside,
+					sets: plural(sets, 'box set'),
+				})
 			: spell(KIND.none);
 	const link: (href: string, text: string) => HTMLAnchorElement = (href, text) =>
-		buildElement('a', {class: 'authorlink', href, target: '_blank', rel: 'noopener'}, `${text} ↗`);
+		buildElement(
+			'a',
+			{class: 'authorlink', href, target: '_blank', rel: 'noopener'},
+			spell('{site} ↗', {site: text}),
+		);
 	// their own site, their pages in external catalogs, then any other link (by its site's name)
 	const links = [
-		info.url && link(info.url, 'Website'),
+		info.url && link(info.url, spell('Website')),
 		...externalLinks(info.external, KIND.one),
 		...webLinks(info.links),
 	].filter(x => !!x);
@@ -197,7 +223,11 @@ function renderCreditPage(id: string) {
 		links.length > 0 && buildElement('p', {class: 'author-links'}, joined(links, ' ')),
 		!info.bio &&
 			!links.length &&
-			buildElement('p', {class: 'hint'}, 'No bio or links yet: add them with Edit, at the end of the page.'),
+			buildElement(
+				'p',
+				{class: 'hint'},
+				spell('No bio or links yet: add them with Edit, at the end of the page.'),
+			),
 	];
 	series.forEach(s =>
 		out.push(
@@ -222,7 +252,7 @@ function renderCreditPage(id: string) {
 				buildElement(
 					'p',
 					{class: 'series-title'},
-					series.length ? 'Outside a series' : 'Titles',
+					spell(series.length ? 'Outside a series' : 'Titles'),
 					' ',
 					buildElement('span', {class: 'n'}, booksText(titles)),
 				),
@@ -239,9 +269,9 @@ function renderCreditPage(id: string) {
 		buildElement(
 			'div',
 			{class: 'page-actions'},
-			buildElement('button', {type: 'button', class: 'aedit', onclick: () => openCreditForm(id)}, 'Edit'),
+			buildElement('button', {type: 'button', class: 'aedit', onclick: () => openCreditForm(id)}, spell('Edit')),
 			...(KIND === CREDIT_KINDS.author && count > 0
-				? [buildElement('a', {class: 'sedit', href: editPageHref(id, 'author')}, 'Edit their books')]
+				? [buildElement('a', {class: 'sedit', href: editPageHref(id, 'author')}, spell('Edit their books'))]
 				: []),
 		),
 	);
@@ -260,15 +290,15 @@ function openCreditForm(id: string) {
 	EDITING = id;
 	REMOVING = null;
 	JOINING = null;
-	byId('creditFormTitle').textContent = `Edit ${KIND.one}: ${name}`;
+	byId('creditFormTitle').textContent = spell(KIND.texts.editTitle, {name});
 	fieldById('cf_name').value = name;
 	fieldById('cf_bio').value = info.bio || '';
 	fieldById('cf_url').value = info.url || '';
 	fillExternalFields('cf_ext_', KIND.one, info.external);
 	fieldById('cf_links').value = info.links.join('\n');
 	byId('creditFormError').textContent = '';
-	byId('creditSaveBtn').textContent = `Save ${KIND.one}`;
-	byId('creditRemoveBtn').textContent = `Remove ${KIND.one}`;
+	byId('creditSaveBtn').textContent = spell(KIND.texts.save);
+	byId('creditRemoveBtn').textContent = spell(KIND.texts.remove);
 	const form = byId('creditForm');
 	form.classList.add('open');
 	form.scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -309,20 +339,17 @@ async function saveCreditForm() {
 	const name = nameOf(id);
 	if (hardcover.error) return showFormError(hardcover.error);
 	const newName = Text.tidy(fieldById('cf_name').value);
-	if (!newName) return showFormError(`Give the ${KIND.one} a name.`);
+	if (!newName) return showFormError(spell(KIND.texts.noName));
 	// the Edit page reads names as a list: a publisher's parted by commas alone, as "&" is part of many a name
 	const publisher = KIND === CREDIT_KINDS.publisher;
 	if ((publisher ? Text.splitPublishers : Text.splitNames)(newName).join('\n') !== newName) {
-		return showFormError(
-			publisher
-				? `${newName} would be read as several ${KIND.many}: a comma or a semicolon separates names.`
-				: `${newName} would be read as several ${KIND.many}: a comma, a semicolon, "&" or "and" separates names.`,
-		);
+		return showFormError(spell(KIND.texts.several, {name: newName}));
 	}
 	const renamed = newName !== name;
 	const had = kept().get(id);
 	const external = readExternalFields('cf_ext_', KIND.one, had ? had.external : {});
-	if (external.bad.length) return showFormError(`Not an id or address there: ${external.bad.join('; ')}.`);
+	if (external.bad.length)
+		return showFormError(spell('Not an id or address there: {bad}.', {bad: external.bad.join('; ')}));
 	const entry = Contributor.tidy(newName, {
 		bio: fieldById('cf_bio').value,
 		url: fieldById('cf_url').value,
@@ -336,7 +363,8 @@ async function saveCreditForm() {
 		const problems = [...errors, ...warnings.filter(w => !/is a page on/.test(w))].map(e =>
 			e.replace(/^\w+\[[^\]]*\]: /, ''),
 		);
-		if (problems.length) return showFormError(problems.join('; '));
+		// Check's messages, which a module writes
+		if (problems.length) return showFormError(spell(problems.join('; ')));
 	}
 	// the one the new name is, with their books, which join these
 	if (renamed) {
@@ -350,10 +378,7 @@ async function saveCreditForm() {
 	// joining another is easy to do by mistake, so the first Save says so
 	if (joins !== undefined && JOINING !== newName) {
 		JOINING = newName;
-		return showFormError(
-			`There is already ${/^[aeiou]/.test(KIND.one) ? 'an' : 'a'} ${KIND.one} called ${newName}. Press Save again to join them: ` +
-				`every book of either will credit ${newName}, with what this form has, and what ${newName} has where this form is empty.`,
-		);
+		return showFormError(spell(KIND.texts.joins, {name: newName}));
 	}
 	const other = joins === undefined ? undefined : kept().get(joins);
 	// renamed on their books, keeping the id they are stored under (or taking the id of the one they join)
@@ -377,10 +402,10 @@ async function saveCreditForm() {
 	}
 	render();
 	persist();
-	showIoStatus(
-		(renamed ? `Renamed ${name} to ${newName} on ${Text.plural(count, 'book')}.` : `Saved ${newName}.`) +
-			(hardcover.note ? ' ' + hardcover.note : ''),
-	);
+	const saved = renamed
+		? spell('Renamed {name} to {newName} on {books}.', {name, newName, books: plural(count, 'book')})
+		: spell('Saved {name}.', {name: newName});
+	showIoStatus(hardcover.note ? spell('{saved} {note}', {saved, note: hardcover.note}) : saved);
 }
 
 /**
@@ -393,16 +418,15 @@ function removeCredit() {
 	const name = nameOf(id);
 	const problem = CATALOG.removeProblem(KIND.infoKey, id);
 	if (problem) {
-		byId('creditFormError').textContent = problem;
+		byId('creditFormError').textContent = spell(problem); // the catalog's (a module's) message
 		return;
 	}
 	const count = CATALOG.booksOf(KIND.infoKey, id).length;
 	if (REMOVING !== id) {
 		REMOVING = id;
-		byId('creditFormError').textContent =
-			(count
-				? `This takes ${name} off ${Text.plural(count, 'book')}${KIND === CREDIT_KINDS.author ? '' : `' editions`}, which stay in the catalog, and removes them.`
-				: `This removes ${name}, whom no book credits.`) + ` Press Remove ${KIND.one} again to do it.`;
+		byId('creditFormError').textContent = count
+			? spell(KIND.texts.removeBooks, {name, books: plural(count, 'book')})
+			: spell(KIND.texts.removeNone, {name});
 		return;
 	}
 	CATALOG.removeEntry(KIND.infoKey, id);
@@ -415,11 +439,17 @@ function removeCredit() {
 		buildElement(
 			'p',
 			{class: 'empty'},
-			`${name} was removed. `,
-			buildElement('a', {href: KIND.list}, `All ${KIND.many}`),
+			spellParts('{name} was removed. {all}', {
+				name,
+				all: buildElement('a', {href: KIND.list}, spell(KIND.texts.all)),
+			}),
 		),
 	);
-	showIoStatus(count ? `Removed ${name} from ${Text.plural(count, 'book')}.` : `Removed ${name}.`);
+	showIoStatus(
+		count
+			? spell('Removed {name} from {books}.', {name, books: plural(count, 'book')})
+			: spell('Removed {name}.', {name}),
+	);
 }
 
 // ------------------------------------------------------------------ the address
@@ -481,13 +511,13 @@ export function startCreditPage(kind: 'author' | 'narrator' | 'publisher'): Prom
 		location.replace(KIND.list);
 		return Promise.resolve();
 	}
-	byId('cf_url_label').textContent = KIND.site[0];
+	byId('cf_url_label').textContent = spell(KIND.site[0]);
 	byId('cf_url').setAttribute('placeholder', KIND.site[1]);
 	fillElement(byId('cf_ext'), externalFields('cf_ext_', KIND.one));
 	fillElement(
 		byId('cf_linksBox'),
 		linksField('cf_links', KIND.one, group => document.getElementById('cf_ext_' + group) as FormField | null, {
-			label: 'Other links, one per line',
+			label: spell('Other links, one per line'),
 		}),
 	);
 	byId('creditForm').addEventListener('submit', e => {

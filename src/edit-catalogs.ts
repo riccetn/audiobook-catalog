@@ -7,6 +7,7 @@ import {Merger} from './modules/merger.js';
 import {BookReview} from './modules/book-review.js';
 import {CatalogConnectors} from './modules/catalog-connectors.js';
 import {CATALOG, showCatalogJob, whenSaved, type CatalogJob} from './store.js';
+import {spell, plural} from './dom.js';
 import {savedKey, savedServer, catalogClient} from './connections.js';
 import type {Book} from './modules/book.js';
 import type {MergeReport} from './modules/merger.js';
@@ -46,9 +47,12 @@ export function setSkipped(catalog: string, skip: boolean) {
 /** What keeps a catalog from being asked now ('' when nothing does): no server saved, or no key where it needs one. */
 function cantAsk(Sync: SyncClass): string {
 	const Client = Sync.CLIENT;
-	if (Client.VIA_PROXY && !savedServer()) return "needs your server's catalog proxy (on Import & export)";
+	if (Client.VIA_PROXY && !savedServer()) return spell("needs your server's catalog proxy (on Import & export)");
 	if (Client.KEY_NEEDED && !savedKey(Client))
-		return `needs your ${Client.LABEL} ${Client.KEY_NAME} (on Import & export)`;
+		return spell('needs your {catalog} {key} (on Import & export)', {
+			catalog: Client.LABEL,
+			key: spell(Client.KEY_NAME),
+		});
 	return '';
 }
 
@@ -170,7 +174,7 @@ export async function runCatalogs(kind: 'series' | 'author', name: string, ids: 
 	const sources: Compared[] = [];
 	const asked = syncsFor(kind).filter(Sync => {
 		const why = cantAsk(Sync);
-		if (why) notes.push(`${Sync.CLIENT.LABEL}: not asked, as it ${why}.`);
+		if (why) notes.push(spell('{catalog}: not asked, as it {why}.', {catalog: Sync.CLIENT.LABEL, why}));
 		return !why && !skip.has(Sync.CLIENT.CATALOG);
 	});
 	const started = Date.now();
@@ -189,9 +193,16 @@ export async function runCatalogs(kind: 'series' | 'author', name: string, ids: 
 				Sync.part(CATALOG, kind, name),
 			);
 			sources.push({sync, result});
-			notes.push(`${Client.LABEL}: ${Text.plural(result.incoming.length, 'book')} read.`);
+			notes.push(
+				spell('{catalog}: {books} read.', {
+					catalog: Client.LABEL,
+					books: plural(result.incoming.length, 'book'),
+				}),
+			);
 		} catch (e) {
-			notes.push(`${Client.LABEL}: couldn't compare: ${Text.errorText(e)}`);
+			notes.push(
+				spell("{catalog}: couldn't compare: {error}", {catalog: Client.LABEL, error: spell(Text.errorText(e))}),
+			);
 		}
 	}
 	showCatalogJob(null);
