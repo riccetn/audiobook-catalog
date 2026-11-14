@@ -857,12 +857,13 @@ function editionOffers(d: Draft, j: number): {offer: Offer; lines: string[]; now
 	return out;
 }
 
-/** The notes that an edition may not be an audiobook, as the catalogs say (by the id or ISBN they name). */
+/** The notes that an edition may not be an audiobook, as the catalogs say (by the id or ISBN they name, `NotAudio.key`). */
 function notAudioOf(d: Draft, ed: Edition): {source: number; note: NotAudio}[] {
 	const reviewed = RUN && RUN.review.books.get(d.id);
 	if (!reviewed) return [];
-	const ids = [...Object.values(ed.external), ...(ed.isbn ? [ed.isbn] : [])];
-	return reviewed.notAudio.filter(({note}) => ids.some(id => note.edition.split(/\s+/).includes(id)));
+	// by the catalog and id together, so another catalog's id with the same digits is not this edition's
+	const keys = ed.idAndIsbnKeys();
+	return reviewed.notAudio.filter(({note}) => keys.includes(note.key));
 }
 
 /** A catalog's line: its icon and what it would change, with Take. */

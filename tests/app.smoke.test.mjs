@@ -5848,12 +5848,16 @@ test('a narrator or publisher can be edited on their page, with links checked, a
 });
 
 test('Check on the import page lists problems; a catalog in an older format is kept in the current one at once', async () => {
-	const mine = JSON.stringify([{t: 'Old Favorite', a: 'Ann Vale', id: 'B0OLD00001'}]);
-	const info = JSON.stringify({Nowhere: {total: 3, status: 'ongoing'}});
+	const mine = JSON.stringify([
+		{t: 'Old Favorite', a: 'Ann Vale', id: 'B0OLD00001'},
+		{t: 'Far Away', a: 'Ann Vale', s: 'Elsewhere', sn: '1'},
+	]);
+	const info = JSON.stringify({Nowhere: {total: 3, status: 'ongoing'}, Elsewhere: {status: 'complete'}});
 	const {els, storage} = await boot({page: 'import.html', files: {'books.json': mine, 'series-info.json': info}});
 	// moving it to IndexedDB wrote it the current way
 	assert.deepEqual((await kept(storage)).books, [
 		{t: 'Old Favorite', a: ['Ann Vale'], e: [{ext: {'audible.com': 'B0OLD00001'}}]},
+		{t: 'Far Away', a: ['Ann Vale'], s: 'Elsewhere', sn: '1'},
 	]);
 	els.checkBtn.listeners.click[0]();
 	await idle();
@@ -5861,7 +5865,7 @@ test('Check on the import page lists problems; a catalog in an older format is k
 	assert.equal(els.importPreview.place, 'after checkPanel');
 	assert.match(
 		report,
-		/1 books; 1 series, 1 with a released total; 1 author, 0 narrators, 0 publishers, 0 with a bio or links\./,
+		/2 books; 2 series, 1 with a released total; 1 author, 0 narrators, 0 publishers, 0 with a bio or links\./,
 	);
 	assert.match(report, /No problems found/);
 	assert.equal(els.importConfirm.style.display, 'none');

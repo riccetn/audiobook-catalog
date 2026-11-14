@@ -42,13 +42,15 @@ export interface SyncPlan {
 /**
  * A book that may not be an audiobook, as the other catalog says, which may be a data problem: an edition of
  * yours (`yours`), or the one on your shelf there. `edition` names it ("ASIN B0…", "ISBN 978…", "Hardcover
- * edition 601"), `said` is what the catalog has it as ("a print book"), `url` its page there; `maybe` when
- * it is only a guess (Audible not selling it).
+ * edition 601"), `key` is that id as Edition.idAndIsbnKeys() writes it ("asin B0…", "isbn 978…", "hardcover
+ * 601"), `said` is what the catalog has it as ("a print book"), `url` its page there; `maybe` when it is
+ * only a guess (Audible not selling it).
  */
 export type NotAudio = {
 	book: Book;
 	yours: boolean;
 	edition: string;
+	key: string;
 	said: string;
 	url?: string | null;
 	maybe?: boolean;

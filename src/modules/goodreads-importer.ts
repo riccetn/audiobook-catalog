@@ -61,7 +61,12 @@ export class GoodreadsImporter extends FileImporter {
 		const read = Text.parseDate(cell(row, 'Date Read')); // Goodreads keeps only the latest read
 		if (read) rec.r = [read];
 		const book = Book.fromRecord(rec);
-		if (book.authors.length && book.title) result.books.push(book);
+		if (!book.title) return;
+		if (!book.authors.length) {
+			result.warnings.push(`${Text.repr(book.title)}: no author in the export, skipped`);
+			return;
+		}
+		result.books.push(book);
 	}
 
 	/**

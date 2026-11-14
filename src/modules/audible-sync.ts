@@ -200,6 +200,7 @@ export class AudibleSync extends ShelfSync {
 				book,
 				yours: true,
 				edition: `ASIN ${a}`,
+				key: `asin ${a}`,
 				said: `not sold on ${site}: maybe another site's ASIN, or not an audiobook`,
 				url: ExternalCatalog.url(key, 'edition', a),
 				maybe: true,

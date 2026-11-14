@@ -160,7 +160,7 @@ export class OpenLibrarySource extends BookSource {
 	}
 
 	/**
-	 * A series as Open Library writes it on an edition ("Discworld (3)", "The Expanse ; 1", "Discworld -- 3")
+	 * A series as Open Library writes it on an edition ("Harbor Lights (3)", "The Glass Tide ; 1", "Harbor Lights -- 3")
 	 * as {name, number}; null when there is none.
 	 */
 	static seriesOf(text: string): {name: string; number: string | null} | null {
