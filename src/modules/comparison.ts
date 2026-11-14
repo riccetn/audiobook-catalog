@@ -8,6 +8,7 @@ import {ExternalCatalog} from './external-catalog.js';
 import {Book} from './book.js';
 import {Merger} from './merger.js';
 import type {Catalog} from './catalog.js';
+import type {Phrase} from './text.js';
 import type {Edition} from './edition.js';
 import type {MergeOptions, MergeReport} from './merger.js';
 
@@ -61,9 +62,9 @@ export interface ComparedBook {
 	/** what importing it adds (a box set's titles, a new book) */
 	added: Book[];
 	/** what importing it fills in on the books it is, besides their editions */
-	gains: string[];
+	gains: Phrase[];
 	/** what its edition fills in on theirs, or the edition it adds */
-	editionGains: string[];
+	editionGains: Phrase[];
 	differences: Difference[];
 	boxSet: boolean;
 }
@@ -165,30 +166,35 @@ export class Comparison {
 	 * 2024-03-01", "Hardcover id") and its editions' ("narrators", "another edition (...)"). `title` names
 	 * the book, when the lines are about several.
 	 */
-	static gains(before: Book, after: Book, title: string): {book: string[]; editions: string[]} {
-		const lines: string[] = [];
-		const editions: string[] = [];
+	static gains(before: Book, after: Book, title: string): {book: Phrase[]; editions: Phrase[]} {
+		const P = Text.phrase;
+		const lines: Phrase[] = [];
+		const editions: Phrase[] = [];
 		const dates = after.read.filter(d => !before.read.includes(d));
-		if (dates.length) lines.push(`read ${dates.join(', ')}`);
+		if (dates.length) lines.push(P('read {dates}', {dates: dates.join(', ')}));
 		for (const [key] of Object.entries(after.external))
-			if (!before.idOn(key)) lines.push(`${ExternalCatalog.name(key)} id`);
+			if (!before.idOn(key)) lines.push(P('{catalog} id', {catalog: ExternalCatalog.name(key)}));
 		after.editions.forEach((ed, i) => {
 			const was = before.editions[i];
 			if (!was) {
+				const details = ed.format() || P('no details');
 				editions.push(
-					`${before.editions.length ? 'another edition' : 'an edition'} (${ed.format() || 'no details'})`,
+					P(before.editions.length ? 'another edition ({details})' : 'an edition ({details})', {details}),
 				);
 				return;
 			}
-			const filled: string[] = [];
-			for (const [key] of ed.externalList()) if (!was.idOn(key)) filled.push(`${ExternalCatalog.name(key)} id`);
+			const filled: Phrase[] = [];
+			for (const [key] of ed.externalList())
+				if (!was.idOn(key)) filled.push(P('{catalog} id', {catalog: ExternalCatalog.name(key)}));
 			for (const k of Object.keys(EDITION_LABELS) as (keyof typeof EDITION_LABELS)[]) {
-				if (was.value(k) === undefined && ed.value(k) !== undefined) filled.push(EDITION_LABELS[k]);
+				if (was.value(k) === undefined && ed.value(k) !== undefined) filled.push(P(EDITION_LABELS[k]));
 			}
+			const list = Text.joinPhrases(filled, ', ');
 			if (filled.length)
-				editions.push((before.editions.length > 1 ? `edition ${i + 1}: ` : '') + filled.join(', '));
+				editions.push(before.editions.length > 1 ? P('edition {n}: {filled}', {n: i + 1, filled: list}) : list);
 		});
-		const named: (list: string[]) => string[] = list => (title ? list.map(l => `${title}: ${l}`) : list);
+		const named: (list: Phrase[]) => Phrase[] = list =>
+			title ? list.map(gain => P('{title}: {gain}', {title, gain})) : list;
 		return {book: named(lines), editions: named(editions)};
 	}
 

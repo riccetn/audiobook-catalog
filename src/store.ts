@@ -12,7 +12,7 @@ import type {RecordSet, Snapshot, StoreName, BookRecord, EditionRecord} from './
 import type {Book} from './modules/book.js';
 import type {NamedKind} from './modules/catalog.js';
 import type {ContributorKind} from './modules/contributor.js';
-import type {Unchecked} from './modules/text.js';
+import type {Unchecked, Phrase} from './modules/text.js';
 import type {SyncPrefer} from './modules/catalog-sync.js';
 import {spell, plural, firstThree, buildElement, fillElement, byId, showIoStatus} from './dom.js';
 import {fetchFromServer} from './connections.js';
@@ -30,7 +30,7 @@ export interface CatalogJob {
 	/** milliseconds */
 	elapsed: number;
 	/** what it is doing */
-	step?: string;
+	step?: Phrase;
 	/** of `total` steps */
 	done?: number;
 	total?: number;
@@ -250,7 +250,7 @@ export function afterSaving(task: () => Promise<void> | void): Promise<void> {
 		.catch(e =>
 			showIoStatus(
 				spell("Couldn't read the catalog kept in this browser: {error}. Reload the page.", {
-					error: spell(Text.errorText(e)),
+					error: Text.errorPhrase(e),
 				}),
 				true,
 			),
@@ -944,7 +944,6 @@ export function showCatalogJob(job: CatalogJob | null) {
 					' ',
 					buildElement('span', {class: 'bgTaskTime'}, minutes(job.elapsed)),
 					buildElement('br'),
-					// (a step a module names)
 					job.step ? spell(job.step) : '',
 					counted && [
 						spell(': {done} of {total} ', {done: job.done ?? 0, total: job.total ?? 0}),

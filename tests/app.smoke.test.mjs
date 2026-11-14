@@ -5980,6 +5980,43 @@ test('the Edit and credit pages respell their notes and confirmations, but never
 	);
 });
 
+test("a module's messages are respelled for a British browser, but the titles in them never are", async () => {
+	const mine = JSON.stringify([{t: 'Catalog Notes', a: ['Ann Vale'], r: ['2024-05-01', '2023-01-01']}]);
+	const state = hardcoverState();
+	// a book on the Read shelf that Hardcover has no author for is skipped, and the comparison says so
+	state.books[90] = {id: 90, title: 'Catalog Days', contributions: []};
+	state.shelf.push({id: 3, book_id: 90, status_id: 3, user_book_reads: []});
+	const hc = fakeHardcover(state);
+	const setTimeout = (fn, ms) => {
+		if (ms === 1000) Promise.resolve().then(fn);
+		return 0;
+	};
+	const {els} = await boot({
+		page: 'import.html',
+		languages: ['en-GB'],
+		files: {'books.json': mine},
+		hardcover: hc.fetch,
+		setTimeout,
+		storage: new Map([['audiobook-catalog-hardcover-token', 'tok-123']]),
+	});
+	// Check's warning names the book by its title, as it is
+	els.checkBtn.listeners.click[0]();
+	await idle();
+	assert.match(
+		els.importPreviewBody.innerHTML,
+		/book #0 \('Catalog Notes'\): dates read \['2024-05-01', '2023-01-01'\] are not in order/,
+	);
+	assert.doesNotMatch(els.importPreviewBody.innerHTML, /Catalogue Notes/);
+	// the comparison's summary is the sync's, and so is its warning, with Hardcover's title in it
+	await els.hardcoverCompareBtn.listeners.click[0]();
+	await idle();
+	const html = els.importPreviewBody.innerHTML;
+	assert.match(html, /^<p>2 books on your Hardcover Read shelf \(took 0:00\)<\/p>/);
+	assert.match(html, /'Catalog Days': no author on Hardcover, skipped/);
+	assert.doesNotMatch(html, /Catalogue Days/);
+	assert.match(html, /the same as in this catalogue/, "the page's own text is respelled");
+});
+
 // ------------------------------------------------------------------ a page holds only what it shows
 const SAGAS = JSON.stringify([
 	...['1', '2', '3'].map(n => ({t: `Gull ${n}`, a: ['Ann Vale'], s: 'Gull Isle', sn: n, e: [{n: ['Cy Hale']}]})),

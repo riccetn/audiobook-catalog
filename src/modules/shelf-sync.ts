@@ -5,6 +5,7 @@
 // and a subclass's static texts say what differs on it. Comparing only reads the other catalog, and sending
 // only adds to it.
 import {Text} from './text.js';
+import type {Phrase, PhraseValue} from './text.js';
 import {Series} from './series.js';
 import {Comparison} from './comparison.js';
 import {CatalogClient} from './catalog-client.js';
@@ -51,7 +52,7 @@ export type NotAudio = {
 	yours: boolean;
 	edition: string;
 	key: string;
-	said: string;
+	said: Phrase;
 	url?: string | null;
 	maybe?: boolean;
 };
@@ -69,7 +70,7 @@ export interface ShelfComparison {
 	incoming: Book[];
 	/** how they are imported (Comparison.apply() takes them) */
 	opts: MergeOptions;
-	warnings: string[];
+	warnings: Phrase[];
 	/** what the catalog has for your books; the subclass's addIds() gives their ids */
 	found: unknown;
 	/** the books that gain an id there, in the comparison's merged copy */
@@ -86,7 +87,7 @@ export interface ShelfComparison {
 	yours?: Book[];
 }
 /** what sending one entry of a plan did */
-export type Sent = {shelved: number; reads: number; problems: string[]};
+export type Sent = {shelved: number; reads: number; problems: Phrase[]};
 export type PlanGroup = 'add' | 'reads';
 
 /** Compares the catalog with your shelves on one catalog, and puts books (and reads) on them. */
@@ -157,9 +158,16 @@ export class ShelfSync {
 	summary(
 		_result: ShelfComparison,
 		_catalog: Catalog,
-		_scope: {kind: 'series' | 'author'; name: string; label: string} | null,
-	): string {
+		_scope: {kind: 'series' | 'author'; name: string; label: PhraseValue} | null,
+	): Phrase {
 		throw new Error(`${this.label}: summary is not written`);
+	}
+
+	/**
+	 * A summary's line for `scope` (see summary): "Only {scope}: {summary}", or `summary` itself for every book.
+	 */
+	static scoped(scope: {label: PhraseValue} | null, summary: Phrase): Phrase {
+		return scope ? Text.phrase('Only {scope}: {summary}', {scope: scope.label, summary}) : summary;
 	}
 
 	/**
@@ -173,8 +181,11 @@ export class ShelfSync {
 	/**
 	 * What the comparison says of the `count` books it can't add, as it can't tell which edition is yours.
 	 */
-	static notAdded(count: number): string {
-		return `Not added, as ${this.CLIENT.LABEL} can't tell which edition is yours: ${count}`;
+	static notAdded(count: number): Phrase {
+		return Text.phrase("Not added, as {catalog} can't tell which edition is yours: {count}", {
+			catalog: this.CLIENT.LABEL,
+			count,
+		});
 	}
 
 	/**
@@ -198,14 +209,15 @@ export class ShelfSync {
 	 * Carry out a plan (or the part of it picked): put its `add` books on your Read shelf, and add its `reads`.
 	 * Stops after STOP_AFTER entries in a row fail. Returns a promise of the exit code.
 	 */
-	async push(plan: SyncPlan, out: (line: string) => void, err: (line: string) => void, step: Step): Promise<number> {
+	async push(plan: SyncPlan, out: (line: Phrase) => void, err: (line: Phrase) => void, step: Step): Promise<number> {
+		const P = Text.phrase;
 		const label = this.label,
 			reads = this.kind.SENDS_READS;
 		const done = {shelved: 0, reads: 0};
-		const problems: string[] = [];
-		const groups: [PlanGroup, string][] = [
-			['add', `Putting books on your ${label} ${plan.name} shelf`],
-			['reads', `Adding reads to books on your ${plan.name} shelf`],
+		const problems: Phrase[] = [];
+		const groups: [PlanGroup, Phrase][] = [
+			['add', P('Putting books on your {catalog} {shelf} shelf', {catalog: label, shelf: plan.name})],
+			['reads', P('Adding reads to books on your {shelf} shelf', {shelf: plan.name})],
 		];
 		const total = plan.add.length + plan.reads.length;
 		let at = 0,
@@ -220,11 +232,22 @@ export class ShelfSync {
 					problems.push(...sent.problems);
 					failed = 0;
 				} catch (exc) {
-					problems.push(`${entry.books[0].title}: not added (${Text.errorText(exc)})`);
+					problems.push(
+						P('{title}: not added ({error})', {title: entry.books[0].title, error: Text.errorPhrase(exc)}),
+					);
 					if (++failed >= this.kind.STOP_AFTER) {
 						err(
-							`error: ${Text.errorText(exc)}; stopped after putting ${done.shelved} book(s) on ${label}${reads ? ` and adding ${done.reads} read(s)` : ''}. ` +
-								'Run it again to carry on: what is already there is not added twice.',
+							P(
+								reads
+									? 'error: {error}; stopped after putting {shelved} book(s) on {catalog} and adding {reads} read(s). Run it again to carry on: what is already there is not added twice.'
+									: 'error: {error}; stopped after putting {shelved} book(s) on {catalog}. Run it again to carry on: what is already there is not added twice.',
+								{
+									error: Text.errorPhrase(exc),
+									shelved: done.shelved,
+									catalog: label,
+									reads: done.reads,
+								},
+							),
 						);
 						return 1;
 					}
@@ -232,9 +255,14 @@ export class ShelfSync {
 			}
 		}
 		out(
-			`put ${done.shelved} book(s) on your ${label} ${plan.name} shelf${reads ? ` and added ${done.reads} read(s)` : ''}`,
+			P(
+				reads
+					? 'put {shelved} book(s) on your {catalog} {shelf} shelf and added {reads} read(s)'
+					: 'put {shelved} book(s) on your {catalog} {shelf} shelf',
+				{shelved: done.shelved, catalog: label, shelf: plan.name, reads: done.reads},
+			),
 		);
-		for (const p of problems.slice(0, 15)) out('    ! ' + p);
+		for (const problem of problems.slice(0, 15)) out(P('    ! {problem}', {problem}));
 		return problems.length ? 1 : 0;
 	}
 

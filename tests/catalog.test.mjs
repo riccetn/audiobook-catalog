@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {Text} from '../public/modules/text.js';
+import {Text, PhraseError} from '../public/modules/text.js';
 import {Isbn} from '../public/modules/isbn.js';
 import {Edition} from '../public/modules/edition.js';
 import {ExternalCatalog} from '../public/modules/external-catalog.js';
@@ -56,6 +56,17 @@ import {FakeIndexedDB, FakeKeyRange} from './fake-indexeddb.mjs';
 // Books are written here as they are stored ({t, a, s, sn, ..., e}), and compared that way: json() gives
 // what toJSON() writes, so a Book, an Edition or a report of them compares with the stored form.
 const json = x => JSON.parse(JSON.stringify(x));
+// a module's message (a Phrase) in American English, as the tests compare it
+const en = phrase => Text.filled(phrase, false);
+// the Check's messages in English: Validator's, with what it found as text
+const english = found =>
+	Array.isArray(found) ? found.map(en) : {errors: found.errors.map(en), warnings: found.warnings.map(en)};
+const Check = {
+	validate: (...args) => english(Validator.validate(...args)),
+	check: (...args) => english(Validator.check(...args)),
+	bookErrors: (...args) => english(Validator.bookErrors(...args)),
+	validateContributors: (...args) => english(Validator.validateContributors(...args)),
+};
 const B = rec => Book.fromJSON(rec);
 const Bs = recs => recs.map(B);
 const E = rec => Edition.fromJSON(rec);
@@ -287,7 +298,7 @@ test('external catalogs: a form field takes an id or an address, and ids are tid
 		'audible.com': 'B0X',
 		goodreads: '7',
 	});
-	assert.deepEqual(ExternalCatalog.problems({hardcover: 'x'}, 'book').errors, [
+	assert.deepEqual(ExternalCatalog.problems({hardcover: 'x'}, 'book').errors.map(en), [
 		"'x' is not Hardcover's id of a book",
 	]);
 	assert.deepEqual(ExternalCatalog.problems({hardcover: 'ann-vale'}, 'author'), {errors: [], warnings: []});
@@ -296,7 +307,7 @@ test('external catalogs: a form field takes an id or an address, and ids are tid
 		id: 'OL456M',
 	});
 	assert.deepEqual(ExternalCatalog.readId('q1001', 'series', 'wikidata'), {catalog: 'wikidata', id: 'Q1001'});
-	assert.deepEqual(ExternalCatalog.problems({openlibrary: 'OL123W', wikidata: 'Q1'}, 'edition').errors, [
+	assert.deepEqual(ExternalCatalog.problems({openlibrary: 'OL123W', wikidata: 'Q1'}, 'edition').errors.map(en), [
 		"'OL123W' is not Open Library's id of an edition",
 		'Wikidata has no edition pages, so no edition id',
 	]);
@@ -312,15 +323,12 @@ const loadContributors = file => JSON.parse(read(file));
 
 test('demo data validates without errors or warnings', () => {
 	assert.deepEqual(
-		Validator.validate(
-			loadBooks(path.join(DATA, 'books.json')),
-			loadSeriesInfo(path.join(DATA, 'series-info.json')),
-		),
+		Check.validate(loadBooks(path.join(DATA, 'books.json')), loadSeriesInfo(path.join(DATA, 'series-info.json'))),
 		{errors: [], warnings: []},
 	);
 	for (const kind of ['authors', 'narrators', 'publishers']) {
 		assert.deepEqual(
-			Validator.validateContributors(kind, loadContributors(path.join(DATA, `${kind}.json`))),
+			Check.validateContributors(kind, loadContributors(path.join(DATA, `${kind}.json`))),
 			{errors: [], warnings: []},
 			kind,
 		);
@@ -544,16 +552,16 @@ test('validation: a clean catalog passes; required fields, unknown keys, ids', (
 			}),
 		},
 	];
-	assert.deepEqual(Validator.validate(clean, {S: {total: 3, status: 'ongoing', note: 'n'}}), {
+	assert.deepEqual(Check.validate(clean, {S: {total: 3, status: 'ongoing', note: 'n'}}), {
 		errors: [],
 		warnings: [],
 	});
-	assert.equal(Validator.validate([{t: '', a: ['x']}, {t: 't', a: ['a'], bogus: 1}, 'nope'], {}).errors.length, 3);
-	assert.ok(Validator.validate([{t: 't', a: ['a'], sn: '1'}], {}).errors.some(e => e.includes('no series')));
+	assert.equal(Check.validate([{t: '', a: ['x']}, {t: 't', a: ['a'], bogus: 1}, 'nope'], {}).errors.length, 3);
+	assert.ok(Check.validate([{t: 't', a: ['a'], sn: '1'}], {}).errors.some(e => e.includes('no series')));
 	// an old-style book-level id is an unknown key: fixBooks() turns it into an edition first
-	assert.ok(Validator.validate([{t: 't', a: ['a'], id: 'B0'}], {}).errors.some(e => e.includes("unknown key 'id'")));
+	assert.ok(Check.validate([{t: 't', a: ['a'], id: 'B0'}], {}).errors.some(e => e.includes("unknown key 'id'")));
 	assert.ok(
-		Validator.validate(
+		Check.validate(
 			[
 				{t: '1', a: ['a'], ...ed({ext: {'audible.com': 'B0'}})},
 				{t: '1', a: ['a'], ...ed({ext: {'audible.com': 'B0'}})},
@@ -564,22 +572,22 @@ test('validation: a clean catalog passes; required fields, unknown keys, ids', (
 });
 
 test('Goodreads ids: validated, excluded, and kept apart from ASINs', () => {
-	assert.deepEqual(Validator.validate([{t: 'A', a: ['B'], ...ed({ext: {goodreads: '4242'}})}], {}), {
+	assert.deepEqual(Check.validate([{t: 'A', a: ['B'], ...ed({ext: {goodreads: '4242'}})}], {}), {
 		errors: [],
 		warnings: [],
 	});
 	assert.ok(
-		Validator.validate([{t: 'A', a: ['B'], ...ed({ext: {goodreads: 'show/4242'}})}], {}).errors.some(e =>
+		Check.validate([{t: 'A', a: ['B'], ...ed({ext: {goodreads: 'show/4242'}})}], {}).errors.some(e =>
 			e.includes("'show/4242' is not Goodreads's id of an edition"),
 		),
 	);
 	assert.ok(
-		Validator.validate([{t: 'A', a: ['B'], ...ed({ext: {goodreads: 4242}})}], {}).errors.some(e =>
+		Check.validate([{t: 'A', a: ['B'], ...ed({ext: {goodreads: 4242}})}], {}).errors.some(e =>
 			e.includes("the id on 'goodreads' must be"),
 		),
 	);
 	assert.ok(
-		Validator.validate(
+		Check.validate(
 			[
 				{t: '1', a: ['a'], ...ed({ext: {goodreads: '7'}})},
 				{t: '1', a: ['a'], ...ed({ext: {goodreads: '7'}})},
@@ -612,7 +620,7 @@ test('Goodreads ids: validated, excluded, and kept apart from ASINs', () => {
 
 test('validation: series-info must be well formed, and may be for a series no book is in', () => {
 	const books = [{t: 't', a: ['a'], s: 'Real'}];
-	const errors = Validator.validate(books, {
+	const errors = Check.validate(books, {
 		Ghost: {total: 2, status: 'ongoing', note: 'n'},
 		Real: {total: 0, status: 'paused', note: '', url: 'https://example.com/', extra: 1},
 	}).errors.join('\n');
@@ -621,23 +629,23 @@ test('validation: series-info must be well formed, and may be for a series no bo
 		assert.ok(errors.includes(needle), needle);
 	}
 	assert.deepEqual(
-		Validator.validate([{t: 't', a: ['a'], s: 'S'}], {S: {total: 'many', status: 'ongoing', note: 'n'}}).errors,
+		Check.validate([{t: 't', a: ['a'], s: 'S'}], {S: {total: 'many', status: 'ongoing', note: 'n'}}).errors,
 		[],
 	);
 	// a series may lack its total and status: one kept only by the id a catalog found for it
 	assert.deepEqual(
-		Validator.validate([{t: 't', a: ['a'], s: 'S'}], {S: {ext: {'audible.com': 'B0SERIES01'}}}).errors,
+		Check.validate([{t: 't', a: ['a'], s: 'S'}], {S: {ext: {'audible.com': 'B0SERIES01'}}}).errors,
 		[],
 	);
 	const catalog = new Catalog({books: [B({t: 't', a: ['a'], s: 'S', sn: '1'})]});
 	catalog.assignIds();
 	assert.equal(AudibleSync.setInfoIds(catalog, [{kind: 'series', name: 'S', id: 'B0SERIES01'}]), 1);
 	assert.equal(AudiobookdbSync.setInfoIds(catalog, [{kind: 'series', name: 'S', id: 'SrsLantern01'}]), 1);
-	assert.deepEqual(Validator.check(catalog, {contributors: true}).errors, []);
+	assert.deepEqual(Check.check(catalog, {contributors: true}).errors, []);
 });
 
 test('validation: warnings for lookalike series, leftover markup, odd numbers, untidy values (once each)', () => {
-	const warnings = Validator.validate(
+	const warnings = Check.validate(
 		[
 			{t: '1', a: ['a'], s: 'Ember Coast'},
 			{t: '2', a: ['a'], s: 'Ember Coast Series'},
@@ -649,7 +657,7 @@ test('validation: warnings for lookalike series, leftover markup, odd numbers, u
 	for (const needle of ['look like the same series', 'leftover Audible markup', 'unusual series number']) {
 		assert.ok(warnings.includes(needle), needle);
 	}
-	const untidy = Validator.validate(
+	const untidy = Check.validate(
 		[
 			{t: '1', a: ['A.B. Quill'], ...ed({n: ['R.T.  Hale']})},
 			{t: '2', a: ['A.B. Quill'], s: 'Some  Series', g: ['Cozy  Mystery']},
@@ -668,10 +676,7 @@ test('validation: warnings for lookalike series, leftover markup, odd numbers, u
 	]) {
 		assert.ok(untidy.includes(needle), needle);
 	}
-	assert.deepEqual(
-		Validator.validate([{t: 'Fine', a: ['A. B. Quill'], ...ed({n: ['R. T. Hale']})}], {}).warnings,
-		[],
-	);
+	assert.deepEqual(Check.validate([{t: 'Fine', a: ['A. B. Quill'], ...ed({n: ['R. T. Hale']})}], {}).warnings, []);
 });
 
 test('dates read: full, month-only and year-only dates, in order', () => {
@@ -694,18 +699,18 @@ test('dates read: full, month-only and year-only dates, in order', () => {
 	});
 	assert.deepEqual(Text.parseDates('  '), {dates: [], bad: []});
 
-	assert.deepEqual(Validator.validate([{t: 'A', a: ['B'], r: ['2021', '2024-03', '2025-01-02']}], {}), {
+	assert.deepEqual(Check.validate([{t: 'A', a: ['B'], r: ['2021', '2024-03', '2025-01-02']}], {}), {
 		errors: [],
 		warnings: [],
 	});
 	for (const r of [[], '2024-01-01', ['2024/01/01'], ['2023-02-29'], [2024]]) {
 		assert.ok(
-			Validator.validate([{t: 'A', a: ['B'], r}], {}).errors.some(e => e.includes("'r' must be")),
+			Check.validate([{t: 'A', a: ['B'], r}], {}).errors.some(e => e.includes("'r' must be")),
 			JSON.stringify(r),
 		);
 	}
 	assert.ok(
-		Validator.validate([{t: 'A', a: ['B'], r: ['2025-01-01', '2024-01-01']}], {}).warnings.some(w =>
+		Check.validate([{t: 'A', a: ['B'], r: ['2025-01-01', '2024-01-01']}], {}).warnings.some(w =>
 			w.includes('not in order'),
 		),
 	);
@@ -813,7 +818,7 @@ test('Audible rows', () => {
 	assert.deepEqual([fallback.number, fallback.genres], ['4', ['Epic']]);
 	const [amb, warning] = audible.rowToBook(row({Series: 'A (book 1), B (book 2)'}));
 	assert.equal(amb.series, 'A');
-	assert.match(warning, /several series/);
+	assert.match(en(warning), /several series/);
 });
 
 test('Audible export: BOM, quoted newlines and counts', () => {
@@ -830,7 +835,7 @@ test('Audible export: BOM, quoted newlines and counts', () => {
 		['T1'],
 	);
 	assert.equal(result.skippedUnfinished, 1);
-	assert.ok(result.warnings.some(w => w.includes('no author')));
+	assert.ok(result.warnings.some(w => en(w).includes('no author')));
 });
 
 test('Audible: a title holding its series is split when the Series column is empty', () => {
@@ -938,7 +943,7 @@ test('Goodreads export: only read audio editions, with tidy names', () => {
 	]);
 	assert.equal(result.skippedUnfinished, 1);
 	assert.deepEqual(
-		result.warnings,
+		result.warnings.map(en),
 		["'Nobody Wrote': no author in the export, skipped"],
 		'as the Audible importer says',
 	);
@@ -1217,7 +1222,7 @@ test('ISBNs: one per edition, so another ISBN becomes another edition, stored in
 test('ISBNs: validation', () => {
 	// several editions with an ISBN each, and the same ISBN on several books (a boxed set), are fine
 	assert.deepEqual(
-		Validator.validate(
+		Check.validate(
 			[
 				{t: '1', a: ['A'], ...ed({isbn: ISBN_A}, {isbn: ISBN_BOX})},
 				{t: '2', a: ['A'], ...ed({isbn: ISBN_BOX})},
@@ -1228,18 +1233,18 @@ test('ISBNs: validation', () => {
 	);
 	for (const isbn of [[ISBN_A], '', [], 9780000000002]) {
 		assert.ok(
-			Validator.validate([{t: 'A', a: ['B'], ...ed({isbn})}], {}).errors.some(e =>
+			Check.validate([{t: 'A', a: ['B'], ...ed({isbn})}], {}).errors.some(e =>
 				e.includes("'isbn' must be one ISBN"),
 			),
 			JSON.stringify(isbn),
 		);
 	}
 	assert.ok(
-		Validator.validate([{t: 'A', a: ['B'], ...ed({isbn: '9780000000003'})}], {}).errors.some(e =>
+		Check.validate([{t: 'A', a: ['B'], ...ed({isbn: '9780000000003'})}], {}).errors.some(e =>
 			e.includes('not a valid ISBN'),
 		),
 	);
-	const {errors, warnings} = Validator.validate(
+	const {errors, warnings} = Check.validate(
 		[{t: 'A', a: ['B'], ...ed({isbn: '978-0-00-000000-2'}, {ext: {'audible.com': 'B1'}, isbn: ISBN_A})}],
 		{},
 	);
@@ -1328,7 +1333,7 @@ test('exclusions read an ASIN in any case, and keep a line that is no entry with
 	// the Check names it
 	const catalog = Backup.toCatalog({books: [{t: 'Kept', a: ['Ann Vale']}], excluded: ['The Lost Voyage']});
 	assert.ok(
-		Validator.check(catalog).warnings.some(w => /^exclusions: 'The Lost Voyage' is not an ASIN/.test(w)),
+		Check.check(catalog).warnings.some(w => /^exclusions: 'The Lost Voyage' is not an ASIN/.test(w)),
 		'Check warns',
 	);
 });
@@ -1374,10 +1379,10 @@ test('owned: a box set counts the titles it covers, but a range too long for one
 	const started = Date.now();
 	assert.equal(Series.owned(Bs([set('1-3000000000')])), 1);
 	assert.ok(Date.now() - started < 1000, 'not counted one number at a time');
-	const warnings = Validator.validate([set('1-3000')], {}).warnings.join('\n');
+	const warnings = Check.validate([set('1-3000')], {}).warnings.join('\n');
 	assert.ok(warnings.includes('covers more than 30 titles'), warnings);
 	assert.ok(
-		!Validator.validate([set('1-3')], {})
+		!Check.validate([set('1-3')], {})
 			.warnings.join('\n')
 			.includes('covers more than'),
 	);
@@ -1390,7 +1395,7 @@ test('missing: a total far above any series is taken for a typo, not listed numb
 	const started = Date.now();
 	assert.equal(Series.missingNumbers(books, 3000000), null);
 	assert.ok(Date.now() - started < 100, 'not listed one number at a time');
-	const check = total => Validator.validate([], {'Glass Harbor': {total, status: 'ongoing'}});
+	const check = total => Check.validate([], {'Glass Harbor': {total, status: 'ongoing'}});
 	const warned = check(3000000);
 	assert.deepEqual(warned.errors, []);
 	assert.ok(warned.warnings.join('\n').includes('total 3000000 is over 1000'), warned.warnings.join('\n'));
@@ -1434,9 +1439,9 @@ test('editions: validation of fields, and of a box set edition shared by several
 		{t: 'Two', a: ['A'], s: 'S', sn: '2', e: [{ext: {'audible.com': 'B2'}}, box]},
 		{t: 'Three', a: ['A'], s: 'S', sn: '3', e: [{...box}]},
 	];
-	assert.deepEqual(Validator.validate(clean, {}), {errors: [], warnings: []});
+	assert.deepEqual(Check.validate(clean, {}), {errors: [], warnings: []});
 
-	const errors = Validator.validate(
+	const errors = Check.validate(
 		[
 			{t: 'A', a: ['B'], e: []},
 			{t: 'C', a: ['B'], e: [{}, {n: ['']}]},
@@ -1457,7 +1462,7 @@ test('editions: validation of fields, and of a box set edition shared by several
 	]) {
 		assert.ok(errors.includes(needle), needle);
 	}
-	const {warnings} = Validator.validate(
+	const {warnings} = Check.validate(
 		[
 			{t: 'Two', a: ['A'], e: [box]},
 			{t: 'Three', a: ['A'], e: [{...box, p: ['Other  Audio']}]},
@@ -1631,7 +1636,7 @@ test('merge: a box set is kept as its own book and becomes its titles, each with
 		[['Ember, Book 3', 'Ember: Books 1-3'], ['Spark', 'Flame'], ['Spark'], 1],
 	);
 	assert.deepEqual(report.boxSets, [{title: 'Ember: Books 1-3', authors: ['Ann Vale'], titles: 2, added: 1}]);
-	assert.deepEqual(Validator.validate(existing, {}), {errors: [], warnings: []});
+	assert.deepEqual(Check.validate(existing, {}), {errors: [], warnings: []});
 
 	// the same set again changes nothing; Goodreads' copy of it fills in the edition on every title
 	assert.deepEqual(merge(existing, [structuredClone(box)]).added, []);
@@ -1808,7 +1813,7 @@ test('Merger.boxSets keeps each box set in the catalog as its own book and as it
 	]);
 	assert.deepEqual(json(books[1].editions), [tideSet], "a title there already gains the set's edition");
 	assert.deepEqual([report.added.length, report.excluded.map(b => b.t)], [2, ['Tide, Book 3']]);
-	assert.deepEqual(Validator.validate(json(books), {}).errors, []);
+	assert.deepEqual(Check.validate(json(books), {}).errors, []);
 	// done once, there is nothing more to do
 	const again = Merger.boxSets(books, Exclusions.parse('Tide, Book 3 | Bo Lin\n'));
 	assert.deepEqual([again.added, again.boxSets], [[], []]);
@@ -1923,8 +1928,12 @@ test('ASINs by site: read from text, an ASIN without a site is audible.com\'s, a
 	assert.deepEqual(Edition.parseAsins('audible'), {asins: null, bad: ['audible']});
 	assert.deepEqual(Edition.parseAsins('audible.com none').bad, ['audible.com', 'none']);
 	assert.deepEqual(Edition.parse('ASIN none; Narrated by Cy Hale').bad, ['ASIN none']);
-	assert.deepEqual(Edition.fromFields({'ext:audible.com': 'none', n: 'Cy Hale'}).bad, ['ASIN audible.com none']);
-	assert.deepEqual(Edition.fromFields({'ext:amazon.com': 'B0ABCDEFG12'}).bad, ['ASIN amazon.com B0ABCDEFG12']);
+	assert.deepEqual(Edition.fromFields({'ext:audible.com': 'none', n: 'Cy Hale'}).bad.map(en), [
+		'ASIN audible.com none',
+	]);
+	assert.deepEqual(Edition.fromFields({'ext:amazon.com': 'B0ABCDEFG12'}).bad.map(en), [
+		'ASIN amazon.com B0ABCDEFG12',
+	]);
 	assert.equal(ExternalCatalog.readId('Audible', 'edition', 'audible'), null);
 	assert.deepEqual(ExternalCatalog.readId('b0abcdefg1', 'edition', 'audible'), {
 		catalog: 'audible.com',
@@ -1954,18 +1963,18 @@ test('ASINs by site: read from text, an ASIN without a site is audible.com\'s, a
 	);
 	// one that disagrees with the audible.com ASIN it has is left for validate() to report
 	const [odd] = BackupV1.fixBooks([{t: 'A', a: ['B'], e: [{id: 'B1', asin: {'audible.com': 'B2'}}]}]);
-	assert.ok(Validator.validate([odd], {}).errors.some(e => e.includes("unknown key 'id'")));
+	assert.ok(Check.validate([odd], {}).errors.some(e => e.includes("unknown key 'id'")));
 	assert.ok(
-		Validator.validate([book('A', 'B', ed({ext: {'kobo.com': 'B1'}}))], {}).warnings.some(e =>
+		Check.validate([book('A', 'B', ed({ext: {'kobo.com': 'B1'}}))], {}).warnings.some(e =>
 			e.includes("'kobo.com' is not an external catalog this app knows"),
 		),
 	);
 	assert.ok(
-		Validator.validate([book('A', 'B', ed({ext: {}}))], {}).errors.some(e =>
+		Check.validate([book('A', 'B', ed({ext: {}}))], {}).errors.some(e =>
 			e.includes("'ext' must map external catalogs to ids"),
 		),
 	);
-	assert.ok(Validator.validate([book('A', 'B', ed({ext: 'B1'}))], {}).errors.some(e => e.includes("'ext' must map")));
+	assert.ok(Check.validate([book('A', 'B', ed({ext: 'B1'}))], {}).errors.some(e => e.includes("'ext' must map")));
 });
 
 test('ASINs by site: each site may have its own, so only another ASIN on the same site is another edition', () => {
@@ -2040,7 +2049,7 @@ test('editions as fields: one field per part in the book form, each checked on i
 		),
 		[{ext: {'audible.co.uk': 'B0UK', 'amazon.com': 'B0AMAZON01'}}],
 	);
-	assert.deepEqual(json(Edition.fromFields({'ext:audible.com': 'B1, B2', 'ext:amazon.com': ''}).bad), [
+	assert.deepEqual(Edition.fromFields({'ext:audible.com': 'B1, B2', 'ext:amazon.com': ''}).bad.map(en), [
 		'ASIN audible.com B1, B2',
 	]);
 	assert.ok(ExternalCatalog.ASIN_SITES.includes('amazon.se') && ExternalCatalog.ASIN_SITES.includes('audible.co.uk'));
@@ -2060,10 +2069,15 @@ test('editions as fields: one field per part in the book form, each checked on i
 		{editions: [{ext: {'audible.com': 'B1'}}], bad: [], book: {hardcover: '909'}},
 	);
 	// what can't be read is reported with the field's name, and left out
+	const unread = Edition.fromFields({
+		'ext:audible.com': 'B1',
+		'ext:goodreads': 'x',
+		d: '2021-13',
+		len: 'long',
+		isbn: '978',
+	});
 	assert.deepEqual(
-		json(
-			Edition.fromFields({'ext:audible.com': 'B1', 'ext:goodreads': 'x', d: '2021-13', len: 'long', isbn: '978'}),
-		),
+		{...json(unread), bad: unread.bad.map(en)},
 		{
 			editions: [{ext: {'audible.com': 'B1'}}],
 			bad: ['Goodreads edition x', 'ISBN 978', 'Released 2021-13', 'Length long'],
@@ -2235,7 +2249,7 @@ test('Book.merge keeps the picked fields and combines genres, dates read and edi
 	assert.equal(picked.s, 'The Lantern Coast');
 	// the inputs are left alone
 	assert.deepEqual(a.e, [{ext: {goodreads: '4242'}, p: ['Gullwing Audio']}, {isbn: ISBN_BOX}]);
-	assert.deepEqual(Validator.validate([picked], {}).errors, []);
+	assert.deepEqual(Check.validate([picked], {}).errors, []);
 });
 
 test('editions that do not disagree on an ASIN, Goodreads id or ISBN can be joined, on merge or later', () => {
@@ -2309,12 +2323,12 @@ test('narrators: a narrator on the book moves onto its editions', () => {
 	assert.deepEqual(BackupV1.fixBooks([{t: 'A', a: 'B', n: 'Ann Vale', id: 'B1'}])[0].e, [
 		{ext: {'audible.com': 'B1'}, n: ['Ann Vale']},
 	]);
-	assert.deepEqual(Validator.validate(BackupV1.fixBooks([{t: 'A', a: 'B', n: 'Ann Vale', id: 'B1'}]), {}), {
+	assert.deepEqual(Check.validate(BackupV1.fixBooks([{t: 'A', a: 'B', n: 'Ann Vale', id: 'B1'}]), {}), {
 		errors: [],
 		warnings: [],
 	});
 	assert.ok(
-		Validator.validate([{t: 'A', a: ['B'], n: ['Ann Vale']}], {}).errors.some(e => e.includes("unknown key 'n'")),
+		Check.validate([{t: 'A', a: ['B'], n: ['Ann Vale']}], {}).errors.some(e => e.includes("unknown key 'n'")),
 	);
 
 	assert.deepEqual(
@@ -2359,8 +2373,8 @@ test("the errors that stop an import are the books', not the series info's", () 
 		],
 		seriesInfo: {'Gull Isle': {total: 0, status: 'paused'}},
 	});
-	assert.equal(Validator.check(catalog).errors.length, 3);
-	assert.deepEqual(Validator.bookErrors(catalog), ["book #1 ('Lone'): has a series number but no series"]);
+	assert.equal(Check.check(catalog).errors.length, 3);
+	assert.deepEqual(Check.bookErrors(catalog), ["book #1 ('Lone'): has a series number but no series"]);
 });
 
 test('a Hardcover book starts a stored book with its title, authors and featured series', () => {
@@ -2417,7 +2431,7 @@ test('authors and narrators are lists; comma separated text from before is split
 	});
 
 	// validate wants lists; the loaders give it them
-	const errors = Validator.validate(
+	const errors = Check.validate(
 		[
 			{t: 'A', a: 'Ann Vale'},
 			{t: 'B', a: []},
@@ -2432,9 +2446,9 @@ test('authors and narrators are lists; comma separated text from before is split
 	]) {
 		assert.ok(errors.includes(needle), needle);
 	}
-	assert.deepEqual(Validator.validate(BackupV1.fixBooks([old]), {}), {errors: [], warnings: []});
+	assert.deepEqual(Check.validate(BackupV1.fixBooks([old]), {}), {errors: [], warnings: []});
 	assert.ok(
-		Validator.validate([{t: 'A', a: ['X'], e: [{n: ['R.T. Hale']}]}], {}).warnings.some(w =>
+		Check.validate([{t: 'A', a: ['X'], e: [{n: ['R.T. Hale']}]}], {}).warnings.some(w =>
 			w.includes("narrator 'R.T. Hale'"),
 		),
 	);
@@ -2894,10 +2908,10 @@ test('merging a backup: author info only the backup has is added; where both dif
 
 // ------------------------------------------------------------------ authors
 test('author info: validated, ids checked against their catalogs', () => {
-	assert.deepEqual(Validator.validateContributors('authors', {}), {errors: [], warnings: []});
-	assert.deepEqual(Validator.validateContributors('authors', undefined), {errors: [], warnings: []});
+	assert.deepEqual(Check.validateContributors('authors', {}), {errors: [], warnings: []});
+	assert.deepEqual(Check.validateContributors('authors', undefined), {errors: [], warnings: []});
 	assert.deepEqual(
-		Validator.validateContributors('authors', {
+		Check.validateContributors('authors', {
 			'Ann Vale': {
 				bio: 'Hi.\n\nMore.',
 				url: 'https://example.com/',
@@ -2907,7 +2921,7 @@ test('author info: validated, ids checked against their catalogs', () => {
 		}),
 		{errors: [], warnings: []},
 	);
-	const {errors, warnings} = Validator.validateContributors('authors', {
+	const {errors, warnings} = Check.validateContributors('authors', {
 		'Ann Vale': {
 			bio: '',
 			url: 'example.com',
@@ -2929,12 +2943,12 @@ test('author info: validated, ids checked against their catalogs', () => {
 		"authors['Ann Vale']: 'kobo.com' is not an external catalog this app knows",
 		"authors['Ann Vale']: link 'https://www.goodreads.com/author/show/7.Ann_Vale' is a page on Goodreads; keep its id '7' instead",
 	]);
-	assert.deepEqual(Validator.validateContributors('authors', []).errors, [
+	assert.deepEqual(Check.validateContributors('authors', []).errors, [
 		'authors: must map author names to their info',
 	]);
 	// a publisher has no page on Goodreads
 	assert.deepEqual(
-		Validator.validateContributors('publishers', {
+		Check.validateContributors('publishers', {
 			'Gull Audio': {ext: {goodreads: '1'}},
 		}).errors,
 		["publishers['Gull Audio']: Goodreads has no publisher pages, so no publisher id"],
@@ -2976,15 +2990,15 @@ test("author info from before ids: the address of each page becomes its id, and 
 test('narrator and publisher info: names come from the editions, and backups carry and merge it', () => {
 	const books = [book('Lantern Road', 'Ann Vale', {e: [{n: ['Cy Hale'], p: ['Gull Audio']}]})];
 	assert.deepEqual(
-		Validator.validateContributors('narrators', {'Cy Hale': {bio: 'Reads.'}, 'Ann Vale': {bio: 'Writes.'}}),
+		Check.validateContributors('narrators', {'Cy Hale': {bio: 'Reads.'}, 'Ann Vale': {bio: 'Writes.'}}),
 		{errors: [], warnings: []},
 		'a narrator no edition has is an entry of their own',
 	);
-	assert.deepEqual(Validator.validateContributors('publishers', {'Gull Audio': {ext: {hardcover: 'gull'}}}), {
+	assert.deepEqual(Check.validateContributors('publishers', {'Gull Audio': {ext: {hardcover: 'gull'}}}), {
 		errors: [],
 		warnings: [],
 	});
-	assert.deepEqual(Validator.validateContributors('publishers', {'Gull Audio': {url: 'gull'}}).errors, [
+	assert.deepEqual(Check.validateContributors('publishers', {'Gull Audio': {url: 'gull'}}).errors, [
 		"publishers['Gull Audio']: 'url' must be a web address starting with http:// or https://",
 	]);
 	// the Check looks at all three
@@ -2993,7 +3007,7 @@ test('narrator and publisher info: names come from the editions, and backups car
 		narrators: {Nobody: {bio: 'Hi.'}},
 		publishers: {'Gull Audio': {note: 'x'}},
 	});
-	const found = Validator.check(catalog, {contributors: true});
+	const found = Check.check(catalog, {contributors: true});
 	assert.deepEqual([found.errors, found.warnings], [["publishers['Gull Audio']: unknown keys ['note']"], []]);
 	// backups: read, older ones have none, and merging adds the backup's
 	assert.equal(Backup.read({books: []}).narrators, null);
@@ -3213,13 +3227,13 @@ test('Hardcover book ids move from the editions to the book on load', () => {
 		{t: 'Three', a: ['Ann Vale'], ext: {hardcover: '73'}, e: [{ext: {'audible.com': 'B3'}}]},
 		{t: 'Four', a: ['Ann Vale'], ext: {hardcover: '74'}},
 	]);
-	assert.deepEqual(Validator.validate(books, {}), {errors: [], warnings: []});
+	assert.deepEqual(Check.validate(books, {}), {errors: [], warnings: []});
 	assert.match(
-		Validator.validate([book('A', 'B', ed({ext: {'audible.com': 'B1'}, hcb: '7'}))], {}).errors.join('\n'),
+		Check.validate([book('A', 'B', ed({ext: {'audible.com': 'B1'}, hcb: '7'}))], {}).errors.join('\n'),
 		/unknown key 'hcb'/,
 	);
 	assert.match(
-		Validator.validate([book('A', 'B', {ext: {hardcover: 'x7'}})], {}).errors.join('\n'),
+		Check.validate([book('A', 'B', {ext: {hardcover: 'x7'}})], {}).errors.join('\n'),
 		/'x7' is not Hardcover's id of a book/,
 	);
 });
@@ -3238,10 +3252,10 @@ test('Hardcover ids round-trip through the edit form, are validated and exclude 
 		book: {hardcover: '77'},
 	});
 	assert.deepEqual(json(Edition.parse('Hardcover abc').bad), ['Hardcover abc']);
-	const {errors} = Validator.validate([book('Tidewater', 'Ann Vale', ed({ext: {hardcover: 'x1'}}))], {});
+	const {errors} = Check.validate([book('Tidewater', 'Ann Vale', ed({ext: {hardcover: 'x1'}}))], {});
 	assert.match(errors.join('\n'), /'x1' is not Hardcover's id of an edition/);
 	assert.match(
-		Validator.validate(
+		Check.validate(
 			[book('A', 'Ann Vale', ed({ext: {hardcover: '5'}})), book('A', 'Ann Vale', ed({ext: {hardcover: '5'}}))],
 			{},
 		).errors.join('\n'),
@@ -3363,7 +3377,7 @@ test('HardcoverSync.read: the Read shelf as books, with every finished date and 
 		{t: 'The Paper Fen', a: ['R. T. Hale', 'Bo Reed'], ext: {hardcover: '78'}},
 	]);
 	assert.deepEqual(
-		result.notAudio.map(n => [n.book.title, n.yours, n.edition, n.key, n.said, n.url]),
+		result.notAudio.map(n => [n.book.title, n.yours, n.edition, n.key, en(n.said), n.url]),
 		[
 			[
 				'The Paper Fen',
@@ -3381,7 +3395,7 @@ test('HardcoverSync.read: the Read shelf as books, with every finished date and 
 		['Tidewater'],
 		'only the audiobook edition may be added',
 	);
-	assert.deepEqual(HardcoverSync.read([{id: 9, book_id: 99, status_id: 3}], HC_BOOKS, HC_EDITIONS).warnings, [
+	assert.deepEqual(HardcoverSync.read([{id: 9, book_id: 99, status_id: 3}], HC_BOOKS, HC_EDITIONS).warnings.map(en), [
 		'Hardcover book 99: not found, skipped',
 	]);
 });
@@ -3437,7 +3451,7 @@ test('HardcoverSync.yourNotAudio lists your editions Hardcover has as print book
 			n.book.title,
 			n.edition,
 			n.key,
-			n.said,
+			en(n.said),
 			n.url,
 		]),
 		[
@@ -3735,7 +3749,7 @@ test('AudiobookdbSync names the book on your Read shelf it could not read, past 
 	};
 	const sync = new AudiobookdbSync({key: 'k', shelves: async () => [shelf], book: async () => null});
 	const result = await sync.compare(new Catalog(), () => {});
-	assert.deepEqual(result.warnings, [
+	assert.deepEqual(result.warnings.map(en), [
 		'AudiobookDB book Gone00000001 (Gone Book): not found, or no title or author, skipped',
 	]);
 });
@@ -4034,6 +4048,29 @@ test('a template is respelled whole, and its values are filled in as they are', 
 	assert.throws(() => Text.filled('Removed {name}.', false, {}), /No value for \{name\}/);
 });
 
+test("a module's message is a Phrase: its template respelled, its data never, a Phrase inside it respelled too", () => {
+	const gain = Text.phrase('{title}: {gain}', {title: 'Catalog Days', gain: Text.phrase('a catalog id')});
+	assert.deepEqual(gain, {
+		template: '{title}: {gain}',
+		values: {title: 'Catalog Days', gain: {template: 'a catalog id', values: {}}},
+	});
+	assert.equal(Text.filled(gain, true), 'Catalog Days: a catalogue id');
+	assert.equal(Text.filled(gain, false), 'Catalog Days: a catalog id');
+	assert.equal(en(Text.counted(1, 'catalog')), '1 catalog');
+	assert.equal(Text.filled(Text.counted(3, 'catalog'), true), '3 catalogues');
+	assert.equal(en(Text.joinPhrases([Text.phrase('one {x}', {x: 'a;b'}), Text.phrase('two')], '; ')), 'one a;b; two');
+	assert.equal(en(Text.joinPhrases([])), '');
+	assert.equal(en(Text.firstThreePhrase(['a', 'b', 'c', 'd'])), 'a, b, c and 1 more');
+	assert.equal(Text.firstThreePhrase(['a', 'b']), 'a, b');
+	// an error with a Phrase says it in American English as its message; any other error's message is a value
+	const err = new PhraseError('{title} is not in the catalog', {title: 'Catalog Days'});
+	assert.equal(err.message, 'Catalog Days is not in the catalog');
+	assert.equal(Text.filled(Text.errorPhrase(err), true), 'Catalog Days is not in the catalogue');
+	assert.equal(Text.filled(Text.errorPhrase(new Error('no catalog')), true), 'no catalog');
+	assert.equal(Text.isPhrase({template: 'x', values: {}}), true);
+	assert.equal(Text.isPhrase({tagName: 'A'}), false);
+});
+
 // ------------------------------------------------------------------ IndexedDB records
 // Numbered ids, so tests can name them.
 const numbered = () => {
@@ -4280,11 +4317,11 @@ test('removeEntry takes a series or person off every book, and refuses to leave 
 	catalog.removeEntry('publishers', id('publishers', 'Gull Audio'));
 	assert.deepEqual(catalog.books[0].editions[0].publishers, []);
 	// Ann Vale shares her book; Bo Reed is the only author of Fern 2
-	assert.equal(catalog.removeProblem('authors', id('authors', 'Ann Vale')), '');
+	assert.equal(catalog.removeProblem('authors', id('authors', 'Ann Vale')), null);
 	catalog.removeEntry('authors', id('authors', 'Ann Vale'));
 	assert.deepEqual(catalog.books[0].authors, ['Bo Reed']);
 	assert.equal(
-		catalog.removeProblem('authors', id('authors', 'Bo Reed')),
+		en(catalog.removeProblem('authors', id('authors', 'Bo Reed'))),
 		'Bo Reed is the only author of 2 books (Fern 1, Fern 2): give them another author first, or remove them.',
 	);
 	assert.throws(() => catalog.removeEntry('authors', id('authors', 'Bo Reed')), /only author/);
@@ -4604,7 +4641,7 @@ test('backups carry the ids: Restore keeps them, and Merge finds a book by its i
 	assert.equal(backup.books[0].uid, 'id-1');
 	assert.equal(backup.books[0].e[0].uid, 'id-5');
 	assert.deepEqual(backup.ids.series, {'Orchard Cycle': catalog.nameIds.series.get('Orchard Cycle')});
-	assert.deepEqual(Validator.validate(backup.books, backup.seriesInfo).errors, [], 'the Check knows the ids');
+	assert.deepEqual(Check.validate(backup.books, backup.seriesInfo).errors, [], 'the Check knows the ids');
 	const restored = Backup.toCatalog(backup);
 	assert.deepEqual(
 		restored.books.map(b => b.id),
@@ -4663,7 +4700,7 @@ test('a comparison shows what is new, what an import fills in, and what differs,
 		],
 	);
 	assert.deepEqual(
-		[books[0].gains, books[0].editionGains],
+		[books[0].gains.map(en), books[0].editionGains.map(en)],
 		[[], ['publisher']],
 		'a value this catalog lacks is filled in',
 	);
@@ -4748,7 +4785,7 @@ test('applying a comparison imports only the books picked, and replaces only the
 	]);
 	const [gr] = Comparison.compare(dated, goodreads).books;
 	assert.deepEqual(
-		[gr.gains, gr.editionGains],
+		[gr.gains.map(en), gr.editionGains.map(en)],
 		[['read 2023-01-05', 'Goodreads id'], ['Goodreads id, ISBN, publisher']],
 	);
 	Comparison.apply(dated, goodreads, {take: new Set([0]), editions: new Set(), patch: new Set()});
@@ -4937,7 +4974,7 @@ test("the Edit series page's review: each book's values and entries from a catal
 		],
 	);
 	assert.deepEqual(
-		one.entries.map(e => [e.url, e.gains, e.edition, e.excluded.map(ed => ed.ids('asin'))]),
+		one.entries.map(e => [e.url, e.gains.map(en), e.edition.map(en), e.excluded.map(ed => ed.ids('asin'))]),
 		[['https://hardcover.app/id/book/77', ['Hardcover id'], ['publisher'], [['B0KEPTOUT1']]]],
 	);
 	assert.deepEqual(review.books.get(fen.id).notFound, [0]);
@@ -5032,7 +5069,7 @@ test('several catalogs side by side: each value once with the catalogs that have
 		],
 	);
 	assert.deepEqual(
-		result.gains.map(g => [g.source, g.at, g.gains, g.edition]),
+		result.gains.map(g => [g.source, g.at, g.gains.map(en), g.edition.map(en)]),
 		[
 			[0, 0, [], ['publisher']],
 			[1, 0, [], ['publisher, release date']],
@@ -5131,7 +5168,7 @@ test('comparing with Hardcover only reads it, and plans what putting your books 
 	});
 	const before = JSON.stringify(catalog);
 	const steps = [];
-	const result = await sync.compare(catalog, text => steps.push(text));
+	const result = await sync.compare(catalog, text => steps.push(en(text)));
 	assert.equal(JSON.stringify(catalog), before);
 	assert.ok(!hc.sent.some(s => s.query.startsWith('mutation')));
 	assert.ok(steps.includes('Reading your Hardcover shelves'));
@@ -5267,7 +5304,7 @@ test("a book's AudiobookDB cover is kept by its key on the edition, and looked f
 	assert.equal(Cover.addresses(book, 'large')[0], `https://cdn.audiobookdb.org/${key}/large.jpg`);
 	// stored as it was read, and checked
 	assert.deepEqual(json(book).e[1], {ext: {audiobookdb: 'RlsGlass0001'}, img: {audiobookdb: key}});
-	assert.deepEqual(Validator.validate([json(book)], {}).errors, []);
+	assert.deepEqual(Check.validate([json(book)], {}).errors, []);
 	const bad = Book.fromJSON({
 		t: 'T',
 		a: ['A'],
@@ -5282,7 +5319,7 @@ test("a book's AudiobookDB cover is kept by its key on the edition, and looked f
 		'kept aside for the Check',
 	);
 	assert.deepEqual(
-		Validator.validate([json(bad)], {}).errors.map(e => e.replace(/^.*?edition/, 'edition')),
+		Check.validate([json(bad)], {}).errors.map(e => e.replace(/^.*?edition/, 'edition')),
 		["edition #1: 'img' must map a catalog (audiobookdb) to its cover's key", 'edition #2: is empty'],
 	);
 	// the edition's form keeps it without showing it; a cover alone is no edition
@@ -5462,10 +5499,9 @@ test("a series' site, from before authors and publishers kept their own, goes to
 		status: 'ongoing',
 		note: 'site: https://example.com/ann',
 	});
-	assert.deepEqual(
-		Validator.validate(books, {Solo: {total: 2, status: 'ongoing', url: 'https://example.com/'}}).errors,
-		["series-info['Solo']: unknown keys ['url']"],
-	);
+	assert.deepEqual(Check.validate(books, {Solo: {total: 2, status: 'ongoing', url: 'https://example.com/'}}).errors, [
+		"series-info['Solo']: unknown keys ['url']",
+	]);
 
 	// records from before keep it on the series record; the whole catalog moves it, and is saved again
 	const catalog = Backup.toCatalog({
@@ -5578,7 +5614,7 @@ test('CatalogLookup finds a book on Open Library and Wikidata, without an accoun
 		],
 	});
 	assert.deepEqual(edition.sources, ['Open Library']);
-	assert.match(edition.notes[0], /narrators and length from Hardcover too, save your Hardcover API token/);
+	assert.match(en(edition.notes[0]), /narrators and length from Hardcover too, save your Hardcover API token/);
 	// by its ISBN, the same
 	assert.deepEqual(
 		JSON.parse(JSON.stringify((await lookup.find('9780000000019')).book)),
@@ -5687,7 +5723,7 @@ test('CatalogLookup asks Audible and AudiobookDB through the catalog proxy', asy
 	// a book of several releases comes without an edition, and says why
 	const work = await lookup.find('https://audiobookdb.org/books/LnTrnKpr2xYz');
 	assert.equal(work.book.editions.length, 0);
-	assert.match(work.notes[0], /AudiobookDB has 2 releases of it; paste your release's address/);
+	assert.match(en(work.notes[0]), /AudiobookDB has 2 releases of it; paste your release's address/);
 	// Open Library's edition: its ASIN is amazon.com's, which Audible isn't asked about
 	const sentBefore = proxy.sent.length;
 	const keeper = await lookup.find('OL901M');
@@ -5785,7 +5821,7 @@ test('CatalogLookup asks Hardcover, with a token, for its books and for the ASIN
 		new HardcoverClient(hc.fetch, 'bad', async () => {}),
 	]).find('9780000000019');
 	assert.deepEqual(refused.sources, ['Open Library']);
-	assert.match(refused.notes[0], /Hardcover couldn't be asked: Hardcover refused your token/);
+	assert.match(en(refused.notes[0]), /Hardcover couldn't be asked: Hardcover refused your token/);
 });
 
 // ------------------------------------------------------------ the catalogs' base classes
@@ -5851,7 +5887,7 @@ test('a catalog written against the base classes alone: its client, its key and 
 	assert.equal(ShelfSync.sameName({kind: 'series', name: 'The Gull Isle'})('Gull Isle'), true);
 	assert.equal(ShelfSync.sameName({kind: 'author', name: 'Ann Vale'})('ann vale'), true);
 	assert.equal(ShelfSync.sameName({kind: 'author', name: 'Ann Vale'})('Bo Reed'), false);
-	assert.equal(ShelfmarkSync.notAdded(2), "Not added, as Shelfmark can't tell which edition is yours: 2");
+	assert.equal(en(ShelfmarkSync.notAdded(2)), "Not added, as Shelfmark can't tell which edition is yours: 2");
 	assert.throws(() => new ShelfmarkSync(client).summary(), /Shelfmark: summary is not written/);
 });
 
@@ -5870,9 +5906,9 @@ test('ShelfSync.push sends each entry of a plan, says what it did, and stops aft
 			steps = [];
 		const code = await sync.push(
 			{name: 'Read', reads: [], otherShelf: [], unknown: [], inexact: [], ...plan},
-			l => out.push(l),
-			l => err.push(l),
-			(t, d, n) => steps.push([t, d, n]),
+			l => out.push(en(l)),
+			l => err.push(en(l)),
+			(t, d, n) => steps.push([en(t), d, n]),
 		);
 		return {code, out, err, steps};
 	};
@@ -5934,7 +5970,7 @@ test('CatalogLookup asks a source written against BookSource alone: its own ids,
 		/to look it up on Shelfmark, save your Shelfmark API key on the Import & export page first/,
 	);
 	const noted = await unkeyed.find('OL901M');
-	assert.deepEqual(noted.notes, [
+	assert.deepEqual(noted.notes.map(en), [
 		'to fill in narrators and length from Shelfmark too, save your Shelfmark API key on the Import & export page',
 	]);
 });
@@ -5970,7 +6006,7 @@ test('CatalogConnectors lists each catalog once, with what the pages need of it'
 	assert.equal(AudiobookdbClient.cleanKey(' abdb-1 '), 'abdb-1');
 	const out = new GoodreadsExporter().write(Bs([book('One', 'Ann Vale')]));
 	assert.deepEqual(
-		[out.books, out.notes],
+		[out.books, out.notes.map(en)],
 		[
 			1,
 			[
@@ -6038,14 +6074,14 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 		],
 	);
 	const [, lantern, brine] = result.comparison.books;
-	assert.deepEqual(lantern.editionGains, ['ISBN, narrators, publisher, release date, length']);
+	assert.deepEqual(lantern.editionGains.map(en), ['ISBN, narrators, publisher, release date, length']);
 	assert.deepEqual(
-		brine.editionGains,
+		brine.editionGains.map(en),
 		['audible.com id, narrators, release date, length'],
 		'its one edition fills in yours',
 	);
 	assert.deepEqual(brine.differences, [], 'book 04 is book 4');
-	assert.deepEqual(result.warnings, [
+	assert.deepEqual(result.warnings.map(en), [
 		'Salt Road: audible.com has 2 editions of book 1 and none has an ASIN of yours; give yours its ASIN to fill it in',
 	]);
 	assert.deepEqual(
@@ -6061,7 +6097,7 @@ test("AudibleSync compares a series' books with Audible's: the edition that is y
 		'not the placeholder, the box set or the companion; the book to add at hand, with its one edition',
 	);
 	assert.equal(
-		sync.summary(result, catalog, {kind: 'series', name: 'Gull Isle', label: 'the series “Gull Isle”'}),
+		en(sync.summary(result, catalog, {kind: 'series', name: 'Gull Isle', label: 'the series “Gull Isle”'})),
 		'Only the series “Gull Isle”: 3 books in this catalog, 4 books in the series on audible.com',
 	);
 	assert.deepEqual(result.infoIds, [
@@ -6110,7 +6146,7 @@ test("AudibleSync says which of your ASINs Audible doesn't sell: maybe not audio
 	assert.equal(sent.at(-1), 'audible/audible.com/catalog/products?asins=B0WRONGST3&response_groups=product_desc');
 	assert.ok(!sent.some(s => /B0KINDLE03|B0GULLDE03/.test(s)), 'only audible.com ASINs are asked of audible.com');
 	assert.deepEqual(
-		result.notAudio.map(n => [n.book.title, n.yours, n.edition, n.said, n.url, n.maybe]),
+		result.notAudio.map(n => [n.book.title, n.yours, n.edition, en(n.said), n.url, n.maybe]),
 		[
 			[
 				'Gull Song',
@@ -6231,7 +6267,7 @@ test("an edition's own title is kept, written and read back, in the stored form,
 		[{t: 'Lanterns; or, The Keeper', ext: {'audible.com': 'B0USLAMP01'}}],
 	);
 	// the Check: an empty title is an error, an untidy one a warning
-	const checked = Validator.validate([{t: 'X', a: ['Ann Vale'], e: [{t: '', isbn: '9780306406157'}, {t: 'Y  Z'}]}]);
+	const checked = Check.validate([{t: 'X', a: ['Ann Vale'], e: [{t: '', isbn: '9780306406157'}, {t: 'Y  Z'}]}]);
 	assert.ok(checked.errors.some(e => /'t' must be a non-empty string/.test(e)));
 	assert.ok(checked.warnings.some(w => /edition title 'Y {2}Z'/.test(w)));
 });
@@ -6638,7 +6674,7 @@ test('an edition may have several publishers: a list of names, typed with commas
 	assert.deepEqual(json(Edition.tidyJSON({p: [' Gull  Audio', 'A.B. Sound', 'Gull Audio']})), {
 		p: ['Gull Audio', 'A.B. Sound'],
 	});
-	const errors = Validator.check({books: [book('A', 'B', ed({p: 'Gull Audio'}, {d: '2020', p: []}))]}).errors;
+	const errors = Check.check({books: [book('A', 'B', ed({p: 'Gull Audio'}, {d: '2020', p: []}))]}).errors;
 	assert.deepEqual(
 		errors.filter(e => /'p'/.test(e)),
 		[
@@ -6950,7 +6986,7 @@ test("links: merging books, joining editions and taking in another tab's save co
 });
 
 test("links: the Check notes one that is no web address, one listed twice, and a catalog's page", () => {
-	const {errors, warnings} = Validator.validate(
+	const {errors, warnings} = Check.validate(
 		[
 			{
 				t: 'Salt Road',

@@ -140,7 +140,7 @@ export function lookupHardcoverField(
 			return kept(
 				spell(
 					"Kept Hardcover's {kind} by the name in its address, as Hardcover couldn't be asked for its number ({error}).",
-					{kind: spell(kind), error: spell(Text.errorText(err))},
+					{kind: spell(kind), error: Text.errorPhrase(err)},
 				),
 			);
 		}

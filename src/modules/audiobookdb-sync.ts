@@ -14,7 +14,8 @@ import {ExternalCatalog} from './external-catalog.js';
 import {AudiobookdbSource} from './audiobookdb-source.js';
 import {AudiobookdbClient} from './audiobookdb-client.js';
 import {ShelfSync} from './shelf-sync.js';
-import type {Unchecked} from './text.js';
+import {PhraseError} from './text.js';
+import type {Unchecked, Phrase, PhraseValue} from './text.js';
 import type {Edition} from './edition.js';
 import type {Step} from './catalog-client.js';
 import type {ShelfPart, InfoId, PlanEntry, Sent, MissingBook} from './shelf-sync.js';
@@ -55,7 +56,7 @@ export interface AudiobookdbComparison {
 	incoming: Book[];
 	/** how they are imported (Comparison.apply() takes them) */
 	opts: MergeOptions;
-	warnings: string[];
+	warnings: Phrase[];
 	/** what AudiobookDB has for your books (addIds() gives their ids) */
 	found: AudiobookdbFound;
 	/** the books that gain an AudiobookDB id or cover, in the comparison's merged copy */
@@ -106,7 +107,7 @@ export class AudiobookdbSync extends ShelfSync {
 		const myIds = new Set(mine.map(b => b.idOn('audiobookdb')).filter(id => typeof id === 'string'));
 		let shelves: AudiobookdbShelf[] | null = null;
 		if (client.key) {
-			step('Reading your AudiobookDB shelves');
+			step(Text.phrase('Reading your AudiobookDB shelves'));
 			shelves = await client.shelves();
 		}
 		const read = shelves ? AudiobookdbSync.readShelf(shelves) : null;
@@ -118,7 +119,14 @@ export class AudiobookdbSync extends ShelfSync {
 			// the series' books as it lists them, each with its number in it
 			let listed: Unchecked[] = [];
 			if (id) {
-				step(`Reading ${part.kind === 'series' ? 'the series' : 'the author'} ${part.name} on AudiobookDB`);
+				step(
+					Text.phrase(
+						part.kind === 'series'
+							? 'Reading the series {name} on AudiobookDB'
+							: 'Reading the author {name} on AudiobookDB',
+						{name: part.name},
+					),
+				);
 				const answer = part.kind === 'series' ? await client.series(id) : await client.person(id);
 				if (answer && part.kind === 'series') listed = list(answer.books).filter(x => Text.isObject(x.book));
 				theirs = answer
@@ -161,11 +169,11 @@ export class AudiobookdbSync extends ShelfSync {
 		const asked = wanted.filter(sb => typeof sb.id === 'string');
 		const details = await AudiobookdbClient.each(
 			asked,
-			'Reading the books on your Read shelf',
+			Text.phrase('Reading the books on your Read shelf'),
 			step,
 			async sb => found.books.get(sb.id) || (await client.book(sb.id)),
 		);
-		const warnings: string[] = [];
+		const warnings: Phrase[] = [];
 		const incoming: Book[] = [];
 		const byId = AudiobookdbSync.byBookId(mine);
 		details.forEach((detail, i) => {
@@ -174,7 +182,14 @@ export class AudiobookdbSync extends ShelfSync {
 			if (book) incoming.push(book);
 			else
 				warnings.push(
-					`AudiobookDB book ${asked[i].id}${tidyText(asked[i].title) ? ` (${tidyText(asked[i].title)})` : ''}: not found, or no title or author, skipped`,
+					tidyText(asked[i].title)
+						? Text.phrase('AudiobookDB book {id} ({title}): not found, or no title or author, skipped', {
+								id: asked[i].id,
+								title: tidyText(asked[i].title),
+							})
+						: Text.phrase('AudiobookDB book {id}: not found, or no title or author, skipped', {
+								id: asked[i].id,
+							}),
 				);
 		});
 		const inScope = part ? incoming.filter(b => scope(b) || myIds.has(b.idOn('audiobookdb') as string)) : incoming;
@@ -219,8 +234,11 @@ export class AudiobookdbSync extends ShelfSync {
 		return book;
 	}
 
-	static notAdded(count: number): string {
-		return `Not added, as AudiobookDB has several releases of them and none is yours: ${count}. Add them with + Add a book, filled in from your release's address.`;
+	static notAdded(count: number): Phrase {
+		return Text.phrase(
+			"Not added, as AudiobookDB has several releases of them and none is yours: {count}. Add them with + Add a book, filled in from your release's address.",
+			{count},
+		);
 	}
 
 	/**
@@ -229,19 +247,27 @@ export class AudiobookdbSync extends ShelfSync {
 	summary(
 		result: AudiobookdbComparison,
 		catalog: Catalog,
-		scope: {kind: 'series' | 'author'; name: string; label: string} | null,
-	): string {
-		const here = ShelfSync.inScope(catalog, scope).length;
+		scope: {kind: 'series' | 'author'; name: string; label: PhraseValue} | null,
+	): Phrase {
+		const here = Text.counted(ShelfSync.inScope(catalog, scope).length, 'book');
 		// the catalog's own books come first in the comparison's merged copy, with the ids found
 		const mine = result.comparison.merged.books.slice(0, catalog.books.length);
 		const found = (scope ? mine.filter(Comparison.scope(scope.kind, scope.name)) : mine).filter(b =>
 			b.idOn('audiobookdb'),
 		).length;
-		const shelf =
+		const summary =
 			result.onShelf === null
-				? ''
-				: `, ${Text.plural(result.onShelf, 'book')} on your AudiobookDB ${result.plan ? result.plan.name : 'Read'} shelf`;
-		return `${scope ? `Only ${scope.label}: ` : ''}${Text.plural(here, 'book')} in this catalog, ${found} of them on AudiobookDB${shelf}`;
+				? Text.phrase('{here} in this catalog, {found} of them on AudiobookDB', {here, found})
+				: Text.phrase(
+						'{here} in this catalog, {found} of them on AudiobookDB, {onShelf} on your AudiobookDB {shelf} shelf',
+						{
+							here,
+							found,
+							onShelf: Text.counted(result.onShelf, 'book'),
+							shelf: result.plan ? result.plan.name : 'Read',
+						},
+					);
+		return ShelfSync.scoped(scope, summary);
 	}
 
 	/**
@@ -267,7 +293,7 @@ export class AudiobookdbSync extends ShelfSync {
 			),
 		];
 		const asked = new Set();
-		await AudiobookdbClient.each(unknown, 'Finding your books on AudiobookDB', step, async b => {
+		await AudiobookdbClient.each(unknown, Text.phrase('Finding your books on AudiobookDB'), step, async b => {
 			for (const asin of b.editions.filter(ed => !shared(ed)).flatMap(ed => ed.ids('asin'))) {
 				if (asked.has(asin)) continue;
 				asked.add(asin);
@@ -281,7 +307,7 @@ export class AudiobookdbSync extends ShelfSync {
 				return;
 			}
 		});
-		await AudiobookdbClient.each(known, 'Reading your books on AudiobookDB', step, async id => {
+		await AudiobookdbClient.each(known, Text.phrase('Reading your books on AudiobookDB'), step, async id => {
 			const book = await this.client.book(id);
 			if (book) found.books.set(id, book);
 		});
@@ -321,9 +347,11 @@ export class AudiobookdbSync extends ShelfSync {
 			shelves.find(s => s.isDefault && named(s, /^(finished|listened)$/i)) ||
 			shelves.find(s => named(s, /^read$/i));
 		if (!read)
-			throw new Error(
-				`AudiobookDB has no Read shelf of yours (your shelves: ${shelves.map(s => tidyText(s.name) || s.slug).join(', ') || 'none'})`,
-			);
+			throw shelves.length
+				? new PhraseError('AudiobookDB has no Read shelf of yours (your shelves: {shelves})', {
+						shelves: shelves.map(s => tidyText(s.name) || s.slug).join(', '),
+					})
+				: new PhraseError('AudiobookDB has no Read shelf of yours (your shelves: none)');
 		return read;
 	}
 

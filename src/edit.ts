@@ -9,6 +9,7 @@
 // and Save puts them in the catalog with saveBook(), then adds the new books picked, renames the series and saves
 // its info.
 import {Text} from './modules/text.js';
+import type {Phrase} from './modules/text.js';
 import {Book} from './modules/book.js';
 import {Edition} from './modules/edition.js';
 import {Series} from './modules/series.js';
@@ -917,10 +918,10 @@ function notAudioNote(source: number, note: NotAudio): HTMLElement {
 		{class: 'editNotAudio'},
 		catalogIcon(run.keys[source]),
 		note.maybe
-			? spell('Maybe not an audiobook: {edition} is {said}.', {edition: note.edition, said: spell(note.said)})
+			? spell('Maybe not an audiobook: {edition} is {said}.', {edition: note.edition, said: note.said})
 			: spell('Maybe not an audiobook: {edition} is {said} on {catalog}.', {
 					edition: note.edition,
-					said: spell(note.said),
+					said: note.said,
 					catalog: run.labels[source],
 				}),
 		...(note.url ? [' ', outLink(note.url, run.labels[source], run.keys[source])] : []),
@@ -1190,12 +1191,12 @@ async function pickMissing(n: number, source: number) {
 	dropNew({kind: 'missing', n});
 	drawNewBooks();
 	let book: Book | null = null,
-		problem = '';
+		problem: Phrase | null = null;
 	try {
 		book = await run.missingBook(n, source);
-		if (!book) problem = spell("{catalog} doesn't have it after all", {catalog: run.labels[source]});
+		if (!book) problem = Text.phrase("{catalog} doesn't have it after all", {catalog: run.labels[source]});
 	} catch (exc) {
-		problem = Text.errorText(exc);
+		problem = Text.errorPhrase(exc);
 	}
 	// unticked, or ticked as another catalog's, while it was read
 	const now = MISSING_PICKS.get(n);
@@ -1209,7 +1210,7 @@ async function pickMissing(n: number, source: number) {
 			spell("Couldn't read {title} from {catalog}: {problem}", {
 				title: run.review.missing[n].title,
 				catalog: run.labels[source],
-				problem: spell(problem),
+				problem: problem || '',
 			}),
 			true,
 		);
@@ -1524,7 +1525,7 @@ export async function readBookIds(i: number): Promise<void> {
 			if (!d) return;
 			d.error = spell(
 				"Couldn't find the Hardcover book: {error}. Paste the address of its page, or of one of its editions, on hardcover.app, or the number in hardcover.app/id/book/12345.",
-				{error: spell(Text.errorText(err))},
+				{error: Text.errorPhrase(err)},
 			);
 			byId(`book-${i}-error`).textContent = d.error;
 		} finally {
@@ -1646,8 +1647,7 @@ export function readEditionFields(i: number, j: number) {
 	}
 	// a publisher the edition or the catalog has stays whole, though its name holds a comma
 	const read = Edition.fromFields(typed, [...ed.publishers, ...knownPublishers()]);
-	// (what Edition.fromFields couldn't read, in its words)
-	if (read.bad.length) problems.push(spell('Not understood: {bad}.', {bad: spell(read.bad.join('; '))}));
+	if (read.bad.length) problems.push(spell('Not understood: {bad}.', {bad: Text.joinPhrases(read.bad)}));
 	if (!problems.length && !read.editions.length)
 		problems.push(
 			spell('An edition needs something, such as an id or a narrator. To take it off, press Remove edition.'),
@@ -1708,7 +1708,7 @@ export function mergeEditions(i: number, j: number, k: number) {
 	try {
 		DRAFTS[i].book.mergeEditions([j, k]);
 	} catch (exc) {
-		showIoStatus(Text.errorText(exc), true);
+		showIoStatus(spell(Text.errorPhrase(exc)), true);
 		return;
 	}
 	renderBook(i);
@@ -1725,7 +1725,7 @@ export function splitEdition(i: number, j: number) {
 	try {
 		DRAFTS[i].book.splitEdition(j, move, copy);
 	} catch (exc) {
-		byId(`book-${i}-ed-${j}-split-error`).textContent = Text.errorText(exc);
+		byId(`book-${i}-ed-${j}-split-error`).textContent = spell(Text.errorPhrase(exc));
 		return;
 	}
 	OPEN_PANEL = null;
@@ -1970,10 +1970,9 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 	if (links.length) typed.links = links;
 	const {errors} = Validator.validate(JSON.parse(JSON.stringify(CATALOG.books)), {[name]: typed});
 	const problems = errors
-		.filter(e => e.startsWith('series-info'))
-		.map(e => e.replace(/^series-info(\[[^\]]*\])?: /, ''));
-	// Check's messages, which a module writes
-	if (problems.length) return showError(spell(problems.join('; ')));
+		.filter(e => Validator.labelOf(e)?.template === Validator.SERIES_LABEL)
+		.map(Validator.unlabeled);
+	if (problems.length) return showError(spell(Text.joinPhrases(problems)));
 	return {newName, entry: Series.fromJSON(newName, typed), note: hardcover.note};
 }
 
@@ -1986,10 +1985,13 @@ function bookProblems(b: Book): string[] {
 	if (needs.length) return needs;
 	if (b.editions.some(ed => !ed.format())) return [spell('An edition is empty: fill it in, or remove it.')];
 	const editions = b.editions.length ? {e: JSON.parse(JSON.stringify(b.editions))} : {}; // a book may have none
-	// Check's messages, which a module writes
-	return Validator.validate([{t: b.title, a: b.authors, ...editions}], {}).errors.map(e =>
-		spell(e.includes(' edition #') ? e.slice(e.indexOf(' edition #') + 1) : e),
-	);
+	// an edition's problem names it by its place, "edition #2: ...", not by the book the form shows
+	return Validator.validate([{t: b.title, a: b.authors, ...editions}], {}).errors.map(e => {
+		const label = Validator.labelOf(e);
+		return label?.template === Validator.EDITION_LABEL
+			? spell('edition #{n}: {problem}', {n: label.values.n, problem: Validator.unlabeled(e)})
+			: spell(e);
+	});
 }
 
 // ------------------------------------------------------------------ Review & save
@@ -2299,11 +2301,10 @@ export async function fillFromCatalog() {
 		if (DRAFTS[0] !== d) return;
 		const filled = fillBook(d, found.book);
 		byId('bookFormError').textContent = '';
-		// the catalogs' names, and their notes, which a module writes
 		const values = {
 			catalogs: found.sources.join(spell(' and ')),
 			filled: filled.join(', '),
-			notes: spell(found.notes.join('; ')),
+			notes: Text.joinPhrases(found.notes),
 		};
 		showIoStatus(
 			spell(
@@ -2325,7 +2326,7 @@ export async function fillFromCatalog() {
 	} catch (err) {
 		showIoStatus('');
 		byId('bookFormError').textContent = spell("Couldn't fill in the book: {error}.", {
-			error: spell(Text.errorText(err)),
+			error: Text.errorPhrase(err),
 		});
 	} finally {
 		if (FILLING === text) FILLING = null;

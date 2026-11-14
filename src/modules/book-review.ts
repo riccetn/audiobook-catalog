@@ -14,6 +14,7 @@ import type {Catalog} from './catalog.js';
 import type {Exclusions} from './exclusions.js';
 import type {MergeOptions} from './merger.js';
 import type {NewBook} from './multi-comparison.js';
+import type {Phrase} from './text.js';
 import type {InfoId, NotAudio, ShelfComparison} from './shelf-sync.js';
 
 /** One catalog compared: its name, its key in ExternalCatalog, and its comparison. */
@@ -41,8 +42,8 @@ export interface CatalogEntry {
 	at: number;
 	theirs: Book;
 	url: string | null;
-	gains: string[];
-	edition: string[];
+	gains: Phrase[];
+	edition: Phrase[];
 	/** its editions you keep out of imports (an `Edition …` exclusion), which taking it leaves out */
 	excluded: Edition[];
 }

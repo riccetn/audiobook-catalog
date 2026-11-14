@@ -2,7 +2,7 @@
 // the page asks it through the catalog proxy (the fetch it is given: route in, Response out), and the tests
 // give it a fake. Your API key, when saved, is sent only with what acts for your account (who you are, your
 // shelves, putting a book on one); the proxy passes it on to those paths alone, and refuses it anywhere else.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {CatalogClient} from './catalog-client.js';
 import type {Unchecked} from './text.js';
@@ -74,10 +74,10 @@ export class AudiobookdbClient extends CatalogClient {
 			}
 			const said =
 				json && Array.isArray(json.errors) && json.errors[0] && typeof json.errors[0].title === 'string'
-					? ` (${json.errors[0].title})`
+					? String(json.errors[0].title)
 					: '';
 			if (res.status === 429)
-				throw new Error('AudiobookDB asks to slow down (its daily budget may be spent); try again later');
+				throw new PhraseError('AudiobookDB asks to slow down (its daily budget may be spent); try again later');
 			if (res.status === 401)
 				throw new Error(
 					keyed && this.key
@@ -85,14 +85,25 @@ export class AudiobookdbClient extends CatalogClient {
 						: 'AudiobookDB needs your API key for that: save it on the Import & export page',
 				);
 			if (res.status === 403)
-				throw new Error(
-					`AudiobookDB said no${said}: your shelves are private and it doesn't know the key, or the key can't do that`,
+				throw new PhraseError(
+					said
+						? "AudiobookDB said no ({said}): your shelves are private and it doesn't know the key, or the key can't do that"
+						: "AudiobookDB said no: your shelves are private and it doesn't know the key, or the key can't do that",
+					{said},
 				);
 			if ((res.status === 400 || res.status === 405) && keyed)
-				throw new Error(
-					`your server refused it (${res.status}): deploy it again (make deploy-server) to bring it up to date`,
+				throw new PhraseError(
+					'your server refused it ({status}): deploy it again (make deploy-server) to bring it up to date',
+					{status: res.status},
 				);
-			if (!res.ok || json === null) throw new Error(`AudiobookDB answered ${res.status}${said}`);
+			if (!res.ok || json === null)
+				throw new PhraseError(
+					said ? 'AudiobookDB answered {status} ({said})' : 'AudiobookDB answered {status}',
+					{
+						status: res.status,
+						said,
+					},
+				);
 			return json;
 		}
 	}
@@ -115,11 +126,11 @@ export class AudiobookdbClient extends CatalogClient {
 	 */
 	async whoAmI(): Promise<string> {
 		if (this.username) return this.username;
-		if (!this.key) throw new Error('save your AudiobookDB API key first');
+		if (!this.key) throw new PhraseError('save your AudiobookDB API key first');
 		const me = await this.ask('auth/session', {keyed: true});
 		const user = Text.isObject(me) && Text.isObject(me.user) ? me.user : me;
 		const name = Text.isObject(user) && typeof user.username === 'string' ? user.username.trim() : '';
-		if (!name) throw new Error("AudiobookDB didn't say whose key it is");
+		if (!name) throw new PhraseError("AudiobookDB didn't say whose key it is");
 		return (this.username = name);
 	}
 
@@ -129,7 +140,7 @@ export class AudiobookdbClient extends CatalogClient {
 	async shelves(): Promise<AudiobookdbShelf[]> {
 		const user = encodeURIComponent(await this.whoAmI());
 		const answer = await this.ask(`users/username/${user}/shelves`, {keyed: true});
-		if (!Array.isArray(answer)) throw new Error("AudiobookDB sent something that isn't a list of shelves");
+		if (!Array.isArray(answer)) throw new PhraseError("AudiobookDB sent something that isn't a list of shelves");
 		return answer
 			.filter(s => Text.isObject(s) && typeof s.slug === 'string')
 			.map(s => ({...s, books: Array.isArray(s.books) ? s.books.filter(Text.isObject) : []}));

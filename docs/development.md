@@ -222,7 +222,22 @@ plural(count, 'book'); // "3 books", spelled
 The template is respelled and the values are put in as they are, so a title with "Catalog" in it stays as
 it is. Never build a sentence from pieces around a value (`'Removed ' + title + '.'`): a sentence that
 changes with a count or a choice is a template for each case, so the whole sentence can one day be put in
-another language. A value that is the app's own text (a count with its word, a module's message) is spelled
-on its own first. `spelled()` knows only the words in `BRITISH_WORDS`
+another language. A value that is the app's own text (a count with its word) is spelled on its own first.
+
+The classes in `modules/` don't touch the page, so they hand it their messages unspelled, as a `Phrase`: the
+template and its values together, which `spell()` fills in like any other template (and a Phrase among the
+values is spelled too). An error a page shows is a `PhraseError`, whose `phrase` `Text.errorPhrase()` gives;
+any other error's message is put in as a value, as it is.
+
+```ts
+// in a module
+warnings.push(Text.phrase('{title}: no author on Hardcover, skipped', {title}));
+throw new PhraseError("{catalog} can't be searched by title", {catalog: this.label});
+// on the page
+messageList(compare.warnings.map(w => spell(w)));
+showIoStatus(spell("Couldn't compare: {error}", {error: Text.errorPhrase(e)}), true);
+```
+
+`spelled()` knows only the words in `BRITISH_WORDS`
 (now just catalog/catalogue), so a page that starts using another such word adds it there. Stored keys and
 file names (`audiobook-catalog-device`, the backup's file name) are names, not text, and never change.

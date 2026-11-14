@@ -1,4 +1,6 @@
 // The Goodreads exporter: the catalog as a Goodreads library export CSV, which Goodreads' import accepts.
+import {Text} from './text.js';
+import type {Phrase} from './text.js';
 import {Edition} from './edition.js';
 import {Isbn} from './isbn.js';
 import {Csv} from './csv.js';
@@ -90,12 +92,15 @@ export class GoodreadsExporter extends FileExporter {
 			if (!ed.idOn('goodreads') && !isbn) report.withoutIds++;
 			if (!dates.length) report.withoutDate++;
 		}
-		const notes = [];
+		const notes: Phrase[] = [];
 		if (report.withoutIds)
 			notes.push(
-				`${report.withoutIds} without a Goodreads id or ISBN, which Goodreads finds by title and author`,
+				Text.phrase('{count} without a Goodreads id or ISBN, which Goodreads finds by title and author', {
+					count: report.withoutIds,
+				}),
 			);
-		if (report.withoutDate) notes.push(`${report.withoutDate} without a full date read`);
+		if (report.withoutDate)
+			notes.push(Text.phrase('{count} without a full date read', {count: report.withoutDate}));
 		return {text: lines.join('\n') + '\n', notes, ...report};
 	}
 

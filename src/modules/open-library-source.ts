@@ -1,6 +1,6 @@
 // Open Library as a source of the Edit page's Fill in: it answers any web page (open CORS, no key), by its
 // works (OL…W), editions (OL…M) and ISBNs. It has no narrators, and seldom a series.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
@@ -63,7 +63,7 @@ export class OpenLibrarySource extends BookSource {
 	 */
 	async work(id: string): Promise<Book> {
 		const work = await this.ask(`/works/${id}.json`);
-		if (!work) throw new Error(`Open Library has no work ${id}`);
+		if (!work) throw new PhraseError('Open Library has no work {id}', {id});
 		const authors = await this.authors(
 			(Array.isArray(work.authors) ? work.authors : []).map((a: unknown) =>
 				Text.isObject(a) && Text.isObject(a.author) ? a.author.key : null,
@@ -79,7 +79,7 @@ export class OpenLibrarySource extends BookSource {
 	 */
 	async edition(id: string): Promise<Book> {
 		const edition = await this.ask(`/books/${id}.json`);
-		if (!edition) throw new Error(`Open Library has no edition ${id}`);
+		if (!edition) throw new PhraseError('Open Library has no edition {id}', {id});
 		return this.bookOf(edition);
 	}
 

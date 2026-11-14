@@ -6,6 +6,7 @@
 // every book (an import, Check, Box sets, a comparison, Export, Restore or Merge), and then holds the whole
 // catalog. Loading and saving live in store.ts.
 import {Text} from './modules/text.js';
+import type {Phrase} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
 import type {NameIds} from './modules/catalog.js';
 import {Backup, NewerBackup, UnreadableBackup} from './modules/backup.js';
@@ -92,7 +93,7 @@ async function holdWholeCatalog(): Promise<boolean> {
 	} catch (e) {
 		showIoStatus(
 			spell("Couldn't read the catalog kept in this browser: {error}. Reload the page.", {
-				error: spell(Text.errorText(e)),
+				error: Text.errorPhrase(e),
 			}),
 			true,
 		);
@@ -182,8 +183,7 @@ function exportFile(exporter: FileExporter) {
 	const {LABEL, FORMAT, FILE_NAME, TYPE} = exporter.kind;
 	const out = exporter.write(CATALOG.books);
 	download(out.text, TYPE, FILE_NAME);
-	// (its notes are the exporter's, a module's)
-	const values = {catalog: LABEL, format: spell(FORMAT), count: out.books, notes: spell(out.notes.join('; '))};
+	const values = {catalog: LABEL, format: spell(FORMAT), count: out.books, notes: Text.joinPhrases(out.notes)};
 	showIoStatus(
 		out.notes.length
 			? spell('{catalog} {format} with {count} books downloaded ({notes}).', values)
@@ -361,7 +361,7 @@ export interface PendingCompare {
 	incoming: Book[];
 	opts?: MergeOptions;
 	comparison: ComparisonResult;
-	warnings: string[];
+	warnings: Phrase[];
 	/** the comparison with a catalog's shelves */
 	online: {sync: ShelfSync; result: ShelfComparison} | null;
 	picks: ComparePicks;
@@ -542,7 +542,7 @@ function differenceRow(d: Difference, name: string, renames: Map<string, string>
 		{},
 		pickBox('patch', d.key, [
 			spellParts('{field}: {here} here, {there} on {catalog}', {
-				// the field's label is Comparison's, a module's
+				// the field's label, a fixed word of Comparison's (no data in it)
 				field: spell(d.label),
 				here: buildElement('span', {class: 'cmpHere'}, d.here || spell('none')),
 				there: buildElement('span', {class: 'cmpThere'}, d.there),
@@ -602,10 +602,9 @@ function drawCompare() {
 						'li',
 						{},
 						pickBox('editions', b.at, [
-							// what the edition gains is Comparison's, a module's
 							spell('the {catalog} edition: {gains}', {
 								catalog: name,
-								gains: spell(b.editionGains.join('; ')),
+								gains: Text.joinPhrases(b.editionGains),
 							}),
 						]),
 					),
@@ -851,12 +850,11 @@ function notAudioSections(notAudio: NotAudio[], label: string): Child[] {
 		n.yours && n.book.id
 			? buildElement('a', {href: bookPageHref(n.book.id)}, Comparison.bookLine(n.book))
 			: Comparison.bookLine(n.book),
-		// what the catalog said it is, in the sync's (a module's) words
 		n.yours
 			? n.maybe
-				? spell(': {edition} is {said}', {edition: n.edition, said: spell(n.said)})
-				: spell(': {edition} is {said} on {catalog}', {edition: n.edition, said: spell(n.said), catalog: label})
-			: spell(': read as {said} ({edition})', {said: spell(n.said), edition: n.edition}),
+				? spell(': {edition} is {said}', {edition: n.edition, said: n.said})
+				: spell(': {edition} is {said} on {catalog}', {edition: n.edition, said: n.said, catalog: label})
+			: spell(': read as {said} ({edition})', {said: n.said, edition: n.edition}),
 		n.url && [
 			' ',
 			buildElement(
@@ -1132,7 +1130,6 @@ function previewMerge() {
 	if (m.notDuplicates.length)
 		out.push(para(spell('More books marked "Not duplicates": {count}', {count: m.notDuplicates.length})));
 	if (errors.length) {
-		// Check's messages, which a module writes
 		out.push(
 			para(spell('Validation failed, nothing will be changed:'), 'warn'),
 			messageList(errors.slice(0, 10).map(e => spell(e))),
@@ -1230,7 +1227,6 @@ function checkCatalog() {
 			),
 		),
 	];
-	// Check's messages, which a module writes
 	if (errors.length)
 		out.push(
 			para(spell('Errors ({count}):', {count: errors.length}), 'warn'),
@@ -1466,7 +1462,7 @@ async function checkServer(saved?: string) {
 		} else if (res.status === 401) say(spell('your server refused the key.'), true);
 		else say(spell('your server answered {status}.', {status: res.status}), true);
 	} catch (e) {
-		say(spell('{error}.', {error: spell(Text.errorText(e))}), true);
+		say(spell('{error}.', {error: Text.errorPhrase(e)}), true);
 	}
 }
 
@@ -1567,8 +1563,8 @@ async function runSync(prefer?: SyncPrefer) {
 			showSyncChoice(
 				spell(
 					'Both have {names} under other ids. Use the synced catalog here (this one is replaced; Export a backup first), or see the docs to join them.',
-					// the names, from the module's message
-					{names: e.message.replace(/^two \S+ are named /, '')},
+					// the names Backup.checkNames found twice
+					{names: e.phrase.values.name ?? e.phrase},
 				),
 				['syncReplace'],
 			);
@@ -1576,13 +1572,13 @@ async function runSync(prefer?: SyncPrefer) {
 			showIoStatus(
 				e instanceof WrongPassphrase
 					? spell('Not synced: {problem}. Use the passphrase your other devices sync with.', {
-							problem: spell(e.message),
+							problem: e.phrase,
 						})
 					: e instanceof NewerBackup
 						? spell(
 								'Not synced: a newer version of the app synced last. Reload the page to update it, then sync again.',
 							)
-						: spell('Not synced: {problem}.', {problem: spell(Text.errorText(e))}),
+						: spell('Not synced: {problem}.', {problem: Text.errorPhrase(e)}),
 				true,
 			);
 	} finally {
@@ -1800,7 +1796,7 @@ async function withCatalogJob<T>(
 		dryRun: mode === 'compare',
 		running: true,
 		elapsed: 0,
-		step: 'Starting',
+		step: Text.phrase('Starting'),
 	});
 	const show = () => {
 		job.elapsed = Date.now() - started;
@@ -1875,16 +1871,15 @@ async function compareShelfSync(Sync: SyncClass) {
 	if (!result) {
 		showPreview(
 			spell('Compare with {catalog}', {catalog: label}),
-			[para(spell("Couldn't compare: {error}", {error: spell(Text.errorText(run.error))}), 'warn')],
+			[para(spell("Couldn't compare: {error}", {error: Text.errorPhrase(run.error)}), 'warn')],
 			'',
 			`${prefix}Panel`,
 		);
 		return;
 	}
-	// (the summary is the sync's words, a module's)
 	const notes = [
 		spell('{summary} (took {time})', {
-			summary: spell(sync.summary(result, CATALOG, null)),
+			summary: sync.summary(result, CATALOG, null),
 			time: minutes(run.elapsed),
 		}),
 	];
@@ -1969,17 +1964,16 @@ async function applyShelfSync(compare: PendingCompare) {
 		return;
 	}
 	const lines: string[] = [];
-	const say = (line: string) => {
-		lines.push(line);
+	const say = (line: Phrase) => {
+		lines.push(spell(line));
 	};
 	const run = await withCatalogJob(label, 'send', step => sync.push(plan, say, say, step));
 	if (!run) return;
-	if (run.error) lines.push(spell('error: {error}', {error: spell(Text.errorText(run.error))}));
+	if (run.error) lines.push(spell('error: {error}', {error: Text.errorPhrase(run.error)}));
 	const ok = !run.error && run.value === 0;
 	showPreview(
 		spell('{catalog} updated (took {time})', {catalog: label, time: minutes(run.elapsed)}),
-		// (what was sent, line by line, in the sync's words, a module's)
-		[para(spell('{done} here.', {done: here})), buildElement('pre', {}, spell(lines.join('\n')))],
+		[para(spell('{done} here.', {done: here})), buildElement('pre', {}, lines.join('\n'))],
 		'',
 		`${Client.CATALOG}Panel`,
 	);

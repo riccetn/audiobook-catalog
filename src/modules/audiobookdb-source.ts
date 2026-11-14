@@ -1,7 +1,7 @@
 // AudiobookDB as a source of the Edit page's Fill in: its API doesn't answer web pages, so it is asked through
 // the user's own catalog proxy (server/proxy.ts), by its books and releases, by an ASIN (beside Audible), and
 // by a typed title. A release's ASINs are taken under the site its links name for them.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
@@ -69,17 +69,27 @@ export class AudiobookdbSource extends BookSource {
 		const hits = wanted.size ? books.filter(b => names(b).some(n => wanted.has(Text.norm(n)))) : books;
 		if (hits.length === 1) return hits[0].id;
 		if (!hits.length)
-			throw new Error(
-				`AudiobookDB has no book titled ${title}${wanted.size ? ` by ${authors.join(', ')}` : ''}; paste its address instead`,
+			throw new PhraseError(
+				wanted.size
+					? 'AudiobookDB has no book titled {title} by {authors}; paste its address instead'
+					: 'AudiobookDB has no book titled {title}; paste its address instead',
+				{title, authors: authors.join(', ')},
 			);
-		const some = hits
-			.slice(0, 3)
-			.map(
-				b =>
-					`${tidyText(b.title)} by ${names(b).join(', ') || 'no author'} (${ExternalCatalog.url('audiobookdb', 'book', b.id)})`,
-			);
-		throw new Error(
-			`AudiobookDB has ${hits.length} books titled ${title}: ${some.join('; ')}${hits.length > 3 ? '…' : ''}; type the author first, or paste the address of the one you mean`,
+		const some = hits.slice(0, 3).map(b => {
+			const values = {
+				title: tidyText(b.title),
+				authors: names(b).join(', '),
+				url: ExternalCatalog.url('audiobookdb', 'book', b.id) || '',
+			};
+			return values.authors
+				? Text.phrase('{title} by {authors} ({url})', values)
+				: Text.phrase('{title} by no author ({url})', values);
+		});
+		throw new PhraseError(
+			hits.length > 3
+				? 'AudiobookDB has {count} books titled {title}: {some}…; type the author first, or paste the address of the one you mean'
+				: 'AudiobookDB has {count} books titled {title}: {some}; type the author first, or paste the address of the one you mean',
+			{count: hits.length, title, some: Text.joinPhrases(some)},
 		);
 	}
 
@@ -88,7 +98,7 @@ export class AudiobookdbSource extends BookSource {
 	 */
 	async release(id: string): Promise<Book> {
 		const release = await this.proxied(`audiobookdb/releases/${encodeURIComponent(id)}`);
-		if (!release) throw new Error(`AudiobookDB has no release ${id}`);
+		if (!release) throw new PhraseError('AudiobookDB has no release {id}', {id});
 		const bookId = Text.isObject(release.book) && typeof release.book.id === 'string' ? release.book.id : '';
 		const book = bookId ? await this.proxied(`audiobookdb/books/${encodeURIComponent(bookId)}`) : null;
 		return AudiobookdbSource.book(book || (Text.isObject(release.book) ? release.book : {}), release);
@@ -100,11 +110,14 @@ export class AudiobookdbSource extends BookSource {
 	 */
 	async work(id: string, found: Found): Promise<Book> {
 		const book = await this.proxied(`audiobookdb/books/${encodeURIComponent(id)}`);
-		if (!book) throw new Error(`AudiobookDB has no book ${id}`);
+		if (!book) throw new PhraseError('AudiobookDB has no book {id}', {id});
 		const releases = (Array.isArray(book.releases) ? book.releases : []).filter((r: unknown) => Text.isObject(r));
 		if (releases.length > 1)
 			found.notes.push(
-				`AudiobookDB has ${releases.length} releases of it; paste your release's address to fill in its edition`,
+				Text.phrase(
+					"AudiobookDB has {count} releases of it; paste your release's address to fill in its edition",
+					{count: releases.length},
+				),
 			);
 		return AudiobookdbSource.book(book, releases.length === 1 ? releases[0] : null);
 	}

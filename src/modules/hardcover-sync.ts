@@ -10,7 +10,7 @@ import {HardcoverClient} from './hardcover-client.js';
 import {ShelfSync} from './shelf-sync.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Comparison} from './comparison.js';
-import type {Unchecked} from './text.js';
+import type {Unchecked, Phrase, PhraseValue} from './text.js';
 import type {HardcoverLookups, HardcoverFound, HardcoverHit} from './hardcover-client.js';
 import type {Step} from './catalog-client.js';
 import type {ShelfPart, PlanEntry, Sent, PlanGroup, InfoId, NotAudio} from './shelf-sync.js';
@@ -35,7 +35,7 @@ export interface HardcoverComparison {
 	incoming: Book[];
 	/** how they are imported (Comparison.apply() takes them) */
 	opts: MergeOptions;
-	warnings: string[];
+	warnings: Phrase[];
 	/** how many of your Hardcover books are on other shelves */
 	otherShelves: number;
 	/** the Hardcover ids of your editions' ids (addIds() gives them) */
@@ -58,7 +58,7 @@ export type HardcoverShelf = {
 	books: Book[];
 	audio: Set<Book>;
 	otherShelves: number;
-	warnings: string[];
+	warnings: Phrase[];
 	notAudio: NotAudio[];
 };
 
@@ -94,7 +94,7 @@ export class HardcoverSync extends ShelfSync {
 	async compare(catalog: Catalog, step: Step, part?: ShelfPart): Promise<HardcoverComparison> {
 		if (part) return this.comparePart(catalog, step, part);
 		const client = this.client;
-		step('Reading your Hardcover shelves');
+		step(Text.phrase('Reading your Hardcover shelves'));
 		const shelf = await client.shelf(step);
 		const {result, opts} = await this.readShelfBooks(shelf, step);
 		const incoming = result.books;
@@ -139,9 +139,21 @@ export class HardcoverSync extends ShelfSync {
 					.map(Number),
 			),
 		];
-		step(`Finding ${part.kind === 'series' ? 'the series' : 'the author'} ${part.name} on Hardcover`);
+		const series = part.kind === 'series';
+		step(
+			Text.phrase(series ? 'Finding the series {name} on Hardcover' : 'Finding the author {name} on Hardcover', {
+				name: part.name,
+			}),
+		);
 		const partIds = await this.partIds(part, theirs, step);
-		step(`Reading your Hardcover shelves: ${part.kind === 'series' ? 'the series' : 'the books by'} ${part.name}`);
+		step(
+			Text.phrase(
+				series
+					? 'Reading your Hardcover shelves: the series {name}'
+					: 'Reading your Hardcover shelves: the books by {name}',
+				{name: part.name},
+			),
+		);
 		const shelf = [];
 		const seen = new Set();
 		for (const ub of [
@@ -176,8 +188,8 @@ export class HardcoverSync extends ShelfSync {
 		};
 	}
 
-	static notAdded(count: number): string {
-		return `Not added, as Hardcover has no audiobook edition picked for them: ${count}`;
+	static notAdded(count: number): Phrase {
+		return Text.phrase('Not added, as Hardcover has no audiobook edition picked for them: {count}', {count});
 	}
 
 	/**
@@ -186,14 +198,23 @@ export class HardcoverSync extends ShelfSync {
 	summary(
 		result: HardcoverComparison,
 		catalog: Catalog,
-		scope: {kind: 'series' | 'author'; name: string; label: string} | null,
-	): string {
+		scope: {kind: 'series' | 'author'; name: string; label: PhraseValue} | null,
+	): Phrase {
 		if (scope)
-			return `Only ${scope.label}: ${Text.plural(ShelfSync.inScope(catalog, scope).length, 'book')} in this catalog, ${result.incoming.length} on your Hardcover Read shelf`;
-		return (
-			`${Text.plural(result.incoming.length, 'book')} on your Hardcover Read shelf` +
-			(result.otherShelves ? `, ${result.otherShelves} on other shelves` : '')
-		);
+			return ShelfSync.scoped(
+				scope,
+				Text.phrase('{here} in this catalog, {count} on your Hardcover Read shelf', {
+					here: Text.counted(ShelfSync.inScope(catalog, scope).length, 'book'),
+					count: result.incoming.length,
+				}),
+			);
+		const shelf = Text.counted(result.incoming.length, 'book');
+		return result.otherShelves
+			? Text.phrase('{shelf} on your Hardcover Read shelf, {other} on other shelves', {
+					shelf,
+					other: result.otherShelves,
+				})
+			: Text.phrase('{shelf} on your Hardcover Read shelf', {shelf});
 	}
 
 	/**
@@ -232,7 +253,7 @@ export class HardcoverSync extends ShelfSync {
 			'editions',
 			HardcoverSync.exportEditions(books),
 			step,
-			'Checking your editions on Hardcover',
+			Text.phrase('Checking your editions on Hardcover'),
 		);
 		for (const [id, row] of rows) {
 			const said = HardcoverClient.notAudio(row);
@@ -263,7 +284,7 @@ export class HardcoverSync extends ShelfSync {
 						yours: true,
 						edition: `Hardcover edition ${hc}`,
 						key: `hardcover ${hc}`,
-						said: byId,
+						said: Text.phrase(byId),
 						url: url(hc),
 					});
 					continue;
@@ -293,7 +314,14 @@ export class HardcoverSync extends ShelfSync {
 				const hit = hits.find(([, , h]) => h && h.other);
 				const other = hit && hit[2] && hit[2].other;
 				if (hit && other)
-					out.push({book, yours: true, edition: hit[0], key: hit[1], said: other.said, url: url(other.id)});
+					out.push({
+						book,
+						yours: true,
+						edition: hit[0],
+						key: hit[1],
+						said: Text.phrase(other.said),
+						url: url(other.id),
+					});
 			}
 		return out;
 	}
@@ -337,7 +365,13 @@ export class HardcoverSync extends ShelfSync {
 				})
 			).insert_user_book_read;
 			if (!r || r.error)
-				sent.problems.push(`${a.books[0].title}: read ${date} not added (${(r && r.error) || 'no answer'})`);
+				sent.problems.push(
+					Text.phrase('{title}: read {date} not added ({error})', {
+						title: a.books[0].title,
+						date,
+						error: (r && r.error) || Text.phrase('no answer'),
+					}),
+				);
 			else sent.reads++;
 		};
 		if (group === 'reads') {
@@ -347,7 +381,12 @@ export class HardcoverSync extends ShelfSync {
 		const object = {book_id: a.book, status_id: READ, ...(a.edition ? {edition_id: a.edition} : {})};
 		const r = (await client.ask(QUERIES.addBook, {object})).insert_user_book;
 		if (!r || r.error || !r.id) {
-			sent.problems.push(`${a.books[0].title}: not added (${(r && r.error) || 'no answer'})`);
+			sent.problems.push(
+				Text.phrase('{title}: not added ({error})', {
+					title: a.books[0].title,
+					error: (r && r.error) || Text.phrase('no answer'),
+				}),
+			);
 			return sent;
 		}
 		sent.shelved++;
@@ -447,13 +486,15 @@ export class HardcoverSync extends ShelfSync {
 			}
 			const book = books.get(ub.book_id);
 			if (!book || typeof book.title !== 'string' || !Text.tidy(book.title)) {
-				result.warnings.push(`Hardcover book ${ub.book_id}: not found, skipped`);
+				result.warnings.push(Text.phrase('Hardcover book {id}: not found, skipped', {id: ub.book_id}));
 				continue;
 			}
 			const edition = ub.edition_id ? editions.get(ub.edition_id) : null;
 			const rec = HardcoverSync.bookRecord(book);
 			if (!rec.a.length) {
-				result.warnings.push(`${Text.repr(rec.t)}: no author on Hardcover, skipped`);
+				result.warnings.push(
+					Text.phrase('{title}: no author on Hardcover, skipped', {title: Text.repr(rec.t)}),
+				);
 				continue;
 			}
 			const reads = Array.isArray(ub.user_book_reads) ? ub.user_book_reads : [];
@@ -478,7 +519,7 @@ export class HardcoverSync extends ShelfSync {
 					yours: false,
 					edition: `Hardcover edition ${ub.edition_id}`,
 					key: `hardcover ${ub.edition_id}`,
-					said,
+					said: Text.phrase(said),
 					url: ExternalCatalog.url('hardcover', 'edition', String(ub.edition_id)),
 				});
 		}

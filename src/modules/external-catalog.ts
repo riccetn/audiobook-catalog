@@ -3,6 +3,7 @@
 // (`{"audible.com": "B0…", "goodreads": "4242"}`); each catalog's definition says how to make the address
 // of an id and how to read the id back out of an address, for each kind of thing it has pages for.
 import {Text} from './text.js';
+import type {Phrase} from './text.js';
 
 export type ExternalKind = 'book' | 'edition' | 'series' | 'author' | 'narrator' | 'publisher';
 /** How a catalog names one kind of thing. */
@@ -632,25 +633,40 @@ export class ExternalCatalog {
 	 * What is wrong with stored ids of a kind of thing, as lines for the Check: not an object, a catalog this
 	 * app doesn't know (a warning), an id that isn't one.
 	 */
-	static problems(ids: unknown, kind: ExternalKind): {errors: string[]; warnings: string[]} {
-		const errors: string[] = [];
-		const warnings: string[] = [];
+	static problems(ids: unknown, kind: ExternalKind): {errors: Phrase[]; warnings: Phrase[]} {
+		const errors: Phrase[] = [];
+		const warnings: Phrase[] = [];
+		const P = Text.phrase;
 		if (!Text.isObject(ids) || !Object.keys(ids).length) {
-			errors.push(`'ext' must map external catalogs to ids, e.g. {"audible.com": "B0...", "goodreads": "4242"}`);
+			errors.push(
+				P(`'ext' must map external catalogs to ids, e.g. {example}`, {
+					example: '{"audible.com": "B0...", "goodreads": "4242"}',
+				}),
+			);
 			return {errors, warnings};
 		}
 		for (const [k, v] of Object.entries(ids)) {
 			if (typeof v !== 'string' || !v.trim()) {
-				errors.push(`the id on ${Text.repr(k)} must be a non-empty string`);
+				errors.push(P('the id on {key} must be a non-empty string', {key: Text.repr(k)}));
 				continue;
 			}
 			const def = BY_KEY.get(k);
 			if (!def && !(ASIN_SITE.test(k) && kind === 'edition'))
-				warnings.push(`${Text.repr(k)} is not an external catalog this app knows`);
-			else if (def && !def.kinds[kind]) errors.push(`${def.name} has no ${kind} pages, so no ${kind} id`);
+				warnings.push(P('{key} is not an external catalog this app knows', {key: Text.repr(k)}));
+			else if (def && !def.kinds[kind])
+				errors.push(P('{catalog} has no {kind} pages, so no {kind} id', {catalog: def.name, kind}));
 			else if (!ExternalCatalog.isId(k, kind, v.trim()))
 				errors.push(
-					`${Text.repr(v)} is not ${ExternalCatalog.name(k)}'s id of ${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`,
+					P(
+						/^[aeiou]/.test(kind)
+							? "{id} is not {catalog}'s id of an {kind}"
+							: "{id} is not {catalog}'s id of a {kind}",
+						{
+							id: Text.repr(v),
+							catalog: ExternalCatalog.name(k),
+							kind,
+						},
+					),
 				);
 		}
 		return {errors, warnings};

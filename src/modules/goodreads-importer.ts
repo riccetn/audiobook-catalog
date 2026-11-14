@@ -63,7 +63,9 @@ export class GoodreadsImporter extends FileImporter {
 		const book = Book.fromRecord(rec);
 		if (!book.title) return;
 		if (!book.authors.length) {
-			result.warnings.push(`${Text.repr(book.title)}: no author in the export, skipped`);
+			result.warnings.push(
+				Text.phrase('{title}: no author in the export, skipped', {title: Text.repr(book.title)}),
+			);
 			return;
 		}
 		result.books.push(book);

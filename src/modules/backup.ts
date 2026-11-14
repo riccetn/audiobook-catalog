@@ -3,7 +3,7 @@
 // authors, narrators, publishers, excluded, notDuplicates, ids}, as Catalog.toJSON() writes it), which
 // BackupV1 reads (also the old data/ files picked together, and backups from before some parts existed).
 // Reading either, and merging one made on another device into this catalog.
-import {Text} from './text.js';
+import {Text, PhraseError} from './text.js';
 import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
@@ -128,16 +128,17 @@ const LISTS: Partial<Record<BackupStore, string[]>> = {
 };
 
 /** A version 2 to 5 backup that isn't one: its message says what is wrong, for Restore and Merge to show. */
-export class UnreadableBackup extends Error {}
+export class UnreadableBackup extends PhraseError {}
 
 /** A backup the page can't read because a newer version of it wrote it. */
-export class NewerBackup extends Error {
+export class NewerBackup extends PhraseError {
 	version: number;
 
 	constructor(version: number) {
-		super(
-			`the backup is version ${version}, newer than this page reads (${Backup.VERSION}): reload the page to update it`,
-		);
+		super('the backup is version {version}, newer than this page reads ({reads}): reload the page to update it', {
+			version,
+			reads: Backup.VERSION,
+		});
 		this.version = version;
 	}
 }
@@ -245,12 +246,12 @@ export class Backup {
 		// a backup without a version is from before version 2 (BackupV1, which goes when this line does)
 		if (!(Text.isObject(data) && 'version' in data)) return new Backup(BackupV1.read(data));
 		const {version} = data;
-		if (!Number.isInteger(version) || version < 2) throw new Error('version is not a version number');
+		if (!Number.isInteger(version) || version < 2) throw new PhraseError('version is not a version number');
 		if (version > Backup.VERSION) throw new NewerBackup(version);
 		try {
 			return Backup.readRecords(data);
 		} catch (exc) {
-			throw new UnreadableBackup(Text.errorText(exc), {cause: exc});
+			throw new UnreadableBackup(Text.errorPhrase(exc), {}, {cause: exc});
 		}
 	}
 
@@ -284,36 +285,54 @@ export class Backup {
 		const onePublisher = typeof data.version === 'number' && data.version < 4;
 		for (const store of Backup.STORES) {
 			const part = data[store] === undefined ? {} : data[store];
-			if (!Text.isObject(part)) throw new Error(`${store} is not an object`);
+			if (!Text.isObject(part)) throw new PhraseError('{store} is not an object', {store});
 			const fields = Backup.FIELDS[store];
 			records[store] = Object.entries(part).map(([id, value], position) => {
-				if (!Text.isObject(value)) throw new Error(`${store} ${Text.repr(id)} is not an object`);
+				if (!Text.isObject(value))
+					throw new PhraseError('{store} {id} is not an object', {store, id: Text.repr(id)});
 				const rec: Record<string, unknown> = {id};
 				for (const list of LISTS[store] || []) rec[list] = [];
 				for (const [field, v] of Object.entries(value)) {
 					if (store === 'editions' && field === 'publisherId' && onePublisher) {
-						if (!isText(v)) throw new Error(`${store} ${Text.repr(id)}: ${field} is not an id`);
+						if (!isText(v))
+							throw new PhraseError('{store} {id}: {field} is not an id', {
+								store,
+								id: Text.repr(id),
+								field,
+							});
 						rec.publisherIds = [v];
 						continue;
 					}
 					if (!fields.includes(field))
-						throw new Error(`${store} ${Text.repr(id)} has a field no backup has: ${Text.repr(field)}`);
+						throw new PhraseError('{store} {id} has a field no backup has: {field}', {
+							store,
+							id: Text.repr(id),
+							field: Text.repr(field),
+						});
 					const shape = SHAPES[field];
 					if (shape && !shape[0](v))
-						throw new Error(`${store} ${Text.repr(id)}: ${field} is not ${shape[1]}`);
+						throw new PhraseError('{store} {id}: {field} is not {shape}', {
+							store,
+							id: Text.repr(id),
+							field,
+							shape: Text.phrase(shape[1]),
+						});
 					rec[field] = v;
 				}
 				const kinds = KINDS[store];
 				if (kinds && !kinds.includes(rec.kind as string))
-					throw new Error(
-						`${store} ${Text.repr(id)}: kind is not ${kinds.slice(0, -1).join(', ')} or ${kinds[kinds.length - 1]}`,
-					);
+					throw new PhraseError('{store} {id}: kind is not {kinds} or {last}', {
+						store,
+						id: Text.repr(id),
+						kinds: kinds.slice(0, -1).join(', '),
+						last: kinds[kinds.length - 1],
+					});
 				if (store === 'books') rec.position = position;
 				return rec;
 			});
 		}
 		const exclusions = data.exclusions === undefined ? [] : data.exclusions;
-		if (!isTextList(exclusions)) throw new Error('exclusions is not a list of texts');
+		if (!isTextList(exclusions)) throw new PhraseError('exclusions is not a list of texts');
 		records.exclusions = (exclusions as string[]).map((entry, position) => ({entry, position}));
 		Backup.checkNames(records as unknown as RecordSet);
 		return records as unknown as RecordSet;
@@ -329,8 +348,10 @@ export class Backup {
 		] as const) {
 			const seen = new Set();
 			for (const rec of records[store] as unknown as Record<string, unknown>[]) {
-				if (typeof rec.name !== 'string') throw new Error(`${store} ${Text.repr(rec.id)} has no name`);
-				if (seen.has(nameOf(rec))) throw new Error(`two ${store} are named ${Text.repr(rec.name)}`);
+				if (typeof rec.name !== 'string')
+					throw new PhraseError('{store} {id} has no name', {store, id: Text.repr(rec.id)});
+				if (seen.has(nameOf(rec)))
+					throw new PhraseError('two {store} are named {name}', {store, name: Text.repr(rec.name)});
 				seen.add(nameOf(rec));
 			}
 		}
