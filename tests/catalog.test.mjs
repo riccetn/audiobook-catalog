@@ -5259,6 +5259,46 @@ test("AudiobookdbSync.addIds gives an edition with a release id that release's c
 	assert.deepEqual(AudiobookdbSync.addIds(list, found), [], 'once it has one, nothing more');
 });
 
+test('AudiobookdbSync finds editions and books by index, not by reading every one for each (a large catalog)', () => {
+	const n = 2000;
+	const pad = i => String(i).padStart(6, '0');
+	const asin = i => 'B0' + pad(i) + 'XX';
+	const detail = i => ({
+		id: 'Book' + pad(i) + 'XX',
+		title: 'Tale ' + i,
+		people: [{role: {name: 'Author'}, person: {name: 'Ann Vale'}}],
+		releases: [
+			{id: 'Rls' + pad(i) + 'XXX', external: [{itemId: asin(i), category: {url: 'https://www.audible.com'}}]},
+		],
+	});
+	const list = Bs(
+		Array.from({length: n}, (_, i) => book('Tale ' + i, 'Ann Vale', ed({ext: {'audible.com': asin(i)}}))),
+	);
+	const found = {
+		asin: new Map(list.map((_, i) => [asin(i), {book: detail(i).id, release: detail(i).releases[0].id}])),
+		books: new Map(list.map((_, i) => [detail(i).id, detail(i)])),
+	};
+	const sameAs = Edition.prototype.sameAs;
+	let calls = 0;
+	Edition.prototype.sameAs = function (other) {
+		calls++;
+		return sameAs.call(this, other);
+	};
+	try {
+		assert.equal(AudiobookdbSync.addIds(list, found).length, n);
+		assert.ok(calls < n, `sameAs was asked ${calls} times`);
+	} finally {
+		Edition.prototype.sameAs = sameAs;
+	}
+	assert.deepEqual(json(list[7]).e[0].ext, {'audible.com': asin(7), audiobookdb: detail(7).releases[0].id});
+	const byId = AudiobookdbSync.byBookId(list);
+	assert.deepEqual(
+		byId.get(detail(7).id).map(b => b.title),
+		['Tale 7'],
+	);
+	assert.deepEqual(json(AudiobookdbSync.incoming(detail(7), byId)), json(AudiobookdbSync.incoming(detail(7), list)));
+});
+
 test("a book's cover is looked for by its ASINs first, then its Open Library edition and its ISBN", () => {
 	const book = Book.fromJSON({
 		t: 'The Glass Orchard',

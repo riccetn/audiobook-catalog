@@ -165,9 +165,10 @@ export class AudiobookdbSync extends ShelfSync {
 		);
 		const warnings: string[] = [];
 		const incoming: Book[] = [];
+		const byId = AudiobookdbSync.byBookId(mine);
 		details.forEach((detail, i) => {
 			if (detail) found.books.set(detail.id, detail);
-			const book = detail && AudiobookdbSync.incoming(detail, mine);
+			const book = detail && AudiobookdbSync.incoming(detail, byId);
 			if (book) incoming.push(book);
 			else
 				warnings.push(
@@ -353,15 +354,32 @@ export class AudiobookdbSync extends ShelfSync {
 	}
 
 	/**
+	 * `books` by their AudiobookDB book id, in their order (books without one are left out): what incoming()
+	 * finds your books of an AudiobookDB book by, without reading every book for each one on your shelf.
+	 */
+	static byBookId(books: Book[]): Map<string, Book[]> {
+		const out: Map<string, Book[]> = new Map();
+		for (const b of books) {
+			const id = b.idOn('audiobookdb');
+			if (!id) continue;
+			const of = out.get(id);
+			if (of) of.push(b);
+			else out.set(id, [b]);
+		}
+		return out;
+	}
+
+	/**
 	 * A book on your Read shelf as an import takes it: AudiobookDB's book, with the release that is an edition
 	 * of yours of it (by its release id or ASIN), else its one release, with its ASINs under the sites its
 	 * links name; with several releases and none of yours, none, as it can't tell which is yours. null when it has no title or author.
-	 * @param mine your books, with the AudiobookDB ids found
+	 * @param mine your books, with the AudiobookDB ids found, or byBookId() of them
 	 */
-	static incoming(detail: Unchecked, mine: Book[]): Book | null {
+	static incoming(detail: Unchecked, mine: Book[] | Map<string, Book[]>): Book | null {
 		const releases = list(detail.releases);
 		let release: Unchecked | null = releases.length === 1 ? releases[0] : null;
-		for (const b of mine.filter(x => x.idOn('audiobookdb') === detail.id)) {
+		const byId = Array.isArray(mine) ? AudiobookdbSync.byBookId(mine) : mine;
+		for (const b of (typeof detail.id === 'string' && byId.get(detail.id)) || []) {
 			for (const ed of b.editions) {
 				const hit =
 					releases.find(r => r.id === ed.idOn('audiobookdb')) ||
@@ -390,7 +408,32 @@ export class AudiobookdbSync extends ShelfSync {
 			shared = Book.sharedEditionTest(books);
 		const editions = books.flatMap(b => b.editions);
 		const owners: Map<string, Edition[]> = new Map();
-		for (const ed of editions) for (const a of ed.ids('asin')) owners.set(a, [...(owners.get(a) || []), ed]);
+		for (const ed of editions)
+			for (const a of ed.ids('asin')) {
+				const of = owners.get(a);
+				if (of) of.push(ed);
+				else owners.set(a, [ed]);
+			}
+		// Every edition by its ids and ISBN (Edition.idAndIsbnKeys), as an edition is the same as another
+		// (Edition.sameAs) only when they have one in common, so finding an edition's copies on other books
+		// doesn't read every edition for each one (which took time in the square of the catalog's size).
+		// An edition only gains ids here, and is indexed again when it does.
+		const byKey: Map<string, Set<Edition>> = new Map();
+		const index = (ed: Edition) => {
+			for (const k of ed.idAndIsbnKeys()) {
+				const set = byKey.get(k);
+				if (set) set.add(ed);
+				else byKey.set(k, new Set([ed]));
+			}
+		};
+		editions.forEach(index);
+		// the other editions that are the same as `ed`, as it is now
+		const copiesOf = (ed: Edition): Edition[] => {
+			const out: Set<Edition> = new Set();
+			for (const k of ed.idAndIsbnKeys())
+				for (const x of byKey.get(k) || []) if (x !== ed && x.sameAs(ed)) out.add(x);
+			return [...out];
+		};
 		for (const b of books) {
 			let gained = false;
 			if (!b.idOn('audiobookdb')) {
@@ -414,36 +457,35 @@ export class AudiobookdbSync extends ShelfSync {
 						? byAsin.release
 						: releases.find(r => AudiobookdbClient.asins(r).some(a => asins.includes(a)))?.id;
 					if (typeof release === 'string' && release) {
+						const copies = copiesOf(ed).filter(x => !x.idOn('audiobookdb'));
 						ed.external = {...ed.external, audiobookdb: release};
-						for (const copy of books
-							.flatMap(x => x.editions)
-							.filter(x => x !== ed && x.sameAs(ed) && !x.idOn('audiobookdb')))
+						index(ed);
+						for (const copy of copies) {
 							copy.external = {...copy.external, audiobookdb: release};
+							index(copy);
+						}
 						gained = true;
 					}
 				}
 				for (const ed of b.editions.filter(x => x.idOn('audiobookdb'))) {
 					const release = releases.find(r => r.id === ed.idOn('audiobookdb'));
 					const asins = release ? Object.entries(AudiobookdbClient.asinsBySite(release)) : [];
-					const copies = asins.length ? editions.filter(y => y === ed || y.sameAs(ed)) : [];
+					const copies = asins.length ? [ed, ...copiesOf(ed)] : [];
 					// an ASIN another of your editions has is that one's, not this one's
 					const othersHave = (asin: string) => (owners.get(asin) || []).some(y => !copies.includes(y));
 					for (const [site, asin] of asins)
 						if (!ed.external[site] && !othersHave(asin)) {
-							for (const x of copies.filter(y => !y.external[site]))
+							for (const x of copies.filter(y => !y.external[site])) {
 								x.external = ExternalCatalog.order({...x.external, [site]: asin}) || {};
+								index(x);
+							}
 							gained = true;
 						}
 					if (ed.covers.audiobookdb) continue;
 					const cover =
 						release && (Cover.audiobookdbKey(release.images) || Cover.audiobookdbKey(detail.images));
 					if (!cover) continue;
-					for (const x of [
-						ed,
-						...books
-							.flatMap(y => y.editions)
-							.filter(y => y !== ed && y.sameAs(ed) && !y.covers.audiobookdb),
-					])
+					for (const x of [ed, ...copiesOf(ed).filter(y => !y.covers.audiobookdb)])
 						x.covers = {...x.covers, audiobookdb: cover};
 					gained = true;
 				}
@@ -521,8 +563,15 @@ export class AudiobookdbSync extends ShelfSync {
 	 */
 	static setInfoIds(catalog: Catalog, found: InfoId[]): number {
 		let n = 0;
+		// each kind's names once, not for every id found (each reads every book)
+		const names: Map<NamedKind, Set<string>> = new Map();
+		const namesOf = (kind: NamedKind): Set<string> => {
+			let set = names.get(kind);
+			if (!set) names.set(kind, (set = catalog.namesOf(kind)));
+			return set;
+		};
 		for (const {kind, name, id} of found) {
-			if (!catalog.namesOf(kind).has(name)) continue;
+			if (!namesOf(kind).has(name)) continue;
 			const key = catalog.idFor(kind, name),
 				map = catalog.infoMap(kind);
 			const info = map.get(key) || (kind === 'series' ? new Series(name) : new Contributor(name));
@@ -570,7 +619,9 @@ export class AudiobookdbSync extends ShelfSync {
 				plan.otherShelf.push([b, other]);
 				continue;
 			}
-			wanted.set(id, [...(wanted.get(id) || []), b]);
+			const of = wanted.get(id);
+			if (of) of.push(b);
+			else wanted.set(id, [b]);
 		}
 		for (const [book, of] of wanted) plan.add.push({book, books: of});
 		return plan;
