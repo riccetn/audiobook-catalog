@@ -22,7 +22,7 @@
 	<section class="editPanel" id="bookPanel" aria-labelledby="bookPanelTitle" hidden>
 		<h2 id="bookPanelTitle">Fill in from another catalog</h2>
 		<div class="formrow fillFrom">
-			<div><label for="fillFrom">Its address, id, ISBN or title</label><input id="fillFrom" placeholder="e.g. its Audible, Goodreads or Open Library address" title="A book's address on Open Library, Wikidata, Hardcover, Audible, Amazon, Goodreads or AudiobookDB, or its ISBN; with your server saved, its title, found on AudiobookDB"></div>
+			<div><label for="fillFrom">Its address, id, ISBN or title</label><input id="fillFrom" placeholder="e.g. its address in another catalog" title="A book's address on {{ lookup_catalogs }}, or its ISBN; with your server saved, its title, found on {{ search_catalogs }}"></div>
 			<div class="formrow-btn"><button type="button" id="fillFromBtn" title="Fill in the book's empty fields from the catalog">Fill in</button></div>
 		</div>
 		<p id="bookFormError" class="formError"></p>

@@ -58,6 +58,10 @@ export class HardcoverSync extends ShelfSync {
 	static SENDS_READS = true;
 	// a request Hardcover refuses (the token, its rate limit) refuses the next one too
 	static STOP_AFTER = 1;
+	static PANEL_NOTE =
+		"Shows the books on your Hardcover <em>Read</em> shelf beside this catalog's, to pick what to take from Hardcover, " +
+		"and which of your books and dates read to put on your Read shelf there. A series' or an author's books are compared on their Edit page. " +
+		'Nothing on Hardcover is changed or removed.';
 	static NOT_FOUND =
 		'No ASIN, ISBN or Goodreads id Hardcover knows: give the book a "Hardcover <edition id>" in its edit form.';
 

@@ -1800,29 +1800,6 @@ button:focus {
 	height: 100%;
 	object-fit: contain;
 }
-.cat-audible {
-	--cat: #c8650a;
-}
-.cat-amazon {
-	--cat: #232f3e;
-}
-.cat-goodreads {
-	--cat: #6b4f2a;
-}
-.cat-hardcover {
-	--cat: #4f46b5;
-}
-.cat-audiobookdb {
-	--cat: #1f7a6d;
-}
-.cat-openlibrary {
-	--cat: #3a6ea5;
-}
-.cat-isfdb,
-.cat-bookbrainz,
-.cat-wikidata {
-	--cat: #6b6b6b;
-}
 .editChipFrom .catIcon {
 	margin-right: 0.15em;
 }

@@ -36,7 +36,7 @@ import {
 } from './store.js';
 import {spell, plural, byId, fieldById, buildElement, fillElement, showIoStatus} from './dom.js';
 import {externalFields, linksField, fillExternalFields, readExternalFields} from './id-fields.js';
-import {lookupHardcoverField, lookupHardcoverBook, keyedClients, savedServer, fetchViaProxy} from './connections.js';
+import {lookupIdFields, lookupBookId, keyedClients, savedServer, fetchViaProxy} from './connections.js';
 import {coverImage, editionText, totalText, setAddress, hashParts, hashText} from './book-list.js';
 import {comboField, newNames, refreshNewNotes} from './combo-box.js';
 import type {NewNote} from './combo-box.js';
@@ -541,13 +541,15 @@ function anotherIdField(i: number, j: number, onchange: () => void): HTMLElement
 			'select',
 			{id: inputId(i, j, 'more-catalog'), 'aria-label': spell('Catalog of the id'), onchange},
 			buildElement('option', {value: ''}, spell('Catalog: from the address')),
-			...catalogs.map(def =>
-				buildElement(
+			...catalogs.map(def => {
+				// a site of a family several sites share is named by what its ids are called: "ASIN audible.co.uk"
+				const shared = ExternalCatalog.siteFamily(def.key);
+				return buildElement(
 					'option',
 					{value: def.key},
-					ExternalCatalog.family(def.key) === 'asin' ? `${spell('ASIN')} ${def.key}` : def.name,
-				),
-			),
+					shared ? `${spell(shared.idName)} ${def.key}` : def.name,
+				);
+			}),
 		),
 		buildElement('input', {
 			id,
@@ -604,7 +606,7 @@ function mergePanel(i: number, j: number): HTMLElement {
 					'p',
 					{},
 					spell(
-						'No other edition of this book can be merged with it: their ids differ (two ASINs on one site, or two ISBNs).',
+						'No other edition of this book can be merged with it: their ids differ (two ids in one catalog, or two ISBNs).',
 					),
 				),
 		...others.map(k =>
@@ -686,35 +688,20 @@ function outLink(href: string, text: string, catalog: string): HTMLAnchorElement
 	);
 }
 
-/** The short mark each catalog's icon shows, by its group (any Audible site is Audible's). */
-const CATALOG_MARKS: Record<string, string> = {
-	audible: 'Au',
-	amazon: 'Am',
-	goodreads: 'Gr',
-	hardcover: 'Hc',
-	audiobookdb: 'AD',
-	openlibrary: 'OL',
-	isfdb: 'IS',
-	bookbrainz: 'BB',
-	wikidata: 'WD',
-};
-
-/** The catalogs whose site's `/favicon.ico` is broken: the icon their pages name instead, by group. */
-const FAVICONS: Record<string, string> = {
-	hardcover: 'https://assets.hardcover.app/static/favicon.ico',
-};
-
 /**
- * A small icon for an external catalog (`catalog`, its key or any of its sites'): its site's favicon, else
- * (when that can't be loaded) its mark in its own color, which CSS draws.
+ * A small icon for an external catalog (`catalog`, its key or any of its sites'): its site's favicon (the one its
+ * group names, where the site's own is broken), else (when that can't be loaded) its group's mark in its color
+ * (any site of a group has the group's), which CSS draws.
  */
 export function catalogIcon(catalog: string): HTMLElement {
-	const group = ExternalCatalog.groupOf(catalog)?.key || catalog;
+	const of = ExternalCatalog.groupOf(catalog);
+	const group = of?.key || catalog;
 	const home = ExternalCatalog.home(catalog);
-	const src = FAVICONS[group] || (home && `${home}/favicon.ico`);
+	const src = of?.favicon || (home && `${home}/favicon.ico`);
 	const icon = buildElement('span', {
 		class: src ? `catIcon cat-${group} favicon` : `catIcon cat-${group}`,
-		'data-mark': CATALOG_MARKS[group] || group.slice(0, 2),
+		'data-mark': of?.mark || group.slice(0, 2),
+		...(of ? {style: `--cat: ${of.color}`} : {}),
 		'aria-hidden': 'true',
 	});
 	if (src)
@@ -1500,41 +1487,64 @@ function showChangeCount() {
 }
 
 // ------------------------------------------------------------------ reading what is typed
-/** The Hardcover books being looked up, by the place of the book they are for: Review & save waits for them. */
-const HARDCOVER_LOOKUPS: Map<number, Promise<void>> = new Map();
+/** The books being looked up on a catalog, by the place of the book they are for: Review & save waits for them. */
+const BOOK_LOOKUPS: Map<number, Promise<void>> = new Map();
 
 /**
- * Read a book's ids: the address of a Hardcover book's page (or of one of its editions'), which holds no id, is
- * looked up on Hardcover for the book's id first, which then takes its place.
+ * Read a book's ids: on a catalog that can be asked for a book's id (ExternalCatalog.looksUp: Hardcover), the address
+ * of the book's page there (or of one of its editions'), which holds no id, is looked up for the book's id first,
+ * which then takes its place.
  */
 export async function readBookIds(i: number): Promise<void> {
-	const input = document.getElementById(inputId(i, null, 'ext_') + 'hardcover') as HTMLInputElement | null;
-	const text = input ? Text.tidy(input.value) : '';
-	if (!input || !/hardcover\.app\//i.test(text) || ExternalCatalog.readId(text, 'book', 'hardcover'))
-		return readBookFields(i);
+	const asked = ExternalCatalog.groupsFor('book').flatMap(group => {
+		const input = document.getElementById(inputId(i, null, 'ext_') + group.key) as HTMLInputElement | null;
+		const text = input ? Text.tidy(input.value) : '';
+		const lookedUp =
+			input !== null &&
+			ExternalCatalog.looksUp(group.key, 'book') &&
+			ExternalCatalog.siteOf(text) === group.key &&
+			!ExternalCatalog.readId(text, 'book', group.key);
+		return lookedUp ? [{group, input, text}] : [];
+	});
+	if (!asked.length) return readBookFields(i);
 	// declared first, as its own finally compares with it (which runs after an await, once it is assigned)
 	let lookup: Promise<void> | null = null;
 	lookup = (async () => {
+		let failed = '';
 		try {
-			const found = await lookupHardcoverBook(text);
-			if (Text.tidy(input.value) === text) input.value = found.id;
-			if (found.title)
-				showIoStatus(spell('Found on Hardcover: {title} (book {id}).', {title: found.title, id: found.id}));
-			readBookFields(i);
-		} catch (err) {
+			for (const {group, input, text} of asked) {
+				try {
+					const found = await lookupBookId(group.key, text);
+					if (Text.tidy(input.value) === text) input.value = found.id;
+					if (found.name)
+						showIoStatus(
+							spell('Found on {catalog}: {title} (book {id}).', {
+								catalog: group.name,
+								title: found.name,
+								id: found.id,
+							}),
+						);
+				} catch (err) {
+					failed = spell(
+						"Couldn't find the {catalog} book: {error}. Paste the address of its page, or of one of its editions, on {site}, or its id there.",
+						{
+							catalog: group.name,
+							error: Text.errorPhrase(err),
+							site: (ExternalCatalog.home(group.key) || group.name).replace(/^https?:\/\/(www\.)?/, ''),
+						},
+					);
+				}
+			}
 			readBookFields(i);
 			const d = DRAFTS[i];
-			if (!d) return;
-			d.error = spell(
-				"Couldn't find the Hardcover book: {error}. Paste the address of its page, or of one of its editions, on hardcover.app, or the number in hardcover.app/id/book/12345.",
-				{error: Text.errorPhrase(err)},
-			);
+			if (!failed || !d) return;
+			d.error = failed;
 			byId(`book-${i}-error`).textContent = d.error;
 		} finally {
-			if (HARDCOVER_LOOKUPS.get(i) === lookup) HARDCOVER_LOOKUPS.delete(i);
+			if (BOOK_LOOKUPS.get(i) === lookup) BOOK_LOOKUPS.delete(i);
 		}
 	})();
-	HARDCOVER_LOOKUPS.set(i, lookup);
+	BOOK_LOOKUPS.set(i, lookup);
 	return lookup;
 }
 
@@ -1945,10 +1955,10 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 	if (!Text.tidy(fieldById('sf_name').value)) return showError(spell('Give the series a name.'));
 	// unchanged, it is kept as it is (Check may find fault with what it had: that is Check's to say)
 	if (!seriesChanges(name).length) return {newName: name, entry: CATALOG.series.get(id) ?? null, note: ''};
-	// a Hardcover address is looked up for its number first
-	const lookup = lookupHardcoverField('sf_ext_', 'series');
-	const hardcover = lookup ? await lookup : {error: '', note: ''};
-	if (hardcover.error) return showError(hardcover.error);
+	// an address that holds a name is looked up on its catalog for the id first
+	const lookup = lookupIdFields('sf_ext_', 'series');
+	const looked = lookup ? await lookup : {error: '', note: ''};
+	if (looked.error) return showError(looked.error);
 	const newName = Text.tidy(fieldById('sf_name').value);
 	if (!newName) return showError(spell('Give the series a name.'));
 	const totalTyped = fieldById('sf_total').value.trim();
@@ -1961,7 +1971,7 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 	const status = fieldById('sf_status').value;
 	// a series needs none of these; with all of them empty, it keeps none
 	if (!(totalTyped || status || note || Object.keys(external.ids).length || links.length))
-		return {newName, entry: null, note: hardcover.note};
+		return {newName, entry: null, note: looked.note};
 	// unchecked as typed: the Check below says what is wrong with the total or status; what is left empty is unknown
 	const typed: Record<string, unknown> = {
 		...(totalTyped ? {total: /^\d+$/.test(totalTyped) ? parseInt(totalTyped, 10) : totalTyped.toLowerCase()} : {}),
@@ -1975,7 +1985,7 @@ async function readSeriesPanel(): Promise<{newName: string; entry: Series | null
 		.filter(e => Validator.labelOf(e)?.template === Validator.SERIES_LABEL)
 		.map(Validator.unlabeled);
 	if (problems.length) return showError(spell(Text.joinPhrases(problems)));
-	return {newName, entry: Series.fromJSON(newName, typed), note: hardcover.note};
+	return {newName, entry: Series.fromJSON(newName, typed), note: looked.note};
 }
 
 /** The problems that stop a book from being saved, as Check finds them on its editions. */
@@ -2001,7 +2011,7 @@ function bookProblems(b: Book): string[] {
 export async function review() {
 	const panel = byId('reviewPanel');
 	setReviewing(false);
-	await Promise.all(HARDCOVER_LOOKUPS.values());
+	await Promise.all(BOOK_LOOKUPS.values());
 	const unread = unreadField();
 	if (unread) return showProblem(unread, spell('Some fields are not understood: they are marked on their books.'));
 	for (const [i, d] of DRAFTS.entries()) {
@@ -2075,7 +2085,7 @@ function showProblem(at: HTMLElement, status?: string) {
 /** Save: the books, the exclusions, then the series' rename and info. */
 export async function save() {
 	setReviewing(false);
-	await Promise.all(HARDCOVER_LOOKUPS.values());
+	await Promise.all(BOOK_LOOKUPS.values());
 	if (KIND === 'add') return saveNew();
 	const series = KIND === 'series' ? await readSeriesPanel() : null;
 	const name = shownName();

@@ -675,8 +675,6 @@ export class CatalogRecords {
 		editions: Map<string, EditionRecord>,
 		nameOf: (id: string, what: string) => string,
 	): Book {
-		// a record from before ids were kept by external catalog has `hardcoverId`
-		const hardcoverId = (rec as {hardcoverId?: string}).hardcoverId;
 		return new Book({
 			id: rec.id,
 			title: rec.title,
@@ -685,7 +683,8 @@ export class CatalogRecords {
 			number: rec.number,
 			genres: rec.genres,
 			read: rec.read,
-			external: rec.external || (hardcoverId ? {hardcover: hardcoverId} : {}),
+			// a record from before ids were kept by external catalog has them under fields of their own
+			external: rec.external || ExternalCatalog.oldIds(rec),
 			links: rec.links,
 			editions: rec.editionIds.map(id => {
 				const ed = editions.get(id);
@@ -740,15 +739,10 @@ export class CatalogRecords {
 			names.set(c.id, c.name);
 			catalog.nameIds[kind].set(c.name, c.id);
 			// a record from before ids were kept by external catalog has its pages' addresses (fixLinks)
-			const {bio, url, external, links, audible, goodreads, hardcover} = c as ContributorRecord & {
-				audible?: string;
-				goodreads?: string;
-				hardcover?: string;
-			};
+			const {bio, url, external, links} = c;
+			const old = ExternalCatalog.OLD_LINKS.map(key => [key, (c as Record<string, any>)[key]]);
 			const stored = Object.fromEntries(
-				Object.entries({bio, url, ext: external, links, audible, goodreads, hardcover}).filter(
-					([, v]) => v !== undefined,
-				),
+				[...Object.entries({bio, url, ext: external, links}), ...old].filter(([, v]) => v !== undefined),
 			);
 			const entry = Contributor.fromJSON(c.name, Contributor.fixLinks(stored, kind));
 			if (Object.keys(entry.toJSON()).length) catalog[kind].set(c.id, entry);
@@ -799,18 +793,11 @@ export class CatalogRecords {
 	}
 
 	/**
-	 * An edition record's external ids; a record from before they were kept by external catalog has its
-	 * ASINs by site (`asins`), `goodreadsId` and `hardcoverId`.
+	 * An edition record's external ids; a record from before they were kept by external catalog has them under
+	 * fields of their own (ExternalCatalog.oldIds: its ASINs by site, a field per other catalog).
 	 */
-	static editionExternal(
-		ed: EditionRecord & {asins?: Record<string, string>; goodreadsId?: string; hardcoverId?: string},
-	): Record<string, string> {
-		if (ed.external) return ed.external;
-		return {
-			...(ed.asins || {}),
-			...(ed.goodreadsId ? {goodreads: ed.goodreadsId} : {}),
-			...(ed.hardcoverId ? {hardcover: ed.hardcoverId} : {}),
-		};
+	static editionExternal(ed: EditionRecord): Record<string, string> {
+		return ed.external || ExternalCatalog.oldIds(ed);
 	}
 
 	/**

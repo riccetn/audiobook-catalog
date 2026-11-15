@@ -170,8 +170,11 @@ export class CatalogLookup {
 			const where =
 				pasted.kind === 'isbn'
 					? Text.phrase('with ISBN {id}', {id: pasted.id})
-					: ExternalCatalog.family(pasted.catalog) === 'asin'
-						? Text.phrase('with ASIN {id}', {id: pasted.id})
+					: ExternalCatalog.siteFamily(pasted.catalog)
+						? Text.phrase('with {name} {id}', {
+								name: ExternalCatalog.idName(ExternalCatalog.family(pasted.catalog)),
+								id: pasted.id,
+							})
 						: pasted.id;
 			const unasked = candidates.filter(s => !s.available);
 			// a template for each case: with what the others said, and with what to save to ask the rest
@@ -251,14 +254,14 @@ export class CatalogLookup {
 	}
 
 	/**
-	 * What an edition can be looked up by elsewhere: its ASIN (an Audible site's first), under its own site, then
-	 * its ISBN. An Amazon site's ASIN stays that site's, so Audible isn't asked about it.
+	 * What an edition can be looked up by elsewhere: its id several sites share (an ASIN), under its own site, the
+	 * first in the catalogs' usual order (an Audible site's before an Amazon one's), then its ISBN. A site's id
+	 * stays that site's, so another site's catalog isn't asked about it.
 	 */
 	static editionIds(ed: Edition): Pasted[] {
 		const ids: Pasted[] = [];
-		const keys = Object.keys(ed.external).filter(key => ExternalCatalog.family(key) === 'asin');
-		const site = keys.find(key => ExternalCatalog.groupOf(key)?.key === 'audible') || keys[0];
-		if (site) ids.push({catalog: site, kind: 'edition', id: ed.external[site]});
+		const [shared] = ed.siteIds();
+		if (shared) ids.push({catalog: shared[0], kind: 'edition', id: shared[1]});
 		const isbn = ed.isbns()[0];
 		if (isbn) ids.push({catalog: 'isbn', kind: 'isbn', id: isbn});
 		return ids;

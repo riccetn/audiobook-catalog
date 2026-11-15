@@ -654,7 +654,7 @@ test('validation: warnings for lookalike series, leftover markup, odd numbers, u
 		],
 		{},
 	).warnings.join('\n');
-	for (const needle of ['look like the same series', 'leftover Audible markup', 'unusual series number']) {
+	for (const needle of ['look like the same series', 'leftover markup of an export', 'unusual series number']) {
 		assert.ok(warnings.includes(needle), needle);
 	}
 	const untidy = Check.validate(
@@ -1077,7 +1077,7 @@ test('merge: hand edits win but a missing id is filled in', () => {
 			...ed({ext: {'audible.com': 'B5'}}),
 		},
 	]);
-	assert.equal(report.backfilled.length, 1);
+	assert.equal(report.idsFilled.asin.length, 1);
 });
 
 test('merge: a Goodreads id matches a renamed book, and a missing one is filled in', () => {
@@ -1097,7 +1097,12 @@ test('merge: a Goodreads id matches a renamed book, and a missing one is filled 
 		],
 	);
 	assert.deepEqual(
-		[report.added.length, report.goodreadsFilled.length, report.backfilled.length, report.editionsAdded.length],
+		[
+			report.added.length,
+			report.idsFilled.goodreads.length,
+			(report.idsFilled.asin || []).length,
+			report.editionsAdded.length,
+		],
 		[0, 1, 0, 0],
 	);
 	assert.equal(merge(existing, [book('Renamed Again', 'Author', ed({ext: {goodreads: '77'}}))]).added.length, 0);
@@ -1327,13 +1332,17 @@ test('exclusions read an ASIN in any case, and keep a line that is no entry with
 	// a title without its author is no ASIN, and keeps out neither a book of that title nor one with that "id"
 	assert.deepEqual([...ex.unreadable], ['The Lost Voyage']);
 	assert.ok(!ex.covers(B({t: 'The Lost Voyage', a: ['Mira Holloway']})));
-	assert.equal(ex.ids.size, 1);
+	assert.equal(ex.ids.get('asin').size, 1);
 	assert.equal(ex.add('the lost voyage'), 'the lost voyage', 'kept as written');
 	assert.equal(ex.add('The Lost Voyage'), null, 'once');
 	// the Check names it
 	const catalog = Backup.toCatalog({books: [{t: 'Kept', a: ['Ann Vale']}], excluded: ['The Lost Voyage']});
 	assert.ok(
-		Check.check(catalog).warnings.some(w => /^exclusions: 'The Lost Voyage' is not an ASIN/.test(w)),
+		Check.check(catalog).warnings.some(w =>
+			/^exclusions: 'The Lost Voyage' is not an id \(ASIN, "ISBN 978…", "Goodreads 12345", "Hardcover 12345"\) or "Title \| Author"/.test(
+				w,
+			),
+		),
 		'Check warns',
 	);
 });
@@ -1511,7 +1520,7 @@ test('merge: an edition fills in its match, a lone edition, or is added as anoth
 	let report = merge(existing, [book('One', 'Author', ed({ext: {goodreads: '7'}, p: ['Theirs'], d: '2021'}))]);
 	assert.deepEqual(existing[0].e, [{ext: {'audible.com': 'B1', goodreads: '7'}, p: ['Mine'], d: '2021'}]);
 	assert.deepEqual(
-		[report.goodreadsFilled.length, report.detailsFilled.length, report.editionsAdded.length],
+		[report.idsFilled.goodreads.length, report.detailsFilled.length, report.editionsAdded.length],
 		[1, 1, 0],
 	);
 
@@ -1910,23 +1919,30 @@ test('editions as text: formatted for the card and read back from the form', () 
 
 test('ASINs by site: read from text, an ASIN without a site is audible.com\'s, and old "id" ASINs are audible.com\'s', () => {
 	assert.deepEqual(
-		Edition.parseAsins(
+		Edition.parseSiteIds(
+			'asin',
 			'audible.com B0ABCDEFG1, B0X1234567 (amazon.co.uk); https://www.amazon.de/dp/B0ZZZZZZZ9?ref=x',
 		),
-		{asins: {'audible.com': 'B0ABCDEFG1', 'amazon.co.uk': 'B0X1234567', 'amazon.de': 'B0ZZZZZZZ9'}, bad: []},
+		{ids: {'audible.com': 'B0ABCDEFG1', 'amazon.co.uk': 'B0X1234567', 'amazon.de': 'B0ZZZZZZZ9'}, bad: []},
 	);
 	assert.deepEqual(
-		Edition.parseAsins('https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0SALTROAD?qid=1 b0lower001'),
-		{asins: {'audible.co.uk': 'B0SALTROAD', 'audible.com': 'B0LOWER001'}, bad: []},
+		Edition.parseSiteIds(
+			'asin',
+			'https://www.audible.co.uk/pd/The-Salt-Road-Audiobook/B0SALTROAD?qid=1 b0lower001',
+		),
+		{ids: {'audible.co.uk': 'B0SALTROAD', 'audible.com': 'B0LOWER001'}, bad: []},
 	);
-	assert.deepEqual(Edition.parseAsins('B0ABCDEFG1', 'amazon.com'), {asins: {'amazon.com': 'B0ABCDEFG1'}, bad: []});
+	assert.deepEqual(Edition.parseSiteIds('asin', 'B0ABCDEFG1', 'amazon.com'), {
+		ids: {'amazon.com': 'B0ABCDEFG1'},
+		bad: [],
+	});
 	// a second ASIN for one site, a site with no ASIN, or a shop that isn't Amazon's can't be read
-	assert.deepEqual(Edition.parseAsins('audible.com B1, audible.com B2').bad, ['audible.com B2']);
-	assert.deepEqual(Edition.parseAsins('audible.com').bad, ['audible.com']);
-	assert.deepEqual(Edition.parseAsins('kobo.com B1').bad, ['kobo.com']);
+	assert.deepEqual(Edition.parseSiteIds('asin', 'audible.com B1, audible.com B2').bad, ['audible.com B2']);
+	assert.deepEqual(Edition.parseSiteIds('asin', 'audible.com').bad, ['audible.com']);
+	assert.deepEqual(Edition.parseSiteIds('asin', 'kobo.com B1').bad, ['kobo.com']);
 	// a word is no ASIN, typed in the text or in a site's field, nor is more than ten letters and digits
-	assert.deepEqual(Edition.parseAsins('audible'), {asins: null, bad: ['audible']});
-	assert.deepEqual(Edition.parseAsins('audible.com none').bad, ['audible.com', 'none']);
+	assert.deepEqual(Edition.parseSiteIds('asin', 'audible'), {ids: null, bad: ['audible']});
+	assert.deepEqual(Edition.parseSiteIds('asin', 'audible.com none').bad, ['audible.com', 'none']);
 	assert.deepEqual(Edition.parse('ASIN none; Narrated by Cy Hale').bad, ['ASIN none']);
 	assert.deepEqual(Edition.fromFields({'ext:audible.com': 'none', n: 'Cy Hale'}).bad.map(en), [
 		'ASIN audible.com none',
@@ -1998,7 +2014,7 @@ test('ASINs by site: each site may have its own, so only another ASIN on the sam
 	assert.deepEqual(books[0].e, [
 		{ext: {'audible.com': 'B0TIDEWAT1', 'amazon.com': 'B0TIDEWAT9', hardcover: '501'}, len: 600},
 	]);
-	assert.deepEqual(report.backfilled, books);
+	assert.deepEqual(report.idsFilled.asin, books);
 	// and is found again by it
 	assert.equal(merge(books, [book('Tide Water', 'Someone', ed({ext: {'amazon.co.uk': 'B0TIDEWAT9'}}))]).matched, 1);
 	// an Audible export from another site keeps that site's ASINs
@@ -3187,7 +3203,7 @@ test("Hardcover ids: an edition id names an edition, the book id is the book's",
 	assert.equal(
 		merge(fen, [
 			book('Fen', 'Ann Vale', {ext: {hardcover: '78'}, ...ed({ext: {'audible.com': 'B2', hardcover: '601'}})}),
-		]).hardcoverFilled.length,
+		]).idsFilled.hardcover.length,
 		1,
 	);
 	assert.deepEqual(Object.keys(fen[0]), ['t', 'a', 'r', 'ext', 'e']);
@@ -5275,7 +5291,7 @@ test("a book's AudiobookDB cover is kept by its key on the edition, and looked f
 	const key = 'f4'.repeat(32),
 		other = '5e'.repeat(32);
 	assert.equal(
-		Cover.audiobookdbKey([
+		AudiobookdbClient.coverKey([
 			{
 				id: 'Img000000001',
 				url: `https://cdn.audiobookdb.org/${key}`,
@@ -5291,7 +5307,7 @@ test("a book's AudiobookDB cover is kept by its key on the edition, and looked f
 		[{url: 'https://cdn.audiobookdb.org/abc'}],
 		['x'],
 	])
-		assert.equal(Cover.audiobookdbKey(none), null);
+		assert.equal(AudiobookdbClient.coverKey(none), null);
 	const book = Book.fromJSON({
 		t: 'The Glass Orchard',
 		a: ['Wren Halloway'],
@@ -7039,4 +7055,61 @@ test('a stored value that is not what its key holds is kept aside, for books and
 	assert.deepEqual(ed.toJSON(), {n: [], d: '2021', len: '10h'});
 	assert.equal(ed.released, '2021');
 	assert.deepEqual(Object.keys(ed.extra), ['n', 'len']);
+});
+
+test('a catalog says what its ids can do, so nothing else names it', () => {
+	// ids several sites share: any Audible or Amazon site's, also one not listed
+	assert.equal(ExternalCatalog.siteFamily('audible.co.uk').idName, 'ASIN');
+	assert.equal(ExternalCatalog.siteFamily('amazon.xx').key, 'asin');
+	assert.equal(ExternalCatalog.siteFamily('goodreads'), null);
+	assert.deepEqual(
+		ExternalCatalog.SITE_FAMILIES.map(f => f.key),
+		['asin'],
+	);
+	// what an id is called, with or without a definition of its family
+	assert.deepEqual(['asin', 'goodreads', 'openlibrary'].map(ExternalCatalog.idName), [
+		'ASIN',
+		'Goodreads id',
+		'Open Library id',
+	]);
+	// the exclusions list's entries, and the marks' prefixes
+	assert.equal(ExternalCatalog.exclusionEntry('asin', ' B0TIDEWAT1 '), 'B0TIDEWAT1');
+	assert.equal(ExternalCatalog.exclusionEntry('goodreads', '4242'), 'Goodreads 4242');
+	assert.equal(ExternalCatalog.exclusionEntry('goodreads', 'x'), null);
+	assert.equal(ExternalCatalog.exclusionEntry('openlibrary', 'OL1M'), null);
+	assert.deepEqual(['asin', 'hardcover', 'isfdb'].map(ExternalCatalog.markPrefix), ['id', 'hc', 'isfdb']);
+	// the ids its client can look up, by the catalog's key or its group's
+	assert.ok(ExternalCatalog.looksUp('hardcover', 'book') && ExternalCatalog.looksUp('hardcover', 'author'));
+	assert.ok(!ExternalCatalog.looksUp('hardcover', 'edition') && !ExternalCatalog.looksUp('audible', 'series'));
+	assert.equal(CatalogConnectors.client('hardcover'), HardcoverClient);
+	assert.equal(CatalogConnectors.client('isfdb'), null);
+	// its covers, its icon, and the ids of a record from before they were kept by catalog
+	assert.equal(ExternalCatalog.coverOf('amazon.xx'), ExternalCatalog.coverOf('audible.com'));
+	assert.equal(ExternalCatalog.coverOf('goodreads'), null);
+	assert.deepEqual(Cover.CATALOGS, ['audiobookdb']);
+	assert.equal(ExternalCatalog.groupOf('audible.de').mark, 'Au');
+	assert.deepEqual(
+		ExternalCatalog.oldIds({asins: {'audible.com': 'B1'}, goodreadsId: '7', hardcoverId: '9', title: 'T'}),
+		{'audible.com': 'B1', goodreads: '7', hardcover: '9'},
+	);
+	assert.deepEqual(ExternalCatalog.BOOK_MATCHING, ['hardcover']);
+	assert.equal(ExternalCatalog.byLabel('GR').key, 'goodreads');
+	assert.equal(ExternalCatalog.byLabel('open library edition').key, 'openlibrary');
+});
+
+test('Import & export gets a panel per catalog from the classes listed in CatalogConnectors', () => {
+	const panels = CatalogConnectors.panels();
+	assert.deepEqual(
+		panels.map(p => p.catalog),
+		['audible', 'goodreads', 'hardcover', 'audiobookdb'],
+	);
+	const [audible, goodreads, hardcover, audiobookdb] = panels;
+	// an export file's import picks its site where the catalog has several; a catalog compared only on the Edit page says so
+	assert.ok(audible.importer.sites.includes('audible.co.uk') && audible.importer.title && !audible.exporter);
+	assert.ok(!audible.compare && !audible.key && /Edit page/.test(audible.note));
+	assert.deepEqual([goodreads.via, goodreads.importer.sites, goodreads.exporter.format], ['CSV file', [], 'CSV']);
+	// a shelf sync has Compare, and the row of its key as the catalog calls it
+	assert.deepEqual([hardcover.via, hardcover.key], ['Online', {name: 'API token', word: 'token'}]);
+	assert.deepEqual([audiobookdb.via, audiobookdb.key], ['Through the proxy', {name: 'API key', word: 'key'}]);
+	assert.ok(hardcover.compare.note && audiobookdb.compare.note && !hardcover.importer);
 });

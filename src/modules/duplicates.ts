@@ -8,9 +8,7 @@ import {Text} from './text.js';
 import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
-
-// The prefix an edition's id has in a "Keep separate" mark, by its family (ExternalCatalog.family).
-const MARK_PREFIX: Record<string, string> = {asin: 'id', goodreads: 'gr', hardcover: 'hc'};
+import {ExternalCatalog} from './external-catalog.js';
 
 /**
  * A mark of the duplicates page: two books that are "Not duplicates", a book whose editions are to be kept
@@ -191,7 +189,7 @@ export class Duplicates {
 	 */
 	static editionsKey(book: Book): string {
 		const ids = book.editions.flatMap(ed => [
-			...ed.idKeys().map(k => k.replace(/^\S+/, family => MARK_PREFIX[family] || family)),
+			...ed.idKeys().map(k => k.replace(/^\S+/, family => ExternalCatalog.markPrefix(family))),
 			...ed.isbns().map(x => 'isbn ' + x),
 		]);
 		return Text.key('editions', ...[...new Set(ids)].sort());

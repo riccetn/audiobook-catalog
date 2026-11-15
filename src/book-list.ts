@@ -468,7 +468,7 @@ export function showEmptyCatalog() {
 			'p',
 			{class: 'empty'},
 			spellParts(
-				'No books yet. {add}, import your Audible, Goodreads or Hardcover library on {import}, or restore a backup there.',
+				'No books yet. {add}, import your library from another catalog on {import}, or restore a backup there.',
 				{
 					add: buildElement('a', {href: 'edit.html#add'}, spell('Add one')),
 					import: buildElement('a', {href: 'import.html'}, spell('Import & export')),

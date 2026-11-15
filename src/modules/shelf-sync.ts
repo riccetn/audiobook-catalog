@@ -106,6 +106,11 @@ export class ShelfSync {
 	static PARTS = ['series', 'author'] as readonly ('series' | 'author')[];
 	/** Whether it compares every book of the catalog (Import & export's Compare), not only a series' or an author's. */
 	static EVERY_BOOK = true;
+	/**
+	 * What its panel on Import & export says, as the page's HTML (make pages writes it): below Compare what it
+	 * does, or for a catalog compared only on the Edit page (not EVERY_BOOK) where that is.
+	 */
+	static PANEL_NOTE = '';
 
 	client: CatalogClient;
 

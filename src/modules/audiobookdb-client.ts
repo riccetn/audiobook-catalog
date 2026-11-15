@@ -5,6 +5,7 @@
 import {Text, PhraseError} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {CatalogClient} from './catalog-client.js';
+import {Cover} from './cover.js';
 import type {Unchecked} from './text.js';
 import type {CatalogFetch, Pause} from './catalog-client.js';
 /** One of your AudiobookDB shelves, as the API answers it: its books are {id, title, people, addedAt}. */
@@ -195,6 +196,18 @@ export class AudiobookdbClient extends CatalogClient {
 	 */
 	static asins(release: Unchecked): string[] {
 		return [...new Set(AudiobookdbClient.asinLinks(release).map(x => x.asin))];
+	}
+
+	/**
+	 * The key of the first cover in an AudiobookDB answer's `images` ({url: "https://cdn.audiobookdb.org/<key>", ...}),
+	 * or null when it has none.
+	 */
+	static coverKey(images: unknown): string | null {
+		for (const image of Array.isArray(images) ? images : []) {
+			const key = Text.isObject(image) ? Cover.keyOf(AudiobookdbClient.CATALOG, image.url) : null;
+			if (key) return key;
+		}
+		return null;
 	}
 
 	/**

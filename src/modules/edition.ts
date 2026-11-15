@@ -36,12 +36,18 @@ export interface EditionInit {
 	id?: string;
 }
 
-// The catalogs other than Audible's and Amazon's sites, as format() names them: "Open Library OL1M"
-// (an edition's id), "Hardcover book 77" (the book's).
-const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => def.family !== 'asin');
+// The catalogs with ids of their own (not a site of a family whose ids several sites share, which format() writes
+// as one part: "ASIN audible.com B0X"), as format() names them: "Open Library OL1M" (an edition's id), "Hardcover
+// book 77" (the book's); a catalog's other word ("gr") is read too.
+const OTHER_CATALOGS = ExternalCatalog.ALL.filter(def => !ExternalCatalog.siteFamily(def.key));
 const CATALOG_LABEL = `(?:${OTHER_CATALOGS.map(def => Text.escapeRegExp(def.name).replace(/ /g, '\\s+')).join('|')})(?:\\s+(?:book|edition))?(?:\\s+id)?`;
+const ID_LABELS = [
+	...ExternalCatalog.SITE_FAMILIES.map(family => Text.escapeRegExp(family.idName)),
+	CATALOG_LABEL,
+	...OTHER_CATALOGS.flatMap(def => (def.alias ? [Text.escapeRegExp(def.alias)] : [])),
+].join('|');
 const EDITION_PART = new RegExp(
-	`^(title|asin|${CATALOG_LABEL}|gr|isbns?|publishers?|released?|length|narrated\\s+by|narrators?|description|links?)\\b:?\\s*(.*)$`,
+	`^(title|${ID_LABELS}|isbns?|publishers?|released?|length|narrated\\s+by|narrators?|description|links?)\\b:?\\s*(.*)$`,
 	'i',
 );
 
@@ -59,8 +65,8 @@ const EDITION_FIELDS: Record<string, StoredField<Edition>> = {
 	links: [Text.isNameList, (ed, v) => (ed.links = v ? [...v] : [])],
 	img: [Cover.isKeys, (ed, v) => (ed.covers = v ? {...v} : {})],
 };
-/** whether a catalog's ids are ASINs */
-const isAsinSite: (key: string) => boolean = key => ExternalCatalog.family(key) === 'asin';
+/** whether a catalog is a site of a family whose ids several sites share (an ASIN's) */
+const isSite: (key: string) => boolean = key => ExternalCatalog.siteFamily(key) !== null;
 
 /** An edition of a book. */
 export class Edition {
@@ -75,7 +81,7 @@ export class Edition {
 		['t', 'Title', 'Title'],
 		['desc', 'Description', 'Description'],
 		['n', 'Narrated by', 'Narrators'],
-		['ext', '', 'ASINs'],
+		['ext', '', 'Ids'],
 		['isbn', 'ISBN', 'ISBN'],
 		['p', 'Publisher', 'Publishers'],
 		['d', 'Released', 'Released'],
@@ -196,10 +202,15 @@ export class Edition {
 	}
 
 	/**
-	 * The ASINs as [site, ASIN] pairs, Audible's sites first, e.g. [["audible.com", "B0X"], ["amazon.com", "B0Y"]].
+	 * Its ids of the families several sites share (ASINs) as [site, id] pairs in the usual order, e.g.
+	 * [["audible.com", "B0X"], ["amazon.com", "B0Y"]].
+	 * @param family only that family's (ExternalCatalog.SITE_FAMILIES), when given
 	 */
-	asinList(): [string, string][] {
-		return this.externalList().filter(([key]) => isAsinSite(key));
+	siteIds(family?: string): [string, string][] {
+		return this.externalList().filter(([key]) => {
+			const of = ExternalCatalog.siteFamily(key);
+			return of !== null && (family === undefined || of.key === family);
+		});
 	}
 
 	/**
@@ -320,17 +331,19 @@ export class Edition {
 	// ------------------------------------------------------------------ as text
 	/**
 	 * The parts of the edition as format() writes them, as [key, label, value] (the description has no
-	 * label): the ASINs are one part ('asin'), each other external id one of its own ('ext:goodreads'), so
-	 * the page can turn them into links.
+	 * label): the ids several sites share (ASINs) are one part ('sites:asin'), each other external id one of its
+	 * own ('ext:goodreads'), so the page can turn them into links.
 	 */
 	parts(): [string, string, string][] {
 		const parts: [string, string, string][] = [];
 		if (this.title) parts.push(['t', 'Title', this.title]);
 		if (this.description) parts.push(['desc', '', this.description]);
 		if (this.narrators.length) parts.push(['n', 'Narrated by', Text.namesText(this.narrators)]);
-		if (this.asinList().length) parts.push(['asin', 'ASIN', this.asinsText()]);
+		for (const family of ExternalCatalog.SITE_FAMILIES)
+			if (this.siteIds(family.key).length)
+				parts.push(['sites:' + family.key, family.idName, this.siteIdsText(family.key)]);
 		for (const [key, v] of this.externalList())
-			if (!isAsinSite(key)) parts.push(['ext:' + key, ExternalCatalog.name(key), v]);
+			if (!isSite(key)) parts.push(['ext:' + key, ExternalCatalog.name(key), v]);
 		if (this.isbn) parts.push(['isbn', 'ISBN', this.isbn]);
 		if (this.publishers.length)
 			parts.push(['p', this.publishers.length > 1 ? 'Publishers' : 'Publisher', Text.namesText(this.publishers)]);
@@ -353,10 +366,10 @@ export class Edition {
 	}
 
 	/**
-	 * @returns the ASINs as text, each after its site: "audible.com B0X, amazon.com B0Y" (what parseAsins() reads)
+	 * @returns a family's ids as text, each after its site: "audible.com B0X, amazon.com B0Y" (what parseSiteIds() reads)
 	 */
-	asinsText(): string {
-		return this.asinList()
+	siteIdsText(family: string): string {
+		return this.siteIds(family)
 			.map(([site, v]) => `${site} ${v}`)
 			.join(', ');
 	}
@@ -370,7 +383,7 @@ export class Edition {
 	fields(): Record<string, string> {
 		const fields: Record<string, string> = Object.fromEntries(
 			this.parts()
-				.filter(([k]) => k !== 'asin' && !k.startsWith('ext:'))
+				.filter(([k]) => !k.startsWith('sites:') && !k.startsWith('ext:'))
 				.map(([k, , value]) => [k, value]),
 		);
 		// one per line, as the field shows them
@@ -385,48 +398,63 @@ export class Edition {
 	 * else the catalog and "edition" ("Hardcover edition").
 	 */
 	static fieldLabel(catalog: string): string {
-		return isAsinSite(catalog) ? catalog : `${ExternalCatalog.name(catalog)} edition`;
+		return isSite(catalog) ? catalog : `${ExternalCatalog.name(catalog)} edition`;
 	}
 
 	/**
-	 * Read ASINs written as asinsText() writes them, "audible.com B0X, amazon.com B0Y": each ASIN after (or
-	 * before) the site it belongs to, or as the address of its page there. An ASIN without a site is
-	 * `site`'s (by default audible.com's, as before ASINs were kept by site). Returns {asins (an object of
-	 * site -> ASIN, null when there are none), bad (what could not be read, e.g. a second ASIN for one site)}.
+	 * Read the ids of a family several sites share (ASINs) written as siteIdsText() writes them, "audible.com B0X,
+	 * amazon.com B0Y": each id after (or before) the site it belongs to, or as the address of its page there. An id
+	 * without a site is `site`'s (by default the family's usual site's: audible.com's, as before ASINs were kept by
+	 * site). Returns {ids (an object of site -> id, null when there are none), bad (what could not be read, e.g. a
+	 * second id for one site)}.
+	 * @param family the family's key (ExternalCatalog.SITE_FAMILIES)
 	 */
-	static parseAsins(text: unknown, site?: string): {asins: Record<string, string> | null; bad: string[]} {
-		const found: [string | null, string][] = []; // [site or null, ASIN]
+	static parseSiteIds(
+		family: string,
+		text: unknown,
+		site?: string,
+	): {ids: Record<string, string> | null; bad: string[]} {
+		const found: [string | null, string][] = []; // [site or null, id]
 		const bad: string[] = [];
 		const tokens = String(text || '')
 			.split(/[\s,;]+/)
 			.map(x => x.replace(/^[([]+|[)\]:]+$/g, ''))
 			.filter(Boolean);
+		const sites = ExternalCatalog.familyOf(family).sites;
+		if (!sites) return {ids: null, bad: tokens};
+		const listed = ExternalCatalog.ALL.filter(def => def.family === family).map(def => def.key);
 		const siteOf = (t: string) => {
 			const s = t.toLowerCase().replace(/^www\./, '');
-			return ExternalCatalog.ASIN_SITE.test(s) ? s : null;
+			return sites.site.test(s) ? s : null;
 		};
-		// an ASIN is ten letters and digits (a shorter one, from a hand-made catalog, is taken as it is), at least
-		// one a digit, so a word ("none", "audible") is none
-		const isAsin = (t: string) => /^(?=[A-Za-z]*[0-9])[A-Za-z0-9]{1,10}$/.test(t);
+		// an id as typed (an ASIN: ten letters and digits, a shorter one, from a hand-made catalog, taken as it is,
+		// at least one a digit, so a word ("none", "audible") is none)
+		const typed = new RegExp(`^(?:${sites.id})$`);
+		const isId = (t: string) => typed.test(t);
+		// an address on one of the sites that names no id
+		const onSite = (t: string) => {
+			const m = /^(?:https?:\/\/)?([^/]+)\//.exec(t);
+			return m !== null && siteOf(m[1]) !== null;
+		};
 		for (let i = 0; i < tokens.length; i++) {
 			const t = tokens[i],
 				s = siteOf(t);
-			const url = ExternalCatalog.fromAddress(t, 'edition', ExternalCatalog.ASIN_SITES);
+			const url = ExternalCatalog.fromAddress(t, 'edition', listed);
 			if (url) found.push([url.catalog, url.id]);
-			else if (/^(?:https?:\/\/)?(?:www\.)?(?:audible|amazon)\.[a-z.]+\//i.test(t)) bad.push(t);
-			else if (s && i + 1 < tokens.length && isAsin(tokens[i + 1])) found.push([s, tokens[++i].toUpperCase()]);
-			else if (s && found.length && found[found.length - 1][0] === null && isAsin(tokens[i - 1]))
+			else if (onSite(t)) bad.push(t);
+			else if (s && i + 1 < tokens.length && isId(tokens[i + 1])) found.push([s, tokens[++i].toUpperCase()]);
+			else if (s && found.length && found[found.length - 1][0] === null && isId(tokens[i - 1]))
 				found[found.length - 1][0] = s;
-			else if (isAsin(t)) found.push([null, t.toUpperCase()]);
+			else if (isId(t)) found.push([null, t.toUpperCase()]);
 			else bad.push(t);
 		}
-		const asins: Record<string, string> = {};
+		const ids: Record<string, string> = {};
 		for (const [s, v] of found) {
-			const at = s || site || ExternalCatalog.AUDIBLE_SITE;
-			if (asins[at] && asins[at] !== v) bad.push(`${at} ${v}`);
-			else asins[at] = v;
+			const at = s || site || sites.default;
+			if (ids[at] && ids[at] !== v) bad.push(`${at} ${v}`);
+			else ids[at] = v;
 		}
-		return {asins: ExternalCatalog.order(asins) as Record<string, string> | null, bad};
+		return {ids: ExternalCatalog.order(ids) as Record<string, string> | null, bad};
 	}
 
 	/**
@@ -499,23 +527,21 @@ export class Edition {
 				const allIsbns = isbns.isbns.length > 0 && !isbns.bad.length;
 				let field: string | null = null;
 				let v: any = null;
-				if (label === 'asin') {
-					const read = Edition.parseAsins(value);
+				const shared = ExternalCatalog.SITE_FAMILIES.find(family => family.idName.toLowerCase() === label);
+				if (shared) {
+					const read = Edition.parseSiteIds(shared.key, value);
 					if (
 						read.bad.length ||
-						!read.asins ||
-						Object.entries(read.asins).some(([site, x]) => ext[site] && ext[site] !== x)
+						!read.ids ||
+						Object.entries(read.ids).some(([site, x]) => ext[site] && ext[site] !== x)
 					) {
 						bad.push(part);
 						continue;
 					}
-					Object.assign(ext, read.asins);
+					Object.assign(ext, read.ids);
 					continue;
 				}
-				const named =
-					label === 'gr'
-						? ExternalCatalog.get('goodreads')
-						: OTHER_CATALOGS.find(def => label.replace(/\s+/g, ' ').startsWith(def.name.toLowerCase()));
+				const named = ExternalCatalog.byLabel(label);
 				if (named) {
 					const catalog = named.key,
 						kind = /\sbook$/.test(label) ? 'book' : 'edition';
@@ -592,7 +618,8 @@ export class Edition {
 			const catalog = k.startsWith('ext:') ? k.slice(4) : null,
 				value = Text.tidy(String(text || ''));
 			if (!catalog || !value) continue;
-			const label = isAsinSite(catalog) ? `ASIN ${catalog}` : Edition.fieldLabel(catalog);
+			const shared = ExternalCatalog.siteFamily(catalog);
+			const label = shared ? `${shared.idName} ${catalog}` : Edition.fieldLabel(catalog);
 			// the id, or an address: of the edition on this catalog, or (for an ASIN) on another site, or of the book
 			const found =
 				ExternalCatalog.readId(value, 'edition', catalog) ||

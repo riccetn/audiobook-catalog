@@ -1,23 +1,31 @@
-// A book's cover: AudiobookDB's image an edition keeps the key of (its address can't be worked out from an id),
-// then, from the ids its editions already have, Amazon's image of an ASIN (an audiobook's square cover) and Open
-// Library's of an edition's id or ISBN. The page tries them in order and shows the first that loads.
+// A book's cover: the image an edition keeps the key of (in a catalog whose covers' addresses can't be worked out
+// from an id), then, from the ids its editions already have, the cover each catalog has of an id or of the ISBN.
+// Which catalogs have covers, and where, is in their definitions (ExternalCatalog, CoverDefinition). The page tries
+// the addresses in order and shows the first that loads.
 import {Text} from './text.js';
 import {ExternalCatalog} from './external-catalog.js';
+import type {CoverDefinition, CoverSize} from './external-catalog.js';
 import type {Book} from './book.js';
 
-export type CoverSize = 'small' | 'large';
+export type {CoverSize};
 
-// Amazon's images are asked from media-amazon.com: Firefox's tracking protection lists it as content, blocked only
-// when protection is strict, while the older hosts (images-na.ssl-images-amazon.com) are listed as analytics.
-const AMAZON_IMAGES = 'https://m.media-amazon.com/images/P/';
-// AudiobookDB keeps each image under the hash of its content; the key alone is no image, its sizes are below it.
-const AUDIOBOOKDB_IMAGES = 'https://cdn.audiobookdb.org/';
-const AUDIOBOOKDB_KEY = /^[0-9a-f]{64}$/;
+/** the catalogs with covers by an id or an ISBN, a family's once (its sites share them), in the usual order */
+const BY_ID: {family: string; cover: CoverDefinition}[] = [];
+for (const def of ExternalCatalog.ALL)
+	if (def.cover && (def.cover.byId || def.cover.byIsbn) && !BY_ID.some(x => x.family === def.family))
+		BY_ID.push({family: def.family, cover: def.cover});
+
+/**
+ * A cover's address from its catalog's pattern, with `value` in place of {id}, {isbn} or {key}.
+ */
+function address(pattern: string, cover: CoverDefinition, size: CoverSize, value: string): string {
+	return pattern.replace(/\{(?:id|isbn|key)\}/, encodeURIComponent(value)).replace('{size}', cover.sizes[size]);
+}
 
 /** Where a book's cover can be found; every method is static. */
 export class Cover {
 	/** the catalogs an edition keeps a cover's key from (`img`), in the order they are tried */
-	static CATALOGS: string[] = ['audiobookdb'];
+	static CATALOGS: string[] = ExternalCatalog.ALL.filter(def => def.cover && def.cover.byKey).map(def => def.key);
 
 	/**
 	 * Whether a value is what an edition keeps as its covers: an object of catalog -> the key of its image there,
@@ -38,60 +46,51 @@ export class Cover {
 	 * Whether `key` is a cover's key on `catalog`.
 	 */
 	static isKey(catalog: string, key: string): boolean {
-		return catalog === 'audiobookdb' && AUDIOBOOKDB_KEY.test(key);
+		const cover = Cover.CATALOGS.includes(catalog) ? ExternalCatalog.coverOf(catalog) : null;
+		return !!cover && !!cover.key && new RegExp(`^(?:${cover.key})$`).test(key);
 	}
 
 	/**
-	 * The key of the first cover in an AudiobookDB answer's `images` ({url: "https://cdn.audiobookdb.org/<key>", ...}),
-	 * or null when it has none.
+	 * The key of the cover a catalog's answer gives the address of ("https://cdn.audiobookdb.org/<key>"), which is
+	 * what an edition keeps; null when it is no address of a cover there.
 	 */
-	static audiobookdbKey(images: unknown): string | null {
-		for (const image of Array.isArray(images) ? images : []) {
-			const url = Text.isObject(image) && typeof image.url === 'string' ? image.url.trim() : '';
-			const key = url.startsWith(AUDIOBOOKDB_IMAGES)
-				? url.slice(AUDIOBOOKDB_IMAGES.length).replace(/\/$/, '')
-				: '';
-			if (AUDIOBOOKDB_KEY.test(key)) return key;
-		}
-		return null;
+	static keyOf(catalog: string, image: unknown): string | null {
+		const cover = ExternalCatalog.coverOf(catalog),
+			url = typeof image === 'string' ? image.trim() : '';
+		if (!cover || !cover.keyAt || !url.startsWith(cover.keyAt)) return null;
+		const key = url.slice(cover.keyAt.length).replace(/\/$/, '');
+		return Cover.isKey(catalog, key) ? key : null;
 	}
 
 	/**
-	 * The addresses a book's cover may be at, best first, each once: each edition's AudiobookDB cover, then its
-	 * ASINs (Amazon), then its Open Library edition id and its ISBN (Open Library, which answers "not found"
-	 * rather than a blank image). Empty when its editions have none of those.
+	 * The addresses a book's cover may be at, best first, each once: each edition's covers by the keys it keeps,
+	 * then, catalog by catalog, each edition's cover by its id there and by its ISBN. Empty when its editions have
+	 * none of those.
 	 * @param size 'small' for a card, 'large' for the book's details
 	 */
 	static addresses(book: Book, size: CoverSize = 'small'): string[] {
-		// Amazon's M and L are 160 and 500 pixels tall, Open Library's M and L 180 and 500, AudiobookDB's small and large
-		// 192 and 768: a card's cover sharp on a phone's screen, and the details' at its larger size.
-		const amazon = size === 'small' ? 'MZZZZZZZ' : 'LZZZZZZZ',
-			openLibrary = size === 'small' ? 'M' : 'L';
 		const found: string[] = [];
-		for (const ed of book.editions) {
-			const key = ed.covers.audiobookdb;
-			if (key && AUDIOBOOKDB_KEY.test(key)) found.push(`${AUDIOBOOKDB_IMAGES}${key}/${size}.jpg`);
+		for (const catalog of Cover.CATALOGS) {
+			const cover = ExternalCatalog.coverOf(catalog);
+			for (const ed of book.editions) {
+				const key = ed.covers[catalog];
+				if (cover && cover.byKey && key && Cover.isKey(catalog, key))
+					found.push(address(cover.byKey, cover, size, key));
+			}
 		}
-		for (const ed of book.editions)
-			for (const [site, asin] of ed.externalList())
-				if (ExternalCatalog.family(site) === 'asin' && ExternalCatalog.isId(site, 'edition', asin))
-					found.push(`${AMAZON_IMAGES}${encodeURIComponent(asin)}.01.${amazon}.jpg`);
-		for (const ed of book.editions) {
-			const olid = ed.idOn('openlibrary');
-			if (olid && ExternalCatalog.isId('openlibrary', 'edition', olid))
-				found.push(
-					`https://covers.openlibrary.org/b/olid/${encodeURIComponent(olid)}-${openLibrary}.jpg?default=false`,
-				);
-			if (ed.isbn)
-				found.push(
-					`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(ed.isbn)}-${openLibrary}.jpg?default=false`,
-				);
-		}
+		for (const {family, cover} of BY_ID)
+			for (const ed of book.editions) {
+				if (cover.byId)
+					for (const [key, id] of ed.externalList())
+						if (ExternalCatalog.family(key) === family && ExternalCatalog.isId(key, 'edition', id))
+							found.push(address(cover.byId, cover, size, id));
+				if (cover.byIsbn && ed.isbn) found.push(address(cover.byIsbn, cover, size, ed.isbn));
+			}
 		return [...new Set(found)];
 	}
 
 	/**
-	 * Whether a loaded image is a real cover: Amazon answers an ASIN it has no image for with a 1×1 picture.
+	 * Whether a loaded image is a real cover: a catalog may answer an id it has no image for with a 1×1 picture.
 	 * @param width the image's natural width
 	 */
 	static isCover(width: number, height: number): boolean {

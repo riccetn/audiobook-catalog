@@ -1,7 +1,7 @@
 // What every importer of an export file (a CSV) shares: it reads the file a row at a time into books, tidied
 // the way the catalog keeps them. The merge into the catalog is not an importer's: see Merger.into. The
-// Import & export page knows only this class: a subclass says what its export is (CATALOG, LABEL) and how
-// to read one of its rows (readRow).
+// Import & export page knows only this class: a subclass says what its export is (CATALOG, LABEL), what its
+// panel there says (PANEL_TITLE, PANEL_NOTE, SITES) and how to read one of its rows (readRow).
 import {Csv} from './csv.js';
 import type {Book} from './book.js';
 import type {CsvRow} from './csv.js';
@@ -23,6 +23,14 @@ export class FileImporter {
 	 * comparison may offer one the catalog lacks as the title that edition was released under.
 	 */
 	static EDITION_TITLES = false;
+	/** How its panel on Import & export says the catalog is reached, beside its heading. */
+	static VIA = 'CSV file';
+	/** The sites of a catalog with several, which the panel's `<CATALOG>ImportSite` field picks from; the first is the usual one. */
+	static SITES: readonly string[] = [];
+	/** The Import button's title on Import & export. */
+	static PANEL_TITLE = '';
+	/** What the Import row says below its button, as the page's HTML (make pages writes it). */
+	static PANEL_NOTE = '';
 
 	site: string;
 

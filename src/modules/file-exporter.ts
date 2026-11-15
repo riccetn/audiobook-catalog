@@ -1,6 +1,6 @@
 // What every exporter to an import file of another catalog shares (Goodreads' CSV): it writes books into a
 // file to download. The Import & export page knows only this class: a subclass says what the file is
-// (CATALOG, LABEL, FORMAT, FILE_NAME, TYPE) and writes it (write).
+// (CATALOG, LABEL, FORMAT, FILE_NAME, TYPE), what its panel there says (PANEL_TITLE, PANEL_NOTE) and writes it (write).
 import type {Book} from './book.js';
 import type {Phrase} from './text.js';
 
@@ -19,6 +19,12 @@ export class FileExporter {
 	static FILE_NAME = 'export';
 	/** Its media type: 'text/csv'. */
 	static TYPE = 'text/csv';
+	/** How its panel on Import & export says the catalog is reached, beside its heading. */
+	static VIA = 'CSV file';
+	/** The Download button's title on Import & export. */
+	static PANEL_TITLE = '';
+	/** What the Export row says below its button, as the page's HTML (make pages writes it). */
+	static PANEL_NOTE = '';
 
 	/** @returns the exporter's class, with what it says of its file */
 	get kind(): typeof FileExporter {

@@ -43,9 +43,80 @@ export interface CatalogDefinition {
 	family: string;
 	description: string;
 	kinds: Partial<Record<ExternalKind, KindPattern>>;
+	/** another word an edition's text names it by ("gr 4242", from before catalogs were named in full) */
+	alias?: string;
+	/**
+	 * a book's id here names the book whatever its editions, so an import finds a book by it (Hardcover's), and a
+	 *   book of another id found by a shared edition is a box set
+	 */
+	matchesBooks?: boolean;
+	/**
+	 * the kinds whose id its client can be asked for (CatalogClient.lookupId) when a page's address doesn't hold it:
+	 *   a book's page by its name, a series or person kept by the fallback id
+	 */
+	lookups?: ExternalKind[];
+	/** where its covers are */
+	cover?: CoverDefinition;
+	/** the field a stored record kept its id under before ids were kept by catalog (database version 1): `goodreadsId` */
+	oldField?: string;
+}
+export type CoverSize = 'small' | 'large';
+/** Where a catalog's covers are; in an address {id}, {isbn} or {key} is replaced, URL-encoded, and {size} by `sizes`. */
+export interface CoverDefinition {
+	/** the address of the cover of an edition's id there */
+	byId?: string;
+	/** the address of the cover of an ISBN */
+	byIsbn?: string;
+	/** the address of a cover an edition keeps the key of (`img`), as its address can't be worked out from an id */
+	byKey?: string;
+	/** what such a key is (a regular expression) */
+	key?: string;
+	/** what the catalog's answers have before the key in an image's address */
+	keyAt?: string;
+	/** what {size} is for a card's cover and for the details' */
+	sizes: Record<CoverSize, string>;
 }
 /** a form field's catalogs, and the one a bare id is of */
-export type CatalogGroup = {key: string; name: string; default: string};
+export type CatalogGroup = {
+	key: string;
+	name: string;
+	default: string;
+	/** the short mark its icon shows when its site's icon can't be loaded */
+	mark: string;
+	/** the mark's color */
+	color: string;
+	/** its icon's address, when its site's `/favicon.ico` is broken */
+	favicon?: string;
+	/**
+	 * a stored author, narrator or publisher once kept the address of its page there under the group's key
+	 *   (Contributor.fixLinks reads the id out of it)
+	 */
+	oldLink?: boolean;
+};
+/**
+ * What the ids of a family of catalogs (CatalogDefinition.family) are called and can do; a family without a
+ * definition of its own has only a name, its catalog's and "id".
+ */
+export interface FamilyDefinition {
+	key: string;
+	/** one of its ids in a sentence ("ASIN", "Goodreads id"), which is also what an edition's text writes before them */
+	idName: string;
+	/**
+	 * its ids are the same edition's on several sites, so an edition shows them as one part, each after its site:
+	 *   `default` the site a bare id is of, `site` what a site's key looks like (also one not listed), `id` a bare id as typed
+	 */
+	sites?: {default: string; site: RegExp; id: string};
+	/**
+	 * its edition ids keep books out of imports (the exclusions list): `name` what an entry writes before the id
+	 *   ('' for the id alone), `also` other words read for it, `id` what an id is, `edition` what it is after
+	 *   "Edition" when that is stricter, `upper` kept in capitals
+	 */
+	exclusion?: {name: string; also?: string[]; id: string; edition?: string; upper?: boolean};
+	/** what a "Keep separate" mark's text writes before one of its ids (its key, when left out) */
+	mark?: string;
+	/** the field a stored edition kept its ids under, by site, before ids were kept by catalog (database version 1): `asins` */
+	oldField?: string;
+}
 export type ExternalId = {catalog: string; id: string};
 
 // Patterns: an address is written as the page would link it, and reading one is forgiving: http or https,
@@ -94,6 +165,15 @@ const AMAZON_SITES = [
 	'amazon.com.mx',
 ];
 
+// An ASIN's cover is Amazon's image of it (an audiobook's square cover), whichever site the ASIN is on. The images are
+// asked from media-amazon.com: Firefox's tracking protection lists it as content, blocked only when protection is
+// strict, while the older hosts (images-na.ssl-images-amazon.com) are listed as analytics. M and L are 160 and 500
+// pixels tall: a card's cover sharp on a phone's screen, and the details' at its larger size.
+const AMAZON_COVER: CoverDefinition = {
+	byId: 'https://m.media-amazon.com/images/P/{id}.01.{size}.jpg',
+	sizes: {small: 'MZZZZZZZ', large: 'LZZZZZZZ'},
+};
+
 function audible(site: string): CatalogDefinition {
 	const at = `https://www.${site}`;
 	return {
@@ -115,6 +195,7 @@ function audible(site: string): CatalogDefinition {
 			narrator: {id: NAME, url: `${at}/search?searchNarrator={id}`},
 			publisher: {id: NAME, url: `${at}/search?searchProvider={id}`},
 		},
+		cover: AMAZON_COVER,
 	};
 }
 
@@ -141,6 +222,7 @@ function amazon(site: string): CatalogDefinition {
 				also: [`${at}/stores/*/author/{id}`, `${at}/**/e/{id}`],
 			},
 		},
+		cover: AMAZON_COVER,
 	};
 }
 
@@ -169,6 +251,8 @@ const DEFINITIONS: CatalogDefinition[] = [
 		family: 'goodreads',
 		description:
 			'Goodreads: a book (its work, all its editions), an edition (what Goodreads calls a book), a series, an author (narrators are listed as authors)',
+		alias: 'gr',
+		oldField: 'goodreadsId',
 		kinds: {
 			book: {
 				id: NUMBER,
@@ -211,6 +295,9 @@ const DEFINITIONS: CatalogDefinition[] = [
 		family: 'hardcover',
 		description:
 			"Hardcover: a book, edition, series, author, narrator or publisher by its number (its address by id keeps working when it is renamed); a series or person by the name in its address while Hardcover can't be asked for the number",
+		matchesBooks: true,
+		lookups: ['book', 'series', 'author', 'narrator', 'publisher'],
+		oldField: 'hardcoverId',
 		kinds: {
 			book: {
 				id: NUMBER,
@@ -244,6 +331,14 @@ const DEFINITIONS: CatalogDefinition[] = [
 			narrator: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/people/{id}'},
 			publisher: {id: AUDIOBOOKDB_ID, url: 'https://audiobookdb.org/publishers/{id}'},
 		},
+		// AudiobookDB keeps each image under the hash of its content; the key alone is no image, its sizes (192 and
+		// 768 pixels) are below it.
+		cover: {
+			byKey: 'https://cdn.audiobookdb.org/{key}/{size}.jpg',
+			key: '[0-9a-f]{64}',
+			keyAt: 'https://cdn.audiobookdb.org/',
+			sizes: {small: 'small', large: 'large'},
+		},
 	},
 	// The open catalogs: their data is free to use, and they have APIs a later lookup could use.
 	{
@@ -257,6 +352,12 @@ const DEFINITIONS: CatalogDefinition[] = [
 			book: {id: OPEN_LIBRARY('W'), upper: true, url: 'https://openlibrary.org/works/{id}'},
 			edition: {id: OPEN_LIBRARY('M'), upper: true, url: 'https://openlibrary.org/books/{id}'},
 			author: {id: OPEN_LIBRARY('A'), upper: true, url: 'https://openlibrary.org/authors/{id}'},
+		},
+		// Open Library answers "not found" rather than a blank image (default=false); M and L are 180 and 500 pixels tall.
+		cover: {
+			byId: 'https://covers.openlibrary.org/b/olid/{id}-{size}.jpg?default=false',
+			byIsbn: 'https://covers.openlibrary.org/b/isbn/{isbn}-{size}.jpg?default=false',
+			sizes: {small: 'M', large: 'L'},
 		},
 	},
 	{
@@ -309,20 +410,45 @@ const DEFINITIONS: CatalogDefinition[] = [
 ];
 
 const GROUPS: CatalogGroup[] = [
-	{key: 'audible', name: 'Audible', default: 'audible.com'},
-	{key: 'amazon', name: 'Amazon', default: 'amazon.com'},
-	{key: 'goodreads', name: 'Goodreads', default: 'goodreads'},
-	{key: 'hardcover', name: 'Hardcover', default: 'hardcover'},
-	{key: 'audiobookdb', name: 'AudiobookDB', default: 'audiobookdb'},
-	{key: 'openlibrary', name: 'Open Library', default: 'openlibrary'},
-	{key: 'isfdb', name: 'ISFDB', default: 'isfdb'},
-	{key: 'bookbrainz', name: 'BookBrainz', default: 'bookbrainz'},
-	{key: 'wikidata', name: 'Wikidata', default: 'wikidata'},
+	{key: 'audible', name: 'Audible', default: 'audible.com', mark: 'Au', color: '#c8650a', oldLink: true},
+	{key: 'amazon', name: 'Amazon', default: 'amazon.com', mark: 'Am', color: '#232f3e'},
+	{key: 'goodreads', name: 'Goodreads', default: 'goodreads', mark: 'Gr', color: '#6b4f2a', oldLink: true},
+	{
+		key: 'hardcover',
+		name: 'Hardcover',
+		default: 'hardcover',
+		mark: 'Hc',
+		color: '#4f46b5',
+		favicon: 'https://assets.hardcover.app/static/favicon.ico',
+		oldLink: true,
+	},
+	{key: 'audiobookdb', name: 'AudiobookDB', default: 'audiobookdb', mark: 'AD', color: '#1f7a6d'},
+	{key: 'openlibrary', name: 'Open Library', default: 'openlibrary', mark: 'OL', color: '#3a6ea5'},
+	{key: 'isfdb', name: 'ISFDB', default: 'isfdb', mark: 'IS', color: '#6b6b6b'},
+	{key: 'bookbrainz', name: 'BookBrainz', default: 'bookbrainz', mark: 'BB', color: '#6b6b6b'},
+	{key: 'wikidata', name: 'Wikidata', default: 'wikidata', mark: 'WD', color: '#6b6b6b'},
 ];
 
 const BY_KEY: Map<string, CatalogDefinition> = new Map(DEFINITIONS.map(def => [def.key, def]));
 // An Audible or Amazon site's address, as an ASIN's site is kept: a site not listed is still an ASIN's.
 const ASIN_SITE = /^(?:audible|amazon)\.(?:[a-z]{2,3}|com?\.[a-z]{2})$/;
+
+// The families whose ids do more than name a page. An ASIN is the same edition on every Audible and Amazon site, and
+// alone on a line of the exclusions list (stored ones may be shorter than Amazon's ten, kept in capitals); a
+// Goodreads or Hardcover edition id needs its catalog's name before it there, to tell it from an ASIN.
+const FAMILIES: FamilyDefinition[] = [
+	{
+		key: 'asin',
+		idName: 'ASIN',
+		sites: {default: 'audible.com', site: ASIN_SITE, id: EDITION_ASIN},
+		exclusion: {name: '', id: ANY_ASIN, edition: ASIN, upper: true},
+		mark: 'id',
+		oldField: 'asins',
+	},
+	{key: 'goodreads', idName: 'Goodreads id', exclusion: {name: 'Goodreads', also: ['gr'], id: NUMBER}, mark: 'gr'},
+	{key: 'hardcover', idName: 'Hardcover id', exclusion: {name: 'Hardcover', id: NUMBER}, mark: 'hc'},
+];
+const FAMILY_BY_KEY: Map<string, FamilyDefinition> = new Map(FAMILIES.map(f => [f.key, f]));
 
 /**
  * A pattern as a regular expression that reads an address, with the id as its first group.
@@ -393,6 +519,115 @@ export class ExternalCatalog {
 
 	static get(key: string): CatalogDefinition | null {
 		return BY_KEY.get(key) || null;
+	}
+
+	// ------------------------------------------------------------------ what a catalog's ids can do
+	// What the rest of the app asks a catalog instead of naming it: whether its ids are one edition's on several
+	// sites, keep books out of imports, match books, have covers, can be looked up.
+
+	/** The families whose ids are one edition's on several sites (ASINs), in the usual order. */
+	static SITE_FAMILIES: FamilyDefinition[] = FAMILIES.filter(f => f.sites);
+	/** The families whose edition ids the exclusions list keeps, in the usual order. */
+	static EXCLUDING: FamilyDefinition[] = FAMILIES.filter(f => f.exclusion);
+	/** The catalogs a book's own id finds the book by in an import (CatalogDefinition.matchesBooks). */
+	static BOOK_MATCHING: string[] = DEFINITIONS.filter(def => def.matchesBooks).map(def => def.key);
+
+	/**
+	 * What a family's ids are called and can do: its definition, or for a family without one only its name
+	 * ("Open Library id").
+	 * @param family a family's key (ExternalCatalog.family)
+	 */
+	static familyOf(family: string): FamilyDefinition {
+		return FAMILY_BY_KEY.get(family) || {key: family, idName: `${ExternalCatalog.name(family)} id`};
+	}
+
+	/**
+	 * What one of a family's ids is called in a sentence: "ASIN", "Goodreads id".
+	 */
+	static idName(family: string): string {
+		return ExternalCatalog.familyOf(family).idName;
+	}
+
+	/**
+	 * The family of a catalog whose ids are one edition's on several sites (any Audible or Amazon site's: ASINs);
+	 * null for a catalog with ids of its own.
+	 */
+	static siteFamily(key: string): FamilyDefinition | null {
+		const family = FAMILY_BY_KEY.get(ExternalCatalog.family(key));
+		return family && family.sites ? family : null;
+	}
+
+	/**
+	 * The exclusions list's entry for an edition's id of a family ("Goodreads 4242", an ASIN alone); null when the
+	 * family's ids keep nothing out, or it is no id of the family.
+	 */
+	static exclusionEntry(family: string, id: string): string | null {
+		const of = FAMILY_BY_KEY.get(family)?.exclusion,
+			value = id.trim();
+		if (!of || !new RegExp(`^(?:${of.id})$`).test(value)) return null;
+		return of.name ? `${of.name} ${value}` : value;
+	}
+
+	/**
+	 * What a "Keep separate" mark's text writes before an id of a family.
+	 */
+	static markPrefix(family: string): string {
+		return FAMILY_BY_KEY.get(family)?.mark || family;
+	}
+
+	/**
+	 * Whether the catalog's client can be asked for the id of a kind of thing when a page's address doesn't hold
+	 * it (CatalogClient.lookupId); a group's key stands for its default catalog.
+	 */
+	static looksUp(key: string, kind: ExternalKind): boolean {
+		const def = BY_KEY.get(key) || BY_KEY.get(GROUPS.find(g => g.key === key)?.default || '');
+		return !!def && !!def.lookups && def.lookups.includes(kind);
+	}
+
+	/**
+	 * Where a catalog's covers are; a site this app doesn't list has its family's (an ASIN's cover is the same
+	 * on any site). null when it has none.
+	 */
+	static coverOf(key: string): CoverDefinition | null {
+		const def = BY_KEY.get(key) || BY_KEY.get(ExternalCatalog.siteFamily(key)?.sites?.default || '');
+		return (def && def.cover) || null;
+	}
+
+	/** The groups a stored person once kept the address of its page in, under the group's key (CatalogGroup.oldLink). */
+	static OLD_LINKS: string[] = GROUPS.filter(g => g.oldLink).map(g => g.key);
+
+	/**
+	 * The external ids of a stored record from before they were kept by catalog (database version 1), read from
+	 * the fields they had then: a family's ids by site (`asins`), then each catalog's own (`goodreadsId`).
+	 */
+	static oldIds(record: object): Record<string, string> {
+		const had = record as Record<string, unknown>;
+		const ids: Record<string, string> = {};
+		for (const family of FAMILIES) {
+			const bySite = family.oldField ? had[family.oldField] : undefined;
+			if (Text.isObject(bySite))
+				for (const [site, id] of Object.entries(bySite)) if (typeof id === 'string') ids[site] = id;
+		}
+		for (const def of DEFINITIONS) {
+			const id = def.oldField ? had[def.oldField] : undefined;
+			if (typeof id === 'string' && id) ids[def.key] = id;
+		}
+		return ids;
+	}
+
+	/**
+	 * The catalog an edition's text names by `label`: its name ("open library"), or its other word ("gr"),
+	 * whatever the case. null when it is none; a site of a family named as one (SITE_FAMILIES) is none either.
+	 */
+	static byLabel(label: string): CatalogDefinition | null {
+		const text = label.toLowerCase().replace(/\s+/g, ' ');
+		return (
+			DEFINITIONS.find(
+				def =>
+					!ExternalCatalog.siteFamily(def.key) &&
+					(text === def.alias || text.startsWith(def.name.toLowerCase())),
+			) || null
+		);
 	}
 
 	/**

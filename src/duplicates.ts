@@ -127,7 +127,7 @@ function renderSplit(): Child[] {
 			'p',
 			{class: 'hint'},
 			spell(
-				"These books have editions that don't disagree on an ASIN or Goodreads id, such as one from Audible and one from Goodreads.",
+				"These books have editions that don't disagree on an id, such as one from each of two catalogs' imports.",
 			),
 		),
 		SPLIT.map(id => {
@@ -292,7 +292,7 @@ function duplicateGroup(ids: string[], g: number): HTMLDivElement {
 					},
 				}),
 				' ',
-				spell("Make the editions one edition (they don't disagree on an ASIN or Goodreads id)"),
+				spell("Make the editions one edition (they don't disagree on an id)"),
 			),
 		buildElement(
 			'div',
