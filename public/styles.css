@@ -1928,3 +1928,49 @@ button:focus {
 	border-style: solid;
 	border-color: var(--moss);
 }
+
+/* Fill in from other catalogs (entry-fill.ts): what each catalog has that the form lacks, to tick */
+.entryFill:empty {
+	display: none;
+}
+.entryFill {
+	margin: 0.6rem 0;
+}
+.entryAnswer {
+	margin: 0.5rem 0;
+	padding: 0.45rem 0.6rem;
+	border-left: 3px solid var(--moss);
+	background: var(--paper);
+	font-size: 0.88rem;
+}
+/* found by name alone: it may be another of that name */
+.entryAnswer.unsure {
+	border-left-color: var(--gold);
+}
+.entryFrom {
+	margin: 0 0 0.2rem;
+	font-weight: 600;
+}
+.entryAnswer .hint {
+	margin: 0 0 0.3rem;
+}
+#creditForm .entryFill label.entryOffer,
+.editPanel .entryFill label.entryOffer {
+	display: flex;
+	gap: 0.45rem;
+	align-items: baseline;
+	margin: 0.25rem 0;
+	font-size: 0.88rem;
+	color: var(--ink);
+}
+#creditForm .entryFill input,
+.editPanel .entryFill input {
+	flex: none;
+	width: auto;
+	margin: 0;
+	padding: 0;
+}
+.entryOffer span {
+	white-space: pre-line;
+	overflow-wrap: anywhere;
+}

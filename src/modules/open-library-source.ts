@@ -1,12 +1,13 @@
 // Open Library as a source of the Edit page's Fill in: it answers any web page (open CORS, no key), by its
-// works (OL…W), editions (OL…M) and ISBNs. It has no narrators, and seldom a series.
+// works (OL…W), editions (OL…M) and ISBNs. It has no narrators, and seldom a series. Its authors (OL…A) have a
+// bio, links and their ids in other catalogs.
 import {Text, PhraseError} from './text.js';
 import {Isbn} from './isbn.js';
 import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {BookSource} from './book-source.js';
 import type {Unchecked} from './text.js';
-import type {Pasted, Answers} from './book-source.js';
+import type {Pasted, Answers, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
 
 const OPEN_LIBRARY = 'https://openlibrary.org';
 const tidyText = BookSource.text;
@@ -16,6 +17,14 @@ export class OpenLibrarySource extends BookSource {
 	static CATALOG = 'openlibrary';
 	static LABEL = 'Open Library';
 	static NAMES = ['Open Library'];
+	static ENTRIES = ['author'] as const;
+	/** an author's ids elsewhere, as Open Library names them (`remote_ids`), by the catalog's key here */
+	static REMOTE_IDS: Record<string, string> = {
+		wikidata: 'wikidata',
+		goodreads: 'goodreads',
+		bookbrainz: 'bookbrainz',
+		amazon: ExternalCatalog.AMAZON_SITE,
+	};
 
 	/**
 	 * A bare Open Library id: OL…M an edition, OL…W a work.
@@ -173,5 +182,82 @@ export class OpenLibrarySource extends BookSource {
 			);
 		if (m && Text.tidy(m[1])) return {name: Text.tidy(m[1]), number: m[2]};
 		return {name: value, number: null};
+	}
+
+	// ------------------------------------------------------------------ authors
+	async entry(kind: EntryKind, id: string): Promise<EntryAnswer | null> {
+		const author = await this.ask(`/authors/${encodeURIComponent(id)}.json`);
+		return author ? this.authorOf(kind, id, author, 'id') : null;
+	}
+
+	/**
+	 * An author by the Open Library works of their books, which name them; else the authors called `name`, each
+	 * with their best known work.
+	 */
+	async findEntries({kind, name, books}: EntryQuery): Promise<EntryAnswer[]> {
+		const works = [...new Set(books.map(b => b.external[OpenLibrarySource.CATALOG]).filter(Boolean))];
+		for (const id of works.slice(0, 3)) {
+			const work = await this.ask(`/works/${encodeURIComponent(id)}.json`);
+			const keys: unknown[] = (work && Array.isArray(work.authors) ? work.authors : []).map((a: unknown) =>
+				Text.isObject(a) && Text.isObject(a.author) ? a.author.key : null,
+			);
+			for (const key of keys.slice(0, 10)) {
+				const m = typeof key === 'string' ? /^\/authors\/(OL\d+A)$/.exec(key) : null;
+				const author = m ? await this.ask(`/authors/${m[1]}.json`) : null;
+				if (m && author && BookSource.sameName(author.name, name))
+					return [this.authorOf(kind, m[1], author, 'books')];
+			}
+		}
+		const params = new URLSearchParams({q: name, limit: '10', fields: 'key,name,top_work,work_count'});
+		const answer = await this.ask(`/search/authors.json?${params}`);
+		const hits: Unchecked[] = (answer && Array.isArray(answer.docs) ? answer.docs : [])
+			.filter(
+				(doc: unknown) =>
+					Text.isObject(doc) && /^OL\d+A$/.test(String(doc.key)) && BookSource.sameName(doc.name, name),
+			)
+			.slice(0, OpenLibrarySource.NAMESAKES);
+		const found: EntryAnswer[] = [];
+		for (const hit of hits) {
+			const author = await this.ask(`/authors/${hit.key}.json`);
+			if (!author) continue;
+			const values = {work: tidyText(hit.top_work), works: Text.counted(Number(hit.work_count) || 0, 'work')};
+			found.push(
+				this.authorOf(
+					kind,
+					hit.key,
+					author,
+					'name',
+					values.work
+						? Text.phrase('{works}, best known for {work}', values)
+						: Text.phrase('{works}', values),
+				),
+			);
+		}
+		return found;
+	}
+
+	/**
+	 * An author from Open Library's page of them: their bio, links, and ids in other catalogs.
+	 * @param author Open Library's answer
+	 */
+	authorOf(
+		kind: EntryKind,
+		id: string,
+		author: Unchecked,
+		by: EntryAnswer['by'],
+		about: EntryAnswer['about'] = null,
+	): EntryAnswer {
+		const remote = Text.isObject(author.remote_ids) ? author.remote_ids : {};
+		const external: Record<string, string> = {};
+		for (const [theirs, catalog] of Object.entries(OpenLibrarySource.REMOTE_IDS)) {
+			const value = tidyText(remote[theirs]);
+			if (value) external[catalog] = value;
+		}
+		// a bio is a text, or {type, value}
+		const bio = Text.isObject(author.bio) ? author.bio.value : author.bio;
+		const links = (Array.isArray(author.links) ? author.links : [])
+			.map((link: unknown) => (Text.isObject(link) ? tidyText(link.url) : ''))
+			.filter(Boolean);
+		return this.answerOf(kind, id, tidyText(author.name), by, {bio, external, links}, about);
 	}
 }

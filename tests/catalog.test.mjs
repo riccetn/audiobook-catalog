@@ -37,6 +37,7 @@ import {AudiobookdbSync} from '../public/modules/audiobookdb-sync.js';
 import {CatalogRecords} from '../public/modules/catalog-records.js';
 import {CatalogSync, WrongPassphrase, UnrelatedCatalogs} from '../public/modules/catalog-sync.js';
 import {CatalogLookup} from '../public/modules/catalog-lookup.js';
+import {EntryLookup} from '../public/modules/entry-lookup.js';
 import {CatalogConnectors} from '../public/modules/catalog-connectors.js';
 import {CatalogClient} from '../public/modules/catalog-client.js';
 import {ShelfSync} from '../public/modules/shelf-sync.js';
@@ -7112,4 +7113,280 @@ test('Import & export gets a panel per catalog from the classes listed in Catalo
 	assert.deepEqual([hardcover.via, hardcover.key], ['Online', {name: 'API token', word: 'token'}]);
 	assert.deepEqual([audiobookdb.via, audiobookdb.key], ['Through the proxy', {name: 'API key', word: 'key'}]);
 	assert.ok(hardcover.compare.note && audiobookdb.compare.note && !hardcover.importer);
+});
+
+// ------------------------------------------------------------------ series and people looked up in other catalogs
+const noInfo = () => ({external: {}, links: []});
+// an answer without its info, as the tests compare it
+const answered = found => found.answers.map(a => [a.source, a.id, a.by]);
+
+test('EntryLookup finds an author by name on Open Library and Wikidata, without an account, as namesakes to tell apart', async () => {
+	const catalogs = fakeCatalogs();
+	const found = await new EntryLookup(catalogs.fetch, []).find('author', 'Ann Vale', noInfo());
+	assert.deepEqual(answered(found), [
+		['Open Library', 'OL70A', 'name'],
+		['Open Library', 'OL71A', 'name'],
+		['Wikidata', 'Q9002', 'name'],
+		['Wikidata', 'Q9005', 'name'],
+	]);
+	assert.deepEqual(
+		found.answers.map(a => a.about && en(a.about)),
+		[
+			'4 works, best known for The Lantern Keeper',
+			'1 work, best known for Tide Tables 1988',
+			'writer of sea stories',
+			'village in a valley',
+		],
+	);
+	assert.deepEqual(found.answers[0].info, {
+		// her page on ISFDB, among her links there, is her id there
+		external: {
+			openlibrary: 'OL70A',
+			wikidata: 'Q9002',
+			goodreads: '8801',
+			'amazon.com': 'B0AUTHOR01',
+			isfdb: '3301',
+		},
+		links: ['https://valereaders.example/'],
+		bio: 'Ann Vale writes of tides.\n\nShe lives by an estuary.',
+	});
+	assert.deepEqual(found.answers[2].info, {
+		external: {wikidata: 'Q9002', openlibrary: 'OL70A', goodreads: '8801', isfdb: '3301'},
+		links: [],
+		url: 'https://annvale.example',
+	});
+	// the catalogs that need something saved are named, not asked
+	assert.deepEqual(found.notes.map(en), [
+		'to ask Audible too, save your server on the Import & export page',
+		'to ask AudiobookDB too, save your server on the Import & export page',
+		'to ask Hardcover too, save your Hardcover API token on the Import & export page',
+	]);
+	// found by name alone, they may be someone else: everything is offered, nothing is ticked
+	const offers = EntryLookup.offers(noInfo(), found.answers);
+	assert.ok(offers.length > 6);
+	assert.ok(offers.every(o => !o.ticked));
+	assert.deepEqual(
+		offers.filter(o => o.key === 'bio').map(o => [o.answer, o.value]),
+		[
+			[0, 'Ann Vale writes of tides.\n\nShe lives by an estuary.'],
+			[1, 'Ann Vale edits tide tables.'],
+		],
+	);
+	// a narrator is no author on Open Library, and nobody of that name is nobody
+	const narrator = await new EntryLookup(catalogs.fetch, []).find('narrator', 'Hollis Marr', noInfo());
+	assert.deepEqual(narrator.answers, []);
+	assert.ok(!catalogs.sent.some(url => url.includes('openlibrary.org') && url.includes('Hollis')));
+});
+
+test('EntryLookup asks a catalog for the id the entry has there, and the others for the ids that one gives', async () => {
+	const catalogs = fakeCatalogs();
+	const lookup = new EntryLookup(catalogs.fetch, []);
+	const found = await lookup.find('author', 'Ann Vale', {external: {wikidata: 'Q9002'}, links: []});
+	// Wikidata by the id kept, and Open Library by the id Wikidata has for it: no search by name
+	assert.deepEqual(answered(found), [
+		['Open Library', 'OL70A', 'id'],
+		['Wikidata', 'Q9002', 'id'],
+	]);
+	assert.ok(!catalogs.sent.some(url => /search/.test(url)));
+	const current = {external: {wikidata: 'Q9002'}, links: [], bio: 'Mine.'};
+	const offers = EntryLookup.offers(current, found.answers);
+	// only what is lacking, each once, the sure ones ticked but the link
+	assert.deepEqual(
+		offers.map(o => [o.key, o.value, o.answer, o.ticked]),
+		[
+			['id:openlibrary', 'OL70A', 0, true],
+			['id:goodreads', '8801', 0, true],
+			['id:amazon.com', 'B0AUTHOR01', 0, true],
+			['id:isfdb', '3301', 0, true],
+			['link:https://valereaders.example/', 'https://valereaders.example/', 0, false],
+			['url', 'https://annvale.example', 1, true],
+		],
+	);
+	// only what is picked is put in, into a copy, and nothing the entry has is replaced
+	const {info, added} = EntryLookup.apply(
+		current,
+		offers.filter(o => o.ticked && o.key !== 'id:isfdb'),
+	);
+	assert.deepEqual(info, {
+		bio: 'Mine.',
+		url: 'https://annvale.example',
+		external: {wikidata: 'Q9002', openlibrary: 'OL70A', goodreads: '8801', 'amazon.com': 'B0AUTHOR01'},
+		links: [],
+	});
+	assert.equal(added.length, 4);
+	assert.deepEqual(
+		current,
+		{external: {wikidata: 'Q9002'}, links: [], bio: 'Mine.'},
+		'what was given is not changed',
+	);
+	const taken = EntryLookup.apply({external: {goodreads: '1'}, links: [], url: 'https://mine.example'}, [
+		{key: 'url', field: 'url', value: 'https://annvale.example', answer: 0, ticked: true},
+		{key: 'id:goodreads', field: 'id', catalog: 'goodreads', value: '8801', answer: 0, ticked: true},
+		{key: 'bio', field: 'bio', value: 'One.', answer: 0, ticked: true},
+		{key: 'bio', field: 'bio', value: 'Two.', answer: 1, ticked: true},
+	]);
+	assert.deepEqual(taken.info, {external: {goodreads: '1'}, links: [], url: 'https://mine.example', bio: 'One.'});
+	assert.deepEqual(
+		taken.added.map(o => o.value),
+		['One.'],
+	);
+	// an id the catalog doesn't have is no answer, and its books or name are tried instead
+	const gone = await lookup.find('author', 'Ann Vale', {external: {openlibrary: 'OL999A'}, links: []}, [
+		B(book('The Lantern Keeper', 'Ann Vale', {ext: {openlibrary: 'OL900W', wikidata: 'Q9001'}})),
+	]);
+	assert.deepEqual(answered(gone), [
+		['Open Library', 'OL70A', 'books'],
+		['Wikidata', 'Q9002', 'books'],
+	]);
+});
+
+test('EntryLookup finds a series and its people on the catalogs their books are in: Audible, AudiobookDB, Hardcover', async () => {
+	const proxy = fakeProxyCatalogs();
+	const hc = fakeHardcover(hardcoverState());
+	const lookup = new EntryLookup(
+		fakeCatalogs().fetch,
+		[new HardcoverClient(hc.fetch, 'tok-123', async () => {})],
+		proxy.route,
+	);
+	const books = [
+		B(
+			book('Tidewater', 'Ann Vale', {
+				s: 'Gull Isle',
+				sn: '1',
+				ext: {hardcover: '77', audiobookdb: 'LnTrnKpr2xYz'},
+				e: [{ext: {'audible.com': 'B0LANTERN2'}, n: ['Hollis Marr'], p: ['Gullwing Audio']}],
+			}),
+		),
+	];
+	const series = await lookup.find('series', 'Gull Isle', noInfo(), books);
+	assert.deepEqual(answered(series), [
+		['Audible', 'B0SERIES02', 'books'],
+		['AudiobookDB', 'SrsGullIsle1', 'books'],
+		['Hardcover', '3102', 'books'],
+		['Wikidata', 'Q9003', 'name'],
+	]);
+	assert.deepEqual(series.notes, []);
+	assert.deepEqual(series.answers[0].info, {external: {'audible.com': 'B0SERIES02'}, links: []});
+	assert.deepEqual(series.answers[2].info, {external: {hardcover: '3102'}, links: [], total: 3, status: 'complete'});
+	assert.deepEqual(
+		EntryLookup.offers(noInfo(), series.answers).map(o => [o.key, o.value, o.ticked]),
+		[
+			['id:audible.com', 'B0SERIES02', true],
+			['id:audiobookdb', 'SrsGullIsle1', true],
+			['total', 3, true],
+			['status', 'complete', true],
+			['id:hardcover', '3102', true],
+			['id:wikidata', 'Q9003', false],
+			['id:goodreads', '6611', false],
+		],
+	);
+	// a series kept as too long to count is offered no count
+	assert.ok(
+		!EntryLookup.offers({total: 'many', external: {}, links: []}, series.answers).some(o => o.key === 'total'),
+	);
+	// an author: her ASIN from Audible's products, her description and id from AudiobookDB, her bio from Hardcover
+	const author = await lookup.find('author', 'Ann Vale', noInfo(), books);
+	assert.deepEqual(answered(author), [
+		['Audible', 'B0AUTHOR01', 'books'],
+		['AudiobookDB', 'PrsnAuth0000', 'books'],
+		['Hardcover', '4103', 'books'],
+		['Open Library', 'OL70A', 'name'],
+		['Open Library', 'OL71A', 'name'],
+		['Wikidata', 'Q9002', 'name'],
+		['Wikidata', 'Q9005', 'name'],
+	]);
+	assert.equal(author.answers[1].info.bio, 'Ann Vale writes of the sea.');
+	assert.equal(author.answers[2].info.bio, 'Ann Vale grew up on a tidal island.');
+	assert.equal(en(author.answers[2].about), '3 books');
+	// of the bios the first sure one is ticked
+	assert.deepEqual(
+		EntryLookup.offers(noInfo(), author.answers)
+			.filter(o => o.key === 'bio')
+			.map(o => [o.answer, o.ticked]),
+		[
+			[1, true],
+			[2, false],
+			[3, false],
+			[4, false],
+		],
+	);
+	// a narrator is found on the releases of the books; Audible keeps narrators by name, so it has no id to give
+	const narrator = await lookup.find('narrator', 'Hollis Marr', noInfo(), books);
+	assert.deepEqual(answered(narrator), [['AudiobookDB', 'PrsnNarr0000', 'books']]);
+	assert.deepEqual(narrator.answers[0].info, {
+		external: {audiobookdb: 'PrsnNarr0000'},
+		links: [],
+		bio: 'Hollis Marr reads aloud.',
+	});
+	// without the books, by name: only the one credited as a narrator
+	const named = await lookup.find('narrator', 'Hollis Marr', noInfo());
+	assert.deepEqual(answered(named), [['AudiobookDB', 'PrsnNarr0000', 'name']]);
+	assert.equal(en(named.answers[0].about), 'credited on The Lantern Keeper');
+	// a publisher, on the releases too; and on Hardcover by its name
+	const publisher = await lookup.find('publisher', 'Gullwing Audio', noInfo(), books);
+	assert.deepEqual(answered(publisher), [['AudiobookDB', 'PblshrGullw1', 'books']]);
+	const kestrel = await lookup.find('publisher', 'Kestrel Row Audio', noInfo());
+	assert.deepEqual(answered(kestrel), [['Hardcover', '5101', 'name']]);
+	assert.equal(en(kestrel.answers[0].about), '12 editions');
+	// an entry kept by the name in its Hardcover address is asked for by that name
+	const bySlug = await lookup.find('author', 'Wendell Ashcombe', {external: {hardcover: 'w-ashcombe'}, links: []});
+	assert.deepEqual(answered(bySlug), [['Hardcover', '4101', 'id']]);
+	// nothing but questions was sent
+	assert.ok(hc.sent.every(s => s.query.startsWith('query ')));
+});
+
+test('EntryLookup asks a source written against BookSource alone, notes the one that fails, and says when none can be asked', async () => {
+	class LedgerSource extends BookSource {
+		static CATALOG = 'wikidata'; // a catalog whose ids are known, as the ids an answer gives are checked
+		static LABEL = 'Ledger';
+		static ENTRIES = ['series'];
+		async entry(kind, id) {
+			return id === 'Q1'
+				? this.answerOf(kind, id, 'Gull Isle', 'id', {total: 4, external: {nowhere: 'x'}})
+				: null;
+		}
+		async findEntries({kind, name}) {
+			return [this.answerOf(kind, 'Q1', name, 'name', {status: 'ongoing', total: -2})];
+		}
+	}
+	class DownSource extends BookSource {
+		static CATALOG = 'goodreads';
+		static LABEL = 'Down';
+		static ENTRIES = ['series'];
+		async findEntries() {
+			throw new Error('out to lunch');
+		}
+	}
+	class KeyedSource extends BookSource {
+		static CATALOG = 'isfdb';
+		static LABEL = 'Keyed';
+		static NEEDS = 'proxy';
+		static ENTRIES = ['series', 'author'];
+	}
+	const lookup = new EntryLookup(fakeCatalogs().fetch, [], null, [LedgerSource, DownSource, KeyedSource]);
+	const byName = await lookup.find('series', 'Gull Isle', noInfo());
+	assert.deepEqual(answered(byName), [['Ledger', 'Q1', 'name']]);
+	assert.deepEqual(byName.answers[0].info, {external: {wikidata: 'Q1'}, links: [], status: 'ongoing'});
+	assert.deepEqual(byName.notes.map(en), [
+		'to ask Keyed too, save your server on the Import & export page',
+		"Down couldn't be asked: out to lunch",
+	]);
+	const byId = await lookup.find('series', 'Gull Isle', {external: {wikidata: 'Q1'}, links: []});
+	assert.deepEqual(byId.answers[0].info, {external: {wikidata: 'Q1'}, links: [], total: 4});
+	await assert.rejects(
+		lookup.find('author', 'Ann Vale', noInfo()),
+		/no catalog can be asked yet: to ask Keyed too, save your server on the Import & export page$/,
+	);
+	await assert.rejects(lookup.find('narrator', 'Hollis Marr', noInfo()), /no catalog can be asked about this/);
+	// the catalogs listed say which kinds they know
+	assert.deepEqual(
+		CatalogConnectors.SOURCES.map(Source => [Source.LABEL, Source.ENTRIES.join(' ')]),
+		[
+			['Audible', 'series author'],
+			['AudiobookDB', 'series author narrator publisher'],
+			['Hardcover', 'series author narrator publisher'],
+			['Open Library', 'author'],
+			['Wikidata', 'series author narrator publisher'],
+		],
+	);
 });

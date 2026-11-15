@@ -722,6 +722,8 @@ const cards = html => (html.match(/class="book"/g) || []).length;
 const IMPORT_PAGE_ONLY = [
 	'modules/catalog-connectors.js',
 	'modules/catalog-lookup.js',
+	'modules/entry-lookup.js',
+	'entry-fill.js',
 	'modules/shelf-sync.js',
 	'modules/book-source.js',
 	'modules/file-importer.js',
@@ -6521,4 +6523,211 @@ test("links: a person's other links, typed in their form beside their website, a
 	assert.match(els.creditBody.innerHTML, /href="https:\/\/gullwing\.example\/about"[^>]*>gullwing\.example ↗<\/a>/);
 	els.creditBody.querySelector('.aedit').listeners.click[0]();
 	assert.equal(els.cf_links.value, 'https://gullwing.example/about');
+});
+
+// ------------------------------------------------------------------ Fill in from other catalogs: series and people
+const LANTERN_KEEPER = {
+	t: 'The Lantern Keeper',
+	a: ['Ann Vale'],
+	s: 'Gull Isle',
+	sn: '2',
+	ext: {openlibrary: 'OL900W'},
+	e: [{ext: {'audible.com': 'B0LANTERN2'}, n: ['Hollis Marr']}],
+};
+
+test("an author's form is filled in from other catalogs: what they have is offered with ticks, and nothing is kept before Save", async () => {
+	const catalogs = fakeCatalogs();
+	const {ctx, els, storage} = await boot({
+		page: 'author.html',
+		hash: '#a=Ann+Vale',
+		files: {'books.json': JSON.stringify([LANTERN_KEEPER])},
+		catalogs: catalogs.fetch,
+	});
+	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	assert.equal(els.cf_fill.innerHTML, '');
+	els.cf_ext_isfdb.value = '77';
+	await ctx.fillCredit();
+	// found on her book's work on Open Library, and on Wikidata by the id Open Library has for her
+	const drawn = els.cf_fill.innerHTML;
+	assert.match(
+		drawn,
+		/<p class="entryFrom">Open Library: <a href="https:\/\/openlibrary\.org\/authors\/OL70A" target="_blank" rel="noopener">Ann Vale<\/a>, named on your books there<\/p>/,
+	);
+	assert.match(
+		drawn,
+		/<p class="entryFrom">Wikidata: <a href="https:\/\/www\.wikidata\.org\/wiki\/Q9002" target="_blank" rel="noopener">Ann Vale<\/a>, by the id kept here<\/p><p class="hint">writer of sea stories<\/p>/,
+	);
+	assert.doesNotMatch(drawn, /Q9005|OL71A/, 'no namesakes once she is found for sure');
+	assert.match(drawn, /to ask Hardcover too, save your Hardcover API token on the Import &amp; export page/);
+	const ticks = [0, 1, 2, 3, 4, 5, 6].map(i => els[`cf_fill-pick-${i}`]);
+	assert.equal(els['cf_fill-pick-7'], undefined, 'the ISFDB id is not offered, as the form has one');
+	assert.deepEqual(
+		ticks.map(t => t.checked),
+		[true, true, true, true, true, false, true],
+		'all but the link are ticked',
+	);
+	assert.match(
+		drawn,
+		/Its id on Goodreads: <a href="https:\/\/www\.goodreads\.com\/author\/show\/8801"[^>]*>8801<\/a>/,
+	);
+	// asking changed nothing: not the form, not the catalog
+	assert.equal(els.cf_bio.value, '');
+	assert.equal(els.cf_ext_goodreads.value, '');
+	assert.deepEqual((await kept(storage)).authors, {});
+	// only what is ticked is added, to the form
+	ticks[3].checked = false; // not her Goodreads id
+	ticks[5].checked = true; // but the link
+	els.cf_fillAdd.listeners.click[0]();
+	assert.equal(els.cf_fill.innerHTML, '');
+	assert.equal(els.cf_bio.value, 'Ann Vale writes of tides.\n\nShe lives by an estuary.');
+	assert.equal(els.cf_url.value, 'https://annvale.example');
+	assert.equal(els.cf_ext_openlibrary.value, 'OL70A');
+	assert.equal(els.cf_ext_wikidata.value, 'Q9002');
+	assert.equal(els.cf_ext_amazon.value, 'B0AUTHOR01');
+	assert.equal(els.cf_ext_goodreads.value, '');
+	assert.equal(els.cf_ext_isfdb.value, '77', 'what was typed stays');
+	assert.equal(els.cf_links.value, 'https://valereaders.example/');
+	assert.equal(els.ioStatus.textContent, 'Added 6 values to the form; save it to keep them.');
+	assert.deepEqual((await kept(storage)).authors, {}, 'still only in the form');
+	// Save keeps them
+	await els.creditForm.listeners.submit[0]({preventDefault() {}});
+	assert.deepEqual((await kept(storage)).authors['Ann Vale'], {
+		bio: 'Ann Vale writes of tides.\n\nShe lives by an estuary.',
+		url: 'https://annvale.example',
+		ext: {'amazon.com': 'B0AUTHOR01', openlibrary: 'OL70A', isfdb: '77', wikidata: 'Q9002'},
+		links: ['https://valereaders.example/'],
+	});
+	// asked again, there is nothing more but what was left unticked; Close puts the list away
+	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	await ctx.fillCredit();
+	assert.equal(els['cf_fill-pick-1'], undefined);
+	assert.match(els.cf_fill.innerHTML, /Its id on Goodreads/);
+	els.cf_fillClose.listeners.click[0]();
+	assert.equal(els.cf_fill.innerHTML, '');
+	// nothing was sent anywhere but questions to the two catalogs
+	assert.ok(catalogs.sent.every(url => /^https:\/\/(openlibrary\.org|www\.wikidata\.org)\//.test(url)));
+});
+
+test('a narrator found by name alone is offered unticked, and a catalog that has no one says so', async () => {
+	const catalogs = fakeCatalogs();
+	const page = await boot({
+		page: 'author.html',
+		hash: '#a=Ann+Vale',
+		files: {'books.json': JSON.stringify([{t: 'Tide Tables', a: ['Ann Vale']}])},
+		catalogs: catalogs.fetch,
+	});
+	const {ctx, els, storage} = page;
+	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	await ctx.fillCredit();
+	// her book has no id anywhere, so she is found by name: two on each catalog, which may be others
+	assert.equal((els.cf_fill.innerHTML.match(/class="entryAnswer unsure"/g) || []).length, 4);
+	assert.match(els.cf_fill.innerHTML, /found by name alone, so it may be another of that name/);
+	assert.match(els.cf_fill.innerHTML, /<p class="hint">1 work, best known for Tide Tables 1988<\/p>/);
+	const ticks = [...Array(20).keys()].map(i => els[`cf_fill-pick-${i}`]).filter(Boolean);
+	assert.ok(ticks.length > 8);
+	assert.ok(ticks.every(t => !t.checked));
+	// adding with nothing ticked adds nothing
+	els.cf_fillAdd.listeners.click[0]();
+	assert.equal(els.ioStatus.textContent, 'Nothing was ticked, so nothing was added.');
+	assert.equal(els.cf_bio.value, '');
+	// one bio at most: ticking the other namesake's unticks the first
+	await ctx.fillCredit();
+	const bios = [...Array(20).keys()]
+		.map(i => els[`cf_fill-pick-${i}`])
+		.filter(t => t && /Bio: /.test(t.parentNode.textContent));
+	assert.equal(bios.length, 2);
+	bios[0].checked = true;
+	bios[1].checked = true;
+	bios[1].listeners.change[0]();
+	assert.deepEqual(
+		bios.map(t => t.checked),
+		[false, true],
+	);
+	els.cf_fillAdd.listeners.click[0]();
+	assert.equal(els.cf_bio.value, 'Ann Vale edits tide tables.');
+	assert.deepEqual((await kept(storage)).authors, {});
+	// a closed form's answers are not listed
+	const closing = ctx.fillCredit();
+	els.cancelCredit.listeners.click[0]();
+	await closing;
+	assert.equal(els.cf_fill.innerHTML, '');
+	// no one of that name
+	const nobody = await boot({
+		page: 'narrator.html',
+		hash: '#n=Hollis+Marr',
+		files: {'books.json': JSON.stringify([LANTERN_KEEPER])},
+		catalogs: catalogs.fetch,
+	});
+	nobody.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	await nobody.ctx.fillCredit();
+	assert.match(nobody.els.cf_fill.innerHTML, /None of the other catalogs asked has Hollis Marr\./);
+	// offline, it says so and changes nothing
+	const offline = await boot({
+		page: 'author.html',
+		hash: '#a=Ann+Vale',
+		files: {'books.json': JSON.stringify([LANTERN_KEEPER])},
+	});
+	offline.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	await offline.ctx.fillCredit();
+	assert.match(
+		offline.els.cf_fill.innerHTML,
+		/Open Library couldn't be asked: this browser could not reach Open Library/,
+	);
+	assert.equal(offline.els['cf_fill-pick-0'], undefined);
+});
+
+test("the Edit page's series panel is filled in from other catalogs, and Review & save lists what was added", async () => {
+	const hc = fakeHardcover(hardcoverState());
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const tidewater = {t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: {hardcover: '77'}};
+	const page = await bootEdit('Gull Isle', {
+		files: {'books.json': JSON.stringify([tidewater])},
+		catalogs: fakeCatalogs().fetch,
+		hardcover: hc.fetch,
+		setTimeout: done => setTimeout(done), // no waiting between the questions
+		storage,
+	});
+	const {ctx, els} = page;
+	await ctx.ASKING;
+	await idle();
+	els.sf_total.value = 'many';
+	await ctx.fillSeries();
+	const drawn = els.sf_fill.innerHTML;
+	assert.match(
+		drawn,
+		/Hardcover: <a href="https:\/\/hardcover\.app\/id\/series\/3102"[^>]*>Gull Isle<\/a>, named on your books there/,
+	);
+	assert.match(drawn, /Wikidata: <a [^>]*>Gull Isle<\/a>, found by name alone/);
+	assert.doesNotMatch(drawn, /Books released so far/, 'a count is kept, so none is offered');
+	// Hardcover's are ticked, Wikidata's (found by name) are not
+	const ticks = [0, 1, 2, 3].map(i => els[`sf_fill-pick-${i}`]);
+	assert.deepEqual(
+		ticks.map(t => [t.parentNode.textContent, t.checked]),
+		[
+			['Status: complete', true],
+			['Its id on Hardcover: 3102', true],
+			['Its id on Wikidata: Q9003', false],
+			['Its id on Goodreads: 6611', false],
+		],
+	);
+	assert.equal(els.sf_status.value, '');
+	ticks[3].checked = true;
+	els.sf_fillAdd.listeners.click[0]();
+	assert.equal(els.sf_total.value, 'many');
+	assert.equal(els.sf_status.value, 'complete');
+	assert.equal(els.sf_ext_hardcover.value, '3102');
+	assert.equal(els.sf_ext_goodreads.value, '6611');
+	assert.equal(els.sf_ext_wikidata.value, '');
+	assert.equal(els.ioStatus.textContent, 'Added 3 values to the form; save it to keep them.');
+	assert.deepEqual((await kept(storage)).seriesInfo, {}, 'nothing is kept before Save');
+	assert.ok(await saveEdit(page));
+	assert.deepEqual((await kept(storage)).seriesInfo['Gull Isle'], {
+		total: 'many',
+		status: 'complete',
+		ext: {goodreads: '6611', hardcover: '3102'},
+	});
+	assert.ok(
+		hc.sent.every(s => s.query.startsWith('query ')),
+		'Hardcover was only asked',
+	);
 });

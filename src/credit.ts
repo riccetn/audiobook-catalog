@@ -39,6 +39,7 @@ import type {CreditKind} from './credit-kinds.js';
 import type {Book} from './modules/book.js';
 import type {Child, FormField} from './dom.js';
 import type {ContributorRecord} from './modules/catalog-records.js';
+import type {EntryInfo} from './modules/book-source.js';
 
 let KIND: CreditKind = CREDIT_KINDS.author;
 export let SHOWN: string | null = null; // the id of the author, narrator or publisher shown (#a=...); null until the address is read
@@ -298,6 +299,7 @@ function openCreditForm(id: string) {
 	fillExternalFields('cf_ext_', KIND.one, info.external);
 	fieldById('cf_links').value = info.links.join('\n');
 	byId('creditFormError').textContent = '';
+	fillElement(byId('cf_fill'));
 	byId('creditSaveBtn').textContent = spell(KIND.texts.save);
 	byId('creditRemoveBtn').textContent = spell(KIND.texts.remove);
 	const form = byId('creditForm');
@@ -313,6 +315,43 @@ function closeCreditForm() {
 	form.classList.remove('open');
 	form.reset();
 	byId('creditFormError').textContent = '';
+	fillElement(byId('cf_fill'));
+}
+
+/**
+ * Fill in from other catalogs: asks the catalogs a page may read about the one the form edits (entry-fill.ts,
+ * loaded only now) and lists under the form what they have that it lacks, to tick. Asking changes nothing; Add
+ * puts the ticked values in the form's empty fields, and only Save keeps them.
+ */
+export async function fillCredit(): Promise<void> {
+	const id = EDITING;
+	if (id === null) return;
+	const name = nameOf(id);
+	const had = kept().get(id);
+	// what the form holds now: a field that can't be read counts as empty, and Save says what is wrong with it
+	const current = (): EntryInfo => ({
+		bio: fieldById('cf_bio').value.trim() || undefined,
+		url: fieldById('cf_url').value.trim() || undefined,
+		external: readExternalFields('cf_ext_', KIND.one, had ? had.external : {}).ids,
+		links: Text.parseLinks(fieldById('cf_links').value),
+	});
+	const {series, titles} = CATALOG.works(KIND.infoKey, name);
+	const {fillEntry, addedText} = await import('./entry-fill.js');
+	await fillEntry({
+		kind: KIND.one,
+		name,
+		current,
+		books: [...series.flatMap(s => s.books), ...titles],
+		box: byId('cf_fill'),
+		still: () => EDITING === id,
+		onAdd: (info, added) => {
+			fieldById('cf_bio').value = info.bio || '';
+			fieldById('cf_url').value = info.url || '';
+			fillExternalFields('cf_ext_', KIND.one, info.external);
+			fieldById('cf_links').value = info.links.join('\n');
+			showIoStatus(addedText(added));
+		},
+	});
 }
 
 // The form belongs to the page shown; another page closes it.
@@ -520,6 +559,7 @@ export function startCreditPage(kind: 'author' | 'narrator' | 'publisher'): Prom
 		return saveCreditForm();
 	});
 	byId('creditRemoveBtn').addEventListener('click', removeCredit);
+	byId('creditFillBtn').addEventListener('click', () => void fillCredit());
 	byId('cancelCredit').addEventListener('click', closeCreditForm);
 	addEventListener('hashchange', showAddress);
 	addEventListener('popstate', showAddress);

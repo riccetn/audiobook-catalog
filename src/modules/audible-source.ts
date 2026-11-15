@@ -1,5 +1,6 @@
 // Audible as a source of the Edit page's Fill in: its catalog API doesn't answer web pages, so it is asked
 // through the user's own catalog proxy (server/proxy.ts), by an Audible or Amazon ASIN, on the site of the ASIN.
+// A series' and an author's ASIN on a site are read off the products of their books there.
 import {Series} from './series.js';
 import {Text} from './text.js';
 import {Isbn} from './isbn.js';
@@ -7,7 +8,7 @@ import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {BookSource} from './book-source.js';
 import type {Unchecked} from './text.js';
-import type {Pasted, Answers} from './book-source.js';
+import type {Pasted, Answers, EntryQuery, EntryAnswer} from './book-source.js';
 
 /** Looks books up in Audible's catalog, through the catalog proxy. */
 export class AudibleSource extends BookSource {
@@ -19,6 +20,9 @@ export class AudibleSource extends BookSource {
 	static NAMES = ['Audible', 'Amazon'];
 	static NEEDS = 'proxy' as const;
 	static FILLS_IN = true;
+	static ENTRIES = ['series', 'author'] as const;
+	/** How many of the books' ASINs on a site are asked about, in one request. */
+	static ENTRY_BOOKS = 20;
 
 	/**
 	 * A bare ASIN, as audible.com's (Fill in takes a bare one).
@@ -107,5 +111,42 @@ export class AudibleSource extends BookSource {
 			ed.len = product.runtime_length_min;
 		rec.e = [ed];
 		return Book.fromRecord(Book.fixSeriesTitle(rec));
+	}
+
+	// ------------------------------------------------------------------ series and authors
+	/**
+	 * A series' or an author's ASIN on each Audible site its books have editions on, read off those editions'
+	 * products there, which name their series and authors. Audible has no search by name a page could ask, and
+	 * says nothing more of a series or author than its books do, so there is nothing to find without them.
+	 */
+	async findEntries({kind, name, books}: EntryQuery): Promise<EntryAnswer[]> {
+		const bySite: Map<string, Set<string>> = new Map();
+		for (const b of books)
+			for (const ed of b.editions)
+				for (const [site, asin] of Object.entries(ed.external))
+					if (AudibleSource.isSite(site)) bySite.set(site, (bySite.get(site) || new Set()).add(asin));
+		const found: EntryAnswer[] = [];
+		for (const [site, asins] of bySite) {
+			const list = [...asins].slice(0, AudibleSource.ENTRY_BOOKS).map(encodeURIComponent).join(',');
+			const answer = await this.proxied(
+				`audible/${site}/catalog/products?asins=${list}&response_groups=series,contributors,product_desc`,
+			);
+			const products: unknown[] = answer && Array.isArray(answer.products) ? answer.products : [];
+			const named: unknown[] = products.flatMap(p =>
+				Text.isObject(p) ? (kind === 'series' ? p.series : p.authors) || [] : [],
+			);
+			const ids = new Set(
+				named
+					.filter(
+						x =>
+							Text.isObject(x) &&
+							typeof x.asin === 'string' &&
+							BookSource.sameName(kind === 'series' ? x.title : x.name, name),
+					)
+					.map(x => ((x as Unchecked).asin as string).toUpperCase()),
+			);
+			if (ids.size === 1) found.push(this.answerOf(kind, [...ids][0], name, 'books', {}, null, site));
+		}
+		return found;
 	}
 }

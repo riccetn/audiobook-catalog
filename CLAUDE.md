@@ -155,14 +155,18 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       `products`). Comparing only reads the catalog; sending only adds.
     - `BookSource` (a catalog the Edit page's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
       `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
-      (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`) with `AudibleSource` (Audible's catalog API through the
+      (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`; for series and people:
+      `ENTRIES` (the kinds it knows), `entry(kind, id)`, `findEntries({kind, name, books})` (the one its books there name, `by` 'books', else its namesakes, `by` 'name', `NAMESAKES` at most), `answerOf` (an `EntryAnswer`: its `info` an `EntryInfo`, ids no catalog takes for the kind left out), `sameName`, `paragraphs`) with `AudibleSource` (Audible's catalog API through the
       proxy, by an Audible site's ASIN on that site, `isSite`; an Amazon site's ASIN is that site's alone, so never asked of Audible; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
       proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the book's authors; a release's ASINs under the sites its links name (`category.url`, `AudiobookdbClient.asinsBySite`);
       `book`, `minutes`), `HardcoverSource` (with the token: its books, and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
       `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
       sources, with the fetch, the clients whose key is saved and the catalog proxy passed in: the candidates in order own, also, fallback (a fallback only when
       none found it; one asked beside others has its failure noted, not thrown), then the `FILLS_IN` ones by the edition; `unavailable` says what to save;
-      `fill` (gaps only; `fillEdition`), `editionIds`).
+      `fill` (gaps only; `fillEdition`), `editionIds`). `EntryLookup` (the same for a series, author, narrator or publisher: `find(kind, name, info, books)`
+      asks each source that lists the kind in `ENTRIES`, by the id the entry has there, else `findEntries`, then by the ids the sure answers gave for each other;
+      a source that can't be asked is a note; `offers(current, answers)`: the values the entry lacks, each once, the first sure one of a `key` ticked, never a link or
+      one found by name alone; `apply(current, picked)`: a copy with the picked in its gaps. It changes nothing: the forms show the offers and add only what is ticked).
   - `Comparison` (`compare`: each incoming book's `kind`, `gains`, `editionGains` and `differences` beside the catalog, from
     `Merger`'s report `matches`; `apply`: imports the books picked by place, their editions only where picked (`MergeOptions.withEditions`;
     Goodreads' and Hardcover's are unticked at first, as an edition picked there may not be the user's), and puts in the values picked by `Difference.key`; a series' name picked renames the series on all its books when the other
@@ -218,6 +222,10 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   time, `more`, and `showMore(render)` for the Show more button), `readOrdered` (series order from the indexes alone), `bookGroups` (books grouped by series with their headings, or
   `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, `nameLinks` (and `authorLinks`/`narratorLinks`), `statusTag`, `watchSearchAndFilters` (the series and books pages' search box and Filters button), `showFilterCount(filters)`,
   and the address helpers `hashParts`/`hashText`/`hashOf` (with `store.js`'s `hashValue`)/`setAddress`.
+- `entry-fill.js`: _Fill in from other catalogs_ of a series (the Edit page's series panel, `fillSeries`, box `sf_fill`) and of an author, narrator or
+  publisher (their form, `credit.js`'s `fillCredit`, box `cf_fill`), loaded with `import()` when pressed (only it loads `EntryLookup` and the connectors there):
+  `fillEntry({kind, name, current, books, box, still, onAdd})` asks, lists each answer's offers with a tick (`<box>-pick-<n>`; one tick per `key`), and
+  `<box>Add` hands the page `EntryLookup.apply` of the form as it is then, which the page puts in its fields; only the form's Save keeps them. `addedText`.
 - `combo-box.js`: a search combo box (`comboBox(input, list, {names, multiple, onPick})`, `comboField` builds one): an
   `<input>` listing the names matching what is typed (`matchingNames`; in a field of several names, the one the cursor is in, `namePart`),
   picked with a click or the arrow keys and Enter, and a note below it naming what is new (`newNames`, `refreshNewNotes`). The Edit page's
@@ -398,7 +406,7 @@ The repo is public; the user's library is not.
   (`{template, values}`, `Text.phrase('{title}: not added', {title})`; a value may be a Phrase of its own, a count
   `Text.counted(n, 'book')`, a list `Text.joinPhrases`), and throws `PhraseError` for an error the page shows: Check's
   messages (labeled, `Validator.labelOf`/`unlabeled`), what a comparison gains, a sync's summary, steps and notes, the
-  backups' and lookups' errors. The page spells it, `spell(phrase)` or as a value (`{error: Text.errorPhrase(e)}`), and
+  backups' and lookups' errors, an `EntryAnswer`'s `about`. The page spells it, `spell(phrase)` or as a value (`{error: Text.errorPhrase(e)}`), and
   never joins phrases as text; the tests read one in English with `Text.filled(phrase, false)`. A module's fixed text
   with no data in it (`KEY_HELP`, `FOUND`, a field's label) stays a string, spelled whole.
 - The catalog is stored as compact `JSON.stringify` output (backups are indented for reading).

@@ -34,6 +34,11 @@ narrators as authors (`https://hardcover.app/authors/...`) and has publisher pag
 pages, so a publisher has no Goodreads field. Each field takes the id or the address of the page, as on an
 author's page. Clearing every field keeps nothing about them; they stay.
 
+**Fill in from other catalogs** in the form works as on an [author's page](authors.md): the catalogs are asked
+about them, what they have that the form lacks is listed to tick, and nothing is kept until you add it and save.
+A narrator and a publisher are found on your editions on AudiobookDB (through [your server](server.md)), by name on
+Hardcover (with your token) and on Wikidata; Open Library has neither, and Audible keeps them only by name.
+
 Each narrator and publisher is an entry of their own, under the name exactly as the editions write it: they stay,
 with no books, when no edition names them any more, until you remove them. Renaming one on the editions
 leaves the old name as a narrator (or publisher) with no books. **Remove narrator** (or **Remove

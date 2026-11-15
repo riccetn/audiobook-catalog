@@ -2,8 +2,8 @@
 // invented; the shapes are those the real APIs answer (checked against them on 2026-10-22).
 
 /**
- * Answers Open Library's /works, /books, /authors and /isbn pages and Wikidata's wbgetentities from `state`
- * (openCatalogState()); `sent` lists the addresses asked.
+ * Answers Open Library's /works, /books, /authors and /isbn pages and its search for authors, and Wikidata's
+ * wbgetentities and wbsearchentities, from `state` (openCatalogState()); `sent` lists the addresses asked.
  * @param {ReturnType<typeof openCatalogState>} state
  */
 export function fakeCatalogs(state = openCatalogState()) {
@@ -12,6 +12,19 @@ export function fakeCatalogs(state = openCatalogState()) {
 	const fetch = async url => {
 		sent.push(url);
 		const u = new URL(url);
+		if (u.hostname === 'openlibrary.org' && u.pathname === '/search/authors.json') {
+			// as Open Library searches: any author with the words in their name, the id without its path
+			const q = u.searchParams.get('q').toLowerCase();
+			const docs = Object.values(state.openLibrary.authors)
+				.filter(a => a.name.toLowerCase().includes(q))
+				.map(a => ({
+					key: a.key.replace('/authors/', ''),
+					name: a.name,
+					type: 'author',
+					...(state.openLibrary.found[a.key.replace('/authors/', '')] || {work_count: 0}),
+				}));
+			return json(200, {numFound: docs.length, start: 0, numFoundExact: true, docs});
+		}
 		if (u.hostname === 'openlibrary.org') {
 			const m = /^\/(works|books|authors|isbn)\/([^/]+)\.json$/.exec(u.pathname);
 			const page =
@@ -20,6 +33,23 @@ export function fakeCatalogs(state = openCatalogState()) {
 					? state.openLibrary.books[state.openLibrary.isbn[m[2]]]
 					: state.openLibrary[m[1]][m[2]]);
 			return page ? json(200, page) : json(404, {error: 'notfound'});
+		}
+		if (
+			u.hostname === 'www.wikidata.org' &&
+			u.pathname === '/w/api.php' &&
+			u.searchParams.get('action') === 'wbsearchentities'
+		) {
+			// as Wikidata searches: the items whose label starts with the words
+			const q = u.searchParams.get('search').toLowerCase();
+			const search = Object.values(state.wikidata)
+				.filter(item => item.labels.en.value.toLowerCase().startsWith(q))
+				.map(item => ({
+					id: item.id,
+					label: item.labels.en.value,
+					...(item.descriptions ? {description: item.descriptions.en.value} : {}),
+					match: {type: 'label', language: 'en', text: item.labels.en.value},
+				}));
+			return json(200, {searchinfo: {search: q}, search, success: 1});
 		}
 		if (u.hostname === 'www.wikidata.org' && u.pathname === '/w/api.php') {
 			const entities = Object.fromEntries(
@@ -46,7 +76,11 @@ const claim = (datavalue, qualifiers) => ({
 	...(qualifiers ? {qualifiers} : {}),
 });
 
-/** An invented book in both: "The Lantern Keeper" by Ann Vale, book 2 of Gull Isle. */
+/**
+ * An invented book in both: "The Lantern Keeper" by Ann Vale, book 2 of Gull Isle. Its author has a page in both
+ * (with a bio, a link and her ids elsewhere on Open Library, her site and ids on Wikidata), and a namesake on
+ * each; the series is an item on Wikidata.
+ */
 export const openCatalogState = () => ({
 	openLibrary: {
 		works: {
@@ -70,7 +104,25 @@ export const openCatalogState = () => ({
 				contributors: [{role: 'Narrator', name: 'Hollis Marr'}],
 			},
 		},
-		authors: {OL70A: {key: '/authors/OL70A', name: 'Ann Vale'}},
+		authors: {
+			OL70A: {
+				key: '/authors/OL70A',
+				name: 'Ann Vale',
+				bio: {type: '/type/text', value: 'Ann Vale writes  of tides.\r\n\r\nShe lives by an estuary.'},
+				links: [
+					{title: 'Her readers', url: 'https://valereaders.example/', type: {key: '/type/link'}},
+					{title: 'On ISFDB', url: 'https://www.isfdb.org/cgi-bin/ea.cgi?3301', type: {key: '/type/link'}},
+				],
+				remote_ids: {wikidata: 'Q9002', goodreads: '8801', amazon: 'B0AUTHOR01', viaf: '1234'},
+			},
+			OL71A: {key: '/authors/OL71A', name: 'Ann Vale', bio: 'Ann Vale edits tide tables.'},
+			OL72A: {key: '/authors/OL72A', name: 'Ann Valerian'},
+		},
+		// what its search says of an author it found
+		found: {
+			OL70A: {top_work: 'The Lantern Keeper', work_count: 4},
+			OL71A: {top_work: 'Tide Tables 1988', work_count: 1},
+		},
 		isbn: {9780000000019: 'OL901M'},
 	},
 	wikidata: {
@@ -86,8 +138,30 @@ export const openCatalogState = () => ({
 				P8383: [claim({type: 'string', value: '7171'})],
 			},
 		},
-		Q9002: {id: 'Q9002', labels: {en: {language: 'en', value: 'Ann Vale'}}, claims: {}},
-		Q9003: {id: 'Q9003', labels: {en: {language: 'en', value: 'Gull Isle'}}, claims: {}},
+		Q9002: {
+			id: 'Q9002',
+			labels: {en: {language: 'en', value: 'Ann Vale'}},
+			descriptions: {en: {language: 'en', value: 'writer of sea stories'}},
+			claims: {
+				P856: [claim({type: 'string', value: 'https://annvale.example'})],
+				P648: [claim({type: 'string', value: 'OL70A'})],
+				P2963: [claim({type: 'string', value: '8801'})],
+				P1233: [claim({type: 'string', value: '3301'})],
+			},
+		},
+		Q9003: {
+			id: 'Q9003',
+			labels: {en: {language: 'en', value: 'Gull Isle'}},
+			descriptions: {en: {language: 'en', value: 'series of novels by Ann Vale'}},
+			claims: {P6947: [claim({type: 'string', value: '6611'})]},
+		},
+		Q9005: {
+			id: 'Q9005',
+			labels: {en: {language: 'en', value: 'Ann Vale'}},
+			descriptions: {en: {language: 'en', value: 'village in a valley'}},
+			claims: {},
+		},
+		Q9006: {id: 'Q9006', labels: {en: {language: 'en', value: 'Ann Vale bibliography'}}, claims: {}},
 		Q9004: {id: 'Q9004', labels: {en: {language: 'en', value: 'fantasy'}}, claims: {}},
 	},
 });
@@ -257,6 +331,40 @@ export function fakeProxyCatalogs() {
 			],
 		},
 	};
+	// a series' or a person's ASIN is a link of theirs, as a release's is
+	const onAudible = asin => [
+		{id: `Ext${asin.slice(2)}00`, itemId: asin, category: {title: 'Audible', url: 'https://www.audible.com'}},
+	];
+	const entries = {
+		series: {
+			SrsGullIsle1: {id: 'SrsGullIsle1', title: 'Gull Isle', external: onAudible('B0SERIES02'), books: []},
+		},
+		people: {
+			PrsnAuth0000: {
+				id: 'PrsnAuth0000',
+				name: 'Ann Vale',
+				description: 'Ann Vale writes of the sea.',
+				external: onAudible('B0AUTHOR01'),
+			},
+			PrsnNarr0000: {id: 'PrsnNarr0000', name: 'Hollis Marr', description: 'Hollis Marr reads aloud.'},
+			PrsnHllsMrr2: {id: 'PrsnHllsMrr2', name: 'Hollis Marr'},
+		},
+		publishers: {PblshrGullw1: {id: 'PblshrGullw1', name: 'Gullwing Audio'}},
+	};
+	// what a search says of what it found
+	const found = {
+		SrsGullIsle1: {bookCount: 3},
+		PrsnAuth0000: {
+			roleNames: ['Author'],
+			sampleCredits: [{role: 'Author', book: {id: book.id, title: book.title}}],
+		},
+		PrsnNarr0000: {
+			roleNames: ['Narrator'],
+			sampleCredits: [{role: 'Narrator', book: {id: book.id, title: book.title}}],
+		},
+		PrsnHllsMrr2: {roleNames: ['Author'], sampleCredits: []},
+		PblshrGullw1: {releaseCount: 2},
+	};
 	const notFound = detail => json(404, {errors: [{status: '404', title: 'Not Found', detail}]});
 	const route = async path => {
 		sent.push(path);
@@ -313,6 +421,19 @@ export function fakeProxyCatalogs() {
 			return json(
 				200,
 				items.filter(i => i.title.toLowerCase().includes(q)),
+			);
+		}
+		// its series, people and publishers: one by its id, or those a search finds (any with the words in its name)
+		m = /^\/audiobookdb\/(series|people|publishers)(?:\/([^/]+))?$/.exec(u.pathname);
+		if (m && m[2])
+			return entries[m[1]][m[2]] ? json(200, entries[m[1]][m[2]]) : notFound(`${m[1]} with id ${m[2]} not found`);
+		if (m) {
+			const q = u.searchParams.get('q').toLowerCase();
+			return json(
+				200,
+				Object.values(entries[m[1]])
+					.filter(e => (e.title || e.name).toLowerCase().includes(q))
+					.map(e => ({id: e.id, ...(e.title ? {title: e.title} : {name: e.name}), ...found[e.id]})),
 			);
 		}
 		m = /^\/audiobookdb\/(audiobooks\/external\/audible|books|releases)\/([^/]+)$/.exec(u.pathname);

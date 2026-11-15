@@ -1,10 +1,11 @@
 // Wikidata as a source of the Edit page's Fill in: it answers any web page (open CORS, no key), by its items
 // (Q…), with a book's title, authors, series and genres, and its ids in other catalogs. It has no editions.
+// A series, author, narrator or publisher is an item too: it gives their site and their ids in other catalogs.
 import {Text, PhraseError} from './text.js';
 import {Book} from './book.js';
 import {BookSource} from './book-source.js';
 import type {Unchecked} from './text.js';
-import type {Pasted} from './book-source.js';
+import type {Pasted, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
 
 const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
 // Wikidata's properties of a book: its title, authors, series (with the number as a qualifier), genres, and
@@ -20,11 +21,47 @@ const P = {
 	isfdbTitle: 'P1274',
 };
 
-/** Looks books up on Wikidata. */
+// Wikidata's properties of a series or a person: their site, and their ids in catalogs this app knows, by kind
+// (checked against Wikidata on 2026-11-15); a narrator is a person as an author is
+const SITE = 'P856';
+const PERSON_IDS = {
+	openlibrary: 'P648',
+	goodreads: 'P2963',
+	isfdb: 'P1233',
+	bookbrainz: 'P2607',
+	'amazon.com': 'P4862',
+};
+const ENTRY_IDS: Record<EntryKind, Record<string, string>> = {
+	series: {goodreads: 'P6947', isfdb: 'P1235', bookbrainz: 'P12048'},
+	author: PERSON_IDS,
+	narrator: PERSON_IDS,
+	publisher: {isfdb: 'P1239', bookbrainz: 'P8063'},
+};
+// which of a book's properties names its series or its authors
+const ON_BOOK: Partial<Record<EntryKind, string>> = {series: P.series, author: P.author};
+
+/** an item's claims of a property that aren't deprecated */
+const claimsOf = (item: Unchecked, prop: string): Unchecked[] =>
+	Text.isObject(item.claims) && Array.isArray(item.claims[prop])
+		? item.claims[prop].filter((c: unknown) => Text.isObject(c) && c.rank !== 'deprecated')
+		: [];
+/** what a claim says: a text, or an item ({id}) */
+const valueOf = (claim: Unchecked): unknown =>
+	Text.isObject(claim.mainsnak) && Text.isObject(claim.mainsnak.datavalue)
+		? claim.mainsnak.datavalue.value
+		: undefined;
+/** an item's label or description in English, tidied */
+const inEnglish = (item: unknown, what: 'labels' | 'descriptions'): string => {
+	const text = Text.isObject(item) && Text.isObject(item[what]) ? item[what].en : null;
+	return Text.isObject(text) && typeof text.value === 'string' ? Text.tidy(text.value) : '';
+};
+
+/** Looks books, series and people up on Wikidata. */
 export class WikidataSource extends BookSource {
 	static CATALOG = 'wikidata';
 	static LABEL = 'Wikidata';
 	static NAMES = ['Wikidata'];
+	static ENTRIES = ['series', 'author', 'narrator', 'publisher'] as const;
 
 	/**
 	 * A bare Wikidata item (Q…).
@@ -45,7 +82,7 @@ export class WikidataSource extends BookSource {
 		const params = new URLSearchParams({
 			action: 'wbgetentities',
 			ids: ids.slice(0, 50).join('|'),
-			props: claims ? 'labels|claims' : 'labels',
+			props: claims ? 'labels|descriptions|claims' : 'labels',
 			languages: 'en',
 			languagefallback: '1',
 			format: 'json',
@@ -127,5 +164,81 @@ export class WikidataSource extends BookSource {
 		if (/^\d+$/.test(isfdb)) ext.isfdb = isfdb;
 		rec.ext = ext;
 		return Book.fromRecord(rec);
+	}
+
+	// ------------------------------------------------------------------ series and people
+	async entry(kind: EntryKind, id: string): Promise<EntryAnswer | null> {
+		const item = (await this.items([id], true))[id];
+		return Text.isObject(item) && !('missing' in item) ? this.entryOf(kind, item, 'id') : null;
+	}
+
+	/**
+	 * A series or author by the Wikidata items of its books, which name them; else the items called `name`, each
+	 * with Wikidata's description of it.
+	 */
+	async findEntries({kind, name, books}: EntryQuery): Promise<EntryAnswer[]> {
+		const prop = ON_BOOK[kind];
+		const mine = [...new Set(books.map(b => b.external[WikidataSource.CATALOG]).filter(Boolean))].slice(0, 5);
+		if (prop && mine.length) {
+			const named = Object.values(await this.items(mine, true)).flatMap(item =>
+				Text.isObject(item)
+					? claimsOf(item, prop).map(claim => {
+							const v = valueOf(claim);
+							return Text.isObject(v) && typeof v.id === 'string' ? v.id : '';
+						})
+					: [],
+			);
+			const items = await this.items([...new Set(named.filter(Boolean))], true);
+			const same = Object.values(items).filter(item => BookSource.sameName(inEnglish(item, 'labels'), name));
+			if (same.length === 1) return [this.entryOf(kind, same[0], 'books')];
+		}
+		const params = new URLSearchParams({
+			action: 'wbsearchentities',
+			search: name,
+			type: 'item',
+			language: 'en',
+			limit: '10',
+			format: 'json',
+			origin: '*',
+		});
+		const answer = await this.json(`${WIKIDATA_API}?${params}`);
+		const hits = (answer && Array.isArray(answer.search) ? answer.search : [])
+			.filter(
+				(hit: unknown) =>
+					Text.isObject(hit) && /^Q\d+$/.test(String(hit.id)) && BookSource.sameName(hit.label, name),
+			)
+			.slice(0, WikidataSource.NAMESAKES)
+			.map((hit: Unchecked) => hit.id as string);
+		const items = await this.items(hits, true);
+		return hits
+			.map((id: string) => items[id])
+			.filter((item: unknown) => Text.isObject(item) && !('missing' in item))
+			.map((item: Unchecked) => this.entryOf(kind, item, 'name'));
+	}
+
+	/**
+	 * A series or person from its Wikidata item: its site, and its ids in the catalogs Wikidata knows them in.
+	 */
+	entryOf(kind: EntryKind, item: Unchecked, by: EntryAnswer['by']): EntryAnswer {
+		const string = (prop: string): string => {
+			const v = claimsOf(item, prop)
+				.map(valueOf)
+				.find(x => typeof x === 'string');
+			return typeof v === 'string' ? Text.tidy(v) : '';
+		};
+		const external: Record<string, string> = {};
+		for (const [catalog, prop] of Object.entries(ENTRY_IDS[kind])) {
+			const id = string(prop);
+			if (id) external[catalog] = /^ol\d+[a-z]$/i.test(id) ? id.toUpperCase() : id;
+		}
+		const described = inEnglish(item, 'descriptions');
+		return this.answerOf(
+			kind,
+			String(item.id),
+			inEnglish(item, 'labels'),
+			by,
+			{url: string(SITE), external},
+			described ? Text.phrase('{description}', {description: described}) : null,
+		);
 	}
 }

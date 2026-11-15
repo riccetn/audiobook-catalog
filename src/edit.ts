@@ -46,6 +46,7 @@ import type {CatalogRun, CatalogChoice} from './edit-catalogs.js';
 import type {CatalogEntry, FieldChoices} from './modules/book-review.js';
 import type {NotAudio} from './modules/shelf-sync.js';
 import type {Filled} from './modules/catalog-lookup.js';
+import type {EntryInfo} from './modules/book-source.js';
 
 /** A book being edited: the book as loaded (`before`, as stored text) and the copy the page changes. */
 export type Draft = {id: string; before: Book; book: Book; error: string; added?: NewPick};
@@ -2284,6 +2285,47 @@ async function removeBook() {
 	);
 }
 
+// ------------------------------------------------------------------ Fill in the series from other catalogs
+/**
+ * The series panel's Fill in from other catalogs: asks the catalogs a page may read about the series
+ * (entry-fill.ts, loaded only now) and lists under the panel what they have that it lacks, to tick. Asking
+ * changes nothing; Add puts the ticked values in the panel's empty fields, which Review & save then lists.
+ */
+export async function fillSeries(): Promise<void> {
+	const id = SERIES_ID;
+	const name = id === null ? undefined : CATALOG.nameOf('series', id);
+	if (id === null || name === undefined) return;
+	const had = CATALOG.series.get(id);
+	// what the panel holds now: a field that can't be read counts as empty, and Review & save says what is wrong with it
+	const current = (): EntryInfo => {
+		const total = fieldById('sf_total').value.trim().toLowerCase(),
+			status = fieldById('sf_status').value;
+		return {
+			...(total ? {total: /^\d+$/.test(total) ? parseInt(total, 10) : ('many' as const)} : {}),
+			...(status === 'ongoing' || status === 'complete' ? {status} : {}),
+			external: readExternalFields('sf_ext_', 'series', had ? had.external : {}).ids,
+			links: Text.parseLinks(fieldById('sf_links').value),
+		};
+	};
+	const {fillEntry, addedText} = await import('./entry-fill.js');
+	await fillEntry({
+		kind: 'series',
+		name,
+		current,
+		books: DRAFTS.map(d => d.book),
+		box: byId('sf_fill'),
+		still: () => SERIES_ID === id && !byId('seriesPanel').hidden,
+		onAdd: (info, added) => {
+			fieldById('sf_total').value = info.total === undefined ? '' : String(info.total);
+			fieldById('sf_status').value = info.status || '';
+			fillExternalFields('sf_ext_', 'series', info.external);
+			fieldById('sf_links').value = info.links.join('\n');
+			showChangeCount();
+			showIoStatus(addedText(added));
+		},
+	});
+}
+
 // ------------------------------------------------------------------ Fill in from another catalog
 // One book's Fill in: the book a pasted address, id or ISBN names (or a title typed, found on AudiobookDB),
 // looked up in the catalogs a page may read (catalog-lookup.ts), fills in the book's empty fields only, so
@@ -2423,6 +2465,7 @@ export async function loadSeries() {
 	fillExternalFields('sf_ext_', 'series', info ? info.external : {});
 	fieldById('sf_links').value = info ? info.links.join('\n') : '';
 	byId('seriesFormError').textContent = '';
+	fillElement(byId('sf_fill'));
 	REMOVING_SERIES = false;
 	startDrafts(CATALOG.booksOf('series', id).slice().sort(bookOrder));
 	drawSeriesChips();
@@ -2514,6 +2557,7 @@ fillElement(
 	}),
 );
 byId('seriesRemoveBtn').addEventListener('click', removeSeries);
+byId('seriesFillBtn').addEventListener('click', () => void fillSeries());
 byId('bookRemoveBtn').addEventListener('click', removeBook);
 byId('fillFromBtn').addEventListener('click', () => void fillFromCatalog());
 // Enter looks it up
