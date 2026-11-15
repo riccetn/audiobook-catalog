@@ -120,6 +120,18 @@ export class HardcoverClient extends CatalogClient {
 		publisherBySlug: `query PublisherBySlug($slug: String!) {
 	publishers(where: {slug: {_eq: $slug}}, limit: 1) { id canonical_id name }
 }`,
+		// what Hardcover says of some series, authors (narrators are authors there) or publishers, by their ids
+		// (a publisher's is a bigint), and the publishers of a name
+		seriesInfo: `query SeriesInfo($ids: [Int!]) {
+	series(where: {id: {_in: $ids}}) { id canonical_id name books_count primary_books_count is_completed }
+}`,
+		authorInfo: `query AuthorInfo($ids: [Int!]) {
+	authors(where: {id: {_in: $ids}}) { id canonical_id name bio books_count }
+}`,
+		publisherInfo: `query PublisherInfo($ids: [bigint!]) {
+	publishers(where: {id: {_in: $ids}}) { id canonical_id name editions_count }
+}`,
+		publishersByName: `query PublishersByName($names: [String!]) { publishers(where: {name: {_in: $names}}) { id name } }`,
 		// a book's audiobook editions, for a book named without one
 		audioEditions: `query AudioEditions($book: Int!) {
 	editions(where: {book_id: {_eq: $book}, reading_format_id: {_eq: 2}}, order_by: {id: asc}, limit: 1) {

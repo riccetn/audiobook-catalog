@@ -3,10 +3,14 @@
 // (lookup), and what it needs to be asked (a key, the catalog proxy). CatalogLookup knows only this class, so
 // a catalog is added by writing its source and listing it in CatalogConnectors.SOURCES. Nothing here changes
 // the catalog; the requests are passed in, so the tests run it offline.
+// A source may also know series, authors, narrators and publishers (ENTRIES): EntryLookup asks it for one by its
+// id there (entry), or for those a name and its books point to (findEntries), to fill in what the catalog keeps
+// about them.
 import {Text, PhraseError} from './text.js';
 import {CatalogClient} from './catalog-client.js';
 import type {Unchecked, Phrase} from './text.js';
 import type {Book} from './book.js';
+import {ExternalCatalog} from './external-catalog.js';
 
 /** a fetch of an address */
 export type Get = (url: string) => Promise<{ok: boolean; status: number; json: () => Promise<unknown>}>;
@@ -31,6 +35,39 @@ export type LookupContext = {get: Get; clients: CatalogClient[]; proxy: Get | nu
  * `fallback` (asked only when no other has it); null when it can't.
  */
 export type Answers = 'own' | 'also' | 'fallback' | null;
+
+/** A series, or someone credited: what the catalog keeps info about beside its books. */
+export type EntryKind = 'series' | 'author' | 'narrator' | 'publisher';
+/**
+ * What is kept about a series or a person, as far as a catalog can fill it in: a person's bio and site, a series'
+ * books released so far and whether it is complete, the ids in external catalogs and links to other pages.
+ */
+export interface EntryInfo {
+	bio?: string;
+	url?: string;
+	/** a count, or 'many' for a series kept as too long to count (no catalog answers that) */
+	total?: number | 'many';
+	status?: 'ongoing' | 'complete';
+	external: Record<string, string>;
+	links: string[];
+}
+/** Whom a source is asked about: the name the catalog has, and the books of theirs it has. */
+export type EntryQuery = {kind: EntryKind; name: string; books: Book[]};
+/**
+ * A series or person as a catalog has it: `catalog` and `id` name its page there, `name` is what the catalog
+ * calls it, `about` what tells it from others of its name, and `info` what it gives (with its own id). `by` says
+ * how it was found: by an id the entry has ('id'), on one of its books ('books'), both of which are sure, or by
+ * its name alone ('name'), which may be someone else of that name.
+ */
+export type EntryAnswer = {
+	catalog: string;
+	source: string;
+	id: string;
+	name: string;
+	about: Phrase | null;
+	by: 'id' | 'books' | 'name';
+	info: EntryInfo;
+};
 
 const MONTHS = [
 	'january',
@@ -63,6 +100,10 @@ export class BookSource {
 	static FILLS_IN = false;
 	/** Whether a typed title (no address or id) is searched on it. */
 	static SEARCHES = false;
+	/** The kinds of series and people it can be asked about (entry, findEntries); none by default. */
+	static ENTRIES = [] as readonly EntryKind[];
+	/** How many of a name's namesakes findEntries gives at most, as each is one to tell apart. */
+	static NAMESAKES = 3;
 
 	context: LookupContext;
 
@@ -143,6 +184,75 @@ export class BookSource {
 		throw new PhraseError("{catalog} can't be searched by title", {catalog: this.label});
 	}
 
+	// ------------------------------------------------------------------ series and people
+	/**
+	 * The series or person with `id` in this catalog, with what it gives about them; null when the catalog has
+	 * none, or has nothing to say of one. Throws with a short reason when it can't be asked.
+	 * @param _id as the catalog's entries keep it (ExternalCatalog)
+	 */
+	async entry(_kind: EntryKind, _id: string): Promise<EntryAnswer | null> {
+		return null;
+	}
+
+	/**
+	 * The series or people this catalog has for a name the catalog has no id of here: the one its books there
+	 * name (found by the ids the books and their editions have in this catalog, `by` 'books'), else those of
+	 * that name (`by` 'name', NAMESAKES at most). Throws with a short reason when it can't be asked.
+	 */
+	async findEntries(_query: EntryQuery): Promise<EntryAnswer[]> {
+		return [];
+	}
+
+	/**
+	 * An answer of this source: the entry `id` here, with `info` (its own id is added to the ids; ids no catalog
+	 * takes for this kind are left out, and so are empty values).
+	 */
+	answerOf(
+		kind: EntryKind,
+		id: string,
+		name: string,
+		by: EntryAnswer['by'],
+		info: Partial<EntryInfo> = {},
+		about: Phrase | null = null,
+		catalog: string = this.kind.CATALOG,
+	): EntryAnswer {
+		const external: Record<string, string> = {};
+		for (const [key, value] of Object.entries({[catalog]: id, ...info.external}))
+			if (ExternalCatalog.isId(key, kind, value)) external[key] = value;
+		// a link that is their page in a catalog is kept as their id there, as the catalog's entries keep it
+		const links: string[] = [];
+		for (const link of Text.tidyLinks(info.links || []) as string[]) {
+			const page = ExternalCatalog.fromAddress(link, kind);
+			if (!page) links.push(link);
+			else external[page.catalog] ??= page.id;
+		}
+		const out: EntryInfo = {external, links};
+		const bio = BookSource.paragraphs(info.bio);
+		if (bio) out.bio = bio;
+		const [url] = Text.tidyLinks([info.url || '']) as string[];
+		if (url) out.url = url;
+		if (typeof info.total === 'number' && Number.isInteger(info.total) && info.total > 0) out.total = info.total;
+		if (info.status) out.status = info.status;
+		return {catalog, source: this.label, id, name: Text.tidy(name), about, by, info: out};
+	}
+
+	/** Whether a catalog calls someone or a series what the catalog here does (spelling and case aside). */
+	static sameName(theirs: unknown, mine: string): boolean {
+		return typeof theirs === 'string' && Boolean(Text.norm(mine)) && Text.norm(theirs) === Text.norm(mine);
+	}
+
+	/** A text of several paragraphs as a bio keeps it: tidy lines, a blank line between paragraphs; '' when none. */
+	static paragraphs(text: unknown): string {
+		return typeof text === 'string'
+			? text
+					.split(/\r\n|\r|\n/)
+					.map(Text.tidy)
+					.join('\n')
+					.replace(/\n{3,}/g, '\n\n')
+					.trim()
+			: '';
+	}
+
 	// ------------------------------------------------------------------ asking
 	/**
 	 * An answer of a catalog that answers web pages, at `url`.
@@ -189,7 +299,7 @@ export class BookSource {
 	}
 
 	/**
-	 * @param list a list is wanted (a search's), not a book
+	 * @param list a list is wanted (a search's), not one thing
 	 * @returns what `res` holds, null for a 404; throws with a short reason otherwise
 	 */
 	static async answer(
@@ -201,12 +311,7 @@ export class BookSource {
 		if (!res.ok) throw new PhraseError('{catalog} answered {status}', {catalog: source, status: res.status});
 		const json = await res.json().catch(() => null);
 		if (list ? !Array.isArray(json) : !Text.isObject(json))
-			throw new PhraseError(
-				list
-					? "{catalog} sent something that isn't a list of books"
-					: "{catalog} sent something that isn't a book",
-				{catalog: source},
-			);
+			throw new PhraseError("{catalog} sent an answer this app can't read", {catalog: source});
 		return json;
 	}
 

@@ -83,6 +83,15 @@ thing it does and listing it there:
 | `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync`, `AudibleSync`                                              | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
 | `BookSource`                         | a catalog the Edit page's _Fill in_ asks              | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
 
+A `BookSource` may also know series, authors, narrators and publishers: it lists the kinds in `ENTRIES` and writes
+`entry(kind, id)` (the one with that id there) and `findEntries({kind, name, books})` (the one the entry's books
+there name, `by: 'books'`, else those of that name, `by: 'name'`), each answer made with `answerOf`. `EntryLookup`
+(`entry-lookup.ts`) asks the sources of `CatalogConnectors.SOURCES` that list the kind, by the id the entry has
+there, else by its books and name, and then by the ids the sure answers gave for one another; `offers` lists what
+the answers have that the entry lacks, and `apply` puts the picked ones in a copy. It changes nothing itself: the
+forms' _Fill in from other catalogs_ (`entry-fill.ts`, loaded with `import()`) shows the offers with ticks and puts
+only the ticked ones in the form, which its own Save keeps. Neither names a catalog.
+
 A `CatalogClient` subclass asks the catalog's API and says what your key for it is: `KEY_NAME` (Hardcover calls its
 key a token), `KEY_STORAGE` (where this browser keeps it), `KEY_HELP`, whether nothing works without it (`KEY_NEEDED`),
 and whether it is asked through the catalog proxy (`VIA_PROXY`); `connections.ts` reads and saves every key the same way
@@ -101,7 +110,8 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `connections.ts
 - a shelf sync listed in `SYNCS` is also asked by the Edit series page for each kind in its `PARTS`
   (`edit-catalogs.ts`, `BookReview`), with nothing more to write.
 
-`tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone.
+`tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone (and Ledger,
+a source of series).
 
 ### What a catalog's ids can do
 

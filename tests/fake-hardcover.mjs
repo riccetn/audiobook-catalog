@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 /**
  * A stand-in for Hardcover's GraphQL API, answering the queries the page sends from `state`: {shelf
  * (user_books rows), books, editions (rows by id), goodreads ({Goodreads id: Hardcover book id}), series, authors,
- * publishers (lists of rows with a slug)}.
+ * publishers (lists of rows with a slug), about (what Hardcover says of a series, author or publisher, by id)}.
  * Mutations change `state.shelf`. Built from Hardcover's published schema; the real API is not reached.
  */
 export function fakeHardcover(state) {
@@ -53,6 +53,34 @@ export function fakeHardcover(state) {
 				authors: [...new Map(all.filter(a => variables.names.includes(a.name)).map(a => [a.id, a])).values()],
 			});
 		}
+		// what Hardcover says of some series, authors or publishers: those of the books and the lists, by id
+		const info = /^query (Series|Author|Publisher)Info/.exec(query);
+		if (info) {
+			const table = {Series: 'series', Author: 'authors', Publisher: 'publishers'}[info[1]];
+			const rows = [
+				...(state[table] || []),
+				...Object.values(state.books).flatMap(b =>
+					table === 'series'
+						? [b.featured_book_series?.series].filter(Boolean)
+						: table === 'authors'
+							? b.contributions.map(c => c.author)
+							: [],
+				),
+			];
+			const byId = new Map(rows.map(row => [String(row.id), row]));
+			return answer({
+				[table]: variables.ids
+					.map(id => byId.get(String(id)))
+					.filter(Boolean)
+					.map(row => ({...row, ...((state.about || {})[table] || {})[row.id]})),
+			});
+		}
+		if (query.startsWith('query PublishersByName'))
+			return answer({
+				publishers: (state.publishers || [])
+					.filter(row => variables.names.includes(row.name))
+					.map(({id, name}) => ({id, name})),
+			});
 		if (query.startsWith('query BookParts')) {
 			return answer({
 				books: variables.ids
@@ -172,6 +200,11 @@ export const hardcoverState = () => ({
 		{id: 4102, slug: 'w-ashcombe', canonical_id: 4101, name: 'W. Ashcombe'},
 	],
 	publishers: [{id: 5101, slug: 'kestrel-row-audio', name: 'Kestrel Row Audio'}],
+	about: {
+		series: {3102: {books_count: 4, primary_books_count: 3, is_completed: true}},
+		authors: {4103: {bio: 'Ann Vale grew up on a tidal island.', books_count: 3}},
+		publishers: {5101: {editions_count: 12}},
+	},
 	shelf: [
 		{id: 1, book_id: 77, edition_id: 501, status_id: 3, user_book_reads: [{finished_at: '2024-03-15'}]},
 		{id: 2, book_id: 78, edition_id: 601, status_id: 3, user_book_reads: []},

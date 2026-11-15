@@ -35,6 +35,20 @@ audible.com's or amazon.com's; for another store, paste the address, and the fie
 form refuses what is neither an id nor an address there (a Hardcover address in the Goodreads field, say).
 Clearing every field keeps nothing about them; the author stays. Like every edit, the change is saved in the browser (see [Running the app and keeping your catalog](saving.md)).
 
+**Fill in from other catalogs**, in the form, asks the other catalogs what they have about the author: a bio,
+their website, their id on each catalog, and other links. A catalog the author has an id in is asked by that id.
+One where your books by them have ids is asked who wrote those books (Audible by your editions' ASINs, through
+[your server](server.md); AudiobookDB, through it too; Hardcover, with your token; Open Library and Wikidata, which
+need nothing), and a catalog that knows their id in another one (Wikidata and Open Library know each other's, and
+their Goodreads and Amazon ids) lets that one be asked too. Only when none of that finds them is a catalog searched
+for the name. What the catalogs have that the form lacks is listed below the fields, under the catalog that has
+it, each value with a tick and a link to check it by. An author found by an id or by your books is ticked; one found
+by the name alone is listed with what tells them apart (their best known book, a description) and left unticked, as
+it may be someone else of that name. Of several bios, tick the one you want. Nothing is changed by asking: **Add
+the ticked** puts those values in the form's empty fields (a field you filled in is never replaced), where you
+can still edit them, and nothing is kept until you press **Save author**. A catalog that can't be asked is named,
+with what to save on Import & export to ask it. Nothing is sent to any catalog but the questions.
+
 An author is an entry of their own, under the name exactly as the books write it: they stay in the catalog,
 and on _Authors_ ("no books yet"), when no book names them any more, until you remove them. The _Edit_ page
 says when a name you type is new (see [Everyday workflows](workflows.md)).
