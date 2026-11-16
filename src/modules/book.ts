@@ -17,6 +17,8 @@ export interface BookInit {
 	/** number in the series, as text: "3", "2.5", or a box set's range "4-6" */
 	number?: string;
 	genres?: string[];
+	/** where its story takes place: the names of its places (a world, or a place in one) */
+	places?: string[];
 	/** dates read, oldest first: "2024-03-15", "2024-03" or "2024"; none means unknown, not unread */
 	read?: string[];
 	/** its ids by external catalog: {"hardcover": "77", "goodreads": "1234"} */
@@ -52,6 +54,7 @@ const BOOK_FIELDS: Record<string, StoredField<Book>> = {
 	s: [Text.nonEmpty, (b, v) => (b.series = v)],
 	sn: [Text.nonEmpty, (b, v) => (b.number = v)],
 	g: [v => Array.isArray(v) && v.every(Text.nonEmpty), (b, v) => (b.genres = v ? [...v] : [])],
+	pl: [Text.isNameList, (b, v) => (b.places = v ? [...v] : [])],
 	r: [
 		v => Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'),
 		(b, v) => (b.read = v ? [...v] : []),
@@ -74,7 +77,7 @@ export class Book {
 	}
 
 	/** the keys of a stored book, in order */
-	static KEYS = ['t', 'a', 's', 'sn', 'g', 'r', 'ext', 'links', 'e'];
+	static KEYS = ['t', 'a', 's', 'sn', 'g', 'pl', 'r', 'ext', 'links', 'e'];
 	// The key a backup keeps the book's id under, before the others. It is not one of KEYS, as it says which
 	// record the book is, not what the book is: text() and the comparisons built on it leave it out.
 	static ID_KEY = 'uid';
@@ -86,6 +89,8 @@ export class Book {
 	series: string | undefined;
 	number: string | undefined;
 	genres: string[];
+	/** where its story takes place: its places' names (a place in a world implies the world, Catalog.placeAncestors) */
+	places: string[];
 	/** none means the date is unknown, not that it is unread */
 	read: string[];
 	/** its ids by external catalog */
@@ -102,6 +107,7 @@ export class Book {
 		series,
 		number,
 		genres = [],
+		places = [],
 		read = [],
 		external = {},
 		links = [],
@@ -114,6 +120,7 @@ export class Book {
 		this.series = series;
 		this.number = number;
 		this.genres = [...genres];
+		this.places = [...places];
 		this.read = [...read];
 		this.external = {...external};
 		this.links = [...links];
@@ -122,7 +129,7 @@ export class Book {
 	}
 
 	/**
-	 * A book from the way it is stored (`{t, a, s, sn, g, r, ext, links, e}`), in the current format (BackupV1.fixBooks()
+	 * A book from the way it is stored (`{t, a, s, sn, g, pl, r, ext, links, e}`), in the current format (BackupV1.fixBooks()
 	 * brings one from an older backup to it). A value that is not what its key holds, and a key a book has not, is
 	 * kept aside as it is and written back by toJSON(), so the Check still reports it. Throws when it is
 	 * not an object.
@@ -158,6 +165,7 @@ export class Book {
 		else if (key === 't') v = this.title || undefined;
 		else if (key === 'a') v = this.authors.length ? [...this.authors] : undefined;
 		else if (key === 'g') v = this.genres.length ? [...this.genres] : undefined;
+		else if (key === 'pl') v = this.places.length ? [...this.places] : undefined;
 		else if (key === 'r') v = this.read.length ? [...this.read] : undefined;
 		else if (key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
 		else if (key === 'links') v = this.links.length ? [...this.links] : undefined;
@@ -501,7 +509,7 @@ export class Book {
 	/**
 	 * One book made of several entries for the same title. `pick` says, for the title, the authors, the
 	 * series (and its number) and the external ids, which entry's value to keep, as an index into
-	 * `books`; by default the first entry that has one. Genres, dates read and links are combined, and so are
+	 * `books`; by default the first entry that has one. Genres, places, dates read and links are combined, and so are
 	 * editions: an edition that shares an ASIN, Goodreads id or ISBN with one already kept fills in what it
 	 * lacks, the others are added. With `pick.joinEditions`, editions that do not disagree on an ASIN or
 	 * Goodreads id become one edition (see Edition.joinable).
@@ -528,6 +536,7 @@ export class Book {
 			if (series.number) out.number = series.number;
 		}
 		out.genres = [...new Set(books.flatMap(b => b.genres))];
+		out.places = [...new Set(books.flatMap(b => b.places))];
 		out.read = [...new Set(books.flatMap(b => b.read))].sort();
 		const external = from('external', b => Object.keys(b.external).length > 0);
 		for (const b of external ? [external, ...books] : books) {
@@ -584,6 +593,10 @@ export class Book {
 			if (!out.links.length) delete out.links;
 		}
 		if (Array.isArray(out.a)) out.a = Text.tidyNames(out.a);
+		if (Array.isArray(out.pl)) {
+			out.pl = Text.tidyList(out.pl).filter((x: unknown) => x !== '');
+			if (!out.pl.length) delete out.pl;
+		}
 		if (Array.isArray(out.g)) {
 			out.g = out.g
 				.map((x: unknown) => (typeof x === 'string' ? Text.tidy(x) : x))

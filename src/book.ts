@@ -18,6 +18,7 @@ import {
 	bookPageHref,
 	seriesPageHref,
 	editPageHref,
+	namedPlacePageHref,
 } from './store.js';
 import {showIoStatus, byId, spell, spellParts, buildElement, fillElement, joined} from './dom.js';
 import {webLinks} from './id-fields.js';
@@ -420,6 +421,14 @@ function bookDetails(b: Book): HTMLDivElement {
 							b.genres.map(g => buildElement('span', {class: 'tag'}, g)),
 						),
 				],
+				[
+					spell(b.places.length > 1 ? 'Places' : 'Place'),
+					b.places.length > 0 &&
+						joined(
+							b.places.map(name => placeLink(name)),
+							', ',
+						),
+				],
 				...Object.entries(ExternalCatalog.order(b.external) || {}).map(
 					([key, value]) =>
 						[spell('{site} book', {site: ExternalCatalog.name(key)}), idLink(key, 'book', value)] as [
@@ -436,6 +445,18 @@ function bookDetails(b: Book): HTMLDivElement {
 			bookActions(id),
 		),
 	);
+}
+
+/**
+ * A place on a book's details: a link to its page, with the places it is within after it ("London (England,
+ * Earth)"), as the book is set there too.
+ */
+function placeLink(name: string): Child[] {
+	const within = CATALOG.placeAncestors(name);
+	return [
+		buildElement('a', {href: namedPlacePageHref(name)}, name),
+		within.length > 0 && [' ', buildElement('span', {class: 'within'}, `(${within.join(', ')})`)],
+	];
 }
 
 /**

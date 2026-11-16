@@ -1,9 +1,9 @@
-// The stats page (stats.html): how complete the catalog is. For books, editions, series and people, how many
+// The stats page (stats.html): how complete the catalog is. For books, editions, series, people and places, how many
 // lack each value (CatalogStats.sections), each line opening to the ones without it, linked to their pages;
 // and how many have an id in each external catalog (CatalogStats.byCatalog). It holds the whole catalog, as
 // every count goes through all of it, and changes nothing.
 import {CatalogStats} from './modules/catalog-stats.js';
-import {CATALOG, startPage, bookPageHref, seriesPageHref, creditPageHref} from './store.js';
+import {CATALOG, startPage, bookPageHref, seriesPageHref, creditPageHref, placePageHref} from './store.js';
 import {spell, plural, byId, buildElement, fillElement} from './dom.js';
 import type {StatKind, StatSection, StatRow, CatalogCount} from './modules/catalog-stats.js';
 
@@ -16,6 +16,7 @@ export const LISTED = 100;
 function entryHref(kind: StatKind, id: string): string {
 	if (kind === 'books' || kind === 'editions') return bookPageHref(id);
 	if (kind === 'series') return seriesPageHref(id);
+	if (kind === 'places') return placePageHref(id);
 	return creditPageHref(kind, id);
 }
 

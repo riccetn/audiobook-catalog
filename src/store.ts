@@ -6,6 +6,7 @@ import {Text} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
 import {CatalogRecords} from './modules/catalog-records.js';
 import {Contributor} from './modules/contributor.js';
+import {Place} from './modules/place.js';
 import {CatalogDatabase, CatalogConflict, MemoryReader} from './modules/catalog-database.js';
 import type {CatalogReader} from './modules/catalog-database.js';
 import type {
@@ -15,6 +16,7 @@ import type {
 	BookRecord,
 	EditionRecord,
 	ContributorRecord,
+	PlaceRecord,
 	CreditKind,
 } from './modules/catalog-records.js';
 import type {Book} from './modules/book.js';
@@ -93,6 +95,15 @@ export const seriesPageHref: (id: string) => string = id => pageHref('index.html
 /** The Edit page of the series stored under `id` (or the author's books, or the book). */
 export const editPageHref: (id: string, kind?: 'series' | 'author' | 'book') => string = (id, kind = 'series') =>
 	pageHref('edit.html', `#${kind}=` + hashValue(id));
+/**
+ * The address of a place's page (where a book's story takes place), by the id it is stored under.
+ */
+export const placePageHref: (id: string) => string = id => pageHref('place.html', '#place=' + hashValue(id));
+/**
+ * The address of a place's page, by name: its id when the page holds it, else its name, which its page looks up.
+ */
+export const namedPlacePageHref: (name: string) => string = name =>
+	placePageHref(CATALOG.nameIds.places.get(name) ?? name);
 /** The address of the page of the books in no series. */
 export const standalonePageHref = () => pageHref('index.html', '#standalone');
 
@@ -305,7 +316,8 @@ const loaded = (store: StoreName, key: IDBValidKey): boolean =>
 /**
  * What a page asks loadRecords() for: books by id, every book of some series (by id, or by name), the books
  * with an edition an external id names ("asin B0…", as Edition.idKeys() has it, or "isbn 978…"), and series
- * and people by id (their records, whether or not any book loaded names them).
+ * and people by id (their records, whether or not any book loaded names them). Every place comes too, with
+ * the authors who created them: there are few, and a place needs the ones it is part of and within it.
  */
 export interface Wanted {
 	books?: string[];
@@ -368,7 +380,11 @@ async function readWanted(
 		...seriesBooks,
 		...(want.series || []),
 	]);
+	const places: PlaceRecord[] = (await r.all('places', undefined)).filter(
+		(rec: PlaceRecord) => !has('places', rec.id),
+	);
 	const people = lacking('contributors', [
+		...places.flatMap(s => s.creatorIds || []),
 		...books.flatMap(b => b.authorIds),
 		...editions.flatMap(ed => [...ed.narratorIds, ...CatalogRecords.publisherIdsOf(ed)]),
 		...(want.contributors || []),
@@ -378,6 +394,7 @@ async function readWanted(
 		editions,
 		series: await r.get('series', series),
 		contributors: await r.get('contributors', people),
+		places,
 		credits: [],
 		marks: [],
 		exclusions: [],
@@ -491,8 +508,10 @@ export function wholeCatalog(): Promise<void> {
 async function takeInNamesTyped(): Promise<void> {
 	if (WHOLE || !DATABASE) return;
 	const ask: {kind: NamedKind; name: string}[] = [];
+	const storeOf = (kind: NamedKind): 'series' | 'places' | 'contributors' =>
+		kind === 'series' || kind === 'places' ? kind : 'contributors';
 	for (const kind of Catalog.NAMED_KINDS) {
-		const store = kind === 'series' ? 'series' : 'contributors';
+		const store = storeOf(kind);
 		for (const name of CATALOG.namesOf(kind)) {
 			const id = CATALOG.nameIds[kind].get(name);
 			if (id === undefined || !loaded(store, id)) ask.push({kind, name});
@@ -502,8 +521,8 @@ async function takeInNamesTyped(): Promise<void> {
 	const {result} = await DATABASE.read(r =>
 		Promise.all(
 			ask.map(({kind, name}) =>
-				kind === 'series'
-					? r.all('series', 'name', name)
+				kind === 'series' || kind === 'places'
+					? r.all(kind, 'name', name)
 					: r.all('contributors', 'kindName', [Contributor.ONE[kind], name]),
 			),
 		),
@@ -512,27 +531,49 @@ async function takeInNamesTyped(): Promise<void> {
 		const rec = found[0];
 		if (!rec) return;
 		const {kind, name} = ask[i],
-			store = kind === 'series' ? 'series' : 'contributors';
+			store = storeOf(kind);
 		const info = CATALOG.infoMap(kind),
 			had = CATALOG.nameIds[kind].get(name);
 		const typed = had === undefined ? undefined : info.get(had);
 		if (had !== undefined) info.delete(had);
 		CATALOG.nameIds[kind].set(name, rec.id);
-		const stored = CatalogRecords.toCatalog({
-			books: [],
-			editions: [],
-			series: store === 'series' ? [rec] : [],
-			contributors: store === 'contributors' ? [rec] : [],
-			credits: [],
-			marks: [],
-			exclusions: [],
-		})
-			.infoMap(kind)
-			.get(rec.id);
+		const stored =
+			store === 'places'
+				? storedPlace(rec)
+				: CatalogRecords.toCatalog({
+						books: [],
+						editions: [],
+						series: store === 'series' ? [rec] : [],
+						contributors: store === 'contributors' ? [rec] : [],
+						places: [],
+						credits: [],
+						marks: [],
+						exclusions: [],
+					})
+						.infoMap(kind)
+						.get(rec.id);
 		const entry = typed || stored;
 		if (entry) info.set(rec.id, entry);
 		if (!SAVED.has(store)) SAVED.set(store, new Map());
 		(SAVED.get(store) as Map<string, string>).set(JSON.stringify(rec.id), CatalogRecords.ownText(store, rec));
+	});
+}
+
+/**
+ * The info of a place another tab stored since this page read the places (which it holds every one of), as
+ * far as the page can name what it points at: the places it is part of and its creators the page holds.
+ */
+function storedPlace(rec: PlaceRecord): Place | undefined {
+	if (!CatalogRecords.hasInfo('places', rec)) return undefined;
+	const names = (ids: string[] | undefined, kind: 'places' | 'authors'): string[] =>
+		(ids || []).map(id => CATALOG.nameOf(kind, id)).filter(x => x !== undefined);
+	return new Place(rec.name, {
+		parents: names(rec.parentIds, 'places'),
+		creators: names(rec.creatorIds, 'authors'),
+		owner: rec.owner,
+		note: rec.note,
+		external: rec.external,
+		links: rec.links,
 	});
 }
 
@@ -705,12 +746,16 @@ async function loadCatalog(whole: boolean) {
 			WHOLE = true;
 			if (await readOldCatalog()) await persist();
 			// one that can't be saved (persist() said why) stays shown as it is
-			if (!whole && (await DATABASE.revision()) !== null) holdNothing();
+			if (!whole && (await DATABASE.revision()) !== null) {
+				holdNothing();
+				await holdPlaces();
+			}
 			return;
 		}
 		const reshape = await DATABASE.needsReshape();
 		if (!whole && !reshape) {
 			SEEN_REVISION = revision;
+			await holdPlaces();
 			return;
 		}
 		for (let tries = 1; ; tries++) {
@@ -740,7 +785,10 @@ async function loadCatalog(whole: boolean) {
 				return;
 			}
 		}
-		if (!whole) holdNothing();
+		if (!whole) {
+			holdNothing();
+			await holdPlaces();
+		}
 	} catch (e) {
 		try {
 			SEEN_REVISION = await DATABASE.setAside(stored ? stored.records : Text.errorText(e));
@@ -775,6 +823,14 @@ function holdNothing() {
 	SAVED = new Map();
 	POSITIONS = new Map();
 	WHOLE = false;
+}
+
+// A page that holds only some of the catalog holds every place from the start (readWanted reads them all with
+// any books): a place's page and the forms need the ones it is part of and within it, and there are few.
+async function holdPlaces() {
+	if (!DATABASE) return;
+	const {result} = await DATABASE.read(r => readWanted(r, {}, loaded));
+	takeIn(result);
 }
 
 // localStorage held the catalog before IndexedDB did: under CATALOG_KEY as a backup ({books, seriesInfo, authors, narrators,

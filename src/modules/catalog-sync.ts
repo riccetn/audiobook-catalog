@@ -192,7 +192,16 @@ export class CatalogSync {
 
 	/** @returns an empty catalog's records */
 	static noRecords(): RecordSet {
-		return {books: [], editions: [], series: [], contributors: [], credits: [], marks: [], exclusions: []};
+		return {
+			books: [],
+			editions: [],
+			series: [],
+			contributors: [],
+			places: [],
+			credits: [],
+			marks: [],
+			exclusions: [],
+		};
 	}
 }
 

@@ -1,5 +1,5 @@
 // The catalog as the records IndexedDB keeps (CatalogDatabase): a record per book, edition, series,
-// author, narrator and publisher, each under an id that never changes, pointing at each other by id; a
+// author, narrator, publisher and place, each under an id that never changes, pointing at each other by id; a
 // record per person and book they are credited on; the "Not duplicates" marks and the exclusions. Next to
 // what they hold, records carry derived fields (sort keys, counts) that exist only so an index can sort or
 // filter without reading other records. They are written from the catalog on every save and never read
@@ -13,6 +13,7 @@ import {Book} from './book.js';
 import {Edition} from './edition.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
+import {Place} from './place.js';
 import {Exclusions} from './exclusions.js';
 import {Catalog} from './catalog.js';
 import {ExternalCatalog} from './external-catalog.js';
@@ -34,6 +35,8 @@ export interface BookRecord {
 	/** "3", "2.5", or a box set's range "4-6" */
 	number?: string;
 	genres: string[];
+	/** where its story takes place (none: no `placeIds`) */
+	placeIds?: string[];
 	read: string[];
 	/** its own ids by external catalog ({"hardcover": "77"}) */
 	external?: Record<string, string>;
@@ -146,6 +149,28 @@ export interface ContributorRecord {
 	/** a narrator's or publisher's: how many authors their books have */
 	authorCount?: number;
 }
+/**
+ * A place: an entry of its own, whether or not a book names it. `parentIds` are the places it is part of,
+ * `creatorIds` the authors who created it. `sortName`, `bookCount` and `externalKeys` are derived.
+ */
+export interface PlaceRecord {
+	id: string;
+	name: string;
+	parentIds?: string[];
+	creatorIds?: string[];
+	/** who holds its rights */
+	owner?: string;
+	note?: string;
+	/** its ids by external catalog */
+	external?: Record<string, string>;
+	/** other pages about it */
+	links?: string[];
+	sortName: string;
+	/** how many books are set there (not counting the places within it) */
+	bookCount: number;
+	/** its external ids, "wikidata Q42" */
+	externalKeys: string[];
+}
 /** Someone credited on a book (derived: rewritten from the books on every save). */
 export interface CreditRecord {
 	contributorId: string;
@@ -165,6 +190,7 @@ export interface RecordSet {
 	editions: EditionRecord[];
 	series: SeriesRecord[];
 	contributors: ContributorRecord[];
+	places: PlaceRecord[];
 	credits: CreditRecord[];
 	marks: MarkRecord[];
 	exclusions: ExclusionRecord[];
@@ -220,6 +246,7 @@ export class CatalogRecords {
 				['readYears', 'readYears', {multiEntry: true}],
 				['search', 'search'],
 				['standalone', ['standalone', 'sortTitle', 'id']],
+				['placeIds', 'placeIds', {multiEntry: true}],
 			],
 		},
 		editions: {
@@ -248,6 +275,15 @@ export class CatalogRecords {
 				['externalKeys', 'externalKeys', {multiEntry: true}],
 			],
 		},
+		places: {
+			keyPath: 'id',
+			indexes: [
+				['name', 'name', {unique: true}],
+				['byName', ['sortName', 'id']],
+				['parentIds', 'parentIds', {multiEntry: true}],
+				['externalKeys', 'externalKeys', {multiEntry: true}],
+			],
+		},
 		credits: {
 			keyPath: ['contributorId', 'bookId'],
 			indexes: [
@@ -259,7 +295,16 @@ export class CatalogRecords {
 		marks: {keyPath: 'id', indexes: [['bookIds', 'bookIds', {multiEntry: true}]]},
 		exclusions: {keyPath: 'entry', indexes: [['byPosition', ['position', 'entry']]]},
 	};
-	static STORE_NAMES: StoreName[] = ['books', 'editions', 'series', 'contributors', 'credits', 'marks', 'exclusions'];
+	static STORE_NAMES: StoreName[] = [
+		'books',
+		'editions',
+		'series',
+		'contributors',
+		'places',
+		'credits',
+		'marks',
+		'exclusions',
+	];
 	// The derived fields of each store's records (see fromCatalog), which a save works out again from the
 	// rest; credits are derived as a whole. Two tabs changed the same thing only when they changed a
 	// record's other fields.
@@ -291,6 +336,7 @@ export class CatalogRecords {
 			'topAuthorIds',
 			'authorCount',
 		],
+		places: ['sortName', 'bookCount', 'externalKeys'],
 		credits: null,
 		marks: [],
 		exclusions: ['position'],
@@ -302,9 +348,10 @@ export class CatalogRecords {
 	// What the read filter's "No date read" finds in readYears.
 	static UNDATED = 'undated';
 	// The info a series' or person's record holds, beside its name.
-	static INFO: Record<'series' | 'contributors', string[]> = {
+	static INFO: Record<'series' | 'contributors' | 'places', string[]> = {
 		series: ['total', 'status', 'note', 'external', 'links'],
 		contributors: ['bio', 'url', 'external', 'links'],
+		places: ['parentIds', 'creatorIds', 'owner', 'note', 'external', 'links'],
 	};
 
 	/**
@@ -333,6 +380,7 @@ export class CatalogRecords {
 		for (const s of catalog.series.values()) note(`series info ${Text.repr(s.name)}`, s.extra);
 		for (const kind of Contributor.KINDS)
 			for (const c of catalog[kind].values()) note(`${kind} ${Text.repr(c.name)}`, c.extra);
+		for (const s of catalog.places.values()) note(`place ${Text.repr(s.name)}`, s.extra);
 		return out;
 	}
 
@@ -403,11 +451,18 @@ export class CatalogRecords {
 			),
 		);
 
+		const placeBooks: Map<string, number> = new Map();
+		for (const rec of books) for (const id of rec.placeIds || []) placeBooks.set(id, (placeBooks.get(id) || 0) + 1);
+		const places = [...ids.places].map(([name, id]) =>
+			CatalogRecords.placeRecord(id, name, catalog.places.get(id), placeBooks.get(id) || 0, idOf),
+		);
+
 		return {
 			books,
 			editions: [...editions.values()],
 			series,
 			contributors,
+			places,
 			credits,
 			marks: [...catalog.marks.values()].map(m => ({...m})),
 			exclusions: catalog.exclusions.entries.map((entry, position) => ({entry, position})),
@@ -415,7 +470,7 @@ export class CatalogRecords {
 	}
 
 	/**
-	 * What the catalog's search looks in for a book: its title, authors, series, genres, its editions' titles, ids,
+	 * What the catalog's search looks in for a book: its title, authors, series, genres, places, its editions' titles, ids,
 	 * narrators, publisher, description and ISBN, and its own ids, in lower case; then, after a \u0001, its
 	 * ISBNs (13 digits), which a search for an ISBN typed any way finds (searchMatches).
 	 */
@@ -425,6 +480,7 @@ export class CatalogRecords {
 			...b.authors,
 			b.series,
 			...b.genres,
+			...b.places,
 			...b.editions.flatMap(ed => [
 				ed.title,
 				...ed.externalList().map(([, id]) => id),
@@ -492,6 +548,7 @@ export class CatalogRecords {
 			rec.numberEnd = range ? range[1] : rec.numberKey;
 		} else rec.standalone = 1;
 		if (b.number) rec.number = b.number;
+		if (b.places.length) rec.placeIds = [...new Set(b.places)].map(name => idOf('places', name));
 		if (Object.keys(b.external).length) rec.external = ExternalCatalog.order(b.external) as Record<string, string>;
 		if (b.links.length) rec.links = [...b.links];
 		const lastRead = latest(b.read);
@@ -573,9 +630,46 @@ export class CatalogRecords {
 	}
 
 	/**
-	 * Whether a series' or person's record holds info (anything beside its name).
+	 * A place's record.
+	 * @param bookCount how many books are set there
 	 */
-	static hasInfo(store: 'series' | 'contributors', rec: Record<string, any>): boolean {
+	static placeRecord(id: string, name: string, info: Place | undefined, bookCount: number, idOf: IdOf): PlaceRecord {
+		const rec: PlaceRecord = {
+			id,
+			name,
+			sortName: CatalogRecords.sortKey(name),
+			bookCount,
+			externalKeys: externalKeys(info ? info.external : {}),
+		};
+		if (info) {
+			if (info.parents.length) rec.parentIds = info.parents.map(p => idOf('places', p));
+			if (info.creators.length) rec.creatorIds = info.creators.map(a => idOf('authors', a));
+			if (info.owner !== undefined) rec.owner = info.owner;
+			if (info.note !== undefined) rec.note = info.note;
+			if (Object.keys(info.external).length)
+				rec.external = ExternalCatalog.order(info.external) as Record<string, string>;
+			if (info.links.length) rec.links = [...info.links];
+		}
+		return rec;
+	}
+
+	/**
+	 * A place's record as it is stored (`rec`, its own fields), with what is derived worked out again.
+	 * @param bookCount how many books are set there
+	 */
+	static rederivePlace(rec: PlaceRecord, bookCount: number): PlaceRecord {
+		return {
+			...rec,
+			sortName: CatalogRecords.sortKey(rec.name),
+			bookCount,
+			externalKeys: externalKeys(rec.external || {}),
+		};
+	}
+
+	/**
+	 * Whether a series', person's or place's record holds info (anything beside its name).
+	 */
+	static hasInfo(store: 'series' | 'contributors' | 'places', rec: Record<string, any>): boolean {
 		return CatalogRecords.INFO[store].some(k => rec[k] !== undefined);
 	}
 
@@ -682,6 +776,7 @@ export class CatalogRecords {
 			series: rec.seriesId === undefined ? undefined : nameOf(rec.seriesId, 'series'),
 			number: rec.number,
 			genres: rec.genres,
+			places: (rec.placeIds || []).map(id => nameOf(id, 'place')),
 			read: rec.read,
 			// a record from before ids were kept by external catalog has them under fields of their own
 			external: rec.external || ExternalCatalog.oldIds(rec),
@@ -752,6 +847,24 @@ export class CatalogRecords {
 			if (name === undefined) throw new Error(`no ${what} is stored under ${id}`);
 			return name;
 		};
+		const places = byName(records.places || []);
+		for (const s of places) {
+			names.set(s.id, s.name);
+			catalog.nameIds.places.set(s.name, s.id);
+		}
+		for (const s of places)
+			if (CatalogRecords.hasInfo('places', s))
+				catalog.places.set(
+					s.id,
+					new Place(s.name, {
+						parents: (s.parentIds || []).map(id => nameOf(id, 'place')),
+						creators: (s.creatorIds || []).map(id => nameOf(id, 'author')),
+						owner: s.owner,
+						note: s.note,
+						external: s.external,
+						links: s.links,
+					}),
+				);
 		const editions = new Map(records.editions.map(ed => [ed.id, ed]));
 		catalog.books = [...records.books]
 			.sort((x, y) => x.position - y.position)
@@ -880,7 +993,7 @@ export class CatalogRecords {
 					? `an edition of ${titleOf(rec.bookIds)}`
 					: store === 'series'
 						? `the series ${rec.name}`
-						: store === 'contributors'
+						: store === 'contributors' || store === 'places'
 							? rec.name
 							: store === 'marks'
 								? `a mark on ${titleOf(rec.bookIds)}`

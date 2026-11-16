@@ -1,11 +1,11 @@
-// The catalogs outside this one that books, editions, series and people have ids in: each Audible and
+// The catalogs outside this one that books, editions, series, people and places have ids in: each Audible and
 // Amazon site, Goodreads, Hardcover, AudiobookDB, Open Library, ISFDB, BookBrainz and Wikidata. The catalog keeps only the ids, under the catalog's key
 // (`{"audible.com": "B0…", "goodreads": "4242"}`); each catalog's definition says how to make the address
 // of an id and how to read the id back out of an address, for each kind of thing it has pages for.
 import {Text} from './text.js';
 import type {Phrase} from './text.js';
 
-export type ExternalKind = 'book' | 'edition' | 'series' | 'author' | 'narrator' | 'publisher';
+export type ExternalKind = 'book' | 'edition' | 'series' | 'author' | 'narrator' | 'publisher' | 'place';
 /** How a catalog names one kind of thing. */
 export interface KindPattern {
 	/** a regular expression an id must match (an ASIN, a number, a slug, a name) */
@@ -250,7 +250,7 @@ const DEFINITIONS: CatalogDefinition[] = [
 		group: 'goodreads',
 		family: 'goodreads',
 		description:
-			'Goodreads: a book (its work, all its editions), an edition (what Goodreads calls a book), a series, an author (narrators are listed as authors)',
+			'Goodreads: a book (its work, all its editions), an edition (what Goodreads calls a book), a series, an author (narrators are listed as authors), a place (a setting of a book)',
 		alias: 'gr',
 		oldField: 'goodreadsId',
 		kinds: {
@@ -275,6 +275,12 @@ const DEFINITIONS: CatalogDefinition[] = [
 					'https://www.goodreads.com/series/show/{id}',
 					'https://www.goodreads.com/series/show/{id}-*',
 				],
+			},
+			// a place is one of Goodreads' places
+			place: {
+				id: NUMBER,
+				url: 'https://www.goodreads.com/places/{id}',
+				also: ['https://www.goodreads.com/places/{id}-*'],
 			},
 			author: {
 				id: NUMBER,
@@ -398,13 +404,14 @@ const DEFINITIONS: CatalogDefinition[] = [
 		name: 'Wikidata',
 		group: 'wikidata',
 		family: 'wikidata',
-		description: 'Wikidata: the item (Q…) of a book, a series, an author, a narrator or a publisher',
+		description: 'Wikidata: the item (Q…) of a book, a series, an author, a narrator, a publisher or a place',
 		kinds: {
 			book: WIKIDATA_ITEM,
 			series: WIKIDATA_ITEM,
 			author: WIKIDATA_ITEM,
 			narrator: WIKIDATA_ITEM,
 			publisher: WIKIDATA_ITEM,
+			place: WIKIDATA_ITEM,
 		},
 	},
 ];
@@ -502,7 +509,7 @@ const COMPILED: Map<string, {re: RegExp; query: boolean}[]> = new Map();
 export class ExternalCatalog {
 	static ALL: CatalogDefinition[] = DEFINITIONS;
 	static GROUPS = GROUPS;
-	static KINDS: ExternalKind[] = ['book', 'edition', 'series', 'author', 'narrator', 'publisher'];
+	static KINDS: ExternalKind[] = ['book', 'edition', 'series', 'author', 'narrator', 'publisher', 'place'];
 	static AUDIBLE_STORES = AUDIBLE_STORES;
 	static AUDIBLE_SITE = 'audible.com';
 	static AMAZON_SITE = 'amazon.com';

@@ -100,6 +100,7 @@ const BOOK_FIELDS: [string, string][] = [
 	['s', 'Series'],
 	['sn', 'Number in the series'],
 	['g', 'Genres'],
+	['pl', 'Places'],
 	['r', 'Read'],
 ];
 /** The book fields with an input on this page. */
@@ -118,11 +119,17 @@ const EDITION_FIELDS: [string, string][] = [
 
 // ------------------------------------------------------------------ the names the catalog has
 /** The kinds of name a field offers the catalog's names of as it is typed in (combo-box.ts). */
-type NameKind = 'series' | 'author' | 'narrator' | 'publisher';
+type NameKind = 'series' | 'author' | 'narrator' | 'publisher' | 'place';
 // The names the catalog has for series, authors, narrators and publishers, which the fields offer as they are
 // typed in, and say a name is new when it isn't one of them; read when the page opens, from the series' and
 // contributors' indexes alone.
-export const FORM_NAMES: Record<NameKind, string[]> = {series: [], author: [], narrator: [], publisher: []};
+export const FORM_NAMES: Record<NameKind, string[]> = {
+	series: [],
+	author: [],
+	narrator: [],
+	publisher: [],
+	place: [],
+};
 let FORM_NAMES_READ = false; // whether FORM_NAMES holds the names, so a name not among them is new
 const NEW_NOTES: Record<NameKind, [string, string]> = {
 	series: [
@@ -141,6 +148,10 @@ const NEW_NOTES: Record<NameKind, [string, string]> = {
 		'New publisher: {names}, added to the catalog when this is saved.',
 		'New publishers: {names}, added to the catalog when this is saved.',
 	],
+	place: [
+		'New place: {names}, added to the catalog when this is saved.',
+		'New places: {names}, added to the catalog when this is saved.',
+	],
 };
 // The book fields and edition fields that offer names: the kind, and whether they hold several
 const NAME_FIELDS: Record<string, [NameKind, boolean]> = {
@@ -148,6 +159,7 @@ const NAME_FIELDS: Record<string, [NameKind, boolean]> = {
 	s: ['series', false],
 	n: ['narrator', true],
 	p: ['publisher', true],
+	pl: ['place', true],
 };
 // a name new to the catalog, in Save's status line
 const NEW_ENTRY: Record<NameKind, string> = {
@@ -155,6 +167,7 @@ const NEW_ENTRY: Record<NameKind, string> = {
 	author: 'the author {name}',
 	narrator: 'the narrator {name}',
 	publisher: 'the publisher {name}',
+	place: 'the place {name}',
 };
 const newNote = (kind: NameKind): NewNote => ({texts: NEW_NOTES[kind], ready: () => FORM_NAMES_READ});
 
@@ -162,14 +175,15 @@ const newNote = (kind: NameKind): NewNote => ({texts: NEW_NOTES[kind], ready: ()
 export async function loadFormNames(): Promise<void> {
 	FORM_NAMES_READ = false;
 	refreshNewNotes();
-	const [keys, series] = await queryCatalog(r =>
-		Promise.all([r.keys('contributors', 'kindName'), r.keys('series', 'name')]),
+	const [keys, series, places] = await queryCatalog(r =>
+		Promise.all([r.keys('contributors', 'kindName'), r.keys('series', 'name'), r.keys('places', 'name')]),
 	);
 	for (const kind of ['author', 'narrator', 'publisher'] as const) {
 		const stored = keys.filter(k => Array.isArray(k) && k[0] === kind).map(k => String((k as IDBValidKey[])[1]));
 		FORM_NAMES[kind] = [...new Set([...stored, ...CATALOG.namesOf(`${kind}s`)])];
 	}
 	FORM_NAMES.series = [...new Set([...series.map(k => String(k)), ...CATALOG.namesOf('series')])];
+	FORM_NAMES.place = [...new Set([...places.map(k => String(k)), ...CATALOG.namesOf('places')])];
 	FORM_NAMES_READ = true;
 	refreshNewNotes();
 }
@@ -184,6 +198,15 @@ function splitPublishers(text: unknown): string[] {
 	return Text.splitPublishers(text, knownPublishers());
 }
 
+/** Places typed in a field: parted as publishers are ("Washington, D.C." stays whole when the catalog has it). */
+function splitPlaces(text: unknown): string[] {
+	return Text.splitPublishers(text, [...FORM_NAMES.place, ...CATALOG.namesOf('places')]);
+}
+
+/** How a field of names of a kind is read: places and publishers by commas alone, people as names are. */
+const splitterOf = (kind: NameKind): ((text: unknown) => string[]) =>
+	kind === 'publisher' ? splitPublishers : kind === 'place' ? splitPlaces : Text.splitNames;
+
 /** What saving `b` adds to the catalog: the names on it the catalog doesn't have yet, as "the author X". */
 function newEntries(b: Book): string[] {
 	if (!FORM_NAMES_READ) return [];
@@ -192,14 +215,12 @@ function newEntries(b: Book): string[] {
 		['author', 'authors'],
 		['narrator', 'narrators'],
 		['publisher', 'publishers'],
+		['place', 'places'],
 	];
 	return kinds.flatMap(([kind, named]) =>
-		newNames(
-			FORM_NAMES[kind],
-			Catalog.namesOn(named)(b).join(', '),
-			true,
-			kind === 'publisher' ? splitPublishers : Text.splitNames,
-		).map(name => spell(NEW_ENTRY[kind], {name})),
+		newNames(FORM_NAMES[kind], Catalog.namesOn(named)(b).join(', '), true, splitterOf(kind)).map(name =>
+			spell(NEW_ENTRY[kind], {name}),
+		),
 	);
 }
 
@@ -213,6 +234,7 @@ export function bookFieldText(b: Book, key: string): string {
 	if (key === 's') return b.series || '';
 	if (key === 'sn') return b.number || '';
 	if (key === 'g') return b.genres.join(', ');
+	if (key === 'pl') return b.places.join(', ');
 	if (key === 'r') return b.read.join(', ');
 	return '';
 }
@@ -283,7 +305,7 @@ function field(
 					names: () => FORM_NAMES[named[0]],
 					multiple: named[1],
 					// "&" and "and" are part of many a publisher's name, so only commas part them
-					split: named[0] === 'publisher' ? splitPublishers : undefined,
+					split: named[0] === 'author' || named[0] === 'narrator' ? undefined : splitterOf(named[0]),
 					newNote: newNote(named[0]),
 					// a name picked is read as if typed
 					onPick: onchange,
@@ -1582,6 +1604,7 @@ export function readBookFields(i: number) {
 		.split(',')
 		.map(x => x.trim())
 		.filter(Boolean);
+	b.places = splitPlaces(value('pl'));
 	b.read = dates;
 	b.external = external.ids;
 	b.links = Text.parseLinks(value('links'));

@@ -1,0 +1,16 @@
+{% layout 'layout' title: 'Places' nav: 'places.html' script: 'places.js' %}
+	<p class="sub" id="subtitle">Loading&hellip;</p>
+
+	<div class="controls" id="placeControls">
+		<input type="text" id="q" placeholder="Search places&hellip;">
+	</div>
+
+	<div class="count-row">
+		<span></span>
+		<div class="rowbtns"><a class="addbtn" id="addPlace" href="place.html#new">+ Add a place</a></div>
+	</div>
+
+	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
+	<p id="ioStatus" class="ioStatus" role="status"></p>
+
+	<div id="placeBody"></div>

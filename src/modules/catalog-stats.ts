@@ -34,7 +34,7 @@ const hasAny: (ids: Record<string, string>[]) => boolean = ids => ids.some(x => 
 
 export class CatalogStats {
 	/** the sections, in the order the page shows them */
-	static KINDS: StatKind[] = ['books', 'editions', 'series', 'authors', 'narrators', 'publishers'];
+	static KINDS: StatKind[] = ['books', 'editions', 'series', 'authors', 'narrators', 'publishers', 'places'];
 	static LABELS: Record<StatKind, string> = {
 		books: 'Books',
 		editions: 'Editions',
@@ -42,6 +42,7 @@ export class CatalogStats {
 		authors: 'Authors',
 		narrators: 'Narrators',
 		publishers: 'Publishers',
+		places: 'Places',
 	};
 
 	catalog: Catalog;
@@ -75,9 +76,11 @@ export class CatalogStats {
 	}
 
 	/**
-	 * The series, authors, narrators or publishers, each with its info (undefined when it has none), by name.
+	 * The series, authors, narrators, publishers or places, each with its info (undefined when it has none), by name.
 	 */
-	named(kind: NamedKind): Counted<{total?: unknown; status?: unknown; bio?: string} | undefined>[] {
+	named(
+		kind: NamedKind,
+	): Counted<{total?: unknown; status?: unknown; bio?: string; external: Record<string, string>} | undefined>[] {
 		const byName = new Map([...this.catalog.infoMap(kind).values()].map(info => [info.name, info]));
 		return [...this.catalog.namesOf(kind)]
 			.sort((x, y) => x.localeCompare(y))
@@ -122,6 +125,7 @@ export class CatalogStats {
 				external,
 				['editions', 'No editions', x => x.value.editions.length > 0],
 				['genres', 'No genres', x => x.value.genres.length > 0],
+				['places', 'No place', x => x.value.places.length > 0],
 				// a book without a date read has an unknown date, not none: it may well have been read
 				['read', 'Date read unknown', x => x.value.read.length > 0],
 			]),
@@ -147,6 +151,7 @@ export class CatalogStats {
 			...Contributor.KINDS.map(kind =>
 				section(kind, this.named(kind), [external, ['bio', 'No bio', x => Boolean(x.value?.bio)]]),
 			),
+			section('places', this.named('places'), [external]),
 		];
 	}
 

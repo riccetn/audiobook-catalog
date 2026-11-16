@@ -8,6 +8,7 @@ import {Edition} from './edition.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
+import {Place} from './place.js';
 import type {ContributorKind} from './contributor.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Cover} from './cover.js';
@@ -57,7 +58,7 @@ export class Validator {
 
 	/**
 	 * What is wrong with a catalog's books and series info (validate()), and with its author, narrator and
-	 * publisher info when `contributors` (validateContributors()): the Check.
+	 * publisher info and its places when `contributors` (validateContributors(), validatePlaces()): the Check.
 	 */
 	static check(catalog: Catalog, {contributors = false}: {contributors?: boolean} = {}): Problems {
 		const json = JSON.parse(JSON.stringify(catalog));
@@ -67,6 +68,19 @@ export class Validator {
 				const found = Validator.validateContributors(kind, json[kind]);
 				problems.errors.push(...found.errors);
 				problems.warnings.push(...found.warnings);
+			}
+			const found = Validator.validatePlaces(json.places);
+			problems.errors.push(...found.errors);
+			problems.warnings.push(...found.warnings);
+			// a place within itself, through the places it is part of, would be in itself and on and on
+			for (const s of catalog.places?.values() ?? []) {
+				const within = s.parents.filter(p => p !== s.name && catalog.placeAncestors(p).includes(s.name));
+				if (within.length)
+					problems.errors.push(
+						about(P('places[{name}]', {name: repr(s.name)}), 'is within itself, through {parents}', {
+							parents: within.map(repr).join(', '),
+						}),
+					);
 			}
 		}
 		// a test's catalog may be its books alone
@@ -131,6 +145,8 @@ export class Validator {
 			}
 			if ('ext' in b) idProblems(ExternalCatalog.problems(b.ext, 'book'), label, errors, warnings);
 			if ('links' in b) Validator.checkLinks(b.links, 'book', label, errors, warnings);
+			if ('pl' in b && !nameList(b.pl))
+				errors.push(about(label, "'pl' must be a non-empty list of places' names"));
 			if ('g' in b && !(Array.isArray(b.g) && b.g.every(nonEmpty))) {
 				errors.push(about(label, "'g' must be a list of non-empty strings"));
 			}
@@ -379,7 +395,7 @@ export class Validator {
 	 */
 	static checkLinks(
 		links: unknown,
-		kind: 'book' | 'edition' | 'series',
+		kind: 'book' | 'edition' | 'series' | 'place',
 		label: Phrase,
 		errors: Phrase[],
 		warnings: Phrase[],
@@ -454,6 +470,41 @@ export class Validator {
 						}
 					}
 			}
+		}
+		return {errors, warnings};
+	}
+
+	/**
+	 * Check stored places ({name: {in, by, owner, note, ext, links}}). Returns {errors, warnings}: a malformed entry, or an
+	 * id that isn't one, is an error, and an id in a catalog this app doesn't know is a warning. A place no book
+	 * names is fine, as is one part of a place that has no entry (it is a name alone).
+	 */
+	static validatePlaces(entries: Unchecked): Problems {
+		const errors: Phrase[] = [];
+		const warnings: Phrase[] = [];
+		if (entries === undefined || entries === null) return {errors, warnings};
+		if (!Text.isObject(entries)) return {errors: [P("places: must map places' names to their info")], warnings};
+		for (const [name, entry] of Object.entries(entries)) {
+			const label = P('places[{name}]', {name: repr(name)});
+			if (!Text.isObject(entry)) {
+				errors.push(about(label, 'not an object'));
+				continue;
+			}
+			const unknown = Object.keys(entry)
+				.filter(k => !Place.KEYS.includes(k))
+				.sort();
+			if (unknown.length) errors.push(about(label, 'unknown keys {keys}', {keys: repr(unknown)}));
+			if ('in' in entry) {
+				if (!nameList(entry.in)) errors.push(about(label, "'in' must be a non-empty list of places' names"));
+				else if (entry.in.includes(name)) errors.push(about(label, 'is part of itself'));
+			}
+			if ('by' in entry && !nameList(entry.by))
+				errors.push(about(label, "'by' must be a non-empty list of authors' names"));
+			for (const k of ['owner', 'note'])
+				if (k in entry && !nonEmpty(entry[k]))
+					errors.push(about(label, '{key} must be a non-empty string when present', {key: repr(k)}));
+			if ('ext' in entry) idProblems(ExternalCatalog.problems(entry.ext, 'place'), label, errors, warnings);
+			if ('links' in entry) Validator.checkLinks(entry.links, 'place', label, errors, warnings);
 		}
 		return {errors, warnings};
 	}

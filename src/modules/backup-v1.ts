@@ -1,5 +1,5 @@
 // Everything about backups from before version 2, which have no `version`: the catalog by name ({books,
-// seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}), a plain list of books from
+// seriesInfo, authors, narrators, publishers, places, excluded, notDuplicates, ids}), a plain list of books from
 // before series info was exported, the data/ files a catalog kept before it lived in the browser (several
 // files picked together), and the old shapes of books and editions they may hold, brought to the current
 // one. The localStorage catalog from before IndexedDB is a version 1 backup too. Backup.read() hands such a
@@ -11,6 +11,7 @@ import {ExternalCatalog} from './external-catalog.js';
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
+import {Place} from './place.js';
 import {Exclusions} from './exclusions.js';
 import {Duplicates} from './duplicates.js';
 import type {NameIds, NamedKind} from './catalog.js';
@@ -52,9 +53,9 @@ function readBooks(list: Unchecked[]): Book[] {
 export class BackupV1 {
 	/**
 	 * The parts of a version 1 backup: the files Restore was given, several picked together (fromFiles()), or {books: [...], seriesInfo: {...}, authors: {...}, narrators: {...},
-	 * publishers: {...}, excluded: [...], notDuplicates: [...], ids: {...}}, or a plain array of books from
+	 * publishers: {...}, places: {...}, excluded: [...], notDuplicates: [...], ids: {...}}, or a plain array of books from
 	 * before series info was exported. The books are brought to the current format (BackupV1.fixBooks). Series
-	 * info, author, narrator and publisher info, the exclusions list entries and the "Not duplicates" marks
+	 * info, author, narrator and publisher info, places, the exclusions list entries and the "Not duplicates" marks
 	 * are null when the backup predates them, so callers leave theirs alone. Throws when it is neither, or a
 	 * part of it is not what it should be.
 	 */
@@ -64,7 +65,7 @@ export class BackupV1 {
 		if (data && typeof data === 'object' && Array.isArray(data.books)) {
 			const {seriesInfo: info, excluded, notDuplicates} = data;
 			if (info !== undefined && !Text.isObject(info)) throw new PhraseError('seriesInfo is not an object');
-			for (const kind of Contributor.KINDS)
+			for (const kind of [...Contributor.KINDS, 'places'])
 				if (data[kind] !== undefined && !Text.isObject(data[kind]))
 					throw new PhraseError('{kind} is not an object', {kind});
 			const people: (kind: ContributorKind) => Map<string, Contributor> | null = kind =>
@@ -94,6 +95,12 @@ export class BackupV1 {
 				authors: people('authors'),
 				narrators: people('narrators'),
 				publishers: people('publishers'),
+				places:
+					data.places === undefined
+						? null
+						: new Map(
+								Object.entries(data.places).map(([name, entry]) => [name, Place.fromJSON(name, entry)]),
+							),
 				excluded: excluded === undefined ? null : excluded,
 				notDuplicates: notDuplicates === undefined ? null : notDuplicates,
 			};
@@ -111,8 +118,14 @@ export class BackupV1 {
 	static readIds(ids: unknown): NameIds | null {
 		if (ids === undefined) return null;
 		if (!Text.isObject(ids)) throw new PhraseError('ids is not an object');
-		const out: NameIds = {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()};
-		for (const kind of ['series', ...Contributor.KINDS] as NamedKind[]) {
+		const out: NameIds = {
+			series: new Map(),
+			authors: new Map(),
+			narrators: new Map(),
+			publishers: new Map(),
+			places: new Map(),
+		};
+		for (const kind of ['series', ...Contributor.KINDS, 'places'] as NamedKind[]) {
 			const named = ids[kind];
 			if (named === undefined) continue;
 			if (!Text.isObject(named) || !Object.values(named).every(v => typeof v === 'string' && v.trim()))
