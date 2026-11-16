@@ -33,11 +33,17 @@ const PAGES = [
 	'authors.html',
 	'narrators.html',
 	'publishers.html',
+	'places.html',
 	'stats.html',
 ];
-const ALL_PAGES = [...PAGES, 'book.html', 'edit.html', 'author.html', 'narrator.html', 'publisher.html'];
+const ALL_PAGES = [...PAGES, 'book.html', 'edit.html', 'author.html', 'narrator.html', 'publisher.html', 'place.html'];
 // someone's page shows the one its address names; without one it goes to the list
-const PAGE_HASH = {'author.html': '#a=Ann+Vale', 'narrator.html': '#n=Cy+Hale', 'publisher.html': '#p=Tern+Press'};
+const PAGE_HASH = {
+	'author.html': '#a=Ann+Vale',
+	'narrator.html': '#n=Cy+Hale',
+	'publisher.html': '#p=Tern+Press',
+	'place.html': '#place=Earth',
+};
 const readData = file => fs.readFileSync(path.join(root, 'sample', file), 'utf8');
 const DEMO_BOOKS = readData('books.json');
 const DEMO_INFO = readData('series-info.json');
@@ -392,6 +398,7 @@ function stored(files) {
 		authors: json('authors.json', '{}'),
 		narrators: json('narrators.json', '{}'),
 		publishers: json('publishers.json', '{}'),
+		places: json('places.json', '{}'),
 		excluded: Exclusions.parse(files['excluded.txt'] || '').entries,
 	};
 	return JSON.stringify(catalog);
@@ -642,9 +649,10 @@ async function boot({
 			a: people('author'),
 			n: people('narrator'),
 			p: people('publisher'),
+			place: [...records('places').map(x => [x.id, x.name]), ...heldNames('places')],
 		};
 		const enc = v => encodeURIComponent(v).replace(/%20/g, '+');
-		return html.replace(/#(book|series|a|n|p)=([^"&]+)/g, (m, k, id) => {
+		return html.replace(/#(book|series|a|n|p|place)=([^"&]+)/g, (m, k, id) => {
 			const name = new Map(named[k]).get(decodeURIComponent(id));
 			return name === undefined ? m : `#${k}=${enc(name)}`;
 		});
@@ -767,7 +775,7 @@ test("a form's Cancel sits next to its Save, and a Remove button comes after bot
 			assert.equal(remove, buttons.length - 1, `${page}: Remove comes last`);
 		}
 	}
-	assert.equal(forms, 3, 'the author, narrator and publisher forms');
+	assert.equal(forms, 4, 'the author, narrator, publisher and place forms');
 });
 
 test('opens on the series overview, with a row per series', async () => {
@@ -2209,6 +2217,7 @@ test('with no catalog in this browser it starts empty, not with the demo, and sa
 		authors: {},
 		narrators: {},
 		publishers: {},
+		places: {},
 		excluded: [],
 		notDuplicates: [],
 	});
@@ -2345,7 +2354,7 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 	await first.saved();
 	// a book that lists an edition there is no record of
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 6);
+		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	await new Promise(resolve => {
@@ -2370,7 +2379,7 @@ test('a catalog another tab saves while this page saves it again in a new shape 
 		const first = await boot({storage});
 		await first.saved();
 		const {db} = await new Promise(resolve => {
-			const req = first.database.open('audiobook-catalog', 6);
+			const req = first.database.open('audiobook-catalog', 7);
 			req.onsuccess = () => resolve({db: req.result});
 		});
 		first.database.data.get('audiobook-catalog').version = 3;
@@ -2417,7 +2426,7 @@ test("a series' site, from before authors kept their own, goes to its author whe
 	await first.saved();
 	// a database of version 3, whose series kept a site
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 6);
+		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	const series = first.database.records('series').find(x => x.name === 'The Lantern Coast');
@@ -2452,7 +2461,7 @@ test('an edition stored with one publisher, from before database version 5, is s
 	const first = await boot({storage});
 	await first.saved();
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 6);
+		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	const before = first.database.records('editions');
@@ -2484,7 +2493,7 @@ test('a person whose box sets were counted among their books, before database ve
 	const first = await boot({storage});
 	await first.saved();
 	const {db} = await new Promise(resolve => {
-		const req = first.database.open('audiobook-catalog', 6);
+		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
 	const before = first.database.records('contributors');
@@ -2808,17 +2817,18 @@ test('Export includes series and author info, and Import brings them back', asyn
 	first.els.exportBtn.listeners.click[0]();
 	await idle();
 	const backup = JSON.parse(blobs[0]);
-	// version 5: the stored records by store and id, without what is derived
+	// version 6: the stored records by store and id, without what is derived
 	assert.deepEqual(Object.keys(backup), [
 		'version',
 		'books',
 		'editions',
 		'series',
 		'contributors',
+		'places',
 		'marks',
 		'exclusions',
 	]);
-	assert.equal(backup.version, 5);
+	assert.equal(backup.version, 6);
 	const byName = JSON.parse(JSON.stringify(Backup.toCatalog(backup)));
 	assert.deepEqual(withoutIds(byName), {
 		books: demoBooks,
@@ -2826,6 +2836,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 		authors: JSON.parse(DEMO_AUTHORS),
 		narrators: JSON.parse(DEMO_NARRATORS),
 		publishers: JSON.parse(DEMO_PUBLISHERS),
+		places: {},
 		excluded: [],
 		notDuplicates: [],
 	});
@@ -2897,7 +2908,10 @@ test('Export includes series and author info, and Import brings them back', asyn
 
 	// a backup from a newer version of the page is refused, saying so
 	await other.els.importFile.listeners.change[0]({
-		target: {files: [{name: 'b.json', text: JSON.stringify({...backup, version: 6, books: {}})}], value: ''},
+		target: {
+			files: [{name: 'b.json', text: JSON.stringify({...backup, version: Backup.VERSION + 1, books: {}})}],
+			value: '',
+		},
 	});
 	await idle();
 	assert.match(other.els.ioStatus.textContent, /^Not restored: a newer version of the catalog made that backup/);
@@ -2991,6 +3005,7 @@ test('Restore takes the data files of a catalog from before it lived in the brow
 		authors: {'Ann Vale': {bio: 'Writes about the sea.'}},
 		narrators: {'Cy Hale': {bio: 'Reads sea stories.'}},
 		publishers: {},
+		places: {},
 		excluded: ['BGONE'],
 		notDuplicates: [pair],
 	});
@@ -6730,4 +6745,213 @@ test("the Edit page's series panel is filled in from other catalogs, and Review 
 		hc.sent.every(s => s.query.startsWith('query ')),
 		'Hardcover was only asked',
 	);
+});
+
+// ------------------------------------------------------------------ places
+// Invented worlds: Port Wren is on the Gull Coast of Emberlands, a world Ann Vale made and Gullwing Games owns.
+const SETTING_FILES = {
+	'books.json': JSON.stringify([
+		{t: 'The Tidewright', a: ['Ann Vale'], pl: ['Port Wren'], e: [{ext: {'audible.com': 'B0TIDE0001'}}]},
+		{t: 'Salt and Ember', a: ['Bo Reyes'], pl: ['Emberlands'], e: [{ext: {'audible.com': 'B0SALT0001'}}]},
+		{t: 'A Quiet Harbor', a: ['Cy Hale'], e: [{ext: {'audible.com': 'B0QUIET001'}}]},
+	]),
+	'places.json': JSON.stringify({
+		'Port Wren': {in: ['Gull Coast'], note: 'A port town.'},
+		'Gull Coast': {in: ['Emberlands']},
+		Emberlands: {by: ['Ann Vale'], owner: 'Gullwing Games'},
+	}),
+};
+
+test('the places page lists every place as a tree, the places within each below it, and a search finds one by name', async () => {
+	const {els, readable} = await boot({page: 'places.html', files: SETTING_FILES});
+	await idle();
+	assert.equal(els.subtitle.textContent, '3 places across 3 audiobooks');
+	// adding a place is a button: its name is typed in the form
+	assert.match(els.addPlace.outerHTML, /<a class="addbtn" id="addPlace" href="place\.html#new">\+ Add a place<\/a>/);
+	assert.equal(els.newPlaceName, undefined);
+	const html = readable(els.placeBody.innerHTML);
+	const row = (name, count) =>
+		`<div class="place-row"><div class="srow-head"><span class="place-name"><a class="srow-title" href="place.html#place=${name.replace(/ /g, '+')}">${name}</a></span><span class="srow-owned">${count}</span></div>`;
+	assert.ok(
+		html.startsWith(
+			`<ul class="place-tree top"><li>${row('Emberlands', '1 book, 1 more within')}</div><ul class="place-tree"><li>${row('Gull Coast', '1 book within')}</div>`,
+		),
+		html,
+	);
+	// a note goes below the line, so the count stays at its end
+	assert.ok(html.includes(`${row('Port Wren', '1 book')}<p class="srow-note">A port town.</p></div>`), html);
+	els.q.value = 'wren';
+	els.q.listeners.input[0]();
+	const found = readable(els.placeBody.innerHTML);
+	assert.match(
+		found,
+		/Port Wren<\/a> <span class="within">in Gull Coast<\/span><\/span><span class="srow-owned">1 book<\/span>/,
+	);
+	assert.doesNotMatch(found, /Emberlands<\/a>/);
+});
+
+test('a place part of several shows under each, but the places within it only once', async () => {
+	const files = {
+		...SETTING_FILES,
+		'places.json': JSON.stringify({
+			'Port Wren': {in: ['Gull Coast', 'Tide Isles']},
+			'Wren Harbor': {in: ['Port Wren']},
+			'Gull Coast': {in: ['Emberlands']},
+			'Tide Isles': {},
+		}),
+	};
+	const {els, readable} = await boot({page: 'places.html', files});
+	await idle();
+	const html = readable(els.placeBody.innerHTML);
+	assert.equal(html.match(/>Port Wren<\/a>/g).length, 2, 'under the Gull Coast and the Tide Isles');
+	assert.equal(html.match(/>Wren Harbor<\/a>/g).length, 1, 'once, under the first');
+	assert.match(
+		html,
+		/>Port Wren<\/a> <span class="within">\(the places within it are under <a href="place\.html#place=Gull\+Coast">Gull Coast<\/a>\)<\/span>/,
+	);
+});
+
+test("a place's page shows what it is within, who made it, the places within it as a tree, and the books set there and in them", async () => {
+	const {ctx, els, storage, readable} = await boot({
+		page: 'place.html',
+		hash: '#place=Emberlands',
+		files: SETTING_FILES,
+	});
+	await idle();
+	assert.equal(ctx.document.title, 'Emberlands · Audiobook Catalog');
+	assert.equal(els.subtitle.textContent, '2 audiobooks set here or in a place within it');
+	const html = readable(els.placeBody.innerHTML);
+	assert.match(html, /<h2 class="author-name">Emberlands<\/h2>/);
+	assert.match(html, /Created by <a href="author\.html#a=Ann\+Vale">Ann Vale<\/a>/);
+	assert.match(html, /Rights held by Gullwing Games/);
+	// the tree of the places within it, with it at the top
+	assert.match(
+		html,
+		/<p class="series-title">Places within it<\/p><ul class="place-tree"><li><div class="place-row">.*>Emberlands<\/a>.*<ul class="place-tree"><li>.*>Gull Coast<\/a>.*<ul class="place-tree"><li>.*>Port Wren<\/a>/,
+	);
+	assert.match(
+		html,
+		/Set here <span class="n">1 book<\/span><\/p><ul class="author-books"><li><a href="book\.html#book=Salt\+and\+Ember">/,
+	);
+	assert.match(
+		html,
+		/<a href="#place=Port\+Wren">Port Wren<\/a> <span class="n">1 book<\/span><\/p><ul class="author-books"><li><a href="book\.html#book=The\+Tidewright">/,
+	);
+	assert.match(html, /<a class="sedit" href="#new=id-\d+">\+ Add a place within it<\/a>/);
+
+	// a place: what it is part of, and what that is within; no tree when nothing is within it
+	const wren = await boot({page: 'place.html', hash: '#place=Port+Wren', storage});
+	await idle();
+	const place = wren.readable(wren.els.placeBody.innerHTML);
+	assert.match(place, /Part of <a href="#place=Gull\+Coast">Gull Coast<\/a>/);
+	assert.match(place, /Also within <a href="#place=Emberlands">Emberlands<\/a>/);
+	assert.doesNotMatch(place, /Places within it/);
+	assert.equal(wren.els.subtitle.textContent, '1 audiobook set here');
+});
+
+test("a place is edited, renamed and removed on its page, and can't be put within itself", async () => {
+	const {els, storage} = await boot({page: 'place.html', hash: '#place=Gull+Coast', files: SETTING_FILES});
+	await idle();
+	const submit = () => els.placeForm.listeners.submit[0]({preventDefault() {}});
+	els.placeBody.querySelector('.aedit').listeners.click[0]();
+	assert.ok(els.placeForm.classList.contains('open'));
+	assert.equal(els.placeFormTitle.textContent, 'Edit place: Gull Coast');
+	assert.equal(els.sf_in.value, 'Emberlands');
+	// a place within it can't be what it is part of
+	els.sf_in.value = 'Emberlands, Port Wren';
+	submit();
+	assert.match(els.placeFormError.textContent, /can't be part of Port Wren: it is within Gull Coast already/);
+	els.sf_in.value = 'Emberlands';
+	els.sf_name.value = 'Gull Shore';
+	els.sf_note.value = '  Windy  cliffs. ';
+	els.sf_ext_wikidata.value = 'https://www.wikidata.org/wiki/Q4242';
+	submit();
+	assert.ok(!els.placeForm.classList.contains('open'));
+	assert.equal(els.ioStatus.textContent, 'Renamed Gull Coast to Gull Shore on 0 books.');
+	const stored = await kept(storage);
+	assert.deepEqual(stored.places['Gull Shore'], {
+		in: ['Emberlands'],
+		note: 'Windy cliffs.',
+		ext: {wikidata: 'Q4242'},
+	});
+	assert.deepEqual(stored.places['Port Wren'].in, ['Gull Shore'], 'the places within it follow');
+	assert.equal(stored.places['Gull Coast'], undefined);
+
+	// removing it puts its places in what it was part of
+	els.placeBody.querySelector('.aedit').listeners.click[0]();
+	els.placeRemoveBtn.listeners.click[0]();
+	assert.match(
+		els.placeFormError.textContent,
+		/^This removes Gull Shore, where no book is set; the places within it stay/,
+	);
+	els.placeRemoveBtn.listeners.click[0]();
+	const after = await kept(storage);
+	assert.equal(after.places['Gull Shore'], undefined);
+	assert.deepEqual(after.places['Port Wren'].in, ['Emberlands']);
+	assert.equal(els.ioStatus.textContent, 'Removed Gull Shore.');
+});
+
+test('a new place is named in its form; one added from a place is within it', async () => {
+	// + Add a place on the list: an empty form
+	const blank = await boot({page: 'place.html', hash: '#new', files: SETTING_FILES});
+	await idle();
+	const {els} = blank;
+	assert.ok(els.placeForm.classList.contains('open'));
+	assert.equal(els.placeFormTitle.textContent, 'New place');
+	assert.equal(els.sf_name.value, '');
+	assert.equal(els.sf_in.value, '');
+	assert.equal(els.placeRemoveBtn.hidden, true);
+	els.placeForm.listeners.submit[0]({preventDefault() {}});
+	assert.equal(els.placeFormError.textContent, 'Give the place a name.');
+	els.sf_name.value = 'Emberlands';
+	els.placeForm.listeners.submit[0]({preventDefault() {}});
+	assert.equal(els.placeFormError.textContent, 'There is already a place called Emberlands.');
+	// Cancel adds nothing, and goes back to the list
+	els.cancelPlace.listeners.click[0]();
+	assert.equal(blank.ctx.location.assigned, 'places.html');
+
+	// + Add a place within it, on a place's page: its Part of is filled in
+	const id = blank.get("CATALOG.nameIds.places.get('Emberlands')");
+	const {ctx, els: form, storage} = await boot({page: 'place.html', hash: '#new=' + id, storage: blank.storage});
+	await idle();
+	assert.equal(form.subtitle.textContent, 'A new place within Emberlands');
+	assert.equal(form.sf_in.value, 'Emberlands');
+	form.sf_name.value = ' Tide Isles ';
+	form.sf_by.value = 'Dee Marsh';
+	form.placeForm.listeners.submit[0]({preventDefault() {}});
+	assert.equal(form.ioStatus.textContent, 'Added Tide Isles.');
+	const stored = await kept(storage);
+	assert.deepEqual(stored.places['Tide Isles'], {in: ['Emberlands'], by: ['Dee Marsh']});
+	// saved, its page shows it, known by its id
+	const tide = databaseOf(storage)
+		.records('places')
+		.find(x => x.name === 'Tide Isles');
+	assert.equal(ctx.location.hash, '#place=' + tide.id);
+	assert.match(form.placeBody.innerHTML, /<h2 class="author-name">Tide Isles<\/h2>/);
+	// its creator is an author of their own, though no book of theirs is in the catalog
+	assert.ok(
+		databaseOf(storage)
+			.records('contributors')
+			.some(c => c.name === 'Dee Marsh' && c.kind === 'author'),
+	);
+});
+
+test("a book's page lists its places with what each is within, and the Edit page sets them", async () => {
+	const book = await bootBook('The Tidewright', {files: SETTING_FILES});
+	await idle();
+	assert.match(
+		book.readable(book.els.results.innerHTML),
+		/<dt>Place<\/dt><dd><a href="place\.html#place=Port\+Wren">Port Wren<\/a> <span class="within">\(Gull Coast, Emberlands\)<\/span><\/dd>/,
+	);
+	const edit = await boot({
+		page: 'edit.html',
+		hash: '#book=' + bookIdOf(book.get, 'The Tidewright'),
+		storage: book.storage,
+	});
+	await idle();
+	assert.equal(edit.els.b0_pl.value, 'Port Wren');
+	typeIn(edit.els, 'b0_pl', 'Port Wren, Saltmarsh');
+	edit.els.b0_pl.dispatch('input');
+	assert.deepEqual(edit.get('DRAFTS[0].book.places'), ['Port Wren', 'Saltmarsh']);
+	assert.match(edit.els.b0_plNew.textContent, /New place: Saltmarsh/);
 });

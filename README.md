@@ -43,6 +43,8 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 - _Authors_ gives each author a page with a short bio, links to their website and their Audible, Goodreads
   and Hardcover pages, and their series and titles ([Authors](docs/authors.md)). _Narrators_ and _Publishers_
   do the same for everyone named on the editions ([Narrators and publishers](docs/narrators-publishers.md)).
+- _Places_ keeps where each story takes place: worlds (Earth, or invented ones with their authors and rights
+  holders) and the places within them, so a book set in a city is set in its country and world too ([Places](docs/places.md)).
 - Every edit is saved in the browser as you make it. Each browser (and each phone) keeps its own
   catalog, so **Export** a backup now and then: it is the only copy outside the browser.
 - The pages speak British English ("catalogue") when your browser's first English language is a British
@@ -55,7 +57,8 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
   books, a book's details, ISBNs, dates read, links to other pages about a book, an edition or a series
 - [Authors](docs/authors.md): author pages with a bio, links, and their series and titles
 - [Narrators and publishers](docs/narrators-publishers.md): a page for each narrator and publisher with a bio, links, and their series and titles
-- [Data format](docs/data-format.md): books, editions, box sets, series info, author, narrator and publisher info, tidy names
+- [Places](docs/places.md): where stories take place, worlds and the places within them
+- [Data format](docs/data-format.md): books, editions, box sets, series info, author, narrator and publisher info, places, tidy names
   and known data quirks
 - [Audible](docs/audible.md): importing your Audible library
 - [Goodreads](docs/goodreads.md): importing from and exporting to Goodreads

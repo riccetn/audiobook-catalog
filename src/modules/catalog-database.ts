@@ -179,7 +179,14 @@ export class CatalogReader {
 	}
 }
 
-import type {BookRecord, EditionRecord, SeriesRecord, ContributorRecord, CreditRecord} from './catalog-records.js';
+import type {
+	BookRecord,
+	EditionRecord,
+	SeriesRecord,
+	ContributorRecord,
+	CreditRecord,
+	PlaceRecord,
+} from './catalog-records.js';
 
 /**
  * Two keys in IndexedDB's order: numbers, then strings, then lists (item by item).
@@ -377,12 +384,12 @@ class SaveTransaction {
 		});
 	}
 	/**
-	 * The name of a series or person, by their id (read once).
+	 * The name of a series, person or place, by their id (read once).
 	 */
 	async nameOf(id: string, what: string): Promise<string> {
 		const had = this.names.get(id);
 		if (had !== undefined) return had;
-		const rec = await this.get(what === 'series' ? 'series' : 'contributors', id);
+		const rec = await this.get(what === 'series' ? 'series' : what === 'place' ? 'places' : 'contributors', id);
 		if (!rec) throw new Error(`no ${what} is stored under ${id}`);
 		this.names.set(id, rec.name);
 		return rec.name;
@@ -401,6 +408,7 @@ class SaveTransaction {
 		const affectedEditions = new Set([...puts('editions').map(r => r.id), ...dels('editions')] as string[]);
 		const affectedSeries = new Set([...puts('series').map(r => r.id), ...dels('series')] as string[]);
 		const affectedPeople = new Set([...puts('contributors').map(r => r.id), ...dels('contributors')] as string[]);
+		const affectedPlaces = new Set([...puts('places').map(r => r.id), ...dels('places')] as string[]);
 		const oldBooks: Map<string, BookRecord | undefined> = new Map();
 		for (const id of [...puts('books').map(r => r.id), ...dels('books')] as string[]) {
 			const old = await this.get('books', id);
@@ -408,18 +416,20 @@ class SaveTransaction {
 			if (!old) continue;
 			old.editionIds.forEach((ed: string) => affectedEditions.add(ed));
 			if (old.seriesId) affectedSeries.add(old.seriesId);
+			for (const s of old.placeIds || []) affectedPlaces.add(s);
 			for (const key of await this.keysIn('credits', 'bookId', id))
 				affectedPeople.add((key as IDBValidKey[])[0] as string);
 		}
-		/** series and people whose name changes, so their books' search text does */
-		const renamed: Set<string> = new Set();
+		/** series, people and places whose name changes, so their books' search text does */
+		const renamed: Map<string, 'series' | 'contributors' | 'places'> = new Map();
 		for (const [store, list] of [
 			['series', puts('series')],
 			['contributors', puts('contributors')],
-		] as ['series' | 'contributors', Record<string, any>[]][]) {
+			['places', puts('places')],
+		] as ['series' | 'contributors' | 'places', Record<string, any>[]][]) {
 			for (const r of list) {
 				const old = await this.get(store, r.id);
-				if (old && old.name !== r.name) renamed.add(r.id);
+				if (old && old.name !== r.name) renamed.set(r.id, store);
 			}
 		}
 
@@ -427,7 +437,9 @@ class SaveTransaction {
 		for (const store of ['marks', 'books'] as StoreName[])
 			for (const key of dels(store)) this.os(store).delete(key);
 		for (const key of dels('exclusions')) this.os('exclusions').delete(key);
-		const dropped = new Set([...dels('series'), ...dels('contributors')].map(key => key as string));
+		const dropped = new Set(
+			[...dels('series'), ...dels('contributors'), ...dels('places')].map(key => key as string),
+		);
 		let nextBook = -1;
 		for (const r of puts('books')) {
 			let position = r.position;
@@ -443,8 +455,8 @@ class SaveTransaction {
 			this.os('books').put({...r, position});
 		}
 		for (const r of puts('editions')) this.os('editions').put(r);
-		for (const r of [...puts('series'), ...puts('contributors')])
-			this.os(r.kind ? 'contributors' : 'series').put(r);
+		for (const store of ['series', 'contributors', 'places'] as StoreName[])
+			for (const r of puts(store)) this.os(store).put(r);
 		for (const r of puts('marks')) this.os('marks').put(r);
 		let nextExclusion = -1;
 		for (const r of puts('exclusions')) {
@@ -470,10 +482,13 @@ class SaveTransaction {
 			editions.set(id, fresh);
 			bookIds.forEach(b => affectedBooks.add(b));
 		}
-		for (const id of renamed) {
-			const ids = (await this.get('series', id))
-				? await this.keysIn('books', 'bySeries', [id], true)
-				: (await this.keysIn('credits', 'byTitle', [id], true)).map(key => (key as IDBValidKey[])[1]);
+		for (const [id, store] of renamed) {
+			const ids =
+				store === 'series'
+					? await this.keysIn('books', 'bySeries', [id], true)
+					: store === 'places'
+						? await this.keysIn('books', 'placeIds', id)
+						: (await this.keysIn('credits', 'byTitle', [id], true)).map(key => (key as IDBValidKey[])[1]);
 			ids.forEach(b => affectedBooks.add(b as string));
 		}
 
@@ -499,6 +514,7 @@ class SaveTransaction {
 			};
 			for (const a of rec.authorIds) await name(a, 'author');
 			if (rec.seriesId) await name(rec.seriesId, 'series');
+			for (const s of rec.placeIds || []) await name(s, 'place');
 			for (const edId of rec.editionIds) {
 				const ed = editions.get(edId);
 				if (!ed) continue;
@@ -508,7 +524,10 @@ class SaveTransaction {
 			const book = CatalogRecords.bookOf(rec, editions, x => this.names.get(x) as string);
 			const derived = CatalogRecords.bookRecord(
 				book,
-				(kind, n) => ids.get((kind === 'series' ? 'series' : Contributor.ONE[kind]) + '\n' + n) as string,
+				(kind, n) =>
+					ids.get(
+						(kind === 'series' ? 'series' : kind === 'places' ? 'place' : Contributor.ONE[kind]) + '\n' + n,
+					) as string,
 				rec.position,
 			);
 			const fresh = {...derived, ...CatalogRecords.ownFields('books', rec)};
@@ -516,6 +535,7 @@ class SaveTransaction {
 			const old = oldBooks.get(id);
 			if (old && old.seriesId) affectedSeries.add(old.seriesId);
 			if (fresh.seriesId) affectedSeries.add(fresh.seriesId);
+			for (const s of fresh.placeIds || []) affectedPlaces.add(s);
 			for (const key of await this.keysIn('credits', 'bookId', id)) {
 				affectedPeople.add((key as IDBValidKey[])[0] as string);
 				this.os('credits').delete(key);
@@ -566,6 +586,18 @@ class SaveTransaction {
 			);
 			this.os('contributors').put({...fresh, ...CatalogRecords.ownFields('contributors', rec)});
 		}
+		for (const id of affectedPlaces) {
+			const rec: PlaceRecord | undefined = await this.get('places', id);
+			if (!rec) continue;
+			const bookCount = (await this.keysIn('books', 'placeIds', id)).length;
+			if (!bookCount && dropped.has(id)) {
+				this.os('places').delete(id);
+				continue;
+			}
+			const own = CatalogRecords.ownFields('places', rec) as PlaceRecord;
+			const fresh = CatalogRecords.rederivePlace(own, bookCount);
+			this.os('places').put({...fresh, ...own});
+		}
 	}
 }
 
@@ -583,7 +615,9 @@ export class CatalogDatabase {
 	// a multi-entry one; records from before are saved again with the list.
 	// 6: a person's box sets are counted apart from their books (`boxSetCount`); records from before are saved
 	// again with it, the stores as they were.
-	static VERSION = 6;
+	// 7: places, where a book's story takes place: the store `places`, and the books' `placeIds` index.
+	// Records from before have none, so they need not be saved again.
+	static VERSION = 7;
 	/** every store, the records' and meta */
 	static ALL_STORES: (StoreName | 'meta')[] = [...CatalogRecords.STORE_NAMES, 'meta'];
 

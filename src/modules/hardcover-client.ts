@@ -421,7 +421,7 @@ export class HardcoverClient extends CatalogClient {
 		text: string,
 	): Promise<{id: string; name?: string} | null> {
 		const hardcover = client as HardcoverClient;
-		if (kind === 'edition') return null;
+		if (kind === 'edition' || kind === 'place') return null;
 		if (kind !== 'book') return HardcoverClient.idBySlug(hardcover, kind, text);
 		const found = await HardcoverClient.bookId(hardcover, text);
 		return {id: found.id, name: found.title};

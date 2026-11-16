@@ -458,7 +458,8 @@ button:focus {
 	color: var(--ink);
 	font-size: 0.9rem;
 }
-#creditForm {
+#creditForm,
+#placeForm {
 	display: none;
 	background: var(--card);
 	border: 1px solid var(--line);
@@ -466,23 +467,28 @@ button:focus {
 	padding: 1rem;
 	margin-bottom: 1.5rem;
 }
-#creditForm.open {
+#creditForm.open,
+#placeForm.open {
 	display: block;
 }
-#creditForm h3 {
+#creditForm h3,
+#placeForm h3 {
 	margin: 0 0 0.3rem;
 	font-family: 'Lora', Georgia, serif;
 	font-size: 0.98rem;
 	font-weight: 600;
 }
-#creditForm label {
+#creditForm label,
+#placeForm label {
 	display: block;
 	font-size: 0.78rem;
 	color: var(--ink-soft);
 	margin: 0.5rem 0 0.2rem;
 }
 #creditForm input,
-#creditForm textarea {
+#creditForm textarea,
+#placeForm input,
+#placeForm textarea {
 	width: 100%;
 	font-family: inherit;
 	resize: vertical;
@@ -492,6 +498,35 @@ button:focus {
 	background: var(--paper);
 	color: var(--ink);
 	font-size: 0.9rem;
+}
+/* the places list (places.html) and a place's page (place.html) */
+.place-tree {
+	list-style: none;
+	margin: 0;
+	padding-left: 1.2rem;
+	border-left: 1px solid var(--line);
+}
+.place-tree.top {
+	padding-left: 0;
+	border-left: 0;
+}
+.place-tree li {
+	margin: 0.35rem 0;
+}
+/* a place's note goes below its line, so every count stays at the end of its line */
+.place-row .srow-note {
+	margin-top: 0.1rem;
+}
+.place-fact {
+	font-size: 0.9rem;
+	margin: 0 0 0.3rem;
+}
+.place-fact a {
+	color: var(--moss);
+}
+.within {
+	color: var(--ink-soft);
+	font-size: 0.85em;
 }
 /* an author's, narrator's or publisher's page (authors.html, narrators.html, publishers.html) */
 .crumb a,

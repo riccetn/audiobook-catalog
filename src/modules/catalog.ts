@@ -1,14 +1,15 @@
-// The catalog itself: the books, the series info, the author info, the exclusions list and the "Not
+// The catalog itself: the books, the series info, the author info, the places, the exclusions list and the "Not
 // duplicates" marks, and what is done to them as a whole. Inside, an entry is known by the id it is stored
 // under: a book by Book.id, a series or person by their id in nameIds (the books name them, so a name leads
 // to its id), and their info and the marks by those ids. toJSON() writes it by name, as a version 1 backup has it
-// ({books, seriesInfo, authors, narrators, publishers, excluded, notDuplicates, ids}), which the Check reads, and
+// ({books, seriesInfo, authors, narrators, publishers, places, excluded, notDuplicates, ids}), which the Check reads, and
 // Backup.toCatalog() reads a backup of any version; Export writes version 5, the stored records (Backup.write).
 // Reading backups, imports (Merger) and the Check (Validator) live in their own modules, so a page that only
 // shows the catalog doesn't load them.
 import {Book} from './book.js';
 import {Series} from './series.js';
 import {Contributor} from './contributor.js';
+import {Place} from './place.js';
 import {Edition} from './edition.js';
 import {Exclusions} from './exclusions.js';
 import {Duplicates} from './duplicates.js';
@@ -18,8 +19,12 @@ import type {ContributorKind} from './contributor.js';
 import type {Backup} from './backup.js';
 import type {Mark} from './duplicates.js';
 
-/** what is known by its name on the books: a series, or an author, narrator or publisher */
-export type NamedKind = 'series' | ContributorKind;
+/** what is known by its name on the books: a series, an author, narrator or publisher, or a place */
+export type NamedKind = 'series' | ContributorKind | 'places';
+/** what the catalog keeps about one of a kind */
+export type NamedInfo = Series | Contributor | Place;
+/** what the catalog keeps about one of a kind, by the kind */
+export type InfoOf<K extends NamedKind> = K extends 'series' ? Series : K extends 'places' ? Place : Contributor;
 /**
  * The ids that series, authors, narrators and publishers are stored under, by name (as the books write it),
  * whether or not there is info about them. Each is an entry of its own: it stays when no book names it any
@@ -43,6 +48,8 @@ export interface CatalogInit {
 	narrators?: Map<string, Contributor>;
 	/** publisher name (as the editions' `publisher` has it) -> its info */
 	publishers?: Map<string, Contributor>;
+	/** place name (as the books' `places` have it) -> its info */
+	places?: Map<string, Place>;
 	/** the books imports must never re-add */
 	exclusions?: Exclusions;
 	/** "Not duplicates" (and "Keep separate") marks of the duplicates page, as text (Duplicates.textMark) */
@@ -52,7 +59,7 @@ export interface CatalogInit {
 
 /** The catalog. */
 export class Catalog {
-	static NAMED_KINDS: NamedKind[] = ['series', ...Contributor.KINDS];
+	static NAMED_KINDS: NamedKind[] = ['series', ...Contributor.KINDS, 'places'];
 
 	/** @returns a new id */
 	static newId(): string {
@@ -69,6 +76,8 @@ export class Catalog {
 	narrators: Map<string, Contributor>;
 	/** publisher info, by the publisher's id */
 	publishers: Map<string, Contributor>;
+	/** place info, by the place's id */
+	places: Map<string, Place>;
 	exclusions: Exclusions;
 	/** the duplicates page's marks, by their id */
 	marks: Map<string, Mark>;
@@ -79,6 +88,7 @@ export class Catalog {
 		authors = new Map(),
 		narrators = new Map(),
 		publishers = new Map(),
+		places = new Map(),
 		exclusions = new Exclusions(),
 		notDuplicates = [],
 		nameIds = Catalog.emptyNameIds(),
@@ -89,7 +99,9 @@ export class Catalog {
 		this.authors = new Map();
 		this.narrators = new Map();
 		this.publishers = new Map();
+		this.places = new Map();
 		for (const [name, info] of series) this.series.set(this.idFor('series', name), info);
+		for (const [name, info] of places) this.places.set(this.idFor('places', name), info);
 		for (const [kind, byName] of [
 			['authors', authors],
 			['narrators', narrators],
@@ -107,7 +119,13 @@ export class Catalog {
 
 	/** @returns no ids yet */
 	static emptyNameIds(): NameIds {
-		return {series: new Map(), authors: new Map(), narrators: new Map(), publishers: new Map()};
+		return {
+			series: new Map(),
+			authors: new Map(),
+			narrators: new Map(),
+			publishers: new Map(),
+			places: new Map(),
+		};
 	}
 
 	/**
@@ -120,6 +138,7 @@ export class Catalog {
 			authors: backup.authors || new Map(),
 			narrators: backup.narrators || new Map(),
 			publishers: backup.publishers || new Map(),
+			places: backup.places || new Map(),
 			exclusions: Exclusions.parse((backup.excluded || []).join('\n')),
 			notDuplicates: backup.marks ? [] : backup.notDuplicates || [],
 			nameIds: backup.nameIds || Catalog.emptyNameIds(),
@@ -141,6 +160,7 @@ export class Catalog {
 		authors: Record<string, Contributor>;
 		narrators: Record<string, Contributor>;
 		publishers: Record<string, Contributor>;
+		places: Record<string, Place>;
 		excluded: string[];
 		notDuplicates: string[];
 		ids?: Record<NamedKind, Record<string, string>>;
@@ -151,6 +171,7 @@ export class Catalog {
 			authors: Object.fromEntries(this.infoByName('authors')),
 			narrators: Object.fromEntries(this.infoByName('narrators')),
 			publishers: Object.fromEntries(this.infoByName('publishers')),
+			places: Object.fromEntries(this.infoByName('places')),
 			excluded: this.exclusions.entries,
 			notDuplicates: this.markTexts(),
 		};
@@ -172,6 +193,7 @@ export class Catalog {
 		for (const [id, s] of this.series) out.series.set(id, Series.fromJSON(s.name, copy(s)));
 		for (const kind of Contributor.KINDS)
 			for (const [id, c] of this[kind]) out[kind].set(id, Contributor.fromJSON(c.name, copy(c)));
+		for (const [id, s] of this.places) out.places.set(id, Place.fromJSON(s.name, copy(s)));
 		for (const [id, mark] of this.marks) out.marks.set(id, copy(mark) as Mark);
 		return out;
 	}
@@ -194,6 +216,7 @@ export class Catalog {
 		this.authors = other.authors;
 		this.narrators = other.narrators;
 		this.publishers = other.publishers;
+		this.places = other.places;
 		this.exclusions = other.exclusions;
 		this.marks = other.marks;
 		this.nameIds = other.nameIds;
@@ -275,18 +298,26 @@ export class Catalog {
 	}
 
 	/**
-	 * The names of a kind the catalog has: on its books, or with info.
+	 * The names of a kind the catalog has: on its books, or with info, or named in a place's info (the places
+	 * it is part of, the authors who created it).
 	 */
 	namesOf(kind: NamedKind): Set<string> {
 		const onBook = Catalog.namesOn(kind);
-		return new Set([...this.books.flatMap(onBook), ...[...this.infoMap(kind).values()].map(x => x.name)]);
+		const inPlaces = [...this.places.values()].flatMap(s =>
+			kind === 'places' ? s.parents : kind === 'authors' ? s.creators : [],
+		);
+		return new Set([
+			...this.books.flatMap(onBook),
+			...[...this.infoMap(kind).values()].map(x => x.name),
+			...inPlaces,
+		]);
 	}
 
 	/**
-	 * The info of a kind, by id (the series' or the people's).
+	 * The info of a kind, by id (the series', the people's or the places').
 	 */
-	infoMap(kind: NamedKind): Map<string, Series | Contributor> {
-		return this[kind] as Map<string, Series | Contributor>;
+	infoMap(kind: NamedKind): Map<string, NamedInfo> {
+		return this[kind] as Map<string, NamedInfo>;
 	}
 
 	/**
@@ -318,19 +349,16 @@ export class Catalog {
 	/**
 	 * Every entry of a kind's info by its name, as a backup has it.
 	 */
-	infoByName<K extends NamedKind>(kind: K): Map<string, K extends 'series' ? Series : Contributor> {
+	infoByName<K extends NamedKind>(kind: K): Map<string, InfoOf<K>> {
 		return new Map(
-			[...this.infoMap(kind)].map(([id, info]) => [
-				this.nameOf(kind, id) ?? info.name,
-				info as K extends 'series' ? Series : Contributor,
-			]),
+			[...this.infoMap(kind)].map(([id, info]) => [this.nameOf(kind, id) ?? info.name, info as InfoOf<K>]),
 		);
 	}
 
 	/**
 	 * Replace a kind's info with `byName` (Restore, a merge applied); each name keeps the id it has.
 	 */
-	replaceInfo(kind: NamedKind, byName: Map<string, Series | Contributor>) {
+	replaceInfo(kind: NamedKind, byName: Map<string, NamedInfo>) {
 		const info = this.infoMap(kind);
 		info.clear();
 		for (const [name, entry] of byName) info.set(this.idFor(kind, name), entry);
@@ -521,13 +549,18 @@ export class Catalog {
 	}
 
 	/**
-	 * Rename a series, author, narrator or publisher on every book naming them (a book that names both the
-	 * old and the new name names the new one once), and move their info, which replaces any the new name
-	 * had; returns how many books changed. The entry keeps its id, unless it joins one that has its own.
+	 * Rename a series, author, narrator, publisher or place on every book naming them (a book that names both the
+	 * old and the new name names the new one once), and in the places' info that names them (as a place it is part
+	 * of, or an author who created it), and move their info, which replaces any the new name had; returns how many
+	 * books changed. The entry keeps its id, unless it joins one that has its own.
 	 */
 	renameEntry(kind: NamedKind, name: string, newName: string): number {
 		const swap: (names: string[]) => string[] = names => [...new Set(names.map(x => (x === name ? newName : x)))];
 		let count = 0;
+		for (const s of this.places.values()) {
+			if (kind === 'places') s.parents = swap(s.parents).filter(x => x !== s.name);
+			if (kind === 'authors') s.creators = swap(s.creators);
+		}
 		for (const b of this.books) {
 			let hit = false;
 			if (kind === 'series' && b.series === name) {
@@ -536,6 +569,10 @@ export class Catalog {
 			}
 			if (kind === 'authors' && b.authors.includes(name)) {
 				b.authors = swap(b.authors);
+				hit = true;
+			}
+			if (kind === 'places' && b.places.includes(name)) {
+				b.places = swap(b.places);
 				hit = true;
 			}
 			for (const ed of b.editions) {
@@ -561,15 +598,17 @@ export class Catalog {
 		if (joined === undefined && id !== undefined) ids.set(newName, id);
 		if (info && target !== undefined) {
 			info.name = newName;
+			if (info instanceof Place) info.parents = info.parents.filter(x => x !== newName);
 			infos.set(target, info);
 		}
 		return count;
 	}
 
 	/**
-	 * Remove a series, author, narrator or publisher: their name comes off every book (a series' books lose
-	 * their number in it too, and a person comes off the editions they read or publish), and their entry and
-	 * info go. Returns the books changed. Throws when an author is the only author of a book, as a book needs
+	 * Remove a series, author, narrator, publisher or place: their name comes off every book (a series' books lose
+	 * their number in it too, and a person comes off the editions they read or publish) and off the places' info
+	 * (a place is no longer part of it, an author no longer its creator), and their entry and info go. The places
+	 * within a removed place stay, part of what it was part of instead. Returns the books changed. Throws when an author is the only author of a book, as a book needs
 	 * one (removeProblem says so first).
 	 */
 	removeEntry(kind: NamedKind, id: string): Book[] {
@@ -578,8 +617,20 @@ export class Catalog {
 		const name = this.nameOf(kind, id);
 		const changed: Book[] = [];
 		if (name !== undefined) {
+			const removed = kind === 'places' ? this.placeInfo(name) : undefined;
+			for (const s of this.places.values()) {
+				if (kind === 'places' && s.parents.includes(name))
+					s.parents = [
+						...new Set(s.parents.flatMap(p => (p === name ? (removed ? removed.parents : []) : [p]))),
+					].filter(p => p !== s.name);
+				if (kind === 'authors') s.creators = s.creators.filter(a => a !== name);
+			}
 			for (const b of this.books) {
 				let hit = false;
+				if (kind === 'places' && b.places.includes(name)) {
+					b.places = b.places.filter(x => x !== name);
+					hit = true;
+				}
 				if (kind === 'series' && b.series === name) {
 					b.series = undefined;
 					b.number = undefined;
@@ -655,17 +706,82 @@ export class Catalog {
 		return {series, titles};
 	}
 
+	// ------------------------------------------------------------------ places
 	/**
-	 * How a book gives the names of a kind: its series, authors, or its editions' narrators or publishers.
+	 * The info of the place `name`, if it has some.
+	 */
+	placeInfo(name: string): Place | undefined {
+		const id = this.nameIds.places.get(name);
+		return id === undefined ? undefined : this.places.get(id);
+	}
+
+	/**
+	 * The places `name` is part of, and those they are part of, and so on (London: England, United Kingdom,
+	 * Earth), nearest first and each once; never `name` itself, even when the places go round in a circle (which
+	 * the Check reports).
+	 */
+	placeAncestors(name: string): string[] {
+		const out: string[] = [];
+		const seen = new Set([name]);
+		let next = [name];
+		while (next.length) {
+			const parents = next.flatMap(n => this.placeInfo(n)?.parents || []).filter(p => !seen.has(p));
+			next = [...new Set(parents)];
+			for (const p of next) seen.add(p);
+			out.push(...next);
+		}
+		return out;
+	}
+
+	/**
+	 * The places directly within `name`: those that name it among the places they are part of, by name.
+	 */
+	placeChildren(name: string): string[] {
+		return [...this.places.values()]
+			.filter(s => s.parents.includes(name) && s.name !== name)
+			.map(s => s.name)
+			.sort((x, y) => x.localeCompare(y));
+	}
+
+	/**
+	 * Every place within `name`, however deep (England's: London, and the places in London), each once.
+	 */
+	placeDescendants(name: string): string[] {
+		const out: string[] = [];
+		const seen = new Set([name]);
+		const walk: (n: string) => void = n => {
+			for (const c of this.placeChildren(n))
+				if (!seen.has(c)) {
+					seen.add(c);
+					out.push(c);
+					walk(c);
+				}
+		};
+		walk(name);
+		return out;
+	}
+
+	/**
+	 * Whether making `parent` one of the places `name` is part of would make a circle: `parent` is `name`, or
+	 * within it.
+	 */
+	placeCircle(name: string, parent: string): boolean {
+		return parent === name || this.placeDescendants(name).includes(parent);
+	}
+
+	/**
+	 * How a book gives the names of a kind: its series, authors, or its editions' narrators or publishers, or its places.
 	 */
 	static namesOn(kind: NamedKind): (b: Book) => string[] {
 		return kind === 'series'
 			? b => (b.series ? [b.series] : [])
-			: kind === 'authors'
-				? Catalog.authorsOf
-				: kind === 'narrators'
-					? Catalog.narratorsOf
-					: Catalog.publishersOf;
+			: kind === 'places'
+				? b => b.places
+				: kind === 'authors'
+					? Catalog.authorsOf
+					: kind === 'narrators'
+						? Catalog.narratorsOf
+						: Catalog.publishersOf;
 	}
 	/** @returns its authors */
 	static authorsOf(b: Book): string[] {

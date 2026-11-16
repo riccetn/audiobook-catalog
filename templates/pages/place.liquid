@@ -1,0 +1,28 @@
+{% layout 'layout' title: 'Place' nav: 'places.html' script: 'place.js' %}
+	<p class="sub" id="subtitle">Loading&hellip;</p>
+
+	<div class="crumb show" id="crumb">
+		<a href="places.html">&larr; All places</a>
+	</div>
+
+	<div id="bgTask" class="bgTask" role="status" aria-live="polite"></div>
+	<p id="ioStatus" class="ioStatus" role="status"></p>
+
+	<form id="placeForm" class="creditForm">
+		<h3 id="placeFormTitle">Edit place</h3>
+		<div><label for="sf_name">Name (renames it on every book set there)</label><input id="sf_name"></div>
+		<div><label for="sf_in">Part of (the world or place it is in, such as a country for a city; several separated by commas)</label><div id="sf_inBox"></div></div>
+		<div><label for="sf_by">Created by (an invented world's authors)</label><div id="sf_byBox"></div></div>
+		<div><label for="sf_owner">Rights held by (an open world's owner, when not its authors)</label><input id="sf_owner"></div>
+		<div><label for="sf_note">Note</label><textarea id="sf_note" rows="3"></textarea></div>
+		<div class="formrow extFields" id="sf_ext"></div>
+		<div id="sf_linksBox"></div>
+		<p id="placeFormError" class="formError"></p>
+		<div class="formbtns">
+			<button type="submit" class="save" id="placeSaveBtn">Save place</button>
+			<button type="button" id="cancelPlace">Cancel</button>
+			<button type="button" id="placeRemoveBtn" class="removeBook">Remove place</button>
+		</div>
+	</form>
+
+	<div id="placeBody"></div>

@@ -13,6 +13,7 @@ import {ExternalCatalog} from '../public/modules/external-catalog.js';
 import {Book} from '../public/modules/book.js';
 import {Series} from '../public/modules/series.js';
 import {Contributor} from '../public/modules/contributor.js';
+import {Place} from '../public/modules/place.js';
 import {Exclusions} from '../public/modules/exclusions.js';
 import {DeviceSetup} from '../public/modules/device-setup.js';
 import {Validator} from '../public/modules/validator.js';
@@ -2591,6 +2592,7 @@ test('a version 2 backup is the stored records by store and uid, without what is
 		'editions',
 		'series',
 		'contributors',
+		'places',
 		'marks',
 		'exclusions',
 	]);
@@ -3044,13 +3046,14 @@ test('narrator and publisher info: names come from the editions, and backups car
 		'authors',
 		'narrators',
 		'publishers',
+		'places',
 		'excluded',
 		'notDuplicates',
 		'ids',
 	]);
 	assert.deepEqual(
 		Object.keys(json(Backup.toCatalog({books: []}))),
-		['books', 'seriesInfo', 'authors', 'narrators', 'publishers', 'excluded', 'notDuplicates'],
+		['books', 'seriesInfo', 'authors', 'narrators', 'publishers', 'places', 'excluded', 'notDuplicates'],
 		'no ids when there are none',
 	);
 });
@@ -6576,10 +6579,11 @@ test('stats: each value counts the books, editions, series and people without it
 		books: [
 			{t: 'Lantern Coast 1-2', a: ['Ann Vale'], s: 'Lantern Coast', sn: '1-2', e: [shared]},
 			{t: 'The Tidewright', a: ['Ann Vale'], s: 'Lantern Coast', sn: '1', r: ['2024-03-01'], e: [shared]},
-			{t: 'Salt and Ember', a: ['Bo Reyes'], g: ['Fantasy'], ext: {goodreads: '42'}},
+			{t: 'Salt and Ember', a: ['Bo Reyes'], g: ['Fantasy'], pl: ['Gullhaven'], ext: {goodreads: '42'}},
 		],
 		seriesInfo: {'Lantern Coast': {total: 3, ext: {hardcover: 'lantern-coast'}}},
 		authors: {'Bo Reyes': {bio: 'Writes.'}},
+		places: {Gullhaven: {in: ['Emberlands'], ext: {wikidata: 'Q42'}}},
 	});
 	catalog.assignIds();
 	const stats = new CatalogStats(catalog);
@@ -6594,6 +6598,7 @@ test('stats: each value counts the books, editions, series and people without it
 			external: [],
 			editions: ['Salt and Ember'],
 			genres: ['Lantern Coast 1-2', 'The Tidewright'],
+			places: ['Lantern Coast 1-2', 'The Tidewright'],
 			read: ['Lantern Coast 1-2', 'Salt and Ember'],
 		},
 	]);
@@ -6605,14 +6610,33 @@ test('stats: each value counts the books, editions, series and people without it
 	// people without info lack everything
 	assert.deepEqual(sections.authors, [2, {external: ['Ann Vale', 'Bo Reyes'], bio: ['Ann Vale']}]);
 	assert.deepEqual(sections.narrators, [1, {external: ['Cy Hale'], bio: ['Cy Hale']}]);
+	// a place named only as another's part counts too
+	assert.deepEqual(sections.places, [2, {external: ['Emberlands']}]);
 	// entries are known by the page they link to: a book's id for an edition
 	assert.equal(stats.sections()[1].rows[0].missing.length, 0);
 	assert.equal(stats.sections()[0].rows[1].missing[0].id, catalog.books[2].id);
 	assert.equal(stats.sections()[2].rows[2].missing[0].id, catalog.idFor('series', 'Lantern Coast'));
 
 	const counts = Object.fromEntries(stats.byCatalog().map(c => [c.group.key, c.counts]));
-	assert.deepEqual(counts.audible, {books: 2, editions: 1, series: 0, authors: 0, narrators: 0, publishers: 0});
-	assert.deepEqual(counts.goodreads, {books: 1, editions: 0, series: 0, authors: 0, narrators: 0, publishers: 0});
+	assert.deepEqual(counts.audible, {
+		books: 2,
+		editions: 1,
+		series: 0,
+		authors: 0,
+		narrators: 0,
+		publishers: 0,
+		places: 0,
+	});
+	assert.deepEqual(counts.goodreads, {
+		books: 1,
+		editions: 0,
+		series: 0,
+		authors: 0,
+		narrators: 0,
+		publishers: 0,
+		places: 0,
+	});
+	assert.equal(counts.wikidata.places, 1);
 	assert.equal(counts.hardcover.series, 1);
 	assert.equal(counts.wikidata.books, 0);
 });
@@ -6933,7 +6957,7 @@ test('links: tidied, kept on books, editions and series, stored, backed up (vers
 	assert.deepEqual(back.seriesInfo('Lanterns').links, ['https://gullwing.example/lanterns']);
 
 	const backup = Backup.write(catalog);
-	assert.equal(backup.version, 5);
+	assert.equal(backup.version, Backup.VERSION);
 	assert.deepEqual(Object.values(backup.books)[0].links, ['https://gullwing.example/lantern-keeper']);
 	assert.deepEqual(Object.values(backup.editions)[0].links, ['https://gullwing.example/lantern-keeper/audio']);
 	assert.deepEqual(Object.values(backup.series)[0].links, ['https://gullwing.example/lanterns']);
@@ -7389,4 +7413,166 @@ test('EntryLookup asks a source written against BookSource alone, notes the one 
 			['Wikidata', 'series author narrator publisher'],
 		],
 	);
+});
+
+// ------------------------------------------------------------------ places
+/** A catalog of invented worlds and places: Emberlands' town of Gullhaven, and the open world of the Tide Isles. */
+function placesCatalog() {
+	return Backup.toCatalog({
+		books: [
+			{t: 'The Tidewright', a: ['Ann Vale'], pl: ['Gullhaven']},
+			{t: 'Salt and Ember', a: ['Bo Reyes'], pl: ['Emberlands', 'Tide Isles']},
+			{t: 'A Quiet Harbor', a: ['Cy Hale']},
+		],
+		places: {
+			Gullhaven: {in: ['Emberlands'], note: 'A port town.'},
+			Emberlands: {in: ['Ember'], by: ['Ann Vale']},
+			'Tide Isles': {in: ['Ember'], by: ['Dee Marsh'], owner: 'Gullwing Games'},
+		},
+	});
+}
+
+test('places: a book is set in some, a place is part of others, and a place implies what it is within', () => {
+	const catalog = placesCatalog();
+	const book = catalog.books[0];
+	assert.deepEqual(book.places, ['Gullhaven']);
+	assert.deepEqual(book.toJSON().pl, ['Gullhaven']);
+	assert.deepEqual(catalog.placeAncestors('Gullhaven'), ['Emberlands', 'Ember']);
+	assert.deepEqual(catalog.placeChildren('Ember'), ['Emberlands', 'Tide Isles']);
+	assert.deepEqual(catalog.placeDescendants('Ember'), ['Emberlands', 'Gullhaven', 'Tide Isles']);
+	assert.ok(catalog.placeCircle('Emberlands', 'Gullhaven'));
+	assert.ok(!catalog.placeCircle('Gullhaven', 'Tide Isles'));
+	// a place named only as another's part, and a creator without books, are entries too
+	assert.ok(catalog.namesOf('places').has('Ember'));
+	assert.ok(catalog.namesOf('authors').has('Dee Marsh'));
+	assert.deepEqual(
+		catalog.booksOf('places', catalog.idFor('places', 'Emberlands')).map(b => b.title),
+		['Salt and Ember'],
+	);
+	// what the search looks in
+	assert.ok(CatalogRecords.searchMatches(CatalogRecords.searchText(book), 'gullhaven'));
+});
+
+test('places: tidied, merged as a union, and Book.tidyJSON drops empty names', () => {
+	const tidy = Place.tidy('Gullhaven', {
+		in: [' Emberlands ', 'Emberlands', 'Gullhaven'],
+		by: [],
+		owner: ' ',
+		note: '',
+	});
+	assert.deepEqual(tidy.toJSON(), {in: ['Emberlands']});
+	assert.equal(Place.tidy('Gullhaven', {in: ['Gullhaven']}), null);
+	const merged = Book.merge([
+		new Book({title: 'X', authors: ['A'], places: ['Gullhaven']}),
+		new Book({title: 'X', authors: ['A'], places: ['Gullhaven', 'Tide Isles']}),
+	]);
+	assert.deepEqual(merged.places, ['Gullhaven', 'Tide Isles']);
+	assert.deepEqual(Book.tidyJSON({t: 'X', a: ['A'], pl: [' ', '  Gullhaven ']}).pl, ['Gullhaven']);
+	assert.equal('pl' in Book.tidyJSON({t: 'X', a: ['A'], pl: ['']}), false);
+});
+
+test('places: renaming and removing keep the books and the other places in step', () => {
+	const catalog = placesCatalog();
+	const id = catalog.idFor('places', 'Emberlands');
+	assert.equal(catalog.renameEntry('places', 'Emberlands', 'Ember Coast'), 1);
+	assert.equal(catalog.idFor('places', 'Ember Coast'), id);
+	assert.deepEqual(catalog.placeInfo('Gullhaven').parents, ['Ember Coast']);
+	assert.deepEqual(catalog.books[1].places, ['Ember Coast', 'Tide Isles']);
+	// renaming an author renames them as a place's creator
+	catalog.renameEntry('authors', 'Ann Vale', 'Ann Vale-Hart');
+	assert.deepEqual(catalog.placeInfo('Ember Coast').creators, ['Ann Vale-Hart']);
+	// a removed place's places become part of what it was part of
+	const changed = catalog.removeEntry('places', id);
+	assert.deepEqual(
+		changed.map(b => b.title),
+		['Salt and Ember'],
+	);
+	assert.deepEqual(catalog.books[1].places, ['Tide Isles']);
+	assert.deepEqual(catalog.placeInfo('Gullhaven').parents, ['Ember']);
+	assert.equal(catalog.nameIds.places.has('Ember Coast'), false);
+});
+
+test('places: stored as records with ids, backed up (version 6) and read back; version 5 has none', () => {
+	const catalog = placesCatalog();
+	const records = CatalogRecords.fromCatalog(catalog);
+	const ids = catalog.nameIds;
+	const gull = records.places.find(s => s.name === 'Gullhaven');
+	assert.deepEqual(gull.parentIds, [ids.places.get('Emberlands')]);
+	assert.equal(gull.bookCount, 1);
+	assert.equal(gull.note, 'A port town.');
+	const isles = records.places.find(s => s.name === 'Tide Isles');
+	assert.deepEqual(isles.creatorIds, [ids.authors.get('Dee Marsh')]);
+	assert.equal(isles.owner, 'Gullwing Games');
+	// Ember has no info, but is an entry of its own
+	assert.equal(records.places.find(s => s.name === 'Ember').parentIds, undefined);
+	assert.deepEqual(records.books[0].placeIds, [ids.places.get('Gullhaven')]);
+	assert.equal('placeIds' in records.books[2], false);
+	assert.ok(records.contributors.some(c => c.name === 'Dee Marsh' && c.bookCount === 0));
+	const back = CatalogRecords.toCatalog(records);
+	assert.deepEqual(json(back), json(catalog));
+
+	const backup = Backup.write(catalog);
+	assert.equal(backup.version, 6);
+	assert.deepEqual(
+		Object.values(backup.places).find(s => s.name === 'Tide Isles'),
+		{
+			name: 'Tide Isles',
+			parentIds: [ids.places.get('Ember')],
+			creatorIds: [ids.authors.get('Dee Marsh')],
+			owner: 'Gullwing Games',
+		},
+	);
+	const read = Backup.toCatalog(json(backup));
+	assert.deepEqual(json(read), json(catalog));
+	// a version 5 backup reads as it is, without places
+	const old = {...json(backup), version: 5};
+	delete old.places;
+	for (const b of Object.values(old.books)) delete b.placeIds;
+	assert.equal(Backup.toCatalog(old).nameIds.places.size, 0);
+	// two places of one name can't be put together
+	const twice = json(backup);
+	twice.places.extra = {name: 'Ember'};
+	assert.throws(() => Backup.read(twice));
+});
+
+test('places: the Check reports a malformed place and one within itself', () => {
+	const catalog = placesCatalog();
+	assert.deepEqual(Validator.check(catalog, {contributors: true}).errors, []);
+	catalog.places.set(catalog.idFor('places', 'Ember'), new Place('Ember', {parents: ['Gullhaven']}));
+	const errors = Validator.check(catalog, {contributors: true}).errors.map(e => Text.filled(e, false));
+	assert.ok(errors.some(e => e.startsWith("places['Ember']: is within itself")));
+	const found = Validator.validatePlaces({X: {in: 'Y', by: ['A'], owner: '', zz: 1}});
+	assert.deepEqual(
+		found.errors.map(e => Text.filled(e, false)),
+		[
+			"places['X']: unknown keys ['zz']",
+			"places['X']: 'in' must be a non-empty list of places' names",
+			"places['X']: 'owner' must be a non-empty string when present",
+		],
+	);
+	const book = Validator.validate([{t: 'X', a: ['A'], pl: []}]);
+	assert.equal(Text.filled(book.errors[0], false), "book #0 ('X'): 'pl' must be a non-empty list of places' names");
+});
+
+test("places: a Goodreads place and a Wikidata item are a place's ids", () => {
+	assert.deepEqual(ExternalCatalog.fromAddress('https://www.goodreads.com/places/123-gullhaven', 'place'), {
+		catalog: 'goodreads',
+		id: '123',
+	});
+	assert.equal(ExternalCatalog.url('goodreads', 'place', '123'), 'https://www.goodreads.com/places/123');
+	assert.equal(ExternalCatalog.url('wikidata', 'place', 'Q42'), 'https://www.wikidata.org/wiki/Q42');
+});
+
+test('places: merging a backup adds places only it has, and renames follow ids', () => {
+	const ours = placesCatalog();
+	ours.assignIds();
+	const theirs = ours.clone();
+	theirs.renameEntry('places', 'Gullhaven', 'Gull Haven');
+	theirs.places.set(theirs.idFor('places', 'Saltmarsh'), new Place('Saltmarsh', {parents: ['Gull Haven']}));
+	const backup = Backup.read(json(Backup.write(theirs)));
+	const merged = backup.mergeInto(ours, 'backup');
+	assert.deepEqual(merged.renamed, [{kind: 'places', from: 'Gullhaven', to: 'Gull Haven'}]);
+	assert.deepEqual(merged.placesAdded, ['Saltmarsh']);
+	assert.deepEqual(merged.places.get('Saltmarsh').parents, ['Gull Haven']);
+	assert.deepEqual(merged.books[0].places, ['Gull Haven']);
 });
