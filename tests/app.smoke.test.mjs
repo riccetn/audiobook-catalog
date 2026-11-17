@@ -6790,6 +6790,31 @@ test('the places page lists every place as a tree, the places within each below 
 	assert.doesNotMatch(found, /Emberlands<\/a>/);
 });
 
+test('the places tree counts a book once in a place, however many of the places within it it is set in', async () => {
+	const files = {
+		...SETTING_FILES,
+		'books.json': JSON.stringify([
+			{t: 'The Tidewright', a: ['Ann Vale'], pl: ['Port Wren', 'Gull Coast', 'Emberlands']},
+			{t: 'Salt and Ember', a: ['Bo Reyes'], pl: ['Port Wren', 'Dun Moor']},
+			{t: 'A Quiet Harbor', a: ['Cy Hale'], pl: ['Dun Moor']},
+		]),
+		'places.json': JSON.stringify({
+			'Port Wren': {in: ['Gull Coast']},
+			'Gull Coast': {in: ['Emberlands']},
+			'Dun Moor': {in: ['Emberlands']},
+			Emberlands: {},
+		}),
+	};
+	const {els, readable} = await boot({page: 'places.html', files});
+	await idle();
+	const html = readable(els.placeBody.innerHTML);
+	const count = name => html.match(new RegExp(`>${name}</a></span><span class="srow-owned">([^<]*)<`))[1];
+	assert.equal(count('Emberlands'), '1 book, 2 more within', 'The Tidewright is set there itself');
+	assert.equal(count('Gull Coast'), '1 book, 1 more within');
+	assert.equal(count('Dun Moor'), '2 books');
+	assert.equal(count('Port Wren'), '2 books');
+});
+
 test('a place part of several shows under each, but the places within it only once', async () => {
 	const files = {
 		...SETTING_FILES,
