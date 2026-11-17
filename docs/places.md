@@ -31,7 +31,8 @@ an open world may have books by many, each of them set there.
 ## The pages
 
 - **Places** (in the nav bar) lists every place as a tree: those part of none at the top, each with the places
-  within it below, and how many books are set in each and in the places within it. A place part of two shows
+  within it below, and how many books are set in each and in the places within it (a book set in several of them
+  counted once, and not at all when it is set in the place itself). A place part of two shows
   under each, but the places within it only under the first; the other says where they are. The search lists the
   places whose names match, each with what it is part of. _+ Add a place_ opens the form of a new place, where you
   name it.

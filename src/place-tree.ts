@@ -1,21 +1,43 @@
 // The tree of places that the places list (places.ts) and a place's page (place.ts) draw: a place, and below it the
 // places within it, each with how many books are set there. A place part of several shows under each, but the
 // places within it only once, under the first; elsewhere it says where they are. Read from the places' records
-// alone (each keeps how many books are set there).
+// and the keys of the books' `placeIds` index (never the books themselves), so a book is counted once in a place
+// however many of the places within it it is set in.
 import {placePageHref} from './store.js';
 import {spell, spellParts, plural, buildElement} from './dom.js';
 import type {CatalogReader} from './modules/catalog-database.js';
 import type {PlaceRecord} from './modules/catalog-records.js';
 
-/** A place in the tree: its name, the places it is part of (by id), how many books are set there, its note. */
-export type PlaceEntry = {id: string; name: string; parentIds: string[]; books: number; note: string};
+/**
+ * A place in the tree: its name, the places it is part of (by id), how many books are set there and their ids, its
+ * note.
+ */
+export type PlaceEntry = {
+	id: string;
+	name: string;
+	parentIds: string[];
+	books: number;
+	bookIds: string[];
+	note: string;
+};
 
-/** Every place, by name, from the places' records alone. */
+/**
+ * Every place, by name, from the places' records and the books' `placeIds` index (the ids of the books set in each,
+ * so a book set in two places within a third counts once there).
+ */
 export async function readPlaces(r: CatalogReader): Promise<PlaceEntry[]> {
 	const records: PlaceRecord[] = await r.all('places', 'byName');
-	return records
-		.map(s => ({id: s.id, name: s.name, parentIds: s.parentIds || [], books: s.bookCount || 0, note: s.note || ''}))
-		.sort((x, y) => x.name.localeCompare(y.name));
+	const entries = await Promise.all(
+		records.map(async s => ({
+			id: s.id,
+			name: s.name,
+			parentIds: s.parentIds || [],
+			books: s.bookCount || 0,
+			bookIds: s.bookCount ? ((await r.allKeys('books', 'placeIds', s.id)) as string[]) : [],
+			note: s.note || '',
+		})),
+	);
+	return entries.sort((x, y) => x.name.localeCompare(y.name));
 }
 
 /** The places of a list, with the places within each (by id), from the places they are part of. */
@@ -39,20 +61,24 @@ export class PlaceTree {
 		return [...this.byId.values()].filter(x => !x.parentIds.some(p => this.byId.has(p)));
 	}
 
-	/** How many books are set in the places within `id`, however deep, each place once. */
+	/**
+	 * How many books are set in the places within `id`, however deep, but not in `id` itself: each book once, however
+	 * many of those places it is set in.
+	 */
 	booksWithin(id: string): number {
 		const seen = new Set([id]);
-		let count = 0;
+		const own = new Set(this.byId.get(id)?.bookIds || []);
+		const books: Set<string> = new Set();
 		const walk = (at: string) => {
 			for (const c of this.children.get(at) || [])
 				if (!seen.has(c.id)) {
 					seen.add(c.id);
-					count += c.books;
+					for (const b of c.bookIds) if (!own.has(b)) books.add(b);
 					walk(c.id);
 				}
 		};
 		walk(id);
-		return count;
+		return books.size;
 	}
 
 	/** How many books are set in a place, and in the places within it: "3 books, 5 more within". */
