@@ -7,6 +7,9 @@ node_modules/
 # Mac OS
 .DS_Store
 
+# Windows
+desktop.ini
+
 # written by make pages: the pages from templates/, and the scripts compiled from src/ with their source maps
 public/*.html
 public/*.js
