@@ -141,7 +141,7 @@ so it can be dropped whole. The server's proxy routes (`server/proxy.ts`) are it
 
 - `make test` runs `node --experimental-vm-modules --enable-source-maps --test tests/*.test.mjs` on what `make pages`
   compiled into `public/` (so run that first when you run one suite by hand): the classes (`catalog.test.mjs`), the server (`server.test.mjs`: the catalog proxy, sync and `make serve`), the service worker (`service-worker.test.mjs`),
-  and the browser smoke test (`app.smoke.test.mjs`), which executes each page's real modules against a small fake DOM built from
+  and the browser smoke test (`app.smoke.*.test.mjs`, split by topic so they run side by side, sharing `smoke.mjs`), which executes each page's real modules against a small fake DOM built from
   its HTML, with a fake `localStorage` holding the demo data, which the page moves into a fake IndexedDB
   (`tests/fake-indexeddb.mjs`) as a browser would (running ES modules in `node:vm` is what needs the flag;
   Node prints an ExperimentalWarning for it, and for `node:sqlite`, which the server's tests use). With the source
