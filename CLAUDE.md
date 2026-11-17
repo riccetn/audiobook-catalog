@@ -313,7 +313,8 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
   - `service-worker.test.mjs`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-app.js`'s files and hash.
   - `server.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses), its sync on an in-memory SQLite (`sqliteD1`), and `make serve`'s server on a free port.
-  - `app.smoke.test.mjs`: runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
+  - `app.smoke.*.test.mjs` (`pages`, `storage`, `catalogs`, `people`: files of their own so `node --test` runs them side by side; put a new test in the one its topic is in, and keep them about even), with what they share in `smoke.mjs`
+    (`boot`, the fake DOM and the helpers, exported; it keeps each module's text and V8 code cache across boots, and `idle()` waits only on the current test's pages): runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
     what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws), a fake localStorage (`boot`'s `files`
     seed the old localStorage catalog, by default from `sample/`, which the page moves to IndexedDB; `files: null` for none) and a fake
