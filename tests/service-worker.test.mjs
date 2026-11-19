@@ -14,9 +14,17 @@ const site = path.join(root, 'public');
 
 /**
  * Starts sw.js at an address, with every file answered by the fake network and `caches` kept in a Map.
- * @param {{origin?: string, version?: string, stores?: Map<string, Map<string, Response>>, redirects?: boolean}} [options]
+ * `waiting` is the new version's worker, waiting to take over, and `open` the pages of the app this one has.
+ * @param {{origin?: string, version?: string, stores?: Map<string, Map<string, Response>>, redirects?: boolean, waiting?: object, open?: number}} [options]
  */
-function start({origin = 'https://example.github.io', version = 'v1', stores = new Map(), redirects = false} = {}) {
+function start({
+	origin = 'https://example.github.io',
+	version = 'v1',
+	stores = new Map(),
+	redirects = false,
+	waiting = null,
+	open = 1,
+} = {}) {
 	const base = `${origin}/app/`;
 	const listeners = {};
 	const asked = [];
@@ -49,10 +57,15 @@ function start({origin = 'https://example.github.io', version = 'v1', stores = n
 		keys: async () => [...stores.keys()],
 		delete: async name => stores.delete(name),
 	};
+	let skipped = 0;
 	const self = {
 		addEventListener: (type, fn) => (listeners[type] = fn),
-		skipWaiting: async () => assert.fail('a new version waits until no page of the old one is open'),
-		clients: {claim: async () => assert.fail('a new version waits until no page of the old one is open')},
+		skipWaiting: async () => void skipped++,
+		registration: {waiting},
+		clients: {
+			claim: async () => assert.fail('a new version waits until no page of the old one is open'),
+			matchAll: async ({type}) => (assert.equal(type, 'window'), Array.from({length: open}, () => ({}))),
+		},
 	};
 	const context = vm.createContext({
 		self,
@@ -67,17 +80,17 @@ function start({origin = 'https://example.github.io', version = 'v1', stores = n
 		Response,
 		URL,
 		importScripts: file => {
-			assert.equal(file, 'sw-app.js');
+			assert.match(file, /^sw-app\.js(\?v=\w+)?$/);
 			self.APP_VERSION = version;
 			self.APP_FILES = ['./', 'index.html', 'store.js', 'modules/book.js'];
 		},
 	});
 	vm.runInContext(fs.readFileSync(path.join(site, 'sw.js'), 'utf8'), context);
 	/** Runs an event's listener and waits for what it waits on. */
-	const fire = async (type, request) => {
+	const fire = async (type, request, data) => {
 		let waited = Promise.resolve();
 		let answer;
-		listeners[type]({request, waitUntil: p => (waited = p), respondWith: p => (answer = p)});
+		listeners[type]({request, data, waitUntil: p => (waited = p), respondWith: p => (answer = p)});
 		await waited;
 		return answer && (await answer);
 	};
@@ -93,6 +106,14 @@ function start({origin = 'https://example.github.io', version = 'v1', stores = n
 			return res && (await res.text());
 		},
 		answer: file => fire('fetch', new Request(new URL(file, base))),
+		/** A page's navigation to a file (a Request made with mode 'navigate' can't be built, so it is said). */
+		navigate: file => {
+			const request = new Request(new URL(file, base));
+			Object.defineProperty(request, 'mode', {value: 'navigate'});
+			return fire('fetch', request);
+		},
+		message: data => fire('message', undefined, data),
+		skipped: () => skipped,
 	};
 }
 
@@ -135,6 +156,41 @@ test("a new version is fetched whole into a cache of its own, and the app's old 
 	assert.equal(await next.get('store.js'), 'fresh /app/store.js');
 });
 
+test("a new version waiting takes over on a page's navigation when no other page of the app is open", async () => {
+	const told = [];
+	const waiting = {postMessage: message => told.push(message)};
+	for (const open of [0, 1]) {
+		const sw = start({waiting, open});
+		await sw.install();
+		await sw.activate();
+		const res = await sw.navigate('books.html');
+		assert.equal(res.headers.get('Refresh'), '0', 'the page loads again, from the new version');
+		assert.equal(await res.text(), '');
+	}
+	assert.deepEqual(told, ['skipWaiting', 'skipWaiting']);
+	// with another page open, the old version still answers, as that page may import a module later
+	const sw = start({waiting, open: 2});
+	await sw.install();
+	await sw.activate();
+	const res = await sw.navigate('books.html');
+	assert.equal(res.headers.get('Refresh'), null);
+	assert.equal(await res.text(), 'fresh /app/books.html');
+	assert.equal(told.length, 2);
+	// nothing waiting: the page as cached; and a module never hands over, only a page's navigation
+	const alone = start();
+	await alone.install();
+	assert.equal(await (await alone.navigate('books.html')).text(), 'fresh /app/books.html');
+	const busy = start({waiting, open: 1});
+	await busy.install();
+	assert.equal(await busy.get('store.js'), 'fresh /app/store.js');
+	assert.equal(told.length, 2);
+	// the waiting version, told, takes over
+	assert.equal(busy.skipped(), 0);
+	await busy.message('skipWaiting');
+	await busy.message('something else');
+	assert.equal(busy.skipped(), 1);
+});
+
 test('on this computer the network goes first, and the cache answers offline', async () => {
 	const sw = start({origin: 'http://127.0.0.1:8000'});
 	await sw.install();
@@ -173,7 +229,10 @@ test('make pages writes the files to cache, every file served but the source map
 	assert.deepEqual(JSON.parse(written.match(/APP_FILES = (\[.*\]);/)[1]), ['./', ...files]);
 	const hash = crypto.createHash('sha256');
 	for (const file of files) hash.update(`${file}\0`).update(fs.readFileSync(path.join(site, file)));
-	assert.equal(written.match(/APP_VERSION = '(\w+)'/)[1], hash.digest('hex').slice(0, 16));
+	const version = hash.digest('hex').slice(0, 16);
+	assert.equal(written.match(/APP_VERSION = '(\w+)'/)[1], version);
+	// in sw.js too, so the browser sees a new version by sw.js alone
+	assert.ok(fs.readFileSync(path.join(site, 'sw.js'), 'utf8').includes(`importScripts('sw-app.js?v=${version}');`));
 });
 
 test('an answer reached through a redirect is copied, as Chrome refuses a redirected page', async () => {

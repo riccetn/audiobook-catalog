@@ -100,15 +100,23 @@ async function build() {
 		.sort();
 	const hash = crypto.createHash('sha256');
 	for (const file of files) hash.update(`${file}\0`).update(fs.readFileSync(path.join(site, file)));
+	const version = hash.digest('hex').slice(0, 16);
 	fs.writeFileSync(
 		path.join(site, APP_FILE),
 		[
 			"// Written by make pages (build.mjs): the app's files, which sw.js caches, and their hash, which it names its cache by.",
-			`self.APP_VERSION = '${hash.digest('hex').slice(0, 16)}';`,
+			`self.APP_VERSION = '${version}';`,
 			`self.APP_FILES = ${JSON.stringify(['./', ...files])};`,
 			'',
 		].join('\n'),
 	);
+	// The version in sw.js itself too, as the browser looks for a new version by comparing sw.js, and not every
+	// browser compares the scripts it imports (Firefox kept the old version after a deploy).
+	const SW = path.join(site, 'sw.js');
+	const worker = fs.readFileSync(SW, 'utf8');
+	const IMPORT = `importScripts('${APP_FILE}');`;
+	if (!worker.includes(IMPORT)) throw new Error(`sw.js no longer says ${IMPORT}`);
+	fs.writeFileSync(SW, worker.replace(IMPORT, `importScripts('${APP_FILE}?v=${version}');`));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await build();

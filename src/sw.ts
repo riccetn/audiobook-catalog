@@ -1,9 +1,13 @@
 // The service worker that makes the catalog installable as an app (on a phone, say) and usable offline.
 // The app's files are answered from the cache, without asking the network. sw-app.js, which make pages
 // writes, lists them (every file in public/) with a hash of them all, so a deploy changes it; the browser checks it at each start,
-// and a new version is fetched whole into a cache of its own in the background and shown from the next start
-// on (one version at a time, so a page never mixes an old module with a new one). On this computer (make serve)
+// and a new version is fetched whole into a cache of its own in the background and shown from the next page
+// opened when no other page of the app is open (one version at a time, so a page never mixes an old module with a
+// new one). On this computer (make serve)
 // the network goes first instead, so an edit shows at once. The catalog itself lives in IndexedDB (store.ts), not in files.
+// make pages adds the version to this address (?v=), so this file changes with every deploy: a browser that
+// compares only the worker's own script, not those it imports, sees the new version too, and the old sw-app.js
+// in its HTTP cache is never used for it.
 importScripts('sw-app.js');
 
 // `self`, as what it is in a service worker (the type checker only knows it as a worker's), with the files and
@@ -38,8 +42,10 @@ sw.addEventListener('install', e => {
 					}),
 				),
 			),
-		// No skipWaiting: the new version waits until no page of the old one is open, as an open page that
-		// imports a module later (import()) would otherwise get the new version's beside its own old ones.
+		// No skipWaiting here: the new version waits until no page of the old one is open, as an open page that
+		// imports a module later (import()) would otherwise get the new version's beside its own old ones. Moving
+		// from page to page never closes the last one, though, so the old version hands over on a page's navigation
+		// when that page is the only one (navigate, below), by this message.
 	);
 });
 
@@ -100,12 +106,39 @@ function cached(req: Request): Promise<Response | undefined> {
 	return caches.open(CACHE).then(c => c.match(req, {ignoreSearch: true}));
 }
 
+sw.addEventListener('message', e => {
+	if (e.data === 'skipWaiting') sw.skipWaiting();
+});
+
+/**
+ * Answers a request for one of the app's files: from the cache, or on this computer from the network first.
+ */
+function answer(req: Request): Promise<Response> {
+	return LOCAL
+		? fetchAndKeep(req).catch(() => cached(req).then(hit => hit || Response.error()))
+		: cached(req).then(hit => hit || fetchAndKeep(req));
+}
+
+/**
+ * Answers a page's navigation. With a new version waiting and no other page of the app open (the page navigating
+ * away is the one counted; one opened past this worker, with Ctrl+F5, isn't), the new version takes over and the
+ * answer is an empty page that loads the address again, from it. Otherwise the new version would wait for every
+ * page to close, which following links from page to page never does.
+ */
+async function navigate(req: Request): Promise<Response> {
+	const waiting = sw.registration.waiting;
+	if (waiting) {
+		const open = await sw.clients.matchAll({type: 'window'});
+		if (open.length <= 1) {
+			waiting.postMessage('skipWaiting');
+			return new Response('', {headers: {Refresh: '0'}});
+		}
+	}
+	return answer(req);
+}
+
 sw.addEventListener('fetch', e => {
 	const req = e.request;
 	if (!cacheable(req)) return;
-	e.respondWith(
-		LOCAL
-			? fetchAndKeep(req).catch(() => cached(req).then(hit => hit || Response.error()))
-			: cached(req).then(hit => hit || fetchAndKeep(req)),
-	);
+	e.respondWith(req.mode === 'navigate' ? navigate(req) : answer(req));
 });

@@ -53,7 +53,10 @@ into `public/` (see [Types](#types)), then renders each `templates/pages/<name>.
 `.gitignore`: edit the template or the TypeScript, never what is in `public/`. Last it writes
 `public/sw-app.js` (git-ignored too): every file in `public/` (but `sw.js`, the source maps and the API docs), which the service worker
 caches, and a hash of them, which it names its cache by. A file added to `public/` or taken out needs nothing more. It
-serves the app from that cache, so a deploy is picked up because this file changes. On `localhost` it goes to the
+serves the app from that cache, so a deploy is picked up because this file changes; the hash is put in `sw.js` too
+(`importScripts('sw-app.js?v=<hash>')`), as a browser that compares only the worker's own script (Firefox) would
+otherwise miss it. A new version takes over on a page's navigation when no other page of the app is open (the old
+one answers it with an empty page that reloads, `Refresh: 0`), and otherwise waits for the others to close. On `localhost` it goes to the
 network first, so an edit shows on reload.
 
 A page's template starts by naming the layout and what it fills in, then holds the page's own HTML:
