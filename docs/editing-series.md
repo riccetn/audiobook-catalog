@@ -84,12 +84,13 @@ book's and gives the book's title before to its other editions.
 
 ## Other catalogs
 
-When the page opens it asks every catalog you have set up for the series' (or author's, or book's) books: Hardcover with
-your token, AudiobookDB through your server's catalog proxy, and Audible through it too (a series only). Each is
+_Other catalogs_ lists every catalog you have set up, and **Ask the catalogs** asks those ticked about the series' (or
+author's, or book's) books: Hardcover with your token, AudiobookDB through your server's catalog proxy, and Audible
+through it too (a series only). Nothing is asked until you press it, so a small edit doesn't wait on them. Each is
 read as its **Compare** on _Import & export_ would read it, but only for these books, and nothing is sent to any
-catalog. Untick one under _Other catalogs_ to leave it out: it stays left out in this browser until you tick it
-again. A catalog that can't be asked says why (no token, or no server saved), and **Ask again** asks those ticked
-once more (after you add an id to a book, say).
+catalog. Untick one to leave it out: it stays left out in this browser until you tick it again. A catalog that can't
+be asked says why (no token, or no server saved), and **Ask again** asks those ticked once more (after you add an id
+to a book, say).
 
 What they say is shown on the books, and nothing of it is taken until you pick it and save:
 

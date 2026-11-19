@@ -252,7 +252,7 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   `Edition.fromFields`); one that can't be read is named and changes nothing. Review & save lists the changes (`changes`, `bookChanges`; the fields are `inert` while it is open,
   and a field that can't be read is scrolled to instead) and Save `saveBook`s each changed book, adds `EXCLUDE`, then renames the series and saves its info,
   and goes back to the series' (author's, book's) page with what it saved, and the names new to the catalog (`newEntries`), in its status line (`openWithStatus` in `store.js`, sessionStorage `audiobook-catalog-status`); Discard goes back too.
-  The other catalogs: on open `askCatalogs` (`ASKING`, which tests await) loads `edit-catalogs.js` with `import()` (only it loads the connectors) and,
+  The other catalogs: on open `showCatalogPicks` draws the ticks only, asking nothing (so a small edit doesn't wait); _Ask the catalogs_ (`askBtn`, then _Ask again_) runs `askCatalogs` (`ASKING`, which tests await; `bootAsked` presses it), which loads `edit-catalogs.js` with `import()` (only it loads the connectors) and,
   holding the whole catalog, `runCatalogs(kind, name, ids)` compares every `CatalogConnectors.SYNCS` whose `PARTS` has the kind, can be asked
   (`cantAsk`) and isn't unticked (`catalogChoices`, `setSkipped`, localStorage `audiobook-catalog-edit-skip`), giving a `CatalogRun` (`RUN`: `review`, a
   `BookReview`; `take`, `idsFor`, `addFresh`, `keepInfoIds`). Each catalog is shown with its icon (`catalogIcon`: its site's `favicon.ico`, `ExternalCatalog.home` (its group's `favicon` where that one is broken), else on an error its group's `mark` in its `color`,
