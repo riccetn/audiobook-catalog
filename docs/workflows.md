@@ -36,7 +36,7 @@ from Open Library when it has one.
 
 Edit books on the _Edit_ page ([Editing books and series](editing-series.md)). **Edit** at the end of a book's page
 opens it for that book (`edit.html#book=…`): the book's fields and a card per edition, edited in place, with what
-the other catalogs you set up have for it. `+ Add a book`, on _Books_ and on a series' page, opens it for a new book
+the other catalogs you set up have for it when you ask them. `+ Add a book`, on _Books_ and on a series' page, opens it for a new book
 (`edit.html#add`), with the series and author filled in from where you were: the series you were looking at, and
 the author picked in the author filter (else the author of every book in the series). Nothing is saved until you
 press **Review & save** (**Save** in the list it opens); then the book's page opens, saying what was saved.

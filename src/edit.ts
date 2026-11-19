@@ -70,7 +70,7 @@ export let BOOK_ID: string | null = null;
 export let ADDING: {series: string; author: string} | null = null;
 /** What the other catalogs said, once asked; null before (or when none can be). */
 export let RUN: CatalogRun | null = null;
-/** Resolves once the other catalogs have been asked (each time the page asks them). */
+/** Resolves once the catalogs to ask are shown (on open), and once they have been asked (each time Ask is pressed). */
 export let ASKING: Promise<void> = Promise.resolve();
 /** The new books picked, by their place in the review's: the catalog (its place) each is added as. */
 export let FRESH_PICKS: Map<number, number> = new Map();
@@ -1401,6 +1401,17 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 }
 
 /**
+ * The catalogs that can be asked, ticked as they were last time, drawn when the page opens. Nothing is asked
+ * until Ask the catalogs is pressed, so a small edit doesn't wait on them.
+ */
+async function showCatalogPicks() {
+	const part = comparedPart();
+	if (part === undefined) return;
+	const catalogs = await import('./edit-catalogs.js');
+	drawCatalogPicks(catalogs.catalogChoices(part.kind), catalogs.setSkipped);
+}
+
+/**
  * Ask the other catalogs about the books shown: each ticked one that can be asked, in turn. The page holds
  * the whole catalog from then on, as a catalog's book may be one outside the series.
  */
@@ -1411,6 +1422,7 @@ export function askCatalogs(): Promise<void> {
 		const catalogs = await import('./edit-catalogs.js');
 		const choices = catalogs.catalogChoices(part.kind);
 		drawCatalogPicks(choices, catalogs.setSkipped);
+		byId('askBtn').textContent = spell('Ask again');
 		const asked = choices.filter(c => !c.cantAsk && !c.skipped);
 		if (!asked.length) {
 			RUN = null;
@@ -2649,7 +2661,7 @@ export const READY = startPage(
 		}
 		await loadShown();
 		void loadFormNames();
-		void askCatalogs();
+		ASKING = showCatalogPicks();
 	},
 	{refresh},
 );

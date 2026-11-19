@@ -677,14 +677,49 @@ test('a Hardcover comparison sends nothing unticked, nothing once another tab sa
 	);
 	assert.equal(offline.els.importConfirm.style.display, 'none');
 });
-// The Edit series page asks the other catalogs once it has drawn the books (edit-catalogs.js): wait for that.
+// The Edit series page, with the other catalogs asked (edit-catalogs.js): they are asked only when Ask the
+// catalogs is pressed, so a small edit doesn't wait on them.
 const bootAsked = async (hash, options = {}) => {
 	const page = await boot({...options, page: 'edit.html', hash});
 	await idle();
 	await page.ctx.ASKING;
+	page.els.askBtn.listeners.click[0]();
+	await page.ctx.ASKING;
 	await idle();
 	return page;
 };
+test('the Edit page shows the catalogs to ask when it opens, and asks them only when Ask the catalogs is pressed', async () => {
+	const mine = [{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'}];
+	const hc = fakeHardcover(hardcoverState());
+	const setTimeout = (fn, ms) => {
+		if (ms === 1000) Promise.resolve().then(fn);
+		return 0;
+	};
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const page = await boot({
+		page: 'edit.html',
+		hash: '#series=Gull+Isle',
+		files: {'books.json': JSON.stringify(mine)},
+		hardcover: hc.fetch,
+		setTimeout,
+		storage,
+	});
+	await idle();
+	await page.ctx.ASKING;
+	await idle();
+	const {els, get} = page;
+	assert.match(els.catalogPicks.innerHTML, /id="catalog-hardcover" checked=""/);
+	assert.equal(hc.sent.length, 0, 'nothing is asked on open');
+	assert.equal(get('RUN'), null);
+	assert.equal(els.catalogNotes.textContent, '');
+	assert.equal(els.askBtn.textContent, 'Ask the catalogs');
+	els.askBtn.listeners.click[0]();
+	await page.ctx.ASKING;
+	await idle();
+	assert.ok(hc.sent.length > 0);
+	assert.match(els.catalogNotes.textContent, /Hardcover: \d+ books? read\./);
+	assert.equal(els.askBtn.textContent, 'Ask again');
+});
 test("a book's Edit page asks the other catalogs by its series (else its first author), and offers no other books", async () => {
 	const mine = [
 		{t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]},
@@ -711,7 +746,7 @@ test("a book's Edit page asks the other catalogs by its series (else its first a
 	await added.ctx.ASKING;
 	assert.equal(added.get('RUN'), null);
 });
-test("the Edit series page compares a series' books with Hardcover when it opens, and adds a new book only when ticked", async () => {
+test("the Edit series page compares a series' books with Hardcover when asked, and adds a new book only when ticked", async () => {
 	const mine = [
 		{t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]},
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},

@@ -715,8 +715,8 @@ export const bootEdit = async (series, options = {}) => {
 	await idle();
 	return page;
 };
-// One book's Edit page (edit.html#book=<id>), by its title (which the page turns into its id), once the other
-// catalogs were asked.
+// One book's Edit page (edit.html#book=<id>), by its title (which the page turns into its id), once it shows the
+// catalogs it can ask (it asks them only when Ask the catalogs is pressed).
 export const bootEditBook = async (title, options = {}) => {
 	const page = await boot({...options, page: 'edit.html', hash: '#book=' + hashValue(title)});
 	await idle();
