@@ -93,6 +93,21 @@ export function fakeHardcover(state) {
 					})),
 			});
 		}
+		if (query.startsWith('query SearchBooks')) {
+			// as Hardcover's search answers: Typesense's hits, each book's document with its id as text
+			const q = variables.q.toLowerCase();
+			const hits = Object.entries(state.books)
+				.filter(([, b]) => b.title.toLowerCase().includes(q))
+				.map(([id, b]) => ({
+					document: {
+						id: String(id),
+						title: b.title,
+						slug: b.slug || '',
+						author_names: (b.contributions || []).map(c => c.author.name),
+					},
+				}));
+			return answer({search: {results: {found: hits.length, hits, page: 1}}});
+		}
 		if (query.startsWith('query Books'))
 			return answer({books: variables.ids.map(id => state.books[id]).filter(Boolean)});
 		if (query.startsWith('query Editions')) return answer({editions: pick(variables.ids)});

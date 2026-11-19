@@ -10,7 +10,7 @@ import {BookSource} from './book-source.js';
 import {HardcoverClient} from './hardcover-client.js';
 import {HardcoverSync} from './hardcover-sync.js';
 import type {Unchecked} from './text.js';
-import type {Pasted, Answers, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
+import type {Pasted, Answers, Hit, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
 
 /** How Hardcover is asked about a kind of series or person: what it says of some ids, those of a name, its table. */
 const ENTRY_QUERIES: Record<EntryKind, {info: string; byName: string; table: string}> = {
@@ -39,6 +39,7 @@ export class HardcoverSource extends BookSource {
 	static NEEDS = 'key' as const;
 	static CLIENT = HardcoverClient;
 	static FILLS_IN = true;
+	static SEARCHES = true;
 	static ENTRIES = ['series', 'author', 'narrator', 'publisher'] as const;
 
 	/**
@@ -86,6 +87,24 @@ export class HardcoverSource extends BookSource {
 		const book = await this.book(id, null);
 		if (!book) throw new PhraseError('Hardcover has no book {id}', {id});
 		return book;
+	}
+
+	/**
+	 * The books Hardcover's search finds for a title, with their authors' names.
+	 */
+	async titled(title: string): Promise<Hit[]> {
+		const found = (await this.hardcover.ask(HardcoverClient.QUERIES.searchBooks, {q: title})).search;
+		const results = Text.isObject(found) && Text.isObject(found.results) ? found.results : {};
+		return (Array.isArray(results.hits) ? results.hits : [])
+			.map((hit: unknown) => (Text.isObject(hit) && Text.isObject(hit.document) ? hit.document : null))
+			.filter((doc: Unchecked | null): doc is Unchecked => Boolean(doc && numberOf(doc.id)))
+			.map((doc: Unchecked) => ({
+				catalog: HardcoverSource.CATALOG,
+				kind: 'book' as const,
+				id: numberOf(doc.id),
+				title: BookSource.text(doc.title),
+				authors: (Array.isArray(doc.author_names) ? doc.author_names : []).map(BookSource.text).filter(Boolean),
+			}));
 	}
 
 	/**

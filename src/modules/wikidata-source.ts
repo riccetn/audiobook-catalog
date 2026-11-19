@@ -5,7 +5,7 @@ import {Text, PhraseError} from './text.js';
 import {Book} from './book.js';
 import {BookSource} from './book-source.js';
 import type {Unchecked} from './text.js';
-import type {Pasted, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
+import type {Pasted, Hit, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
 
 const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';
 // Wikidata's properties of a book: its title, authors, series (with the number as a qualifier), genres, and
@@ -61,6 +61,7 @@ export class WikidataSource extends BookSource {
 	static CATALOG = 'wikidata';
 	static LABEL = 'Wikidata';
 	static NAMES = ['Wikidata'];
+	static SEARCHES = true;
 	static ENTRIES = ['series', 'author', 'narrator', 'publisher'] as const;
 
 	/**
@@ -72,6 +73,52 @@ export class WikidataSource extends BookSource {
 
 	async lookup(pasted: Pasted): Promise<Book> {
 		return this.item(pasted.id);
+	}
+
+	/**
+	 * The items Wikidata's search finds for a title that name an author (so are books), with their title (or
+	 * label) and their authors' names.
+	 */
+	async titled(title: string): Promise<Hit[]> {
+		const params = new URLSearchParams({
+			action: 'wbsearchentities',
+			search: title,
+			type: 'item',
+			language: 'en',
+			limit: '10',
+			format: 'json',
+			origin: '*',
+		});
+		const answer = await this.json(`${WIKIDATA_API}?${params}`);
+		const ids: string[] = (answer && Array.isArray(answer.search) ? answer.search : [])
+			.map((hit: unknown) => (Text.isObject(hit) ? String(hit.id) : ''))
+			.filter((id: string) => /^Q\d+$/.test(id));
+		const items = await this.items(ids, true);
+		const authorsOf = (item: Unchecked): string[] =>
+			claimsOf(item, P.author)
+				.map(claim => {
+					const v = valueOf(claim);
+					return Text.isObject(v) && typeof v.id === 'string' ? v.id : '';
+				})
+				.filter(Boolean);
+		const books = ids
+			.map(id => items[id])
+			.filter((item): item is Unchecked => Text.isObject(item) && authorsOf(item).length > 0);
+		const labels = await this.items([...new Set(books.flatMap(authorsOf))], false);
+		return books.map(item => {
+			const titled = claimsOf(item, P.title)
+				.map(valueOf)
+				.find(v => Text.isObject(v) && typeof v.text === 'string');
+			return {
+				catalog: WikidataSource.CATALOG,
+				kind: 'book' as const,
+				id: String(item.id),
+				title: Text.isObject(titled) ? Text.tidy(titled.text) : inEnglish(item, 'labels'),
+				authors: authorsOf(item)
+					.map(id => inEnglish(labels[id], 'labels'))
+					.filter(Boolean),
+			};
+		});
 	}
 
 	/**

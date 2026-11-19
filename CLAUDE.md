@@ -154,15 +154,15 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
       keeps the series' ASIN under the site and its `total`; `unsold`: your ASINs under that Audible site it doesn't sell, as maybe not audiobooks; `siteOf` and both count only Audible sites' ASINs). `AudibleClient` (no key, through the proxy's `audible/<site>/catalog/` route; `product`,
       `products`). Comparing only reads the catalog; sending only adds.
     - `BookSource` (a catalog the Edit page's _Fill in from another catalog_ asks: `read` (an address or bare id only it reads), `answers(pasted)` (`own`, `also`,
-      `fallback` or null), `lookup`, `search` (`SEARCHES`), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
+      `fallback` or null), `lookup`, `search(title, authors)` (with `SEARCHES`: the `Hit`s of the subclass's `titled` of that title (`Book.sameTitle`), by one of the authors when any are given), `NEEDS` (`proxy` or `key`, with `CLIENT`'s key name) and `available`/`needsText`, `FILLS_IN`
       (asked for narrators and length by the found edition's ASIN or ISBN); `json`/`proxied`/`answer`, `date`; for series and people:
       `ENTRIES` (the kinds it knows), `entry(kind, id)`, `findEntries({kind, name, books})` (the one its books there name, `by` 'books', else its namesakes, `by` 'name', `NAMESAKES` at most), `answerOf` (an `EntryAnswer`: its `info` an `EntryInfo`, ids no catalog takes for the kind left out), `sameName`, `paragraphs`) with `AudibleSource` (Audible's catalog API through the
-      proxy, by an Audible site's ASIN on that site, `isSite`; an Amazon site's ASIN is that site's alone, so never asked of Audible; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
-      proxy: releases, books, by ASIN beside Audible, a typed title narrowed by the book's authors; a release's ASINs under the sites its links name (`category.url`, `AudiobookdbClient.asinsBySite`);
-      `book`, `minutes`), `HardcoverSource` (with the token: its books, and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
-      `OpenLibrarySource` (works, editions, ISBNs; `seriesOf`) and `WikidataSource`. `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
+      proxy, by an Audible site's ASIN on that site, `isSite`; a typed title on audible.com, its products editions; an Amazon site's ASIN is that site's alone, so never asked of Audible; a product without a title is one the site doesn't sell), `AudiobookdbSource` (through the
+      proxy: releases, books, by ASIN beside Audible, a typed title; a release's ASINs under the sites its links name (`category.url`, `AudiobookdbClient.asinsBySite`);
+      `book`, `minutes`), `HardcoverSource` (with the token: its books, a typed title by its `search` (`searchBooks`), and the ASINs (when no other has them), ISBNs and Goodreads editions it knows),
+      `OpenLibrarySource` (works, editions, ISBNs, a typed title's works; `seriesOf`) and `WikidataSource` (items; a typed title's items that name an author). `CatalogLookup` (`read` names what was pasted; `find(text, authors)` asks the
       sources, with the fetch, the clients whose key is saved and the catalog proxy passed in: the candidates in order own, also, fallback (a fallback only when
-      none found it; one asked beside others has its failure noted, not thrown), then the `FILLS_IN` ones by the edition; `unavailable` says what to save;
+      none found it; one asked beside others has its failure noted, not thrown), then the `FILLS_IN` ones by the edition; text that is none of those is a title, `search(title, authors)`: each source that `SEARCHES` in order until one has exactly one book of it, else the first one's several or `notFound`; `unavailable` says what to save;
       `fill` (gaps only; `fillEdition`), `editionIds`). `EntryLookup` (the same for a series, author, narrator or publisher: `find(kind, name, info, books)`
       asks each source that lists the kind in `ENTRIES`, by the id the entry has there, else `findEntries`, then by the ids the sure answers gave for each other;
       a source that can't be asked is a note; `offers(current, answers)`: the values the entry lacks, each once, the first sure one of a `key` ticked, never a link or

@@ -12,7 +12,7 @@ import {Edition} from './edition.js';
 import {ExternalCatalog} from './external-catalog.js';
 import type {BookSource} from './book-source.js';
 import {CatalogConnectors} from './catalog-connectors.js';
-import type {Get, Pasted, Found} from './book-source.js';
+import type {Get, Pasted, Found, Hit} from './book-source.js';
 import type {CatalogClient} from './catalog-client.js';
 
 /**
@@ -98,7 +98,7 @@ export class CatalogLookup {
 	 * id too, or when it has none), then those that fill in what the first lacks, by the edition's ASIN or ISBN.
 	 * What the first has wins; the others only fill in what it lacks. Throws with a short reason when `text`
 	 * names nothing this can look up, or no catalog has it. Text that is no address, id or ISBN is a title,
-	 * searched on the source that SEARCHES (by `authors` too, when the book has them).
+	 * searched on the sources that SEARCHES (by `authors` too, when the book has them; search()).
 	 */
 	async find(text: unknown, authors: string[] = []): Promise<Found> {
 		const typed = Text.tidy(String(text || ''));
@@ -106,12 +106,11 @@ export class CatalogLookup {
 			typed,
 			this.sources.map(s => s.kind),
 		);
-		const searcher = this.sources.find(s => s.kind.SEARCHES && s.available);
-		if (!pasted && searcher && typed.length >= 3)
-			pasted = {catalog: searcher.kind.CATALOG, kind: 'book', id: await searcher.search(typed, authors)};
+		const searchable = this.sources.some(s => s.kind.SEARCHES && s.available);
+		if (!pasted && searchable && typed.length >= 3) pasted = await this.search(typed, authors);
 		if (!pasted)
 			throw new PhraseError(
-				searcher
+				searchable
 					? 'paste the address of a book or edition on {catalogs}, or an ISBN, or type its title'
 					: 'paste the address of a book or edition on {catalogs}, or an ISBN',
 				{catalogs: this.pastable},
@@ -176,21 +175,10 @@ export class CatalogLookup {
 								id: pasted.id,
 							})
 						: pasted.id;
-			const unasked = candidates.filter(s => !s.available);
-			// a template for each case: with what the others said, and with what to save to ask the rest
-			throw new PhraseError(
-				'no catalog has a book {where}' +
-					(found.notes.length ? ' ({notes})' : '') +
-					(unasked.length ? ' (to ask {unasked} too, {needs} on the Import & export page)' : ''),
-				{
-					where,
-					notes: Text.joinPhrases(found.notes),
-					unasked: listed(
-						unasked.map(s => s.label),
-						'and',
-					),
-					needs: listed(needed(unasked.map(s => s.needsText)), 'and'),
-				},
+			throw CatalogLookup.notFound(
+				where,
+				found.notes,
+				candidates.filter(s => !s.available),
 			);
 		}
 		if (pasted.kind === 'edition') {
@@ -221,6 +209,93 @@ export class CatalogLookup {
 				);
 		}
 		return found;
+	}
+
+	/**
+	 * The book titled `title` (by one of `authors`, when any are given), asking each source that SEARCHES in
+	 * turn until one has exactly one such book: the first catalog in the usual order that tells it apart. One
+	 * that can't be asked is noted, not thrown. Throws, naming a few, when the first to find several has several
+	 * and no other has one; else, when none has it, says so (with what to save to search the others too).
+	 */
+	async search(title: string, authors: string[]): Promise<Pasted> {
+		const searchers = this.sources.filter(s => s.kind.SEARCHES);
+		const notes: Phrase[] = [];
+		let several: {source: BookSource; hits: Hit[]} | null = null;
+		for (const source of searchers.filter(s => s.available)) {
+			let hits: Hit[];
+			try {
+				hits = await source.search(title, authors);
+			} catch (err) {
+				notes.push(
+					Text.phrase("{catalog} couldn't be asked: {error}", {
+						catalog: source.label,
+						error: Text.errorPhrase(err),
+					}),
+				);
+				continue;
+			}
+			if (hits.length === 1) {
+				const [{catalog, kind, id}] = hits;
+				return {catalog, kind, id};
+			}
+			if (hits.length && !several) several = {source, hits};
+		}
+		const values = {title, authors: authors.join(', ')};
+		if (several) {
+			const {source, hits} = several;
+			const some = hits.slice(0, 3).map(hit => {
+				const shown = {
+					title: hit.title,
+					authors: hit.authors.join(', '),
+					url: (hit.kind !== 'isbn' && ExternalCatalog.url(hit.catalog, hit.kind, hit.id)) || hit.id,
+				};
+				return shown.authors
+					? Text.phrase('{title} by {authors} ({url})', shown)
+					: Text.phrase('{title} by no author ({url})', shown);
+			});
+			const more = hits.length > 3;
+			// a whole template for each case: with the authors typed or not, a few of them or all
+			throw new PhraseError(
+				authors.length
+					? more
+						? '{catalog} has {count} books titled {title} by {authors}: {some}…; paste the address of the one you mean'
+						: '{catalog} has {count} books titled {title} by {authors}: {some}; paste the address of the one you mean'
+					: more
+						? '{catalog} has {count} books titled {title}: {some}…; type the author first, or paste the address of the one you mean'
+						: '{catalog} has {count} books titled {title}: {some}; type the author first, or paste the address of the one you mean',
+				{...values, catalog: source.label, count: hits.length, some: Text.joinPhrases(some)},
+			);
+		}
+		const where = authors.length
+			? Text.phrase('titled {title} by {authors}', values)
+			: Text.phrase('titled {title}', values);
+		throw CatalogLookup.notFound(
+			where,
+			notes,
+			searchers.filter(s => !s.available),
+		);
+	}
+
+	/**
+	 * That no catalog has a book `where` (`with ISBN 978…`), with what those asked said (`notes`), and what to
+	 * save to ask those that couldn't be (`unasked`).
+	 */
+	static notFound(where: PhraseValue, notes: Phrase[], unasked: BookSource[]): PhraseError {
+		// a template for each case: with what the others said, and with what to save to ask the rest
+		return new PhraseError(
+			'no catalog has a book {where}' +
+				(notes.length ? ' ({notes})' : '') +
+				(unasked.length ? ' (to ask {unasked} too, {needs} on the Import & export page)' : ''),
+			{
+				where,
+				notes: Text.joinPhrases(notes),
+				unasked: listed(
+					unasked.map(s => s.label),
+					'and',
+				),
+				needs: listed(needed(unasked.map(s => s.needsText)), 'and'),
+			},
+		);
 	}
 
 	/**

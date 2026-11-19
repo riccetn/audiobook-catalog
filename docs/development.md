@@ -83,6 +83,11 @@ thing it does and listing it there:
 | `ShelfSync` (with a `CatalogClient`) | your shelves there: Compare, then send what is ticked | `HardcoverSync`, `AudiobookdbSync`, `AudibleSync`                                              | `CLIENT`, `compare`, `summary`, `send`, `addIds` |
 | `BookSource`                         | a catalog the Edit page's _Fill in_ asks              | `AudibleSource`, `AudiobookdbSource`, `HardcoverSource`, `OpenLibrarySource`, `WikidataSource` | `CATALOG`, `LABEL`, `NEEDS`, `answers`, `lookup` |
 
+A `BookSource` whose catalog can be searched by title says `SEARCHES = true` and writes `titled(title, authors)`:
+the books its search finds, as `Hit`s (what to look up, a book's or an edition's id, with the title and authors
+there). `search` keeps those of that title by one of the authors typed, and `CatalogLookup` asks each such source
+in turn, until one has exactly one.
+
 A `BookSource` may also know series, authors, narrators and publishers: it lists the kinds in `ENTRIES` and writes
 `entry(kind, id)` (the one with that id there) and `findEntries({kind, name, books})` (the one the entry's books
 there name, `by: 'books'`, else those of that name, `by: 'name'`), each answer made with `answerOf`. `EntryLookup`
