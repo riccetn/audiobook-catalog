@@ -82,6 +82,8 @@ export class HardcoverClient extends CatalogClient {
 		user_book_reads(order_by: {id: asc}) { finished_at edition_id }
 	}
 }`,
+		// a title search: Hardcover's own search (Typesense), whose `results` are its hits with their documents
+		searchBooks: `query SearchBooks($q: String!) { search(query: $q, query_type: "Book", per_page: 25) { results } }`,
 		seriesByName: `query SeriesByName($names: [String!]) { series(where: {name: {_in: $names}}) { id name } }`,
 		authorsByName: `query AuthorsByName($names: [String!]) { authors(where: {name: {_in: $names}}) { id name } }`,
 		// the series and authors of some books, to find a series' or author's id from your books of it

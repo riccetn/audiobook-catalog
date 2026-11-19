@@ -2,7 +2,7 @@
 // invented; the shapes are those the real APIs answer (checked against them on 2026-10-22).
 
 /**
- * Answers Open Library's /works, /books, /authors and /isbn pages and its search for authors, and Wikidata's
+ * Answers Open Library's /works, /books, /authors and /isbn pages and its searches for titles and authors, and Wikidata's
  * wbgetentities and wbsearchentities, from `state` (openCatalogState()); `sent` lists the addresses asked.
  * @param {ReturnType<typeof openCatalogState>} state
  */
@@ -22,6 +22,21 @@ export function fakeCatalogs(state = openCatalogState()) {
 					name: a.name,
 					type: 'author',
 					...(state.openLibrary.found[a.key.replace('/authors/', '')] || {work_count: 0}),
+				}));
+			return json(200, {numFound: docs.length, start: 0, numFoundExact: true, docs});
+		}
+		if (u.hostname === 'openlibrary.org' && u.pathname === '/search.json') {
+			// as Open Library searches by title: the works with the words in their title, with their authors' names
+			const q = u.searchParams.get('title').toLowerCase();
+			const {works, authors} = state.openLibrary;
+			const docs = Object.values(works)
+				.filter(w => w.title.toLowerCase().includes(q))
+				.map(w => ({
+					key: w.key,
+					title: w.title,
+					author_name: w.authors
+						.map(a => authors[a.author.key.replace('/authors/', '')]?.name)
+						.filter(Boolean),
 				}));
 			return json(200, {numFound: docs.length, start: 0, numFoundExact: true, docs});
 		}
@@ -390,6 +405,15 @@ export function fakeProxyCatalogs() {
 			});
 		}
 		m = /^\/audible\/([^/]+)\/catalog\/products$/.exec(u.pathname);
+		if (m && u.searchParams.has('title')) {
+			// a title search on the site: the products with the words in their title, with what was asked of them
+			const q = u.searchParams.get('title').toLowerCase();
+			const groups = u.searchParams.get('response_groups');
+			const products = Object.entries(audible)
+				.filter(([key, p]) => key.startsWith(`${m[1]}/`) && p.title?.toLowerCase().includes(q))
+				.map(([, p]) => asked(p, groups));
+			return json(200, {products, response_groups: ['always-returned'], total_results: products.length});
+		}
 		if (m) {
 			const asins = u.searchParams.get('asins').split(',');
 			if (asins.length > 50)

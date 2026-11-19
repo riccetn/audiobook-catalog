@@ -46,6 +46,8 @@ import {FileImporter} from '../public/modules/file-importer.js';
 import {FileExporter} from '../public/modules/file-exporter.js';
 import {BookSource} from '../public/modules/book-source.js';
 import {OpenLibrarySource} from '../public/modules/open-library-source.js';
+import {WikidataSource} from '../public/modules/wikidata-source.js';
+import {HardcoverSource} from '../public/modules/hardcover-source.js';
 import {AudibleSource} from '../public/modules/audible-source.js';
 import {AudibleClient} from '../public/modules/audible-client.js';
 import {AudibleSync} from '../public/modules/audible-sync.js';
@@ -5670,7 +5672,12 @@ test('CatalogLookup finds a book on Open Library and Wikidata, without an accoun
 		lookup.find('hardcover.app/id/book/77'),
 		/to look it up on Hardcover, save your Hardcover API token/,
 	);
-	await assert.rejects(lookup.find('just a title'), /paste the address of a book or edition/);
+	// a title is searched on those two, and the others that can't be asked are named
+	await assert.rejects(
+		lookup.find('just a title'),
+		/^Error: no catalog has a book titled just a title \(to ask Audible, AudiobookDB and Hardcover too, save your server and save your Hardcover API token on the Import & export page\)$/,
+	);
+	await assert.rejects(lookup.find('ab'), /paste the address of a book or edition .* or type its title$/);
 	await assert.rejects(
 		new CatalogLookup(async () => {
 			throw new TypeError('Failed to fetch');
@@ -5956,6 +5963,82 @@ test('ShelfSync.push sends each entry of a plan, says what it did, and stops aft
 	);
 });
 
+test('CatalogLookup searches a typed title on each catalog that can be searched, until one has just one book of it', async () => {
+	const plain = found => JSON.parse(JSON.stringify(found.book));
+	// without an account: Open Library's work, any spelling (Wikidata isn't asked once Open Library has it)
+	const open = fakeCatalogs();
+	const keeper = await new CatalogLookup(open.fetch, []).find('the lantern KEEPER');
+	assert.deepEqual(keeper.sources, ['Open Library']);
+	assert.deepEqual(plain(keeper), {t: 'The Lantern Keeper', a: ['Ann Vale'], ext: {openlibrary: 'OL900W'}});
+	assert.ok(open.sent.some(url => url.startsWith('https://openlibrary.org/search.json?title=the+lantern+KEEPER')));
+	assert.ok(!open.sent.some(url => url.includes('wbsearchentities')));
+	// by an author it doesn't list, Open Library has none, and Wikidata is asked
+	await assert.rejects(
+		new CatalogLookup(fakeCatalogs().fetch, [], null, [OpenLibrarySource, WikidataSource]).find(
+			'The Lantern Keeper',
+			['Bo Reed'],
+		),
+		/^Error: no catalog has a book titled The Lantern Keeper by Bo Reed$/,
+	);
+	// Wikidata: an item that names an author is a book; one that doesn't (the author Ann Vale) isn't
+	const item = await new CatalogLookup(fakeCatalogs().fetch, [], null, [WikidataSource]).find('The Lantern Keeper', [
+		'Ann Vale',
+	]);
+	assert.deepEqual(plain(item).ext, {goodreads: '7171', openlibrary: 'OL900W', wikidata: 'Q9001'});
+	await assert.rejects(
+		new CatalogLookup(fakeCatalogs().fetch, [], null, [WikidataSource]).find('Ann Vale'),
+		/^Error: no catalog has a book titled Ann Vale$/,
+	);
+	// with the server: Audible first, its product an edition on audible.com, then AudiobookDB by its ASIN
+	const proxy = fakeProxyCatalogs();
+	const lookup = new CatalogLookup(fakeCatalogs().fetch, [], proxy.route);
+	const audible = await lookup.find('The Lantern Keeper');
+	assert.deepEqual(audible.sources, ['Audible', 'AudiobookDB']);
+	assert.equal(audible.book.editions[0].external['audible.com'], 'B0LANTERN2');
+	assert.ok(proxy.sent.some(r => /^audible\/audible\.com\/catalog\/products\?title=The\+Lantern\+Keeper&/.test(r)));
+	// AudiobookDB has two of that title: by the author typed, else the next catalog's one
+	const abdb = new CatalogLookup(fakeCatalogs().fetch, [], proxy.route, [AudiobookdbSource]);
+	await assert.rejects(
+		abdb.find('the lantern keeper'),
+		/^Error: AudiobookDB has 2 books titled the lantern keeper: The Lantern Keeper by Ann Vale \(https:\/\/audiobookdb\.org\/books\/LnTrnKpr2xYz\); The Lantern Keeper by Bo Reed \(.*\); type the author first, or paste the address of the one you mean$/,
+	);
+	assert.deepEqual(plain(await abdb.find('the lantern keeper', ['ann vale'])).ext, {audiobookdb: 'LnTrnKpr2xYz'});
+	const next = await new CatalogLookup(fakeCatalogs().fetch, [], proxy.route, [
+		AudiobookdbSource,
+		OpenLibrarySource,
+	]).find('the lantern keeper');
+	assert.deepEqual(next.sources, ['Open Library']);
+	await assert.rejects(
+		abdb.find('The Salt Harbor', ['Ann Vale']),
+		/^Error: no catalog has a book titled The Salt Harbor by Ann Vale$/,
+	);
+	// one that can't be asked is said, and the others are still searched
+	const down = new CatalogLookup(fakeCatalogs().fetch, [], async () => {
+		throw new TypeError('Failed to fetch');
+	});
+	const despite = await down.find('The Lantern Keeper');
+	assert.deepEqual(despite.sources, ['Open Library']);
+	await assert.rejects(
+		down.find('The Salt Harbor'),
+		/^Error: no catalog has a book titled The Salt Harbor \(Audible couldn't be asked: this browser could not reach your server .*; AudiobookDB couldn't be asked: .*\) \(to ask Hardcover too, save your Hardcover API token on the Import & export page\)$/,
+	);
+	// Hardcover, with the token: its search's books, told apart by their authors (79 was merged into 77)
+	const hc = fakeHardcover(hardcoverState());
+	const hardcover = new CatalogLookup(
+		fakeCatalogs().fetch,
+		[new HardcoverClient(hc.fetch, 'tok-123', async () => {})],
+		null,
+		[HardcoverSource],
+	);
+	await assert.rejects(
+		hardcover.find('Tidewater'),
+		/^Error: Hardcover has 2 books titled Tidewater: Tidewater by Ann Vale \(https:\/\/hardcover\.app\/.*77\); Tidewater by no author \(.*79\); type the author first/,
+	);
+	const tidewater = await hardcover.find('tidewater', ['ann vale']);
+	assert.deepEqual([tidewater.sources, tidewater.book.external.hardcover], [['Hardcover'], '77']);
+	assert.ok(hc.sent.some(x => x.query.startsWith('query SearchBooks') && x.variables.q === 'tidewater'));
+});
+
 test('CatalogLookup asks a source written against BookSource alone: its own ids, a fallback, what it needs, and what it fills in', async () => {
 	const keyed = new CatalogLookup(
 		fakeCatalogs().fetch,
@@ -5979,9 +6062,11 @@ test('CatalogLookup asks a source written against BookSource alone: its own ids,
 	assert.deepEqual(isbn.sources, ['Open Library']);
 	const fallback = await keyed.find('9780000000026');
 	assert.deepEqual(fallback.sources, ['Shelfmark']);
+	// a title is searched only on a source that SEARCHES (Open Library)
+	await assert.rejects(keyed.find('typed words'), /^Error: no catalog has a book titled typed words$/);
 	await assert.rejects(
-		keyed.find('typed words'),
-		/paste the address of a book or edition on Shelfmark or Open Library, or an ISBN$/,
+		new CatalogLookup(fakeCatalogs().fetch, [], null, [ShelfmarkSource]).find('typed words'),
+		/paste the address of a book or edition on Shelfmark, or an ISBN$/,
 	);
 	// without its key: what to save, and a note for what it would fill in
 	const unkeyed = new CatalogLookup(fakeCatalogs().fetch, [], null, [ShelfmarkSource, OpenLibrarySource]);

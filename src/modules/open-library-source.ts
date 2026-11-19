@@ -7,7 +7,7 @@ import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {BookSource} from './book-source.js';
 import type {Unchecked} from './text.js';
-import type {Pasted, Answers, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
+import type {Pasted, Answers, Hit, EntryKind, EntryQuery, EntryAnswer} from './book-source.js';
 
 const OPEN_LIBRARY = 'https://openlibrary.org';
 const tidyText = BookSource.text;
@@ -17,6 +17,7 @@ export class OpenLibrarySource extends BookSource {
 	static CATALOG = 'openlibrary';
 	static LABEL = 'Open Library';
 	static NAMES = ['Open Library'];
+	static SEARCHES = true;
 	static ENTRIES = ['author'] as const;
 	/** an author's ids elsewhere, as Open Library names them (`remote_ids`), by the catalog's key here */
 	static REMOTE_IDS: Record<string, string> = {
@@ -52,6 +53,23 @@ export class OpenLibrarySource extends BookSource {
 	 */
 	async ask(path: string): Promise<Unchecked | null> {
 		return this.json(OPEN_LIBRARY + path);
+	}
+
+	/**
+	 * The works Open Library's search finds for a title, with their authors' names.
+	 */
+	async titled(title: string): Promise<Hit[]> {
+		const params = new URLSearchParams({title, limit: '20', fields: 'key,title,author_name'});
+		const answer = await this.ask(`/search.json?${params}`);
+		return (answer && Array.isArray(answer.docs) ? answer.docs : [])
+			.filter((doc: unknown) => Text.isObject(doc) && /^\/works\/OL\d+W$/.test(String(doc.key)))
+			.map((doc: Unchecked) => ({
+				catalog: OpenLibrarySource.CATALOG,
+				kind: 'book' as const,
+				id: String(doc.key).slice('/works/'.length),
+				title: tidyText(doc.title),
+				authors: (Array.isArray(doc.author_name) ? doc.author_name : []).map(tidyText).filter(Boolean),
+			}));
 	}
 
 	/**

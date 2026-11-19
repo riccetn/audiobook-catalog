@@ -9,7 +9,7 @@
 import {Text, PhraseError} from './text.js';
 import {CatalogClient} from './catalog-client.js';
 import type {Unchecked, Phrase} from './text.js';
-import type {Book} from './book.js';
+import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
 
 /** a fetch of an address */
@@ -24,6 +24,11 @@ export type Pasted = {catalog: string; kind: 'book' | 'edition' | 'isbn'; id: st
  * asked and why.
  */
 export type Found = {book: Book; sources: string[]; notes: Phrase[]};
+/**
+ * A book a title search found: what to look up (its book's or edition's id), and its title and authors there,
+ * which tell it apart.
+ */
+export type Hit = Pasted & {title: string; authors: string[]};
 /**
  * What a lookup asks through: `get` for catalogs that answer web pages, `clients` (those of catalogs whose key is
  * saved: Hardcover's with your token), and `proxy`, the catalog proxy given a route
@@ -177,10 +182,29 @@ export class BookSource {
 	}
 
 	/**
-	 * The id of the book titled `title` (by one of `authors`, when given), for a source that SEARCHES.
-	 * Throws, with a short reason, when there is none or there are several.
+	 * The books titled `title` on this catalog (by one of `authors`, when any are given), for a source that
+	 * SEARCHES: those of its search's hits (`titled`) whose title is that one (spelled any way, punctuation and
+	 * a subtitle aside), each once. Throws with a short reason when it can't be asked.
 	 */
-	async search(_title: string, _authors: string[]): Promise<string> {
+	async search(title: string, authors: string[]): Promise<Hit[]> {
+		const wanted = new Set(authors.map(Text.norm).filter(Boolean));
+		const out: Hit[] = [];
+		for (const hit of await this.titled(title, authors))
+			if (
+				hit.id &&
+				Book.sameTitle(hit.title, title) &&
+				(!wanted.size || hit.authors.some(a => wanted.has(Text.norm(a)))) &&
+				!out.some(x => x.catalog === hit.catalog && x.id === hit.id)
+			)
+				out.push(hit);
+		return out;
+	}
+
+	/**
+	 * What this catalog's search finds for a title (`authors` may narrow it, where the catalog takes them), as
+	 * hits; search() keeps those of that title.
+	 */
+	async titled(_title: string, _authors: string[]): Promise<Hit[]> {
 		throw new PhraseError("{catalog} can't be searched by title", {catalog: this.label});
 	}
 

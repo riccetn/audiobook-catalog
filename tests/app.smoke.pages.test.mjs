@@ -955,28 +955,22 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 			'img:audiobookdb': 'c1'.repeat(32),
 		},
 	]);
-	// a title is looked up on AudiobookDB: by the authors typed, when it has several of that title
-	const titled = await bootAdd('', {proxy, storage});
+	// a title is searched on the catalogs, by the authors typed: Audible's one edition of it, then AudiobookDB by its ASIN
+	const titled = await bootAdd('', {proxy, storage, catalogs: fakeCatalogs().fetch});
+	typeIn(titled.els, 'b0_a', 'Ann Vale');
 	titled.els.fillFrom.value = 'the lantern keeper';
 	await titled.ctx.fillFromCatalog();
-	assert.match(
-		titled.els.bookFormError.textContent,
-		/AudiobookDB has 2 books titled the lantern keeper: The Lantern Keeper by Ann Vale \(https:\/\/audiobookdb\.org\/books\/LnTrnKpr2xYz\); The Lantern Keeper by Bo Reed .*type the author first/,
-	);
-	typeIn(titled.els, 'b0_a', 'Ann Vale');
-	await titled.ctx.fillFromCatalog();
 	assert.equal(titled.els.bookFormError.textContent, '');
+	assert.equal(titled.els.b0_t.value, 'The Lantern Keeper');
 	assert.equal(titled.els.b0_ext_audiobookdb.value, 'LnTrnKpr2xYz');
 	assert.equal(titled.els.b0_s.value, 'Gull Isle');
-	assert.match(
-		titled.els.ioStatus.textContent,
-		/^Filled in from AudiobookDB: title, series, number in the series, genres, the book's id in another catalog\. \(AudiobookDB has 2 releases of it/,
-	);
+	assert.equal(draftEditions(titled.get)[0]['ext:audible.com'], 'B0LANTERN2');
+	assert.match(titled.els.ioStatus.textContent, /^Filled in from Audible and AudiobookDB: title, series/);
 	titled.els.fillFrom.value = 'The Salt Harbor';
 	await titled.ctx.fillFromCatalog();
 	assert.match(
 		titled.els.bookFormError.textContent,
-		/AudiobookDB has no book titled The Salt Harbor by Ann Vale; paste its address instead/,
+		/no catalog has a book titled The Salt Harbor by Ann Vale \(to ask Hardcover too, save your Hardcover API token/,
 	);
 	// without the proxy, AudiobookDB says how it could be asked
 	const without = await bootAdd();
@@ -1052,6 +1046,14 @@ test('a new book is filled in from another catalog: only its empty fields, and t
 		/^Couldn't fill in the book: Audible and AudiobookDB can't be read from a web page; to look it up on Hardcover, save your Hardcover API token/,
 	);
 	assert.equal(els.fillFrom.value, 'https://www.audible.com/pd/B0TIDEWAT1');
+	// a title is searched without an account, on Open Library and Wikidata
+	const searched = await bootAdd('', {catalogs: catalogs.fetch, storage: new Map()});
+	searched.els.fillFrom.value = 'The Lantern Keeper';
+	await searched.ctx.fillFromCatalog();
+	assert.equal(searched.els.bookFormError.textContent, '');
+	assert.equal(searched.els.b0_a.value, 'Ann Vale');
+	assert.equal(searched.els.b0_ext_openlibrary.value, 'OL900W');
+	assert.match(searched.els.ioStatus.textContent, /^Filled in from Open Library: title, authors/);
 	// saved, the book has it all
 	assert.equal(await saveEdit(page), true);
 	const added = (await kept(storage)).books.find(b => b.t === 'My Own Title');

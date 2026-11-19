@@ -8,7 +8,7 @@ import {Book} from './book.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {BookSource} from './book-source.js';
 import type {Unchecked} from './text.js';
-import type {Pasted, Answers, EntryQuery, EntryAnswer} from './book-source.js';
+import type {Pasted, Answers, Hit, EntryQuery, EntryAnswer} from './book-source.js';
 
 /** Looks books up in Audible's catalog, through the catalog proxy. */
 export class AudibleSource extends BookSource {
@@ -20,7 +20,10 @@ export class AudibleSource extends BookSource {
 	static NAMES = ['Audible', 'Amazon'];
 	static NEEDS = 'proxy' as const;
 	static FILLS_IN = true;
+	static SEARCHES = true;
 	static ENTRIES = ['series', 'author'] as const;
+	/** How many products a title search lists at most (Audible's own limit is 50). */
+	static SEARCH_RESULTS = 50;
 	/** How many of the books' ASINs on a site are asked about, in one request. */
 	static ENTRY_BOOKS = 20;
 
@@ -50,6 +53,36 @@ export class AudibleSource extends BookSource {
 		// edition when the book has another
 		if (book && book.editions[0]) book.editions[0].title = book.title;
 		return book;
+	}
+
+	/**
+	 * The products audible.com's catalog lists for a title (as a bare ASIN is read as audible.com's), each an
+	 * edition, with its authors; a product without a title is one the site doesn't sell.
+	 */
+	async titled(title: string): Promise<Hit[]> {
+		const site = ExternalCatalog.AUDIBLE_SITE;
+		const params = new URLSearchParams({
+			title,
+			num_results: String(AudibleSource.SEARCH_RESULTS),
+			products_sort_by: 'Relevance',
+			response_groups: 'contributors,product_desc',
+		});
+		const answer = await this.proxied(`audible/${site}/catalog/products?${params}`);
+		const products: unknown[] = answer && Array.isArray(answer.products) ? answer.products : [];
+		return products
+			.filter(
+				(p): p is Unchecked =>
+					Text.isObject(p) && typeof p.asin === 'string' && Boolean(BookSource.text(p.title)),
+			)
+			.map(p => ({
+				catalog: site,
+				kind: 'edition' as const,
+				id: p.asin.toUpperCase(),
+				title: BookSource.text(p.title),
+				authors: (Array.isArray(p.authors) ? p.authors : [])
+					.map((a: unknown) => (Text.isObject(a) ? BookSource.text(a.name) : ''))
+					.filter(Boolean),
+			}));
 	}
 
 	/** Whether `key` is an Audible site's (`audible.de`), whose catalog API answers for its ASINs; an Amazon site's isn't. */
