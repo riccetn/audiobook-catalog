@@ -315,7 +315,7 @@ test('a Hardcover comparison flags print books and ebooks, yours and on your she
 	const html = readable(els.importPreviewBody.innerHTML);
 	assert.match(
 		html,
-		/Maybe not audiobooks, in this catalog \(2\)<\/h4><p class="cmpNote">By what Hardcover says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form\.<\/p><ul class="cmpRows"><li><a href="book\.html#book=[^"]+">Brine Songs — Ann Vale<\/a>: Hardcover edition 811 is a print book on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/811" target="_blank" rel="noopener">hardcover.app ↗<\/a><\/li><li><a href="book\.html#book=[^"]+">Lantern Hours — R\. T\. Hale<\/a>: ASIN B0LANTERNK is an ebook on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/821"/,
+		/Maybe not audiobooks, in this catalog \(2\) <button[^>]*>Take out all<\/button> <button[^>]*>Tick none<\/button><\/h4><p class="cmpNote">By what Hardcover says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form, or tick what to put right\. Only values that are the same as that edition's on Hardcover are taken out\.<\/p><ul class="cmpRows"><li><a href="book\.html#book=[^"]+">Brine Songs — Ann Vale<\/a>: Hardcover edition 811 is a print book on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/811" target="_blank" rel="noopener">hardcover.app ↗<\/a><ul><li><label class="cmpPick"><input type="checkbox" data-pick="fixOut:0"> Take out what it has of that edition: Hardcover id 811 \(nothing else is left, so the edition is removed\)<\/label><\/li><\/ul><\/li><li><a href="book\.html#book=[^"]+">Lantern Hours — R\. T\. Hale<\/a>: ASIN B0LANTERNK is an ebook on Hardcover <a href="https:\/\/hardcover\.app\/id\/edition\/821"/,
 	);
 	assert.match(
 		html,
@@ -335,6 +335,72 @@ test('a Hardcover comparison flags print books and ebooks, yours and on your she
 		sent.user_book_reads.map(r => r.finished_at),
 		['2024-06-01'],
 	);
+});
+test('a Hardcover comparison offers, unticked, to put right an edition of yours that is a print book or an ebook there', async () => {
+	const mine = [
+		{
+			t: 'Brine Songs',
+			a: ['Ann Vale'],
+			ext: {hardcover: '81'},
+			e: [{ext: {hardcover: '811'}, isbn: '9780000000002', p: ['Kestrel Row'], n: ['Hollis Marr']}],
+		},
+		{t: 'Lantern Hours', a: ['R. T. Hale'], ext: {hardcover: '80'}, e: [{ext: {'amazon.com': 'B0LANTERNK'}}]},
+	];
+	const state = hardcoverState();
+	state.editions[811].publisher = {name: 'Kestrel Row'};
+	state.editions[812] = {
+		id: 812,
+		book_id: 81,
+		asin: 'B0BRINEAUD',
+		audio_seconds: 30000,
+		reading_format_id: 2,
+		contributions: [{contribution: 'Narrator', author: {name: 'Hollis Marr'}}],
+	};
+	state.editions[821] = {id: 821, book_id: 80, asin: 'B0LANTERNK', reading_format_id: 4, contributions: []};
+	const setTimeout = (fn, ms) => {
+		if (ms === 1000) Promise.resolve().then(fn);
+		return 0;
+	};
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const {els, readable} = await boot({
+		page: 'import.html',
+		files: {'books.json': JSON.stringify(mine)},
+		hardcover: fakeHardcover(state).fetch,
+		setTimeout,
+		storage,
+	});
+	await els.hardcoverCompareBtn.listeners.click[0]();
+	await idle();
+	const html = readable(els.importPreviewBody.innerHTML);
+	assert.match(
+		html,
+		/Brine Songs — Ann Vale<\/a>: Hardcover edition 811 is a print book on Hardcover <a[^>]*>hardcover\.app ↗<\/a><ul><li><label class="cmpPick"><input type="checkbox" data-pick="fixOut:0"> Take out what it has of that edition: Hardcover id 811, ISBN 9780000000002, publisher Kestrel Row<\/label><\/li><li><label class="cmpPick"><input type="checkbox" data-pick="fixIn:0"> Take those out and fill it in from the audiobook edition on Hardcover: amazon\.com id, Hardcover id, length <a href="https:\/\/hardcover\.app\/id\/edition\/812"/,
+	);
+	assert.match(
+		html,
+		/Lantern Hours — R\. T\. Hale<\/a>: ASIN B0LANTERNK is an ebook on Hardcover .*data-pick="fixOut:1"> Take out what it has of that edition: ASIN B0LANTERNK \(nothing else is left, so the edition is removed\)<\/label><\/li><li>.*data-pick="fixIn:1"> Take those out and fill it in from the audiobook edition on Hardcover: amazon\.com id, Hardcover id /,
+	);
+	assert.ok(
+		els.importPreviewBody.querySelectorAll('input[data-pick^="fix"]').every(box => !box.checked),
+		'nothing is ticked at first',
+	);
+	const tick = pick => {
+		const box = els.importPreviewBody.querySelector(`input[data-pick="${pick}"]`);
+		box.checked = true;
+		box.dispatch('change');
+	};
+	tick('fixIn:0');
+	tick('fixOut:1');
+	await els.importConfirm.listeners.click[0]();
+	await idle();
+	assert.match(els.ioStatus.textContent, /put right the editions of 2 books/);
+	const books = (await kept(storage)).books;
+	assert.deepEqual(
+		books.find(b => b.t === 'Brine Songs').e,
+		[{ext: {'amazon.com': 'B0BRINEAUD', hardcover: '812'}, n: ['Hollis Marr'], len: 500}],
+		"the print edition's values are out, and the audiobook edition's in",
+	);
+	assert.equal(books.find(b => b.t === 'Lantern Hours').e, undefined, 'an edition left with nothing is gone');
 });
 test('your server is kept in this browser, checked when saved, and only ever sent its own key', async () => {
 	// the real Worker (server/worker.js) behind the page, with no catalog behind it

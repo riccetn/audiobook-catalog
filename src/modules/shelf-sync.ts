@@ -10,6 +10,7 @@ import {Series} from './series.js';
 import {Comparison} from './comparison.js';
 import {CatalogClient} from './catalog-client.js';
 import type {Book} from './book.js';
+import type {Edition, EditionValue} from './edition.js';
 import type {Catalog, NamedKind} from './catalog.js';
 import type {MergeOptions} from './merger.js';
 import type {ComparisonResult} from './comparison.js';
@@ -55,6 +56,28 @@ export type NotAudio = {
 	said: Phrase;
 	url?: string | null;
 	maybe?: boolean;
+	/** an edition of yours: the edition itself, and the id there of the edition it was found as */
+	mine?: Edition;
+	otherId?: string;
+	/** what may put an edition of yours right (ShelfSync.editionFix()), when the comparison worked it out */
+	fix?: EditionFix;
+};
+/**
+ * What may put right an edition of yours (`editionId`, of book `bookId`) that the other catalog has as a print
+ * book or an ebook (`other`): taking out the values it has of that edition (`values`; `empties` when nothing
+ * would be left, so the edition goes), and filling it in from the book's audiobook edition there (`audio`,
+ * which would fill in `fills`; null when it can't tell which, as the book has `audioEditions` of them there).
+ */
+export type EditionFix = {
+	bookId: string;
+	editionId: string;
+	other: Edition;
+	values: EditionValue[];
+	empties: boolean;
+	audio: Edition | null;
+	audioUrl?: string | null;
+	fills: Phrase[];
+	audioEditions: number;
 };
 /**
  * A book of the series compared that the catalog has none of: its title (and number) there, its page there
@@ -92,6 +115,73 @@ export type PlanGroup = 'add' | 'reads';
 
 /** Compares the catalog with your shelves on one catalog, and puts books (and reads) on them. */
 export class ShelfSync {
+	/**
+	 * What may put right `mine`, an edition of `book` that the other catalog has as `other` (a print book or an
+	 * ebook), as an import may have taken the edition picked there for the audiobook: the values it has of
+	 * `other`, and filling it in from `audio`, the book's audiobook edition there, when that adds something to it
+	 * once they are out, disagrees with none of what is left, and is no other edition of the book. `count` is how
+	 * many audiobook editions the book has there. null when there is nothing to offer, or the edition isn't
+	 * stored yet.
+	 */
+	static editionFix(
+		book: Book,
+		mine: Edition,
+		other: Edition,
+		audio: Edition | null,
+		count: number,
+		audioUrl?: string | null,
+	): EditionFix | null {
+		if (!book.id || !mine.id) return null;
+		const values = mine.sharedValues(other);
+		const after = mine.clone();
+		after.withoutValues(values.map(v => v.key));
+		let fills: Phrase[] = [];
+		const usable = audio && !after.conflictsWith(audio) && !book.editions.some(x => x !== mine && x.sameAs(audio));
+		if (usable) {
+			const filled = after.clone();
+			filled.fillFrom(audio);
+			fills = Comparison.editionGains(after, filled);
+		}
+		if (!values.length && !fills.length) return null;
+		return {
+			bookId: book.id,
+			editionId: mine.id,
+			other,
+			values,
+			empties: after.isEmpty(),
+			audio: fills.length ? audio : null,
+			audioUrl,
+			fills,
+			audioEditions: count,
+		};
+	}
+
+	/**
+	 * Put an edition right in `books` as `fix` offers, in place: with `remove`, take out what it (and each box set's
+	 * copy of it) still has of the other catalog's edition, and with `fill` that too, then fill it in from the
+	 * audiobook edition there, unless it disagrees with what is left. An edition left with nothing is taken off its book.
+	 * @returns the books changed
+	 */
+	static fixEdition(books: Book[], fix: EditionFix, {remove, fill}: {remove: boolean; fill: boolean}): Book[] {
+		const changed: Book[] = [];
+		const keys = fix.values.map(v => v.key);
+		for (const book of books) {
+			const eds = book.editions.filter(ed => ed.id === fix.editionId);
+			if (!eds.length) continue;
+			const before = JSON.stringify(book.editions);
+			for (const ed of eds) {
+				if (remove || fill) {
+					const still = new Set(ed.sharedValues(fix.other).map(v => v.key));
+					ed.withoutValues(keys.filter(k => still.has(k)));
+				}
+				if (fill && fix.audio && !ed.conflictsWith(fix.audio)) ed.fillFrom(fix.audio);
+			}
+			book.editions = book.editions.filter(ed => !ed.isEmpty());
+			if (JSON.stringify(book.editions) !== before) changed.push(book);
+		}
+		return changed;
+	}
+
 	/** The client class it asks through: its catalog's name, key and ids. */
 	static CLIENT = CatalogClient;
 	/** Whether it sends dates read too (as reads on books on your Read shelf there). */

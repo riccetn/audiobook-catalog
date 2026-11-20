@@ -95,6 +95,7 @@ export class HardcoverSync extends ShelfSync {
 		const ids = await client.find(HardcoverSync.lookups(books), step);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		const {plan, notAudio} = await this.planFor(books, shelf, step, ids);
+		await this.editionFixes(notAudio, ids, step);
 		return {
 			comparison,
 			incoming,
@@ -278,6 +279,8 @@ export class HardcoverSync extends ShelfSync {
 						key: `hardcover ${hc}`,
 						said: Text.phrase(byId),
 						url: url(hc),
+						mine: ed,
+						otherId: hc,
 					});
 					continue;
 				}
@@ -313,9 +316,61 @@ export class HardcoverSync extends ShelfSync {
 						key: hit[1],
 						said: Text.phrase(other.said),
 						url: url(other.id),
+						mine: ed,
+						otherId: other.id,
 					});
 			}
 		return out;
+	}
+
+	/**
+	 * Work out what may put right each edition of yours in `notAudio` (its `fix`, ShelfSync.editionFix()): Hardcover's
+	 * print book or ebook edition it was found as, and the book's audiobook edition there to fill it in from: the
+	 * one your edition's other ids name (`found`), else the book's only one.
+	 */
+	async editionFixes(notAudio: NotAudio[], found: HardcoverFound, step: Step) {
+		const mine = notAudio.filter(n => n.yours && n.mine && n.otherId && n.book.id && n.mine.id);
+		if (!mine.length) return;
+		// the audiobook edition an edition's ASIN or ISBN names, when they name only one
+		const named = (n: NotAudio): string | null => {
+			const ed = n.mine as Edition;
+			const hits = [
+				...ed.ids('asin').map(a => found.asin.get(a)),
+				...ed.isbns().map(i => found.isbn.get(i)),
+				...(ed.idOn('hardcover') ? [found.hc.get(ed.idOn('hardcover') as string)] : []),
+			];
+			const ids = [...new Set(hits.filter(h => h && h.hc && !h.other).map(h => (h as HardcoverHit).hc))];
+			return ids.length === 1 ? (ids[0] as string) : null;
+		};
+		const rows = await this.client.rows(
+			'editions',
+			[...new Set(mine.flatMap(n => [n.otherId, named(n)]).filter(Boolean))].map(Number),
+			step,
+			Text.phrase('Reading those editions on Hardcover'),
+		);
+		const row = (id: string | null | undefined) => (id ? rows.get(Number(id)) : undefined);
+		const bookIds = [
+			...new Set(mine.map(n => row(n.otherId)?.book_id).filter(id => Number.isInteger(id))),
+		] as number[];
+		const audio = await this.client.audioEditionsOf(bookIds, step);
+		const url = (id: unknown) => ExternalCatalog.url('hardcover', 'edition', String(id));
+		for (const n of mine) {
+			const other = row(n.otherId);
+			if (!Text.isObject(other) || !HardcoverClient.notAudio(other)) continue;
+			const ofBook = audio.get(other.book_id) || [];
+			const byId = row(named(n));
+			const pick =
+				Text.isObject(byId) && byId.book_id === other.book_id ? byId : ofBook.length === 1 ? ofBook[0] : null;
+			const fix = ShelfSync.editionFix(
+				n.book,
+				n.mine as Edition,
+				HardcoverSync.edition(other),
+				pick ? HardcoverSync.edition(pick) : null,
+				ofBook.length,
+				pick ? url(pick.id) : null,
+			);
+			if (fix) n.fix = fix;
+		}
 	}
 
 	/**

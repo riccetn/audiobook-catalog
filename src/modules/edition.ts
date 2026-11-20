@@ -11,6 +11,9 @@ import type {Unchecked, StoredField, Phrase} from './text.js';
 /** the keys of an edition as it is stored */
 export type EditionKey = 't' | 'ext' | 'isbn' | 'n' | 'p' | 'd' | 'len' | 'desc' | 'links' | 'img';
 
+/** One value of an edition: its key ('ext:' and the catalog, 'isbn', 'p', 'd') and how it reads ("ISBN 978…"). */
+export type EditionValue = {key: string; text: Phrase};
+
 /** What a new Edition is made of; every part is optional. */
 export interface EditionInit {
 	/** the title it was released under, when that is not the book's (a box set's edition: the set's) */
@@ -309,6 +312,53 @@ export class Edition {
 			}
 		}
 		return gained;
+	}
+
+	/**
+	 * The values this edition has that `other` has too: its ids under the same catalog or family (an ASIN of any
+	 * site), the ISBN, the publishers and the release date, as the key withoutValues() takes ('ext:' and the
+	 * catalog, 'isbn', 'p', 'd') and how it reads. What an edition holds of another one: of a print book's, say,
+	 * when an import took that for the audiobook.
+	 */
+	sharedValues(other: Edition): EditionValue[] {
+		const out: EditionValue[] = [];
+		const theirs = other.idKeys();
+		for (const [key, id] of this.externalList()) {
+			const family = ExternalCatalog.family(key);
+			if (theirs.includes(family + ' ' + id))
+				out.push({
+					key: 'ext:' + key,
+					text: Text.phrase('{name} {id}', {name: ExternalCatalog.idName(family), id}),
+				});
+		}
+		const isbn = this.isbns()[0];
+		if (isbn && other.isbns()[0] === isbn) out.push({key: 'isbn', text: Text.phrase('ISBN {isbn}', {isbn})});
+		const names = (list: string[]) => list.map(Text.norm).sort().join('\n');
+		if (this.publishers.length && names(this.publishers) === names(other.publishers))
+			out.push({key: 'p', text: Text.phrase('publisher {names}', {names: this.publishers.join(', ')})});
+		if (this.released && this.released === other.released)
+			out.push({key: 'd', text: Text.phrase('released {date}', {date: this.released})});
+		return out;
+	}
+
+	/**
+	 * Take the values `keys` name (sharedValues()' keys) out of this edition, in place.
+	 */
+	withoutValues(keys: string[]) {
+		for (const key of keys) {
+			if (key.startsWith('ext:')) {
+				const external = {...this.external};
+				delete external[key.slice(4)];
+				this.external = external;
+			} else if (key === 'isbn') this.isbn = undefined;
+			else if (key === 'p') this.publishers = [];
+			else if (key === 'd') this.released = undefined;
+		}
+	}
+
+	/** Whether it holds nothing but its stored id and covers, which is no edition (the Check says so). */
+	isEmpty(): boolean {
+		return !Object.keys(this.toJSON()).some(k => k !== Edition.ID_KEY && k !== 'img');
 	}
 
 	/**

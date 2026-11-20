@@ -3494,6 +3494,146 @@ test('HardcoverSync.yourNotAudio lists your editions Hardcover has as print book
 	);
 });
 
+test('Edition.sharedValues names what an edition has of another, and withoutValues takes it out', () => {
+	const mine = E({
+		uid: 'e1',
+		ext: {'audible.com': 'B0BRINEAUD', 'amazon.com': 'B0BRINEKIN', hardcover: '811', goodreads: '4242'},
+		isbn: '9780000000002',
+		n: ['Hollis Marr'],
+		p: ['Kestrel Row'],
+		d: '2019-01-01',
+	});
+	const print = E({
+		ext: {'amazon.co.uk': 'B0BRINEKIN', hardcover: '811'},
+		isbn: '9780000000002',
+		p: ['kestrel row'],
+		d: '2019-01-01',
+	});
+	const values = mine.sharedValues(print);
+	assert.deepEqual(
+		values.map(v => [v.key, en(v.text)]),
+		[
+			['ext:amazon.com', 'ASIN B0BRINEKIN'],
+			['ext:hardcover', 'Hardcover id 811'],
+			['isbn', 'ISBN 9780000000002'],
+			['p', 'publisher Kestrel Row'],
+			['d', 'released 2019-01-01'],
+		],
+		"an ASIN counts on any site, a publisher however it's spelled",
+	);
+	assert.deepEqual(E({p: ['Gull Press'], d: '2019'}).sharedValues(print), [], 'only the same values count');
+	mine.withoutValues(values.map(v => v.key));
+	assert.deepEqual(json(mine), {
+		uid: 'e1',
+		ext: {'audible.com': 'B0BRINEAUD', goodreads: '4242'},
+		n: ['Hollis Marr'],
+	});
+	assert.ok(!mine.isEmpty());
+	assert.ok(E({uid: 'e2', img: {audiobookdb: 'abc'}}).isEmpty(), 'a cover alone is no edition');
+});
+
+test('ShelfSync.editionFix offers to take out what is the print edition and fill in from the audiobook one, and fixEdition does it', () => {
+	const print = HardcoverSync.edition({
+		id: 811,
+		book_id: 81,
+		isbn_13: '9780000000002',
+		publisher: {name: 'Kestrel Row'},
+		release_date: '2019-01-01',
+		reading_format_id: 1,
+	});
+	const audio = HardcoverSync.edition({
+		id: 812,
+		book_id: 81,
+		asin: 'B0BRINEAUD',
+		publisher: {name: 'Kestrel Row Audio'},
+		release_date: '2020-02-02',
+		audio_seconds: 36000,
+		reading_format_id: 2,
+		contributions: [{contribution: 'Narrator', author: {name: 'Hollis Marr'}}],
+	});
+	const edition = {
+		uid: 'e1',
+		ext: {hardcover: '811', 'audible.com': 'B0BRINEAUD'},
+		isbn: '9780000000002',
+		p: ['Kestrel Row'],
+		d: '2019-01-01',
+	};
+	const books = Bs([
+		{uid: 'b1', ...book('Brine Songs', 'Ann Vale', ed(edition))},
+		// a box set's copy of the edition
+		{uid: 'b2', ...book('Brine Songs and More', 'Ann Vale', ed(edition, {uid: 'e3', isbn: '9780000000019'}))},
+	]);
+	const fix = ShelfSync.editionFix(
+		books[0],
+		books[0].editions[0],
+		print,
+		audio,
+		1,
+		'https://hardcover.app/id/edition/812',
+	);
+	assert.deepEqual(
+		[fix.bookId, fix.editionId, fix.values.map(v => v.key), fix.empties, fix.fills.map(en), fix.audioEditions],
+		[
+			'b1',
+			'e1',
+			['ext:hardcover', 'isbn', 'p', 'd'],
+			false,
+			['amazon.com id', 'Hardcover id', 'narrators', 'publisher', 'release date', 'length'],
+			1,
+		],
+	);
+	const copy = Bs(json(books));
+	assert.deepEqual(
+		json(ShelfSync.fixEdition(copy, fix, {remove: true, fill: false})).map(b => b.uid),
+		['b1', 'b2'],
+	);
+	assert.deepEqual(json(copy[0].editions), [{uid: 'e1', ext: {'audible.com': 'B0BRINEAUD'}}]);
+	assert.deepEqual(json(copy[1].editions)[0], {uid: 'e1', ext: {'audible.com': 'B0BRINEAUD'}}, 'and its copies');
+	assert.deepEqual(json(copy[1].editions)[1], {uid: 'e3', isbn: '9780000000019'}, 'other editions are left alone');
+	// filling in takes the print values out too
+	const filled = Bs(json(books));
+	books[0].editions[0].publishers = ['Gull Press'];
+	ShelfSync.fixEdition(filled, {...fix}, {remove: false, fill: true});
+	assert.deepEqual(json(filled[0].editions), [
+		{
+			uid: 'e1',
+			ext: {'audible.com': 'B0BRINEAUD', 'amazon.com': 'B0BRINEAUD', hardcover: '812'},
+			n: ['Hollis Marr'],
+			p: ['Kestrel Row Audio'],
+			d: '2020-02-02',
+			len: 600,
+		},
+	]);
+	// a value changed since is no longer the print edition's, and stays
+	const changed = Bs(json(books));
+	ShelfSync.fixEdition(changed, fix, {remove: true, fill: false});
+	assert.deepEqual(json(changed[0].editions), [{uid: 'e1', ext: {'audible.com': 'B0BRINEAUD'}, p: ['Gull Press']}]);
+
+	// an edition with nothing but the print edition's values goes, and no audiobook edition is offered where the
+	// book has it already, or the book has several there
+	const lone = Bs([
+		{
+			uid: 'b3',
+			...book(
+				'Fen',
+				'Ann Vale',
+				ed({uid: 'e4', ext: {hardcover: '811'}}, {uid: 'e5', ext: {'amazon.com': 'B0BRINEAUD'}}),
+			),
+		},
+	]);
+	const loneFix = ShelfSync.editionFix(lone[0], lone[0].editions[0], print, audio, 1);
+	assert.deepEqual([loneFix.empties, loneFix.audio, loneFix.fills], [true, null, []]);
+	assert.equal(ShelfSync.editionFix(lone[0], lone[0].editions[0], print, null, 3).audioEditions, 3);
+	ShelfSync.fixEdition(lone, loneFix, {remove: true, fill: false});
+	assert.deepEqual(json(lone[0].editions), [{uid: 'e5', ext: {'amazon.com': 'B0BRINEAUD'}}]);
+	assert.equal(ShelfSync.editionFix(lone[0], lone[0].editions[0], print, null, 0), null, 'nothing to offer');
+	assert.equal(
+		ShelfSync.editionFix(B(book('New')), E({ext: {hardcover: '811'}}), print, null, 0),
+		null,
+		'not stored yet',
+	);
+});
+
 test('HardcoverSync.addIds fills in the ids found (box set copies alike), never changing one you have', () => {
 	const books = Bs([
 		book('Tidewater', 'Ann Vale', ed({ext: {'audible.com': 'B0TIDEWAT1'}})),
