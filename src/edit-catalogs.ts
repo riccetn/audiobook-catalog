@@ -11,7 +11,7 @@ import {spell, plural} from './dom.js';
 import {savedKey, savedServer, catalogClient} from './connections.js';
 import type {Book} from './modules/book.js';
 import type {MergeReport} from './modules/merger.js';
-import type {ShelfSync, ShelfComparison, ShelfPart} from './modules/shelf-sync.js';
+import type {ShelfSync, ShelfComparison, ShelfPart, EditionFix} from './modules/shelf-sync.js';
 import type {CatalogEntry, ReviewResult} from './modules/book-review.js';
 
 type SyncClass = typeof ShelfSync;
@@ -153,6 +153,16 @@ export class CatalogRun {
 	/** Add a missing book (as missingBook() gave it) to the catalog, as an import would. */
 	addMissing(book: Book): MergeReport {
 		return Merger.into(CATALOG, [book], {});
+	}
+
+	/**
+	 * `book` with an edition put right as a catalog's `fix` offers (ShelfSync.fixEdition): the values it has of that
+	 * catalog's print book or ebook taken out, and with `fill` the audiobook edition there filled in; null when that
+	 * changes nothing (it was put right already).
+	 */
+	fixEdition(book: Book, source: number, fix: EditionFix, fill: boolean): Book | null {
+		const copy = book.clone();
+		return this.sources[source].sync.kind.fixEdition([copy], fix, {remove: true, fill}).length ? copy : null;
 	}
 
 	/** Keep the ids a catalog found for the series and people, where they have none; how many gained one. */
