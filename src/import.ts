@@ -63,7 +63,7 @@ import type {Child} from './dom.js';
 import type {Book} from './modules/book.js';
 import type {FileImporter} from './modules/file-importer.js';
 import type {FileExporter} from './modules/file-exporter.js';
-import type {ShelfSync, ShelfComparison, SyncPlan, NotAudio} from './modules/shelf-sync.js';
+import type {ShelfSync, ShelfComparison, SyncPlan, NotAudio, EditionFix} from './modules/shelf-sync.js';
 import type {ClientClass} from './modules/catalog-client.js';
 import type {DeviceSettings} from './modules/device-setup.js';
 import type {CatalogJob} from './store.js';
@@ -339,7 +339,9 @@ let IMPORT_KIND: ImporterClass = CatalogConnectors.IMPORTERS[0];
 /**
  * What is ticked in a comparison: the incoming books to import (by place), those whose edition goes into the
  * book they find (an edition ticked imports its book), the differences to take (by key), the books of a
- * catalog's plan to put on its Read shelf and reads to add (by place), and whether to keep the ids found there.
+ * catalog's plan to put on its Read shelf and reads to add (by place), whether to keep the ids found there, and
+ * the editions of yours the catalog has as print books or ebooks to put right (by place in its `notAudio`): their
+ * values of that edition taken out (`fixOut`), or that and filled in from its audiobook edition (`fixIn`).
  */
 export type ComparePicks = {
 	take: Set<number>;
@@ -348,6 +350,8 @@ export type ComparePicks = {
 	add: Set<number>;
 	reads: Set<number>;
 	ids: boolean;
+	fixOut: Set<number>;
+	fixIn: Set<number>;
 };
 /** A comparison open in the preview. */
 export interface PendingCompare {
@@ -385,7 +389,20 @@ function pendingCompare(compare: Omit<PendingCompare, 'picks'>): PendingCompare 
 	const editions = new Set(
 		books.filter(b => b.editionGains.length && (compare.editionsYours || yours.has(b.theirs))).map(b => b.at),
 	);
-	return {...compare, picks: {take, editions, patch: new Set(), add: new Set(), reads: new Set(), ids: true}};
+	// putting an edition right is never ticked at first: what the catalog says of it may be wrong
+	return {
+		...compare,
+		picks: {
+			take,
+			editions,
+			patch: new Set(),
+			add: new Set(),
+			reads: new Set(),
+			ids: true,
+			fixOut: new Set(),
+			fixIn: new Set(),
+		},
+	};
 }
 
 /**
@@ -406,7 +423,7 @@ function messageList(items: string[], limit: number = Infinity): HTMLUListElemen
 	);
 }
 
-export type PickGroup = 'take' | 'editions' | 'patch' | 'add' | 'reads';
+export type PickGroup = 'take' | 'editions' | 'patch' | 'add' | 'reads' | 'fixOut' | 'fixIn';
 
 /**
  * How many changes the ticks of a comparison make.
@@ -419,6 +436,7 @@ function pickedCount(compare: PendingCompare): number {
 		picks.patch.size +
 		picks.add.size +
 		picks.reads.size +
+		new Set([...picks.fixOut, ...picks.fixIn]).size +
 		(picks.ids && idsToSave(compare) ? 1 : 0)
 	);
 }
@@ -487,7 +505,32 @@ function pickBox(group: PickGroup, key: number | string, label: Child[]): HTMLLa
 }
 
 /**
- * A group of the comparison: its heading with how many, tick all and none for its `keys`, and its rows.
+ * A button of a comparison's group that ticks (`on`) or unticks the picks `keys` of each group given.
+ */
+function tickButton(label: string, on: boolean, groups: [PickGroup, (number | string)[]][]): HTMLButtonElement {
+	return buildElement(
+		'button',
+		{
+			type: 'button',
+			class: 'cmpTick',
+			onclick: () => {
+				const compare = PENDING_COMPARE as PendingCompare;
+				for (const [group, keys] of groups) {
+					const picked = compare.picks[group] as Set<number | string>;
+					for (const k of keys)
+						if (on) picked.add(k);
+						else picked.delete(k);
+				}
+				drawCompare();
+			},
+		},
+		label,
+	);
+}
+
+/**
+ * A group of the comparison: its heading with how many, tick all and none for its `keys` (or the `buttons`
+ * given), and its rows.
  */
 function compareGroup(
 	heading: string,
@@ -495,16 +538,17 @@ function compareGroup(
 	group: PickGroup | null,
 	keys: (number | string)[],
 	note?: string,
+	buttons?: HTMLButtonElement[],
 ): HTMLElement | null {
 	if (!rows.length) return null;
-	const tick = (on: boolean) => () => {
-		const compare = PENDING_COMPARE as PendingCompare;
-		const picked = compare.picks[group as PickGroup] as Set<number | string>;
-		for (const k of keys)
-			if (on) picked.add(k);
-			else picked.delete(k);
-		drawCompare();
-	};
+	const ticks =
+		buttons ||
+		(group && keys.length > 1
+			? [
+					tickButton(spell('Tick all'), true, [[group, keys]]),
+					tickButton(spell('Tick none'), false, [[group, keys]]),
+				]
+			: []);
 	return buildElement(
 		'section',
 		{class: 'cmpGroup'},
@@ -512,17 +556,7 @@ function compareGroup(
 			'h4',
 			{},
 			spell('{heading} ({count})', {heading, count: rows.length}),
-			group &&
-				keys.length > 1 && [
-					' ',
-					buildElement('button', {type: 'button', class: 'cmpTick', onclick: tick(true)}, spell('Tick all')),
-					' ',
-					buildElement(
-						'button',
-						{type: 'button', class: 'cmpTick', onclick: tick(false)},
-						spell('Tick none'),
-					),
-				],
+			ticks.map(b => [' ', b]),
 		),
 		note && para(note, 'cmpNote'),
 		buildElement(
@@ -817,7 +851,7 @@ function shelfSections(compare: PendingCompare, sync: ShelfSync, result: ShelfCo
 				),
 			);
 	}
-	out.push(...notAudioSections(result.notAudio, label));
+	out.push(...notAudioSections(result.notAudio, label, true));
 	if (result.missing.length) {
 		out.push(
 			buildElement(
@@ -843,10 +877,78 @@ function shelfSections(compare: PendingCompare, sync: ShelfSync, result: ShelfCo
 
 /**
  * The books a catalog says may not be audiobooks, which may be data problems: your editions it has as
- * something else, and the books on your shelves there read as something else. Nothing to tick: they are
- * put right in the book's form here, or on the catalog.
+ * something else, and the books on your shelves there read as something else. Those on your shelves there are
+ * put right on the catalog; yours in the book's form here, or, where the comparison worked out how (`fix`), with
+ * the ticks below each (when `picks`, as they can be ticked).
  */
-function notAudioSections(notAudio: NotAudio[], label: string): Child[] {
+function notAudioSections(notAudio: NotAudio[], label: string, picks: boolean = false): Child[] {
+	const fixes = (n: NotAudio): Child => {
+		const fix = n.fix;
+		const i = notAudio.indexOf(n);
+		if (!fix || !picks) return null;
+		const values = Text.joinPhrases(
+			fix.values.map(v => v.text),
+			', ',
+		);
+		const link = fix.audioUrl
+			? buildElement(
+					'a',
+					{href: fix.audioUrl, target: '_blank', rel: 'noopener'},
+					`${new URL(fix.audioUrl).hostname.replace(/^www\./, '')} \u2197`,
+				)
+			: '';
+		const fills = Text.joinPhrases(fix.fills, ', ');
+		return buildElement(
+			'ul',
+			{},
+			fix.values.length > 0 &&
+				buildElement(
+					'li',
+					{},
+					pickBox('fixOut', i, [
+						spell(
+							fix.empties
+								? 'Take out what it has of that edition: {values} (nothing else is left, so the edition is removed)'
+								: 'Take out what it has of that edition: {values}',
+							{values},
+						),
+					]),
+				),
+			fix.audio &&
+				buildElement(
+					'li',
+					{},
+					pickBox(
+						'fixIn',
+						i,
+						fix.values.length
+							? spellParts(
+									'Take those out and fill it in from the audiobook edition on {catalog}: {fills} {link}',
+									{
+										catalog: label,
+										fills,
+										link,
+									},
+								)
+							: spellParts('Fill it in from the audiobook edition on {catalog}: {fills} {link}', {
+									catalog: label,
+									fills,
+									link,
+								}),
+					),
+				),
+			!fix.audio &&
+				fix.audioEditions > 1 &&
+				buildElement(
+					'li',
+					{class: 'cmpNote'},
+					spell(
+						'{catalog} has {count} audiobook editions of it: give yours its ASIN in its form to fill it in from the one it is.',
+						{catalog: label, count: fix.audioEditions},
+					),
+				),
+		);
+	};
 	const row: (n: NotAudio) => Child = n => [
 		n.yours && n.book.id
 			? buildElement('a', {href: bookPageHref(n.book.id)}, Comparison.bookLine(n.book))
@@ -864,7 +966,22 @@ function notAudioSections(notAudio: NotAudio[], label: string): Child[] {
 				`${new URL(n.url).hostname.replace(/^www\./, '')} \u2197`,
 			),
 		],
+		n.yours && fixes(n),
 	];
+	const fixable = notAudio.flatMap((n, i) => (n.yours && n.fix && picks ? [i] : []));
+	const out = fixable.filter(i => (notAudio[i].fix as EditionFix).values.length);
+	const filled = fixable.filter(i => (notAudio[i].fix as EditionFix).audio);
+	const buttons =
+		fixable.length > 1
+			? [
+					out.length > 1 && tickButton(spell('Take out all'), true, [['fixOut', out]]),
+					filled.length > 1 && tickButton(spell('Fill in all'), true, [['fixIn', filled]]),
+					tickButton(spell('Tick none'), false, [
+						['fixOut', fixable],
+						['fixIn', fixable],
+					]),
+				].filter((b): b is HTMLButtonElement => Boolean(b))
+			: [];
 	return [
 		compareGroup(
 			spell('Maybe not audiobooks, in this catalog'),
@@ -872,9 +989,12 @@ function notAudioSections(notAudio: NotAudio[], label: string): Child[] {
 			null,
 			[],
 			spell(
-				'By what {catalog} says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form.',
+				fixable.length
+					? "By what {catalog} says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form, or tick what to put right. Only values that are the same as that edition's on {catalog} are taken out."
+					: 'By what {catalog} says, these editions of yours may not be audiobooks: if so, give the book its audiobook edition in its form.',
 				{catalog: label},
 			),
+			buttons,
 		),
 		compareGroup(
 			spell('Maybe not audiobooks, on your {catalog} shelves', {catalog: label}),
@@ -944,10 +1064,19 @@ function applyIntoCopy(compare: PendingCompare) {
 		compare.opts,
 	);
 	const {online, picks} = compare;
+	// the editions put right, before the ids found are kept
+	const fixed: Set<Book> = new Set();
+	if (online)
+		online.result.notAudio.forEach((n, i) => {
+			const fill = picks.fixIn.has(i);
+			if (n.fix && (fill || picks.fixOut.has(i)))
+				for (const book of online.sync.kind.fixEdition(copy.books, n.fix, {remove: true, fill}))
+					fixed.add(book);
+		});
 	const idsFound = picks.ids && online ? online.sync.kind.addIds(copy.books, online.result.found).length : 0;
 	const infoIds = picks.ids && online ? online.sync.kind.setInfoIds(copy, online.result.infoIds) : 0;
 	const errors = Validator.bookErrors(copy);
-	return {copy, report, patched, renamed, idsFound, infoIds, errors};
+	return {copy, report, patched, renamed, idsFound, infoIds, errors, fixed: fixed.size};
 }
 
 /**
@@ -1940,7 +2069,7 @@ async function applyShelfSync(compare: PendingCompare) {
 		);
 		return;
 	}
-	const {copy, report, patched, renamed, idsFound, infoIds, errors} = applyIntoCopy(compare);
+	const {copy, report, patched, renamed, idsFound, infoIds, errors, fixed} = applyIntoCopy(compare);
 	if (errors.length) {
 		showIoStatus(
 			spell(
@@ -1952,7 +2081,12 @@ async function applyShelfSync(compare: PendingCompare) {
 		return;
 	}
 	const found = spell('{catalog} {found}', {catalog: label, found: spell(sync.kind.FOUND)});
-	const here = appliedText(report, patched, idsFound, found, infoIds);
+	const here = [
+		appliedText(report, patched, idsFound, found, infoIds),
+		fixed && spell('put right the editions of {books}', {books: plural(fixed, 'book')}),
+	]
+		.filter(Boolean)
+		.join(', ');
 	if (JSON.stringify(copy.books) !== JSON.stringify(CATALOG.books) || infoIds) {
 		takeBooks(copy, renamed);
 		if (picks.ids) sync.kind.setInfoIds(CATALOG, result.infoIds);

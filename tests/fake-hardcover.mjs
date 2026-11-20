@@ -129,6 +129,13 @@ export function fakeHardcover(state) {
 					.slice(0, 1),
 			});
 		}
+		if (query.startsWith('query AudiobookEditions')) {
+			return answer({
+				editions: Object.values(state.editions)
+					.filter(e => variables.books.includes(e.book_id) && e.reading_format_id === 2)
+					.sort((a, b) => a.id - b.id),
+			});
+		}
 		if (query.startsWith('query EditionBook')) {
 			const e = state.editions[variables.id];
 			return answer({editions: e ? [{book_id: e.book_id, book: {title: state.books[e.book_id].title}}] : []});

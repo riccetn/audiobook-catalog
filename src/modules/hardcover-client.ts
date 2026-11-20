@@ -142,6 +142,14 @@ export class HardcoverClient extends CatalogClient {
 		contributions { contribution author { name } }
 	}
 }`,
+		// the audiobook editions of several books
+		audiobookEditions: `query AudiobookEditions($books: [Int!]) {
+	editions(where: {book_id: {_in: $books}, reading_format_id: {_eq: 2}}, order_by: {id: asc}) {
+		id book_id asin isbn_13 isbn_10 release_date audio_seconds reading_format_id
+		publisher { name }
+		contributions { contribution author { name } }
+	}
+}`,
 		editionBook: `query EditionBook($id: Int!) {
 	editions(where: {id: {_eq: $id}}) { book_id book { title } }
 }`,
@@ -307,6 +315,24 @@ export class HardcoverClient extends CatalogClient {
 				rows.set(row.id, row);
 		}
 		return rows;
+	}
+
+	/**
+	 * The audiobook editions of these Hardcover books, by book id, in the order of their ids.
+	 */
+	async audioEditionsOf(books: number[], step: Step): Promise<Map<number, Unchecked[]>> {
+		const out: Map<number, Unchecked[]> = new Map();
+		for (let i = 0; i < books.length; i += BATCH) {
+			step(Text.phrase('Finding their audiobook editions on Hardcover'), i, books.length);
+			const rows = (await this.ask(HardcoverClient.QUERIES.audiobookEditions, {books: books.slice(i, i + BATCH)}))
+				.editions;
+			for (const row of Array.isArray(rows) ? rows.filter(Text.isObject) : [])
+				if (row.reading_format_id === HardcoverClient.AUDIO) {
+					const list = out.get(row.book_id) || [];
+					out.set(row.book_id, [...list, row]);
+				}
+		}
+		return out;
 	}
 
 	/**

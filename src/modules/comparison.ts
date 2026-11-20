@@ -183,12 +183,7 @@ export class Comparison {
 				);
 				return;
 			}
-			const filled: Phrase[] = [];
-			for (const [key] of ed.externalList())
-				if (!was.idOn(key)) filled.push(P('{catalog} id', {catalog: ExternalCatalog.name(key)}));
-			for (const k of Object.keys(EDITION_LABELS) as (keyof typeof EDITION_LABELS)[]) {
-				if (was.value(k) === undefined && ed.value(k) !== undefined) filled.push(P(EDITION_LABELS[k]));
-			}
+			const filled = Comparison.editionGains(was, ed);
 			const list = Text.joinPhrases(filled, ', ');
 			if (filled.length)
 				editions.push(before.editions.length > 1 ? P('edition {n}: {filled}', {n: i + 1, filled: list}) : list);
@@ -196,6 +191,19 @@ export class Comparison {
 		const named: (list: Phrase[]) => Phrase[] = list =>
 			title ? list.map(gain => P('{title}: {gain}', {title, gain})) : list;
 		return {book: named(lines), editions: named(editions)};
+	}
+
+	/**
+	 * What edition `was` gained to become `ed`, as short lines: "Hardcover id", "narrators".
+	 */
+	static editionGains(was: Edition, ed: Edition): Phrase[] {
+		const filled: Phrase[] = [];
+		for (const [key] of ed.externalList())
+			if (!was.idOn(key)) filled.push(Text.phrase('{catalog} id', {catalog: ExternalCatalog.name(key)}));
+		for (const k of Object.keys(EDITION_LABELS) as (keyof typeof EDITION_LABELS)[]) {
+			if (was.value(k) === undefined && ed.value(k) !== undefined) filled.push(Text.phrase(EDITION_LABELS[k]));
+		}
+		return filled;
 	}
 
 	/**

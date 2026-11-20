@@ -81,9 +81,21 @@ names until their form is saved.
 ebook, so the comparison lists what may be a data problem:
 
 - _in this catalog_: your editions whose Hardcover edition id, ASIN or ISBN is a print book's or an ebook's
-  there (an ASIN may be a Kindle edition's, an ISBN the paperback's). Correct the edition in the book's form,
-  or give it the audiobook edition's Hardcover id. Such an edition is never sent to Hardcover, nor saved as
-  an edition's Hardcover id: the book goes on _Read_ without it.
+  there (an ASIN may be a Kindle edition's, an ISBN the paperback's). Such an edition is never sent to Hardcover,
+  nor saved as an edition's Hardcover id: the book goes on _Read_ without it. It often comes from an import
+  that took the edition picked on Goodreads or Hardcover (the default, print one) for your audiobook. Correct it
+  in the book's form, or, when comparing every book, with the ticks below it (none ticked at first; _Take out
+  all_ and _Fill in all_ tick each one):
+  - _Take out what it has of that edition_: the values your edition shares with that print book or ebook
+    there (its Hardcover id, ASIN, ISBN, publisher and release date), and only while they are still the
+    same. Narrators, length and everything else stay. An edition left with nothing is removed.
+  - _Take those out and fill it in from the audiobook edition on Hardcover_: that, and then what it lacks
+    from the book's audiobook edition there: the one your edition's other ids (an Audible ASIN, say) name,
+    else the book's only one. It isn't offered when the book has several and none is named (give the edition
+    its ASIN first), when it would disagree with an id the edition keeps, or when the book already has it.
+
+  A box set's edition is put right on each of its titles. Apply saves it here; nothing is changed on Hardcover.
+
 - _on your Hardcover shelves_: books on your _Read_ shelf with a print or ebook edition picked. Their edition
   fills in nothing here; pick the audiobook edition on Hardcover.
 
