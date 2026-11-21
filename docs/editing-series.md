@@ -103,8 +103,10 @@ What they say is shown on the books, and nothing of it is taken until you pick i
   import would take its book in. **Take** puts it in the book's fields.
 - **On an edition's card**: what a catalog would change on that edition (its ids, cover, narrators, length, ...),
   each with **Take**, and a catalog's note that it may be no audiobook (a print book or ebook there, or an ASIN
-  Audible doesn't sell). A closed edition says so on its summary: **to review**, with the catalogs' icons, and
-  **not audio?**.
+  Audible doesn't sell). Where Hardcover has it as a print book or ebook, **Take** below the note takes out the
+  values the edition shares with that one (its ids, ISBN, publisher, release date), or those and then what it
+  lacks from the book's audiobook edition there ([Hardcover](hardcover.md)); an edition left with nothing goes.
+  A closed edition says so on its summary: **to review**, with the catalogs' icons, and **not audio?**.
 - **Another edition**: an edition a catalog has that is none of yours, under the editions. **Add** adds it, as an
   edition listed there may not be yours.
 

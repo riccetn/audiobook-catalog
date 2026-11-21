@@ -1213,6 +1213,86 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	assert.match(byHale.els['book-0'].innerHTML, /AudiobookDB ↗/);
 	assert.doesNotMatch(byHale.els.editBooks.innerHTML, /Tidewater|Brine Tide/);
 });
+test('the Edit series page offers to put right, with Take, an edition Hardcover has as a print book or an ebook', async () => {
+	const mine = [
+		{
+			t: 'Brine Songs',
+			a: ['Ann Vale'],
+			s: 'Brine Cycle',
+			sn: '1',
+			ext: {hardcover: '81'},
+			e: [{ext: {hardcover: '811'}, isbn: '9780000000002', p: ['Kestrel Row'], n: ['Hollis Marr']}],
+		},
+		{
+			t: 'Lantern Hours',
+			a: ['Ann Vale'],
+			s: 'Brine Cycle',
+			sn: '2',
+			ext: {hardcover: '80'},
+			e: [{ext: {'amazon.com': 'B0LANTERNK'}}],
+		},
+	];
+	const state = hardcoverState();
+	state.editions[811].publisher = {name: 'Kestrel Row'};
+	state.editions[812] = {
+		id: 812,
+		book_id: 81,
+		asin: 'B0BRINEAUD',
+		audio_seconds: 30000,
+		reading_format_id: 2,
+		contributions: [{contribution: 'Narrator', author: {name: 'Hollis Marr'}}],
+	};
+	state.editions[821] = {id: 821, book_id: 80, asin: 'B0LANTERNK', reading_format_id: 4, contributions: []};
+	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const {els, get} = await bootAsked('#series=Brine+Cycle', {
+		files: {'books.json': JSON.stringify(mine)},
+		hardcover: fakeHardcover(state).fetch,
+		storage,
+		setTimeout: (fn, ms) => {
+			if (ms === 1000) Promise.resolve().then(fn);
+			return 0;
+		},
+	});
+	const brine = get('DRAFTS[0].book.editions[0].id');
+	const card = els['book-0-ed-0'];
+	assert.match(card.textContent, /Maybe not an audiobook: Hardcover edition 811 is a print book on Hardcover/);
+	assert.match(
+		els[`book-0-fix-0-${brine}-out`].textContent,
+		/^Hardcover: that edition's Hardcover id 811, ISBN 9780000000002, publisher Kestrel Row taken outTake$/,
+	);
+	assert.match(
+		els[`book-0-fix-0-${brine}-in`].textContent,
+		/^Hardcover: that edition's Hardcover id 811, ISBN 9780000000002, publisher Kestrel Row taken out, and the audiobook edition's amazon\.com id, Hardcover id, length put in Hardcover ↗Take$/,
+	);
+	const lantern = get('DRAFTS[1].book.editions[0].id');
+	assert.match(
+		els[`book-1-fix-0-${lantern}-out`].textContent,
+		/^Hardcover: that edition's ASIN B0LANTERNK taken out, and with them the edition, as nothing else is left/,
+	);
+	assert.deepEqual(JSON.parse(JSON.stringify(get('DRAFTS[0].book.editions'))), [
+		{
+			ext: {hardcover: '811'},
+			isbn: '9780000000002',
+			n: ['Hollis Marr'],
+			p: ['Kestrel Row'],
+		},
+	]);
+	els[`book-0-fix-0-${brine}-in-do`].listeners.click[0]();
+	els[`book-1-fix-0-${lantern}-out-do`].listeners.click[0]();
+	await idle();
+	assert.ok(!els[`book-0-fix-0-${brine}-in`], 'taken, it is offered no more');
+	assert.doesNotMatch(els['book-0'].innerHTML + els['book-1'].innerHTML, /editNotAudio/);
+	assert.equal(els.changeCount.textContent, '2 changes');
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	await els.reviewSaveBtn.listeners.click[0]();
+	await idle();
+	const books = (await kept(storage)).books;
+	assert.deepEqual(books.find(b => b.t === 'Brine Songs').e, [
+		{ext: {'amazon.com': 'B0BRINEAUD', hardcover: '812'}, n: ['Hollis Marr'], len: 500},
+	]);
+	assert.equal(books.find(b => b.t === 'Lantern Hours').e, undefined);
+});
 test("the Edit series page shows on an edition's card what the catalogs say of it, and offers their other editions apart", async () => {
 	// an ASIN Audible doesn't sell, on a book whose one edition there is another
 	const mine = [

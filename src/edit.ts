@@ -917,8 +917,77 @@ function catalogFinds(d: Draft, i: number): HTMLElement[] {
 	// a note that names none of its editions (as they are now) stays with the book
 	const reviewed = run.review.books.get(d.id);
 	const placed = new Set(d.book.editions.flatMap(ed => notAudioOf(d, ed).map(x => x.note)));
-	for (const {source, note} of reviewed ? reviewed.notAudio : [])
-		if (!placed.has(note)) out.push(notAudioNote(source, note));
+	for (const {source, note} of reviewed ? reviewed.notAudio : []) {
+		if (placed.has(note)) continue;
+		// an edition put right with Take names no longer what the note is about
+		const fixes = fixOffers(d, i, source, note);
+		if (!note.fix || fixes.length) out.push(notAudioNote(source, note), ...fixes);
+	}
+	return out;
+}
+
+/**
+ * What a catalog's note that an edition may not be an audiobook offers to put it right (`NotAudio.fix`), each with
+ * Take: the values the edition has of the print book or ebook there taken out, or those taken out and the
+ * audiobook edition there filled in. Those that would change nothing (taken already) aren't offered.
+ */
+function fixOffers(d: Draft, i: number, source: number, note: NotAudio): HTMLElement[] {
+	const run = RUN as CatalogRun;
+	const fix = note.fix;
+	if (!fix) return [];
+	const out: HTMLElement[] = [];
+	const values = Text.joinPhrases(
+		fix.values.map(v => v.text),
+		', ',
+	);
+	const taken = fix.values.length ? run.fixEdition(d.book, source, fix, false) : null;
+	if (taken)
+		out.push(
+			offerRow(
+				`book-${i}-fix-${source}-${fix.editionId}-out`,
+				source,
+				spell(
+					fix.empties
+						? "that edition's {values} taken out, and with them the edition, as nothing else is left"
+						: "that edition's {values} taken out",
+					{values},
+				),
+				() => {
+					d.book = taken;
+					renderBook(i);
+				},
+			),
+		);
+	const filled = fix.audio ? run.fixEdition(d.book, source, fix, true) : null;
+	if (filled)
+		out.push(
+			offerRow(
+				`book-${i}-fix-${source}-${fix.editionId}-in`,
+				source,
+				spell(
+					fix.values.length
+						? "that edition's {values} taken out, and the audiobook edition's {fills} put in"
+						: "the audiobook edition's {fills} put in",
+					{values, fills: Text.joinPhrases(fix.fills, ', ')},
+				),
+				() => {
+					d.book = filled;
+					renderBook(i);
+				},
+				fix.audioUrl ? [' ', outLink(fix.audioUrl, run.labels[source], run.keys[source])] : [],
+			),
+		);
+	else if (!fix.audio && fix.audioEditions > 1)
+		out.push(
+			buildElement(
+				'p',
+				{class: 'editNotAudio'},
+				spell(
+					'{catalog} has {count} audiobook editions of it: give yours its ASIN to fill it in from the one it is.',
+					{catalog: run.labels[source], count: fix.audioEditions},
+				),
+			),
+		);
 	return out;
 }
 
@@ -999,7 +1068,10 @@ function editionFinds(d: Draft, i: number, j: number): HTMLElement[] {
 				),
 			),
 		),
-		...notAudioOf(d, ed).map(({source, note}) => notAudioNote(source, note)),
+		...notAudioOf(d, ed).flatMap(({source, note}) => [
+			notAudioNote(source, note),
+			...fixOffers(d, i, source, note),
+		]),
 	];
 }
 

@@ -165,6 +165,7 @@ export class HardcoverSync extends ShelfSync {
 		const books = comparison.merged.books.filter(scope);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		const {plan, notAudio} = await this.planFor(books, shelf, step, ids);
+		await this.editionFixes(notAudio, ids, step);
 		const shelved = new Set(incoming);
 		return {
 			comparison,
@@ -324,7 +325,8 @@ export class HardcoverSync extends ShelfSync {
 	}
 
 	/**
-	 * Work out what may put right each edition of yours in `notAudio` (its `fix`, ShelfSync.editionFix()): Hardcover's
+	 * Work out what may put right each edition of yours in `notAudio` (its `fix`, ShelfSync.editionFix()), for every
+	 * book's comparison and a series' or an author's alike: Hardcover's
 	 * print book or ebook edition it was found as, and the book's audiobook edition there to fill it in from: the
 	 * one your edition's other ids name (`found`), else the book's only one.
 	 */

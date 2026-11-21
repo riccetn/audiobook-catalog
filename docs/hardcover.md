@@ -84,8 +84,10 @@ ebook, so the comparison lists what may be a data problem:
   there (an ASIN may be a Kindle edition's, an ISBN the paperback's). Such an edition is never sent to Hardcover,
   nor saved as an edition's Hardcover id: the book goes on _Read_ without it. It often comes from an import
   that took the edition picked on Goodreads or Hardcover (the default, print one) for your audiobook. Correct it
-  in the book's form, or, when comparing every book, with the ticks below it (none ticked at first; _Take out
-  all_ and _Fill in all_ tick each one):
+  in the book's form, or with what the comparison offers below it: when comparing every book, ticks (none
+  ticked at first; _Take out all_ and _Fill in all_ tick each one); on a series' or an author's Edit page,
+  **Take** on the edition's card, which changes the book's fields until you save
+  ([Editing a series](editing-series.md)):
   - _Take out what it has of that edition_: the values your edition shares with that print book or ebook
     there (its Hardcover id, ASIN, ISBN, publisher and release date), and only while they are still the
     same. Narrators, length and everything else stay. An edition left with nothing is removed.
@@ -94,12 +96,13 @@ ebook, so the comparison lists what may be a data problem:
     else the book's only one. It isn't offered when the book has several and none is named (give the edition
     its ASIN first), when it would disagree with an id the edition keeps, or when the book already has it.
 
-  A box set's edition is put right on each of its titles. Apply saves it here; nothing is changed on Hardcover.
+  A box set's edition is put right on each of its titles. Apply (or Save on the Edit page) keeps it here;
+  nothing is changed on Hardcover.
 
 - _on your Hardcover shelves_: books on your _Read_ shelf with a print or ebook edition picked. Their edition
   fills in nothing here; pick the audiobook edition on Hardcover.
 
-Each links to the edition on Hardcover. Nothing in either list is ticked or changed.
+Each links to the edition on Hardcover. Nothing in either list is changed until you tick or take it.
 
 Nothing is ever changed or removed on either side: a book on another Hardcover shelf (_Want to Read_,
 _Did Not Finish_, ...) is listed and left alone, and ratings and reviews are not touched. Running it again
