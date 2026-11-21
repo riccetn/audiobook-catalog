@@ -4,18 +4,17 @@
 /**
  * Answers Open Library's /works, /books, /authors and /isbn pages and its searches for titles and authors, and Wikidata's
  * wbgetentities and wbsearchentities, from `state` (openCatalogState()); `sent` lists the addresses asked.
- * @param {ReturnType<typeof openCatalogState>} state
  */
-export function fakeCatalogs(state = openCatalogState()) {
-	const sent = [];
-	const json = (status, body) => ({ok: status < 400, status, json: async () => body});
-	const fetch = async url => {
+export function fakeCatalogs(state: any = openCatalogState()) {
+	const sent: string[] = [];
+	const json = (status: number, body: unknown) => ({ok: status < 400, status, json: async () => body});
+	const fetch = async (url: string) => {
 		sent.push(url);
 		const u = new URL(url);
 		if (u.hostname === 'openlibrary.org' && u.pathname === '/search/authors.json') {
 			// as Open Library searches: any author with the words in their name, the id without its path
-			const q = u.searchParams.get('q').toLowerCase();
-			const docs = Object.values(state.openLibrary.authors)
+			const q = u.searchParams.get('q')!.toLowerCase();
+			const docs = Object.values<any>(state.openLibrary.authors)
 				.filter(a => a.name.toLowerCase().includes(q))
 				.map(a => ({
 					key: a.key.replace('/authors/', ''),
@@ -27,15 +26,15 @@ export function fakeCatalogs(state = openCatalogState()) {
 		}
 		if (u.hostname === 'openlibrary.org' && u.pathname === '/search.json') {
 			// as Open Library searches by title: the works with the words in their title, with their authors' names
-			const q = u.searchParams.get('title').toLowerCase();
+			const q = u.searchParams.get('title')!.toLowerCase();
 			const {works, authors} = state.openLibrary;
-			const docs = Object.values(works)
+			const docs = Object.values<any>(works)
 				.filter(w => w.title.toLowerCase().includes(q))
 				.map(w => ({
 					key: w.key,
 					title: w.title,
 					author_name: w.authors
-						.map(a => authors[a.author.key.replace('/authors/', '')]?.name)
+						.map((a: any) => authors[a.author.key.replace('/authors/', '')]?.name)
 						.filter(Boolean),
 				}));
 			return json(200, {numFound: docs.length, start: 0, numFoundExact: true, docs});
@@ -55,8 +54,8 @@ export function fakeCatalogs(state = openCatalogState()) {
 			u.searchParams.get('action') === 'wbsearchentities'
 		) {
 			// as Wikidata searches: the items whose label starts with the words
-			const q = u.searchParams.get('search').toLowerCase();
-			const search = Object.values(state.wikidata)
+			const q = u.searchParams.get('search')!.toLowerCase();
+			const search = Object.values<any>(state.wikidata)
 				.filter(item => item.labels.en.value.toLowerCase().startsWith(q))
 				.map(item => ({
 					id: item.id,
@@ -69,23 +68,24 @@ export function fakeCatalogs(state = openCatalogState()) {
 		if (u.hostname === 'www.wikidata.org' && u.pathname === '/w/api.php') {
 			const entities = Object.fromEntries(
 				u.searchParams
-					.get('ids')
+					.get('ids')!
 					.split('|')
 					.map(id => {
 						const item = state.wikidata[id];
 						if (!item) return [id, {id, missing: ''}];
-						return [id, u.searchParams.get('props').includes('claims') ? item : {id, labels: item.labels}];
+						return [id, u.searchParams.get('props')!.includes('claims') ? item : {id, labels: item.labels}];
 					}),
 			);
 			return json(200, {entities, success: 1});
 		}
 		throw new Error(`the page fetched ${url}`);
 	};
-	return {fetch, sent};
+	// its answers have what the sources read of a Response: ok, status and json()
+	return {fetch: fetch as unknown as (url: string, init?: any) => Promise<Response>, sent};
 }
 
-const item = id => ({type: 'wikibase-entityid', value: {'entity-type': 'item', id}});
-const claim = (datavalue, qualifiers) => ({
+const item = (id: string) => ({type: 'wikibase-entityid', value: {'entity-type': 'item', id}});
+const claim = (datavalue: unknown, qualifiers?: unknown) => ({
 	mainsnak: {snaktype: 'value', datavalue},
 	rank: 'normal',
 	...(qualifiers ? {qualifiers} : {}),
@@ -96,7 +96,7 @@ const claim = (datavalue, qualifiers) => ({
  * (with a bio, a link and her ids elsewhere on Open Library, her site and ids on Wikidata), and a namesake on
  * each; the series is an item on Wikidata.
  */
-export const openCatalogState = () => ({
+export const openCatalogState = (): any => ({
 	openLibrary: {
 		works: {
 			OL900W: {
@@ -188,10 +188,13 @@ export const openCatalogState = () => ({
  * Keeper", book 2 of Gull Isle (and of no number in the Tidewater Cycle, an umbrella series).
  */
 export function fakeProxyCatalogs() {
-	const sent = [];
-	const json = (status, body) => ({ok: status < 400, status, json: async () => body});
-	const ladder = (...names) => ({root: 'Genres', ladder: names.map((name, i) => ({id: String(1000 + i), name}))});
-	const gullIsle = (asin, title, sequence, more = {}) => ({
+	const sent: string[] = [];
+	const json = (status: number, body: unknown) => ({ok: status < 400, status, json: async () => body});
+	const ladder = (...names: string[]) => ({
+		root: 'Genres',
+		ladder: names.map((name, i) => ({id: String(1000 + i), name})),
+	});
+	const gullIsle = (asin: string, title: string, sequence: string, more = {}) => ({
 		asin,
 		title,
 		authors: [{name: 'Ann Vale'}],
@@ -202,7 +205,7 @@ export function fakeProxyCatalogs() {
 		category_ladders: [ladder('Science Fiction & Fantasy', 'Fantasy')],
 		...more,
 	});
-	const audible = {
+	const audible: Record<string, any> = {
 		'audible.com/B0LANTERN2': {
 			asin: 'B0LANTERN2',
 			title: 'The Lantern Keeper',
@@ -244,11 +247,11 @@ export function fakeProxyCatalogs() {
 				['B0STORIES0', '', 8],
 				['B0NOTSOLD1', '6', 9],
 			]
-				.map(([asin, sequence, sort]) => ({
-					asin,
+				.map(([asin, sequence, sort]): Record<string, string> => ({
+					asin: String(asin),
 					relationship_to_product: 'child',
 					relationship_type: 'series',
-					sequence,
+					sequence: String(sequence),
 					sort: String(sort),
 					sku: `SKU${asin}`,
 				}))
@@ -292,7 +295,7 @@ export function fakeProxyCatalogs() {
 			runtime_length_min: 611,
 		},
 	};
-	const people = (role, ...names) =>
+	const people = (role: string, ...names: string[]) =>
 		names.map((name, i) => ({
 			role: {name: role},
 			person: {id: `Prsn${role.slice(0, 4)}${i}00000`.slice(0, 12), name},
@@ -331,7 +334,7 @@ export function fakeProxyCatalogs() {
 		],
 		releases: [releaseUs, releaseUk],
 	};
-	const releases = {
+	const releases: Record<string, object> = {
 		RlsLntrnUS01: {
 			...releaseUs,
 			isbn: '9780000000019',
@@ -347,10 +350,10 @@ export function fakeProxyCatalogs() {
 		},
 	};
 	// a series' or a person's ASIN is a link of theirs, as a release's is
-	const onAudible = asin => [
+	const onAudible = (asin: string) => [
 		{id: `Ext${asin.slice(2)}00`, itemId: asin, category: {title: 'Audible', url: 'https://www.audible.com'}},
 	];
-	const entries = {
+	const entries: Record<string, Record<string, any>> = {
 		series: {
 			SrsGullIsle1: {id: 'SrsGullIsle1', title: 'Gull Isle', external: onAudible('B0SERIES02'), books: []},
 		},
@@ -367,7 +370,7 @@ export function fakeProxyCatalogs() {
 		publishers: {PblshrGullw1: {id: 'PblshrGullw1', name: 'Gullwing Audio'}},
 	};
 	// what a search says of what it found
-	const found = {
+	const found: Record<string, object> = {
 		SrsGullIsle1: {bookCount: 3},
 		PrsnAuth0000: {
 			roleNames: ['Author'],
@@ -380,13 +383,13 @@ export function fakeProxyCatalogs() {
 		PrsnHllsMrr2: {roleNames: ['Author'], sampleCredits: []},
 		PblshrGullw1: {releaseCount: 2},
 	};
-	const notFound = detail => json(404, {errors: [{status: '404', title: 'Not Found', detail}]});
-	const route = async path => {
+	const notFound = (detail: string) => json(404, {errors: [{status: '404', title: 'Not Found', detail}]});
+	const route = async (path: string) => {
 		sent.push(path);
 		const u = new URL(path, 'https://proxy.invalid/');
-		const stub = asin => ({asin, asset_details: [], is_vvab: false}); // what a site that doesn't sell it answers
+		const stub = (asin: string) => ({asin, asset_details: [], is_vvab: false}); // what a site that doesn't sell it answers
 		// as Audible answers: the title comes with product_desc or media, not with product_attrs (checked 2026-10-25)
-		const asked = (product, groups) => {
+		const asked = (product: any, groups: string) => {
 			if (!product || /\b(product_desc|media)\b/.test(groups)) return product;
 			const rest = {...product};
 			delete rest.title;
@@ -394,7 +397,7 @@ export function fakeProxyCatalogs() {
 		};
 		let m = /^\/audible\/([^/]+)\/catalog\/products\/([^/]+)$/.exec(u.pathname);
 		if (m) {
-			const groups = u.searchParams.get('response_groups');
+			const groups = u.searchParams.get('response_groups')!;
 			assert(
 				groups.includes(m[2] === 'B0SERIES02' ? 'relationships' : 'series'),
 				'Audible is asked for the series',
@@ -407,26 +410,28 @@ export function fakeProxyCatalogs() {
 		m = /^\/audible\/([^/]+)\/catalog\/products$/.exec(u.pathname);
 		if (m && u.searchParams.has('title')) {
 			// a title search on the site: the products with the words in their title, with what was asked of them
-			const q = u.searchParams.get('title').toLowerCase();
-			const groups = u.searchParams.get('response_groups');
+			const q = u.searchParams.get('title')!.toLowerCase();
+			const groups = u.searchParams.get('response_groups')!;
+			const site = m[1];
 			const products = Object.entries(audible)
-				.filter(([key, p]) => key.startsWith(`${m[1]}/`) && p.title?.toLowerCase().includes(q))
+				.filter(([key, p]) => key.startsWith(`${site}/`) && p.title?.toLowerCase().includes(q))
 				.map(([, p]) => asked(p, groups));
 			return json(200, {products, response_groups: ['always-returned'], total_results: products.length});
 		}
 		if (m) {
-			const asins = u.searchParams.get('asins').split(',');
+			const asins = u.searchParams.get('asins')!.split(',');
 			if (asins.length > 50)
 				return json(400, {
 					message: `Number of requested asins ${asins.length} is greater than maximum allowed asins 50`,
 				});
-			const groups = u.searchParams.get('response_groups');
-			const products = asins.map(a => asked(audible[`${m[1]}/${a}`], groups) || stub(a));
+			const groups = u.searchParams.get('response_groups')!;
+			const site = m[1];
+			const products = asins.map(a => asked(audible[`${site}/${a}`], groups) || stub(a));
 			return json(200, {products, response_groups: ['always-returned'], total_results: products.length});
 		}
 		if (u.pathname === '/audiobookdb/books') {
 			// a title search: list items, with up to 3 authors; another author's book of the same title too
-			const q = u.searchParams.get('q').toLowerCase();
+			const q = u.searchParams.get('q')!.toLowerCase();
 			const items = [
 				{id: book.id, title: book.title, authors: [{id: 'PrsnAuth0000', name: 'Ann Vale'}], releaseCount: 2},
 				{
@@ -452,7 +457,7 @@ export function fakeProxyCatalogs() {
 		if (m && m[2])
 			return entries[m[1]][m[2]] ? json(200, entries[m[1]][m[2]]) : notFound(`${m[1]} with id ${m[2]} not found`);
 		if (m) {
-			const q = u.searchParams.get('q').toLowerCase();
+			const q = u.searchParams.get('q')!.toLowerCase();
 			return json(
 				200,
 				Object.values(entries[m[1]])
@@ -471,15 +476,14 @@ export function fakeProxyCatalogs() {
 			return releases[m[2]] ? json(200, releases[m[2]]) : notFound(`release with id ${m[2]} not found`);
 		throw new Error(`the proxy was asked for ${path}`);
 	};
-	return {route, sent};
+	// its answers have what the clients read of a Response: ok, status and json()
+	return {route: route as unknown as (path: string) => Promise<Response>, sent};
 }
 
 /**
  * An image as AudiobookDB lists it: `url` is its key under the image server, which only answers with a size added.
- * @param {string} id
- * @param {string} hash
  */
-function abdbImage(id, hash) {
+function abdbImage(id: string, hash: string) {
 	const url = `https://cdn.audiobookdb.org/${hash}`;
 	return {
 		id,
@@ -491,7 +495,7 @@ function abdbImage(id, hash) {
 	};
 }
 
-function assert(ok, message) {
+function assert(ok: unknown, message: string) {
 	if (!ok) throw new Error(message);
 }
 
@@ -502,15 +506,15 @@ function assert(ok, message) {
  * shelf comes without `books`), and the books, series and people, in the shapes of AudiobookDB's OpenAPI file
  * (1.0.0) and its answers (checked on 2026-10-22 and 2026-10-23).
  */
-export function audiobookdbState() {
-	const person = (role, id, name) => ({role: {name: role}, person: {id, name}});
+export function audiobookdbState(): any {
+	const person = (role: string, id: string, name: string) => ({role: {name: role}, person: {id, name}});
 	// a release's link names the site its ASIN is on
-	const audible = (asin, site = 'audible.com') => ({
+	const audible = (asin: string, site = 'audible.com') => ({
 		id: `Ext${asin.slice(2, 11)}`,
 		itemId: asin,
 		category: {title: 'Audible', url: `https://www.${site}`},
 	});
-	const release = (id, title, asin, extra = {}) => ({
+	const release = (id: string, title: string, asin: string | null, extra = {}) => ({
 		id,
 		title,
 		releaseDate: '2020-02-02T00:00:00Z',
@@ -521,12 +525,12 @@ export function audiobookdbState() {
 	});
 	const vale = person('Author', 'PrsnVale0001', 'Ann Vale');
 	// Lantern Hours has a cover only on its book, Tidewater on its release, Brine Tide none
-	const gullIsle = n => ({
+	const gullIsle = (n: string) => ({
 		ordinal: n,
 		position: {value: n, label: n},
 		series: {id: 'SrsGullIsle1', title: 'Gull Isle', bookCount: 3},
 	});
-	const books = {
+	const books: Record<string, any> = {
 		LntrnHours01: {
 			id: 'LntrnHours01',
 			title: 'Lantern Hours',
@@ -579,8 +583,13 @@ export function audiobookdbState() {
 			releases: [release('RlsGullSng01', 'Gull Song', null)],
 		},
 	};
-	const onShelf = id => ({id, title: books[id].title, people: books[id].people, addedAt: '2026-01-01T00:00:00Z'});
-	const shelf = (slug, name, isExclusive, ids) => ({
+	const onShelf = (id: string) => ({
+		id,
+		title: books[id].title,
+		people: books[id].people,
+		addedAt: '2026-01-01T00:00:00Z',
+	});
+	const shelf = (slug: string, name: string, isExclusive: boolean, ids: string[]) => ({
 		id: `Shlf${slug.replace(/-/g, '').slice(0, 8).padEnd(8, '0')}`,
 		slug,
 		name,
@@ -632,14 +641,13 @@ export function audiobookdbState() {
  * (https://audiobookdb.org/api/...) and answers from `state` (audiobookdbState()), as AudiobookDB would:
  * your session and shelves only with your key (X-API-Key), a book put on a shelf only once. `sent` lists
  * what was asked: {method, path, key}.
- * @param {ReturnType<typeof audiobookdbState>} state
  */
-export function fakeAudiobookdb(state = audiobookdbState()) {
-	const sent = [];
-	const json = (status, body) =>
+export function fakeAudiobookdb(state: any = audiobookdbState()) {
+	const sent: {method: string; path: string; key: string | null}[] = [];
+	const json = (status: number, body: unknown) =>
 		new Response(JSON.stringify(body), {status, headers: {'Content-Type': 'application/json'}});
-	const error = (status, title) => json(status, {errors: [{status: String(status), title}]});
-	const fetch = async request => {
+	const error = (status: number, title: string) => json(status, {errors: [{status: String(status), title}]});
+	const fetch = async (request: Request) => {
 		const u = new URL(request.url);
 		assert(
 			u.origin === 'https://audiobookdb.org' && u.pathname.startsWith('/api/'),
@@ -650,7 +658,7 @@ export function fakeAudiobookdb(state = audiobookdbState()) {
 		const body = request.method === 'POST' ? JSON.parse(await request.text()) : null;
 		sent.push({method: request.method, path: path + u.search, key});
 		const mine = key === state.key;
-		let m;
+		let m: RegExpExecArray | null;
 		if (path === 'auth/session')
 			return mine
 				? json(200, {id: 'user-1', username: state.username, role: 'user'})
@@ -658,7 +666,8 @@ export function fakeAudiobookdb(state = audiobookdbState()) {
 		if ((m = /^users\/username\/([^/]+)\/shelves(?:\/([^/]+)(\/books)?)?$/.exec(path))) {
 			if (m[1] !== state.username) return error(404, 'Not Found');
 			if (!mine) return error(key ? 401 : 403, key ? 'Unauthorized' : 'shelves are private');
-			const shelf = m[2] && state.shelves.find(s => s.slug === m[2]);
+			const slug = m[2];
+			const shelf = slug && state.shelves.find((s: any) => s.slug === slug);
 			if (m[2] && !shelf) return error(404, 'Not Found');
 			if (m[3]) {
 				assert(request.method === 'POST', 'only putting books on shelves');
@@ -666,7 +675,7 @@ export function fakeAudiobookdb(state = audiobookdbState()) {
 				if (!book) return error(404, 'Not Found');
 				if (state.onAdd) state.onAdd(body.bookId);
 				if (!shelf.books) shelf.books = [];
-				if (!shelf.books.some(b => b.id === body.bookId))
+				if (!shelf.books.some((b: any) => b.id === body.bookId))
 					shelf.books.push({
 						id: book.id,
 						title: book.title,
@@ -680,13 +689,15 @@ export function fakeAudiobookdb(state = audiobookdbState()) {
 		}
 		assert(request.method === 'GET', `AudiobookDB was sent a ${request.method} to ${path}`);
 		if ((m = /^audiobooks\/external\/audible\/([^/]+)$/.exec(path))) {
-			const book = Object.values(state.books).find(b =>
-				b.releases.some(r => r.external.some(x => x.itemId === m[1])),
+			const asin = m[1];
+			const book = Object.values<any>(state.books).find(b =>
+				b.releases.some((r: any) => r.external.some((x: any) => x.itemId === asin)),
 			);
 			return book
 				? json(200, {
 						...book,
-						matchedReleaseId: book.releases.find(r => r.external.some(x => x.itemId === m[1])).id,
+						matchedReleaseId: book.releases.find((r: any) => r.external.some((x: any) => x.itemId === asin))
+							.id,
 					})
 				: error(404, 'Not Found');
 		}

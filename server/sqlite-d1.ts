@@ -1,11 +1,11 @@
 // A SQLite database (node:sqlite's DatabaseSync) seen as the part of a D1 binding the sync uses (sync.ts), so the
 // local server (serve.mjs) and the tests run the same statements Cloudflare's D1 runs.
 
-/** What it needs of node:sqlite's DatabaseSync. */
+/** What it needs of node:sqlite's DatabaseSync (whose values are its own SQLInputValue, so any here). */
 export type SqliteDatabase = {
 	prepare: (sql: string) => {
-		run: (...values: unknown[]) => {changes: number | bigint};
-		get: (...values: unknown[]) => unknown;
+		run: (...values: any[]) => {changes: number | bigint};
+		get: (...values: any[]) => unknown;
 	};
 };
 import type {D1Database, D1Statement} from './sync.ts';

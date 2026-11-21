@@ -32,16 +32,17 @@ src/                  the app's TypeScript, which make pages compiles into publi
   vendor/qrcode.d.mts the types of the QR code library make pages copies into public/vendor/
 public/               the app, and all that a static server serves (make serve, GitHub Pages): the pages and scripts
                         make pages writes (not committed), styles.css, manifest.webmanifest and icons/
-package.json          "type": "module" (every .js and .mjs file is an ES module), Liquid (the pages), TypeScript, ESLint
-                        with typescript-eslint, Prettier and TypeDoc
-tsconfig.json, tsconfig.sw.json, tsconfig.server.json    how TypeScript compiles the pages' modules, the service
-                        worker on its own, and checks the server
+package.json          "type": "module" (every .js and .mjs file is an ES module), the tests' #app/ imports, Liquid
+                        (the pages), TypeScript with Node's types (@types/node, for the tests), ESLint with
+                        typescript-eslint, Prettier and TypeDoc
+tsconfig.json, tsconfig.sw.json, tsconfig.server.json, tsconfig.tests.json    how TypeScript compiles the pages'
+                        modules, the service worker on its own, and checks the server and the tests
 api-docs/             TypeDoc's settings (typedoc.json); make docs writes the API documentation into api-docs/out/
 server/               the optional server, never served from public/: worker.ts lets a request in and routes it to the
                         catalog proxy (proxy.ts, /proxy/...) or sync (sync.ts, /sync); a Cloudflare Worker (wrangler.toml,
                         deploy.mjs), or make serve on this computer (serve.mjs, with sync in SQLite: sqlite-d1.ts)
 sample/               fictional demo data, used by the tests: the only data committed to git
-tests/                node:test suites (*.test.mjs), including the browser smoke test
+tests/                node:test suites (*.test.ts), including the browser smoke test
 ```
 
 ## Pages
@@ -118,7 +119,7 @@ and whether it is asked through the catalog proxy (`VIA_PROXY`); `connections.ts
 - a shelf sync listed in `SYNCS` is also asked by the Edit series page for each kind in its `PARTS`
   (`edit-catalogs.ts`, `BookReview`), with nothing more to write.
 
-`tests/catalog.test.mjs` has a made-up catalog, Shelfmark, written against the base classes alone (and Ledger,
+`tests/catalog.test.ts` has a made-up catalog, Shelfmark, written against the base classes alone (and Ledger,
 a source of series).
 
 ### What a catalog's ids can do
@@ -147,14 +148,21 @@ so it can be dropped whole. The server's proxy routes (`server/proxy.ts`) are it
 
 ## Tests
 
-- `make test` runs `node --experimental-vm-modules --enable-source-maps --test tests/*.test.mjs` on what `make pages`
-  compiled into `public/` (so run that first when you run one suite by hand): the classes (`catalog.test.mjs`), the server (`server.test.mjs`: the catalog proxy, sync and `make serve`), the service worker (`service-worker.test.mjs`),
-  and the browser smoke test (`app.smoke.*.test.mjs`, split by topic so they run side by side, sharing `smoke.mjs`), which executes each page's real modules against a small fake DOM built from
+- `make test` runs `node --experimental-vm-modules --enable-source-maps --test tests/*.test.ts` on what `make pages`
+  compiled into `public/` (so run that first when you run one suite by hand): the classes (`catalog.test.ts`), the server (`server.test.ts`: the catalog proxy, sync and `make serve`), the service worker (`service-worker.test.ts`),
+  and the browser smoke test (`app.smoke.*.test.ts`, split by topic so they run side by side, sharing `smoke.ts`), which executes each page's real modules against a small fake DOM built from
   its HTML, with a fake `localStorage` holding the demo data, which the page moves into a fake IndexedDB
-  (`tests/fake-indexeddb.mjs`) as a browser would (running ES modules in `node:vm` is what needs the flag;
+  (`tests/fake-indexeddb.ts`) as a browser would (running ES modules in `node:vm` is what needs the flag;
   Node prints an ExperimentalWarning for it, and for `node:sqlite`, which the server's tests use). With the source
-  maps, a failure's stack trace names the line in `src/`. They need Node 22.18 or later, which runs the server's
-  TypeScript as it is.
+  maps, a failure's stack trace names the line in `src/`. They need Node 22.18 or later, which runs the tests' and
+  the server's TypeScript as it is.
+- The tests are TypeScript, run as they are (like the server, below) and checked by `make typecheck`
+  (`tsconfig.tests.json`, with Node's types from `@types/node`). They import the app as `#app/modules/book.js`
+  (package.json's `imports`): Node loads what `make pages` compiled into `public/`, and the checker reads the types
+  of `src/modules/book.ts`, so the tests run what the browser runs and are checked against the code as written.
+  They import each other by their `.ts` names (`./smoke.ts`). `any` is fine for a record or a catalog's answer
+  as stored, and `!` where a test reads what it expects to be there (an element on the page, a book it saved): if it
+  isn't, the test fails.
 - `.github/workflows/ci.yml` runs the same on GitHub Actions. The smoke test also fails when `public/`
   holds a file no page uses (a page, a module one imports, or what their `<head>` or the manifest names), as the
   service worker caches all of it, so nothing ends up served by accident.
@@ -172,7 +180,7 @@ compiles, so a module taken out of `src/` isn't still served.
 ```sh
 npm install       # once: installs TypeScript, ESLint and typescript-eslint into node_modules/
 make pages        # compile src/ into public/ (tsconfig.json, and tsconfig.sw.json for the service worker), then the pages
-make typecheck    # check src/ and server/ without writing anything (tsconfig.server.json for the server)
+make typecheck    # check src/, server/ and tests/ without writing anything (tsconfig.server.json, tsconfig.tests.json)
 ```
 
 - **Debugging.** DevTools (Chrome, Edge, Firefox, and a phone through `chrome://inspect`) reads the source maps, so

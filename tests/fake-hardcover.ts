@@ -1,18 +1,21 @@
 // A fake of Hardcover's GraphQL API, for the page tests (not a test suite itself).
 import assert from 'node:assert/strict';
 
+// The table a query of a kind asks (SeriesInfo, AuthorBySlug, ...).
+const TABLES: Record<string, string> = {Series: 'series', Author: 'authors', Publisher: 'publishers'};
+
 /**
  * A stand-in for Hardcover's GraphQL API, answering the queries the page sends from `state`: {shelf
  * (user_books rows), books, editions (rows by id), goodreads ({Goodreads id: Hardcover book id}), series, authors,
  * publishers (lists of rows with a slug), about (what Hardcover says of a series, author or publisher, by id)}.
  * Mutations change `state.shelf`. Built from Hardcover's published schema; the real API is not reached.
  */
-export function fakeHardcover(state) {
-	const sent = [];
-	const fetch = async (url, init) => {
+export function fakeHardcover(state: any) {
+	const sent: {url: string; auth: string; query: string; variables: any}[] = [];
+	const fetch = async (url: string, init: any) => {
 		const {query, variables} = JSON.parse(init.body);
 		sent.push({url, auth: init.headers.authorization, query, variables});
-		const answer = data => ({ok: true, status: 200, json: async () => ({data})});
+		const answer = (data: unknown) => ({ok: true, status: 200, json: async () => ({data})});
 		if (init.headers.authorization !== 'Bearer tok-123')
 			return {ok: false, status: 401, json: async () => ({error: 'invalid_token'})};
 		// as Hardcover answers it
@@ -22,7 +25,7 @@ export function fakeHardcover(state) {
 				status: 403,
 				json: async () => ({error: 'ilike and related operations are not permitted on this server.'}),
 			};
-		const pick = ids => ids.map(id => state.editions[id]).filter(Boolean);
+		const pick = (ids: any[]) => ids.map(id => state.editions[id]).filter(Boolean);
 		if (query.startsWith('query { me')) return answer({me: [{id: 42}]});
 		if (query.startsWith('query Shelf')) {
 			assert.equal(variables.user, 42);
@@ -31,16 +34,20 @@ export function fakeHardcover(state) {
 		const part = /^query ShelfBy(Series|Author|Books)/.exec(query);
 		if (part) {
 			assert.equal(variables.user, 42);
-			const has = {
-				Series: ub => variables.ids.includes(state.books[ub.book_id]?.featured_book_series?.series?.id),
-				Author: ub =>
-					(state.books[ub.book_id]?.contributions || []).some(c => variables.ids.includes(c.author.id)),
-				Books: ub => variables.books.includes(ub.book_id),
-			}[part[1]];
-			return answer({user_books: state.shelf.filter(has).slice(variables.offset, variables.offset + 100)});
+			const shelfOf: Record<string, (ub: any) => boolean> = {
+				Series: (ub: any) => variables.ids.includes(state.books[ub.book_id]?.featured_book_series?.series?.id),
+				Author: (ub: any) =>
+					(state.books[ub.book_id]?.contributions || []).some((c: any) =>
+						variables.ids.includes(c.author.id),
+					),
+				Books: (ub: any) => variables.books.includes(ub.book_id),
+			};
+			return answer({
+				user_books: state.shelf.filter(shelfOf[part[1]]).slice(variables.offset, variables.offset + 100),
+			});
 		}
 		if (query.startsWith('query SeriesByName')) {
-			const all = Object.values(state.books)
+			const all = Object.values<any>(state.books)
 				.map(b => b.featured_book_series?.series)
 				.filter(Boolean);
 			return answer({
@@ -48,7 +55,7 @@ export function fakeHardcover(state) {
 			});
 		}
 		if (query.startsWith('query AuthorsByName')) {
-			const all = Object.values(state.books).flatMap(b => b.contributions.map(c => c.author));
+			const all = Object.values<any>(state.books).flatMap(b => b.contributions.map((c: any) => c.author));
 			return answer({
 				authors: [...new Map(all.filter(a => variables.names.includes(a.name)).map(a => [a.id, a])).values()],
 			});
@@ -56,37 +63,37 @@ export function fakeHardcover(state) {
 		// what Hardcover says of some series, authors or publishers: those of the books and the lists, by id
 		const info = /^query (Series|Author|Publisher)Info/.exec(query);
 		if (info) {
-			const table = {Series: 'series', Author: 'authors', Publisher: 'publishers'}[info[1]];
+			const table = TABLES[info[1]];
 			const rows = [
 				...(state[table] || []),
-				...Object.values(state.books).flatMap(b =>
+				...Object.values<any>(state.books).flatMap(b =>
 					table === 'series'
 						? [b.featured_book_series?.series].filter(Boolean)
 						: table === 'authors'
-							? b.contributions.map(c => c.author)
+							? b.contributions.map((c: any) => c.author)
 							: [],
 				),
 			];
 			const byId = new Map(rows.map(row => [String(row.id), row]));
 			return answer({
 				[table]: variables.ids
-					.map(id => byId.get(String(id)))
+					.map((id: any) => byId.get(String(id)))
 					.filter(Boolean)
-					.map(row => ({...row, ...((state.about || {})[table] || {})[row.id]})),
+					.map((row: any) => ({...row, ...((state.about || {})[table] || {})[row.id]})),
 			});
 		}
 		if (query.startsWith('query PublishersByName'))
 			return answer({
 				publishers: (state.publishers || [])
-					.filter(row => variables.names.includes(row.name))
-					.map(({id, name}) => ({id, name})),
+					.filter((row: any) => variables.names.includes(row.name))
+					.map(({id, name}: any) => ({id, name})),
 			});
 		if (query.startsWith('query BookParts')) {
 			return answer({
 				books: variables.ids
-					.map(id => state.books[id])
+					.map((id: any) => state.books[id])
 					.filter(Boolean)
-					.map(b => ({
+					.map((b: any) => ({
 						id: b.id,
 						book_series: b.featured_book_series ? [{series: b.featured_book_series.series}] : [],
 						contributions: b.contributions,
@@ -96,42 +103,44 @@ export function fakeHardcover(state) {
 		if (query.startsWith('query SearchBooks')) {
 			// as Hardcover's search answers: Typesense's hits, each book's document with its id as text
 			const q = variables.q.toLowerCase();
-			const hits = Object.entries(state.books)
+			const hits = Object.entries<any>(state.books)
 				.filter(([, b]) => b.title.toLowerCase().includes(q))
 				.map(([id, b]) => ({
 					document: {
 						id: String(id),
 						title: b.title,
 						slug: b.slug || '',
-						author_names: (b.contributions || []).map(c => c.author.name),
+						author_names: (b.contributions || []).map((c: any) => c.author.name),
 					},
 				}));
 			return answer({search: {results: {found: hits.length, hits, page: 1}}});
 		}
 		if (query.startsWith('query Books'))
-			return answer({books: variables.ids.map(id => state.books[id]).filter(Boolean)});
+			return answer({books: variables.ids.map((id: any) => state.books[id]).filter(Boolean)});
 		if (query.startsWith('query Editions')) return answer({editions: pick(variables.ids)});
 		if (query.startsWith('query BookBySlug'))
 			return answer({
-				books: Object.values(state.books)
+				books: Object.values<any>(state.books)
 					.filter(b => b.slug === variables.slug)
 					.slice(0, 1),
 			});
 		const bySlug = /^query (Series|Author|Publisher)BySlug/.exec(query);
 		if (bySlug) {
-			const table = {Series: 'series', Author: 'authors', Publisher: 'publishers'}[bySlug[1]];
-			return answer({[table]: (state[table] || []).filter(row => row.slug === variables.slug).slice(0, 1)});
+			const table = TABLES[bySlug[1]];
+			return answer({
+				[table]: (state[table] || []).filter((row: any) => row.slug === variables.slug).slice(0, 1),
+			});
 		}
 		if (query.startsWith('query AudioEditions')) {
 			return answer({
-				editions: Object.values(state.editions)
+				editions: Object.values<any>(state.editions)
 					.filter(e => e.book_id === variables.book && e.reading_format_id === 2)
 					.slice(0, 1),
 			});
 		}
 		if (query.startsWith('query AudiobookEditions')) {
 			return answer({
-				editions: Object.values(state.editions)
+				editions: Object.values<any>(state.editions)
 					.filter(e => variables.books.includes(e.book_id) && e.reading_format_id === 2)
 					.sort((a, b) => a.id - b.id),
 			});
@@ -141,7 +150,7 @@ export function fakeHardcover(state) {
 			return answer({editions: e ? [{book_id: e.book_id, book: {title: state.books[e.book_id].title}}] : []});
 		}
 		if (query.startsWith('query Find')) {
-			const all = Object.values(state.editions);
+			const all = Object.values<any>(state.editions);
 			return answer({
 				...(variables.hc ? {byId: pick(variables.hc)} : {}),
 				...(variables.asin ? {byAsin: all.filter(e => variables.asin.includes(e.asin))} : {}),
@@ -149,15 +158,15 @@ export function fakeHardcover(state) {
 				...(variables.gr
 					? {
 							byGoodreads: variables.gr
-								.filter(g => state.goodreads[g])
-								.map(g => ({book_id: state.goodreads[g], external_id: g})),
+								.filter((g: any) => state.goodreads[g])
+								.map((g: any) => ({book_id: state.goodreads[g], external_id: g})),
 						}
 					: {}),
 			});
 		}
 		if (query.startsWith('mutation AddBook')) {
 			const {book_id, edition_id, status_id} = variables.object;
-			if (state.shelf.some(ub => ub.book_id === book_id))
+			if (state.shelf.some((ub: any) => ub.book_id === book_id))
 				return answer({insert_user_book: {id: null, error: 'already on a shelf'}});
 			const ub = {
 				id: 100 + state.shelf.length,
@@ -170,16 +179,17 @@ export function fakeHardcover(state) {
 			return answer({insert_user_book: {id: ub.id, error: null}});
 		}
 		if (query.startsWith('mutation AddRead')) {
-			state.shelf.find(ub => ub.id === variables.id).user_book_reads.push({...variables.read});
+			state.shelf.find((ub: any) => ub.id === variables.id).user_book_reads.push({...variables.read});
 			return answer({insert_user_book_read: {id: 1, error: null}});
 		}
 		throw new Error('unexpected query ' + query);
 	};
-	return {fetch, sent};
+	// its answers have what the clients read of a Response: ok, status and json()
+	return {fetch: fetch as unknown as (url: string, init?: any) => Promise<Response>, sent};
 }
 
 /** A small invented Hardcover library: four books (and one merged into another), two of them on the Read shelf. */
-export const hardcoverState = () => ({
+export const hardcoverState = (): any => ({
 	books: {
 		77: {
 			id: 77,

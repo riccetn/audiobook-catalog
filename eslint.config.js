@@ -27,7 +27,7 @@ export default [
 	// The app's server runs as a Cloudflare Worker, whose globals are a service worker's; its .mjs files run in Node.
 	{files: ['server/**/*.ts'], languageOptions: {globals: globals.serviceworker}},
 	{
-		files: ['tests/**/*.mjs', 'build.mjs', 'server/**/*.mjs', 'eslint.config.js'],
+		files: ['tests/**/*.ts', 'build.mjs', 'server/**/*.mjs', 'eslint.config.js'],
 		languageOptions: {globals: globals.node},
 	},
 ];

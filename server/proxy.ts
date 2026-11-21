@@ -13,7 +13,7 @@ import {jsonResponse} from './responses.ts';
  */
 export type ProxyDeps = {
 	fetch: (request: Request) => Promise<Response>;
-	cache?: Cache | null;
+	cache?: Pick<Cache, 'match' | 'put'> | null;
 	later?: (task: Promise<unknown>) => void;
 };
 /**

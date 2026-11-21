@@ -1,0 +1,17 @@
+{
+	"//": "The tests (tests/): not compiled, as Node (22.18 on) runs TypeScript as it is by stripping its types, so they import each other by their .ts names and use only TypeScript that stripping can remove (make typecheck). They import the app as #app/... (package.json's imports): Node runs what make pages compiled into public/, and the checker reads its types from src/. allowJs: build.mjs and the server's .mjs files, which some import, have their types in doc comments.",
+	"compilerOptions": {
+		"strict": true,
+		"target": "es2022",
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"lib": ["es2023", "dom", "dom.iterable"],
+		"types": ["node"],
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+		"allowImportingTsExtensions": true,
+		"allowJs": true,
+		"noEmit": true
+	},
+	"include": ["tests/**/*.ts"]
+}

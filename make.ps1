@@ -32,7 +32,7 @@ switch ($Command) {
 		'check         - run everything CI runs: the tests, the type check, lint and the format check'
 		'pages         - build public/: compile src/ with TypeScript, and write the pages from the Liquid templates in templates/ (run `npm install` once first)'
 		'test          - run the tests: the catalog classes and the browser smoke test'
-		'typecheck     - check the types of the app (src/) and the server (server/) with TypeScript, writing nothing (run `npm install` once first)'
+		'typecheck     - check the types of the app (src/), the server (server/) and the tests (tests/) with TypeScript, writing nothing (run `npm install` once first)'
 		'lint          - check the code for likely mistakes with ESLint and typescript-eslint (run `npm install` once first)'
 		'format        - format the code, JSON, Markdown and YAML with Prettier (the pre-commit hook does this to what you commit)'
 		'format-check  - check that everything is formatted as Prettier would (format fixes it)'
@@ -60,7 +60,7 @@ switch ($Command) {
 		& $PSCommandPath pages
 		if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 		# PowerShell doesn't expand the glob, and Node before 21 doesn't either, so list the suites here.
-		$suites = Get-ChildItem tests -Filter '*.test.mjs' | ForEach-Object { 'tests/' + $_.Name }
+		$suites = Get-ChildItem tests -Filter '*.test.ts' | ForEach-Object { 'tests/' + $_.Name }
 		Invoke-Native 'node' (@('--experimental-vm-modules', '--enable-source-maps', '--test') + $suites)
 	}
 	'typecheck' {
@@ -72,6 +72,7 @@ switch ($Command) {
 		Invoke-Native 'node' @($tsc, '-p', 'tsconfig.json', '--noEmit')
 		Invoke-Native 'node' @($tsc, '-p', 'tsconfig.sw.json', '--noEmit')
 		Invoke-Native 'node' @($tsc, '-p', 'tsconfig.server.json')
+		Invoke-Native 'node' @($tsc, '-p', 'tsconfig.tests.json')
 	}
 	'lint' {
 		$eslint = 'node_modules/eslint/bin/eslint.js'

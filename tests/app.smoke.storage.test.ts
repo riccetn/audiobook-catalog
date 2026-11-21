@@ -1,12 +1,12 @@
 // Browser smoke tests: keeping the catalog in this browser, imports, backups, removing books, ids, the Edit
-// series page and duplicates. The pages run in Node against a fake DOM (boot() in smoke.mjs).
+// series page and duplicates. The pages run in Node against a fake DOM (boot() in smoke.ts).
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Book} from '../public/modules/book.js';
-import {Duplicates} from '../public/modules/duplicates.js';
-import {CatalogRecords} from '../public/modules/catalog-records.js';
-import {Backup} from '../public/modules/backup.js';
+import {Book} from '#app/modules/book.js';
+import {Duplicates} from '#app/modules/duplicates.js';
+import {CatalogRecords} from '#app/modules/catalog-records.js';
+import {Backup} from '#app/modules/backup.js';
 import {
 	CATALOG_KEY,
 	DEMO,
@@ -32,7 +32,7 @@ import {
 	typeBookId,
 	typeIn,
 	withoutIds,
-} from './smoke.mjs';
+} from './smoke.ts';
 
 test('with no catalog in this browser it starts empty, not with the demo, and says where books come from', async () => {
 	const {els, get, run, storage} = await boot({files: null});
@@ -70,24 +70,24 @@ test('the catalog is kept in this browser, from one page load to the next', asyn
 	);
 });
 test('records saved before ids were kept by external catalog are read, and saved again the current way', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const {database} = await boot({storage});
 	await kept(storage);
 	// make the stored records look as the app before this one wrote them
-	const stores = database.data.get('audiobook-catalog').stores;
-	for (const {value} of stores.get('editions').records.values()) {
+	const stores = database.data.get('audiobook-catalog')!.stores;
+	for (const {value} of stores.get('editions')!.records.values()) {
 		const {external = {}} = value;
 		delete value.external;
 		value.asins = Object.fromEntries(Object.entries(external).filter(([k]) => k.includes('.')));
 		if (external.goodreads) value.goodreadsId = external.goodreads;
 	}
-	for (const {value} of stores.get('contributors').records.values()) {
+	for (const {value} of stores.get('contributors')!.records.values()) {
 		if (value.external && value.external.hardcover)
 			value.hardcover = `https://hardcover.app/authors/${value.external.hardcover}`;
 		delete value.external;
 		delete value.externalKeys;
 	}
-	for (const {value} of stores.get('books').records.values()) delete value.externalKeys;
+	for (const {value} of stores.get('books')!.records.values()) delete value.externalKeys;
 	const revision = database.records('meta').find(m => m.key === 'revision').value;
 	const again = await boot({storage, page: 'duplicates.html'});
 	await kept(storage);
@@ -101,7 +101,7 @@ test('records saved before ids were kept by external catalog are read, and saved
 	);
 });
 test('the catalog localStorage kept is moved to IndexedDB on the first load, and kept aside as it was', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const {get, withIds, database} = await boot({
 		storage,
 		page: 'duplicates.html',
@@ -127,7 +127,7 @@ test('the catalog localStorage kept is moved to IndexedDB on the first load, and
 			);
 	assert.deepEqual(get('CATALOG.books'), demoBooks);
 	assert.ok(
-		withIds('CATALOG.books').every(b => b.uid),
+		withIds('CATALOG.books').every((b: any) => b.uid),
 		'every book has its id',
 	);
 	// a second load reads IndexedDB, not what localStorage has now
@@ -136,7 +136,9 @@ test('the catalog localStorage kept is moved to IndexedDB on the first load, and
 	assert.equal(again.get('CATALOG.books.length'), demoBooks.length);
 });
 test('a catalog with values that are not what their field holds is shown but not moved, until fixed', async () => {
-	const storage = new Map([[CATALOG_KEY, JSON.stringify({books: [{t: 'Odd', a: ['Me'], g: 5, x: 1}]})]]);
+	const storage = new Map<string, string>([
+		[CATALOG_KEY, JSON.stringify({books: [{t: 'Odd', a: ['Me'], g: 5, x: 1}]})],
+	]);
 	const {get, els} = await boot({storage, files: null});
 	assert.equal(get('CATALOG.books[0].title'), 'Odd', 'the page shows it');
 	assert.equal(await kept(storage), null, 'nothing is written');
@@ -144,8 +146,8 @@ test('a catalog with values that are not what their field holds is shown but not
 	assert.match(els.ioStatus.textContent, /^Not saved: these values can't be kept.*book #0 \('Odd'\): 'g', 'x'/);
 });
 test('the status line clears a message after a while, but keeps an error until it is dismissed', async () => {
-	const timers = [];
-	const setTimeout = (fn, ms) => (timers.push({fn, ms}), timers.length);
+	const timers: {fn: () => unknown; ms: number}[] = [];
+	const setTimeout = (fn: () => unknown, ms: number) => (timers.push({fn, ms}), timers.length);
 	const {els, ctx} = await boot({setTimeout});
 	assert.equal(els.ioStatus.getAttribute('role'), 'status', 'screen readers read it out');
 	timers.length = 0;
@@ -161,11 +163,11 @@ test('the status line clears a message after a while, but keeps an error until i
 	assert.deepEqual(timers, [], 'no timer clears an error');
 	assert.match(els.ioStatus.textContent, /^Not saved: the disk is full\. Dismiss$/);
 	assert.ok(els.ioStatus.classList.contains('err'));
-	els.ioStatus.querySelector('.dismiss').listeners.click[0]();
+	els.ioStatus.querySelector('.dismiss')!.listeners.click[0]();
 	assert.equal(els.ioStatus.textContent, '');
 });
 test('without IndexedDB the page shows the catalog localStorage has, and says nothing is saved', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	databaseOf(storage).broken = true;
 	const {get, els, run} = await boot({storage});
 	assert.deepEqual(get('CATALOG.books'), demoBooks);
@@ -175,11 +177,11 @@ test('without IndexedDB the page shows the catalog localStorage has, and says no
 	assert.ok(storage.has(CATALOG_KEY), 'what localStorage has stays');
 });
 test('a stored catalog that does not fit together is set aside, and the catalog starts empty', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const first = await boot({storage});
 	await first.saved();
 	// a book that lists an edition there is no record of
-	const {db} = await new Promise(resolve => {
+	const {db} = await new Promise<any>(resolve => {
 		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
@@ -199,19 +201,19 @@ test('a stored catalog that does not fit together is set aside, and the catalog 
 test('a catalog another tab saves while this page saves it again in a new shape is read again, never set aside', async () => {
 	// A browser whose stored catalog waits to be saved again (a database of version 3), where another tab's save
 	// lands just before each of this page's first `saves` saves: the stored revision moves on under it.
-	const open = async saves => {
-		const storage = new Map();
+	const open = async (saves: any) => {
+		const storage = new Map<string, string>();
 		const first = await boot({storage});
 		await first.saved();
-		const {db} = await new Promise(resolve => {
+		const {db} = await new Promise<any>(resolve => {
 			const req = first.database.open('audiobook-catalog', 7);
 			req.onsuccess = () => resolve({db: req.result});
 		});
-		first.database.data.get('audiobook-catalog').version = 3;
+		first.database.data.get('audiobook-catalog')!.version = 3;
 		const fake = Object.getPrototypeOf(db),
 			transaction = fake.transaction;
 		let left = saves;
-		fake.transaction = function (storeNames, mode) {
+		fake.transaction = function (storeNames: any, mode: any) {
 			if (left > 0 && mode === 'readwrite' && Array.isArray(storeNames) && storeNames.includes('books')) {
 				left--;
 				for (const rec of this.data.stores.get('meta').records.values())
@@ -227,7 +229,7 @@ test('a catalog another tab saves while this page saves it again in a new shape 
 			fake.transaction = transaction;
 		}
 	};
-	const has = (database, key) => database.records('meta').some(m => m.key === key);
+	const has = (database: any, key: string) => database.records('meta').some((m: any) => m.key === key);
 
 	// once: the page reads what the other tab saved, and saves that
 	const once = await open(1);
@@ -245,11 +247,11 @@ test('a catalog another tab saves while this page saves it again in a new shape 
 	assert.equal(always.get('CATALOG.books.length'), demoBooks.length);
 });
 test("a series' site, from before authors kept their own, goes to its author when the page opens", async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const first = await boot({storage});
 	await first.saved();
 	// a database of version 3, whose series kept a site
-	const {db} = await new Promise(resolve => {
+	const {db} = await new Promise<any>(resolve => {
 		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
@@ -259,7 +261,7 @@ test("a series' site, from before authors kept their own, goes to its author whe
 		tx.objectStore('series').put({...series, url: 'https://example.com/lantern'});
 		tx.oncomplete = resolve;
 	});
-	first.database.data.get('audiobook-catalog').version = 3;
+	first.database.data.get('audiobook-catalog')!.version = 3;
 	// a page that shows only a slice still finds it moved
 	const {database} = await boot({storage, page: 'books.html'});
 	const stored = await kept(storage);
@@ -280,10 +282,10 @@ test("a series' site, from before authors kept their own, goes to its author whe
 	);
 });
 test('an edition stored with one publisher, from before database version 5, is saved again with a list of them', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const first = await boot({storage});
 	await first.saved();
-	const {db} = await new Promise(resolve => {
+	const {db} = await new Promise<any>(resolve => {
 		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
@@ -294,7 +296,7 @@ test('an edition stored with one publisher, from before database version 5, is s
 			tx.objectStore('editions').put(publisherIds.length ? {...rec, publisherId: publisherIds[0]} : rec);
 		tx.oncomplete = resolve;
 	});
-	first.database.data.get('audiobook-catalog').version = 4;
+	first.database.data.get('audiobook-catalog')!.version = 4;
 	// a page that shows only a slice still finds it moved
 	const {database} = await boot({storage, page: 'books.html'});
 	const after = database.records('editions');
@@ -311,10 +313,10 @@ test('an edition stored with one publisher, from before database version 5, is s
 	assert.deepEqual((await kept(storage)).books, demoBooks);
 });
 test('a person whose box sets were counted among their books, before database version 6, is counted again', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const first = await boot({storage});
 	await first.saved();
-	const {db} = await new Promise(resolve => {
+	const {db} = await new Promise<any>(resolve => {
 		const req = first.database.open('audiobook-catalog', 7);
 		req.onsuccess = () => resolve({db: req.result});
 	});
@@ -325,7 +327,7 @@ test('a person whose box sets were counted among their books, before database ve
 			tx.objectStore('contributors').put({...rec, bookCount: rec.bookCount + boxSetCount});
 		tx.oncomplete = resolve;
 	});
-	first.database.data.get('audiobook-catalog').version = 5;
+	first.database.data.get('audiobook-catalog')!.version = 5;
 	const {database} = await boot({storage, page: 'authors.html'});
 	const after = database.records('contributors');
 	assert.deepEqual(
@@ -335,7 +337,7 @@ test('a person whose box sets were counted among their books, before database ve
 	assert.ok(after.some(c => c.boxSetCount === 1));
 });
 test("a catalog this browser can't read is set aside, not overwritten", async () => {
-	const {get, els, storage} = await boot({storage: new Map([[CATALOG_KEY, '{not json']])});
+	const {get, els, storage} = await boot({storage: new Map<string, string>([[CATALOG_KEY, '{not json']])});
 	assert.deepEqual(get('CATALOG.books'), []);
 	assert.equal(storage.get(CATALOG_KEY + '.unreadable'), '{not json');
 	assert.equal(storage.has(CATALOG_KEY), false);
@@ -413,7 +415,7 @@ test('a date read written as a plain string loads, renders, and round-trips thro
 	assert.match(els.readFilter.innerHTML, /Read in 2024/);
 
 	const backup = JSON.stringify({books: [{t: 'From Backup', a: ['Ann Vale'], r: '2023-01-05'}], seriesInfo: {}});
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const imp = await boot({page: 'import.html', files: {'books.json': mine}, storage});
 	await imp.els.importFile.listeners.change[0]({target: {files: [{name: 'b.json', text: backup}], value: ''}});
 	await idle();
@@ -482,8 +484,8 @@ test('a comparison takes only what is ticked: a value of the other source in pla
 		els.importCsvFile.listeners.change[0]({target: {files: [{name: 'library.csv', text: csv}], value: ''}});
 		await idle();
 	};
-	const box = pick => els.importPreviewBody.querySelector(`input[data-pick="${pick}"]`);
-	const tick = (pick, on) => {
+	const box = (pick: any) => els.importPreviewBody.querySelector(`input[data-pick="${pick}"]`)!;
+	const tick = (pick: any, on: any) => {
 		box(pick).checked = on;
 		box(pick).dispatch('change');
 	};
@@ -501,7 +503,7 @@ test('a comparison takes only what is ticked: a value of the other source in pla
 	assert.equal(box('take:1').hasAttribute('checked'), false);
 	els.importPreviewBody
 		.querySelectorAll('button.cmpTick')
-		.find(b => b.textContent === 'Tick all')
+		.find(b => b.textContent === 'Tick all')!
 		.listeners.click[0]();
 	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
 
@@ -522,7 +524,7 @@ test('a comparison takes only what is ticked: a value of the other source in pla
 	assert.doesNotMatch(els.importPreviewBody.innerHTML, /Different in both/);
 });
 test("a series' name ticked in a comparison renames the series, on all its books, keeping its id and details", async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const mine = JSON.stringify([
 		{t: 'Salt Road', a: ['Ann Vale'], s: 'Gull Isles', sn: '1', e: [{ext: {'audible.com': 'B1'}}]},
 		{t: 'Paper Fen', a: ['Ann Vale'], s: 'Gull Isles', sn: '2', e: [{ext: {'audible.com': 'B2'}}]},
@@ -546,14 +548,14 @@ test("a series' name ticked in a comparison renames the series, on all its books
 		readable(els.importPreviewBody.innerHTML),
 		/Series: <span class="cmpHere">Gull Isles<\/span> here, <span class="cmpThere">The Gull Isle Saga<\/span> on Audible \(renames the series, on 2 books\)/,
 	);
-	const box = els.importPreviewBody.querySelector('input[data-pick="patch:0:s"]');
+	const box = els.importPreviewBody.querySelector('input[data-pick="patch:0:s"]')!;
 	box.checked = true;
 	box.dispatch('change');
 	els.importConfirm.listeners.click[0]();
 	await idle();
 	const after = await kept(storage);
 	assert.deepEqual(
-		after.books.map(b => [b.t, b.s]),
+		after.books.map((b: any) => [b.t, b.s]),
 		[
 			['Salt Road', 'The Gull Isle Saga'],
 			['Paper Fen', 'The Gull Isle Saga'],
@@ -569,9 +571,9 @@ test("a series' name ticked in a comparison renames the series, on all its books
 });
 test("Goodreads CSV downloads every book for Goodreads' import", async () => {
 	const {ctx, els, get} = await boot({page: 'import.html'});
-	const blobs = [];
+	const blobs: string[] = [];
 	ctx.Blob = class {
-		constructor(parts) {
+		constructor(parts: any) {
 			blobs.push(parts.join(''));
 		}
 	};
@@ -583,7 +585,7 @@ test("Goodreads CSV downloads every book for Goodreads' import", async () => {
 	assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
 });
 test('the Backups panel says how old the last backup is, and the catalog page reminds you when it is getting old', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const imp = await boot({page: 'import.html', storage});
 	await idle();
 	assert.equal(imp.els.backupState.textContent, 'No backup downloaded in this browser yet.');
@@ -594,7 +596,7 @@ test('the Backups panel says how old the last backup is, and the catalog page re
 	imp.els.exportBtn.listeners.click[0]();
 	await idle();
 	assert.equal(imp.els.backupState.textContent, 'Last backup today; nothing changed since.');
-	const revision = JSON.parse(storage.get('audiobook-catalog-last-backup')).revision;
+	const revision = JSON.parse(storage.get('audiobook-catalog-last-backup')!).revision;
 	assert.equal(typeof revision, 'number');
 
 	// a fresh backup: no reminder
@@ -619,9 +621,9 @@ test('the Backups panel says how old the last backup is, and the catalog page re
 });
 test('Export includes series and author info, and Import brings them back', async () => {
 	const first = await boot({page: 'import.html'});
-	const blobs = [];
+	const blobs: string[] = [];
 	first.ctx.Blob = class {
-		constructor(parts) {
+		constructor(parts: any) {
 			blobs.push(parts.join(''));
 		}
 	};
@@ -657,21 +659,21 @@ test('Export includes series and author info, and Import brings them back', asyn
 		first.get('CATALOG.books.map(b => b.id)'),
 		"by the ids they are stored under, in the catalog's order",
 	);
-	const [firstId, firstBook] = Object.entries(backup.books)[0];
+	const [firstId, firstBook] = Object.entries<any>(backup.books)[0];
 	assert.deepEqual(
-		Object.keys(firstBook).filter(k => !CatalogRecords.DERIVED.books.includes(k)),
+		Object.keys(firstBook).filter(k => !CatalogRecords.DERIVED.books!.includes(k)),
 		Object.keys(firstBook),
 		'nothing derived',
 	);
 	assert.equal(firstBook.title, first.get('CATALOG.books[0].title'));
 	assert.ok(!('id' in firstBook) && firstId);
 	assert.ok(
-		firstBook.authorIds.every(id => backup.contributors[id].kind === 'author'),
+		firstBook.authorIds.every((id: any) => backup.contributors[id].kind === 'author'),
 		'authors by id',
 	);
-	assert.ok(Object.values(backup.books).every(b => b.editionIds.every(id => backup.editions[id])));
+	assert.ok(Object.values<any>(backup.books).every(b => b.editionIds.every((id: any) => backup.editions[id])));
 	assert.equal(Object.keys(backup.series).length, new Set(demoBooks.map(b => b.s).filter(Boolean)).size);
-	assert.ok(Object.values(backup.contributors).some(c => c.kind === 'narrator'));
+	assert.ok(Object.values<any>(backup.contributors).some(c => c.kind === 'narrator'));
 
 	// into a page that has no series info: it comes back, and survives a reload
 	const mine = JSON.stringify([{t: 'Mine', a: ['Me']}]);
@@ -752,14 +754,14 @@ test('Restore takes a backup of a catalog made apart from this one, with its ser
 	run(`CATALOG.addExclusions(['BGONE'])`);
 	await run('persist()');
 	// this catalog's backup as another browser would have written it: the same names, each under an id of its own
-	const other = id => 'other-' + id;
-	const backup = {version: 5, exclusions: [], marks: {}};
-	for (const store of ['books', 'editions', 'series', 'contributors']) {
+	const other = (id: any) => 'other-' + id;
+	const backup: Record<string, any> = {version: 5, exclusions: [], marks: {}};
+	for (const store of ['books', 'editions', 'series', 'contributors'] as const) {
 		backup[store] = {};
 		// (a book's place in a backup is its place in the catalog)
 		for (const rec of database.records(store).sort((x, y) => (x.position ?? 0) - (y.position ?? 0))) {
 			const own = Object.fromEntries(
-				Backup.FIELDS[store].filter(f => rec[f] !== undefined).map(f => [f, rec[f]]),
+				Backup.FIELDS[store].filter((f: any) => rec[f] !== undefined).map((f: any) => [f, rec[f]]),
 			);
 			if (own.seriesId) own.seriesId = other(own.seriesId);
 			for (const f of ['authorIds', 'narratorIds', 'publisherIds']) if (own[f]) own[f] = own[f].map(other);
@@ -866,7 +868,7 @@ test("Remove book on a book's Edit page asks once more, then removes it and open
 		'This takes Gone out of the catalog, and imports will skip it. Press Remove book again to do it.',
 	);
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Keep', 'Gone', 'Fern 1'],
 		'nothing is removed yet',
 	);
@@ -874,7 +876,7 @@ test("Remove book on a book's Edit page asks once more, then removes it and open
 	await idle();
 	assert.equal(ctx.location.assigned, 'books.html');
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Keep', 'Fern 1'],
 	);
 	assert.deepEqual((await kept(storage)).excluded, ['BGONE2', 'Gone | Ann Vale']);
@@ -890,16 +892,19 @@ test("Remove book on a book's Edit page asks once more, then removes it and open
 test("Read today on a book's details adds today to its dates read, and Undo takes it off", async () => {
 	const {els, get, storage} = await bootBook('The Salt Road');
 	const id = get('BOOK_FILTER');
-	els.results.querySelector('.readToday').dispatch('click');
+	els.results.querySelector('.readToday')!.dispatch('click');
 	await idle();
 	const today = get('Text.today()');
 	assert.deepEqual(get(`CATALOG.book(${JSON.stringify(id)}).read`), ['2023-06-02', '2025-11-20', today].sort());
-	assert.ok((await kept(storage)).books.find(b => b.t === 'The Salt Road').r.includes(today));
+	assert.ok((await kept(storage)).books.find((b: any) => b.t === 'The Salt Road').r.includes(today));
 	assert.doesNotMatch(els.results.innerHTML, /readToday/, 'read today already');
 	assert.equal(els.ioStatus.textContent, 'Read The Salt Road today. Undo');
-	els.ioStatus.querySelector('.undo').dispatch('click');
+	els.ioStatus.querySelector('.undo')!.dispatch('click');
 	await idle();
-	assert.deepEqual((await kept(storage)).books.find(b => b.t === 'The Salt Road').r, ['2023-06-02', '2025-11-20']);
+	assert.deepEqual((await kept(storage)).books.find((b: any) => b.t === 'The Salt Road').r, [
+		'2023-06-02',
+		'2025-11-20',
+	]);
 	assert.match(els.results.innerHTML, /class="readToday">\+ Read today</);
 });
 test('removing a book excludes it from imports, and Export / Import carry the exclusions', async () => {
@@ -912,7 +917,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 	assert.deepEqual(get('CATALOG.books'), []);
 	assert.equal(ctx.location.assigned, 'books.html');
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Keep'],
 	);
 	assert.deepEqual((await kept(storage)).excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
@@ -955,9 +960,9 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 	assert.deepEqual((await kept(storage)).excluded, ['BOLD', 'BGONE2', 'Gone | Ann Vale']);
 
 	// Export has the whole list; Import adds it to another page's list
-	const blobs = [];
+	const blobs: string[] = [];
 	imp.ctx.Blob = class {
-		constructor(parts) {
+		constructor(parts: any) {
 			blobs.push(parts.join(''));
 		}
 	};
@@ -1000,7 +1005,7 @@ test('with a book removed, edits of the others save to the right books, in anoth
 	typeIn(second.els, 'b0_t', 'Second, Edited');
 	assert.equal(await saveEdit(second), true);
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Second, Edited', 'Third'],
 	);
 	// another book removed while this one is open
@@ -1009,7 +1014,7 @@ test('with a book removed, edits of the others save to the right books, in anoth
 	typeIn(again.els, 'b0_t', 'Second, Again');
 	assert.equal(await saveEdit(again), true);
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Second, Again'],
 	);
 });
@@ -1097,7 +1102,7 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 });
 test("an address pasted into a series', person's or book's id field becomes the id when the field is left", async () => {
 	const {els} = await bootEdit('The Lantern Coast');
-	const leave = (input, value) => {
+	const leave = (input: any, value: any) => {
 		input.value = value;
 		input.dispatch('focusout');
 		return input.value;
@@ -1138,7 +1143,7 @@ test("an address pasted into a series', person's or book's id field becomes the 
 	assert.equal(leave(book.els.b0_ext_openlibrary, 'https://openlibrary.org/works/OL123W/The_Salt_Road'), 'OL123W');
 	assert.equal(leave(book.els.b0_ext_wikidata, 'https://www.wikidata.org/wiki/Q1001'), 'Q1001');
 	const narrator = await boot({page: 'narrator.html', hash: '#n=Tobias+Frane'});
-	narrator.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	narrator.els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	assert.equal(
 		leave(narrator.els.cf_ext_goodreads, 'https://www.goodreads.com/author/show/5150.Tobias_Frane'),
 		'5150',
@@ -1261,7 +1266,11 @@ test('a series is edited on its Edit series page, and removed from its books', a
 	assert.equal(edit.ctx.location.replaced, 'index.html');
 	const saved = await kept(storage);
 	assert.equal(saved.books.length, demoBooks.length);
-	assert.equal(saved.books.filter(b => b.s === name || (!b.s && b.sn)).length, 0, 'no series, and no number in it');
+	assert.equal(
+		saved.books.filter((b: any) => b.s === name || (!b.s && b.sn)).length,
+		0,
+		'no series, and no number in it',
+	);
 	assert.equal(name in saved.seriesInfo, false);
 	assert.equal(
 		databaseOf(storage)
@@ -1350,7 +1359,7 @@ test('a series can be renamed on its Edit series page, on every book in it', asy
 		[seriesId],
 		'it keeps its id',
 	);
-	assert.equal(saved.books.filter(b => b.s === 'The Renamed Saga').length, count);
+	assert.equal(saved.books.filter((b: any) => b.s === 'The Renamed Saga').length, count);
 
 	// a series without info is renamed without having to add some
 	const bare = demoBooks.map(b => b.s).find(s => s && !(s in info));
@@ -1523,14 +1532,14 @@ test('edits of different books in two tabs are both saved, and the same book edi
 			{t: 'Theirs', a: ['Them']},
 		]),
 	};
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const one = await boot({page: 'books.html', files, storage});
 	const two = await boot({page: 'duplicates.html', files, storage});
 	await one.run("CATALOG.books[0].title = 'Edited Here'; persist();");
 	await two.run("CATALOG.books[1].title = 'Edited There'; persist();");
 	assert.equal(two.els.ioStatus.textContent, '');
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Edited Here', 'Edited There', 'Theirs'],
 	);
 	assert.equal(
@@ -1547,7 +1556,7 @@ test('edits of different books in two tabs are both saved, and the same book edi
 	);
 	await three.run("CATALOG.book(BOOK_FILTER).title = 'Retitled Here'; persist();");
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Edited There', 'Retitled Here', 'Added There'],
 	);
 	assert.equal(three.get('BOOK_FILTER'), retitled, 'the page still shows the book it was opened on');
@@ -1557,7 +1566,7 @@ test('edits of different books in two tabs are both saved, and the same book edi
 	await two.run("CATALOG.books[1].title = 'Both There'; CATALOG.books[0].title = 'Also There'; persist();");
 	assert.match(two.els.ioStatus.textContent, /"Both There" changed in another tab too/);
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Edited There', 'Both Here', 'Added There'],
 	);
 	await three.run("CATALOG.book(BOOK_FILTER).title = 'Again Here'; persist();"); // the tab that saved last can keep going

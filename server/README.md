@@ -13,7 +13,7 @@ The rest:
 
 - `worker.ts`: the Cloudflare Worker. `handle` answers only the app's origins (`ALLOWED_ORIGINS`), only with the key
   (the `SERVER_KEY` secret, `X-Server-Key`), and routes the request to the proxy or sync; it is what the tests run
-  (`tests/server.test.mjs`) and what `serve.mjs` runs.
+  (`tests/server.test.ts`) and what `serve.mjs` runs.
 - `serve.mjs`: `make serve`, the app's pages from `public/` and the server beside them on this computer, with the
   key in `.dev.vars` and the synced copy in `.local/sync.sqlite` (both git-ignored). Node 22.18 or later.
 - `wrangler.toml`: the Worker's name and `ALLOWED_ORIGINS`. The key is a secret, never written here.

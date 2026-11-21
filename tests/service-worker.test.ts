@@ -15,7 +15,6 @@ const site = path.join(root, 'public');
 /**
  * Starts sw.js at an address, with every file answered by the fake network and `caches` kept in a Map.
  * `waiting` is the new version's worker, waiting to take over, and `open` the pages of the app this one has.
- * @param {{origin?: string, version?: string, stores?: Map<string, Map<string, Response>>, redirects?: boolean, waiting?: object, open?: number}} [options]
  */
 function start({
 	origin = 'https://example.github.io',
@@ -24,12 +23,19 @@ function start({
 	redirects = false,
 	waiting = null,
 	open = 1,
+}: {
+	origin?: string;
+	version?: string;
+	stores?: Map<string, Map<string, Response>>;
+	redirects?: boolean;
+	waiting?: {postMessage: (message: unknown) => void} | null;
+	open?: number;
 } = {}) {
 	const base = `${origin}/app/`;
-	const listeners = {};
-	const asked = [];
+	const listeners: Record<string, (event: object) => void> = {};
+	const asked: {url: string; cache: RequestCache}[] = [];
 	let online = true;
-	const fetch = async request => {
+	const fetch = async (request: Request) => {
 		asked.push({url: request.url, cache: request.cache});
 		if (!online) throw new TypeError('offline');
 		const res = new Response(`fresh ${new URL(request.url).pathname}`, {headers: {'Content-Type': 'text/html'}});
@@ -37,34 +43,38 @@ function start({
 		if (redirects) Object.defineProperty(res, 'redirected', {value: true});
 		return res;
 	};
-	const storeOf = name => {
+	const storeOf = (name: string) => {
 		if (!stores.has(name)) stores.set(name, new Map());
-		const kept = stores.get(name);
+		const kept = stores.get(name) as Map<string, Response>;
 		return {
-			match: async (request, {ignoreSearch} = {}) => {
+			match: async (request: Request, {ignoreSearch = false} = {}) => {
 				const url = new URL(request.url);
 				if (ignoreSearch) url.search = '';
 				return kept.get(url.href)?.clone();
 			},
-			put: async (request, response) => void kept.set(request.url, response),
-			addAll: async requests => {
+			put: async (request: Request, response: Response) => void kept.set(request.url, response),
+			addAll: async (requests: Request[]) => {
 				for (const request of requests) kept.set(request.url, await fetch(request));
 			},
 		};
 	};
 	const caches = {
-		open: async name => storeOf(name),
+		open: async (name: string) => storeOf(name),
 		keys: async () => [...stores.keys()],
-		delete: async name => stores.delete(name),
+		delete: async (name: string) => stores.delete(name),
 	};
 	let skipped = 0;
-	const self = {
-		addEventListener: (type, fn) => (listeners[type] = fn),
+	// what sw-app.js sets on it too
+	const self: Record<string, unknown> = {
+		addEventListener: (type: string, fn: (event: object) => void) => (listeners[type] = fn),
 		skipWaiting: async () => void skipped++,
 		registration: {waiting},
 		clients: {
 			claim: async () => assert.fail('a new version waits until no page of the old one is open'),
-			matchAll: async ({type}) => (assert.equal(type, 'window'), Array.from({length: open}, () => ({}))),
+			matchAll: async ({type}: {type: string}) => (
+				assert.equal(type, 'window'),
+				Array.from({length: open}, () => ({}))
+			),
 		},
 	};
 	const context = vm.createContext({
@@ -73,13 +83,13 @@ function start({
 		fetch,
 		location: new URL(`${base}sw.js`),
 		Request: class extends Request {
-			constructor(url, init) {
+			constructor(url: string | URL, init?: RequestInit) {
 				super(new URL(url, base), init);
 			}
 		},
 		Response,
 		URL,
-		importScripts: file => {
+		importScripts: (file: string) => {
 			assert.match(file, /^sw-app\.js(\?v=\w+)?$/);
 			self.APP_VERSION = version;
 			self.APP_FILES = ['./', 'index.html', 'store.js', 'modules/book.js'];
@@ -87,10 +97,15 @@ function start({
 	});
 	vm.runInContext(fs.readFileSync(path.join(site, 'sw.js'), 'utf8'), context);
 	/** Runs an event's listener and waits for what it waits on. */
-	const fire = async (type, request, data) => {
-		let waited = Promise.resolve();
-		let answer;
-		listeners[type]({request, data, waitUntil: p => (waited = p), respondWith: p => (answer = p)});
+	const fire = async (type: string, request?: Request, data?: unknown): Promise<Response | undefined> => {
+		let waited: Promise<unknown> = Promise.resolve();
+		let answer: Promise<Response> | undefined;
+		listeners[type]({
+			request,
+			data,
+			waitUntil: (p: Promise<unknown>) => (waited = p),
+			respondWith: (p: Promise<Response>) => (answer = p),
+		});
 		await waited;
 		return answer && (await answer);
 	};
@@ -100,19 +115,19 @@ function start({
 		goOffline: () => (online = false),
 		install: () => fire('install'),
 		activate: () => fire('activate'),
-		get: async file => {
+		get: async (file: string) => {
 			const res = await fire('fetch', new Request(new URL(file, base)));
 			await new Promise(resolve => setImmediate(resolve)); // the copy is kept after answering
 			return res && (await res.text());
 		},
-		answer: file => fire('fetch', new Request(new URL(file, base))),
+		answer: (file: string) => fire('fetch', new Request(new URL(file, base))),
 		/** A page's navigation to a file (a Request made with mode 'navigate' can't be built, so it is said). */
-		navigate: file => {
+		navigate: (file: string) => {
 			const request = new Request(new URL(file, base));
 			Object.defineProperty(request, 'mode', {value: 'navigate'});
 			return fire('fetch', request);
 		},
-		message: data => fire('message', undefined, data),
+		message: (data: unknown) => fire('message', undefined, data),
 		skipped: () => skipped,
 	};
 }
@@ -145,7 +160,7 @@ test("a new version is fetched whole into a cache of its own, and the app's old 
 	const sw = start({version: 'v1'});
 	await sw.install();
 	await sw.activate();
-	sw.stores.get('audiobook-catalog-v1').set('https://example.github.io/app/store.js', new Response('old store.js'));
+	sw.stores.get('audiobook-catalog-v1')?.set('https://example.github.io/app/store.js', new Response('old store.js'));
 	// another app on the same origin (an account's github.io) keeps its caches
 	sw.stores.set('other-app-v7', new Map());
 	const next = start({version: 'v2', stores: sw.stores});
@@ -157,13 +172,13 @@ test("a new version is fetched whole into a cache of its own, and the app's old 
 });
 
 test("a new version waiting takes over on a page's navigation when no other page of the app is open", async () => {
-	const told = [];
-	const waiting = {postMessage: message => told.push(message)};
+	const told: unknown[] = [];
+	const waiting = {postMessage: (message: unknown) => told.push(message)};
 	for (const open of [0, 1]) {
 		const sw = start({waiting, open});
 		await sw.install();
 		await sw.activate();
-		const res = await sw.navigate('books.html');
+		const res = (await sw.navigate('books.html')) as Response;
 		assert.equal(res.headers.get('Refresh'), '0', 'the page loads again, from the new version');
 		assert.equal(await res.text(), '');
 	}
@@ -172,14 +187,14 @@ test("a new version waiting takes over on a page's navigation when no other page
 	const sw = start({waiting, open: 2});
 	await sw.install();
 	await sw.activate();
-	const res = await sw.navigate('books.html');
+	const res = (await sw.navigate('books.html')) as Response;
 	assert.equal(res.headers.get('Refresh'), null);
 	assert.equal(await res.text(), 'fresh /app/books.html');
 	assert.equal(told.length, 2);
 	// nothing waiting: the page as cached; and a module never hands over, only a page's navigation
 	const alone = start();
 	await alone.install();
-	assert.equal(await (await alone.navigate('books.html')).text(), 'fresh /app/books.html');
+	assert.equal(await (await alone.navigate('books.html'))?.text(), 'fresh /app/books.html');
 	const busy = start({waiting, open: 1});
 	await busy.install();
 	assert.equal(await busy.get('store.js'), 'fresh /app/store.js');
@@ -226,11 +241,11 @@ test('make pages writes the files to cache, every file served but the source map
 		)
 		.sort();
 	assert.ok(files.includes('index.html') && files.includes('modules/book.js'));
-	assert.deepEqual(JSON.parse(written.match(/APP_FILES = (\[.*\]);/)[1]), ['./', ...files]);
+	assert.deepEqual(JSON.parse(written.match(/APP_FILES = (\[.*\]);/)?.[1] ?? ''), ['./', ...files]);
 	const hash = crypto.createHash('sha256');
 	for (const file of files) hash.update(`${file}\0`).update(fs.readFileSync(path.join(site, file)));
 	const version = hash.digest('hex').slice(0, 16);
-	assert.equal(written.match(/APP_VERSION = '(\w+)'/)[1], version);
+	assert.equal(written.match(/APP_VERSION = '(\w+)'/)?.[1], version);
 	// in sw.js too, so the browser sees a new version by sw.js alone
 	assert.ok(fs.readFileSync(path.join(site, 'sw.js'), 'utf8').includes(`importScripts('sw-app.js?v=${version}');`));
 });
@@ -238,12 +253,12 @@ test('make pages writes the files to cache, every file served but the source map
 test('an answer reached through a redirect is copied, as Chrome refuses a redirected page', async () => {
 	const sw = start({redirects: true});
 	await sw.install();
-	for (const kept of sw.stores.get('audiobook-catalog-v1').values()) assert.equal(kept.redirected, false);
-	const page = await sw.answer('index.html');
+	for (const kept of sw.stores.get('audiobook-catalog-v1')?.values() ?? []) assert.equal(kept.redirected, false);
+	const page = (await sw.answer('index.html')) as Response;
 	assert.equal(page.redirected, false);
 	assert.equal(await page.text(), 'fresh /app/index.html');
 	assert.equal(page.headers.get('Content-Type'), 'text/html');
-	const fresh = await sw.answer('api/index.html');
+	const fresh = (await sw.answer('api/index.html')) as Response;
 	assert.equal(fresh.redirected, false, 'fetched now, too');
 	assert.equal(await fresh.text(), 'fresh /app/api/index.html');
 });

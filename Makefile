@@ -19,13 +19,14 @@ pages:           ## build public/: compile src/ with TypeScript, and write the p
 	$(NODE) build.mjs
 
 test: pages      ## run the tests: the catalog classes and the browser smoke test
-	$(NODE) --experimental-vm-modules --enable-source-maps --test tests/*.test.mjs
+	$(NODE) --experimental-vm-modules --enable-source-maps --test tests/*.test.ts
 
-typecheck:       ## check the types of the app (src/) and the server (server/) with TypeScript, writing nothing (run `npm install` once first)
+typecheck:       ## check the types of the app (src/), the server (server/) and the tests (tests/) with TypeScript, writing nothing (run `npm install` once first)
 	@test -x $(TSC) || { echo 'TypeScript is not installed: run npm install first'; exit 1; }
 	$(TSC) -p tsconfig.json --noEmit
 	$(TSC) -p tsconfig.sw.json --noEmit
 	$(TSC) -p tsconfig.server.json
+	$(TSC) -p tsconfig.tests.json
 
 lint:            ## check the code for likely mistakes with ESLint and typescript-eslint (run `npm install` once first)
 	@test -x $(ESLINT) || { echo 'ESLint is not installed: run npm install first'; exit 1; }

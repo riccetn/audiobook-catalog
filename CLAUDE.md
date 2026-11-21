@@ -31,25 +31,29 @@ unknown variable or filter fails it). `make test` and `make serve` build first, 
   library `qrcode-generator` (a dependency, which the user allowed for _Set up another device_), which `build.mjs` copies from `node_modules/`
   into `public/vendor/qrcode.mjs` (git-ignored, not linted; its types are `src/vendor/qrcode.d.mts`, from the package's) and `import.js` loads with `import()` when a code is shown.
   `package.json` says `"type": "module"` and its devDependencies are tools only, never served or imported by the app or tests:
-  Liquid (`liquidjs`, `make pages`), TypeScript (`make pages`, `make typecheck`), ESLint with `@eslint/js`, `globals` and `typescript-eslint` (`make lint`), Prettier (`make format`)
+  Liquid (`liquidjs`, `make pages`), TypeScript with Node's types (`@types/node`, for the tests) (`make pages`, `make typecheck`), ESLint with `@eslint/js`, `globals` and `typescript-eslint` (`make lint`), Prettier (`make format`)
   and TypeDoc (`make docs`); don't add others, use Node built-ins in tests. TypeScript is 6, not 7: typescript-eslint and TypeDoc need its JS API, which 7 lacks.
 - `tsconfig.json`: `strict`, `verbatimModuleSyntax` (a type alone comes in with `import type`, which the compiled file leaves out), `rootDir` `src`, `outDir` `public`,
   `sourceMap` with `inlineSources`. Modules import each other by their served names (`'./book.js'`), which TypeScript finds as `.ts`.
-- The tests and `build.mjs` stay JavaScript (`.mjs`), and run what `make pages` compiled into `public/`.
+- The tests are TypeScript (`tests/*.ts`), run as they are, as the server's are (Node strips the types: `erasableSyntaxOnly`), and checked by `make typecheck`
+  (`tsconfig.tests.json`, strict, with `@types/node`); they import each other by their `.ts` names (`./smoke.ts`). They import the app as `#app/modules/book.js`
+  (package.json's `imports`): Node loads what `make pages` compiled into `public/`, and the checker reads the types from `src/modules/book.ts`. `any` is fine for a
+  record or a catalog's answer as stored (and a fake's state), `!` where a test reads what it expects to be there (an element, a book it saved).
+  `build.mjs` stays JavaScript (`.mjs`).
 - ES modules everywhere (`import`/`export`, never `require`/`module.exports`). Each page loads only
   its own script with `<script type="module">`; that imports `store.js` (with `dom.js`, `id-fields.js` and `connections.js`, what it shares that isn't the catalog) and the classes in `modules/`.
 - A page loads only the modules it needs. `store.js` and `Catalog` (which every page loads) import no connector, `Backup`, `Merger`
   or `Validator`; what only Import & export uses stays there (the smoke test's `IMPORT_PAGE_ONLY` checks it), and what a page
   needs only for one action is loaded with `import()` when used (the Edit page's _Fill in_ and other catalogs, the Hardcover lookups, the old
   localStorage catalog's move). `modules/` imports stay static.
-- Node 22.18+ for the tests and `make serve` (`node:sqlite`, and the server's TypeScript run as it is; CI uses 24).
+- Node 22.18+ for the tests and `make serve` (`node:sqlite`, and the tests' and the server's TypeScript run as it is; CI uses 24).
 
 ## Commands
 
 ```sh
 make pages      # node build.mjs: compile src/ into public/ with tsc, write public/*.html from templates/ (needs `npm install` once)
-make test       # make pages, then node --experimental-vm-modules --enable-source-maps --test tests/*.test.mjs  (all suites, incl. the browser smoke test)
-make typecheck  # tsc --noEmit -p tsconfig.json and -p tsconfig.sw.json, and tsc -p tsconfig.server.json; needs `npm install` once
+make test       # make pages, then node --experimental-vm-modules --enable-source-maps --test tests/*.test.ts  (all suites, incl. the browser smoke test)
+make typecheck  # tsc --noEmit -p tsconfig.json and -p tsconfig.sw.json, and tsc -p tsconfig.server.json and -p tsconfig.tests.json; needs `npm install` once
 make lint       # eslint . with the recommended rules and typescript-eslint's (eslint.config.js; public/ is ignored); needs `npm install` once
 make format     # prettier --write . (.prettierrc.json, .prettierignore); needs `npm install` once
 make format-check  # prettier --check ., what make check runs
@@ -58,8 +62,8 @@ make docs       # TypeDoc: the API documentation from the doc comments, into api
 make clean      # delete what make pages and make docs wrote (the git-ignored pages, scripts, public/vendor/, public/api/ and api-docs/out/)
 make deploy-server  # node server/deploy.mjs: deploy the server (proxy and sync) with its sync D1 database, found by name the first time; the id only in the git-ignored server/wrangler.deploy.toml, which later deploys read it from
 make serve      # make pages, then node server/serve.mjs: public/ and the server on http://127.0.0.1:8000/ (PORT=, HOST=; key in server/.dev.vars, sync in server/.local/sync.sqlite)
-node --test tests/catalog.test.mjs            # one suite (it runs the compiled public/, so make pages after editing src/ or a template) (the smoke test needs --experimental-vm-modules too)
-node --test --test-name-pattern='merge' tests/catalog.test.mjs   # one test
+node --test tests/catalog.test.ts             # one suite (it runs the compiled public/, so make pages after editing src/ or a template) (the smoke test needs --experimental-vm-modules too)
+node --test --test-name-pattern='merge' tests/catalog.test.ts    # one test
 ```
 
 On Windows, where make is usually missing, `.\make.ps1 test` (`check`, `pages`, `typecheck`, `lint`, `docs` (`-Out`), `clean`, `serve` (`-Port`, `-Bind`), `deploy-server`, `help`) runs the same commands;
@@ -309,24 +313,24 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   answered before `worker.ts` runs, as `serve.mjs` does; `html_handling = "none"`, as Chrome refuses the service worker a redirected page, so `handle` answers `/` with `ASSETS`' `index.html`,
   and `sw.js` copies any redirected answer, `unredirected`), and lets in its own origin beside `ALLOWED_ORIGINS`. `handle` takes the fetch and cache so the tests run it
   in Node. The `.ts` files aren't compiled: Wrangler and Node (22.18 on) strip their types and run them, so they import each other as `./proxy.ts` and use only erasable TypeScript (`tsconfig.server.json`: `allowImportingTsExtensions`, `erasableSyntaxOnly`, `noEmit`; `make typecheck` checks them); linted with service worker globals; deployed with `npx wrangler`, not a devDependency. `serve.mjs`, `deploy.mjs` and the tests import them by their `.ts` names.
-- `tests/`: `node:test` suites (`*.test.mjs`, ESM). They read the pages and run the modules as written and compiled in `public/`, so they run after `make pages` (`--enable-source-maps` makes a stack trace name the line in `src/`).
-  - `catalog.test.mjs`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
-  - `service-worker.test.mjs`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-app.js`'s files and hash.
-  - `server.test.mjs`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses), its sync on an in-memory SQLite (`sqliteD1`), and `make serve`'s server on a free port.
-  - `app.smoke.*.test.mjs` (`pages`, `storage`, `catalogs`, `people`: files of their own so `node --test` runs them side by side; put a new test in the one its topic is in, and keep them about even), with what they share in `smoke.mjs`
+- `tests/`: `node:test` suites (`*.test.ts`, ESM, TypeScript run as it is). They read the pages and run the modules as written and compiled in `public/`, so they run after `make pages` (`--enable-source-maps` makes a stack trace name the line in `src/`).
+  - `catalog.test.ts`: unit tests of the classes in `modules/` (`Book.fromJSON` in, `JSON.stringify` out, so they compare stored shapes).
+  - `service-worker.test.ts`: `sw.js` in a `vm` context with a fake network and `caches` (cache-first, versions, localhost), and `sw-app.js`'s files and hash.
+  - `server.test.ts`: the Worker's `handle` with a fake catalog and cache (what it lets through and refuses), its sync on an in-memory SQLite (`sqliteD1`), and `make serve`'s server on a free port.
+  - `app.smoke.*.test.ts` (`pages`, `storage`, `catalogs`, `people`: files of their own so `node --test` runs them side by side; put a new test in the one its topic is in, and keep them about even), with what they share in `smoke.ts`
     (`boot`, the fake DOM and the helpers, exported; it keeps each module's text and V8 code cache across boots, and `idle()` waits only on the current test's pages): runs a page's real HTML and its modules (`boot({page})`) as `vm.SourceTextModule`s
     (hence `--experimental-vm-modules`) with a hand-rolled fake DOM (the page's `<body>` parsed into elements; tests read
     what the page drew as `innerHTML`, written as a browser writes it, and setting `innerHTML` throws), a fake localStorage (`boot`'s `files`
     seed the old localStorage catalog, by default from `sample/`, which the page moves to IndexedDB; `files: null` for none) and a fake
-    IndexedDB (`tests/fake-indexeddb.mjs`; pages booted with the same `storage` Map share it, like tabs, and their ids are `id-1`, ...;
+    IndexedDB (`tests/fake-indexeddb.ts`; pages booted with the same `storage` Map share it, like tabs, and their ids are `id-1`, ...;
     `await kept(storage)` is what is stored, once the saves are done; a page draws what it reads after its saves, so `await idle()`
     after a step that changes what is shown; `database.reads(store)` counts the records handed out; `get` leaves out `uid`, `withIds` keeps it; `bootBook(title)` boots a book's page,
     `follow(hash)` follows a link to another place on the page, and `location.replaced` is where `location.replace` sent it). Tests reach what the
     modules export (`ctx.render()`, `get('CATALOG.books')`, `run(...)`), so export what a test needs; a module's
     own code sees only what it imports, so a missing import fails here. When you add elements or DOM APIs
     to the app, the fake DOM may need extending. The page must fetch nothing but Hardcover (`fakeHardcover`
-    in `tests/fake-hardcover.mjs`, built from Hardcover's published schema; the sandbox can't reach Hardcover), Open Library and Wikidata
-    (`fakeCatalogs` in `tests/fake-catalogs.mjs`, `boot`'s `catalogs`), and your server at a `*.workers.dev` address (`boot`'s `proxy`;
+    in `tests/fake-hardcover.ts`, built from Hardcover's published schema; the sandbox can't reach Hardcover), Open Library and Wikidata
+    (`fakeCatalogs` in `tests/fake-catalogs.ts`, `boot`'s `catalogs`), and your server at a `*.workers.dev` address (`boot`'s `proxy`;
     the server tests put the real `handle` there; `fakeProxyCatalogs` answers its Audible and AudiobookDB routes, and `fakeAudiobookdb` (`audiobookdbState`) is AudiobookDB behind the real Worker, with your account and shelves).; covers are `<img>`s, which the fake DOM never loads.
 
 ## Data model (short form; full table in `docs/data-format.md`)
