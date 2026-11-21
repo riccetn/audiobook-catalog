@@ -1,10 +1,10 @@
 // Browser smoke tests: authors, narrators and publishers, spelling, pages that hold only what they show, links,
-// Fill in from other catalogs, and places. The pages run in Node against a fake DOM (boot() in smoke.mjs).
+// Fill in from other catalogs, and places. The pages run in Node against a fake DOM (boot() in smoke.ts).
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fakeHardcover, hardcoverState} from './fake-hardcover.mjs';
-import {fakeCatalogs} from './fake-catalogs.mjs';
+import {fakeHardcover, hardcoverState} from './fake-hardcover.ts';
+import {fakeCatalogs} from './fake-catalogs.ts';
 import {
 	ALL_PAGES,
 	PAGE_HASH,
@@ -22,7 +22,7 @@ import {
 	saveEdit,
 	seriesIdOf,
 	typeIn,
-} from './smoke.mjs';
+} from './smoke.ts';
 
 // ------------------------------------------------------------------ the authors page
 test('the authors page lists every author, with their books and series, and a search narrows it', async () => {
@@ -152,7 +152,7 @@ test("an author's page shows their bio, their links, and their series and titles
 // ------------------------------------------------------------------ the narrators and publishers pages
 test('the narrators page lists every narrator of the editions, with their bio or the authors they read, and a search narrows it', async () => {
 	const {ctx, els, readable} = await boot({page: 'narrators.html'});
-	const narrators = new Set(demoBooks.flatMap(b => (b.e || []).flatMap(ed => ed.n || [])));
+	const narrators = new Set(demoBooks.flatMap(b => (b.e || []).flatMap((ed: any) => ed.n || [])));
 	assert.equal(ctx.document.title, 'Narrators · Audiobook Catalog');
 	assert.equal((readable(els.creditBody.innerHTML).match(/class="srow-title"/g) || []).length, narrators.size);
 	assert.match(
@@ -289,7 +289,7 @@ test('the narrators on a book card, and the publishers in its details, link to t
 });
 test("author info can be added, edited and removed on the author's page, and links are checked", async () => {
 	const {els, get, storage} = await boot({page: 'author.html', hash: '#a=Wendell+Ashcombe'});
-	const editClick = () => els.creditBody.querySelector('.aedit').listeners.click[0]();
+	const editClick = () => els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	const submit = () => els.creditForm.listeners.submit[0]({preventDefault() {}});
 	// Edit comes after their books, not by their name
 	assert.match(
@@ -374,11 +374,11 @@ test("author info can be added, edited and removed on the author's page, and lin
 });
 test("a Hardcover address in the series or info form is looked up for its number, and kept as it is when Hardcover can't be asked", async () => {
 	const hc = fakeHardcover(hardcoverState());
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	}; // the pause between requests
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const {els, get} = await boot({
 		page: 'author.html',
 		hash: '#a=Wendell+Ashcombe',
@@ -386,7 +386,7 @@ test("a Hardcover address in the series or info form is looked up for its number
 		setTimeout,
 		storage,
 	});
-	const edit = () => els.creditBody.querySelector('.aedit').listeners.click[0]();
+	const edit = () => els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	const submit = () => els.creditForm.listeners.submit[0]({preventDefault() {}});
 	edit();
 	els.cf_ext_hardcover.value = 'https://hardcover.app/authors/wendell-ashcombe/books';
@@ -400,7 +400,7 @@ test("a Hardcover address in the series or info form is looked up for its number
 		els.creditBody.innerHTML,
 		/<a class="authorlink" href="https:\/\/hardcover\.app\/id\/author\/4101" target="_blank" rel="noopener">Hardcover ↗<\/a>/,
 	);
-	assert.deepEqual(hc.sent.at(-1).variables, {slug: 'wendell-ashcombe'});
+	assert.deepEqual(hc.sent.at(-1)!.variables, {slug: 'wendell-ashcombe'});
 
 	// as soon as the field is left; one merged into another is that one
 	edit();
@@ -455,7 +455,7 @@ test("a Hardcover address in the series or info form is looked up for its number
 		setTimeout,
 		storage,
 	});
-	pub.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	pub.els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await idle();
 	assert.equal(
 		pub.els.cf_ext_hardcover.value,
@@ -475,7 +475,7 @@ test('an author can be renamed from their form, on every book, keeping their id;
 	const authorId = databaseOf(storage)
 		.records('contributors')
 		.find(c => c.name === 'Wendell Ashcombe').id;
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	assert.equal(els.cf_name.value, 'Wendell Ashcombe');
 	// an author's name can't be read as several
 	els.cf_name.value = 'Ashcombe, Wendell';
@@ -492,8 +492,8 @@ test('an author can be renamed from their form, on every book, keeping their id;
 	assert.equal(ctx.location.hash, `#a=${authorId}`, 'the address names them by id, not by the old name');
 	assert.match(els.creditBody.innerHTML, /<h2 class="author-name">Wendell P\. Ashcombe<\/h2>/);
 	const saved = await kept(storage);
-	assert.equal(saved.books.filter(b => b.a.includes('Wendell P. Ashcombe')).length, count);
-	assert.ok(!saved.books.some(b => b.a.includes('Wendell Ashcombe')));
+	assert.equal(saved.books.filter((b: any) => b.a.includes('Wendell P. Ashcombe')).length, count);
+	assert.ok(!saved.books.some((b: any) => b.a.includes('Wendell Ashcombe')));
 	assert.deepEqual(
 		databaseOf(storage)
 			.records('contributors')
@@ -507,13 +507,15 @@ test('an author can be renamed from their form, on every book, keeping their id;
 	const both = demoBooks.filter(
 		b =>
 			!/^\d+-\d+$/.test(b.sn || '') &&
-			(b.e || []).some(ed => (ed.n || []).some(n => n === 'Dana Whitlock' || n === 'Ingrid Voss')),
+			(b.e || []).some((ed: any) =>
+				(ed.n || []).some((n: string) => n === 'Dana Whitlock' || n === 'Ingrid Voss'),
+			),
 	).length;
 	const narrator = await boot({page: 'narrator.html', hash: '#n=Dana+Whitlock', storage});
 	const ingrid = databaseOf(storage)
 		.records('contributors')
 		.find(c => c.name === 'Ingrid Voss').id;
-	narrator.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	narrator.els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	narrator.els.cf_name.value = 'Ingrid Voss';
 	narrator.els.cf_bio.value = 'Reads everything.';
 	await narrator.els.creditForm.listeners.submit[0]({preventDefault() {}});
@@ -536,7 +538,7 @@ test('an author can be renamed from their form, on every book, keeping their id;
 	});
 	assert.match(narrator.els.subtitle.textContent, new RegExp(`^${both} audiobooks`));
 	const joined = await kept(storage);
-	assert.ok(!joined.books.some(b => (b.e || []).some(ed => (ed.n || []).includes('Dana Whitlock'))));
+	assert.ok(!joined.books.some((b: any) => (b.e || []).some((ed: any) => (ed.n || []).includes('Dana Whitlock'))));
 	assert.deepEqual(
 		databaseOf(storage)
 			.records('contributors')
@@ -555,7 +557,7 @@ test('a narrator or publisher can be edited on their page, with links checked, a
 	const {els, get, storage} = await boot({page: 'narrator.html', hash: '#n=Tobias+Frane'});
 	const submit = () => els.creditForm.listeners.submit[0]({preventDefault() {}});
 	assert.match(els.creditBody.innerHTML, /No bio or links yet/);
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await idle();
 	assert.equal(els.creditFormTitle.textContent, 'Edit narrator: Tobias Frane');
 	assert.equal(els.creditSaveBtn.textContent, 'Save narrator');
@@ -580,9 +582,9 @@ test('a narrator or publisher can be edited on their page, with links checked, a
 	assert.equal(els.ioStatus.textContent, 'Saved Tobias Frane.');
 
 	// Remove narrator warns first, then takes them off the editions they read
-	const read = demoBooks.filter(b => (b.e || []).some(ed => (ed.n || []).includes('Tobias Frane'))).length;
+	const read = demoBooks.filter(b => (b.e || []).some((ed: any) => (ed.n || []).includes('Tobias Frane'))).length;
 	assert.ok(read > 0);
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await idle();
 	els.creditRemoveBtn.listeners.click[0]();
 	assert.equal(
@@ -595,7 +597,7 @@ test('a narrator or publisher can be edited on their page, with links checked, a
 	assert.match(els.creditBody.innerHTML, /Tobias Frane was removed\. <a href="narrators\.html">All narrators<\/a>/);
 	const saved = await kept(storage);
 	assert.equal(saved.books.length, demoBooks.length);
-	assert.ok(!saved.books.some(b => (b.e || []).some(ed => (ed.n || []).includes('Tobias Frane'))));
+	assert.ok(!saved.books.some((b: any) => (b.e || []).some((ed: any) => (ed.n || []).includes('Tobias Frane'))));
 	assert.equal('Tobias Frane' in saved.narrators, false);
 	assert.ok(
 		!databaseOf(storage)
@@ -734,7 +736,7 @@ test('the Edit and credit pages respell their notes and confirmations, but never
 	// Remove narrator
 	const narrator = await boot({...options, page: 'narrator.html', hash: '#n=Catalog+Reed', storage: edit.storage});
 	await idle();
-	narrator.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	narrator.els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await idle();
 	narrator.els.creditRemoveBtn.listeners.click[0]();
 	assert.equal(
@@ -749,7 +751,7 @@ test("a module's messages are respelled for a British browser, but the titles in
 	state.books[90] = {id: 90, title: 'Catalog Days', contributions: []};
 	state.shelf.push({id: 3, book_id: 90, status_id: 3, user_book_reads: []});
 	const hc = fakeHardcover(state);
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
@@ -759,7 +761,7 @@ test("a module's messages are respelled for a British browser, but the titles in
 		files: {'books.json': mine},
 		hardcover: hc.fetch,
 		setTimeout,
-		storage: new Map([['audiobook-catalog-hardcover-token', 'tok-123']]),
+		storage: new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]),
 	});
 	// Check's warning names the book by its title, as it is
 	els.checkBtn.listeners.click[0]();
@@ -784,8 +786,8 @@ const SAGAS = JSON.stringify([
 	...['1', '2', '3', '4', '5'].map(n => ({t: `Fern ${n}`, a: ['Bo Reed'], s: 'Fern Saga', sn: n})),
 ]);
 // A browser that has the catalog in IndexedDB already, and a page booted on it that has read nothing yet.
-async function movedIn(files, options = {}) {
-	const storage = new Map();
+async function movedIn(files: any, options = {}) {
+	const storage = new Map<string, string>();
 	await boot({storage, files});
 	await kept(storage);
 	databaseOf(storage).resetReads();
@@ -814,14 +816,14 @@ test('links to authors, narrators and publishers carry the id they are stored un
 		{t: 'Fern 1', a: ['Bo Reed'], s: 'Fern Saga', sn: '1'},
 	]);
 	// read as they are, not with readable(): it names an id the page made up as well
-	const linked = (html, key) =>
+	const linked = (html: string, key: string) =>
 		[...html.matchAll(new RegExp(`#${key}=([^"&]+)">([^<]+)</a>`, 'g'))].map(([, id, name]) => [
 			decodeURIComponent(id),
 			name,
 		]);
 	const overview = await movedIn({'books.json': books});
 	await idle();
-	const stored = kind =>
+	const stored = (kind: string) =>
 		overview.database
 			.records('contributors')
 			.filter(c => c.kind === kind)
@@ -852,7 +854,7 @@ test('all books shows 50 at a time, and Show more reads the next ones', async ()
 	assert.equal(els.resultCount.textContent, '50 of 60 shown');
 	assert.equal(get('CATALOG.books.length'), 50, 'the page holds only the books it shows');
 	assert.equal(database.reads('books'), 50);
-	const more = els.results.querySelector('#showMore');
+	const more = els.results.querySelector('#showMore')!;
 	assert.equal(more.textContent, 'Show 10 more');
 	more.dispatch('click');
 	await idle();
@@ -875,12 +877,13 @@ test('an edit on a page that holds some books keeps every other record, and the 
 	const books = (await kept(storage)).books;
 	assert.equal(books.length, 8);
 	assert.deepEqual(
-		books.find(b => b.t === 'Fern 4'),
+		books.find((b: any) => b.t === 'Fern 4'),
 		{t: 'Fern 4', a: ['Bo Reed'], s: 'Fern Saga', sn: '4'},
 		'a book the page never read',
 	);
-	assert.deepEqual(books.find(b => b.t === 'Gull 3').s, 'Fern Saga');
-	const count = store => Object.fromEntries(database.records(store).map(x => [x.name, [x.bookCount, x.seriesCount]]));
+	assert.deepEqual(books.find((b: any) => b.t === 'Gull 3').s, 'Fern Saga');
+	const count = (store: any) =>
+		Object.fromEntries(database.records(store).map(x => [x.name, [x.bookCount, x.seriesCount]]));
 	assert.deepEqual(count('series'), {'Fern Saga': [6, undefined], 'Gull Isle': [2, undefined]});
 	assert.deepEqual(count('contributors'), {'Ann Vale': [3, 2], 'Bo Reed': [5, 1], 'Cy Hale': [3, 2]});
 	assert.equal(database.records('credits').length, 8 + 3);
@@ -1007,7 +1010,7 @@ test("the Edit series page edits each book's fields and editions in place, and s
 			},
 		]),
 	};
-	const session = new Map();
+	const session = new Map<string, string>();
 	const edit = await bootEdit('Fern Saga', {files, session});
 	const {els, get, storage} = edit;
 	assert.deepEqual(get('DRAFTS.map(d => d.book.title)'), ['Fern 1', 'Fern 2']);
@@ -1126,7 +1129,7 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	assert.equal(session.has('audiobook-catalog-status'), false);
 	const saved = await kept(storage);
 	assert.deepEqual(
-		saved.books.map(b => [b.t, b.e.map(x => x.ext || x.isbn)]),
+		saved.books.map((b: any) => [b.t, b.e.map((x: any) => x.ext || x.isbn)]),
 		[
 			['Fern One', [{'audible.com': 'B0FERN0001'}, '9780000000002']],
 			['Fern 2', [{'audible.com': 'B0FERN0002'}]],
@@ -1139,7 +1142,7 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	io.els.exclusionsBtn.listeners.click[0]();
 	await idle();
 	assert.match(io.els.exclusionsList.innerHTML, /<span>Edition B0FERN0003<\/span>/);
-	io.els.exclusionsList.querySelector('.removeExclusion').listeners.click[0]();
+	io.els.exclusionsList.querySelector('.removeExclusion')!.listeners.click[0]();
 	await idle();
 	assert.equal(io.els.ioStatus.textContent.startsWith('Imports may add Edition B0FERN0003 again.'), true);
 	assert.match(io.els.exclusionsList.innerHTML, /no book or edition is excluded/);
@@ -1257,7 +1260,7 @@ test("links: a series', a book's and an edition's, edited on the Edit series pag
 });
 test("links: a person's other links, typed in their form beside their website, a catalog's page going to its id", async () => {
 	const {els, get} = await boot({page: 'publisher.html', hash: '#p=Kestrel+Row+Audio'});
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	assert.equal(els.cf_links.value, '');
 	els.cf_links.value = 'gullwing.example/about\nhttps://www.wikidata.org/wiki/Q77\n https://gullwing.example/about ';
 	els.cf_links.dispatch('focusout');
@@ -1269,7 +1272,7 @@ test("links: a person's other links, typed in their form beside their website, a
 	]);
 	assert.equal(get("CATALOG.infoByName('publishers').get('Kestrel Row Audio')").ext.wikidata, 'Q77');
 	assert.match(els.creditBody.innerHTML, /href="https:\/\/gullwing\.example\/about"[^>]*>gullwing\.example ↗<\/a>/);
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	assert.equal(els.cf_links.value, 'https://gullwing.example/about');
 });
 // ------------------------------------------------------------------ Fill in from other catalogs: series and people
@@ -1289,7 +1292,7 @@ test("an author's form is filled in from other catalogs: what they have is offer
 		files: {'books.json': JSON.stringify([LANTERN_KEEPER])},
 		catalogs: catalogs.fetch,
 	});
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	assert.equal(els.cf_fill.innerHTML, '');
 	els.cf_ext_isfdb.value = '77';
 	await ctx.fillCredit();
@@ -1344,7 +1347,7 @@ test("an author's form is filled in from other catalogs: what they have is offer
 		links: ['https://valereaders.example/'],
 	});
 	// asked again, there is nothing more but what was left unticked; Close puts the list away
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await ctx.fillCredit();
 	assert.equal(els['cf_fill-pick-1'], undefined);
 	assert.match(els.cf_fill.innerHTML, /Its id on Goodreads/);
@@ -1362,7 +1365,7 @@ test('a narrator found by name alone is offered unticked, and a catalog that has
 		catalogs: catalogs.fetch,
 	});
 	const {ctx, els, storage} = page;
-	els.creditBody.querySelector('.aedit').listeners.click[0]();
+	els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await ctx.fillCredit();
 	// her book has no id anywhere, so she is found by name: two on each catalog, which may be others
 	assert.equal((els.cf_fill.innerHTML.match(/class="entryAnswer unsure"/g) || []).length, 4);
@@ -1379,7 +1382,7 @@ test('a narrator found by name alone is offered unticked, and a catalog that has
 	await ctx.fillCredit();
 	const bios = [...Array(20).keys()]
 		.map(i => els[`cf_fill-pick-${i}`])
-		.filter(t => t && /Bio: /.test(t.parentNode.textContent));
+		.filter(t => t && /Bio: /.test(t.parentNode!.textContent));
 	assert.equal(bios.length, 2);
 	bios[0].checked = true;
 	bios[1].checked = true;
@@ -1403,7 +1406,7 @@ test('a narrator found by name alone is offered unticked, and a catalog that has
 		files: {'books.json': JSON.stringify([LANTERN_KEEPER])},
 		catalogs: catalogs.fetch,
 	});
-	nobody.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	nobody.els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await nobody.ctx.fillCredit();
 	assert.match(nobody.els.cf_fill.innerHTML, /None of the other catalogs asked has Hollis Marr\./);
 	// offline, it says so and changes nothing
@@ -1412,7 +1415,7 @@ test('a narrator found by name alone is offered unticked, and a catalog that has
 		hash: '#a=Ann+Vale',
 		files: {'books.json': JSON.stringify([LANTERN_KEEPER])},
 	});
-	offline.els.creditBody.querySelector('.aedit').listeners.click[0]();
+	offline.els.creditBody.querySelector('.aedit')!.listeners.click[0]();
 	await offline.ctx.fillCredit();
 	assert.match(
 		offline.els.cf_fill.innerHTML,
@@ -1422,7 +1425,7 @@ test('a narrator found by name alone is offered unticked, and a catalog that has
 });
 test("the Edit page's series panel is filled in from other catalogs, and Review & save lists what was added", async () => {
 	const hc = fakeHardcover(hardcoverState());
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const tidewater = {t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: {hardcover: '77'}};
 	const page = await bootEdit('Gull Isle', {
 		files: {'books.json': JSON.stringify([tidewater])},
@@ -1446,7 +1449,7 @@ test("the Edit page's series panel is filled in from other catalogs, and Review 
 	// Hardcover's are ticked, Wikidata's (found by name) are not
 	const ticks = [0, 1, 2, 3].map(i => els[`sf_fill-pick-${i}`]);
 	assert.deepEqual(
-		ticks.map(t => [t.parentNode.textContent, t.checked]),
+		ticks.map(t => [t.parentNode!.textContent, t.checked]),
 		[
 			['Status: complete', true],
 			['Its id on Hardcover: 3102', true],
@@ -1497,7 +1500,7 @@ test('the places page lists every place as a tree, the places within each below 
 	assert.match(els.addPlace.outerHTML, /<a class="addbtn" id="addPlace" href="place\.html#new">\+ Add a place<\/a>/);
 	assert.equal(els.newPlaceName, undefined);
 	const html = readable(els.placeBody.innerHTML);
-	const row = (name, count) =>
+	const row = (name: string, count: string) =>
 		`<div class="place-row"><div class="srow-head"><span class="place-name"><a class="srow-title" href="place.html#place=${name.replace(/ /g, '+')}">${name}</a></span><span class="srow-owned">${count}</span></div>`;
 	assert.ok(
 		html.startsWith(
@@ -1534,7 +1537,7 @@ test('the places tree counts a book once in a place, however many of the places 
 	const {els, readable} = await boot({page: 'places.html', files});
 	await idle();
 	const html = readable(els.placeBody.innerHTML);
-	const count = name => html.match(new RegExp(`>${name}</a></span><span class="srow-owned">([^<]*)<`))[1];
+	const count = (name: string) => html.match(new RegExp(`>${name}</a></span><span class="srow-owned">([^<]*)<`))![1];
 	assert.equal(count('Emberlands'), '1 book, 2 more within', 'The Tidewright is set there itself');
 	assert.equal(count('Gull Coast'), '1 book, 1 more within');
 	assert.equal(count('Dun Moor'), '2 books');
@@ -1553,8 +1556,8 @@ test('a place part of several shows under each, but the places within it only on
 	const {els, readable} = await boot({page: 'places.html', files});
 	await idle();
 	const html = readable(els.placeBody.innerHTML);
-	assert.equal(html.match(/>Port Wren<\/a>/g).length, 2, 'under the Gull Coast and the Tide Isles');
-	assert.equal(html.match(/>Wren Harbor<\/a>/g).length, 1, 'once, under the first');
+	assert.equal(html.match(/>Port Wren<\/a>/g)!.length, 2, 'under the Gull Coast and the Tide Isles');
+	assert.equal(html.match(/>Wren Harbor<\/a>/g)!.length, 1, 'once, under the first');
 	assert.match(
 		html,
 		/>Port Wren<\/a> <span class="within">\(the places within it are under <a href="place\.html#place=Gull\+Coast">Gull Coast<\/a>\)<\/span>/,
@@ -1601,7 +1604,7 @@ test("a place is edited, renamed and removed on its page, and can't be put withi
 	const {els, storage} = await boot({page: 'place.html', hash: '#place=Gull+Coast', files: SETTING_FILES});
 	await idle();
 	const submit = () => els.placeForm.listeners.submit[0]({preventDefault() {}});
-	els.placeBody.querySelector('.aedit').listeners.click[0]();
+	els.placeBody.querySelector('.aedit')!.listeners.click[0]();
 	assert.ok(els.placeForm.classList.contains('open'));
 	assert.equal(els.placeFormTitle.textContent, 'Edit place: Gull Coast');
 	assert.equal(els.sf_in.value, 'Emberlands');
@@ -1626,7 +1629,7 @@ test("a place is edited, renamed and removed on its page, and can't be put withi
 	assert.equal(stored.places['Gull Coast'], undefined);
 
 	// removing it puts its places in what it was part of
-	els.placeBody.querySelector('.aedit').listeners.click[0]();
+	els.placeBody.querySelector('.aedit')!.listeners.click[0]();
 	els.placeRemoveBtn.listeners.click[0]();
 	assert.match(
 		els.placeFormError.textContent,

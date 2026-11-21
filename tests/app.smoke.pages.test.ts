@@ -1,10 +1,10 @@
 // Browser smoke tests: the pages themselves, browsing the series and books, and a book and its editions on its
-// page and its Edit page. The pages run in Node against a fake DOM (boot() in smoke.mjs).
+// page and its Edit page. The pages run in Node against a fake DOM (boot() in smoke.ts).
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fakeHardcover, hardcoverState} from './fake-hardcover.mjs';
-import {fakeCatalogs, fakeProxyCatalogs} from './fake-catalogs.mjs';
+import {fakeHardcover, hardcoverState} from './fake-hardcover.ts';
+import {fakeCatalogs, fakeProxyCatalogs} from './fake-catalogs.ts';
 import {
 	ALL_PAGES,
 	PAGES,
@@ -30,7 +30,7 @@ import {
 	settle,
 	typeBookId,
 	typeIn,
-} from './smoke.mjs';
+} from './smoke.ts';
 
 const IMPORT_PAGE_ONLY = [
 	'modules/catalog-connectors.js',
@@ -91,7 +91,7 @@ test('opens on the series overview, with a row per series', async () => {
 });
 test('opening a series shows exactly that series, and its books can be added to', async () => {
 	const {ctx, els, get} = await boot();
-	const counts = {};
+	const counts: Record<string, number> = {};
 	demoBooks.forEach(b => b.s && (counts[b.s] = (counts[b.s] || 0) + 1));
 	const [series] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
 	ctx.openSeries(seriesIdOf(get, series));
@@ -124,7 +124,7 @@ test('the books page can be sorted by when they were read or added, newest first
 	const {ctx, els, storage} = await boot({page: 'books.html'});
 	const titles = () =>
 		[...els.results.innerHTML.matchAll(/<div class="title"><a href="[^"]+">([^<]+)<\/a>/g)].map(m => m[1]);
-	const latest = b => (b.r || []).slice().sort().pop() || '';
+	const latest = (b: any) => (b.r || []).slice().sort().pop() || '';
 	const byRead = [...demoBooks].filter(b => latest(b)).sort((x, y) => latest(y).localeCompare(latest(x)));
 
 	els.sortBy.value = 'read';
@@ -318,7 +318,7 @@ test('back and forward step through series, searches and filters, and books', as
 	}
 	await idle();
 	assert.deepEqual(
-		history.entries.map(e => e.hash),
+		history.entries.map((e: any) => e.hash),
 		['', '#q=coast'],
 	);
 	assert.equal((els.results.innerHTML.match(/class="srow-title"/g) || []).length, 1);
@@ -338,7 +338,7 @@ test('back and forward step through series, searches and filters, and books', as
 	}
 	await idle();
 	assert.deepEqual(
-		books.ctx.history.entries.map(e => e.hash),
+		books.ctx.history.entries.map((e: any) => e.hash),
 		['', '#genre=Mystery', '#q=priya&genre=Mystery'],
 	);
 	books.ctx.history.back();
@@ -365,7 +365,7 @@ test('back and forward step through series, searches and filters, and books', as
 	b.q.listeners.input[0]();
 	await idle();
 	assert.deepEqual(
-		books.ctx.history.entries.map(e => e.hash),
+		books.ctx.history.entries.map((e: any) => e.hash),
 		['', '#q=salt'],
 	);
 
@@ -477,7 +477,7 @@ test("the Edit page's author, series, narrator and publisher fields offer the na
 	const {ctx, els, get, run} = edit;
 	await ctx.loadFormNames();
 	assert.deepEqual(get('FORM_NAMES.publisher').sort(), ['Gullwing Audio', 'Harbourlight Sound', 'Kestrel Row Audio']);
-	const options = list => [...list.innerHTML.matchAll(/<li [^>]*>([^<]*)<\/li>/g)].map(m => m[1]);
+	const options = (list: any) => [...list.innerHTML.matchAll(/<li [^>]*>([^<]*)<\/li>/g)].map(m => m[1]);
 	// the authors: the name the cursor is in is looked up, leaving out the ones the field has
 	assert.equal(els.b0_a.getAttribute('role'), 'combobox');
 	assert.equal(els.b0_a.value, 'Marisol Quenby');
@@ -614,7 +614,7 @@ test("a book edited on its Edit page keeps its id, and so do its editions, a box
 	const {els, withIds, database, saved} = edit;
 	const before = withIds('CATALOG.books');
 	assert.deepEqual(
-		before.map(b => b.t),
+		before.map((b: any) => b.t),
 		['Tidewater', 'Gull Light'],
 		"the other book of the box set's edition is loaded with it",
 	);
@@ -630,8 +630,8 @@ test("a book edited on its Edit page keeps its id, and so do its editions, a box
 	const after = withIds('CATALOG.books');
 	assert.equal(after[0].t, 'Tidewater Rising');
 	assert.deepEqual(
-		after.map(b => [b.uid, b.e.map(ed => ed.uid)]),
-		before.map(b => [b.uid, b.e.map(ed => ed.uid)]),
+		after.map((b: any) => [b.uid, b.e.map((ed: any) => ed.uid)]),
+		before.map((b: any) => [b.uid, b.e.map((ed: any) => ed.uid)]),
 	);
 	assert.deepEqual(after[1].e[0].p, ['Gull Audio'], 'the edit reached the other title');
 	const records = database.records('editions');
@@ -660,7 +660,7 @@ test("an edition's card on the Edit page has a field for each site it has an ASI
 	// the sites in use have a field; another is added by its address (or id and site) in Another id
 	assert.equal(els['b0e0_ext-audible.com'].value, 'TESTASIN01');
 	assert.equal(els['b0e0_ext-amazon.co.uk'].value, 'TESTASIN02');
-	assert.equal(els['b0e0_ext-amazon.com'], undefined);
+	assert.equal(els['b0e0_ext-amazon.com']?.id, undefined);
 	typeIn(els, 'b0e0_more', 'https://www.amazon.com/dp/TESTASIN03?ref=x');
 	assert.equal(els['b0e0_ext-amazon.com'].value, 'TESTASIN03');
 	els['b0e1_more-catalog'].value = 'audible.com';
@@ -687,7 +687,7 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	await idle();
 	const card = readable(els.results.innerHTML).match(
 		/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="read">[^<]*<\/div><\/div><\/div>/,
-	)[0];
+	)![0];
 	// its cover from its first ASIN, hidden until it loads
 	assert.match(
 		card,
@@ -726,12 +726,12 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	);
 });
 test('a cover tries the next address when one fails or is blank, and can be turned off', async () => {
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const {els, run} = await bootBook(SALT_ROAD, {storage});
 	run(
 		"CATALOG.books[0].editions = [{ext: { 'audible.com': 'B0COVER001' }, isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist(); render()",
 	);
-	const cover = () => els.results.querySelector('.cover');
+	const cover = () => els.results.querySelector('.cover')!;
 	assert.equal(cover().getAttribute('src'), 'https://m.media-amazon.com/images/P/B0COVER001.01.LZZZZZZZ.jpg');
 	// Amazon answers with a blank picture: Open Library is asked next
 	Object.assign(cover(), {naturalWidth: 1, naturalHeight: 1}).dispatch('load');
@@ -797,20 +797,20 @@ test('an edition added on the Edit page takes its place by release date, earlies
 	typeIn(els, 'b0e3_p', 'Early Audio');
 	typeIn(els, 'b0e3_d', '2018-01');
 	assert.equal(await saveEdit(edit), true);
-	const stored = (await kept(edit.storage)).books.find(b => b.t === SALT_ROAD);
+	const stored = (await kept(edit.storage)).books.find((b: any) => b.t === SALT_ROAD);
 	assert.deepEqual(
-		stored.e.map(ed => ed.p[0]),
+		stored.e.map((ed: any) => ed.p[0]),
 		['Early Audio', 'Gullwing Audio', 'Harbourlight Sound', 'Undated Audio'],
 	);
 });
 test("a book's Hardcover field takes the address of a book or edition on Hardcover, and looks up its id", async () => {
 	// the page asks Hardcover, with the token saved in this browser
 	const hc = fakeHardcover(hardcoverState());
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	}; // the pause between requests
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const edit = await bootEditBook(SALT_ROAD, {hardcover: hc.fetch, setTimeout, storage});
 	const {els, get} = edit;
 	await typeBookId(els, 'hardcover', 'https://hardcover.app/books/tidewater');
@@ -889,12 +889,12 @@ test('adding a book: the Edit page for a new book, which then opens its page', a
 });
 test('with a catalog proxy saved, a new book is filled in from Audible and AudiobookDB through it, with its key', async () => {
 	const behind = fakeProxyCatalogs();
-	const asked = [];
-	const proxy = async (url, init) => {
+	const asked: {url: string; key: string}[] = [];
+	const proxy = async (url: string, init: any) => {
 		asked.push({url, key: init.headers['X-Server-Key']});
 		return behind.route(url.replace('https://catalog-proxy.example.workers.dev/proxy/', ''));
 	};
-	const storage = new Map([
+	const storage = new Map<string, string>([
 		[
 			'audiobook-catalog-proxy',
 			JSON.stringify({url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'}),
@@ -983,7 +983,7 @@ test('with a catalog proxy saved, a new book is filled in from Audible and Audio
 });
 test('a new book is filled in from another catalog: only its empty fields, and the edition', async () => {
 	const catalogs = fakeCatalogs();
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const page = await bootAdd('', {catalogs: catalogs.fetch, storage});
 	const {ctx, els, get} = page;
 	// what was typed stays
@@ -1056,7 +1056,7 @@ test('a new book is filled in from another catalog: only its empty fields, and t
 	assert.match(searched.els.ioStatus.textContent, /^Filled in from Open Library: title, authors/);
 	// saved, the book has it all
 	assert.equal(await saveEdit(page), true);
-	const added = (await kept(storage)).books.find(b => b.t === 'My Own Title');
+	const added = (await kept(storage)).books.find((b: any) => b.t === 'My Own Title');
 	assert.deepEqual(added.ext, {
 		goodreads: '7171',
 		openlibrary: 'OL900W',
@@ -1067,11 +1067,11 @@ test('a new book is filled in from another catalog: only its empty fields, and t
 });
 test("a book fills in from Hardcover with the token saved, by an Audible page's ASIN", async () => {
 	const hc = fakeHardcover(hardcoverState());
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const {ctx, els, get} = await bootAdd('', {
 		hardcover: hc.fetch,
 		catalogs: fakeCatalogs().fetch,
@@ -1102,21 +1102,21 @@ test('a new book starts with the series it is added to and the author picked', a
 	const orchard = seriesIdOf(get, 'The Orchard Cycle');
 	ctx.openSeries(orchard);
 	await idle();
-	const form = async href => {
+	const form = async (href: string) => {
 		assert.match(href, /^edit\.html#add/);
 		const page = await bootAdd(href.slice('edit.html#add'.length), {storage});
 		return [page.els.b0_s.value, page.els.b0_a.value];
 	};
 	// a series: its name, and the authors of all its books
-	assert.deepEqual(await form(els.toggleAdd.getAttribute('href')), ['The Orchard Cycle', 'Wendell Ashcombe']);
+	assert.deepEqual(await form(els.toggleAdd.getAttribute('href') ?? ''), ['The Orchard Cycle', 'Wendell Ashcombe']);
 	// all books: nothing, unless an author is picked
 	const books = await boot({page: 'books.html', storage});
-	assert.deepEqual(await form(books.els.toggleAdd.getAttribute('href')), ['', '']);
+	assert.deepEqual(await form(books.els.toggleAdd.getAttribute('href') ?? ''), ['', '']);
 	books.els.authorFilter.value = 'Priya Ostrander';
 	books.els.authorFilter.listeners.change[0]();
 	await idle();
 	assert.equal(books.els.toggleAdd.getAttribute('href'), 'edit.html#add&author=Priya+Ostrander');
-	assert.deepEqual(await form(books.els.toggleAdd.getAttribute('href')), ['', 'Priya Ostrander']);
+	assert.deepEqual(await form(books.els.toggleAdd.getAttribute('href') ?? ''), ['', 'Priya Ostrander']);
 });
 test("an edition's page pasted in Another id, or in its id field, becomes its id", async () => {
 	const {els, get} = await bootAdd();
@@ -1167,7 +1167,7 @@ test('dates read: shown on the card, edited on its Edit page, and filterable by 
 	els.readFilter.value = '2025';
 	await ctx.refreshView();
 	await idle();
-	const inYear = demoBooks.filter(b => (b.r || []).some(d => d.startsWith('2025')));
+	const inYear = demoBooks.filter(b => (b.r || []).some((d: any) => d.startsWith('2025')));
 	assert.equal(cards(els.results.innerHTML), inYear.length);
 	els.readFilter.value = '__undated__';
 	await ctx.refreshView();
@@ -1175,7 +1175,7 @@ test('dates read: shown on the card, edited on its Edit page, and filterable by 
 	assert.equal(cards(els.results.innerHTML), demoBooks.filter(b => !b.r).length);
 
 	// edit: the Edit page shows the dates; they are tidied, sorted and de-duplicated
-	const stored = () => kept(storage).then(k => k.books.find(b => b.t === dated.t));
+	const stored = () => kept(storage).then(k => k.books.find((b: any) => b.t === dated.t));
 	const edit = await bootEditBook(dated.t, {storage});
 	assert.equal(edit.els.b0_r.value, dated.r.join(', '));
 	typeIn(edit.els, 'b0_r', '2026/9/1, 2021, 2026-09-01');
@@ -1278,7 +1278,7 @@ test("ISBNs: shown in a book's details, searchable however typed, edited on its 
 	typeIn(edit.els, 'b0e0_isbn', '9780306406157, 978-0-00-000000-2');
 	assert.deepEqual(draftEditions(edit.get), [{isbn: '9780306406157'}, {isbn: '9780000000002'}]);
 	assert.equal(await saveEdit(edit), true);
-	const stored = async title => (await kept(storage)).books.find(b => b.t === title);
+	const stored = async (title: string) => (await kept(storage)).books.find((b: any) => b.t === title);
 	assert.deepEqual((await stored('Boxed One')).e, [{isbn: '9780306406157'}, {isbn: '9780000000002'}]);
 
 	// the same ISBN may go on another book (a boxed set); its details then say so
@@ -1313,7 +1313,7 @@ test("narrators and descriptions live on editions: the card names the narrators,
 	const {els, readable, storage} = await boot({page: 'books.html'});
 	const salt = demoBooks.find(b => b.t === 'The Salt Road');
 	assert.ok(
-		salt.e.some(ed => ed.desc),
+		salt.e.some((ed: any) => ed.desc),
 		'the demo data has an edition with a description',
 	);
 	// both narrators on the book; with different narrators each edition names its own
@@ -1398,7 +1398,9 @@ test('box sets: the edition shows on each of its books, and editing it on one ed
 	typeIn(edit.els, 'b0e0_p', 'Merlin Lane Audio');
 	assert.equal(await saveEdit(edit), true);
 	assert.match(edit.els.ioStatus.textContent, /updated the shared edition on 2 other books/);
-	assert.deepEqual((await kept(storage)).books.find(b => b.t === 'Harvest of Gears').e[0].p, ['Merlin Lane Audio']);
+	assert.deepEqual((await kept(storage)).books.find((b: any) => b.t === 'Harvest of Gears').e[0].p, [
+		'Merlin Lane Audio',
+	]);
 });
 test('a Goodreads import adds the ISBN to the edition of books already there', async () => {
 	const mine = JSON.stringify([{t: 'Old Favorite', a: ['Ann Vale'], e: [{ext: {'audible.com': 'B1'}}], r: ['2020']}]);
@@ -1422,7 +1424,7 @@ test('a Goodreads import adds the ISBN to the edition of books already there', a
 		/Different in both \(1\)<\/h4>.*data-pick="patch:0:r"> Dates read: <span class="cmpHere">2020<\/span> here, <span class="cmpThere">2023-11-04<\/span> on Goodreads/,
 	);
 	assert.equal(els.importConfirm.style.display, 'none', 'nothing ticked');
-	const edition = els.importPreviewBody.querySelector('input[data-pick="editions:0"]');
+	const edition = els.importPreviewBody.querySelector('input[data-pick="editions:0"]')!;
 	edition.checked = true;
 	edition.dispatch('change');
 	assert.equal(els.importConfirm.textContent, 'Apply 1 change');
@@ -1453,7 +1455,10 @@ test('authors are lists: the author filter offers each author on its own, and it
 	assert.equal(edit.els.b0_a.value, 'Ferran Doyle, Priya Ostrander');
 	typeIn(edit.els, 'b0_a', 'Ferran Doyle & Cass Merriweather');
 	assert.equal(await saveEdit(edit), true);
-	assert.deepEqual((await kept(storage)).books.find(b => b.t === nine.t).a, ['Ferran Doyle', 'Cass Merriweather']);
+	assert.deepEqual((await kept(storage)).books.find((b: any) => b.t === nine.t).a, [
+		'Ferran Doyle',
+		'Cass Merriweather',
+	]);
 
 	// authors and narrators written as comma separated text, from before, load as lists
 	const mine = JSON.stringify([

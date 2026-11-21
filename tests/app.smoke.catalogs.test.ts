@@ -1,17 +1,18 @@
 // Browser smoke tests: installing the app, the other catalogs (Hardcover, AudiobookDB, Audible), your server
-// and syncing devices. The pages run in Node against a fake DOM (boot() in smoke.mjs).
+// and syncing devices. The pages run in Node against a fake DOM (boot() in smoke.ts).
 // Run with:  make test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import {fakeHardcover, hardcoverState} from './fake-hardcover.mjs';
-import {audiobookdbState, fakeAudiobookdb, fakeProxyCatalogs} from './fake-catalogs.mjs';
+import {fakeHardcover, hardcoverState} from './fake-hardcover.ts';
+import {audiobookdbState, fakeAudiobookdb, fakeProxyCatalogs} from './fake-catalogs.ts';
 import {handle as handleServer} from '../server/worker.ts';
+import type {Env} from '../server/worker.ts';
 import {sqliteD1} from '../server/sqlite-d1.ts';
 import {DatabaseSync} from 'node:sqlite';
-import {Book} from '../public/modules/book.js';
-import {Duplicates} from '../public/modules/duplicates.js';
+import {Book} from '#app/modules/book.js';
+import {Duplicates} from '#app/modules/duplicates.js';
 import {
 	ALL_PAGES,
 	DEMO,
@@ -28,17 +29,20 @@ import {
 	root,
 	saveEdit,
 	site,
-} from './smoke.mjs';
+} from './smoke.ts';
 
 test("the app can be installed: the manifest's icons exist, and the service worker caches every page and module, and nothing else", () => {
 	const manifest = JSON.parse(read('manifest.webmanifest'));
 	for (const icon of manifest.icons) assert.ok(fs.existsSync(path.join(site, icon.src)), icon.src);
-	assert.ok(manifest.icons.some(i => i.sizes === '512x512') && manifest.icons.some(i => i.sizes === '192x192'));
+	assert.ok(
+		manifest.icons.some((i: any) => i.sizes === '512x512') &&
+			manifest.icons.some((i: any) => i.sizes === '192x192'),
+	);
 	// make pages writes the list sw.js caches (sw-app.js) from what public/ holds.
-	const cached = JSON.parse(read('sw-app.js').match(/self\.APP_FILES = (\[.*\]);/)[1]);
-	for (const file of cached.filter(f => f !== './')) assert.ok(fs.existsSync(path.join(site, file)), file);
+	const cached = JSON.parse(read('sw-app.js').match(/self\.APP_FILES = (\[.*\]);/)![1]);
+	for (const file of cached.filter((f: any) => f !== './')) assert.ok(fs.existsSync(path.join(site, file)), file);
 	/** What the pages use: themselves, the modules they import, and what their <head> and the manifest name. */
-	const used = new Set(['manifest.webmanifest', ...manifest.icons.map(i => i.src)]);
+	const used = new Set(['manifest.webmanifest', ...manifest.icons.map((i: any) => i.src)]);
 	for (const page of ALL_PAGES) {
 		const html = read(page);
 		assert.ok(html.includes('<link rel="manifest" href="manifest.webmanifest">'), page);
@@ -48,7 +52,7 @@ test("the app can be installed: the manifest's icons exist, and the service work
 	}
 	for (const file of used) assert.ok(cached.includes(file), `sw.js caches ${file}`);
 	// public/ is what gets served, so it holds the app and nothing else (no catalog files, no notes).
-	for (const file of cached.filter(f => f !== './'))
+	for (const file of cached.filter((f: any) => f !== './'))
 		assert.ok(used.has(file), `public/${file} is served and cached, but no page uses it`);
 });
 test('every page is written from its template, with the shared nav bar marking where it is', () => {
@@ -75,7 +79,7 @@ test('"Not duplicates" marks are kept in this browser and travel in backups', as
 		{t: 'Salt Road', a: ['Marisol Quenby']},
 		{t: 'Salt Road, Book 1', a: ['Marisol Quenby']},
 	];
-	const pairKey = (x, y) => Duplicates.pairKey(Book.fromJSON(books[x]), Book.fromJSON(books[y]));
+	const pairKey = (x: any, y: any) => Duplicates.pairKey(Book.fromJSON(books[x]), Book.fromJSON(books[y]));
 	const ledger = pairKey(0, 1);
 	const files = {'books.json': JSON.stringify(books), 'not-duplicates.txt': '# header\n' + ledger + '\n'};
 	const {ctx, get, run, els, storage} = await boot({page: 'duplicates.html', files});
@@ -100,9 +104,9 @@ test('"Not duplicates" marks are kept in this browser and travel in backups', as
 
 	// Export carries every mark; Restore elsewhere brings them back
 	const imp = await boot({page: 'import.html', files: {...files, 'not-duplicates.txt': ledger}});
-	const blobs = [];
+	const blobs: string[] = [];
 	imp.ctx.Blob = class {
-		constructor(parts) {
+		constructor(parts: any) {
 			blobs.push(parts.join(''));
 		}
 	};
@@ -121,7 +125,7 @@ test('"Not duplicates" marks are kept in this browser and travel in backups', as
 	await idle();
 	assert.deepEqual(
 		copy.get('[...CATALOG.marks.values()]'),
-		Object.entries(exported.marks).map(([id, m]) => ({id, ...m})),
+		Object.entries<any>(exported.marks).map(([id, m]) => ({id, ...m})),
 	);
 	assert.deepEqual(copy.get('CATALOG.markTexts()'), [ledger]);
 	const backup = {books, seriesInfo: {}, notDuplicates: [ledger, pairKey(2, 3)]};
@@ -193,8 +197,8 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 	];
 	const state = hardcoverState();
 	const hc = fakeHardcover(state);
-	let leaving = null; // what leaving the page while it sends would do
-	const hardcover = async (url, init) => {
+	let leaving: any = null; // what leaving the page while it sends would do
+	const hardcover = async (url: string, init: any) => {
 		if (JSON.parse(init.body).query.startsWith('mutation') && !leaving) {
 			leaving = {
 				preventDefault() {
@@ -205,7 +209,7 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 		}
 		return hc.fetch(url, init);
 	};
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	}; // the pause between requests
@@ -252,7 +256,7 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 	assert.equal(els.importConfirm.textContent, 'Apply 2 changes');
 	assert.equal(get('CATALOG.books.length'), 1);
 	assert.equal(state.shelf.length, 2);
-	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]');
+	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]')!;
 	add.checked = true;
 	add.dispatch('change');
 	assert.equal(els.importConfirm.textContent, 'Apply 3 changes');
@@ -262,7 +266,7 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 	await idle();
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Lantern Hours', 'Tidewater']);
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => b.t),
+		(await kept(storage)).books.map((b: any) => b.t),
 		['Lantern Hours', 'Tidewater'],
 	);
 	assert.equal(get("CATALOG.books[0].idOn('hardcover')"), '80', 'the Hardcover ids found are kept');
@@ -274,7 +278,7 @@ test('the page compares the catalog with Hardcover itself, with a token kept in 
 		user_book_reads: [{finished_at: '2024-05-01', edition_id: 801}],
 	});
 	assert.ok(leaving.prevented, 'leaving while it sends is asked about');
-	const after = {
+	const after: {preventDefault(): void; prevented?: boolean} = {
 		preventDefault() {
 			this.prevented = true;
 		},
@@ -298,11 +302,11 @@ test('a Hardcover comparison flags print books and ebooks, yours and on your she
 	const state = hardcoverState();
 	state.editions[821] = {id: 821, book_id: 80, asin: 'B0LANTERNK', reading_format_id: 4, contributions: []};
 	const hc = fakeHardcover(state);
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const {els, readable} = await boot({
 		page: 'import.html',
 		files: {'books.json': JSON.stringify(mine)},
@@ -322,8 +326,8 @@ test('a Hardcover comparison flags print books and ebooks, yours and on your she
 		/Maybe not audiobooks, on your Hardcover shelves \(1\)<\/h4>.*<li>The Paper Fen — Ann Vale: read as a print book \(Hardcover edition 601\) <a href="https:\/\/hardcover\.app\/id\/edition\/601"/,
 	);
 	assert.doesNotMatch(html, /Editions to add|edition:0/, "the print edition read isn't offered as one of yours");
-	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]');
-	assert.match(readable(add.parentNode.innerHTML ?? ''), /Brine Songs/);
+	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]')!;
+	assert.match(readable(add.parentNode!.innerHTML ?? ''), /Brine Songs/);
 	add.checked = true;
 	add.dispatch('change');
 	await els.importConfirm.listeners.click[0]();
@@ -332,7 +336,7 @@ test('a Hardcover comparison flags print books and ebooks, yours and on your she
 	assert.equal(sent.book_id, 81);
 	assert.ok(!sent.edition_id, 'the print edition is not sent');
 	assert.deepEqual(
-		sent.user_book_reads.map(r => r.finished_at),
+		sent.user_book_reads.map((r: any) => r.finished_at),
 		['2024-06-01'],
 	);
 });
@@ -357,11 +361,11 @@ test('a Hardcover comparison offers, unticked, to put right an edition of yours 
 		contributions: [{contribution: 'Narrator', author: {name: 'Hollis Marr'}}],
 	};
 	state.editions[821] = {id: 821, book_id: 80, asin: 'B0LANTERNK', reading_format_id: 4, contributions: []};
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const {els, readable} = await boot({
 		page: 'import.html',
 		files: {'books.json': JSON.stringify(mine)},
@@ -384,8 +388,8 @@ test('a Hardcover comparison offers, unticked, to put right an edition of yours 
 		els.importPreviewBody.querySelectorAll('input[data-pick^="fix"]').every(box => !box.checked),
 		'nothing is ticked at first',
 	);
-	const tick = pick => {
-		const box = els.importPreviewBody.querySelector(`input[data-pick="${pick}"]`);
+	const tick = (pick: any) => {
+		const box = els.importPreviewBody.querySelector(`input[data-pick="${pick}"]`)!;
 		box.checked = true;
 		box.dispatch('change');
 	};
@@ -396,17 +400,17 @@ test('a Hardcover comparison offers, unticked, to put right an edition of yours 
 	assert.match(els.ioStatus.textContent, /put right the editions of 2 books/);
 	const books = (await kept(storage)).books;
 	assert.deepEqual(
-		books.find(b => b.t === 'Brine Songs').e,
+		books.find((b: any) => b.t === 'Brine Songs').e,
 		[{ext: {'amazon.com': 'B0BRINEAUD', hardcover: '812'}, n: ['Hollis Marr'], len: 500}],
 		"the print edition's values are out, and the audiobook edition's in",
 	);
-	assert.equal(books.find(b => b.t === 'Lantern Hours').e, undefined, 'an edition left with nothing is gone');
+	assert.equal(books.find((b: any) => b.t === 'Lantern Hours').e, undefined, 'an edition left with nothing is gone');
 });
 test('your server is kept in this browser, checked when saved, and only ever sent its own key', async () => {
 	// the real Worker (server/worker.js) behind the page, with no catalog behind it
 	const env = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
-	const sent = [];
-	const proxy = async (url, init = {}) => {
+	const sent: any[] = [];
+	const proxy = async (url: string, init: any = {}) => {
 		sent.push({url, headers: init.headers});
 		const request = new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}});
 		return handleServer(request, env, {
@@ -415,7 +419,7 @@ test('your server is kept in this browser, checked when saved, and only ever sen
 			},
 		});
 	};
-	const storage = new Map();
+	const storage = new Map<string, string>();
 	const {els} = await boot({page: 'import.html', proxy, storage});
 	assert.match(els.serverState.textContent, /Paste your server's address and key/);
 	assert.equal(els.serverCheck.style.display, 'none');
@@ -438,7 +442,7 @@ test('your server is kept in this browser, checked when saved, and only ever sen
 		els.ioStatus.textContent,
 		'Server saved; it answers: its catalog proxy asks audiobookdb, audible, bookbrainz, isfdb, and sync is not set up on it.',
 	);
-	assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-proxy')), {
+	assert.deepEqual(JSON.parse(storage.get('audiobook-catalog-proxy')!), {
 		url: 'https://catalog-proxy.example.workers.dev',
 		key: 'right-key',
 	});
@@ -456,7 +460,7 @@ test('your server is kept in this browser, checked when saved, and only ever sen
 	// a proxy the browser can't reach (or that refuses this page, which a browser can't tell apart)
 	const away = await boot({
 		page: 'import.html',
-		storage: new Map([
+		storage: new Map<string, string>([
 			['audiobook-catalog-proxy', JSON.stringify({url: 'https://gone.example.workers.dev', key: 'k'})],
 		]),
 	});
@@ -467,13 +471,13 @@ test('your server is kept in this browser, checked when saved, and only ever sen
 	const before = await boot({
 		page: 'import.html',
 		proxy: async () => new Response('{"ok":true,"catalogs":["audiobookdb"]}', {status: 200}),
-		storage: new Map([SERVER_SAVED]),
+		storage: new Map<string, string>([SERVER_SAVED]),
 	});
 	await before.els.serverCheck.listeners.click[0]();
 	assert.equal(before.els.ioStatus.textContent, 'Your server is from before this version: deploy it again. Dismiss');
 });
 test('another device is set up from a QR code of the settings saved here, and asks before saving them', async () => {
-	const saved = new Map([
+	const saved = new Map<string, string>([
 		[
 			'audiobook-catalog-proxy',
 			JSON.stringify({url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'}),
@@ -483,7 +487,7 @@ test('another device is set up from a QR code of the settings saved here, and as
 		['audiobook-catalog-audiobookdb-key', 'abdb-key'],
 	]);
 	const pc = await boot({page: 'import.html', storage: saved, files: null});
-	const pick = id => pc.els[`setupPick-${id}`];
+	const pick = (id: any) => pc.els[`setupPick-${id}`];
 	assert.equal(
 		pc.els.setupPicks.textContent,
 		' Your server (https://catalog-proxy.example.workers.dev) The sync passphrase Your Hardcover API token Your AudiobookDB API key',
@@ -491,7 +495,7 @@ test('another device is set up from a QR code of the settings saved here, and as
 	for (const id of ['server', 'passphrase', 'hardcover']) pick(id).checked = true;
 	assert.equal(pc.els.setupCode.style.display, 'none');
 	await pc.els.setupShowBtn.listeners.click[0]();
-	assert.match(pc.els.setupQr.getAttribute('src'), /^data:image\/gif;base64,/);
+	assert.match(pc.els.setupQr.getAttribute('src') ?? '', /^data:image\/gif;base64,/);
 	assert.equal(pc.els.setupCode.style.display, '');
 	// the link opens this page where the PC has it, with only the ticked settings after the #
 	const {link} = pc.get('setupLink()');
@@ -501,15 +505,15 @@ test('another device is set up from a QR code of the settings saved here, and as
 	assert.equal(pc.els.setupCode.style.display, 'none');
 
 	// the phone opens it: the settings leave the address at once, and nothing is saved until asked
-	const asked = [];
-	const proxy = async (url, init = {}) => {
+	const asked: any[] = [];
+	const proxy = async (url: string, init: any = {}) => {
 		asked.push({url, key: init.headers['X-Server-Key']});
 		return new Response('{"ok":true,"proxy":["audiobookdb"],"sync":true}', {status: 200});
 	};
 	const phone = await boot({page: 'import.html', hash: link.slice(link.indexOf('#')), proxy, files: null});
 	assert.equal(phone.ctx.location.hash, '');
 	assert.deepEqual(
-		phone.ctx.history.entries.map(e => e.hash),
+		phone.ctx.history.entries.map((e: any) => e.hash),
 		[''],
 	);
 	assert.equal(phone.els.setupReceived.style.display, '');
@@ -519,7 +523,7 @@ test('another device is set up from a QR code of the settings saved here, and as
 	);
 	assert.equal(phone.storage.get('audiobook-catalog-proxy'), undefined);
 	await phone.els.setupReceivedSave.listeners.click[0]();
-	assert.deepEqual(JSON.parse(phone.storage.get('audiobook-catalog-proxy')), {
+	assert.deepEqual(JSON.parse(phone.storage.get('audiobook-catalog-proxy')!), {
 		url: 'https://catalog-proxy.example.workers.dev',
 		key: 'right-key',
 	});
@@ -535,7 +539,7 @@ test('another device is set up from a QR code of the settings saved here, and as
 	const other = await boot({
 		page: 'import.html',
 		hash: link.slice(link.indexOf('#')),
-		storage: new Map([saved.entries().next().value]),
+		storage: new Map<string, string>([saved.entries().next().value!]),
 		files: null,
 	});
 	assert.match(
@@ -558,7 +562,7 @@ test('another device is set up from a QR code of the settings saved here, and as
 	assert.match(local.get('setupLink()').link, /^https:\/\/catalog-proxy\.example\.workers\.dev\/import\.html#setup=/);
 	const alone = await boot({
 		page: 'import.html',
-		storage: new Map([['audiobook-catalog-hardcover-token', 'tok-123']]),
+		storage: new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]),
 		origin: 'http://127.0.0.1:8000',
 		files: null,
 	});
@@ -577,11 +581,16 @@ test('another device is set up from a QR code of the settings saved here, and as
 test('devices sync through your server: encrypted, taking in what the others changed, and asking when both changed a book', async () => {
 	// the real Worker behind the pages, with a D1 database for the synced copy
 	const database = new DatabaseSync(':memory:');
-	const env = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io', SYNC_DB: sqliteD1(database)};
+	const env: Env = {
+		SERVER_KEY: 'right-key',
+		ALLOWED_ORIGINS: 'https://example.github.io',
+		SYNC_DB: sqliteD1(database),
+	};
 	// the copy the server keeps
-	const row = () => database.prepare('SELECT revision, data FROM sync WHERE id = 1').get();
-	const sent = [];
-	const proxy = async (url, init = {}) => {
+	const row = () =>
+		database.prepare('SELECT revision, data FROM sync WHERE id = 1').get() as {revision: number; data: string};
+	const sent: any[] = [];
+	const proxy = async (url: string, init: any = {}) => {
 		sent.push({url, method: init.method || 'GET', body: init.body});
 		const request = new Request(url, {
 			method: init.method,
@@ -591,13 +600,13 @@ test('devices sync through your server: encrypted, taking in what the others cha
 		return handleServer(request, env, {fetch: async () => new Response('', {status: 500})});
 	};
 	// `idPrefix` gives a browser ids of its own (each fake one counts id-1, id-2, ... alike, where real ones never meet)
-	const device = async (files, passphrase = 'sea glass lantern', idPrefix = '') => {
-		const storage = new Map([
+	const device = async (files: any, passphrase = 'sea glass lantern', idPrefix = '') => {
+		const storage = new Map<string, string>([
 			[
 				'audiobook-catalog-proxy',
 				JSON.stringify({url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'}),
 			],
-			...(passphrase ? [['audiobook-catalog-sync-passphrase', passphrase]] : []),
+			...(passphrase ? [['audiobook-catalog-sync-passphrase', passphrase] as [string, string]] : []),
 		]);
 		let n = 0;
 		if (idPrefix) databaseOf(storage).newId = () => `${idPrefix}-${++n}`;
@@ -605,12 +614,12 @@ test('devices sync through your server: encrypted, taking in what the others cha
 		await idle();
 		return page;
 	};
-	const sync = async (page, button = 'syncBtn') => {
+	const sync = async (page: any, button = 'syncBtn') => {
 		await page.els[button].listeners.click[0]();
 		await idle();
 		return page.els.ioStatus.textContent;
 	};
-	const titles = async storage => (await kept(storage)).books.map(b => b.t).sort();
+	const titles = async (storage: any) => (await kept(storage)).books.map((b: any) => b.t).sort();
 
 	const pc = await device(DEMO);
 	assert.match(pc.els.syncState.textContent, /Not synced from this browser yet/);
@@ -686,11 +695,11 @@ test('a Hardcover comparison sends nothing unticked, nothing once another tab sa
 	];
 	const state = hardcoverState();
 	const hc = fakeHardcover(state);
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const page = await boot({
 		page: 'import.html',
 		files: {'books.json': JSON.stringify(mine)},
@@ -733,7 +742,7 @@ test('a Hardcover comparison sends nothing unticked, nothing once another tab sa
 		page: 'import.html',
 		files: {'books.json': JSON.stringify(mine)},
 		setTimeout,
-		storage: new Map([['audiobook-catalog-hardcover-token', 'tok-123']]),
+		storage: new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]),
 	});
 	await offline.els.hardcoverCompareBtn.listeners.click[0]();
 	await idle();
@@ -745,7 +754,7 @@ test('a Hardcover comparison sends nothing unticked, nothing once another tab sa
 });
 // The Edit series page, with the other catalogs asked (edit-catalogs.js): they are asked only when Ask the
 // catalogs is pressed, so a small edit doesn't wait on them.
-const bootAsked = async (hash, options = {}) => {
+const bootAsked = async (hash: string, options = {}) => {
 	const page = await boot({...options, page: 'edit.html', hash});
 	await idle();
 	await page.ctx.ASKING;
@@ -757,11 +766,11 @@ const bootAsked = async (hash, options = {}) => {
 test('the Edit page shows the catalogs to ask when it opens, and asks them only when Ask the catalogs is pressed', async () => {
 	const mine = [{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'}];
 	const hc = fakeHardcover(hardcoverState());
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const page = await boot({
 		page: 'edit.html',
 		hash: '#series=Gull+Isle',
@@ -792,11 +801,11 @@ test("a book's Edit page asks the other catalogs by its series (else its first a
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
 	];
 	const hc = fakeHardcover(hardcoverState());
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const options = {files: {'books.json': JSON.stringify(mine)}, hardcover: hc.fetch, setTimeout, storage};
 	const series = await bootAsked('#series=Gull+Isle', options);
 	assert.match(series.els.editBooks.innerHTML, /class="editNew/, "the series' page offers the books it lacks");
@@ -818,11 +827,11 @@ test("the Edit series page compares a series' books with Hardcover when asked, a
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
 	];
 	const hc = fakeHardcover(hardcoverState());
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const options = {files: {'books.json': JSON.stringify(mine)}, hardcover: hc.fetch, setTimeout, storage};
 	const edit = await bootAsked('#series=Gull+Isle', options);
 	const {els, get} = edit;
@@ -832,8 +841,8 @@ test("the Edit series page compares a series' books with Hardcover when asked, a
 		/<span class="catIcon cat-hardcover favicon" data-mark="Hc" style="--cat: #4f46b5" aria-hidden="true"><img src="https:\/\/assets\.hardcover\.app\/static\/favicon\.ico" alt="" referrerpolicy="no-referrer" decoding="async"><\/span>/,
 	);
 	// a favicon that can't be loaded leaves the catalog's mark, which CSS draws
-	const hcIcon = els.catalogPicks.querySelector('.cat-hardcover');
-	hcIcon.querySelector('img').listeners.error[0]();
+	const hcIcon = els.catalogPicks.querySelector('.cat-hardcover')!;
+	hcIcon.querySelector('img')!.listeners.error[0]();
 	assert.match(
 		els.catalogPicks.innerHTML,
 		/<span class="catIcon cat-hardcover" data-mark="Hc" style="--cat: #4f46b5" aria-hidden="true"><\/span>/,
@@ -882,7 +891,7 @@ test("the Edit series page compares a series' books with Hardcover when asked, a
 	await idle();
 	assert.match(els.ioStatus.textContent, /^Added 1 book\./);
 	assert.deepEqual(
-		(await kept(storage)).books.map(b => [b.t, b.s, b.sn]),
+		(await kept(storage)).books.map((b: any) => [b.t, b.s, b.sn]),
 		[
 			['Lantern Hours', undefined, undefined],
 			['Brine Tide', 'Gull Isle', '2'],
@@ -931,11 +940,11 @@ test("a series' and an author's page link to the Edit page, which old links to t
 		{t: 'Lantern Hours', a: ['R. T. Hale']},
 	];
 	const hc = fakeHardcover(hardcoverState());
-	const setTimeout = (fn, ms) => {
+	const setTimeout = (fn: () => unknown, ms: number) => {
 		if (ms === 1000) Promise.resolve().then(fn);
 		return 0;
 	};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const {els, get} = await bootAsked('#author=Ann+Vale', {
 		files: {'books.json': JSON.stringify(mine)},
 		hardcover: hc.fetch,
@@ -960,15 +969,15 @@ test("a series' and an author's page link to the Edit page, which old links to t
 });
 // ------------------------------------------------------------------ AudiobookDB
 const SERVER_ENV = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
-const SERVER_SAVED = [
+const SERVER_SAVED: [string, string] = [
 	'audiobook-catalog-proxy',
 	JSON.stringify({url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'}),
 ];
 /** The real Worker (server/worker.js) in front of a fake AudiobookDB, as the page reaches it; `asked` is what the page sent. */
 function audiobookdbBehindProxy(state = audiobookdbState()) {
 	const abdb = fakeAudiobookdb(state);
-	const asked = [];
-	const proxy = async (url, init = {}) => {
+	const asked: any[] = [];
+	const proxy = async (url: string, init: any = {}) => {
 		asked.push({url, headers: init.headers, method: init.method || 'GET'});
 		const request = new Request(url, {
 			method: init.method,
@@ -980,7 +989,7 @@ function audiobookdbBehindProxy(state = audiobookdbState()) {
 	return {state, abdb, proxy, asked};
 }
 // the pause between AudiobookDB requests passes at once
-const abdbTimeout = (fn, ms) => {
+const abdbTimeout = (fn: () => unknown, ms: number) => {
 	if (ms === 500) Promise.resolve().then(fn);
 	return 0;
 };
@@ -990,7 +999,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0BRINETD1'}}]},
 	];
 	const {state, abdb, proxy, asked} = audiobookdbBehindProxy();
-	let leaving = null; // what leaving the page while it sends would do
+	let leaving: any = null; // what leaving the page while it sends would do
 	state.onAdd = () => {
 		if (!leaving) {
 			leaving = {
@@ -1001,7 +1010,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 			page.fire('beforeunload', leaving);
 		}
 	};
-	const storage = new Map([SERVER_SAVED]);
+	const storage = new Map<string, string>([SERVER_SAVED]);
 	const page = await boot({
 		page: 'import.html',
 		files: {'books.json': JSON.stringify(mine)},
@@ -1081,7 +1090,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 		'the page sends the key only there too',
 	);
 
-	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]');
+	const add = els.importPreviewBody.querySelector('input[data-pick="add:0"]')!;
 	add.checked = true;
 	add.dispatch('change');
 	assert.equal(els.importConfirm.textContent, 'Apply 3 changes');
@@ -1090,7 +1099,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	assert.deepEqual(get('CATALOG.books.map(b => b.title)'), ['Lantern Hours', 'Brine Tide', 'Tidewater']);
 	const saved = await kept(storage);
 	assert.deepEqual(
-		saved.books.map(b => [b.t, b.ext, b.e.map(e => e.ext)]),
+		saved.books.map((b: any) => [b.t, b.ext, b.e.map((e: any) => e.ext)]),
 		[
 			[
 				'Lantern Hours',
@@ -1103,7 +1112,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 	);
 	// the covers: Lantern Hours' book's (its release has none), Tidewater's release's; Brine Tide has none
 	assert.deepEqual(
-		saved.books.map(b => b.e.map(e => e.img)),
+		saved.books.map((b: any) => b.e.map((e: any) => e.img)),
 		[[{audiobookdb: 'a1'.repeat(32)}], [undefined], [{audiobookdb: 'd2'.repeat(32)}]],
 	);
 	assert.deepEqual(saved.authors['R. T. Hale'].ext, {audiobookdb: 'PrsnHale0001'});
@@ -1116,7 +1125,7 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 		[['users/username/reader/shelves/listened/books', 'abdb-key-1']],
 	);
 	assert.deepEqual(
-		state.shelves[2].books.map(b => b.id),
+		state.shelves[2].books.map((b: any) => b.id),
 		['Tidewater001', 'PaperFen0001', 'LntrnHours01'],
 	);
 	assert.ok(leaving.prevented, 'leaving while it sends is asked about');
@@ -1126,7 +1135,9 @@ test('the page compares the catalog with AudiobookDB through the proxy, with a k
 		/^Added 1 book, saved AudiobookDB ids and covers found for 2 books and 5 series and people; AudiobookDB updated\./,
 	);
 	assert.ok(
-		![...storage.entries()].some(([k, v]) => k !== 'audiobook-catalog-audiobookdb-key' && v.includes('abdb-key-1')),
+		![...storage.entries()].some(
+			([k, v]: [string, string]) => k !== 'audiobook-catalog-audiobookdb-key' && v.includes('abdb-key-1'),
+		),
 		'the key is in no backup or record',
 	);
 
@@ -1142,7 +1153,7 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2', e: [{ext: {'audible.com': 'B0BRINETD1'}}]},
 	];
 	const {abdb, proxy} = audiobookdbBehindProxy();
-	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
+	const storage = new Map<string, string>([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
 	const options = {files: {'books.json': JSON.stringify(mine)}, proxy, storage, setTimeout: abdbTimeout};
 	const {els, get} = await bootAsked('#series=Gull+Isle', options);
 	assert.match(els.catalogNotes.textContent, /AudiobookDB: \d+ books? read\./);
@@ -1190,9 +1201,9 @@ test("the Edit series page compares a series' or an author's books with Audioboo
 	els[`b${at}_g`].listeners.change[0]();
 	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
-	assert.deepEqual(saved.books.find(b => b.t === 'Gull Song').g, ['Fantasy'], 'as changed on the page');
+	assert.deepEqual(saved.books.find((b: any) => b.t === 'Gull Song').g, ['Fantasy'], 'as changed on the page');
 	assert.deepEqual(
-		saved.books.map(b => [b.t, b.s, b.sn, b.ext, (b.e || []).map(e => e.ext)]),
+		saved.books.map((b: any) => [b.t, b.s, b.sn, b.ext, (b.e || []).map((e: any) => e.ext)]),
 		[
 			['Lantern Hours', undefined, undefined, undefined, [{'audible.com': 'B0LANTERN1'}]],
 			[
@@ -1243,12 +1254,12 @@ test('the Edit series page offers to put right, with Take, an edition Hardcover 
 		contributions: [{contribution: 'Narrator', author: {name: 'Hollis Marr'}}],
 	};
 	state.editions[821] = {id: 821, book_id: 80, asin: 'B0LANTERNK', reading_format_id: 4, contributions: []};
-	const storage = new Map([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const {els, get} = await bootAsked('#series=Brine+Cycle', {
 		files: {'books.json': JSON.stringify(mine)},
 		hardcover: fakeHardcover(state).fetch,
 		storage,
-		setTimeout: (fn, ms) => {
+		setTimeout: (fn: () => unknown, ms: number) => {
 			if (ms === 1000) Promise.resolve().then(fn);
 			return 0;
 		},
@@ -1288,10 +1299,10 @@ test('the Edit series page offers to put right, with Take, an edition Hardcover 
 	await els.reviewSaveBtn.listeners.click[0]();
 	await idle();
 	const books = (await kept(storage)).books;
-	assert.deepEqual(books.find(b => b.t === 'Brine Songs').e, [
+	assert.deepEqual(books.find((b: any) => b.t === 'Brine Songs').e, [
 		{ext: {'amazon.com': 'B0BRINEAUD', hardcover: '812'}, n: ['Hollis Marr'], len: 500},
 	]);
-	assert.equal(books.find(b => b.t === 'Lantern Hours').e, undefined);
+	assert.equal(books.find((b: any) => b.t === 'Lantern Hours').e, undefined);
 });
 test("the Edit series page shows on an edition's card what the catalogs say of it, and offers their other editions apart", async () => {
 	// an ASIN Audible doesn't sell, on a book whose one edition there is another
@@ -1300,7 +1311,7 @@ test("the Edit series page shows on an edition's card what the catalogs say of i
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '4', e: [{ext: {'audible.com': 'B0BRINETD4'}}]},
 	];
 	const behind = fakeProxyCatalogs();
-	const proxy = async (url, init = {}) =>
+	const proxy = async (url: string, init: any = {}) =>
 		handleServer(new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}}), SERVER_ENV, {
 			fetch: async upstream => {
 				const u = new URL(String(upstream.url || upstream));
@@ -1312,8 +1323,8 @@ test("the Edit series page shows on an edition's card what the catalogs say of i
 	const {els, get} = await bootAsked('#series=Gull+Isle', {
 		files: {'books.json': JSON.stringify(mine)},
 		proxy,
-		storage: new Map([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]),
-		setTimeout: (fn, ms) => {
+		storage: new Map<string, string>([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]),
+		setTimeout: (fn: () => unknown, ms: number) => {
 			if (ms === 250) Promise.resolve().then(fn);
 			return 0;
 		},
@@ -1323,10 +1334,10 @@ test("the Edit series page shows on an edition's card what the catalogs say of i
 	assert.match(card.textContent, /Maybe not an audiobook: ASIN B0WRONGST3 is not sold on audible\.com/);
 	assert.doesNotMatch(els['book-0'].innerHTML.replace(card.innerHTML, ''), /editNotAudio/, 'only on its card');
 	// Audible's edition isn't yours: offered as another edition, added only when asked
-	const added = els['book-0'].querySelector('.editNewEdition');
+	const added = els['book-0'].querySelector('.editNewEdition')!;
 	assert.match(added.textContent, /^Audible has another edition: .*B0LANTERN2.*Add$/);
 	assert.equal(get('DRAFTS[0].book.editions.length'), 1);
-	added.querySelector('button').listeners.click[0]();
+	added.querySelector('button')!.listeners.click[0]();
 	assert.deepEqual(get("DRAFTS[0].book.editions.map(ed => ed.ids('asin'))"), [['B0WRONGST3'], ['B0LANTERN2']]);
 	assert.equal(els['book-0'].querySelector('.editNewEdition'), null, 'offered no more');
 });
@@ -1337,12 +1348,12 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	];
 	// the real Worker in front of Audible's catalog
 	const behind = fakeProxyCatalogs();
-	const audible = async url => {
+	const audible = async (url: string) => {
 		const u = new URL(url);
 		const site = u.hostname.replace(/^api\./, '');
 		return behind.route(`audible/${site}${u.pathname.replace(/^\/1\.0/, '')}${u.search}`);
 	};
-	const proxy = async (url, init = {}) =>
+	const proxy = async (url: string, init: any = {}) =>
 		handleServer(new Request(url, {headers: {...init.headers, Origin: 'https://example.github.io'}}), SERVER_ENV, {
 			fetch: async upstream => {
 				const res = await audible(String(upstream.url || upstream));
@@ -1350,12 +1361,12 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 			},
 		});
 	// AudiobookDB, which needs only the server too, is left out of this run
-	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]);
+	const storage = new Map<string, string>([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]);
 	const {els, get} = await bootAsked('#series=Gull+Isle', {
 		files: {'books.json': JSON.stringify(mine)},
 		proxy,
 		storage,
-		setTimeout: (fn, ms) => {
+		setTimeout: (fn: () => unknown, ms: number) => {
 			if (ms === 250) Promise.resolve().then(fn);
 			return 0;
 		},
@@ -1370,7 +1381,7 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	);
 	// the series' books not in the catalog, as cards: Audible's answer has what adding one takes
 	assert.deepEqual(
-		[0, 1].map(n => els[`missing-${n}`].textContent.match(/^Not in your catalog Add ([^↗]*?)Audible ↗/)[1]),
+		[0, 1].map(n => els[`missing-${n}`].textContent.match(/^Not in your catalog Add ([^↗]*?)Audible ↗/)![1]),
 		['1. Salt Road', '3. Gull Song'],
 	);
 	// among yours, in series order
@@ -1385,7 +1396,7 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	assert.match(els['book-0-ed-0'].innerHTML, /to review<\/span><\/summary>/);
 	assert.match(els['book-0-ed-0'].textContent, /Audible: Narrators: .*ISBN: .*Take/);
 	assert.match(els['book-1-ed-0'].textContent, /Audible: /);
-	const take = n => els['book-' + n].querySelector('.editTake button');
+	const take = (n: number) => els['book-' + n].querySelector('.editTake button')!;
 	take(0).listeners.click[0]();
 	take(1).listeners.click[0]();
 	assert.doesNotMatch(els['book-0'].innerHTML, /editTake/, 'taken');
@@ -1401,7 +1412,7 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
 	assert.deepEqual(
-		saved.books.map(b => [b.t, b.e.map(e => [e.ext, e.n, e.len])]),
+		saved.books.map((b: any) => [b.t, b.e.map((e: any) => [e.ext, e.n, e.len])]),
 		[
 			['The Lantern Keeper', [[{'audible.com': 'B0LANTERN2'}, ['Hollis Marr', 'Dana Fenwick'], 612]]],
 			['Brine Tide', [[{'audible.com': 'B0BRINETD4'}, ['Dana Fenwick'], 480]]],
@@ -1418,8 +1429,8 @@ test("the Edit series page takes from Audible a book's edition when asked, and k
 	const out = await bootAsked('#series=Gull+Isle', {
 		files: {'books.json': JSON.stringify(mine), 'excluded.txt': 'Edition B0BRINETD4\n'},
 		proxy,
-		storage: new Map([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]),
-		setTimeout: (fn, ms) => {
+		storage: new Map<string, string>([SERVER_SAVED, ['audiobook-catalog-edit-skip', '["audiobookdb"]']]),
+		setTimeout: (fn: () => unknown, ms: number) => {
 			if (ms === 250) Promise.resolve().then(fn);
 			return 0;
 		},
@@ -1446,7 +1457,7 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	const abdb = fakeAudiobookdb(state);
 	// the real Worker in front of AudiobookDB and of Audible's catalog
 	const behind = fakeProxyCatalogs();
-	const proxy = async (url, init = {}) =>
+	const proxy = async (url: string, init: any = {}) =>
 		handleServer(
 			new Request(url, {
 				method: init.method,
@@ -1455,16 +1466,16 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 			}),
 			SERVER_ENV,
 			{
-				fetch: async (upstream, opts) => {
+				fetch: async (upstream: Request) => {
 					const u = new URL(String(upstream.url || upstream));
-					if (!/audible\./.test(u.hostname)) return abdb.fetch(upstream, opts);
+					if (!/audible\./.test(u.hostname)) return abdb.fetch(upstream);
 					const site = u.hostname.replace(/^api\./, '');
 					const res = await behind.route(`audible/${site}${u.pathname.replace(/^\/1\.0/, '')}${u.search}`);
 					return new Response(JSON.stringify(await res.json()), {status: res.status});
 				},
 			},
 		);
-	const storage = new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
+	const storage = new Map<string, string>([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]);
 	const {els, get} = await bootAsked('#series=Gull+Isle', {
 		files: {
 			'books.json': JSON.stringify(mine),
@@ -1472,7 +1483,7 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 		},
 		proxy,
 		storage,
-		setTimeout: (fn, ms) => {
+		setTimeout: (fn: () => unknown, ms: number) => {
 			if (ms === 250 || ms === 500) Promise.resolve().then(fn);
 			return 0;
 		},
@@ -1482,7 +1493,8 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 		/id="catalog-hardcover" disabled=""> <span class="catIcon cat-hardcover[^"]*"[^>]*>(?:<img [^>]*>)?<\/span>Hardcover<span class="editWhy"> \(needs your Hardcover API token/,
 	);
 	// a field's values, each once with the catalogs that have it
-	const chips = id => [...els[id].closest('.editField').querySelectorAll('.editChip')].map(c => c.textContent);
+	const chips = (id: any) =>
+		[...els[id].closest('.editField')!.querySelectorAll('.editChip')].map(c => c.textContent);
 	assert.deepEqual(chips('b0e0_d'), ['AudiobookDB 2020-02-02', 'Audible 2023-09-12']);
 	assert.deepEqual(chips('b0e0_len'), ['AudiobookDB, Audible 8h']);
 	assert.deepEqual(chips('b0_sn'), ['AudiobookDB 2']);
@@ -1518,7 +1530,7 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	assert.ok(await saveEdit({els}));
 	const saved = await kept(storage);
 	assert.deepEqual(
-		saved.books.map(b => [b.t, b.sn, b.e.map(e => [e.ext, e.n, e.d, e.p, e.len])]),
+		saved.books.map((b: any) => [b.t, b.sn, b.e.map((e: any) => [e.ext, e.n, e.d, e.p, e.len])]),
 		[
 			['Brine Tide', '4', [[{'amazon.com': 'B0BRINETD1'}, ['Dana Fenwick'], '2023-09-12', undefined, undefined]]],
 			[
@@ -1556,7 +1568,7 @@ test('AudiobookDB needs the proxy, says when the proxy is out of date, and says 
 		files: {'books.json': JSON.stringify(mine)},
 		proxy,
 		setTimeout: abdbTimeout,
-		storage: new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'not-my-key']]),
+		storage: new Map<string, string>([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'not-my-key']]),
 	});
 	await wrong.els.audiobookdbCompareBtn.listeners.click[0]();
 	await idle();
@@ -1564,7 +1576,7 @@ test('AudiobookDB needs the proxy, says when the proxy is out of date, and says 
 	assert.equal(wrong.els.importConfirm.style.display, 'none');
 
 	// a proxy deployed before AudiobookDB's shelves: it refuses the key
-	const old = async (url, init = {}) =>
+	const old = async (url: string, init: any = {}) =>
 		init.headers['X-Catalog-Key']
 			? new Response('{"error":"This path takes no catalog key."}', {status: 400})
 			: proxy(url, init);
@@ -1573,7 +1585,7 @@ test('AudiobookDB needs the proxy, says when the proxy is out of date, and says 
 		files: {'books.json': JSON.stringify(mine)},
 		proxy: old,
 		setTimeout: abdbTimeout,
-		storage: new Map([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]),
+		storage: new Map<string, string>([SERVER_SAVED, ['audiobook-catalog-audiobookdb-key', 'abdb-key-1']]),
 	});
 	await stale.els.audiobookdbCompareBtn.listeners.click[0]();
 	await idle();

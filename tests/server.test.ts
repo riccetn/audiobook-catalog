@@ -11,14 +11,15 @@ import {deployConfig, keptId, shellArg, DATABASE, BINDING, DEPLOY_CONFIG} from '
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type {AddressInfo} from 'node:net';
 
 const ENV = {SERVER_KEY: 'k3y-for-tests', ALLOWED_ORIGINS: 'https://example.github.io, http://127.0.0.1:8000'};
 const APP = 'https://example.github.io';
 
 /** A fake catalog answering every address with what was asked, and a cache in a Map. */
 function behind() {
-	const asked = [];
-	const fetch = async request => {
+	const asked: {url: string; method: string; headers: Record<string, string>; body: string | null}[] = [];
+	const fetch = async (request: Request) => {
 		asked.push({
 			url: request.url,
 			method: request.method,
@@ -31,21 +32,27 @@ function behind() {
 			headers: {'Content-Type': 'application/json', 'Set-Cookie': 'session=1'},
 		});
 	};
-	const kept = new Map();
+	const kept = new Map<string, Response>();
 	const cache = {
-		match: async request => kept.get(request.url)?.clone(),
-		put: async (request, response) => {
-			kept.set(request.url, response);
+		match: async (request: RequestInfo | URL) => kept.get((request as Request).url)?.clone(),
+		put: async (request: RequestInfo | URL, response: Response) => {
+			kept.set((request as Request).url, response);
 		},
 	};
 	return {asked, kept, deps: {fetch, cache}};
 }
 
-/**
- * @param {string} path
- * @param {{origin?: string | null, key?: string | null, method?: string, headers?: Record<string, string>, body?: string}} [opts]
- */
-function ask(path, {origin = APP, key = ENV.SERVER_KEY, method = 'GET', headers = {}, body} = {}) {
+/** What ask() is told: the page's origin and the server's key (null for none), and the request's method, headers and body. */
+type Ask = {
+	origin?: string | null;
+	key?: string | null;
+	method?: string;
+	headers?: Record<string, string>;
+	body?: string;
+};
+
+/** A request to the server at `path`, from the app with the key unless `opts` says otherwise. */
+function ask(path: string, {origin = APP, key = ENV.SERVER_KEY, method = 'GET', headers = {}, body}: Ask = {}) {
 	return new Request(`https://proxy.example.workers.dev${path}`, {
 		method,
 		body,
@@ -58,7 +65,7 @@ function ask(path, {origin = APP, key = ENV.SERVER_KEY, method = 'GET', headers 
 }
 
 test('proxy: routes name a catalog, never an address, and stay in its API', () => {
-	const up = path => {
+	const up = (path: string) => {
 		const url = new URL(`https://proxy.example.workers.dev${path}`);
 		return upstreamUrl(url.pathname, url.search);
 	};
@@ -109,7 +116,7 @@ test('proxy: answers only the app with the key, and passes on only the body and 
 	assert.equal(asked[0].headers.accept, 'application/json');
 	assert.match(asked[0].headers['user-agent'], /audiobook-catalog-proxy/);
 
-	const status = async (path, opts) => (await handle(ask(path, opts), ENV, deps)).status;
+	const status = async (path: string, opts?: Ask) => (await handle(ask(path, opts), ENV, deps)).status;
 	assert.equal(await status('/proxy/audiobookdb/x', {origin: 'https://evil.example'}), 403);
 	assert.equal(await status('/proxy/audiobookdb/x', {key: null}), 401);
 	assert.equal(await status('/proxy/audiobookdb/x', {key: 'k3y-for-test'}), 401);
@@ -156,10 +163,9 @@ test('proxy: the preflight allows the key headers, and ping says which catalogs'
 
 test("the server's own address opens the app's index page, and a page from before still pings it", async () => {
 	const {deps} = behind();
-	/** @type {string[]} */
-	const served = [];
+	const served: string[] = [];
 	const ASSETS = {
-		fetch: async request => {
+		fetch: async (request: Request) => {
 			served.push(new URL(request.url).pathname);
 			return new Response('<p>the app</p>', {headers: {'Content-Type': 'text/html'}});
 		},
@@ -185,7 +191,7 @@ test('proxy: keeps answers found for a day, and asks again for one not found', a
 		'http://127.0.0.1:8000',
 		'with the CORS of the page asking',
 	);
-	assert.match(again.headers.get('Cache-Control'), /max-age=86400/);
+	assert.match(again.headers.get('Cache-Control') ?? '', /max-age=86400/);
 	assert.equal((await handle(ask('/proxy/audiobookdb/missing'), ENV, deps)).status, 404);
 	await handle(ask('/proxy/audiobookdb/missing'), ENV, deps);
 	assert.equal(asked.length, 3);
@@ -203,7 +209,7 @@ test('proxy: keeps answers found for a day, and asks again for one not found', a
 test('proxy: your catalog key goes only to the paths that need it, which alone take a POST and are never cached', async () => {
 	const {asked, kept, deps} = behind();
 	const shelf = '/proxy/audiobookdb/users/username/reader/shelves/read';
-	const withKey = (path, opts = {}) =>
+	const withKey = (path: string, opts: Ask = {}) =>
 		ask(path, {...opts, headers: {[CATALOG_KEY_HEADER]: 'my-api-key', ...opts.headers}});
 
 	const session = await handle(withKey('/proxy/audiobookdb/auth/session'), ENV, deps);
@@ -233,7 +239,7 @@ test('proxy: your catalog key goes only to the paths that need it, which alone t
 	assert.equal(asked[4].headers.cookie, undefined);
 	assert.equal(asked[4].headers['x-api-key'], 'my-api-key');
 
-	const status = async request => (await handle(request, ENV, deps)).status;
+	const status = async (request: Request) => (await handle(request, ENV, deps)).status;
 	assert.equal(
 		await status(withKey('/proxy/audiobookdb/books/FAKEbook0001')),
 		400,
@@ -273,7 +279,7 @@ test('proxy: a catalog asking to slow down says how long, to the page too', asyn
 test('sync: keeps one synced copy, replaced only over the revision it was read at', async () => {
 	const {deps} = behind();
 	const env = {...ENV, SYNC_DB: sqliteD1(new DatabaseSync(':memory:'))};
-	const send = body => handle(ask('/sync', {method: 'POST', body: JSON.stringify(body)}), env, deps);
+	const send = (body: unknown) => handle(ask('/sync', {method: 'POST', body: JSON.stringify(body)}), env, deps);
 	const read = async () => (await handle(ask('/sync'), env, deps)).json();
 
 	assert.deepEqual(await read(), {revision: 0, data: null, savedAt: null}, 'none yet');
@@ -358,16 +364,16 @@ test('make serve: the pages from public/, everything else the server, with sync 
 	const env = {...ENV, SYNC_DB: sqliteD1(new DatabaseSync(':memory:'))};
 	const server = await startServer({root, port: 0, env, fetch: deps.fetch});
 	t.after(() => server.close());
-	const base = `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}`;
-	const get = (route, init = {}) => fetch(`${base}${route}`, init);
+	const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+	const get = (route: string, init: RequestInit = {}) => fetch(`${base}${route}`, init);
 	const keyed = {headers: {[KEY_HEADER]: ENV.SERVER_KEY, Origin: 'http://127.0.0.1:8000'}};
 
 	const page = await get('/');
 	assert.equal(page.status, 200);
 	assert.equal(await page.text(), '<p>the app</p>');
-	assert.match(page.headers.get('Content-Type'), /^text\/html/);
+	assert.match(page.headers.get('Content-Type') ?? '', /^text\/html/);
 	const module = await get('/modules/book.js');
-	assert.match(module.headers.get('Content-Type'), /^text\/javascript/);
+	assert.match(module.headers.get('Content-Type') ?? '', /^text\/javascript/);
 	assert.equal(
 		(await get('/../package.json')).status,
 		401,
@@ -383,7 +389,7 @@ test('make serve: the pages from public/, everything else the server, with sync 
 	await get('/proxy/bookbrainz/edition/1111-2222', keyed);
 	assert.equal(asked.length, 1, 'kept for a day, as Cloudflare does');
 
-	const send = body => get('/sync', {method: 'POST', body: JSON.stringify(body), headers: keyed.headers});
+	const send = (body: unknown) => get('/sync', {method: 'POST', body: JSON.stringify(body), headers: keyed.headers});
 	assert.equal((await send({revision: 0, data: 'sealed-1'})).status, 200);
 	assert.equal((await send({revision: 0, data: 'sealed-late'})).status, 409);
 	assert.equal((await (await get('/sync', keyed)).json()).data, 'sealed-1');
@@ -411,9 +417,9 @@ test('make serve: the pages from public/, everything else the server, with sync 
 	const cache = memoryCache();
 	const request = new Request('https://catalog.example/x');
 	await cache.put(request, new Response('kept', {headers: {'Cache-Control': 'public, max-age=60'}}));
-	assert.equal(await (await cache.match(request)).text(), 'kept');
+	assert.equal(await (await cache.match(request))?.text(), 'kept');
 	await cache.put(request, new Response('not kept', {headers: {'Cache-Control': 'no-store'}}));
-	assert.equal(await (await cache.match(request)).text(), 'kept');
+	assert.equal(await (await cache.match(request))?.text(), 'kept');
 });
 
 test("deploy: Windows' shell gets one command line, quoted only where an argument needs it", () => {

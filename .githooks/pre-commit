@@ -65,7 +65,8 @@ fi
 
 # Types cross files, so this checks the whole project as it is on disk, as make typecheck does.
 if printf '%s\n' "$staged" | grep -Eq '\.(js|mjs|cjs|ts|mts)$'; then
-	{ node "$tsc" -p tsconfig.json --noEmit && node "$tsc" -p tsconfig.sw.json --noEmit && node "$tsc" -p tsconfig.server.json; } || {
+	{ node "$tsc" -p tsconfig.json --noEmit && node "$tsc" -p tsconfig.sw.json --noEmit && node "$tsc" -p tsconfig.server.json &&
+		node "$tsc" -p tsconfig.tests.json; } || {
 		echo 'TypeScript found errors: fix them, or commit with --no-verify to skip the hook'
 		exit 1
 	}
