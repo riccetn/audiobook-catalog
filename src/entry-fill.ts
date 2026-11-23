@@ -1,4 +1,4 @@
-// Fill in from other catalogs, for a series (the Edit page's series panel) and for an author, a narrator or a
+// Fill in from other catalogs, for a series (the Edit page's series panel, by its Ask the catalogs) and for an author, a narrator or a
 // publisher (their form): the catalogs a page may read are asked about them (modules/entry-lookup.ts, through
 // the sources CatalogConnectors lists, so nothing here names a catalog), and what they have that the form lacks
 // is listed under the form, each value with a tick. Nothing is changed by asking: only Add puts the ticked
@@ -30,6 +30,8 @@ export interface EntryFillOptions {
 	still: () => boolean;
 	/** puts what was picked in the form: `info` is `current()` with the picked values in its gaps */
 	onAdd: (info: EntryInfo, added: EntryOffer[]) => void;
+	/** the catalogs (by their group's key, 'audible' for every Audible site) not to ask, as unticked on the page */
+	skip?: Set<string>;
 }
 
 /** How an answer was found, as its heading says it: a whole sentence for each case. */
@@ -76,12 +78,17 @@ export async function fillEntry(opts: EntryFillOptions): Promise<void> {
 	const close = () => fillElement(box);
 	fillElement(box, buildElement('p', {class: 'hint'}, spell('Asking the other catalogs about {name}…', {name})));
 	const server = savedServer();
+	const skip = opts.skip || new Set<string>();
+	const sources = CatalogConnectors.SOURCES.filter(
+		Source => !skip.has(ExternalCatalog.groupOf(Source.CATALOG)?.key ?? Source.CATALOG),
+	);
 	let found: EntriesFound;
 	try {
 		found = await new EntryLookup(
 			url => fetch(url),
 			keyedClients(CatalogConnectors.CLIENTS),
 			server ? route => fetchViaProxy(route, server) : null,
+			sources,
 		).find(kind, name, opts.current(), opts.books);
 	} catch (err) {
 		if (opts.still())

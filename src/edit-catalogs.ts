@@ -23,7 +23,7 @@ export const SKIP_STORAGE_KEY = 'audiobook-catalog-edit-skip';
 export type CatalogChoice = {catalog: string; label: string; cantAsk: string; skipped: boolean};
 
 /** The catalogs left out of the next run, as remembered in this browser. */
-function skipped(): Set<string> {
+export function skipped(): Set<string> {
 	try {
 		const list: unknown = JSON.parse(localStorage.getItem(SKIP_STORAGE_KEY) || '[]');
 		return new Set(Array.isArray(list) ? list.filter(x => typeof x === 'string') : []);

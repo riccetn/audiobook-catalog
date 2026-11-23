@@ -1423,7 +1423,7 @@ test('a narrator found by name alone is offered unticked, and a catalog that has
 	);
 	assert.equal(offline.els['cf_fill-pick-0'], undefined);
 });
-test("the Edit page's series panel is filled in from other catalogs, and Review & save lists what was added", async () => {
+test("the Edit page's Ask the catalogs fills in the series panel too, and Review & save lists what was added", async () => {
 	const hc = fakeHardcover(hardcoverState());
 	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
 	const tidewater = {t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', ext: {hardcover: '77'}};
@@ -1437,8 +1437,12 @@ test("the Edit page's series panel is filled in from other catalogs, and Review 
 	const {ctx, els} = page;
 	await ctx.ASKING;
 	await idle();
+	assert.equal(els.sf_fill.innerHTML, '', 'nothing is asked until Ask the catalogs is pressed');
+	assert.equal(els.seriesFillBtn, undefined, 'one button asks about both the series and its books');
 	els.sf_total.value = 'many';
-	await ctx.fillSeries();
+	els.askBtn.listeners.click[0]();
+	await ctx.ASKING;
+	await idle();
 	const drawn = els.sf_fill.innerHTML;
 	assert.match(
 		drawn,
