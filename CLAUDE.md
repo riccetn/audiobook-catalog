@@ -226,8 +226,8 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   time, `more`, and `showMore(render)` for the Show more button), `readOrdered` (series order from the indexes alone), `bookGroups` (books grouped by series with their headings, or
   `sorted` as one list), `showEmptyCatalog`, `showBackupNudge`, `nameLinks` (and `authorLinks`/`narratorLinks`), `statusTag`, `watchSearchAndFilters` (the series and books pages' search box and Filters button), `showFilterCount(filters)`,
   and the address helpers `hashParts`/`hashText`/`hashOf` (with `store.js`'s `hashValue`)/`setAddress`.
-- `entry-fill.js`: _Fill in from other catalogs_ of a series (the Edit page's series panel, `fillSeries`, box `sf_fill`) and of an author, narrator or
-  publisher (their form, `credit.js`'s `fillCredit`, box `cf_fill`), loaded with `import()` when pressed (only it loads `EntryLookup` and the connectors there):
+- `entry-fill.js`: _Fill in from other catalogs_ of a series (the Edit page's series panel, `fillSeries`, box `sf_fill`, run by _Ask the catalogs_ with the books) and of an author, narrator or
+  publisher (their form, `credit.js`'s `fillCredit`, box `cf_fill`), loaded with `import()` when asked (only it loads `EntryLookup` and the connectors there):
   `fillEntry({kind, name, current, books, box, still, onAdd})` asks, lists each answer's offers with a tick (`<box>-pick-<n>`; one tick per `key`), and
   `<box>Add` hands the page `EntryLookup.apply` of the form as it is then, which the page puts in its fields; only the form's Save keeps them. `addedText`.
 - `combo-box.js`: a search combo box (`comboBox(input, list, {names, multiple, onPick})`, `comboField` builds one): an

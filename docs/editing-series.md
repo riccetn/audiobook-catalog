@@ -19,12 +19,12 @@ them goes to its id field when that is empty). **Remove series** takes it off it
 asks you to save or discard your changes first. Any of these may be left empty: a series without a total or a
 status shows neither on its pages, rather than guessing. See [Everyday workflows](workflows.md).
 
-**Fill in from other catalogs**, below its fields, asks the other catalogs what they have about the series: its
+**Ask the catalogs** (under _Other catalogs_, below) also asks the other catalogs what they have about the series: its
 id there, how many books it has, whether it is complete. A catalog the series has an id in is asked by that id;
 one where your books of the series have ids (Audible by your editions' ASINs, AudiobookDB and Hardcover by your
 books' ids there) is asked which series those books are in; and Wikidata is searched for the name. Audible and
 AudiobookDB need [your server](server.md) and Hardcover your token; a catalog that can't be asked is named, with
-what to save. What they have that the panel lacks is listed below it, each value with a tick and a link to check
+what to save. What they have that the panel lacks is listed below its fields, each value with a tick and a link to check
 it by. What a catalog found by your books is ticked; what it found by the name alone is not, as it may be another
 series of that name. Nothing is changed by asking: **Add the ticked** puts those values in the panel's empty
 fields (nothing you have there is ever replaced), where you can still change them, and **Review & save** lists
@@ -90,7 +90,8 @@ through it too (a series only). Nothing is asked until you press it, so a small 
 read as its **Compare** on _Import & export_ would read it, but only for these books, and nothing is sent to any
 catalog. Untick one to leave it out: it stays left out in this browser until you tick it again. A catalog that can't
 be asked says why (no token, or no server saved), and **Ask again** asks those ticked once more (after you add an id
-to a book, say).
+to a book, say). On a series' page it also asks about the series itself, listed under its fields (see
+[The series](#the-series)).
 
 What they say is shown on the books, and nothing of it is taken until you pick it and save:
 

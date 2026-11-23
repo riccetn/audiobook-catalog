@@ -1485,52 +1485,64 @@ async function showCatalogPicks() {
 
 /**
  * Ask the other catalogs about the books shown: each ticked one that can be asked, in turn. The page holds
- * the whole catalog from then on, as a catalog's book may be one outside the series.
+ * the whole catalog from then on, as a catalog's book may be one outside the series. On a series' page the
+ * series' own info is asked for at the same time (`fillSeries`), so one button asks about both.
  */
 export function askCatalogs(): Promise<void> {
 	ASKING = (async () => {
 		const part = comparedPart();
 		if (part === undefined) return;
-		const catalogs = await import('./edit-catalogs.js');
-		const choices = catalogs.catalogChoices(part.kind);
-		drawCatalogPicks(choices, catalogs.setSkipped);
-		byId('askBtn').textContent = spell('Ask again');
-		const asked = choices.filter(c => !c.cantAsk && !c.skipped);
-		if (!asked.length) {
-			RUN = null;
-			dropAllNew();
-			render();
-			drawCatalogFound();
-			if (KIND === 'series') drawSeriesChips();
-			fillElement(
-				byId('catalogNotes'),
-				buildElement(
-					'li',
-					{},
-					spell(
-						choices.some(c => !c.cantAsk)
-							? 'No catalog is ticked: tick one, and Ask again.'
-							: 'No catalog can be asked yet: save your server or a key on Import & export.',
-					),
-				),
-			);
-			return;
+		// the series' own info is asked of the catalogs at the same time, listed under the series panel
+		const series = KIND === 'series' ? fillSeries() : Promise.resolve();
+		try {
+			await askAboutBooks(part);
+		} finally {
+			await series;
 		}
-		await wholeCatalog();
-		RUN = await catalogs.runCatalogs(
-			part.kind,
-			part.name,
-			DRAFTS.filter(d => !d.added).map(d => d.id),
-		);
-		FRESH_PICKS = new Map();
-		MISSING_PICKS = new Map();
-		INFO_PICKS = new Set();
-		dropAllNew();
-		drawCatalogFound();
-		render();
-		if (KIND === 'series') drawSeriesChips();
 	})();
 	return ASKING;
+}
+
+/** Ask the ticked catalogs about the books shown, and draw what they have. */
+async function askAboutBooks(part: {kind: 'series' | 'author'; name: string}): Promise<void> {
+	const catalogs = await import('./edit-catalogs.js');
+	const choices = catalogs.catalogChoices(part.kind);
+	drawCatalogPicks(choices, catalogs.setSkipped);
+	byId('askBtn').textContent = spell('Ask again');
+	const asked = choices.filter(c => !c.cantAsk && !c.skipped);
+	if (!asked.length) {
+		RUN = null;
+		dropAllNew();
+		render();
+		drawCatalogFound();
+		if (KIND === 'series') drawSeriesChips();
+		fillElement(
+			byId('catalogNotes'),
+			buildElement(
+				'li',
+				{},
+				spell(
+					choices.some(c => !c.cantAsk)
+						? 'No catalog is ticked: tick one, and Ask again.'
+						: 'No catalog can be asked yet: save your server or a key on Import & export.',
+				),
+			),
+		);
+		return;
+	}
+	await wholeCatalog();
+	RUN = await catalogs.runCatalogs(
+		part.kind,
+		part.name,
+		DRAFTS.filter(d => !d.added).map(d => d.id),
+	);
+	FRESH_PICKS = new Map();
+	MISSING_PICKS = new Map();
+	INFO_PICKS = new Set();
+	dropAllNew();
+	drawCatalogFound();
+	render();
+	if (KIND === 'series') drawSeriesChips();
 }
 
 /** The other catalogs' names for the series, under its name. */
@@ -2394,7 +2406,7 @@ async function removeBook() {
 
 // ------------------------------------------------------------------ Fill in the series from other catalogs
 /**
- * The series panel's Fill in from other catalogs: asks the catalogs a page may read about the series
+ * The series' info, asked with the books by Ask the catalogs: asks the catalogs a page may read about the series
  * (entry-fill.ts, loaded only now) and lists under the panel what they have that it lacks, to tick. Asking
  * changes nothing; Add puts the ticked values in the panel's empty fields, which Review & save then lists.
  */
@@ -2415,7 +2427,9 @@ export async function fillSeries(): Promise<void> {
 		};
 	};
 	const {fillEntry, addedText} = await import('./entry-fill.js');
+	const {skipped} = await import('./edit-catalogs.js');
 	await fillEntry({
+		skip: skipped(),
 		kind: 'series',
 		name,
 		current,
@@ -2664,7 +2678,6 @@ fillElement(
 	}),
 );
 byId('seriesRemoveBtn').addEventListener('click', removeSeries);
-byId('seriesFillBtn').addEventListener('click', () => void fillSeries());
 byId('bookRemoveBtn').addEventListener('click', removeBook);
 byId('fillFromBtn').addEventListener('click', () => void fillFromCatalog());
 // Enter looks it up
