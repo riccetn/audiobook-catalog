@@ -174,10 +174,16 @@ export class CatalogRun {
 
 /**
  * Compare the books of a series or an author (`name`, with `ids` the books shown) with every catalog that can
- * be asked and isn't left out, in turn, with the run shown in the banner on top. The page holds the whole
- * catalog (a catalog's book may be one outside the series).
+ * be asked and isn't left out, in turn, with the run shown in the banner on top; with `only` (one book's Edit
+ * page), only the books shown are compared and read from the catalogs, not the rest of their series or author's.
+ * The page holds the whole catalog (a catalog's book may be one outside the series).
  */
-export async function runCatalogs(kind: 'series' | 'author', name: string, ids: string[]): Promise<CatalogRun> {
+export async function runCatalogs(
+	kind: 'series' | 'author',
+	name: string,
+	ids: string[],
+	only = false,
+): Promise<CatalogRun> {
 	await whenSaved(); // compared with the catalog as saved
 	const skip = skipped();
 	const notes: string[] = [];
@@ -188,11 +194,13 @@ export async function runCatalogs(kind: 'series' | 'author', name: string, ids: 
 		return !why && !skip.has(Sync.CLIENT.CATALOG);
 	});
 	const started = Date.now();
+	const part: ShelfPart = {kind, name, ...(only ? {books: ids} : {})};
 	for (const Sync of asked) {
 		const Client = Sync.CLIENT;
 		const job: CatalogJob = {catalog: Client.LABEL, mode: 'compare', dryRun: true, running: true, elapsed: 0};
 		showCatalogJob(job);
 		const sync = new (Sync as new (client: unknown) => ShelfSync)(catalogClient(Client, savedKey(Client)));
+		const asking: ShelfPart = {...Sync.part(CATALOG, kind, name), ...(only ? {books: ids} : {})};
 		try {
 			const result = await sync.compare(
 				CATALOG,
@@ -200,7 +208,7 @@ export async function runCatalogs(kind: 'series' | 'author', name: string, ids: 
 					Object.assign(job, {step: text, done, total, elapsed: Date.now() - started});
 					showCatalogJob(job);
 				},
-				Sync.part(CATALOG, kind, name),
+				asking,
 			);
 			sources.push({sync, result});
 			notes.push(
@@ -216,5 +224,5 @@ export async function runCatalogs(kind: 'series' | 'author', name: string, ids: 
 		}
 	}
 	showCatalogJob(null);
-	return new CatalogRun(sources, notes, ids, {kind, name});
+	return new CatalogRun(sources, notes, ids, part);
 }

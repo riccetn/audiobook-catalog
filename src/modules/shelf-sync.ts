@@ -16,8 +16,12 @@ import type {MergeOptions} from './merger.js';
 import type {ComparisonResult} from './comparison.js';
 import type {Step} from './catalog-client.js';
 
-/** a series or an author, and its id on the other catalog when it has one */
-export type ShelfPart = {kind: 'series' | 'author'; name: string; id?: string};
+/**
+ * A series or an author, and its id on the other catalog when it has one; with `books` (the Edit page of one
+ * book), only those books of the catalog (by id) are compared, and only they are read from the other catalog: not
+ * the series' or author's other books there, nor the books the catalog lacks.
+ */
+export type ShelfPart = {kind: 'series' | 'author'; name: string; id?: string; books?: string[]};
 /**
  * An id found on the other catalog for a series or person of yours: under `catalog` (the key in ExternalCatalog;
  * the client's CATALOG when left out), and for a series its count of books there (`total`), when it says.
@@ -366,6 +370,16 @@ export class ShelfSync {
 	 */
 	static inScope(catalog: Catalog, scope: {kind: 'series' | 'author'; name: string} | null): Book[] {
 		return scope ? catalog.books.filter(Comparison.scope(scope.kind, scope.name)) : catalog.books;
+	}
+
+	/**
+	 * Whether a book of the catalog is one `part` compares: one of its `books` when it names them, else one of
+	 * the series' or author's (Comparison.scope).
+	 */
+	static partScope(part: ShelfPart): (book: Book) => boolean {
+		if (!part.books) return Comparison.scope(part.kind, part.name);
+		const ids = new Set(part.books);
+		return book => book.id !== undefined && ids.has(book.id);
 	}
 
 	/**

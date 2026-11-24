@@ -121,7 +121,8 @@ export class HardcoverSync extends ShelfSync {
 	async comparePart(catalog: Catalog, step: Step, part: ShelfPart): Promise<HardcoverComparison> {
 		const client = this.client;
 		const scope = Comparison.scope(part.kind, part.name);
-		const mine = catalog.books.filter(scope).map(b => b.clone());
+		const yours = ShelfSync.partScope(part);
+		const mine = catalog.books.filter(yours).map(b => b.clone());
 		const ids = await client.find(HardcoverSync.lookups(mine), step);
 		HardcoverSync.addIds(mine, ids);
 		const theirs = [
@@ -133,24 +134,31 @@ export class HardcoverSync extends ShelfSync {
 			),
 		];
 		const series = part.kind === 'series';
+		// for some books only (one book's Edit page), only their own shelf entries are read
+		let partIds: number[] = [];
+		if (!part.books) {
+			step(
+				Text.phrase(
+					series ? 'Finding the series {name} on Hardcover' : 'Finding the author {name} on Hardcover',
+					{name: part.name},
+				),
+			);
+			partIds = await this.partIds(part, theirs, step);
+		}
 		step(
-			Text.phrase(series ? 'Finding the series {name} on Hardcover' : 'Finding the author {name} on Hardcover', {
-				name: part.name,
-			}),
-		);
-		const partIds = await this.partIds(part, theirs, step);
-		step(
-			Text.phrase(
-				series
-					? 'Reading your Hardcover shelves: the series {name}'
-					: 'Reading your Hardcover shelves: the books by {name}',
-				{name: part.name},
-			),
+			part.books
+				? Text.phrase('Reading your Hardcover shelves: your books')
+				: Text.phrase(
+						series
+							? 'Reading your Hardcover shelves: the series {name}'
+							: 'Reading your Hardcover shelves: the books by {name}',
+						{name: part.name},
+					),
 		);
 		const shelf = [];
 		const seen = new Set();
 		for (const ub of [
-			...(await client.shelfOf(part.kind, partIds, step)),
+			...(partIds.length ? await client.shelfOf(part.kind, partIds, step) : []),
 			...(await client.shelfOfBooks(theirs, step)),
 		]) {
 			if (Text.isObject(ub) && !seen.has(ub.id)) {
@@ -160,9 +168,11 @@ export class HardcoverSync extends ShelfSync {
 		}
 		const {result, opts} = await this.readShelfBooks(shelf, step);
 		// a book Hardcover has under another name of the series or author is in it when it is one of yours
-		const incoming = result.books.filter(b => scope(b) || theirs.includes(Number(b.idOn('hardcover'))));
+		const incoming = result.books.filter(
+			b => (!part.books && scope(b)) || theirs.includes(Number(b.idOn('hardcover'))),
+		);
 		const comparison = Comparison.compare(catalog, incoming, opts);
-		const books = comparison.merged.books.filter(scope);
+		const books = comparison.merged.books.filter(yours);
 		const idsFound = HardcoverSync.addIds(books, ids);
 		const {plan, notAudio} = await this.planFor(books, shelf, step, ids);
 		await this.editionFixes(notAudio, ids, step);

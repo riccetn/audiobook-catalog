@@ -1531,10 +1531,12 @@ async function askAboutBooks(part: {kind: 'series' | 'author'; name: string}): P
 		return;
 	}
 	await wholeCatalog();
+	// one book's page asks about that book only, not the rest of its series or author's
 	RUN = await catalogs.runCatalogs(
 		part.kind,
 		part.name,
 		DRAFTS.filter(d => !d.added).map(d => d.id),
+		KIND === 'book',
 	);
 	FRESH_PICKS = new Map();
 	MISSING_PICKS = new Map();
@@ -2013,8 +2015,9 @@ function shownName(): string | undefined {
 }
 
 /**
- * What the other catalogs are asked for: the series or the author shown, or one book's series (else its first
- * author), whose books they compare; undefined for a new book, which no catalog has yet.
+ * What the other catalogs are asked for: the series or the author shown, whose books they compare, or one book's
+ * series (else its first author), of which they compare that book alone; undefined for a new book, which no
+ * catalog has yet.
  */
 function comparedPart(): {kind: 'series' | 'author'; name: string} | undefined {
 	if (KIND === 'add') return undefined;

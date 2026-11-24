@@ -795,7 +795,7 @@ test('the Edit page shows the catalogs to ask when it opens, and asks them only 
 	assert.match(els.catalogNotes.textContent, /Hardcover: \d+ books? read\./);
 	assert.equal(els.askBtn.textContent, 'Ask again');
 });
-test("a book's Edit page asks the other catalogs by its series (else its first author), and offers no other books", async () => {
+test("a book's Edit page asks the other catalogs about that book only, by its series (else its first author), and offers no other books", async () => {
 	const mine = [
 		{t: 'Lantern Hours', a: ['R. T. Hale'], r: ['2024-05-01'], e: [{ext: {'audible.com': 'B0LANTERN1'}}]},
 		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
@@ -809,13 +809,22 @@ test("a book's Edit page asks the other catalogs by its series (else its first a
 	const options = {files: {'books.json': JSON.stringify(mine)}, hardcover: hc.fetch, setTimeout, storage};
 	const series = await bootAsked('#series=Gull+Isle', options);
 	assert.match(series.els.editBooks.innerHTML, /class="editNew/, "the series' page offers the books it lacks");
+	assert.ok(
+		hc.sent.some(s => /ShelfBySeries/.test(s.query)),
+		"the series' page reads the series' shelf entries",
+	);
+	hc.sent.length = 0;
 	const book = await bootAsked('#book=Brine+Tide', {...options, files: null});
-	assert.deepEqual(book.get('RUN.part'), {kind: 'series', name: 'Gull Isle'});
+	const bookId = book.get('BOOK_ID');
+	assert.deepEqual(book.get('RUN.part'), {kind: 'series', name: 'Gull Isle', books: [bookId]});
 	assert.equal(book.get('DRAFTS.length'), 1);
 	assert.doesNotMatch(book.els.editBooks.innerHTML, /class="editNew/);
-	assert.match(book.els.catalogNotes.innerHTML, /Hardcover: \d+ books? read\./);
+	assert.match(book.els.catalogNotes.innerHTML, /Hardcover: 0 books read\./);
+	// only the book itself is asked about: not the series there, nor its other books on your shelf
+	assert.ok(!hc.sent.some(s => /ShelfBySeries|ShelfByAuthor/.test(s.query)), 'no series or author is read');
+	assert.equal(book.get('RUN.review.fresh.length'), 0);
 	const lone = await bootAsked('#book=Lantern+Hours', {...options, files: null});
-	assert.deepEqual(lone.get('RUN.part'), {kind: 'author', name: 'R. T. Hale'});
+	assert.deepEqual(lone.get('RUN.part'), {kind: 'author', name: 'R. T. Hale', books: [lone.get('BOOK_ID')]});
 	// a new book is asked of no catalog
 	const added = await bootAdd('', {...options, files: null});
 	await added.ctx.ASKING;
