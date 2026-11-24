@@ -53,7 +53,7 @@ export class AudibleSync extends ShelfSync {
 		if (!part || part.kind !== 'series')
 			throw new PhraseError('Audible compares one series at a time: pick a series');
 		const client = this.client;
-		const mine = catalog.books.filter(Comparison.scope('series', part.name));
+		const mine = catalog.books.filter(ShelfSync.partScope(part));
 		const id = catalog.nameIds.series.get(part.name);
 		const info = id === undefined ? undefined : catalog.series.get(id);
 		const site = AudibleSync.siteOf(mine, info);
@@ -67,13 +67,23 @@ export class AudibleSync extends ShelfSync {
 		step(Text.phrase('Reading the series {name} on {site}', {name: part.name, site}));
 		const series = await client.series(site, asin, 'relationships,product_desc');
 		if (!series) throw new PhraseError('{site} has no series {asin}', {site, asin});
-		const children = (Array.isArray(series.relationships) ? series.relationships : []).filter(
+		const listedAll = (Array.isArray(series.relationships) ? series.relationships : []).filter(
 			(r: unknown) =>
 				Text.isObject(r) &&
 				r.relationship_to_product === 'child' &&
 				r.relationship_type === 'series' &&
 				typeof r.asin === 'string',
 		);
+		// for some books only (one book's Edit page), only the series' books that may be theirs are read: those
+		// with one of their ASINs, or their number
+		const myAsins = new Set(mine.flatMap(b => b.ids('asin')));
+		const myNumbers = new Set(mine.map(b => AudibleSync.numberKey(b.number || '')).filter(Boolean));
+		const children = part.books
+			? listedAll.filter(
+					(c: Unchecked) =>
+						myAsins.has(c.asin) || myNumbers.has(AudibleSync.numberKey(String(c.sequence || ''))),
+				)
+			: listedAll;
 		const products = await client.products(
 			site,
 			children.map((c: Unchecked) => c.asin),
@@ -141,6 +151,7 @@ export class AudibleSync extends ShelfSync {
 			}
 			// a box set of books there isn't one to have
 			else if (
+				!part.books &&
 				!yours.length &&
 				!key.includes('-') &&
 				!mine.some(b => b.number && AudibleSync.numberKey(b.number) === key)
@@ -159,7 +170,8 @@ export class AudibleSync extends ShelfSync {
 		const comparison = Comparison.compare(catalog, incoming, opts);
 		const numbers = [...byNumber.keys()].filter(k => /^\d+$/.test(k)).length;
 		const needsId = !info || !info.external[site];
-		const needsTotal = (!info || info.total === undefined) && numbers > 0;
+		// with some books only, the series' other books weren't read, so its count isn't known
+		const needsTotal = !part.books && (!info || info.total === undefined) && numbers > 0;
 		const infoIds: InfoId[] =
 			catalog.namesOf('series').has(part.name) && (needsId || needsTotal)
 				? [{kind: 'series', name: part.name, id: asin, catalog: site, ...(needsTotal ? {total: numbers} : {})}]

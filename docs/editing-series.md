@@ -88,7 +88,8 @@ _Other catalogs_ lists every catalog you have set up, and **Ask the catalogs** a
 author's, or book's) books: Hardcover with your token, AudiobookDB through your server's catalog proxy, and Audible
 through it too (a series only). Nothing is asked until you press it, so a small edit doesn't wait on them. Each is
 read as its **Compare** on _Import & export_ would read it, but only for these books, and nothing is sent to any
-catalog. Untick one to leave it out: it stays left out in this browser until you tick it again. A catalog that can't
+catalog. A book's own Edit page asks about that book alone, not the rest of its series or its author's books, so
+it offers no other books. Untick one to leave it out: it stays left out in this browser until you tick it again. A catalog that can't
 be asked says why (no token, or no server saved), and **Ask again** asks those ticked once more (after you add an id
 to a book, say). On a series' page it also asks about the series itself, listed under its fields (see
 [The series](#the-series)).

@@ -90,7 +90,8 @@ export class AudiobookdbSync extends ShelfSync {
 	async compare(catalog: Catalog, step: Step, part?: ShelfPart): Promise<AudiobookdbComparison> {
 		const client = this.client;
 		const scope = part ? Comparison.scope(part.kind, part.name) : () => true;
-		const mine = catalog.books.filter(scope).map(b => b.clone());
+		const yours = part ? ShelfSync.partScope(part) : () => true;
+		const mine = catalog.books.filter(yours).map(b => b.clone());
 		const found = await this.find(mine, step);
 		AudiobookdbSync.addIds(mine, found);
 		const myIds = new Set(mine.map(b => b.idOn('audiobookdb')).filter(id => typeof id === 'string'));
@@ -102,7 +103,9 @@ export class AudiobookdbSync extends ShelfSync {
 		const read = shelves ? AudiobookdbSync.readShelf(shelves) : null;
 		let wanted = read ? read.books : [];
 		const missing: MissingBook[] = [];
-		if (part) {
+		// for some books only (one book's Edit page), only they are looked for on your shelf
+		if (part && part.books) wanted = wanted.filter(sb => myIds.has(sb.id));
+		else if (part) {
 			const id = AudiobookdbSync.partId(part, mine, found);
 			let theirs: Unchecked[] = [];
 			// the series' books as it lists them, each with its number in it
@@ -177,10 +180,12 @@ export class AudiobookdbSync extends ShelfSync {
 							}),
 				);
 		});
-		const inScope = part ? incoming.filter(b => scope(b) || myIds.has(b.idOn('audiobookdb') as string)) : incoming;
+		const inScope = part
+			? incoming.filter(b => (!part.books && scope(b)) || myIds.has(b.idOn('audiobookdb') as string))
+			: incoming;
 		const opts: MergeOptions = {addable: book => book.editions.length > 0};
 		const comparison = Comparison.compare(catalog, inScope, opts);
-		const books = comparison.merged.books.filter(scope);
+		const books = comparison.merged.books.filter(yours);
 		const idsFound = AudiobookdbSync.addIds(books, found);
 		const infoIds = AudiobookdbSync.infoIds(catalog, books, found, comparison.report.added);
 		const plan = shelves && read ? AudiobookdbSync.planExport(books, shelves, read) : null;
