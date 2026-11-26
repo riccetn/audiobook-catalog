@@ -275,6 +275,25 @@ test('the address names what is shown, so a series, a book or a search can be li
 	assert.equal(odd.get('SERIES_FILTER'), null);
 	assert.equal(odd.ctx.location.hash, '');
 });
+test('every address is read by one rule: parts split at &, + a space, %26 an &, a malformed % kept as written', async () => {
+	const {get} = await boot({files: null});
+	const parts = (hash: string) => get(`Object.fromEntries(hashParts(${JSON.stringify(hash)}))`);
+	const value = (hash: string, key: string) => get(`valueFromPageHash(${JSON.stringify(hash)}, '${key}')`);
+	assert.deepEqual(parts('#p=Tern+%26+Finch+Press&n=Wren%20Talbot&missing'), {
+		p: 'Tern & Finch Press',
+		n: 'Wren Talbot',
+		missing: true,
+	});
+	assert.deepEqual(parts('#q=100%&a=%E0%A4%A'), {q: '100%', a: '%E0%A4%A'});
+	assert.equal(value('#p=Tern+%26+Finch+Press', 'p'), 'Tern & Finch Press');
+	assert.equal(value('#p=Tern+&+Finch', 'p'), 'Tern', 'an & ends the value, as on every page');
+	assert.equal(value('#add&series=id-3', 'series'), 'id-3', 'a part anywhere in the address');
+	assert.equal(value('#q=100%', 'q'), '100%');
+	assert.equal(value('#a=+', 'a'), null, 'nothing but spaces');
+	assert.equal(value('#a', 'a'), null, 'no value');
+	assert.equal(value('#a=x', 'a.'), null, 'a key is a name, not a pattern');
+	assert.equal(get(`hashOf([['p', 'Tern & Finch Press'], ['missing', true]])`), '#p=Tern+%26+Finch+Press&missing');
+});
 test("addresses from when one page showed the series, the books and a book go to the books page and the book's page", async () => {
 	for (const [hash, to] of [
 		['#books', 'books.html'],

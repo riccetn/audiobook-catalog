@@ -24,6 +24,7 @@ import {
 	namedPlacePageHref,
 	hashValue,
 	authorPageHref,
+	setAddress,
 } from './store.js';
 import {showIoStatus, byId, fieldById, spell, spellParts, plural, buildElement, fillElement, joined} from './dom.js';
 import {
@@ -35,7 +36,7 @@ import {
 	webLinks,
 } from './id-fields.js';
 import {comboField} from './combo-box.js';
-import {setAddress, nameLinks, authorLinks} from './book-list.js';
+import {nameLinks, authorLinks} from './book-list.js';
 import {PlaceTree, readPlaces} from './place-tree.js';
 import type {PlaceEntry} from './place-tree.js';
 import type {Book} from './modules/book.js';

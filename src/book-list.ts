@@ -19,7 +19,7 @@ import {
 	narratorPageHref,
 	bookPageHref,
 	seriesPageHref,
-	hashValue,
+	setAddress,
 } from './store.js';
 import {byId, fieldById, spell, spellParts, plural, buildElement, fillElement, joined} from './dom.js';
 import {externalLinks, webLinks} from './id-fields.js';
@@ -547,61 +547,4 @@ export function watchSearchAndFilters(addressNow: () => string, showView: () => 
 export function showFilterCount(filters: string[]) {
 	const on = filters.filter(id => fieldById(id).value).length;
 	byId('filtersBtn').textContent = on ? spell('Filters · {count}', {count: on}) : spell('Filters');
-}
-
-/**
- * The address's #a=1&b -> its parts, by name (true for a part without a value); anything malformed is read as best it can be.
- */
-export function hashParts(hash: string | null): Map<string, string | true> {
-	const dec = (v: string) => {
-		try {
-			return decodeURIComponent(v.replace(/\+/g, ' '));
-		} catch {
-			return v;
-		}
-	};
-	const p: Map<string, string | true> = new Map();
-	String(hash || '')
-		.replace(/^#/, '')
-		.split('&')
-		.filter(Boolean)
-		.forEach(part => {
-			const i = part.indexOf('=');
-			if (i < 0) p.set(dec(part), true);
-			else p.set(dec(part.slice(0, i)), dec(part.slice(i + 1)));
-		});
-	return p;
-}
-
-/**
- * A part of an address's parts (hashParts), trimmed; '' when it has no value.
- */
-export function hashText(parts: Map<string, string | true>, key: string): string {
-	const v = parts.get(key);
-	return typeof v === 'string' ? v.trim() : '';
-}
-
-/**
- * Parts -> an address's #a=1&b ('' for none); a part whose value is '' or false is left out.
- */
-export function hashOf(parts: [string, string | boolean][]): string {
-	const kept = parts
-		.filter(([, v]) => v !== '' && v !== false)
-		.map(([k, v]) => (v === true ? k : k + '=' + hashValue(String(v))));
-	return kept.length ? '#' + kept.join('&') : '';
-}
-
-/**
- * Put `hash` in the address: a new history entry, so Back returns to what was shown, unless `how` is 'replace'.
- */
-export function setAddress(how: 'push' | 'replace', hash: string, data: {search: boolean} | null = null) {
-	try {
-		history[how === 'replace' ? 'replaceState' : 'pushState'](
-			data,
-			'',
-			hash || location.pathname + (location.search || ''),
-		);
-	} catch {
-		/* the address just stays as it was */
-	}
 }

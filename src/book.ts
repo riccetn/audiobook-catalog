@@ -20,6 +20,10 @@ import {
 	seriesPageHref,
 	editPageHref,
 	namedPlacePageHref,
+	hashParts,
+	hashText,
+	hashOf,
+	setAddress,
 } from './store.js';
 import {showIoStatus, byId, fieldById, spell, spellParts, buildElement, fillElement, joined} from './dom.js';
 import {webLinks} from './id-fields.js';
@@ -30,10 +34,6 @@ import {
 	narratorLinks,
 	bookNarrators,
 	coverImage,
-	hashParts,
-	hashText,
-	hashOf,
-	setAddress,
 	alsoPublishedAs,
 	readingText,
 } from './book-list.js';
