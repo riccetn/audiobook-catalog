@@ -631,7 +631,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 	first.els.exportBtn.listeners.click[0]();
 	await idle();
 	const backup = JSON.parse(blobs[0]);
-	// version 6: the stored records by store and id, without what is derived
+	// version 7: the stored records by store and id, without what is derived
 	assert.deepEqual(Object.keys(backup), [
 		'version',
 		'books',
@@ -642,7 +642,7 @@ test('Export includes series and author info, and Import brings them back', asyn
 		'marks',
 		'exclusions',
 	]);
-	assert.equal(backup.version, 6);
+	assert.equal(backup.version, 7);
 	const byName = JSON.parse(JSON.stringify(Backup.toCatalog(backup)));
 	assert.deepEqual(withoutIds(byName), {
 		books: demoBooks,
@@ -898,6 +898,10 @@ test("Read today on a book's details adds today to its dates read, and Undo take
 	assert.deepEqual(get(`CATALOG.book(${JSON.stringify(id)}).read`), ['2023-06-02', '2025-11-20', today].sort());
 	assert.ok((await kept(storage)).books.find((b: any) => b.t === 'The Salt Road').r.includes(today));
 	assert.doesNotMatch(els.results.innerHTML, /readToday/, 'read today already');
+	assert.match(
+		els.results.innerHTML,
+		/<dd>2023-06-02, 2025-11-20, \d{4}-\d\d-\d\d <button type="button" class="startReading">/,
+	);
 	assert.equal(els.ioStatus.textContent, 'Read The Salt Road today. Undo');
 	els.ioStatus.querySelector('.undo')!.dispatch('click');
 	await idle();
@@ -906,6 +910,51 @@ test("Read today on a book's details adds today to its dates read, and Undo take
 		'2025-11-20',
 	]);
 	assert.match(els.results.innerHTML, /class="readToday">\+ Read today</);
+});
+test("+ Start reading on a book's details keeps where you are in it, until you finish it today or stop", async () => {
+	const {els, get, storage} = await bootBook('The Salt Road');
+	const id = get('BOOK_FILTER');
+	const stored = async () => (await kept(storage)).books.find((b: any) => b.t === 'The Salt Road');
+	const today = get('Text.today()');
+	els.results.querySelector('.startReading')!.dispatch('click');
+	await idle();
+	assert.deepEqual((await stored()).cr, {since: today});
+	assert.equal(els.ioStatus.textContent, 'Reading The Salt Road now. Undo');
+	assert.doesNotMatch(els.results.innerHTML, /startReading/, 'read already');
+	assert.match(els.results.innerHTML, new RegExp(`<p class="readingText">Reading now since ${today}</p>`));
+
+	// the place you have come to, and how far that is by its one edition's length (10h 42m)
+	els.readingAt.value = '3:12:45';
+	els.readingSave.dispatch('click');
+	await idle();
+	assert.deepEqual((await stored()).cr, {since: today, at: 11565});
+	assert.equal(els.ioStatus.textContent, 'At 3:12:45 in The Salt Road. Undo');
+	assert.match(els.results.innerHTML, new RegExp(`Reading now since ${today}, at 3:12:45 \\(30%\\)</p>`));
+	assert.equal(els.readingAt.value, '3:12:45');
+	els.readingAt.value = 'half way';
+	els.readingSave.dispatch('click');
+	await idle();
+	assert.match(els.ioStatus.textContent, /Not a place in the book: half way\. Use h:mm:ss/);
+	assert.deepEqual((await stored()).cr, {since: today, at: 11565}, 'unchanged');
+
+	// finished today: a date read, and no longer reading it; Undo puts both back
+	els.readingDone.dispatch('click');
+	await idle();
+	let book = await stored();
+	assert.deepEqual([book.r, book.cr], [['2023-06-02', '2025-11-20', today].sort(), undefined]);
+	assert.equal(els.ioStatus.textContent, 'Finished The Salt Road today. Undo');
+	els.ioStatus.querySelector('.undo')!.dispatch('click');
+	await idle();
+	book = await stored();
+	assert.deepEqual([book.r, book.cr], [['2023-06-02', '2025-11-20'], {since: today, at: 11565}]);
+	assert.deepEqual(get(`CATALOG.book(${JSON.stringify(id)}).reading`), {since: today, at: 11565});
+
+	// stop reading: no date read added
+	els.readingStop.dispatch('click');
+	await idle();
+	book = await stored();
+	assert.deepEqual([book.r, book.cr], [['2023-06-02', '2025-11-20'], undefined]);
+	assert.match(els.results.innerHTML, /class="startReading">\+ Start reading</);
 });
 test('removing a book excludes it from imports, and Export / Import carry the exclusions', async () => {
 	const mine = JSON.stringify([

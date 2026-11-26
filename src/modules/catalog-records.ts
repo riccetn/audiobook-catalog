@@ -19,6 +19,7 @@ import {Catalog} from './catalog.js';
 import {ExternalCatalog} from './external-catalog.js';
 import {Isbn} from './isbn.js';
 import type {ContributorKind} from './contributor.js';
+import type {Reading} from './book.js';
 import type {NamedKind} from './catalog.js';
 import type {SeriesStatus} from './series.js';
 import type {Mark} from './duplicates.js';
@@ -38,6 +39,8 @@ export interface BookRecord {
 	/** where its story takes place (none: no `placeIds`) */
 	placeIds?: string[];
 	read: string[];
+	/** whether you are reading it now: since when, and where in it you are (Book.reading) */
+	reading?: Reading;
 	/** its own ids by external catalog ({"hardcover": "77"}) */
 	external?: Record<string, string>;
 	/** web addresses of other pages about it */
@@ -63,7 +66,10 @@ export interface BookRecord {
 	words: string[];
 	/** its own external ids, "hardcover 77", to find it by one */
 	externalKeys: string[];
-	/** the years it was read in ("2024"), or ["undated"] with no date read, for the read filter */
+	/**
+	 * the years it was read in ("2024"), or ["undated"] with no date read (unless you are reading it now), for the
+	 * read filter; with "reading" too when you are reading it now
+	 */
 	readYears: string[];
 	/** what the catalog's search looks in (CatalogRecords.searchText) */
 	search: string;
@@ -347,6 +353,8 @@ export class CatalogRecords {
 	static NEW_POSITION = -1;
 	// What the read filter's "No date read" finds in readYears.
 	static UNDATED = 'undated';
+	// What the read filter's "Reading now" finds in readYears.
+	static READING = 'reading';
 	// The info a series' or person's record holds, beside its name.
 	static INFO: Record<'series' | 'contributors' | 'places', string[]> = {
 		series: ['total', 'status', 'note', 'external', 'links'],
@@ -516,6 +524,9 @@ export class CatalogRecords {
 	 */
 	static bookRecord(b: Book, idOf: IdOf, position: number): BookRecord {
 		const years = [...new Set(b.read.map(d => d.slice(0, 4)))];
+		// a book you are reading for the first time has no date read yet, which is no unknown one
+		if (!years.length && !b.reading) years.push(CatalogRecords.UNDATED);
+		if (b.reading) years.push(CatalogRecords.READING);
 		const rec: BookRecord = {
 			id: b.id as string,
 			title: b.title,
@@ -535,7 +546,7 @@ export class CatalogRecords {
 				),
 			],
 			externalKeys: externalKeys(b.external),
-			readYears: years.length ? years : [CatalogRecords.UNDATED],
+			readYears: years,
 			search: CatalogRecords.searchText(b),
 		};
 		if (b.series) {
@@ -548,6 +559,7 @@ export class CatalogRecords {
 			rec.numberEnd = range ? range[1] : rec.numberKey;
 		} else rec.standalone = 1;
 		if (b.number) rec.number = b.number;
+		if (b.reading) rec.reading = Book.readingCopy(b.reading);
 		if (b.places.length) rec.placeIds = [...new Set(b.places)].map(name => idOf('places', name));
 		if (Object.keys(b.external).length) rec.external = ExternalCatalog.order(b.external) as Record<string, string>;
 		if (b.links.length) rec.links = [...b.links];
@@ -778,6 +790,7 @@ export class CatalogRecords {
 			genres: rec.genres,
 			places: (rec.placeIds || []).map(id => nameOf(id, 'place')),
 			read: rec.read,
+			reading: rec.reading,
 			// a record from before ids were kept by external catalog has them under fields of their own
 			external: rec.external || ExternalCatalog.oldIds(rec),
 			links: rec.links,

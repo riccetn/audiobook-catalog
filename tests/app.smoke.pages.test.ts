@@ -708,7 +708,7 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	);
 	assert.match(
 		details,
-		/<dl class="details"><dt>Series<\/dt><dd><a href="index\.html#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20 <button type="button" class="readToday">\+ Read today<\/button><\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/,
+		/<dl class="details"><dt>Series<\/dt><dd><a href="index\.html#series=The\+Lantern\+Coast">The Lantern Coast<\/a> #1<\/dd><dt>Read<\/dt><dd>2023-06-02, 2025-11-20 <button type="button" class="readToday">\+ Read today<\/button> <button type="button" class="startReading">\+ Start reading<\/button><\/dd><dt>Genres<\/dt><dd><span class="genres"><span class="tag">Fantasy<\/span><span class="tag">Adventure<\/span><\/span><\/dd><\/dl>/,
 	);
 	assert.match(
 		details,
@@ -1154,6 +1154,48 @@ test("an edition's page pasted in Another id, or in its id field, becomes its id
 		els['book-0-ed-0-error'].textContent,
 		/Not an edition's address: not an address\. For a bare id, pick its catalog\./,
 	);
+});
+test('reading now: edited on the Edit page, shown on the card, and filtered by on Books', async () => {
+	const dated = demoBooks.find(b => b.r && b.r.length > 1);
+	const fresh = demoBooks.find(b => !b.r);
+	const edit = await bootEditBook(fresh.t);
+	const {storage} = edit;
+	const stored = (t: string) => kept(storage).then(k => k.books.find((b: any) => b.t === t));
+	assert.deepEqual([edit.els.b0_crs.value, edit.els.b0_cra.value], ['', '']);
+	edit.els['b0_crs-today'].listeners.click[0]();
+	const today = edit.get('Text.today()');
+	assert.equal(edit.els.b0_crs.value, today);
+	typeIn(edit.els, 'b0_cra', '1h 2m 3s');
+	assert.equal(await saveEdit(edit), true);
+	assert.deepEqual((await stored(fresh.t)).cr, {since: today, at: 3723});
+	// a place that is none is named, and changes nothing; a place alone is enough
+	const again = await bootEditBook(dated.t, {storage});
+	assert.match(again.els['book-0'].innerHTML, /<label for="b0_cra">Place in the book<\/label>/);
+	typeIn(again.els, 'b0_cra', 'soon');
+	assert.match(again.els['book-0-error'].textContent, /Not a place in the book: soon/);
+	assert.equal(await saveEdit(again), false);
+	typeIn(again.els, 'b0_cra', '12:00');
+	assert.equal(await saveEdit(again), true);
+	assert.deepEqual((await stored(dated.t)).cr, {at: 720});
+	// emptied, it is no longer being read
+	const done = await bootEditBook(fresh.t, {storage});
+	assert.equal(done.els.b0_cra.value, '1:02:03');
+	typeIn(done.els, 'b0_crs', '');
+	typeIn(done.els, 'b0_cra', '');
+	assert.equal(await saveEdit(done), true);
+	assert.equal((await stored(fresh.t)).cr, undefined);
+
+	// Books: the card says so, and "Reading now" lists only the books being read
+	const books = await boot({page: 'books.html', hash: '#read=reading', storage});
+	assert.equal(books.els.readFilter.value, '__reading__');
+	assert.match(books.els.readFilter.innerHTML, /<option value="__reading__">Reading now<\/option>/);
+	assert.doesNotMatch(books.els.readFilter.innerHTML, /Read in reading/);
+	assert.equal(cards(books.els.results.innerHTML), 1);
+	assert.match(books.els.results.innerHTML, /<div class="reading">Reading now, at 0:12:00 \(1%\)<\/div>/);
+	books.els.readFilter.value = '';
+	await books.ctx.refreshView();
+	await idle();
+	assert.equal(cards(books.els.results.innerHTML), demoBooks.length);
 });
 test('dates read: shown on the card, edited on its Edit page, and filterable by year', async () => {
 	const {ctx, els, storage} = await boot({page: 'books.html'});

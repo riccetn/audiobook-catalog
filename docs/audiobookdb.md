@@ -34,7 +34,8 @@ the way an import does ([the comparison](imports.md#the-comparison)):
    otherwise it is listed as not added: add it with `+ Add a book`, filled in from your release's address.
 3. The comparison has more groups for AudiobookDB:
    - **Not on your AudiobookDB Listened shelf**: your books AudiobookDB has that aren't on _Listened_ there.
-     Everything in the catalog counts as read, with a date or without. Unticked: tick a book to put it on
+     Everything in the catalog counts as read, with a date or without, but a book you are reading for the first
+     time (no date read yet), which isn't listed. Unticked: tick a book to put it on
      your _Listened_ shelf.
    - **Save the AudiobookDB ids and covers found**: ticked, it keeps the AudiobookDB ids found for your books and their
      editions (the release each one is), and for their series, authors, narrators and publishers (where

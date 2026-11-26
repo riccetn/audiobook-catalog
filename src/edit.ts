@@ -102,6 +102,9 @@ const BOOK_FIELDS: [string, string][] = [
 	['g', 'Genres'],
 	['pl', 'Places'],
 	['r', 'Read'],
+	// you are reading it now when either is filled in
+	['crs', 'Reading since'],
+	['cra', 'Place in the book'],
 ];
 /** The book fields with an input on this page. */
 const bookFields = (): [string, string][] => BOOK_FIELDS.filter(([k]) => k !== 's' || KIND !== 'series');
@@ -236,6 +239,8 @@ export function bookFieldText(b: Book, key: string): string {
 	if (key === 'g') return b.genres.join(', ');
 	if (key === 'pl') return b.places.join(', ');
 	if (key === 'r') return b.read.join(', ');
+	if (key === 'crs') return b.reading?.since || '';
+	if (key === 'cra') return b.reading?.at === undefined ? '' : Text.formatTimecode(b.reading.at);
 	return '';
 }
 
@@ -338,6 +343,21 @@ function readTodayButton(input: string, onchange: () => void): HTMLElement {
 	);
 }
 
+/** + Today beside when you started reading a book: today's date put in the field when it is empty, which is then read. */
+function startTodayButton(input: string, onchange: () => void): HTMLElement {
+	return buttonFor(
+		'+ Today',
+		() => {
+			const field = fieldById(input);
+			if (field.value.trim()) return;
+			field.value = Text.today();
+			onchange();
+		},
+		input + '-today',
+		'editReadToday',
+	);
+}
+
 /**
  * The other catalogs' values for a field, each a button that puts it in the field's input (`id`), which is
  * then read as if typed (`onchange`).
@@ -402,11 +422,12 @@ function bookCard(d: Draft, i: number): HTMLElement {
 			label,
 			bookFieldText(b, k),
 			bookFieldText(d.before, k),
-			{'data-book': String(i), onchange},
+			{'data-book': String(i), onchange, ...(k === 'cra' ? {placeholder: spell('h:mm:ss')} : {})},
 			choicesFor(d, null, null, k),
 			{
 				...(k in NAME_FIELDS ? {names: k} : {}),
 				...(k === 'r' ? {extra: [readTodayButton(inputId(i, null, k), onchange)]} : {}),
+				...(k === 'crs' ? {extra: [startTodayButton(inputId(i, null, k), onchange)]} : {}),
 			},
 		),
 	);
@@ -448,6 +469,7 @@ function bookCard(d: Draft, i: number): HTMLElement {
 					[
 						Text.namesText(b.authors),
 						b.read.length ? spell('read {dates}', {dates: b.read.join(', ')}) : '',
+						b.reading ? spell('reading now') : '',
 						plural(b.editions.length, 'edition'),
 					]
 						.filter(Boolean)
@@ -1686,6 +1708,14 @@ export function readBookFields(i: number) {
 	const {dates, bad} = Text.parseDates(value('r'));
 	if (bad.length)
 		problems.push(spell('Not a date: {dates}. Use YYYY-MM-DD, or YYYY-MM / YYYY.', {dates: bad.join(', ')}));
+	const sinceText = Text.tidy(value('crs')),
+		atText = Text.tidy(value('cra'));
+	const since = sinceText ? Text.parseDate(sinceText) : undefined,
+		at = atText ? Text.parseTimecode(atText) : undefined;
+	if (since === null)
+		problems.push(spell('Not a date: {dates}. Use YYYY-MM-DD, or YYYY-MM / YYYY.', {dates: sinceText}));
+	if (at === null)
+		problems.push(spell('Not a place in the book: {typed}. Use h:mm:ss, as 3:12:45.', {typed: atText}));
 	const external = readExternalFields(inputId(i, null, 'ext_'), 'book', d.book.external);
 	if (external.bad.length)
 		problems.push(spell("Not a book's id or address there: {bad}.", {bad: external.bad.join('; ')}));
@@ -1704,6 +1734,10 @@ export function readBookFields(i: number) {
 		.filter(Boolean);
 	b.places = splitPlaces(value('pl'));
 	b.read = dates;
+	b.reading =
+		since || at !== undefined
+			? Book.readingCopy({since: since || undefined, at: at === null ? undefined : at})
+			: undefined;
 	b.external = external.ids;
 	b.links = Text.parseLinks(value('links'));
 	markFields(i);

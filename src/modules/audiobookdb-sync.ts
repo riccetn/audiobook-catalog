@@ -587,8 +587,8 @@ export class AudiobookdbSync extends ShelfSync {
 
 	// --------------------------------------------------------------- the export
 	/**
-	 * What an export to AudiobookDB would do: each of your books (everything in the catalog counts as read)
-	 * goes on your Read shelf as its AudiobookDB book, unless it is there already. A book on another of the
+	 * What an export to AudiobookDB would do: each of your books (everything in the catalog counts as read, but
+	 * a book you are reading for the first time, which is left out) goes on your Read shelf as its AudiobookDB book, unless it is there already. A book on another of the
 	 * shelves that hold a book on one of them only (exclusive: To Listen, Currently Listening) is left alone, as
 	 * putting it on Read would take it off that one; the others (Favorites, your own) don't count. Books without an AudiobookDB id are listed as unknown.
 	 */
@@ -610,6 +610,7 @@ export class AudiobookdbSync extends ShelfSync {
 					if (!elsewhere.has(b.id)) elsewhere.set(b.id, tidyText(s.name) || s.slug);
 		const wanted: Map<string, Book[]> = new Map();
 		for (const b of books) {
+			if (b.firstReading()) continue;
 			const id = b.idOn('audiobookdb');
 			if (!id) {
 				plan.unknown.push(b);

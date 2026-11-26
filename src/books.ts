@@ -29,6 +29,8 @@ let FILTER_CHOICES: {authors: string[]; genres: string[]; years: string[]} = {au
 
 // Filter value for books with no date read, in the "Read any time" select.
 const UNDATED = '__undated__';
+// Filter value for the books you are reading now.
+const READING = '__reading__';
 const FILTERS = ['authorFilter', 'genreFilter', 'readFilter', 'sortBy']; // the order folds away with them
 
 function uniqueSorted(arr: string[]) {
@@ -43,7 +45,9 @@ async function readFilterChoices(r: CatalogReader): Promise<typeof FILTER_CHOICE
 	const authors = (await r.indexKeys('contributors', 'kindName', r.keyRange.bound(['author'], ['author', []]))).map(
 		([key]) => String((key as IDBValidKey[])[1]),
 	);
-	const years = ((await r.keys('books', 'readYears')) as string[]).filter(y => y !== CatalogRecords.UNDATED);
+	const years = ((await r.keys('books', 'readYears')) as string[]).filter(
+		y => y !== CatalogRecords.UNDATED && y !== CatalogRecords.READING,
+	);
 	return {
 		authors: uniqueSorted(authors),
 		genres: uniqueSorted((await r.keys('books', 'genres')) as string[]),
@@ -74,6 +78,7 @@ function populateFilters() {
 	fillElement(
 		rSel,
 		option('', spell('Read any time')),
+		option(READING, spell('Reading now')),
 		years.map(y => option(y, spell('Read in {year}', {year: y}))),
 		option(UNDATED, spell('No date read')),
 	);
@@ -107,7 +112,14 @@ async function readListed(r: CatalogReader): Promise<string[]> {
 		);
 	}
 	if (genre) narrow(await r.allKeys('books', 'genres', genre));
-	if (read) narrow(await r.allKeys('books', 'readYears', read === UNDATED ? CatalogRecords.UNDATED : read));
+	if (read)
+		narrow(
+			await r.allKeys(
+				'books',
+				'readYears',
+				read === UNDATED ? CatalogRecords.UNDATED : read === READING ? CatalogRecords.READING : read,
+			),
+		);
 	// an ISBN matches however it is typed: with hyphens, or as the ISBN-10 of the same edition
 	if (q)
 		narrow(
@@ -201,7 +213,8 @@ export function render() {
 
 // ------------------------------------------------------------------ the address
 // The search, filters and order live in the address after the #, so they can be linked to, bookmarked and
-// reloaded, and Back and Forward step through them: #q=gull&author=...&genre=...&read=2024 (or read=undated)&sort=read.
+// reloaded, and Back and Forward step through them: #q=gull&author=...&genre=...&read=2024 (or read=undated, or
+// read=reading)&sort=read.
 
 /** @returns the address of what is shown now */
 function addressNow(): string {
@@ -211,7 +224,7 @@ function addressNow(): string {
 		['q', val('q').trim()],
 		['author', val('authorFilter')],
 		['genre', val('genreFilter')],
-		['read', read === UNDATED ? 'undated' : read],
+		['read', read === UNDATED ? 'undated' : read === READING ? 'reading' : read],
 		['sort', val('sortBy')],
 	]);
 }
@@ -224,7 +237,8 @@ function showAddress() {
 	if (box.value.trim() !== hashText(p, 'q')) box.value = hashText(p, 'q');
 	fieldById('authorFilter').value = hashText(p, 'author');
 	fieldById('genreFilter').value = hashText(p, 'genre');
-	fieldById('readFilter').value = hashText(p, 'read') === 'undated' ? UNDATED : hashText(p, 'read');
+	const read = hashText(p, 'read');
+	fieldById('readFilter').value = read === 'undated' ? UNDATED : read === 'reading' ? READING : read;
 	fieldById('sortBy').value = ['read', 'added'].includes(hashText(p, 'sort')) ? hashText(p, 'sort') : '';
 	if (addressNow() !== location.hash) setAddress('replace', addressNow());
 	return showView();

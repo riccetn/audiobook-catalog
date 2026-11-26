@@ -245,6 +245,17 @@ _Read in_ filter picks the books read in a given year, or those with no date yet
 fills in its _Date Read_ on books that have no dates yet (Goodreads keeps only the latest one); it never
 changes dates you already have. Audible imports do not set dates read.
 
+**Keep track of the book you are reading now**: open the book and press **+ Start reading** beside its dates
+read. The book's page then shows since when you are reading it, and a _Place in the book_ field: type where you
+are (`3:12:45`, `12:45` or `3h 12m`) and press **Save place**. When the book has a length (its editions with
+one all agree on it), it says how far in that is (`at 3:12:45 (30%)`). **Finished today** adds today to its dates
+read and ends it; **Stop reading** ends it without a date. Each saves at once and offers **Undo**. The book's
+Edit page has the same as _Reading since_ (with **+ Today**) and _Place in the book_; empty both to end it. The
+book's card says _Reading now_, and on **Books** the _Reading now_ choice of the read filter lists the books you
+are reading (`books.html#read=reading`). A book you are reading for the first time (no date read yet) goes on
+Goodreads' _currently-reading_ shelf in an export, and is left off your _Read_ shelves on Hardcover and AudiobookDB;
+one you are reading again stays read.
+
 **Goodreads**: import from and export to Goodreads; see [Goodreads](goodreads.md).
 
 **Hardcover**: compare the catalog with your Hardcover shelves, take books from them and put books and reads on them; see [Hardcover](hardcover.md).

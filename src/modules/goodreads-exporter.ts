@@ -88,13 +88,14 @@ export class GoodreadsExporter extends FileExporter {
 				'Year Published': ed.released ? ed.released.slice(0, 4) : '',
 				'Date Read': dates.length ? dates[dates.length - 1].replace(/-/g, '/') : '',
 				Bookshelves: book.genres.map(shelf).filter(Boolean).join(', '),
-				'Exclusive Shelf': 'read',
+				// a book you are reading for the first time isn't read yet; one you are reading again is
+				'Exclusive Shelf': book.firstReading() ? 'currently-reading' : 'read',
 				'Read Count': book.read.length ? String(book.read.length) : '',
 			};
 			lines.push(GoodreadsExporter.COLUMNS.map(c => Csv.field(row[c])).join(','));
 			report.books++;
 			if (!ed.idOn('goodreads') && !isbn) report.withoutIds++;
-			if (!dates.length) report.withoutDate++;
+			if (!dates.length && !book.firstReading()) report.withoutDate++;
 		}
 		const notes: Phrase[] = [];
 		if (report.withoutIds)

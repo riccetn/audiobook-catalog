@@ -17,7 +17,8 @@ become the title `The First Adventure` in series `Fantasy Adventures`, number `1
 
 **Download CSV** in the **Goodreads** panel of the _Import & export_ page downloads the catalog as a Goodreads library export,
 the format Goodreads' [import page](https://www.goodreads.com/review/import) takes. Every book goes on the
-_read_ shelf, also those with no date read (a missing date means unknown, not unread), with the series in
+_read_ shelf, also those with no date read (a missing date means unknown, not unread), but for a book you are
+reading for the first time (no date read yet), which goes on _currently-reading_; with the series in
 the title (`The First Adventure (Fantasy Adventures, #1)`), the first author as _Author_ and the rest as
 _Additional Authors_, its genres as shelves (`Science Fiction` becomes `science-fiction`), and how many
 dates read it has as _Read Count_. Goodreads keeps one date read, so a book gets its latest full date

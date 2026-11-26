@@ -629,6 +629,34 @@ button:focus {
 	font-size: 0.78rem;
 	margin-top: 0.15rem;
 }
+.book .reading {
+	color: var(--moss);
+	font-size: 0.78rem;
+	font-weight: 600;
+	margin-top: 0.15rem;
+}
+/* A book you are reading now, on its page: where you are, and what to do next. */
+.book-details .readingNow {
+	border-top: 1px solid var(--line);
+	margin-top: 0.75rem;
+	padding-top: 0.6rem;
+	font-size: 0.82rem;
+}
+.book-details .readingText {
+	margin: 0 0 0.4rem;
+	color: var(--moss);
+	font-weight: 600;
+}
+.book-details .readingControls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.4rem;
+}
+.book-details .readingControls input {
+	width: 7em;
+	font: inherit;
+}
 /* A book on its own: its details and each edition's as label and value rows. */
 .book.book-details {
 	display: grid;
@@ -1357,7 +1385,9 @@ button:focus {
 /* the status line's Undo and Dismiss, and a book's Read today */
 .ioStatus .undo,
 .ioStatus .dismiss,
-.book-details .readToday {
+.book-details .readToday,
+.book-details .startReading,
+.book-details .readingButton {
 	padding: 0.15rem 0.6rem;
 	border-radius: 6px;
 	border: 1px solid var(--moss);
@@ -1369,7 +1399,9 @@ button:focus {
 }
 .ioStatus .undo:hover,
 .ioStatus .dismiss:hover,
-.book-details .readToday:hover {
+.book-details .readToday:hover,
+.book-details .startReading:hover,
+.book-details .readingButton:hover {
 	background: var(--moss);
 	color: var(--on-moss);
 }

@@ -317,6 +317,36 @@ export class Text {
 	}
 
 	/**
+	 * A place in a book, in whole seconds from its start: "3:12:45" (hours, minutes, seconds), "12:45" (minutes and
+	 * seconds), "3h 12m 45s" or "3h 12m". Returns null when it is none of these, or a minute after hours or a second
+	 * after minutes is above 59.
+	 */
+	static parseTimecode(text: unknown): number | null {
+		const s = Text.tidy(String(text ?? '')).toLowerCase();
+		let m = /^(?:(\d+):)?(\d{1,2}):(\d{1,2})$/.exec(s);
+		if (m) {
+			const [h, min, sec] = [Number(m[1] || 0), Number(m[2]), Number(m[3])];
+			// "75:30" is 75 minutes in, but the minutes after hours are below 60
+			if (sec > 59 || (m[1] !== undefined && min > 59)) return null;
+			return h * 3600 + min * 60 + sec;
+		}
+		m = /^(?:(\d+)\s*h(?:rs?)?)?\s*(?:(\d+)\s*m(?:ins?)?)?\s*(?:(\d+)\s*s(?:ecs?)?)?$/.exec(s);
+		if (!m || (m[1] === undefined && m[2] === undefined && m[3] === undefined)) return null;
+		const [h, min, sec] = [Number(m[1] || 0), Number(m[2] || 0), Number(m[3] || 0)];
+		// "90s" alone is a minute and a half in, but the seconds after minutes are below 60
+		if ((sec > 59 && (m[1] !== undefined || m[2] !== undefined)) || (m[1] !== undefined && min > 59)) return null;
+		return h * 3600 + min * 60 + sec;
+	}
+
+	/**
+	 * 11565 -> "3:12:45"; what parseTimecode() reads back. Always with the hours, so places line up.
+	 */
+	static formatTimecode(seconds: number): string {
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+	}
+
+	/**
 	 * The host of a web address ('www.audible.com' from 'https://www.audible.com/author/...'), or null when
 	 * it is not one. A pattern rather than URL(), so this module needs nothing but the language itself.
 	 */

@@ -54,7 +54,7 @@ page on Open Library, Wikidata or Hardcover, or its ISBN.
 
 - [Everyday workflows](docs/workflows.md): editing, series info, missing books, removing and merging
 - [Editing books and series](docs/editing-series.md): a book, a new book, or a series' or an author's books on one page, with what the other catalogs have for them, filling a book in from a catalog, and merging, splitting and removing editions
-  books, a book's details, ISBNs, dates read, links to other pages about a book, an edition or a series
+  books, a book's details, ISBNs, dates read, the book you are reading now and where you are in it, links to other pages about a book, an edition or a series
 - [Authors](docs/authors.md): author pages with a bio, links, and their series and titles
 - [Narrators and publishers](docs/narrators-publishers.md): a page for each narrator and publisher with a bio, links, and their series and titles
 - [Places](docs/places.md): where stories take place, worlds and the places within them
