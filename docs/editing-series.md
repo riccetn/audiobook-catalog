@@ -36,6 +36,12 @@ Each book's card has its title, authors, number in the series, genres, dates rea
 catalogs (Goodreads, Hardcover, Open Library, ...) and its links, one per line. A field that changed is marked, and one that can't be read
 (a date such as "last spring") is named on the book and changes nothing until it is fixed.
 
+With one or two books every card is open. With more, a card starts closed, showing only its summary (number, title,
+authors, dates read and how many editions), so the book you came for is easy to find: open it to edit it, or use
+**Expand all** and **Collapse all** beside _Books_. A card opens by itself when it needs you: a book you changed, one
+with a field that can't be read, one the other catalogs have something for once they are asked, and a new book ticked
+to add. A card you opened or closed stays so as the page draws the books again; it opens only for something new.
+
 ## Its editions
 
 Each edition is told apart by its description (a short name for it, such as `UK edition` or `Full cast`); without one, by its narrators; without those,
@@ -129,6 +135,6 @@ values aren't shown beside the fields and taking its book leaves it out. A book 
 
 **Review & save** lists every change, book by book: the fields, and each edition added, changed or removed.
 While the list is open the fields can't be changed, so **Save** saves just what it lists; **Back** goes on
-editing. When a field can't be read, Review & save says so and scrolls to it instead. **Save** saves the
+editing. When a field can't be read, Review & save says so and opens its card and scrolls to it instead. **Save** saves the
 books, adds the new books ticked, and keeps the ids picked for the series and people, then returns to the
 series' (or author's, or book's) page, which says what was saved, with any name new to the catalog; **Discard** returns to it without saving anything.

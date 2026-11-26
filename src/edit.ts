@@ -410,10 +410,54 @@ function choicesFor(d: Draft, ed: Edition | null, j: number | null, key: string)
 	});
 }
 
+// ------------------------------------------------------------------ open and closed cards
+/** How many of your books a page shows with every card open: with more, a card opens only when it needs to. */
+const ALL_OPEN_UP_TO = 2;
+/** Whether the page holds so few books that their cards are all open (one book's page always is). */
+const fewBooks = (): boolean => oneBook() || DRAFTS.filter(d => !d.added).length <= ALL_OPEN_UP_TO;
+
+/**
+ * Why a book's card is open, whatever the number of books: it was changed, a field of it can't be read, the
+ * other catalogs have something for it, or it is a new book. Kept on the card (`data-open-for`), so a card drawn
+ * again opens only for a reason it didn't have before.
+ */
+function openReasons(d: Draft): string[] {
+	const reviewed = RUN && RUN.review.books.get(d.id);
+	const offers =
+		!!reviewed && (reviewed.fields.length > 0 || reviewed.notAudio.length > 0 || offersFor(d).length > 0);
+	return [
+		...(d.book.text() !== d.before.text() ? ['changed'] : []),
+		...(d.error ? ['error'] : []),
+		...(offers ? ['offers'] : []),
+		...(d.added ? ['new'] : []),
+	];
+}
+
+/** Note on a book's card why it is open now (as its fields are read, without drawing it again). */
+function noteOpenReasons(i: number) {
+	const card = document.getElementById(`book-${i}`);
+	if (card) card.setAttribute('data-open-for', openReasons(DRAFTS[i]).join(' '));
+}
+
+/** Open the cards `el` is in (a book's, an edition's), so what is scrolled to can be seen. */
+function openCardsAround(el: Element) {
+	for (let at = el.closest('details'); at; at = at.parentElement ? at.parentElement.closest('details') : null)
+		at.setAttribute('open', '');
+}
+
+/** Expand all and Collapse all: every book's card opened or closed (their editions stay as they are). */
+function openAllBooks(open: boolean) {
+	for (const card of byId('editBooks').querySelectorAll('details.editBook')) {
+		if (open) card.setAttribute('open', '');
+		else card.removeAttribute('open');
+	}
+}
+
 /** A book's card: its summary, its fields and its editions. */
 function bookCard(d: Draft, i: number): HTMLElement {
 	const b = d.book;
 	const changed = b.text() !== d.before.text();
+	const reasons = openReasons(d);
 	const cover = coverImage(b, 'small');
 	const onchange = () => readBookFields(i);
 	const fields = bookFields().map(([k, label]) =>
@@ -450,7 +494,12 @@ function bookCard(d: Draft, i: number): HTMLElement {
 	links.classList.toggle('changed', b.links.join(' ') !== d.before.links.join(' '));
 	return buildElement(
 		'details',
-		{class: changed ? 'editBook changed' : 'editBook', id: `book-${i}`, open: ''},
+		{
+			class: changed ? 'editBook changed' : 'editBook',
+			id: `book-${i}`,
+			'data-open-for': reasons.join(' '),
+			open: fewBooks() || reasons.length > 0,
+		},
 		buildElement(
 			'summary',
 			{},
@@ -1597,20 +1646,27 @@ export function render() {
 		...DRAFTS.flatMap((d, i) => (d.added ? [] : [{book: d.before, card: bookCard(d, i)}])),
 		...newCards(),
 	].sort((x, y) => bookOrder(x.book, y.book));
-	// a card opened or closed stays so when the books are drawn again (an id added to an edition, say)
+	// a card opened or closed stays so when the books are drawn again (an id added to an edition, say), but a
+	// book's opens when it has a reason to it didn't have (changed by a Take, offers from the catalogs asked)
 	const list = byId('editBooks');
-	const wasOpen = new Map(
-		[...list.querySelectorAll('details[id]')].map(el => [el.getAttribute('id'), el.hasAttribute('open')]),
+	const reasonsOf = (el: Element) => (el.getAttribute('data-open-for') || '').split(' ').filter(Boolean);
+	const was = new Map(
+		[...list.querySelectorAll('details[id]')].map(el => [
+			el.getAttribute('id'),
+			{open: el.hasAttribute('open'), reasons: reasonsOf(el)},
+		]),
 	);
 	fillElement(list, ...cards.map(c => c.card));
 	for (const el of list.querySelectorAll('details[id]')) {
-		const open = wasOpen.get(el.getAttribute('id'));
-		if (open === true) el.setAttribute('open', '');
-		else if (open === false) el.removeAttribute('open');
+		const before = was.get(el.getAttribute('id'));
+		if (!before) continue;
+		if (before.open || reasonsOf(el).some(r => !before.reasons.includes(r))) el.setAttribute('open', '');
+		else el.removeAttribute('open');
 	}
 	DRAFTS.forEach((d, k) => fillExternalFields(inputId(k, null, 'ext_'), 'book', d.book.external));
 	const own = DRAFTS.filter(d => !d.added).length;
 	byId('bookCount').textContent = own ? plural(own, 'book') : '';
+	byId('openCloseBtns').hidden = fewBooks();
 	showChangeCount();
 }
 
@@ -1721,6 +1777,7 @@ export function readBookFields(i: number) {
 		problems.push(spell("Not a book's id or address there: {bad}.", {bad: external.bad.join('; ')}));
 	d.error = problems.join(' ');
 	byId(`book-${i}-error`).textContent = d.error;
+	noteOpenReasons(i);
 	if (problems.length > needs) return showChangeCount();
 	const b = d.book;
 	b.title = title;
@@ -1853,6 +1910,7 @@ function markFields(i: number) {
 	const d = DRAFTS[i];
 	const card = byId(`book-${i}`);
 	card.classList.toggle('changed', d.book.text() !== d.before.text());
+	noteOpenReasons(i);
 	for (const [k] of bookFields()) {
 		const input = fieldById(inputId(i, null, k));
 		const box = input.closest('.editField');
@@ -2233,9 +2291,10 @@ function unreadField(): HTMLElement | null {
 	return null;
 }
 
-/** Why Review & save stopped: in the status line, and the problem it names scrolled into view. */
+/** Why Review & save stopped: in the status line, and the problem it names scrolled into view, its cards opened. */
 function showProblem(at: HTMLElement, status?: string) {
 	if (status) showIoStatus(status, true);
+	openCardsAround(at);
 	at.scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 
@@ -2728,6 +2787,8 @@ byId('reviewSaveBtn').addEventListener('click', save);
 byId('reviewBackBtn').addEventListener('click', () => setReviewing(false));
 byId('askBtn').addEventListener('click', () => void askCatalogs());
 byId('discardBtn').addEventListener('click', discard);
+byId('openAllBtn').addEventListener('click', () => openAllBooks(true));
+byId('closeAllBtn').addEventListener('click', () => openAllBooks(false));
 
 /** After a save took in what another tab changed (store.ts): the page shows the books as stored now. */
 function refresh() {

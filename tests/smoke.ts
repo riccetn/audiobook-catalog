@@ -386,6 +386,9 @@ export class FakeElement {
 		for (let el = this.parentNode; el; el = el.parentNode) out.push(el);
 		return out;
 	}
+	get parentElement(): FakeElement | null {
+		return this.parentNode;
+	}
 	closest(selector: string): FakeElement | null {
 		return this.withAncestors().find(el => matches(el, selector)) ?? null;
 	}

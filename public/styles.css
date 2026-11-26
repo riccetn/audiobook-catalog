@@ -1584,6 +1584,21 @@ button:focus {
 	border-color: var(--moss);
 	box-shadow: inset 0 0 0 1px var(--moss);
 }
+/* the Books heading, with Expand all and Collapse all beside it when the cards start closed */
+.editBooksBar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+.editBooksBtns {
+	display: flex;
+	gap: 0.4rem;
+}
+.editBooksBtns[hidden] {
+	display: none;
+}
 .editCount {
 	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	font-size: 0.85rem;
@@ -1743,6 +1758,7 @@ button:focus {
 }
 .editPanel button,
 .editBook button,
+.editBooksBtns button,
 .saveBar button,
 .editReview button {
 	padding: 0.35rem 0.9rem;
@@ -1756,6 +1772,7 @@ button:focus {
 }
 .editPanel button:hover,
 .editBook button:hover,
+.editBooksBtns button:hover,
 .saveBar button:hover,
 .editReview button:hover {
 	color: var(--moss);

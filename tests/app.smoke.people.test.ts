@@ -1148,6 +1148,58 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	assert.match(io.els.exclusionsList.innerHTML, /no book or edition is excluded/);
 	assert.deepEqual((await kept(storage)).excluded, []);
 });
+test("the Edit page opens every book's card for one or two books, and with more only those that need it", async () => {
+	const isOpen = (els: Record<string, any>, id: string) => els[id].hasAttribute('open');
+	// two books, or one: every card open, and nothing to expand
+	const two = await bootEdit('Halloway & Finch');
+	assert.deepEqual([isOpen(two.els, 'book-0'), isOpen(two.els, 'book-1')], [true, true]);
+	assert.equal(two.els.openCloseBtns.hidden, true);
+	const one = await bootEditBook('The Drowned Chart');
+	assert.equal(isOpen(one.els, 'book-0'), true);
+	assert.equal(one.els.openCloseBtns.hidden, true);
+
+	// four books: closed, found by their summaries, with Expand all and Collapse all
+	const {els} = await bootEdit('The Lantern Coast');
+	const opened = () => [0, 1, 2, 3].map(i => isOpen(els, `book-${i}`));
+	assert.deepEqual(opened(), [false, false, false, false]);
+	assert.match(els['book-2'].querySelector('summary')!.textContent, /^3 · The Drowned Chart/);
+	assert.equal(els.openCloseBtns.hidden, false);
+	els.openAllBtn.listeners.click[0]();
+	assert.deepEqual(opened(), [true, true, true, true]);
+	els.closeAllBtn.listeners.click[0]();
+	assert.deepEqual(opened(), [false, false, false, false]);
+
+	// a book changed and closed again stays closed when the books are drawn again; one opened stays open; a
+	// book changed by what draws them again (an id added to its edition) opens
+	els['book-0'].setAttribute('open', '');
+	await typeIn(els, 'b0_t', 'The Salt Road Home');
+	els['book-0'].removeAttribute('open');
+	els['book-3'].setAttribute('open', '');
+	await typeIn(els, 'b2e0_more', 'https://www.goodreads.com/book/show/4242');
+	assert.equal(els['b2e0_ext-goodreads'].value, '4242');
+	assert.deepEqual(opened(), [false, false, true, true]);
+
+	// Review & save opens the card (and the edition's) it scrolls to, for a field that can't be read
+	els['book-2'].removeAttribute('open');
+	els['book-3'].removeAttribute('open');
+	await typeIn(els, 'b1_r', 'last spring');
+	els['book-1'].removeAttribute('open');
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	assert.equal(els.reviewPanel.classList.contains('open'), false);
+	assert.equal(isOpen(els, 'book-1'), true);
+	assert.equal(els['book-1-error'].scrolledTo, true);
+	await typeIn(els, 'b1_r', '');
+	els['book-1'].removeAttribute('open');
+	await typeIn(els, 'b3e0_more', 'not an address');
+	els['book-3-ed-0'].removeAttribute('open');
+	els['book-3'].removeAttribute('open');
+	await els.reviewBtn.listeners.click[0]();
+	await idle();
+	assert.equal(els['book-3-ed-0-error'].scrolledTo, true);
+	assert.deepEqual([isOpen(els, 'book-3'), isOpen(els, 'book-3-ed-0')], [true, true]);
+	assert.deepEqual(opened(), [false, false, false, true]);
+});
 test("links: a book's and an edition's, typed on its Edit page (a catalog's page going to its id) and shown on its page", async () => {
 	const mine = JSON.stringify([
 		{
