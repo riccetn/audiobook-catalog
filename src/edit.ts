@@ -59,16 +59,18 @@ export type NewPick = {kind: 'fresh' | 'missing'; n: number};
 const NEW_EDITION = 'new-edition-';
 
 /**
- * What the page edits, by its kind: a series' books (#series=..., by the series' id), an author's (#author=..., by
- * the author's id), one book (#book=..., by its id), or a new book being added (#add: what it starts with, the id
- * of the series it is added to and an author's name, each '' when the address names none). A series' id is null
- * when there is nothing to edit: the address names no series, author or book the catalog has.
+ * What the page edits, by its kind: a series' books (#series=..., by the series' id, null when the address names
+ * no series the catalog has), an author's (#author=..., by the author's id), one book (#book=..., by its id), or a
+ * new book being added (#add: what it starts with, the id of the series it is added to and an author's name, each
+ * '' when the address names none). `missing` is an author's or book's page whose address names none the catalog
+ * has (or while it is looked up): there is nothing to load, ask about or save.
  */
 export type Editing =
 	| {kind: 'series'; id: string | null}
 	| {kind: 'author'; id: string}
 	| {kind: 'book'; id: string}
-	| {kind: 'add'; series: string; author: string};
+	| {kind: 'add'; series: string; author: string}
+	| {kind: 'missing'};
 /** What the page edits, from the address. */
 export let EDITING: Editing = {kind: 'series', id: null};
 /** What the other catalogs said, once asked; null before (or when none can be). */
@@ -2059,6 +2061,7 @@ function shownName(): string | undefined {
 	if (editing.kind === 'author') return CATALOG.nameOf('authors', editing.id);
 	if (editing.kind === 'book') return CATALOG.book(editing.id)?.title;
 	if (editing.kind === 'add') return DRAFTS.length ? DRAFTS[0].book.title : undefined;
+	if (editing.kind === 'missing') return undefined;
 	return editing.id === null ? undefined : CATALOG.nameOf('series', editing.id);
 }
 
@@ -2069,7 +2072,7 @@ function shownName(): string | undefined {
  */
 function comparedPart(): {kind: 'series' | 'author'; name: string} | undefined {
 	const editing = EDITING;
-	if (editing.kind === 'add') return undefined;
+	if (editing.kind === 'add' || editing.kind === 'missing') return undefined;
 	if (editing.kind === 'book') {
 		const b = CATALOG.book(editing.id);
 		if (!b) return undefined;
@@ -2086,6 +2089,7 @@ function returnHref(): string | null {
 	if (editing.kind === 'author') return creditPageHref('authors', editing.id);
 	if (editing.kind === 'book') return bookPageHref(editing.id);
 	if (editing.kind === 'add') return editing.series ? seriesPageHref(editing.series) : 'books.html';
+	if (editing.kind === 'missing') return null;
 	return editing.id === null ? null : seriesPageHref(editing.id);
 }
 
@@ -2589,7 +2593,7 @@ export async function loadShown() {
 	if (EDITING.kind === 'author') await loadAuthor();
 	else if (EDITING.kind === 'book') await loadBook();
 	else if (EDITING.kind === 'add') await loadNew();
-	else await loadSeries();
+	else if (EDITING.kind === 'series') await loadSeries();
 }
 
 /** The order of the books shown: by series number (an author's by series first, then number). */
@@ -2768,6 +2772,7 @@ export const READY = startPage(
 				byId('bookRemoveBtn').hidden = true;
 			} else {
 				const asked = book as string;
+				EDITING = {kind: 'missing'};
 				// by its id, or by its title from an older link
 				const id = await storedBookId(asked);
 				if (id === null) {
@@ -2782,6 +2787,7 @@ export const READY = startPage(
 			markNav('authors.html');
 			byId('seriesPanel').hidden = true;
 			byId('eyebrow').textContent = spell("Edit an author's books");
+			EDITING = {kind: 'missing'};
 			// by its id, or by name from an older link
 			const id = await storedContributorId('author', author);
 			if (id === null) {

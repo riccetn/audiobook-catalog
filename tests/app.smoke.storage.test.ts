@@ -1043,6 +1043,19 @@ test("a book's Edit page links back to the book, and Discard returns to it", asy
 	assert.equal(none.els.subtitle.textContent, 'There is no such book in the catalog.');
 	assert.equal(none.els.bookPanel.hidden, true);
 });
+test("an Edit page for a book or author the catalog doesn't have has nothing to review", async () => {
+	for (const hash of ['#book=No+Such+Book', '#author=No+Such+Author']) {
+		const {els, get, ctx} = await boot({page: 'edit.html', hash});
+		await idle();
+		assert.equal(get('EDITING.kind'), 'missing', hash);
+		await els.reviewBtn.listeners.click[0]();
+		await idle();
+		assert.equal(els.reviewPanel.classList.contains('open'), false, 'Review opens nothing');
+		assert.notEqual(els.seriesFormError.scrolledTo, true, 'nor points at the series panel');
+		els.discardBtn.listeners.click[0]();
+		assert.ok(!ctx.location.assigned, 'Discard has nowhere to go back to');
+	}
+});
 test('with a book removed, edits of the others save to the right books, in another tab too', async () => {
 	const mine = JSON.stringify([
 		{t: 'First', a: ['Ann Vale']},
