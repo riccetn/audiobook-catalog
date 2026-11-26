@@ -13,8 +13,7 @@ import type {
 	RecordSet,
 	Snapshot,
 	StoreName,
-	BookRecord,
-	EditionRecord,
+	SeriesRecord,
 	ContributorRecord,
 	PlaceRecord,
 	CreditKind,
@@ -349,8 +348,8 @@ async function readWanted(
 			bookIds.add(key as string);
 	const lacking: (store: StoreName, ids: Iterable<string>) => string[] = (store, ids) =>
 		[...new Set(ids)].filter(id => !has(store, id));
-	const books: BookRecord[] = await r.get('books', lacking('books', bookIds));
-	const editions: EditionRecord[] = await r.get(
+	const books = await r.get('books', lacking('books', bookIds));
+	const editions = await r.get(
 		'editions',
 		lacking(
 			'editions',
@@ -380,9 +379,7 @@ async function readWanted(
 		...seriesBooks,
 		...(want.series || []),
 	]);
-	const places: PlaceRecord[] = (await r.all('places', undefined)).filter(
-		(rec: PlaceRecord) => !has('places', rec.id),
-	);
+	const places = (await r.all('places', undefined)).filter(rec => !has('places', rec.id));
 	const people = lacking('contributors', [
 		...places.flatMap(s => s.creatorIds || []),
 		...books.flatMap(b => b.authorIds),
@@ -463,7 +460,7 @@ export function queryCatalog<T>(ask: (reader: CatalogReader) => Promise<T>): Pro
 export function storedBookId(value: string): Promise<string | null> {
 	return queryCatalog(async r => {
 		if (await r.count('books', undefined, value)) return value;
-		const found: BookRecord[] = await r.under('books', 'byTitle', [CatalogRecords.sortKey(value)]);
+		const found = await r.under('books', 'byTitle', [CatalogRecords.sortKey(value)]);
 		return found.find(b => b.title === value)?.id ?? null;
 	});
 }
@@ -474,9 +471,9 @@ export function storedBookId(value: string): Promise<string | null> {
  */
 export function storedContributorId(kind: CreditKind, value: string): Promise<string | null> {
 	return queryCatalog(async r => {
-		const [rec]: ContributorRecord[] = await r.get('contributors', [value]);
+		const [rec] = await r.get('contributors', [value]);
 		if (rec && rec.kind === kind) return rec.id;
-		const [named]: ContributorRecord[] = await r.all('contributors', 'kindName', [kind, value]);
+		const [named] = await r.all('contributors', 'kindName', [kind, value]);
 		return named ? named.id : null;
 	});
 }
@@ -518,20 +515,28 @@ async function takeInNamesTyped(): Promise<void> {
 		}
 	}
 	if (!ask.length) return;
+	/** the record found for a name, with its store */
+	type Found =
+		| {store: 'series'; rec?: SeriesRecord}
+		| {store: 'places'; rec?: PlaceRecord}
+		| {store: 'contributors'; rec?: ContributorRecord};
 	const {result} = await DATABASE.read(r =>
 		Promise.all(
-			ask.map(({kind, name}) =>
-				kind === 'series' || kind === 'places'
-					? r.all(kind, 'name', name)
-					: r.all('contributors', 'kindName', [Contributor.ONE[kind], name]),
+			ask.map(async ({kind, name}): Promise<Found> =>
+				kind === 'series'
+					? {store: kind, rec: (await r.all(kind, 'name', name))[0]}
+					: kind === 'places'
+						? {store: kind, rec: (await r.all(kind, 'name', name))[0]}
+						: {
+								store: 'contributors',
+								rec: (await r.all('contributors', 'kindName', [Contributor.ONE[kind], name]))[0],
+							},
 			),
 		),
 	);
-	result.forEach((found, i) => {
-		const rec = found[0];
+	result.forEach(({store, rec}, i) => {
 		if (!rec) return;
-		const {kind, name} = ask[i],
-			store = storeOf(kind);
+		const {kind, name} = ask[i];
 		const info = CATALOG.infoMap(kind),
 			had = CATALOG.nameIds[kind].get(name);
 		const typed = had === undefined ? undefined : info.get(had);

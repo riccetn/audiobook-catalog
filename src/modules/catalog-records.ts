@@ -202,6 +202,8 @@ export interface RecordSet {
 	exclusions: ExclusionRecord[];
 }
 export type StoreName = keyof RecordSet;
+/** a record of one store: RecordOf<'books'> is a BookRecord */
+export type RecordOf<S extends StoreName> = RecordSet[S][number];
 /** An index: its name, key path and options. */
 export type IndexSpec = [string, string | string[], IDBIndexParameters?];
 export type StoreSpec = {keyPath: string | string[]; indexes: IndexSpec[]};
@@ -212,7 +214,7 @@ export type Snapshot = Map<StoreName, Map<string, string>>;
  * save). `snapshot` is the records after it, for the save after that.
  */
 export type Changes = {
-	put: Partial<Record<StoreName, object[]>>;
+	put: Partial<RecordSet>;
 	delete: Partial<Record<StoreName, IDBValidKey[]>>;
 	count: number;
 	snapshot: Snapshot;
@@ -1078,7 +1080,8 @@ export class CatalogRecords {
 				return was.get(key) !== now.get(key);
 			});
 			const gone = [...was.keys()].filter(key => !now.has(key)).map(key => JSON.parse(key) as IDBValidKey);
-			if (put.length) out.put[store] = put;
+			// they are records of `store`, taken from records[store], but the checker can't tie the two together
+			if (put.length) (out.put as Record<StoreName, object[]>)[store] = put;
 			if (gone.length) out.delete[store] = gone;
 			out.count += put.length + gone.length;
 		}
