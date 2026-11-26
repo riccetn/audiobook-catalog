@@ -16,7 +16,7 @@ import {
 	standalonePageHref,
 	editPageHref,
 } from './store.js';
-import {byId, fieldById, spell, buildElement, fillElement, joined} from './dom.js';
+import {byId, fieldById, spell, plural, buildElement, fillElement, joined} from './dom.js';
 import type {Child} from './dom.js';
 import {
 	BookList,
@@ -134,6 +134,9 @@ export function refreshView(): Promise<void> {
 export const showMore = () => LIST.showMore(render);
 
 export function render() {
+	// a series shown on its own is edited from beside its + Add a book; the Standalone books are no series
+	const editBtn = byId('seriesEdit');
+	editBtn.hidden = true;
 	if (!TOTAL_BOOKS && !CATALOG.books.length) {
 		showEmptyCatalog();
 		return;
@@ -162,31 +165,48 @@ export function render() {
 		renderOverview();
 		return;
 	}
+	if (name !== null) {
+		editBtn.hidden = false;
+		editBtn.setAttribute('href', editPageHref(SERIES_FILTER));
+	}
 
 	const books = LIST.books().filter(b => (SERIES_FILTER === STANDALONE ? !b.series : b.series === name));
-	byId('subtitle').textContent = spell('{count} audiobooks in the catalog', {count: TOTAL_BOOKS});
+	byId('subtitle').textContent =
+		SERIES_FILTER === STANDALONE ? standaloneText() : name !== null ? seriesText(name) : '';
 	byId('resultCount').textContent = '';
 	fillElement(
 		byId('results'),
 		books.length
-			? bookGroups(books, {
-					more: LIST.rest,
-					onMore: () => showMore(),
-					// it can be edited, and compared with the catalogs, after its books
-					after: id => seriesEditButton(id),
-				})
-			: [
-					buildElement(
-						'p',
-						{class: 'empty'},
-						name === null
-							? spell('No books in this series.')
-							: spell('No books in {series} yet.', {series: name}),
-					),
-					SERIES_FILTER !== STANDALONE && name !== null && seriesEditButton(SERIES_FILTER),
-				],
+			? bookGroups(books, {more: LIST.rest, onMore: () => showMore()})
+			: buildElement(
+					'p',
+					{class: 'empty'},
+					name === null
+						? spell('No books in this series.')
+						: spell('No books in {series} yet.', {series: name}),
+				),
 	);
 }
+
+/**
+ * What a series' page says of it under the heading: how many of its titles you own, of how many released, and
+ * which are missing, as its row on the overview does.
+ * @param name the series'
+ */
+function seriesText(name: string): string {
+	const books = CATALOG.seriesBooks(name);
+	const owned = Series.owned(books);
+	const total = totalText(CATALOG.seriesInfo(name));
+	const missing = CATALOG.missing(name) || [];
+	if (!books.length) return total ? spell('No books yet, {total} released', {total}) : spell('No books yet');
+	if (!total) return spell('{owned} owned', {owned});
+	return missing.length
+		? spell('{owned} owned of {total} — missing {numbers}', {owned, total, numbers: Series.numberList(missing)})
+		: spell('{owned} owned of {total}', {owned, total});
+}
+
+/** @returns what the Standalone page says under its heading: how many books are in no series */
+const standaloneText = (): string => plural(LIST.ids.length, 'standalone book');
 
 /**
  * A series' info, from its record; undefined when it has none.
@@ -395,20 +415,6 @@ byId('missingFilter').addEventListener('change', () => {
 });
 watchSearchAndFilters(addressNow, showView);
 watchCoversBox(() => render());
-
-// ------------------------------------------------------------------ the Edit button
-/**
- * The Edit button at the end of a series' own page, which opens it on the Edit series page (where it is also
- * compared with the other catalogs).
- * @param id the series'
- */
-function seriesEditButton(id: string): HTMLDivElement {
-	return buildElement(
-		'div',
-		{class: 'page-actions'},
-		buildElement('a', {class: 'sedit', 'data-series': id, href: editPageHref(id)}, spell('Edit')),
-	);
-}
 
 // After a save took in what another tab changed (store.ts): the page shows what is stored now.
 function redraw() {

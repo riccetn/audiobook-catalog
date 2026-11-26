@@ -1199,22 +1199,22 @@ test("an address pasted into a series', person's or book's id field becomes the 
 	);
 });
 test('a series is edited on its Edit series page, and removed from its books', async () => {
-	const {ctx, els, get, storage} = await boot();
+	const {ctx, els, get, storage, follow} = await boot();
 	const info = JSON.parse(DEMO_INFO);
 	const [name] = Object.keys(info);
-	assert.doesNotMatch(els.results.innerHTML, /sedit/, 'not in the overview');
+	assert.equal(els.seriesEdit.hidden, true, 'not in the overview');
 	ctx.openSeries(seriesIdOf(get, name));
 	await idle();
 	const id = seriesIdOf(get, name);
-	assert.match(
-		els.results.innerHTML,
-		new RegExp(
-			`<div class="page-actions"><a class="sedit" data-series="${id}" href="edit\\.html#series=${id}">Edit</a></div></div>$`,
-		),
-		'at the end of the page of the series',
-	);
+	assert.equal(els.seriesEdit.hidden, false, 'at the top of the page of the series, beside + Add a book');
+	assert.equal(els.seriesEdit.getAttribute('href'), `edit.html#series=${id}`);
+	assert.doesNotMatch(els.results.innerHTML, /sedit/, 'not after its books');
+	follow('#standalone');
+	await idle();
+	assert.equal(els.seriesEdit.hidden, true, 'the Standalone books are no series');
 	const books = await boot({page: 'books.html', storage});
-	assert.doesNotMatch(books.els.results.innerHTML, /sedit|Compare with Hardcover/, 'nor in the list of all books');
+	assert.equal(books.els.seriesEdit, undefined, 'nor in the list of all books');
+	assert.doesNotMatch(books.els.results.innerHTML, /sedit|Compare with Hardcover/);
 
 	// the page starts from the current entry, and lists its books
 	let edit = await bootEdit(name, {storage});
@@ -1359,10 +1359,10 @@ test('a series no book is in any more stays, and can be removed', async () => {
 	assert.match(home.els.results.innerHTML, /Fern Saga<\/a> <span class="srow-owned">no books yet<\/span>/);
 	home.ctx.openSeries(id);
 	await idle();
-	assert.match(
-		home.els.results.innerHTML,
-		/No books in Fern Saga yet\.<\/p><div class="page-actions"><a class="sedit"/,
-	);
+	assert.match(home.els.results.innerHTML, /No books in Fern Saga yet\.<\/p>$/);
+	assert.equal(home.els.subtitle.textContent, 'No books yet');
+	assert.equal(home.els.seriesEdit.hidden, false, 'it can still be edited, or removed');
+	assert.equal(home.els.seriesEdit.getAttribute('href'), `edit.html#series=${id}`);
 	const edit = await bootEdit('Fern Saga', {storage, files: null});
 	assert.equal(edit.get('DRAFTS.length'), 0);
 	edit.els.seriesRemoveBtn.listeners.click[0]();

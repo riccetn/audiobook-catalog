@@ -1,8 +1,8 @@
 # Editing books and series
 
-**Edit** at the end of a series' page opens the _Edit series_ page (`edit.html#series=<id>`): the series and
-every book in it on one page, a card for each book, with what the other catalogs have for them. Everything is
-edited in place, and nothing is saved until you press **Review & save** and then **Save**.
+**Edit** at the top of a series' page, beside `+ Add a book`, opens the _Edit series_ page (`edit.html#series=<id>`):
+the series and every book in it on one page, a card for each book, with what the other catalogs have for them.
+Everything is edited in place, and nothing is saved until you press **Review & save** and then **Save**.
 
 **Edit their books** on an author's page opens the same page for every book by them (`edit.html#author=<id>`),
 each with its series and number among its fields; the author's own name, bio and links stay in their form.

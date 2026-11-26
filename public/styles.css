@@ -232,6 +232,14 @@ button:focus {
 	color: var(--ink);
 	border-color: var(--moss);
 }
+/* a link drawn as one: a series' Edit, beside its + Add a book */
+a.iconbtn2 {
+	display: inline-block;
+	text-decoration: none;
+}
+a.iconbtn2[hidden] {
+	display: none;
+}
 .panel .option {
 	display: block;
 	margin-top: 0.6rem;

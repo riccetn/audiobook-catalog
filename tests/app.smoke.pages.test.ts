@@ -88,6 +88,7 @@ test('opens on the series overview, with a row per series', async () => {
 	assert.equal((els.results.innerHTML.match(/class="srow-title"/g) || []).length, seriesCount + 1); // + "Standalone"
 	assert.ok(!els.crumb.classList.contains('show'));
 	assert.equal(els.toggleAdd.style.display, 'none', "books are added on a series' page or the books page");
+	assert.equal(els.seriesEdit.hidden, true, 'a series is edited from its page');
 });
 test('opening a series shows exactly that series, and its books can be added to', async () => {
 	const {ctx, els, get} = await boot();
@@ -103,6 +104,22 @@ test('opening a series shows exactly that series, and its books can be added to'
 	assert.equal(els.resultCount.textContent, '', 'its books are not counted again');
 	assert.equal(els.toggleAdd.style.display, '');
 	assert.equal(els.toggleAdd.getAttribute('href'), `edit.html#add&series=${seriesIdOf(get, series)}`);
+});
+test("a series' page says how much of that series you own, and the Standalone page how many books it has", async () => {
+	const {els, get, follow} = await boot();
+	const shown = async (hash: string) => {
+		follow(hash);
+		await idle();
+		return els.subtitle.textContent;
+	};
+	assert.equal(await shown(`#series=${seriesIdOf(get, 'The Lantern Coast')}`), '4 owned of 5 — missing #5');
+	assert.equal(await shown(`#series=${seriesIdOf(get, 'Halloway & Finch')}`), '2 owned of 2');
+	assert.equal(
+		await shown(`#series=${seriesIdOf(get, 'The Orchard Cycle')}`),
+		'3 owned',
+		'no total known; a box set is no title more',
+	);
+	assert.equal(await shown('#standalone'), '3 standalone books');
 });
 test('search narrows the books page', async () => {
 	const {ctx, els} = await boot({page: 'books.html'});
