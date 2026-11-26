@@ -1122,7 +1122,7 @@ test("the Edit series page edits each book's fields and editions in place, and s
 	assert.match(els.ioStatus.textContent, /^Saved 2 books, kept 1 edition id out of imports\./);
 	assert.equal(els.changeCount.textContent, 'No changes yet');
 	// Save goes back to the series' page, which says what was saved, once
-	const seriesId = get('SERIES_ID');
+	const seriesId = get('EDITING.id');
 	assert.equal(edit.ctx.location.assigned, 'index.html#series=' + seriesId);
 	const series = await boot({storage, files: null, session, hash: '#series=' + seriesId});
 	assert.match(series.els.ioStatus.textContent, /^Saved 2 books, kept 1 edition id out of imports\./);

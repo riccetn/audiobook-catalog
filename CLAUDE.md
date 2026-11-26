@@ -243,8 +243,8 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
 - `book.js` (`book.html`): a book's page (`#book=<id>`, `BOOK_FILTER`; `bookDetails`, with the other books of its box set
   loaded), Read today, + Start reading and, while reading, `readingNow` (Save place, Finished today, Stop reading: `changeReading`, with Undo), Edit (a link to `edit.html#book=<id>`, `editPageHref(id, 'book')`) and Merge (Merge searches for the other book, `findMergeBooks`, and links to `duplicates.html#merge=<id>,<id>`).
   An address from when it added books (`#add...`) goes to `edit.html#add...` (`movedAddress`, `location.replace`).
-- `edit.js` (`edit.html#series=<id>`, _Edit series_, `docs/editing-series.md`; `#author=<id>` (or a name), every book by an author, `KIND`, `AUTHOR_ID`, with
-  each book's series and number among its fields and no series panel; `#book=<id>` (or a title), one book, `BOOK_ID`, and `#add` (with `&series=<id>` or `&author=<name>`, `ADDING`, `loadNew`),
+- `edit.js` (`edit.html#series=<id>`, _Edit series_, `docs/editing-series.md`; what it edits is `EDITING`, an `Editing` told apart by its `kind`, with the ids that kind has: `#author=<id>` (or a name), every book by an author, with
+  each book's series and number among its fields and no series panel; `#book=<id>` (or a title), one book, and `#add` (with `&series=<id>` or `&author=<name>`, `loadNew`),
   a new book, `oneBook()`: no series panel but the book panel, _Fill in from another catalog_ (`fillFromCatalog`, with `CatalogLookup.fill`: gaps only; it loads
   `CatalogLookup` and `CatalogConnectors` with `import()`) and Remove book (`removeBook`, pressed twice; it excludes the book and opens its series' page or Books);
   a book is compared by its series, else its first author (`comparedPart`), without the new books (`newCards`); a new book with none, and Save adds it (`saveNew`) and opens its page;
