@@ -60,6 +60,18 @@ for (const page of ALL_PAGES) {
 	assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'), page);
 	for (const other of PAGES) assert.ok(html.includes(`href="${other}"`), `${page} links to ${other}`);
 	assert.doesNotMatch(html, /Catalog<\/a>/, `${page}: Series and Books in the nav bar instead`);
+	// a keyboard can skip the nav bar, and the page's own content is its <main>
+	assert.match(html, /<div class="wrap">\s*<a class="skipLink" href="#main">Skip to content<\/a>/, page);
+	assert.match(html, /<\/nav>\s*<\/header>\s*<main id="main" tabindex="-1">[\s\S]*<\/main>\s*<\/div>/, page);
+	// every <select> has a name a screen reader can say: a label, an aria-label or a title
+	for (const [select] of html.matchAll(/<select\b[^>]*>/g)) {
+		const id = /id="([^"]*)"/.exec(select)?.[1];
+		const inLabel = /<label>[^<]*$/.test(html.slice(0, html.indexOf(select)));
+		assert.ok(
+			/aria-label="|title="/.test(select) || (id && html.includes(`for="${id}"`)) || inLabel,
+			`${page}: ${select} has a name`,
+		);
+	}
 }
 test("a form's Cancel sits next to its Save, and a Remove button comes after both, apart from them", () => {
 	let forms = 0;
@@ -80,12 +92,51 @@ test("a form's Cancel sits next to its Save, and a Remove button comes after bot
 	}
 	assert.equal(forms, 4, 'the author, narrator, publisher and place forms');
 });
+test("Skip to content focuses the page's content and leaves the address alone", async () => {
+	const {ctx, run} = await boot({page: 'books.html', hash: '#q=salt'});
+	let focused = false;
+	run(`document.getElementById('main')`).focus = () => (focused = true);
+	let prevented = false;
+	run(`document.querySelector('a.skipLink')`).dispatch('click', {preventDefault: () => (prevented = true)});
+	assert.ok(focused && prevented);
+	assert.equal(ctx.location.hash, '#q=salt');
+});
+test("on a nav bar too narrow for its tabs, the page's tab is put in the middle, and the ends with more tabs fade", async () => {
+	const {ctx} = await boot();
+	// a phone's bar: 360 wide, its tabs 900 wide, this page's tab 600 to 640 from its start
+	const classes = new Set<string>();
+	const nav = {
+		scrollWidth: 900,
+		clientWidth: 360,
+		scrollLeft: 0,
+		classList: {toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c))},
+		getBoundingClientRect: () => ({left: 15, width: 360}),
+		querySelector: () => ({getBoundingClientRect: () => ({left: 15 + 600 - nav.scrollLeft, width: 40})}),
+	};
+	ctx.fitNav(nav);
+	assert.equal(nav.scrollLeft, 600 - (360 - 40) / 2);
+	assert.deepEqual([...classes].sort(), ['moreAfter', 'moreBefore']);
+	nav.scrollLeft = 900 - 360;
+	ctx.fitNav({...nav, querySelector: () => null, classList: nav.classList});
+	assert.deepEqual([...classes], ['moreBefore'], 'at the end of the bar');
+	// a bar wide enough for every tab (a computer's) is left as it is
+	const wide = {...nav, scrollWidth: 700, clientWidth: 700, scrollLeft: 0};
+	ctx.fitNav(wide);
+	assert.equal(wide.scrollLeft, 0);
+	assert.equal(classes.size, 0);
+});
 test('opens on the series overview, with a row per series', async () => {
 	const {els, get} = await boot();
 	assert.equal(get('SERIES_FILTER'), null);
 	const seriesCount = new Set(demoBooks.filter(b => b.s).map(b => b.s)).size;
 	assert.match(els.subtitle.textContent, new RegExp(`^${seriesCount} series across ${demoBooks.length} audiobooks`));
 	assert.equal((els.results.innerHTML.match(/class="srow-title"/g) || []).length, seriesCount + 1); // + "Standalone"
+	assert.equal(
+		els.resultCount.textContent,
+		`${seriesCount} series and the standalone books shown`,
+		'every row counted',
+	);
+	assert.doesNotMatch(els.subtitle.textContent, /tap/, 'no touch words on a page a mouse reads too');
 	assert.ok(!els.crumb.classList.contains('show'));
 	assert.equal(els.toggleAdd.style.display, 'none', "books are added on a series' page or the books page");
 });

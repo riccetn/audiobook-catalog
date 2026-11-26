@@ -70,7 +70,10 @@ A page's template starts by naming the layout and what it fills in, then holds t
 
 `title` goes before "· Audiobook Catalog" in the tab (left out on the Series page), `nav` is the nav bar link
 marked current (a book's page marks Books), and `script` is the page's module. The nav bar's links are in
-`layout.liquid`; a new page in it is a line there, and a template in `pages/`.
+`layout.liquid`; a new page in it is a line there, and a template in `pages/`. The layout puts the title and nav bar
+in a `<header>` and the page's own content in `<main id="main">`, after a _Skip to content_ link for the keyboard
+(`dom.js` moves the focus there without changing the address, whose hash says what a page shows); `dom.js` also
+scrolls a phone's nav bar to the current page's link (`fitNav`).
 The build is strict, so a misspelled variable fails it. Nothing is rendered in the browser: Liquid never reaches
 `public/`.
 

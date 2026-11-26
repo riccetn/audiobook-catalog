@@ -5,6 +5,7 @@
 	--moss: #3f5d4b;
 	--moss-dark: #2c4235;
 	--gold: #b08d3e;
+	--gold-ink: #6e561e; /* gold dark enough for small text on paper or a gold tint */
 	--line: #ded5c0;
 	--card: #fffefb;
 	--error: #b0453f;
@@ -21,6 +22,7 @@
 		--moss: #7fae93;
 		--moss-dark: #93bfa5;
 		--gold: #d9b968;
+		--gold-ink: #d9b968;
 		--line: #3a3226;
 		--card: #242019;
 		--error: #e8837b;
@@ -53,6 +55,24 @@ body {
 	outline: 2px solid var(--moss);
 	outline-offset: 2px;
 	border-radius: 2px;
+}
+/* Skip to content: out of sight until the keyboard reaches it, the first thing on the page */
+.skipLink {
+	position: absolute;
+	left: -9999px;
+	top: 0.5rem;
+}
+.skipLink:focus {
+	left: 0.75rem;
+	z-index: 10;
+	padding: 0.4rem 0.8rem;
+	border-radius: 6px;
+	background: var(--card);
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+/* the content takes the focus from Skip to content; it is no control, so it shows no ring */
+main:focus {
+	outline: none;
 }
 .wrap {
 	max-width: 820px;
@@ -93,6 +113,19 @@ h1 {
 .pages a.current {
 	color: var(--moss);
 	border-bottom-color: var(--moss);
+}
+/* a nav bar that scrolls sideways (a phone's) fades at the ends with more tabs past them (dom.js marks them) */
+.pages.moreAfter {
+	-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+	mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+}
+.pages.moreBefore {
+	-webkit-mask-image: linear-gradient(to left, #000 calc(100% - 2.5rem), transparent);
+	mask-image: linear-gradient(to left, #000 calc(100% - 2.5rem), transparent);
+}
+.pages.moreBefore.moreAfter {
+	-webkit-mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent);
+	mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent);
 }
 .panel {
 	background: var(--card);
@@ -1095,7 +1128,7 @@ button:focus {
 }
 .status.ongoing {
 	background: rgba(176, 141, 62, 0.18);
-	color: var(--gold);
+	color: var(--gold-ink);
 }
 .status.complete {
 	background: rgba(63, 93, 75, 0.18);
