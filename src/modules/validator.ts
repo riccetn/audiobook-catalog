@@ -165,6 +165,13 @@ export class Validator {
 					);
 				}
 			}
+			if ('cr' in b && !Book.isReading(b.cr))
+				errors.push(
+					about(
+						label,
+						"'cr' must be an object with 'since' (a date: YYYY-MM-DD, YYYY-MM or YYYY), 'at' (whole seconds into the book), or both",
+					),
+				);
 			if ('e' in b && !(Array.isArray(b.e) && b.e.length)) {
 				errors.push(about(label, "'e' must be a non-empty list of editions"));
 			} else if ('e' in b) {

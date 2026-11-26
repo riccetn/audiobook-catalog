@@ -662,7 +662,8 @@ export class HardcoverSync extends ShelfSync {
 	}
 
 	/**
-	 * What an export to Hardcover would do: each of your books goes on your Read shelf as its Hardcover book,
+	 * What an export to Hardcover would do: each of your books (but one you are reading for the first time, which
+	 * is left out) goes on your Read shelf as its Hardcover book,
 	 * as the Hardcover edition of an edition of its own (or a box set's, when the box set is the Hardcover
 	 * book), with its exact dates read as reads.
 	 * `shelf` is your user_books rows. Nothing on Hardcover is changed: a book already on another shelf is
@@ -688,6 +689,7 @@ export class HardcoverSync extends ShelfSync {
 		const shared = Book.sharedEditionTest(books);
 		const wanted: Map<string, {edition: string | null; dates: Set<string>; books: Book[]}> = new Map(); // Hardcover book id -> {edition, dates, books}
 		for (const b of books) {
+			if (b.firstReading()) continue;
 			const hcb = b.idOn('hardcover');
 			// a Hardcover book id that isn't a number (only a hand-edited backup has one) can't be sent
 			if (!hcb || !HardcoverClient.ID.test(hcb)) {

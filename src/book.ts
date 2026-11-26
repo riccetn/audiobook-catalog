@@ -1,4 +1,5 @@
-// A book's page (book.html#book=<id>): everything about the book, its + Read today, and its Edit (the Edit
+// A book's page (book.html#book=<id>): everything about the book, its + Read today, + Start reading and where
+// you are in it while you read it, and its Edit (the Edit
 // page, edit.html#book=<id>) and Merge. Adding a book is the Edit page's too (edit.html#add), where an address
 // from before (book.html#add) goes. The covers and links are book-list.ts's; loading and saving live in store.ts.
 import {Text} from './modules/text.js';
@@ -20,7 +21,7 @@ import {
 	editPageHref,
 	namedPlacePageHref,
 } from './store.js';
-import {showIoStatus, byId, spell, spellParts, buildElement, fillElement, joined} from './dom.js';
+import {showIoStatus, byId, fieldById, spell, spellParts, buildElement, fillElement, joined} from './dom.js';
 import {webLinks} from './id-fields.js';
 import type {Child} from './dom.js';
 import {
@@ -34,6 +35,7 @@ import {
 	hashOf,
 	setAddress,
 	alsoPublishedAs,
+	readingText,
 } from './book-list.js';
 
 // Books and series are known by the ids they are stored under, so a book retitled (here or in another tab)
@@ -402,15 +404,24 @@ function bookDetails(b: Book): HTMLDivElement {
 				],
 				[
 					spell('Read'),
-					[
-						b.read.length > 0 && b.read.join(', ') + ' ',
-						!b.read.includes(Text.today()) &&
-							buildElement(
-								'button',
-								{type: 'button', class: 'readToday', onclick: () => readToday(id)},
-								spell('+ Read today'),
-							),
-					],
+					joined(
+						[
+							b.read.length > 0 && b.read.join(', '),
+							!b.read.includes(Text.today()) &&
+								buildElement(
+									'button',
+									{type: 'button', class: 'readToday', onclick: () => readToday(id)},
+									spell('+ Read today'),
+								),
+							!b.reading &&
+								buildElement(
+									'button',
+									{type: 'button', class: 'startReading', onclick: () => startReading(id)},
+									spell('+ Start reading'),
+								),
+						].filter(x => x !== false),
+						' ',
+					),
 				],
 				[
 					spell('Genres'),
@@ -441,6 +452,7 @@ function bookDetails(b: Book): HTMLDivElement {
 					b.links.length > 0 && joined(webLinks(b.links, 'weblink'), ' '),
 				],
 			]),
+			b.reading && readingNow(id, b),
 			editions,
 			bookActions(id),
 		),
@@ -478,6 +490,120 @@ export function readToday(id: string) {
 		render();
 		persist();
 		refreshView();
+	});
+}
+
+/**
+ * A book you are reading now, on its details: since when and where you are, a field for the place you have
+ * come to, and what to do when you finish it or stop.
+ */
+function readingNow(id: string, b: Book): HTMLElement {
+	const at = buildElement('input', {
+		id: 'readingAt',
+		type: 'text',
+		autocomplete: 'off',
+		placeholder: spell('h:mm:ss'),
+	});
+	at.value = b.reading?.at === undefined ? '' : Text.formatTimecode(b.reading.at);
+	return buildElement(
+		'div',
+		{class: 'readingNow'},
+		buildElement('p', {class: 'readingText'}, readingText(b)),
+		buildElement(
+			'div',
+			{class: 'readingControls'},
+			buildElement('label', {for: 'readingAt'}, spell('Place in the book'), ' ', at),
+			buildElement(
+				'button',
+				{type: 'button', id: 'readingSave', class: 'readingButton', onclick: () => saveReadingPlace(id)},
+				spell('Save place'),
+			),
+			buildElement(
+				'button',
+				{type: 'button', id: 'readingDone', class: 'readingButton', onclick: () => finishReading(id)},
+				spell('Finished today'),
+			),
+			buildElement(
+				'button',
+				{type: 'button', id: 'readingStop', class: 'readingButton', onclick: () => stopReading(id)},
+				spell('Stop reading'),
+			),
+		),
+	);
+}
+
+/**
+ * Change a book's dates read and whether you are reading it, from its details, and say so with an Undo.
+ * @param change what to change on the book; it returns the status line's text, or null to leave it as it was
+ */
+function changeReading(id: string, change: (b: Book) => string | null) {
+	const b = CATALOG.book(id);
+	if (!b) return;
+	const before = {read: [...b.read], reading: b.reading && Book.readingCopy(b.reading)};
+	const message = change(b);
+	if (message === null) return;
+	render();
+	persist();
+	refreshView();
+	showIoStatus(message, false, () => {
+		const now = CATALOG.book(id);
+		if (!now) return;
+		now.read = before.read;
+		now.reading = before.reading;
+		render();
+		persist();
+		refreshView();
+	});
+}
+
+/** + Start reading: you are reading the book now, since today. */
+export function startReading(id: string) {
+	changeReading(id, b => {
+		if (b.reading) return null;
+		b.reading = {since: Text.today()};
+		return spell('Reading {title} now.', {title: b.title});
+	});
+}
+
+/**
+ * Save place: where you are in the book you are reading, as typed in its field (empty: not known). A place
+ * that can't be read is said, and changes nothing.
+ */
+export function saveReadingPlace(id: string) {
+	const typed = fieldById('readingAt').value.trim();
+	const at = typed ? Text.parseTimecode(typed) : undefined;
+	if (at === null) {
+		showIoStatus(spell('Not a place in the book: {typed}. Use h:mm:ss, as 3:12:45.', {typed}), true);
+		return;
+	}
+	changeReading(id, b => {
+		if (!b.reading || b.reading.at === at) return null;
+		const reading = {...b.reading, at};
+		if (at === undefined) delete reading.at;
+		// a place alone or a start alone is enough, but nothing at all would no longer say you read it
+		b.reading = Object.keys(reading).length ? reading : {since: Text.today()};
+		return at === undefined
+			? spell('No place kept in {title}.', {title: b.title})
+			: spell('At {at} in {title}.', {at: Text.formatTimecode(at), title: b.title});
+	});
+}
+
+/** Finished today: today is a date you read the book, and you aren't reading it any more. */
+export function finishReading(id: string) {
+	changeReading(id, b => {
+		if (!b.reading) return null;
+		b.reading = undefined;
+		if (!b.read.includes(Text.today())) b.read = [...b.read, Text.today()].sort();
+		return spell('Finished {title} today.', {title: b.title});
+	});
+}
+
+/** Stop reading: you aren't reading the book any more, and haven't finished it. */
+export function stopReading(id: string) {
+	changeReading(id, b => {
+		if (!b.reading) return null;
+		b.reading = undefined;
+		return spell('Stopped reading {title}.', {title: b.title});
 	});
 }
 

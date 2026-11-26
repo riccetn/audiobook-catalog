@@ -7784,7 +7784,7 @@ test('places: renaming and removing keep the books and the other places in step'
 	assert.equal(catalog.nameIds.places.has('Ember Coast'), false);
 });
 
-test('places: stored as records with ids, backed up (version 6) and read back; version 5 has none', () => {
+test('places: stored as records with ids, backed up (version 6 on) and read back; version 5 has none', () => {
 	const catalog = placesCatalog();
 	const records = CatalogRecords.fromCatalog(catalog);
 	const ids = catalog.nameIds;
@@ -7804,7 +7804,7 @@ test('places: stored as records with ids, backed up (version 6) and read back; v
 	assert.deepEqual(json(back), json(catalog));
 
 	const backup = Backup.write(catalog);
-	assert.equal(backup.version, 6);
+	assert.equal(backup.version, Backup.VERSION);
 	assert.deepEqual(
 		Object.values(backup.places).find(s => s.name === 'Tide Isles'),
 		{
@@ -7867,4 +7867,123 @@ test('places: merging a backup adds places only it has, and renames follow ids',
 	assert.deepEqual(merged.placesAdded, ['Saltmarsh']);
 	assert.deepEqual(merged.places.get('Saltmarsh')!.parents, ['Gull Haven']);
 	assert.deepEqual(merged.books[0].places, ['Gull Haven']);
+});
+
+// ------------------------------------------------------------------ reading a book now
+test('reading now: a place in the book is read from h:mm:ss, mm:ss or 3h 12m 45s, and written as h:mm:ss', () => {
+	const cases: Record<string, number | null> = {
+		'3:12:45': 11565,
+		'0:00:00': 0,
+		'12:45': 765,
+		'75:30': 4530,
+		'3h 12m 45s': 11565,
+		'3h12m': 11520,
+		'45 min': 2700,
+		'2 hrs 5 mins': 7500,
+		'90s': 90,
+		'3:60:00': null,
+		'3:12:75': null,
+		'3h 75m': null,
+		soon: null,
+		'': null,
+	};
+	for (const [raw, expected] of Object.entries(cases)) assert.equal(Text.parseTimecode(raw), expected, raw);
+	assert.deepEqual([11565, 0, 765, 36000].map(Text.formatTimecode), ['3:12:45', '0:00:00', '0:12:45', '10:00:00']);
+});
+
+test('reading now: a book keeps since when and where you are (cr), its progress by its length, and a malformed one aside', () => {
+	const b = B(book('Tidewater', 'Ann Vale', {r: ['2024'], cr: {since: '2026-11-20', at: 3600}, e: [{len: 120}]}));
+	assert.deepEqual(b.reading, {since: '2026-11-20', at: 3600});
+	assert.deepEqual(Object.keys(b.toJSON()), ['t', 'a', 'r', 'cr', 'e']);
+	assert.equal(b.progress(), 0.5);
+	assert.equal(b.firstReading(), false, 'read before: you are reading it again');
+	assert.equal(B(book('New', 'Ann Vale', {cr: {since: '2026'}})).firstReading(), true);
+	// two editions of other lengths give no one answer, and no place none at all
+	assert.equal(B(book('X', 'A', {cr: {at: 60}, e: [{len: 60}, {len: 90}]})).progress(), null);
+	assert.equal(B(book('X', 'A', {cr: {since: '2026'}, e: [{len: 60}]})).progress(), null);
+	for (const bad of [{}, {since: '2026-13-01'}, {at: -1}, {at: 1.5}, {at: 60, page: 3}, 'yes'])
+		assert.deepEqual(B(book('X', 'A', {cr: bad})).extra, {cr: bad}, JSON.stringify(bad));
+	// the Check names a malformed one
+	const {errors} = Check.validate([book('X', 'A', {cr: {at: '1:00'}})]);
+	assert.ok(errors.some((e: string) => e.includes("'cr' must be an object")));
+	// merged books keep the first one's place
+	const merged = Book.merge([
+		B(book('X', 'A', {r: ['2024']})),
+		B(book('X', 'A', {cr: {at: 5}})),
+		B(book('X', 'A', {cr: {at: 9}})),
+	]);
+	assert.deepEqual(merged.reading, {at: 5});
+});
+
+test('reading now: stored on the book record, found by the read filter, backed up as version 7; version 6 has none', () => {
+	const catalog = Backup.toCatalog({
+		books: [
+			book('Reading', 'Ann Vale', {cr: {since: '2026-11-20', at: 42}}),
+			book('Again', 'Ann Vale', {r: ['2024-01-02'], cr: {at: 7}}),
+			book('Done', 'Ann Vale', {r: ['2025']}),
+			book('Unknown', 'Ann Vale'),
+		],
+	});
+	const records = CatalogRecords.fromCatalog(catalog);
+	assert.deepEqual(
+		records.books.map(rec => [rec.title, rec.reading, rec.readYears]),
+		[
+			['Reading', {since: '2026-11-20', at: 42}, ['reading']],
+			['Again', {at: 7}, ['2024', 'reading']],
+			['Done', undefined, ['2025']],
+			['Unknown', undefined, ['undated']],
+		],
+	);
+	assert.deepEqual(json(CatalogRecords.toCatalog(records).books), json(catalog.books));
+	const backup = Backup.write(catalog);
+	assert.equal(backup.version, 7);
+	assert.deepEqual(
+		Object.values(backup.books).map(b => b.reading),
+		[{since: '2026-11-20', at: 42}, {at: 7}, undefined, undefined],
+	);
+	assert.deepEqual(json(Backup.toCatalog(json(backup)).books), json(catalog.books));
+	// a version 6 backup reads as it is, as no book was being read
+	const old = {...json(backup), version: 6};
+	for (const b of Object.values<any>(old.books)) delete b.reading;
+	assert.equal(
+		Backup.toCatalog(old).books.some(b => b.reading),
+		false,
+	);
+	// a reading a record can't hold is refused
+	const bad = json(backup);
+	Object.values<any>(bad.books)[0].reading = {at: 'soon'};
+	assert.throws(() => Backup.read(bad), /reading/);
+});
+
+test("reading now: a book you are reading for the first time isn't exported or sent as read; one read before is", () => {
+	const books = Bs([
+		book('First Time', 'Ann Vale', {
+			cr: {since: '2026-11-20'},
+			ext: {hardcover: '11', audiobookdb: 'FirstTime001'},
+		}),
+		book('Again', 'Ann Vale', {
+			r: ['2024-01-02'],
+			cr: {at: 7},
+			ext: {hardcover: '12', audiobookdb: 'AgainAgain01'},
+		}),
+	]);
+	const out = new GoodreadsExporter().write(books);
+	assert.deepEqual(
+		Csv.parse(out.text).map(r => [r.Title, r['Exclusive Shelf']]),
+		[
+			['First Time', 'currently-reading'],
+			['Again', 'read'],
+		],
+	);
+	assert.equal(out.withoutDate, 0, "a book you haven't finished has no date read to miss");
+	assert.deepEqual(
+		HardcoverSync.planExport(books, []).add.map(a => a.book),
+		[12],
+	);
+	const shelves = audiobookdbState().shelves;
+	assert.deepEqual(
+		AudiobookdbSync.planExport(books, shelves, shelves[2]).add.map(a => a.book),
+		['AgainAgain01'],
+	);
+	assert.deepEqual(AudiobookdbSync.planExport(books, shelves, shelves[2]).unknown, []);
 });

@@ -126,8 +126,9 @@ export class CatalogStats {
 				['editions', 'No editions', x => x.value.editions.length > 0],
 				['genres', 'No genres', x => x.value.genres.length > 0],
 				['places', 'No place', x => x.value.places.length > 0],
-				// a book without a date read has an unknown date, not none: it may well have been read
-				['read', 'Date read unknown', x => x.value.read.length > 0],
+				// a book without a date read has an unknown date, not none: it may well have been read (but not one
+				// you are reading for the first time)
+				['read', 'Date read unknown', x => x.value.read.length > 0 || !!x.value.reading],
 			]),
 			section('editions', this.editions, [
 				external,

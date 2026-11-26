@@ -21,6 +21,8 @@ export interface BookInit {
 	places?: string[];
 	/** dates read, oldest first: "2024-03-15", "2024-03" or "2024"; none means unknown, not unread */
 	read?: string[];
+	/** whether you are reading it now, and how far you have come; none: you aren't */
+	reading?: Reading;
 	/** its ids by external catalog: {"hardcover": "77", "goodreads": "1234"} */
 	external?: Record<string, string>;
 	/** web addresses of other pages about it (its publisher's page, say), in the order typed */
@@ -28,6 +30,16 @@ export interface BookInit {
 	editions?: Edition[];
 	/** the id it is stored under in this browser, which never changes (see CatalogRecords) */
 	id?: string;
+}
+
+/**
+ * A book you are reading now (listening to): since when, and where in it you are. Either may be unknown, not both.
+ */
+export interface Reading {
+	/** the date you started: "2024-03-15", "2024-03" or "2024" */
+	since?: string;
+	/** where you are in it, in seconds from its start (Text.parseTimecode) */
+	at?: number;
 }
 
 /**
@@ -59,6 +71,7 @@ const BOOK_FIELDS: Record<string, StoredField<Book>> = {
 		v => Array.isArray(v) && v.length > 0 && v.every(d => typeof d === 'string'),
 		(b, v) => (b.read = v ? [...v] : []),
 	],
+	cr: [v => Book.isReading(v), (b, v) => (b.reading = v ? Book.readingCopy(v as Reading) : undefined)],
 	ext: [ExternalCatalog.isIds, (b, v) => (b.external = v ? {...v} : {})],
 	links: [Text.isNameList, (b, v) => (b.links = v ? [...v] : [])],
 	e: [
@@ -77,7 +90,7 @@ export class Book {
 	}
 
 	/** the keys of a stored book, in order */
-	static KEYS = ['t', 'a', 's', 'sn', 'g', 'pl', 'r', 'ext', 'links', 'e'];
+	static KEYS = ['t', 'a', 's', 'sn', 'g', 'pl', 'r', 'cr', 'ext', 'links', 'e'];
 	// The key a backup keeps the book's id under, before the others. It is not one of KEYS, as it says which
 	// record the book is, not what the book is: text() and the comparisons built on it leave it out.
 	static ID_KEY = 'uid';
@@ -93,6 +106,8 @@ export class Book {
 	places: string[];
 	/** none means the date is unknown, not that it is unread */
 	read: string[];
+	/** whether you are reading it now (again, when it has dates read), and where in it you are */
+	reading: Reading | undefined;
 	/** its ids by external catalog */
 	external: Record<string, string>;
 	/** web addresses of other pages about it, which name nothing imports match by */
@@ -109,6 +124,7 @@ export class Book {
 		genres = [],
 		places = [],
 		read = [],
+		reading,
 		external = {},
 		links = [],
 		editions = [],
@@ -122,6 +138,7 @@ export class Book {
 		this.genres = [...genres];
 		this.places = [...places];
 		this.read = [...read];
+		this.reading = reading && Book.readingCopy(reading);
 		this.external = {...external};
 		this.links = [...links];
 		this.editions = [...editions];
@@ -129,7 +146,7 @@ export class Book {
 	}
 
 	/**
-	 * A book from the way it is stored (`{t, a, s, sn, g, pl, r, ext, links, e}`), in the current format (BackupV1.fixBooks()
+	 * A book from the way it is stored (`{t, a, s, sn, g, pl, r, cr, ext, links, e}`), in the current format (BackupV1.fixBooks()
 	 * brings one from an older backup to it). A value that is not what its key holds, and a key a book has not, is
 	 * kept aside as it is and written back by toJSON(), so the Check still reports it. Throws when it is
 	 * not an object.
@@ -167,6 +184,7 @@ export class Book {
 		else if (key === 'g') v = this.genres.length ? [...this.genres] : undefined;
 		else if (key === 'pl') v = this.places.length ? [...this.places] : undefined;
 		else if (key === 'r') v = this.read.length ? [...this.read] : undefined;
+		else if (key === 'cr') v = this.reading && Book.readingCopy(this.reading);
 		else if (key === 'ext') v = ExternalCatalog.order(this.external) || undefined;
 		else if (key === 'links') v = this.links.length ? [...this.links] : undefined;
 		else if (key === 'e') v = this.editions.length ? this.editions.map(ed => ed.toJSON()) : undefined;
@@ -322,6 +340,48 @@ export class Book {
 	boxRange(): [number, number] | null {
 		const range = this.series ? Series.wholeRange(this.number) : null;
 		return range && range[1] - range[0] < Series.BOX_MAX ? range : null;
+	}
+
+	// ------------------------------------------------------------------ reading it now
+	/**
+	 * Whether a stored value is what a book's `cr` holds: an object with a start date (`since`, as
+	 * Text.parseDate() writes it) or a place in the book (`at`, whole seconds), or both, and nothing else.
+	 */
+	static isReading(v: unknown): boolean {
+		if (!Text.isObject(v)) return false;
+		const keys = Object.keys(v);
+		if (!keys.length || keys.some(k => k !== 'since' && k !== 'at')) return false;
+		if ('since' in v && !(typeof v.since === 'string' && Text.parseDate(v.since) === v.since)) return false;
+		if ('at' in v && !(Number.isInteger(v.at) && (v.at as number) >= 0)) return false;
+		return true;
+	}
+
+	/** @returns a copy of a Reading with only the values it has, in the stored order */
+	static readingCopy(r: Reading): Reading {
+		const out: Reading = {};
+		if (r.since !== undefined) out.since = r.since;
+		if (r.at !== undefined) out.at = r.at;
+		return out;
+	}
+
+	/**
+	 * How far into the book you are, from 0 to 1, by its length: known only when its editions with a length all
+	 * have the same one (two narrations of different lengths would each give another answer); else null.
+	 */
+	progress(): number | null {
+		const at = this.reading?.at;
+		if (at === undefined) return null;
+		const lengths = [...new Set(this.editions.map(ed => ed.minutes).filter(m => m !== undefined && m > 0))];
+		if (lengths.length !== 1) return null;
+		return Math.min(1, at / ((lengths[0] as number) * 60));
+	}
+
+	/**
+	 * Whether you are reading it for the first time: you are reading it, and it has no date read. Exports and
+	 * shelf syncs, which count every other book as read, leave it off the read shelves.
+	 */
+	firstReading(): boolean {
+		return !!this.reading && !this.read.length;
 	}
 
 	/**
@@ -538,6 +598,9 @@ export class Book {
 		out.genres = [...new Set(books.flatMap(b => b.genres))];
 		out.places = [...new Set(books.flatMap(b => b.places))];
 		out.read = [...new Set(books.flatMap(b => b.read))].sort();
+		// the first book you are reading's place in it: the books merged are one, read once at a time
+		const reading = books.find(b => b.reading);
+		if (reading) out.reading = Book.readingCopy(reading.reading as Reading);
 		const external = from('external', b => Object.keys(b.external).length > 0);
 		for (const b of external ? [external, ...books] : books) {
 			for (const [catalog, id] of Object.entries(b.external)) if (!out.idOn(catalog)) out.external[catalog] = id;
@@ -605,6 +668,8 @@ export class Book {
 		if (Array.isArray(out.r)) {
 			out.r = out.r.map((x: unknown) => (typeof x === 'string' ? Text.tidy(x) : x));
 		}
+		if (Text.isObject(out.cr) && typeof out.cr.since === 'string')
+			out.cr = {...out.cr, since: Text.tidy(out.cr.since)};
 		if (Array.isArray(out.e)) out.e = out.e.map(Edition.tidyJSON);
 		return out;
 	}

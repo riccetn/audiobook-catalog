@@ -236,8 +236,32 @@ function bookCard(
 			),
 			b.read.length > 0 &&
 				buildElement('div', {class: 'read'}, spell('Read {dates}', {dates: b.read.join(', ')})),
+			b.reading && buildElement('div', {class: 'reading'}, readingText(b)),
 		),
 	);
+}
+
+/**
+ * That you are reading a book now, with since when and where in it you are, as far as they are known:
+ * "Reading now since 2026-11-20, at 3:12:45 (42%)". Empty when you aren't.
+ */
+export function readingText(b: Book): string {
+	const r = b.reading;
+	if (!r) return '';
+	const progress = b.progress();
+	const values = {
+		since: r.since || '',
+		at: r.at === undefined ? '' : Text.formatTimecode(r.at),
+		percent: progress === null ? 0 : Math.floor(progress * 100),
+	};
+	if (r.since && r.at !== undefined)
+		return progress === null
+			? spell('Reading now since {since}, at {at}', values)
+			: spell('Reading now since {since}, at {at} ({percent}%)', values);
+	if (r.since) return spell('Reading now since {since}', values);
+	return progress === null
+		? spell('Reading now, at {at}', values)
+		: spell('Reading now, at {at} ({percent}%)', values);
 }
 
 /**

@@ -21,6 +21,7 @@ Hardcover knows. The comparison on _Import & export_ has more groups for Hardcov
 
 - **Not on your Hardcover Read shelf**: your books Hardcover knows (by an id, ASIN, ISBN or Goodreads id) that
   aren't on your shelves there, with their dates read. Unticked: tick a book to put it on your _Read_ shelf.
+  A book you are reading for the first time (no date read yet) isn't listed.
 - **Reads Hardcover lacks**: books on your _Read_ shelf there without some of your dates read. Unticked:
   tick a book to add those reads on Hardcover.
 - **Save the Hardcover ids found**: ticked, it keeps the Hardcover book and edition ids found for your books,
