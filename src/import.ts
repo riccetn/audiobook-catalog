@@ -163,7 +163,8 @@ function download(text: string, type: string, name: string) {
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
-	a.download = name + '-' + new Date().toISOString().slice(0, 10) + (type === 'text/csv' ? '.csv' : '.json');
+	// the viewer's date, as the dates read are, not UTC's, which is another day in the evening west of UTC
+	a.download = name + '-' + Text.today() + (type === 'text/csv' ? '.csv' : '.json');
 	document.body.appendChild(a);
 	a.click();
 	document.body.removeChild(a);
