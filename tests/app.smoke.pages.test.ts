@@ -469,7 +469,7 @@ test('editing a book keeps its editions, and their covers', async () => {
 	// AudiobookDB's cover comes first, at the details' size
 	assert.match(
 		shown.els.results.innerHTML,
-		new RegExp(`<img class="cover large" src="https://cdn\\.audiobookdb\\.org/${cover}/large\\.jpg"`),
+		new RegExp(`<span class="cover large"><img src="https://cdn\\.audiobookdb\\.org/${cover}/large\\.jpg"`),
 	);
 });
 test("the Edit page's author, series, narrator and publisher fields offer the names the catalog has as they are typed, and say which are new", async () => {
@@ -688,10 +688,10 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	const card = readable(els.results.innerHTML).match(
 		/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="read">[^<]*<\/div><\/div><\/div>/,
 	)![0];
-	// its cover from its first ASIN, hidden until it loads
+	// its cover from its first ASIN, in a placeholder of its size that shows it once it loads
 	assert.match(
 		card,
-		/<div class="num">1<\/div><img class="cover small" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.MZZZZZZZ\.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><div class="info">/,
+		/<div class="num">1<\/div><span class="cover small"><img src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.MZZZZZZZ\.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><\/span><div class="info">/,
 	);
 	assert.match(
 		card,
@@ -722,7 +722,7 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	// the cover comes after the title (beside the rest, or across the card on a phone), then the rest
 	assert.match(
 		details,
-		/<\/div><\/div><img class="cover large" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.LZZZZZZZ\.jpg"[^>]*><div class="info"><dl class="details"><dt>Series/,
+		/<\/div><\/div><span class="cover large"><img src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.LZZZZZZZ\.jpg"[^>]*><\/span><div class="info"><dl class="details"><dt>Series/,
 	);
 });
 test('a cover tries the next address when one fails or is blank, and can be turned off', async () => {
@@ -731,19 +731,22 @@ test('a cover tries the next address when one fails or is blank, and can be turn
 	run(
 		"CATALOG.books[0].editions = [{ext: { 'audible.com': 'B0COVER001' }, isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist(); render()",
 	);
+	// the cover's place (a placeholder until a picture loads) and the picture in it
 	const cover = () => els.results.querySelector('.cover')!;
-	assert.equal(cover().getAttribute('src'), 'https://m.media-amazon.com/images/P/B0COVER001.01.LZZZZZZZ.jpg');
-	// Amazon answers with a blank picture: Open Library is asked next
-	Object.assign(cover(), {naturalWidth: 1, naturalHeight: 1}).dispatch('load');
+	const picture = () => cover().querySelector('img')!;
+	assert.equal(picture().getAttribute('src'), 'https://m.media-amazon.com/images/P/B0COVER001.01.LZZZZZZZ.jpg');
+	assert.ok(!cover().classList.contains('loaded'));
+	// Amazon answers with a blank picture: Open Library is asked next, and the placeholder stays
+	Object.assign(picture(), {naturalWidth: 1, naturalHeight: 1}).dispatch('load');
 	assert.equal(
-		cover().getAttribute('src'),
+		picture().getAttribute('src'),
 		'https://covers.openlibrary.org/b/isbn/9780000000002-L.jpg?default=false',
 	);
 	assert.ok(!cover().classList.contains('loaded'));
-	Object.assign(cover(), {naturalWidth: 120, naturalHeight: 180}).dispatch('load');
+	Object.assign(picture(), {naturalWidth: 120, naturalHeight: 180}).dispatch('load');
 	assert.ok(cover().classList.contains('loaded'));
-	// when the last one fails too, it is hidden
-	cover().dispatch('error');
+	// when the last one fails too, its place is hidden
+	picture().dispatch('error');
 	assert.ok(cover().classList.contains('missing'));
 	// turned off on a list, no book asks for one, and it stays off in this browser, on a book's page too
 	const list = await boot({page: 'books.html', storage});

@@ -144,31 +144,34 @@ export function watchCoversBox(redraw: () => void) {
 }
 
 /**
- * A book's cover, trying each address Cover.addresses gives until one loads; hidden until then, and for good
- * when none does. Nothing when covers are off or its editions have no id a cover can be found by.
+ * A book's cover, trying each address Cover.addresses gives until one loads: a faint square of its size until
+ * then (the picture inside hidden, so a broken or blank one never shows), and nothing for good when none loads.
+ * Nothing at all when covers are off or its editions have no id a cover can be found by.
  */
-export function coverImage(b: Book, size: CoverSize): HTMLImageElement | null {
+export function coverImage(b: Book, size: CoverSize): HTMLElement | null {
 	const addresses = coversShown() ? Cover.addresses(b, size) : [];
 	if (!addresses.length) return null;
 	let at = 0;
 	const next = () => {
 		if (++at < addresses.length) img.setAttribute('src', addresses[at]);
-		else img.classList.add('missing');
+		else slot.classList.add('missing');
 	};
 	const img = buildElement('img', {
-		class: `cover ${size}`,
 		src: addresses[0],
 		alt: '',
 		loading: 'lazy',
 		decoding: 'async',
 		referrerpolicy: 'no-referrer',
 		onload: () => {
-			if (Cover.isCover(img.naturalWidth, img.naturalHeight)) img.classList.add('loaded');
+			if (Cover.isCover(img.naturalWidth, img.naturalHeight)) slot.classList.add('loaded');
 			else next();
 		},
 		onerror: next,
 	}) as HTMLImageElement;
-	return img;
+	// The slot, not the picture, shows the placeholder: a picture kept hidden until it loads would hide its own
+	// background too.
+	const slot = buildElement('span', {class: `cover ${size}`}, img);
+	return slot;
 }
 
 /**

@@ -26,8 +26,8 @@ links of both; imports bring none, and never match a book by them.
 an edition, when the edition has one: _Fill in from another catalog_ and AudiobookDB's **Compare** keep it with the
 edition ([AudiobookDB](audiobookdb.md#covers)). Otherwise nothing is stored for it: the page asks for the cover by the
 ids the book's editions already have, first Amazon's image of each ASIN (an audiobook's square cover), then Open
-Library's of the edition's Open Library id and of its ISBN, and shows the first that loads. A book whose editions have
-none of those, or that no site has a cover for, shows none.
+Library's of the edition's Open Library id and of its ISBN, and shows the first that loads; until then a faint square
+keeps its place. A book whose editions have none of those, or that no site has a cover for, shows none.
 Asking tells AudiobookDB, Amazon and Open Library which covers you look at, so _Covers_ (next to _+ Add a book_ on _Series_ and _Books_) turns them off; the choice
 is kept in this browser. Firefox's strict tracking protection blocks Amazon's images; the cover then comes
 from Open Library when it has one.
