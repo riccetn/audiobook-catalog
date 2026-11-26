@@ -216,7 +216,7 @@ export function lookupIdFields(prefix: string, kind: ExternalKind): Promise<Fiel
 // Like the Hardcover token they are kept in this browser only (never in a backup); without them those catalogs
 // are not asked. Hardcover is never asked through it, so the token never leaves for anywhere but Hardcover.
 // The storage key is the one from when the server was only the proxy, so a server saved then is still found.
-export const SERVER_STORAGE_KEY = 'audiobook-catalog-proxy';
+const SERVER_STORAGE_KEY = 'audiobook-catalog-proxy';
 const SERVER_KEY_HEADER = 'X-Server-Key';
 const CATALOG_KEY_HEADER = 'X-Catalog-Key'; // your key for a catalog, which the proxy passes on only where it is needed
 
@@ -232,6 +232,24 @@ export function savedServer(): ServerSettings | null {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Keeps the server in this browser in the shape savedServer() reads, its address tidied, or with null removes the
+ * saved one. A server savedServer() wouldn't read (an address that isn't one, no key) is not written.
+ * Throws when the browser refuses to store it.
+ * @returns whether a server is saved now
+ */
+export function saveServer(server: ServerSettings | null): boolean {
+	if (!server) {
+		localStorage.removeItem(SERVER_STORAGE_KEY);
+		return false;
+	}
+	const url = serverAddress(server.url),
+		key = server.key.trim();
+	if (!url || !key) return false;
+	localStorage.setItem(SERVER_STORAGE_KEY, JSON.stringify({url, key}));
+	return true;
 }
 
 /**

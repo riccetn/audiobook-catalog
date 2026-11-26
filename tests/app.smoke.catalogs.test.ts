@@ -13,6 +13,7 @@ import {sqliteD1} from '../server/sqlite-d1.ts';
 import {DatabaseSync} from 'node:sqlite';
 import {Book} from '#app/modules/book.js';
 import {Duplicates} from '#app/modules/duplicates.js';
+import {DeviceSetup} from '#app/modules/device-setup.js';
 import {
 	ALL_PAGES,
 	DEMO,
@@ -577,6 +578,26 @@ test('another device is set up from a QR code of the settings saved here, and as
 	const empty = await boot({page: 'import.html', files: null});
 	assert.equal(empty.els.setupShowBtn.style.display, 'none');
 	assert.match(empty.els.setupState.textContent, /^Nothing to hand over yet/);
+});
+
+test("a set-up link's server is saved as Your server reads it: its address tidied, never one it can't use", async () => {
+	const kept = {url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'};
+	const open = async (server: {url: string; key: string}) => {
+		const link = DeviceSetup.link('https://reader.example/import.html', {server});
+		const page = await boot({
+			page: 'import.html',
+			hash: link.slice(link.indexOf('#')),
+			storage: new Map<string, string>([['audiobook-catalog-proxy', JSON.stringify(kept)]]),
+			files: null,
+		});
+		await page.els.setupReceivedSave.listeners.click[0]();
+		return JSON.parse(page.storage.get('audiobook-catalog-proxy')!);
+	};
+	assert.deepEqual(await open({url: ' https://other-proxy.example.workers.dev/ ', key: ' other-key '}), {
+		url: 'https://other-proxy.example.workers.dev',
+		key: 'other-key',
+	});
+	assert.deepEqual(await open({url: 'http://other-proxy.example.workers.dev', key: 'other-key'}), kept, 'not https');
 });
 test('devices sync through your server: encrypted, taking in what the others changed, and asking when both changed a book', async () => {
 	// the real Worker behind the pages, with a D1 database for the synced copy
