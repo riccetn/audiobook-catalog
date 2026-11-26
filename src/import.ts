@@ -4,7 +4,7 @@
 // CatalogConnectors and their base classes (FileImporter, FileExporter, ShelfSync, CatalogClient), and each
 // catalog's panel by its prefix (its CATALOG). It shows only how many books there are until an action needs
 // every book (an import, Check, Box sets, a comparison, Export, Restore or Merge), and then holds the whole
-// catalog. Loading and saving live in store.ts.
+// catalog. Loading and saving live in store.ts, syncing devices in sync.ts.
 import {Text} from './modules/text.js';
 import type {Phrase} from './modules/text.js';
 import {Catalog} from './modules/catalog.js';
@@ -26,10 +26,6 @@ import {
 	persist,
 	minutes,
 	showCatalogJob,
-	SYNC_STORAGE_KEY,
-	savedPassphrase,
-	lastSync,
-	syncCatalog,
 	startPage,
 	afterSaving,
 	queryCatalog,
@@ -39,6 +35,7 @@ import {
 	backupAgeText,
 	bookPageHref,
 } from './store.js';
+import {savedPassphrase, savePassphrase, lastSync, syncCatalog} from './sync.js';
 import {
 	showIoStatus,
 	byId,
@@ -267,7 +264,7 @@ async function importBackup(files: File[]) {
 		const keptMarks = CATALOG.markTexts();
 		// A backup of a catalog made apart from this one (the same export imported on two devices) has this one's
 		// series and people under other ids, which can't be stored beside this one's names, as each name is stored
-		// once: this catalog goes first, as when a sync replaces it (syncCatalog).
+		// once: this catalog goes first, as when a sync replaces it (takeInSynced in store.ts).
 		if (nameIds && namedUnderOtherIds(CATALOG.nameIds, nameIds)) {
 			const had = new Catalog();
 			had.replaceWith(CATALOG);
@@ -1599,7 +1596,7 @@ async function checkServer(saved?: string) {
 }
 
 // ------------------------------------------------------------ syncing devices
-// The passphrase is kept in this browser only, like the server's key; syncing itself is syncCatalog() in store.ts.
+// The passphrase is kept in this browser only, like the server's key; syncing itself is syncCatalog() in sync.ts.
 async function showSync() {
 	const saved = Boolean(savedPassphrase());
 	byId('syncPassphraseState').textContent = saved
@@ -1622,8 +1619,7 @@ function saveSyncPassphrase(remove: boolean) {
 		return;
 	}
 	try {
-		if (remove) localStorage.removeItem(SYNC_STORAGE_KEY);
-		else localStorage.setItem(SYNC_STORAGE_KEY, field.value);
+		savePassphrase(remove ? '' : field.value);
 		field.value = '';
 	} catch {
 		showIoStatus(
@@ -1885,7 +1881,7 @@ async function saveReceivedSettings() {
 	if (!settings) return;
 	try {
 		if (settings.server) localStorage.setItem(SERVER_STORAGE_KEY, JSON.stringify(settings.server));
-		if (settings.passphrase) localStorage.setItem(SYNC_STORAGE_KEY, settings.passphrase);
+		if (settings.passphrase) savePassphrase(settings.passphrase);
 		for (const Client of CatalogConnectors.CLIENTS) {
 			const key = settings.keys?.[Client.CATALOG];
 			if (key) saveKey(Client, key);
