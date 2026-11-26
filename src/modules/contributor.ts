@@ -96,14 +96,7 @@ export class Contributor {
 
 	/** @returns the entry as the stored info keeps it */
 	toJSON(): Record<string, unknown> {
-		const out: Record<string, unknown> = {};
-		for (const k of Contributor.KEYS) {
-			const v = this.value(k);
-			if (v !== undefined) out[k] = v;
-			else if (k in this.extra) out[k] = this.extra[k];
-		}
-		for (const [k, v] of Object.entries(this.extra)) if (!(k in out)) out[k] = v;
-		return out;
+		return Text.storedJSON(Contributor.KEYS, k => this.value(k), this.extra);
 	}
 
 	/**
@@ -123,14 +116,8 @@ export class Contributor {
 					.replace(/\n{3,}/g, '\n\n')
 					.trim() || undefined;
 		if (typeof entry.url === 'string') info.url = entry.url.trim() || undefined;
-		if (Text.isObject(entry.ext)) {
-			const ext = ExternalCatalog.tidy(entry.ext);
-			info.external = Object.fromEntries(
-				Object.entries(ext).filter(([, v]) => typeof v === 'string' && v),
-			) as Record<string, string>;
-		}
-		if (Array.isArray(entry.links))
-			info.links = Text.tidyLinks(entry.links.filter(x => typeof x === 'string')) as string[];
+		info.external = ExternalCatalog.tidyIds(entry.ext);
+		info.links = Text.tidyLinkTexts(entry.links);
 		return info.bio || info.url || Object.keys(info.external).length || info.links.length ? info : null;
 	}
 

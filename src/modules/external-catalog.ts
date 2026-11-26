@@ -872,6 +872,33 @@ export class ExternalCatalog {
 	}
 
 	/**
+	 * An entry's ids tidied (tidy()), keeping only the ids that are texts with something in them; none when `ids` is
+	 * not an object.
+	 */
+	static tidyIds(ids: unknown): Record<string, string> {
+		if (!Text.isObject(ids)) return {};
+		const out: Record<string, string> = {};
+		for (const [k, v] of Object.entries(ExternalCatalog.tidy(ids))) if (typeof v === 'string' && v) out[k] = v;
+		return out;
+	}
+
+	/**
+	 * Tidy, in place, what a stored book and a stored edition both hold: the texts under `textKeys`, the ids (tidy())
+	 * and the links (Text.tidyLinks(); none left is no `links`). A value that is not what its key holds is kept as it
+	 * is, for the Check.
+	 */
+	static tidyStored(rec: Record<string, any>, textKeys: string[]) {
+		for (const key of textKeys) {
+			if (typeof rec[key] === 'string') rec[key] = Text.tidy(rec[key]);
+		}
+		if (Text.isObject(rec.ext)) rec.ext = ExternalCatalog.tidy(rec.ext);
+		if (Array.isArray(rec.links)) {
+			rec.links = Text.tidyLinks(rec.links);
+			if (!rec.links.length) delete rec.links;
+		}
+	}
+
+	/**
 	 * What is wrong with stored ids of a kind of thing, as lines for the Check: not an object, a catalog this
 	 * app doesn't know (a warning), an id that isn't one.
 	 */
