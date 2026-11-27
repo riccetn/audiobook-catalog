@@ -945,10 +945,7 @@ test("the Edit series page compares a series' books with Hardcover when asked, a
 test("a series' and an author's page link to the Edit page, which old links to their comparison go to", async () => {
 	const home = await boot({hash: '#series=The+Lantern+Coast'});
 	await idle();
-	assert.match(
-		home.readable(home.els.results.innerHTML),
-		/<div class="page-actions"><a class="sedit" data-series="[^"]+" href="edit\.html#series=The\+Lantern\+Coast">Edit<\/a><\/div>/,
-	);
+	assert.equal(home.readable(home.els.seriesEdit.getAttribute('href')!), 'edit.html#series=The+Lantern+Coast');
 	assert.doesNotMatch(home.els.results.innerHTML, /catalogCompare/);
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
 	assert.match(

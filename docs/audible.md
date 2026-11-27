@@ -20,7 +20,7 @@ Audible's catalog doesn't let a web page ask it about books, so it is asked thro
 [server's catalog proxy](server.md); without one, set up on the _Import & export_ page, there is nothing to compare.
 No Audible account is needed, and nothing is sent to Audible.
 
-1. Press **Edit** at the end of a series' page (on _Series_): on its _Edit series_ page, press **Ask the catalogs**
+1. Press **Edit** at the top of a series' page (on _Series_): on its _Edit series_ page, press **Ask the catalogs**
    under _Other catalogs_ ([Editing books and series](editing-series.md#other-catalogs)), with Audible ticked.
 2. The series is read on the Audible site most of its books' Audible ASINs are from, as each site has its own
    ASINs. An Amazon site's ASIN is that site's alone (Goodreads and Hardcover list amazon.com's, often a Kindle or
