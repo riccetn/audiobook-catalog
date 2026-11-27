@@ -33,11 +33,14 @@ import {
 	creditPageHref,
 	openWithStatus,
 	hashValue,
+	setAddress,
+	hashParts,
+	hashText,
 } from './store.js';
 import {spell, plural, byId, fieldById, buildElement, fillElement, showIoStatus} from './dom.js';
 import {externalFields, linksField, fillExternalFields, readExternalFields} from './id-fields.js';
 import {lookupIdFields, lookupBookId, keyedClients, savedServer, fetchViaProxy} from './connections.js';
-import {coverImage, editionText, totalText, setAddress, hashParts, hashText} from './book-list.js';
+import {coverImage, editionText, totalText} from './book-list.js';
 import {comboField, newNames, refreshNewNotes} from './combo-box.js';
 import type {NewNote} from './combo-box.js';
 import type {Child, FormField} from './dom.js';

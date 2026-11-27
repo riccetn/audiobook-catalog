@@ -15,6 +15,10 @@ import {
 	seriesPageHref,
 	standalonePageHref,
 	editPageHref,
+	hashParts,
+	hashText,
+	hashOf,
+	setAddress,
 } from './store.js';
 import {byId, fieldById, spell, buildElement, fillElement, joined} from './dom.js';
 import type {Child} from './dom.js';
@@ -29,10 +33,6 @@ import {
 	watchCoversBox,
 	showEmptyCatalog,
 	showBackupNudge,
-	hashParts,
-	hashText,
-	hashOf,
-	setAddress,
 	watchSearchAndFilters,
 	showFilterCount,
 } from './book-list.js';

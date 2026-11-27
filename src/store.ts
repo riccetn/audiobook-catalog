@@ -56,6 +56,63 @@ export interface CatalogJob {
  * A value as an address after the # writes it: encoded, with spaces as +.
  */
 export const hashValue: (v: string) => string = v => encodeURIComponent(v).replace(/%20/g, '+');
+/**
+ * The address's #a=1&b -> its parts, by name (true for a part without a value); anything malformed is read as best it can be.
+ */
+export function hashParts(hash: string | null): Map<string, string | true> {
+	const dec = (v: string) => {
+		try {
+			return decodeURIComponent(v.replace(/\+/g, ' '));
+		} catch {
+			return v;
+		}
+	};
+	const p: Map<string, string | true> = new Map();
+	String(hash || '')
+		.replace(/^#/, '')
+		.split('&')
+		.filter(Boolean)
+		.forEach(part => {
+			const i = part.indexOf('=');
+			if (i < 0) p.set(dec(part), true);
+			else p.set(dec(part.slice(0, i)), dec(part.slice(i + 1)));
+		});
+	return p;
+}
+
+/**
+ * A part of an address's parts (hashParts), trimmed; '' when it has no value.
+ */
+export function hashText(parts: Map<string, string | true>, key: string): string {
+	const v = parts.get(key);
+	return typeof v === 'string' ? v.trim() : '';
+}
+
+/**
+ * Parts -> an address's #a=1&b ('' for none); a part whose value is '' or false is left out.
+ */
+export function hashOf(parts: [string, string | boolean][]): string {
+	const kept = parts
+		.filter(([, v]) => v !== '' && v !== false)
+		.map(([k, v]) => (v === true ? k : k + '=' + hashValue(String(v))));
+	return kept.length ? '#' + kept.join('&') : '';
+}
+
+/**
+ * Put `hash` in the address: a new history entry, so Back returns to what was shown, unless `how` is 'replace'.
+ */
+export function setAddress(how: 'push' | 'replace', hash: string, data: {search: boolean} | null = null) {
+	try {
+		history[how === 'replace' ? 'replaceState' : 'pushState'](
+			data,
+			'',
+			hash || location.pathname + (location.search || ''),
+		);
+	} catch {
+		/* the address just stays as it was */
+	}
+}
+
 // The addresses of an author's, a narrator's and a publisher's page: by the id they are stored under, so a
 // link holds while their name is spelled another way.
 const CREDIT_PAGES: Record<ContributorKind, [string, string]> = {
@@ -108,18 +165,11 @@ export const namedPlacePageHref: (name: string) => string = name =>
 export const standalonePageHref = () => pageHref('index.html', '#standalone');
 
 /**
- * What an address of one of those pages holds after `key`= (#n=id), or null: the id there, as it is.
+ * What an address of one of those pages holds after `key`= (#n=id), trimmed, or null: read by hashParts, as every
+ * address is, so a value ends at the next & (a name holding one is written %26).
  */
 export function valueFromPageHash(hash: string, key: string): string | null {
-	const m = new RegExp(`^#${key}=(.*)$`).exec(String(hash || ''));
-	if (!m) return null;
-	let value = m[1].replace(/\+/g, ' ');
-	try {
-		value = decodeURIComponent(value);
-	} catch {
-		/* not encoded: kept as written */
-	}
-	return value.trim() || null;
+	return hashText(hashParts(hash), key) || null;
 }
 
 /**

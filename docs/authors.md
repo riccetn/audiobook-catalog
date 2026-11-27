@@ -3,7 +3,7 @@
 The _Authors_ page lists every author in the catalog, with how many of their books and series you
 have; the search box narrows the list by name. Click an author (or an author's name on a book in the
 catalog) to open their page (`author.html`). Its address names the author by the id the catalog keeps for them, which stays the
-same when you correct the name; an address with the name, `author.html#a=Marisol+Quenby`, opens the same page,
+same when you correct the name; an address with the name, `author.html#a=Marisol+Quenby` (an `&` in a name written `%26`, as in `publisher.html#p=Tern+%26+Finch+Press`), opens the same page,
 and so do the addresses from when the list showed each author too (`authors.html#a=…`). Their page has:
 
 - a short bio, if you wrote one;
