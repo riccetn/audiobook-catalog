@@ -584,6 +584,42 @@ test("Goodreads CSV downloads every book for Goodreads' import", async () => {
 	assert.match(blobs[0], /^Book Id,Title,Author,/);
 	assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
 });
+test("downloaded files are named by the viewer's date, not UTC's", async () => {
+	const {ctx, els, run} = await boot({page: 'import.html'});
+	await idle();
+	ctx.Blob = class {
+		constructor() {}
+	};
+	ctx.URL = {createObjectURL: () => 'blob:x', revokeObjectURL() {}};
+	const names: string[] = [];
+	const createElement = ctx.document.createElement;
+	ctx.document.createElement = (tag: string) => {
+		const el = createElement(tag);
+		if (tag === 'a') el.click = () => names.push(el.download);
+		return el;
+	};
+	// the evening of March 14 west of UTC, when it is already March 15 in UTC
+	const RealDate = run('Date');
+	ctx.Date = class extends RealDate {
+		getFullYear() {
+			return 2031;
+		}
+		getMonth() {
+			return 2;
+		}
+		getDate() {
+			return 14;
+		}
+		toISOString() {
+			return '2031-03-15T02:00:00.000Z';
+		}
+	};
+	els.exportBtn.listeners.click[0]();
+	els.goodreadsExportBtn.listeners.click[0]();
+	await idle();
+	ctx.Date = RealDate;
+	assert.deepEqual(names, ['audiobook-catalog-backup-2031-03-14.json', 'goodreads-import-2031-03-14.csv']);
+});
 test('the Backups panel says how old the last backup is, and the catalog page reminds you when it is getting old', async () => {
 	const storage = new Map<string, string>();
 	const imp = await boot({page: 'import.html', storage});
@@ -1031,7 +1067,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 test("a book's Edit page links back to the book, and Discard returns to it", async () => {
 	const edit = await bootEditBook('The Drowned Chart');
 	const {els, ctx, get} = edit;
-	const id = get('BOOK_ID');
+	const id = get('EDITING.id');
 	assert.equal(ctx.location.hash, `#book=${id}`, 'an address by its title is turned into its id');
 	assert.equal(els.subtitle.textContent, 'The Drowned Chart');
 	assert.equal(els.backLink.getAttribute('href'), `book.html#book=${id}`);
@@ -1042,6 +1078,19 @@ test("a book's Edit page links back to the book, and Discard returns to it", asy
 	const none = await bootEditBook('No Such Book');
 	assert.equal(none.els.subtitle.textContent, 'There is no such book in the catalog.');
 	assert.equal(none.els.bookPanel.hidden, true);
+});
+test("an Edit page for a book or author the catalog doesn't have has nothing to review", async () => {
+	for (const hash of ['#book=No+Such+Book', '#author=No+Such+Author']) {
+		const {els, get, ctx} = await boot({page: 'edit.html', hash});
+		await idle();
+		assert.equal(get('EDITING.kind'), 'missing', hash);
+		await els.reviewBtn.listeners.click[0]();
+		await idle();
+		assert.equal(els.reviewPanel.classList.contains('open'), false, 'Review opens nothing');
+		assert.notEqual(els.seriesFormError.scrolledTo, true, 'nor points at the series panel');
+		els.discardBtn.listeners.click[0]();
+		assert.ok(!ctx.location.assigned, 'Discard has nowhere to go back to');
+	}
 });
 test('with a book removed, edits of the others save to the right books, in another tab too', async () => {
 	const mine = JSON.stringify([
@@ -1129,7 +1178,7 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 	els.sf_ext_goodreads.value = 'https://www.goodreads.com/book/show/4242';
 	assert.equal(await saveEdit(edit), false);
 	assert.match(els.seriesFormError.textContent, /Goodreads: https:\/\/www\.goodreads\.com\/book\/show\/4242/);
-	assert.ok(get('SERIES_ID'));
+	assert.ok(get('EDITING.id'));
 
 	// a book's Goodreads work, by its address, and its work on Open Library and its item on Wikidata
 	const bookEdit = await bootEditBook(SALT_ROAD, {storage});
@@ -1199,26 +1248,26 @@ test("an address pasted into a series', person's or book's id field becomes the 
 	);
 });
 test('a series is edited on its Edit series page, and removed from its books', async () => {
-	const {ctx, els, get, storage} = await boot();
+	const {ctx, els, get, storage, follow} = await boot();
 	const info = JSON.parse(DEMO_INFO);
 	const [name] = Object.keys(info);
-	assert.doesNotMatch(els.results.innerHTML, /sedit/, 'not in the overview');
+	assert.equal(els.seriesEdit.hidden, true, 'not in the overview');
 	ctx.openSeries(seriesIdOf(get, name));
 	await idle();
 	const id = seriesIdOf(get, name);
-	assert.match(
-		els.results.innerHTML,
-		new RegExp(
-			`<div class="page-actions"><a class="sedit" data-series="${id}" href="edit\\.html#series=${id}">Edit</a></div></div>$`,
-		),
-		'at the end of the page of the series',
-	);
+	assert.equal(els.seriesEdit.hidden, false, 'at the top of the page of the series, beside + Add a book');
+	assert.equal(els.seriesEdit.getAttribute('href'), `edit.html#series=${id}`);
+	assert.doesNotMatch(els.results.innerHTML, /sedit/, 'not after its books');
+	follow('#standalone');
+	await idle();
+	assert.equal(els.seriesEdit.hidden, true, 'the Standalone books are no series');
 	const books = await boot({page: 'books.html', storage});
-	assert.doesNotMatch(books.els.results.innerHTML, /sedit|Compare with Hardcover/, 'nor in the list of all books');
+	assert.equal(books.els.seriesEdit, undefined, 'nor in the list of all books');
+	assert.doesNotMatch(books.els.results.innerHTML, /sedit|Compare with Hardcover/);
 
 	// the page starts from the current entry, and lists its books
 	let edit = await bootEdit(name, {storage});
-	assert.equal(edit.get('SERIES_ID'), id);
+	assert.equal(edit.get('EDITING.id'), id);
 	assert.equal(edit.els.sf_name.value, name);
 	assert.equal(edit.els.sf_total.value, String(info[name].total));
 	assert.equal(edit.els.sf_status.value, info[name].status);
@@ -1359,10 +1408,10 @@ test('a series no book is in any more stays, and can be removed', async () => {
 	assert.match(home.els.results.innerHTML, /Fern Saga<\/a> <span class="srow-owned">no books yet<\/span>/);
 	home.ctx.openSeries(id);
 	await idle();
-	assert.match(
-		home.els.results.innerHTML,
-		/No books in Fern Saga yet\.<\/p><div class="page-actions"><a class="sedit"/,
-	);
+	assert.match(home.els.results.innerHTML, /No books in Fern Saga yet\.<\/p>$/);
+	assert.equal(home.els.subtitle.textContent, 'No books yet');
+	assert.equal(home.els.seriesEdit.hidden, false, 'it can still be edited, or removed');
+	assert.equal(home.els.seriesEdit.getAttribute('href'), `edit.html#series=${id}`);
 	const edit = await bootEdit('Fern Saga', {storage, files: null});
 	assert.equal(edit.get('DRAFTS.length'), 0);
 	edit.els.seriesRemoveBtn.listeners.click[0]();
@@ -1395,7 +1444,7 @@ test('a series can be renamed on its Edit series page, on every book in it', asy
 	assert.equal(get(`CATALOG.books.some(b => b.series === ${JSON.stringify(name)})`), false);
 	assert.deepEqual(get(`CATALOG.infoByName('series').get('The Renamed Saga')`), info[name]);
 	assert.equal(get(`CATALOG.infoByName('series').has(${JSON.stringify(name)})`), false);
-	assert.equal(get('SERIES_ID'), seriesId, 'still the series shown, by its id');
+	assert.equal(get('EDITING.id'), seriesId, 'still the series shown, by its id');
 	assert.equal(els.subtitle.textContent, 'The Renamed Saga');
 	assert.match(els.ioStatus.textContent, new RegExp(`Renamed .* on ${count} book`));
 	const saved = await kept(storage);

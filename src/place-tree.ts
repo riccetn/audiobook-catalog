@@ -6,7 +6,6 @@
 import {placePageHref} from './store.js';
 import {spell, spellParts, plural, buildElement} from './dom.js';
 import type {CatalogReader} from './modules/catalog-database.js';
-import type {PlaceRecord} from './modules/catalog-records.js';
 
 /**
  * A place in the tree: its name, the places it is part of (by id), how many books are set there and their ids, its
@@ -26,7 +25,7 @@ export type PlaceEntry = {
  * so a book set in two places within a third counts once there).
  */
 export async function readPlaces(r: CatalogReader): Promise<PlaceEntry[]> {
-	const records: PlaceRecord[] = await r.all('places', 'byName');
+	const records = await r.all('places', 'byName');
 	const entries = await Promise.all(
 		records.map(async s => ({
 			id: s.id,

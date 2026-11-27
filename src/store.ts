@@ -13,8 +13,7 @@ import type {
 	RecordSet,
 	Snapshot,
 	StoreName,
-	BookRecord,
-	EditionRecord,
+	SeriesRecord,
 	ContributorRecord,
 	PlaceRecord,
 	CreditKind,
@@ -54,6 +53,63 @@ export interface CatalogJob {
  * A value as an address after the # writes it: encoded, with spaces as +.
  */
 export const hashValue: (v: string) => string = v => encodeURIComponent(v).replace(/%20/g, '+');
+/**
+ * The address's #a=1&b -> its parts, by name (true for a part without a value); anything malformed is read as best it can be.
+ */
+export function hashParts(hash: string | null): Map<string, string | true> {
+	const dec = (v: string) => {
+		try {
+			return decodeURIComponent(v.replace(/\+/g, ' '));
+		} catch {
+			return v;
+		}
+	};
+	const p: Map<string, string | true> = new Map();
+	String(hash || '')
+		.replace(/^#/, '')
+		.split('&')
+		.filter(Boolean)
+		.forEach(part => {
+			const i = part.indexOf('=');
+			if (i < 0) p.set(dec(part), true);
+			else p.set(dec(part.slice(0, i)), dec(part.slice(i + 1)));
+		});
+	return p;
+}
+
+/**
+ * A part of an address's parts (hashParts), trimmed; '' when it has no value.
+ */
+export function hashText(parts: Map<string, string | true>, key: string): string {
+	const v = parts.get(key);
+	return typeof v === 'string' ? v.trim() : '';
+}
+
+/**
+ * Parts -> an address's #a=1&b ('' for none); a part whose value is '' or false is left out.
+ */
+export function hashOf(parts: [string, string | boolean][]): string {
+	const kept = parts
+		.filter(([, v]) => v !== '' && v !== false)
+		.map(([k, v]) => (v === true ? k : k + '=' + hashValue(String(v))));
+	return kept.length ? '#' + kept.join('&') : '';
+}
+
+/**
+ * Put `hash` in the address: a new history entry, so Back returns to what was shown, unless `how` is 'replace'.
+ */
+export function setAddress(how: 'push' | 'replace', hash: string, data: {search: boolean} | null = null) {
+	try {
+		history[how === 'replace' ? 'replaceState' : 'pushState'](
+			data,
+			'',
+			hash || location.pathname + (location.search || ''),
+		);
+	} catch {
+		/* the address just stays as it was */
+	}
+}
+
 // The addresses of an author's, a narrator's and a publisher's page: by the id they are stored under, so a
 // link holds while their name is spelled another way.
 const CREDIT_PAGES: Record<ContributorKind, [string, string]> = {
@@ -106,18 +162,11 @@ export const namedPlacePageHref: (name: string) => string = name =>
 export const standalonePageHref = () => pageHref('index.html', '#standalone');
 
 /**
- * What an address of one of those pages holds after `key`= (#n=id), or null: the id there, as it is.
+ * What an address of one of those pages holds after `key`= (#n=id), trimmed, or null: read by hashParts, as every
+ * address is, so a value ends at the next & (a name holding one is written %26).
  */
 export function valueFromPageHash(hash: string, key: string): string | null {
-	const m = new RegExp(`^#${key}=(.*)$`).exec(String(hash || ''));
-	if (!m) return null;
-	let value = m[1].replace(/\+/g, ' ');
-	try {
-		value = decodeURIComponent(value);
-	} catch {
-		/* not encoded: kept as written */
-	}
-	return value.trim() || null;
+	return hashText(hashParts(hash), key) || null;
 }
 
 /**
@@ -347,8 +396,8 @@ async function readWanted(
 			bookIds.add(key as string);
 	const lacking: (store: StoreName, ids: Iterable<string>) => string[] = (store, ids) =>
 		[...new Set(ids)].filter(id => !has(store, id));
-	const books: BookRecord[] = await r.get('books', lacking('books', bookIds));
-	const editions: EditionRecord[] = await r.get(
+	const books = await r.get('books', lacking('books', bookIds));
+	const editions = await r.get(
 		'editions',
 		lacking(
 			'editions',
@@ -378,9 +427,7 @@ async function readWanted(
 		...seriesBooks,
 		...(want.series || []),
 	]);
-	const places: PlaceRecord[] = (await r.all('places', undefined)).filter(
-		(rec: PlaceRecord) => !has('places', rec.id),
-	);
+	const places = (await r.all('places', undefined)).filter(rec => !has('places', rec.id));
 	const people = lacking('contributors', [
 		...places.flatMap(s => s.creatorIds || []),
 		...books.flatMap(b => b.authorIds),
@@ -461,7 +508,7 @@ export function queryCatalog<T>(ask: (reader: CatalogReader) => Promise<T>): Pro
 export function storedBookId(value: string): Promise<string | null> {
 	return queryCatalog(async r => {
 		if (await r.count('books', undefined, value)) return value;
-		const found: BookRecord[] = await r.under('books', 'byTitle', [CatalogRecords.sortKey(value)]);
+		const found = await r.under('books', 'byTitle', [CatalogRecords.sortKey(value)]);
 		return found.find(b => b.title === value)?.id ?? null;
 	});
 }
@@ -472,9 +519,9 @@ export function storedBookId(value: string): Promise<string | null> {
  */
 export function storedContributorId(kind: CreditKind, value: string): Promise<string | null> {
 	return queryCatalog(async r => {
-		const [rec]: ContributorRecord[] = await r.get('contributors', [value]);
+		const [rec] = await r.get('contributors', [value]);
 		if (rec && rec.kind === kind) return rec.id;
-		const [named]: ContributorRecord[] = await r.all('contributors', 'kindName', [kind, value]);
+		const [named] = await r.all('contributors', 'kindName', [kind, value]);
 		return named ? named.id : null;
 	});
 }
@@ -516,20 +563,28 @@ async function takeInNamesTyped(): Promise<void> {
 		}
 	}
 	if (!ask.length) return;
+	/** the record found for a name, with its store */
+	type Found =
+		| {store: 'series'; rec?: SeriesRecord}
+		| {store: 'places'; rec?: PlaceRecord}
+		| {store: 'contributors'; rec?: ContributorRecord};
 	const {result} = await DATABASE.read(r =>
 		Promise.all(
-			ask.map(({kind, name}) =>
-				kind === 'series' || kind === 'places'
-					? r.all(kind, 'name', name)
-					: r.all('contributors', 'kindName', [Contributor.ONE[kind], name]),
+			ask.map(async ({kind, name}): Promise<Found> =>
+				kind === 'series'
+					? {store: kind, rec: (await r.all(kind, 'name', name))[0]}
+					: kind === 'places'
+						? {store: kind, rec: (await r.all(kind, 'name', name))[0]}
+						: {
+								store: 'contributors',
+								rec: (await r.all('contributors', 'kindName', [Contributor.ONE[kind], name]))[0],
+							},
 			),
 		),
 	);
-	result.forEach((found, i) => {
-		const rec = found[0];
+	result.forEach(({store, rec}, i) => {
 		if (!rec) return;
-		const {kind, name} = ask[i],
-			store = storeOf(kind);
+		const {kind, name} = ask[i];
 		const info = CATALOG.infoMap(kind),
 			had = CATALOG.nameIds[kind].get(name);
 		const typed = had === undefined ? undefined : info.get(had);

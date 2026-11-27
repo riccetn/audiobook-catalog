@@ -43,7 +43,10 @@ export function externalFields(prefix: string, kind: ExternalKind, except: strin
 				buildElement('input', {
 					id: prefix + g.key,
 					'data-group': g.key,
-					placeholder: spell('id, or its address on {site}', {site: example}),
+					// the label names the catalog, so the placeholder is short enough for the Edit page's narrow
+					// columns; the site whose addresses it reads is in the tooltip
+					placeholder: spell('id or address'),
+					title: spell('id, or its address on {site}', {site: example}),
 					...lookup,
 					onfocusout: () => externalFieldToId(prefix, kind, g.key),
 				}),

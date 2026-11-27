@@ -48,8 +48,8 @@ import {
 	fillElement,
 } from './dom.js';
 import {
-	SERVER_STORAGE_KEY,
 	savedServer,
+	saveServer,
 	serverAddress,
 	fetchFromServer,
 	savedKey,
@@ -160,7 +160,8 @@ function download(text: string, type: string, name: string) {
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
-	a.download = name + '-' + new Date().toISOString().slice(0, 10) + (type === 'text/csv' ? '.csv' : '.json');
+	// the viewer's date, as the dates read are, not UTC's, which is another day in the evening west of UTC
+	a.download = name + '-' + Text.today() + (type === 'text/csv' ? '.csv' : '.json');
 	document.body.appendChild(a);
 	a.click();
 	document.body.removeChild(a);
@@ -1511,7 +1512,7 @@ function showServer() {
 /**
  * Save the server typed in the page in this browser and check it, or `remove` the saved one.
  */
-async function saveServer(remove: boolean) {
+async function saveServerTyped(remove: boolean) {
 	const url = fieldById('serverUrl'),
 		key = fieldById('serverKey');
 	const address = serverAddress(url.value);
@@ -1526,8 +1527,7 @@ async function saveServer(remove: boolean) {
 		}
 	}
 	try {
-		if (remove) localStorage.removeItem(SERVER_STORAGE_KEY);
-		else localStorage.setItem(SERVER_STORAGE_KEY, JSON.stringify({url: address, key: key.value.trim()}));
+		saveServer(remove ? null : {url: address, key: key.value});
 		url.value = '';
 		key.value = '';
 	} catch {
@@ -1880,7 +1880,7 @@ async function saveReceivedSettings() {
 	const settings = RECEIVED_SETTINGS;
 	if (!settings) return;
 	try {
-		if (settings.server) localStorage.setItem(SERVER_STORAGE_KEY, JSON.stringify(settings.server));
+		if (settings.server) saveServer(settings.server);
 		if (settings.passphrase) savePassphrase(settings.passphrase);
 		for (const Client of CatalogConnectors.CLIENTS) {
 			const key = settings.keys?.[Client.CATALOG];
@@ -2202,9 +2202,9 @@ onFilesPicked('importCsvFile', files => importCsv(IMPORT_KIND, files[0]));
 byId('importConfirm').addEventListener('click', () =>
 	PENDING_TIDY ? applyTidy() : PENDING_MERGE ? applyMerge() : applyCompare(),
 );
-byId('serverSave').addEventListener('click', () => saveServer(false));
+byId('serverSave').addEventListener('click', () => saveServerTyped(false));
 byId('serverCheck').addEventListener('click', () => checkServer());
-byId('serverRemove').addEventListener('click', () => saveServer(true));
+byId('serverRemove').addEventListener('click', () => saveServerTyped(true));
 byId('importCancel').addEventListener('click', closeImportPreview);
 byId('syncPassphraseSave').addEventListener('click', () => saveSyncPassphrase(false));
 byId('syncPassphraseRemove').addEventListener('click', () => saveSyncPassphrase(true));

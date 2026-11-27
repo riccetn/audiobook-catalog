@@ -61,6 +61,18 @@ for (const page of ALL_PAGES) {
 	assert.ok(html.includes('<link rel="stylesheet" href="styles.css">'), page);
 	for (const other of PAGES) assert.ok(html.includes(`href="${other}"`), `${page} links to ${other}`);
 	assert.doesNotMatch(html, /Catalog<\/a>/, `${page}: Series and Books in the nav bar instead`);
+	// a keyboard can skip the nav bar, and the page's own content is its <main>
+	assert.match(html, /<div class="wrap">\s*<a class="skipLink" href="#main">Skip to content<\/a>/, page);
+	assert.match(html, /<\/nav>\s*<\/header>\s*<main id="main" tabindex="-1">[\s\S]*<\/main>\s*<\/div>/, page);
+	// every <select> has a name a screen reader can say: a label, an aria-label or a title
+	for (const [select] of html.matchAll(/<select\b[^>]*>/g)) {
+		const id = /id="([^"]*)"/.exec(select)?.[1];
+		const inLabel = /<label>[^<]*$/.test(html.slice(0, html.indexOf(select)));
+		assert.ok(
+			/aria-label="|title="/.test(select) || (id && html.includes(`for="${id}"`)) || inLabel,
+			`${page}: ${select} has a name`,
+		);
+	}
 }
 test("a form's Cancel sits next to its Save, and a Remove button comes after both, apart from them", () => {
 	let forms = 0;
@@ -81,14 +93,54 @@ test("a form's Cancel sits next to its Save, and a Remove button comes after bot
 	}
 	assert.equal(forms, 4, 'the author, narrator, publisher and place forms');
 });
+test("Skip to content focuses the page's content and leaves the address alone", async () => {
+	const {ctx, run} = await boot({page: 'books.html', hash: '#q=salt'});
+	let focused = false;
+	run(`document.getElementById('main')`).focus = () => (focused = true);
+	let prevented = false;
+	run(`document.querySelector('a.skipLink')`).dispatch('click', {preventDefault: () => (prevented = true)});
+	assert.ok(focused && prevented);
+	assert.equal(ctx.location.hash, '#q=salt');
+});
+test("on a nav bar too narrow for its tabs, the page's tab is put in the middle, and the ends with more tabs fade", async () => {
+	const {ctx} = await boot();
+	// a phone's bar: 360 wide, its tabs 900 wide, this page's tab 600 to 640 from its start
+	const classes = new Set<string>();
+	const nav = {
+		scrollWidth: 900,
+		clientWidth: 360,
+		scrollLeft: 0,
+		classList: {toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c))},
+		getBoundingClientRect: () => ({left: 15, width: 360}),
+		querySelector: () => ({getBoundingClientRect: () => ({left: 15 + 600 - nav.scrollLeft, width: 40})}),
+	};
+	ctx.fitNav(nav);
+	assert.equal(nav.scrollLeft, 600 - (360 - 40) / 2);
+	assert.deepEqual([...classes].sort(), ['moreAfter', 'moreBefore']);
+	nav.scrollLeft = 900 - 360;
+	ctx.fitNav({...nav, querySelector: () => null, classList: nav.classList});
+	assert.deepEqual([...classes], ['moreBefore'], 'at the end of the bar');
+	// a bar wide enough for every tab (a computer's) is left as it is
+	const wide = {...nav, scrollWidth: 700, clientWidth: 700, scrollLeft: 0};
+	ctx.fitNav(wide);
+	assert.equal(wide.scrollLeft, 0);
+	assert.equal(classes.size, 0);
+});
 test('opens on the series overview, with a row per series', async () => {
 	const {els, get} = await boot();
 	assert.equal(get('SERIES_FILTER'), null);
 	const seriesCount = new Set(demoBooks.filter(b => b.s).map(b => b.s)).size;
 	assert.match(els.subtitle.textContent, new RegExp(`^${seriesCount} series across ${demoBooks.length} audiobooks`));
 	assert.equal((els.results.innerHTML.match(/class="srow-title"/g) || []).length, seriesCount + 1); // + "Standalone"
+	assert.equal(
+		els.resultCount.textContent,
+		`${seriesCount} series and the standalone books shown`,
+		'every row counted',
+	);
+	assert.doesNotMatch(els.subtitle.textContent, /tap/, 'no touch words on a page a mouse reads too');
 	assert.ok(!els.crumb.classList.contains('show'));
 	assert.equal(els.toggleAdd.style.display, 'none', "books are added on a series' page or the books page");
+	assert.equal(els.seriesEdit.hidden, true, 'a series is edited from its page');
 });
 test('opening a series shows exactly that series, and its books can be added to', async () => {
 	const {ctx, els, get} = await boot();
@@ -104,6 +156,22 @@ test('opening a series shows exactly that series, and its books can be added to'
 	assert.equal(els.resultCount.textContent, '', 'its books are not counted again');
 	assert.equal(els.toggleAdd.style.display, '');
 	assert.equal(els.toggleAdd.getAttribute('href'), `edit.html#add&series=${seriesIdOf(get, series)}`);
+});
+test("a series' page says how much of that series you own, and the Standalone page how many books it has", async () => {
+	const {els, get, follow} = await boot();
+	const shown = async (hash: string) => {
+		follow(hash);
+		await idle();
+		return els.subtitle.textContent;
+	};
+	assert.equal(await shown(`#series=${seriesIdOf(get, 'The Lantern Coast')}`), '4 owned of 5 — missing #5');
+	assert.equal(await shown(`#series=${seriesIdOf(get, 'Halloway & Finch')}`), '2 owned of 2');
+	assert.equal(
+		await shown(`#series=${seriesIdOf(get, 'The Orchard Cycle')}`),
+		'3 owned',
+		'no total known; a box set is no title more',
+	);
+	assert.equal(await shown('#standalone'), '3 standalone books');
 });
 test('search narrows the books page', async () => {
 	const {ctx, els} = await boot({page: 'books.html'});
@@ -275,6 +343,25 @@ test('the address names what is shown, so a series, a book or a search can be li
 	const odd = await boot({hash: '#nothing=here&%E0%A4%A'});
 	assert.equal(odd.get('SERIES_FILTER'), null);
 	assert.equal(odd.ctx.location.hash, '');
+});
+test('every address is read by one rule: parts split at &, + a space, %26 an &, a malformed % kept as written', async () => {
+	const {get} = await boot({files: null});
+	const parts = (hash: string) => get(`Object.fromEntries(hashParts(${JSON.stringify(hash)}))`);
+	const value = (hash: string, key: string) => get(`valueFromPageHash(${JSON.stringify(hash)}, '${key}')`);
+	assert.deepEqual(parts('#p=Tern+%26+Finch+Press&n=Wren%20Talbot&missing'), {
+		p: 'Tern & Finch Press',
+		n: 'Wren Talbot',
+		missing: true,
+	});
+	assert.deepEqual(parts('#q=100%&a=%E0%A4%A'), {q: '100%', a: '%E0%A4%A'});
+	assert.equal(value('#p=Tern+%26+Finch+Press', 'p'), 'Tern & Finch Press');
+	assert.equal(value('#p=Tern+&+Finch', 'p'), 'Tern', 'an & ends the value, as on every page');
+	assert.equal(value('#add&series=id-3', 'series'), 'id-3', 'a part anywhere in the address');
+	assert.equal(value('#q=100%', 'q'), '100%');
+	assert.equal(value('#a=+', 'a'), null, 'nothing but spaces');
+	assert.equal(value('#a', 'a'), null, 'no value');
+	assert.equal(value('#a=x', 'a.'), null, 'a key is a name, not a pattern');
+	assert.equal(get(`hashOf([['p', 'Tern & Finch Press'], ['missing', true]])`), '#p=Tern+%26+Finch+Press&missing');
 });
 test("addresses from when one page showed the series, the books and a book go to the books page and the book's page", async () => {
 	for (const [hash, to] of [
@@ -470,7 +557,7 @@ test('editing a book keeps its editions, and their covers', async () => {
 	// AudiobookDB's cover comes first, at the details' size
 	assert.match(
 		shown.els.results.innerHTML,
-		new RegExp(`<img class="cover large" src="https://cdn\\.audiobookdb\\.org/${cover}/large\\.jpg"`),
+		new RegExp(`<span class="cover large"><img src="https://cdn\\.audiobookdb\\.org/${cover}/large\\.jpg"`),
 	);
 });
 test("the Edit page's author, series, narrator and publisher fields offer the names the catalog has as they are typed, and say which are new", async () => {
@@ -689,10 +776,10 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	const card = readable(els.results.innerHTML).match(
 		/<div class="book" data-id="[^"]+"><div class="num">1<\/div>.*?<div class="read">[^<]*<\/div><\/div><\/div>/,
 	)![0];
-	// its cover from its first ASIN, hidden until it loads
+	// its cover from its first ASIN, in a placeholder of its size that shows it once it loads
 	assert.match(
 		card,
-		/<div class="num">1<\/div><img class="cover small" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.MZZZZZZZ\.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><div class="info">/,
+		/<div class="num">1<\/div><span class="cover small"><img src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.MZZZZZZZ\.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><\/span><div class="info">/,
 	);
 	assert.match(
 		card,
@@ -723,7 +810,7 @@ test('a book card shows its title, authors, narrators and read dates; its page s
 	// the cover comes after the title (beside the rest, or across the card on a phone), then the rest
 	assert.match(
 		details,
-		/<\/div><\/div><img class="cover large" src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.LZZZZZZZ\.jpg"[^>]*><div class="info"><dl class="details"><dt>Series/,
+		/<\/div><\/div><span class="cover large"><img src="https:\/\/m\.media-amazon\.com\/images\/P\/SAMPLE0001\.01\.LZZZZZZZ\.jpg"[^>]*><\/span><div class="info"><dl class="details"><dt>Series/,
 	);
 });
 test('a cover tries the next address when one fails or is blank, and can be turned off', async () => {
@@ -732,19 +819,22 @@ test('a cover tries the next address when one fails or is blank, and can be turn
 	run(
 		"CATALOG.books[0].editions = [{ext: { 'audible.com': 'B0COVER001' }, isbn: '9780000000002'}].map(e => Edition.fromJSON(e)); persist(); render()",
 	);
+	// the cover's place (a placeholder until a picture loads) and the picture in it
 	const cover = () => els.results.querySelector('.cover')!;
-	assert.equal(cover().getAttribute('src'), 'https://m.media-amazon.com/images/P/B0COVER001.01.LZZZZZZZ.jpg');
-	// Amazon answers with a blank picture: Open Library is asked next
-	Object.assign(cover(), {naturalWidth: 1, naturalHeight: 1}).dispatch('load');
+	const picture = () => cover().querySelector('img')!;
+	assert.equal(picture().getAttribute('src'), 'https://m.media-amazon.com/images/P/B0COVER001.01.LZZZZZZZ.jpg');
+	assert.ok(!cover().classList.contains('loaded'));
+	// Amazon answers with a blank picture: Open Library is asked next, and the placeholder stays
+	Object.assign(picture(), {naturalWidth: 1, naturalHeight: 1}).dispatch('load');
 	assert.equal(
-		cover().getAttribute('src'),
+		picture().getAttribute('src'),
 		'https://covers.openlibrary.org/b/isbn/9780000000002-L.jpg?default=false',
 	);
 	assert.ok(!cover().classList.contains('loaded'));
-	Object.assign(cover(), {naturalWidth: 120, naturalHeight: 180}).dispatch('load');
+	Object.assign(picture(), {naturalWidth: 120, naturalHeight: 180}).dispatch('load');
 	assert.ok(cover().classList.contains('loaded'));
-	// when the last one fails too, it is hidden
-	cover().dispatch('error');
+	// when the last one fails too, its place is hidden
+	picture().dispatch('error');
 	assert.ok(cover().classList.contains('missing'));
 	// turned off on a list, no book asks for one, and it stays off in this browser, on a book's page too
 	const list = await boot({page: 'books.html', storage});

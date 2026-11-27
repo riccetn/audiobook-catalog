@@ -175,13 +175,7 @@ export class Edition {
 
 	/** @returns the edition as it is stored, its keys in the usual order */
 	toJSON(): Record<string, unknown> {
-		const out: Record<string, unknown> = {};
-		for (const k of [Edition.ID_KEY, ...Edition.KEYS]) {
-			const v = this.value(k);
-			if (v !== undefined) out[k] = v;
-		}
-		for (const [k, v] of Object.entries(this.extra)) if (!(k in out)) out[k] = v;
-		return out;
+		return Text.storedJSON([Edition.ID_KEY, ...Edition.KEYS], k => this.value(k), this.extra);
 	}
 
 	/** @returns a copy, sharing nothing with this one */
@@ -771,14 +765,7 @@ export class Edition {
 	static tidyJSON(ed: Unchecked): Unchecked {
 		if (!Text.isObject(ed)) return ed;
 		const out: Record<string, any> = {...ed};
-		for (const key of ['t', 'd', 'desc']) {
-			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
-		}
-		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
-		if (Array.isArray(out.links)) {
-			out.links = Text.tidyLinks(out.links);
-			if (!out.links.length) delete out.links;
-		}
+		ExternalCatalog.tidyStored(out, ['t', 'd', 'desc']);
 		if (Array.isArray(out.n)) out.n = Text.tidyNames(out.n);
 		// a publisher's name is tidied, not spaced out as a person's initials are
 		if (Array.isArray(out.p)) out.p = Text.tidyList(out.p);

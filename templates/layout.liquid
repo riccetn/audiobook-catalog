@@ -15,18 +15,23 @@
 </head>
 <body>
 <div class="wrap">
-	<h1>Audiobook Catalog</h1>
-	<nav class="pages">
-		{% include 'nav-link', href: 'index.html', label: 'Series' %}
-		{% include 'nav-link', href: 'books.html', label: 'Books' %}
-		{% include 'nav-link', href: 'authors.html', label: 'Authors' %}
-		{% include 'nav-link', href: 'narrators.html', label: 'Narrators' %}
-		{% include 'nav-link', href: 'publishers.html', label: 'Publishers' %}
-		{% include 'nav-link', href: 'places.html', label: 'Places' %}
-		{% include 'nav-link', href: 'import.html', label: 'Import &amp; export' %}
-		{% include 'nav-link', href: 'duplicates.html', label: 'Duplicates<span id="dupCount"></span>' %}
-		{% include 'nav-link', href: 'stats.html', label: 'Stats' %}
-	</nav>{% block %}{% endblock %}</div>
+	<a class="skipLink" href="#main">Skip to content</a>
+	<header>
+		<h1>Audiobook Catalog</h1>
+		<nav class="pages">
+			{% include 'nav-link', href: 'index.html', label: 'Series' %}
+			{% include 'nav-link', href: 'books.html', label: 'Books' %}
+			{% include 'nav-link', href: 'authors.html', label: 'Authors' %}
+			{% include 'nav-link', href: 'narrators.html', label: 'Narrators' %}
+			{% include 'nav-link', href: 'publishers.html', label: 'Publishers' %}
+			{% include 'nav-link', href: 'places.html', label: 'Places' %}
+			{% include 'nav-link', href: 'import.html', label: 'Import &amp; export' %}
+			{% include 'nav-link', href: 'duplicates.html', label: 'Duplicates<span id="dupCount"></span>' %}
+			{% include 'nav-link', href: 'stats.html', label: 'Stats' %}
+		</nav>
+	</header>
+	<main id="main" tabindex="-1">{% block %}{% endblock %}</main>
+</div>
 
 <script type="module" src="{{ script }}"></script>
 </body>

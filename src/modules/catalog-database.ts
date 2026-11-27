@@ -7,7 +7,7 @@ import {Contributor} from './contributor.js';
 import type {BackupJSON} from './backup.js';
 /** the synced copy this browser last read or sent (`copy` names it, see CatalogSync.seal) */
 export type SyncBase = {revision: number; copy: string; backup: BackupJSON; at: string};
-import type {RecordSet, StoreName, Changes} from './catalog-records.js';
+import type {RecordSet, RecordOf, StoreName, Changes} from './catalog-records.js';
 
 /** What a save finds when another tab saved since this page last read or wrote the catalog. */
 export class CatalogConflict extends Error {
@@ -55,7 +55,7 @@ export class CatalogReader {
 	/**
 	 * The store, or one of its indexes.
 	 */
-	source(store: string, index?: string): IDBObjectStore | IDBIndex {
+	source(store: StoreName, index?: string): IDBObjectStore | IDBIndex {
 		const os = this.tx.objectStore(store);
 		return index ? os.index(index) : os;
 	}
@@ -63,7 +63,7 @@ export class CatalogReader {
 	/**
 	 * The records under these keys, in their order, leaving out keys with none.
 	 */
-	async get(store: string, keys: IDBValidKey[]): Promise<any[]> {
+	async get<S extends StoreName>(store: S, keys: IDBValidKey[]): Promise<RecordOf<S>[]> {
 		const os = this.tx.objectStore(store);
 		const found = await Promise.all([...new Set(keys)].map(key => requested(os.get(key))));
 		return found.filter(rec => rec !== undefined);
@@ -72,12 +72,12 @@ export class CatalogReader {
 	/**
 	 * The records with keys in `query` (a key, an IDBKeyRange, or null for all), in index order, at most `count`.
 	 */
-	all(
-		store: string,
+	all<S extends StoreName>(
+		store: S,
 		index: string | undefined,
 		query: IDBValidKey | IDBKeyRange | null = null,
 		count?: number,
-	): Promise<any[]> {
+	): Promise<RecordOf<S>[]> {
 		return requested(this.source(store, index).getAll(query, count));
 	}
 
@@ -85,7 +85,7 @@ export class CatalogReader {
 	 * The keys of the records with index keys in `query`, in index order, without reading the records.
 	 */
 	allKeys(
-		store: string,
+		store: StoreName,
 		index: string | undefined,
 		query: IDBValidKey | IDBKeyRange | null = null,
 	): Promise<IDBValidKey[]> {
@@ -97,7 +97,7 @@ export class CatalogReader {
 	 * reading the records (a search reads the books' search text this way).
 	 */
 	indexKeys(
-		store: string,
+		store: StoreName,
 		index: string,
 		query: IDBValidKey | IDBKeyRange | null = null,
 	): Promise<[IDBValidKey, IDBValidKey][]> {
@@ -120,7 +120,7 @@ export class CatalogReader {
 	/**
 	 * The records whose index key starts with `prefix` (a compound key's first parts), in index order.
 	 */
-	under(store: string, index: string, prefix: IDBValidKey[], count?: number): Promise<any[]> {
+	under<S extends StoreName>(store: S, index: string, prefix: IDBValidKey[], count?: number): Promise<RecordOf<S>[]> {
 		return this.all(store, index, this.keyRange.bound(prefix, [...prefix, []]), count);
 	}
 
@@ -130,14 +130,14 @@ export class CatalogReader {
 	 * @param lower where the list starts (when `after` is null)
 	 * @param upper where it ends
 	 */
-	page(
-		store: string,
+	page<S extends StoreName>(
+		store: S,
 		index: string | undefined,
 		after: IDBValidKey | null,
 		count: number,
 		lower?: IDBValidKey,
 		upper?: IDBValidKey,
-	): Promise<any[]> {
+	): Promise<RecordOf<S>[]> {
 		const from = after !== null ? after : lower;
 		const open = after !== null;
 		const range =
@@ -154,7 +154,7 @@ export class CatalogReader {
 	/**
 	 * The distinct keys of an index (a multiEntry index's values: every genre), in order, without reading any record.
 	 */
-	keys(store: string, index: string): Promise<IDBValidKey[]> {
+	keys(store: StoreName, index: string): Promise<IDBValidKey[]> {
 		return new Promise((resolve, reject) => {
 			const out: IDBValidKey[] = [];
 			const req = this.source(store, index).openKeyCursor(null, 'nextunique');
@@ -174,19 +174,12 @@ export class CatalogReader {
 	/**
 	 * How many records have keys in `query` (all of them with none).
 	 */
-	count(store: string, index?: string, query: IDBValidKey | IDBKeyRange | null = null): Promise<number> {
+	count(store: StoreName, index?: string, query: IDBValidKey | IDBKeyRange | null = null): Promise<number> {
 		return requested(this.source(store, index).count(query ?? undefined));
 	}
 }
 
-import type {
-	BookRecord,
-	EditionRecord,
-	SeriesRecord,
-	ContributorRecord,
-	CreditRecord,
-	PlaceRecord,
-} from './catalog-records.js';
+import type {BookRecord, EditionRecord, SeriesRecord, ContributorRecord, PlaceRecord} from './catalog-records.js';
 
 /**
  * Two keys in IndexedDB's order: numbers, then strings, then lists (item by item).
@@ -240,15 +233,15 @@ export class MemoryReader {
 	 * The records of a store with their keys in an index (or the store's), in order.
 	 * @returns [key, record]
 	 */
-	entries(store: string, index: string | undefined): [any, any][] {
-		const spec = CatalogRecords.STORES[store as StoreName];
+	entries<S extends StoreName>(store: S, index: string | undefined): [any, RecordOf<S>][] {
+		const spec = CatalogRecords.STORES[store];
 		const found = spec && index ? spec.indexes.find(([name]) => name === index) : null;
 		if (index && !found) throw new Error(`no index ${index} on ${store}`);
 		const keyPath = found ? found[1] : spec.keyPath,
 			multiEntry = !!(found && found[2] && found[2].multiEntry);
-		const at: (rec: any, path: string) => any = (rec, path) => rec[path];
-		const out: [any, any][] = [];
-		for (const rec of this.records[store as StoreName] as any[]) {
+		const at: (rec: RecordOf<S>, path: string) => any = (rec, path) => (rec as Record<string, any>)[path];
+		const out: [any, RecordOf<S>][] = [];
+		for (const rec of this.records[store]) {
 			if (Array.isArray(keyPath)) {
 				const key = keyPath.map(k => at(rec, k));
 				if (key.every(k => k !== undefined)) out.push([key, rec]);
@@ -258,7 +251,7 @@ export class MemoryReader {
 				else if (v !== undefined) out.push([v, rec]);
 			}
 		}
-		const primary = (rec: any) => CatalogRecords.keyOf(store as StoreName, rec);
+		const primary = (rec: RecordOf<S>) => CatalogRecords.keyOf(store, rec);
 		return out.sort((x, y) => compareKeys(x[0], y[0]) || compareKeys(primary(x[1]), primary(y[1])));
 	}
 
@@ -280,62 +273,62 @@ export class MemoryReader {
 		return true;
 	}
 
-	async get(store: string, keys: IDBValidKey[]): Promise<any[]> {
+	async get<S extends StoreName>(store: S, keys: IDBValidKey[]): Promise<RecordOf<S>[]> {
 		const all = this.entries(store, undefined);
 		return [...new Set(keys)]
 			.map(k => all.find(([key]) => compareKeys(key, k) === 0))
 			.filter(e => !!e)
-			.map(e => structuredClone((e as [any, any])[1]));
+			.map(e => structuredClone(e[1]));
 	}
-	async all(
-		store: string,
+	async all<S extends StoreName>(
+		store: S,
 		index: string | undefined,
 		query: IDBValidKey | IDBKeyRange | null = null,
 		count?: number,
-	): Promise<any[]> {
+	): Promise<RecordOf<S>[]> {
 		const list = this.entries(store, index)
 			.filter(([key]) => MemoryReader.inRange(query, key))
 			.map(([, rec]) => rec);
 		return structuredClone(count ? list.slice(0, count) : list);
 	}
 	async allKeys(
-		store: string,
+		store: StoreName,
 		index: string | undefined,
 		query: IDBValidKey | IDBKeyRange | null = null,
 	): Promise<IDBValidKey[]> {
 		return this.entries(store, index)
 			.filter(([key]) => MemoryReader.inRange(query, key))
-			.map(([, rec]) => CatalogRecords.keyOf(store as StoreName, rec));
+			.map(([, rec]) => CatalogRecords.keyOf(store, rec));
 	}
-	under(store: string, index: string, prefix: IDBValidKey[], count?: number): Promise<any[]> {
+	under<S extends StoreName>(store: S, index: string, prefix: IDBValidKey[], count?: number): Promise<RecordOf<S>[]> {
 		return CatalogReader.prototype.under.call(this, store, index, prefix, count);
 	}
-	page(
-		store: string,
+	page<S extends StoreName>(
+		store: S,
 		index: string | undefined,
 		after: IDBValidKey | null,
 		count: number,
 		lower?: IDBValidKey,
 		upper?: IDBValidKey,
-	): Promise<any[]> {
+	): Promise<RecordOf<S>[]> {
 		return CatalogReader.prototype.page.call(this, store, index, after, count, lower, upper);
 	}
-	async keys(store: string, index: string): Promise<IDBValidKey[]> {
+	async keys(store: StoreName, index: string): Promise<IDBValidKey[]> {
 		const out: any[] = [];
 		for (const [key] of this.entries(store, index))
 			if (!out.length || compareKeys(out[out.length - 1], key) !== 0) out.push(key);
 		return out;
 	}
 	async indexKeys(
-		store: string,
+		store: StoreName,
 		index: string,
 		query: IDBValidKey | IDBKeyRange | null = null,
 	): Promise<[IDBValidKey, IDBValidKey][]> {
 		return this.entries(store, index)
 			.filter(([key]) => MemoryReader.inRange(query, key))
-			.map(([key, rec]) => [key, CatalogRecords.keyOf(store as StoreName, rec)]);
+			.map(([key, rec]) => [key, CatalogRecords.keyOf(store, rec)]);
 	}
-	async count(store: string, index?: string, query: IDBValidKey | IDBKeyRange | null = null): Promise<number> {
+	async count(store: StoreName, index?: string, query: IDBValidKey | IDBKeyRange | null = null): Promise<number> {
 		return this.entries(store, index).filter(([key]) => MemoryReader.inRange(query, key)).length;
 	}
 }
@@ -353,20 +346,20 @@ class SaveTransaction {
 		this.names = new Map();
 	}
 
-	os(store: string) {
+	os(store: StoreName) {
 		return this.tx.objectStore(store);
 	}
-	get(store: string, key: IDBValidKey): Promise<any> {
+	get<S extends StoreName>(store: S, key: IDBValidKey): Promise<RecordOf<S> | undefined> {
 		return requested(this.os(store).get(key));
 	}
 	/**
 	 * The primary keys of the records whose `index` key is `key`, or starts with `prefix` when it is a list.
 	 */
-	keysIn(store: string, index: string, key: IDBValidKey, prefix: boolean = false): Promise<IDBValidKey[]> {
+	keysIn(store: StoreName, index: string, key: IDBValidKey, prefix: boolean = false): Promise<IDBValidKey[]> {
 		const query = prefix && Array.isArray(key) ? this.keyRange.bound(key, [...key, []]) : key;
 		return requested(this.os(store).index(index).getAllKeys(query));
 	}
-	under(store: string, index: string, prefix: IDBValidKey[]): Promise<any[]> {
+	under<S extends StoreName>(store: S, index: string, prefix: IDBValidKey[]): Promise<RecordOf<S>[]> {
 		return requested(
 			this.os(store)
 				.index(index)
@@ -376,7 +369,7 @@ class SaveTransaction {
 	/**
 	 * The highest position in a store's `byPosition` index, or -1 when it is empty.
 	 */
-	lastPosition(store: string): Promise<number> {
+	lastPosition(store: StoreName): Promise<number> {
 		return new Promise((resolve, reject) => {
 			const req = this.os(store).index('byPosition').openCursor(null, 'prev');
 			req.onsuccess = () => resolve(req.result ? req.result.value.position : -1);
@@ -401,7 +394,7 @@ class SaveTransaction {
 	async write(changes: Changes, positions: Map<string, number>) {
 		const put = changes.put,
 			del = changes.delete;
-		const puts: (store: StoreName) => Record<string, any>[] = store => (put[store] || []) as Record<string, any>[];
+		const puts = <S extends StoreName>(store: S): RecordOf<S>[] => put[store] || [];
 		const dels: (store: StoreName) => IDBValidKey[] = store => del[store] || [];
 
 		// what the books, series and people changed were before, for what they leave behind
@@ -426,7 +419,7 @@ class SaveTransaction {
 			['series', puts('series')],
 			['contributors', puts('contributors')],
 			['places', puts('places')],
-		] as ['series' | 'contributors' | 'places', Record<string, any>[]][]) {
+		] as ['series' | 'contributors' | 'places', (SeriesRecord | ContributorRecord | PlaceRecord)[]][]) {
 			for (const r of list) {
 				const old = await this.get(store, r.id);
 				if (old && old.name !== r.name) renamed.set(r.id, store);
@@ -498,7 +491,7 @@ class SaveTransaction {
 			for (const key of await this.keysIn('marks', 'bookIds', id)) this.os('marks').delete(key);
 		}
 		for (const id of affectedBooks) {
-			const rec: BookRecord | undefined = await this.get('books', id);
+			const rec = await this.get('books', id);
 			if (!rec) continue;
 			for (const ed of rec.editionIds)
 				if (!editions.has(ed)) {
@@ -552,7 +545,7 @@ class SaveTransaction {
 		// the series and people those books are in or credit: their counts. They stay when no book names them
 		// any more (an entry of their own), unless the page removed them.
 		for (const id of affectedSeries) {
-			const rec: SeriesRecord | undefined = await this.get('series', id);
+			const rec = await this.get('series', id);
 			if (!rec) continue;
 			const books = await this.under('books', 'bySeries', [id]);
 			if (!books.length && dropped.has(id)) {
@@ -563,9 +556,9 @@ class SaveTransaction {
 			this.os('series').put({...fresh, ...CatalogRecords.ownFields('series', rec)});
 		}
 		for (const id of affectedPeople) {
-			const rec: ContributorRecord | undefined = await this.get('contributors', id);
+			const rec = await this.get('contributors', id);
 			if (!rec) continue;
-			const credits: CreditRecord[] = await this.under('credits', 'byTitle', [id]);
+			const credits = await this.under('credits', 'byTitle', [id]);
 			if (!credits.length && dropped.has(id)) {
 				this.os('contributors').delete(id);
 				continue;
@@ -587,7 +580,7 @@ class SaveTransaction {
 			this.os('contributors').put({...fresh, ...CatalogRecords.ownFields('contributors', rec)});
 		}
 		for (const id of affectedPlaces) {
-			const rec: PlaceRecord | undefined = await this.get('places', id);
+			const rec = await this.get('places', id);
 			if (!rec) continue;
 			const bookCount = (await this.keysIn('books', 'placeIds', id)).length;
 			if (!bookCount && dropped.has(id)) {

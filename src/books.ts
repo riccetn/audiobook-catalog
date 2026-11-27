@@ -2,7 +2,7 @@
 // The book cards and lists are book-list.ts's; loading and saving live in store.ts.
 import {CatalogRecords} from './modules/catalog-records.js';
 import type {CatalogReader} from './modules/catalog-database.js';
-import {CATALOG, queryCatalog, afterSaving, startPage} from './store.js';
+import {CATALOG, queryCatalog, afterSaving, startPage, hashParts, hashText, hashOf, setAddress} from './store.js';
 import {byId, fieldById, spell, buildElement, fillElement} from './dom.js';
 import {
 	BookList,
@@ -11,10 +11,6 @@ import {
 	watchCoversBox,
 	showEmptyCatalog,
 	showBackupNudge,
-	hashParts,
-	hashText,
-	hashOf,
-	setAddress,
 	watchSearchAndFilters,
 	showFilterCount,
 } from './book-list.js';

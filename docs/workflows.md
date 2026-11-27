@@ -3,8 +3,9 @@
 **Add new Audible purchases or Goodreads books**: see [Audible](audible.md) and [Goodreads](goodreads.md).
 
 **The pages**: _Series_ (`index.html`) lists every series; a series' name opens its page, with its books in order
-and its info (**Edit** at the end). _Books_ (`books.html`) lists every book, 50 at a time, with the search,
-filters and order. A book's title, anywhere, opens its own page (`book.html`).
+and its info, and at the top how many of its books you own, of how many released, and which are missing (e.g.
+_4 owned of 5 — missing #5_), and **Edit** beside `+ Add a book`. _Books_ (`books.html`) lists every book, 50 at a
+time, with the search, filters and order. A book's title, anywhere, opens its own page (`book.html`).
 
 **A book's card and its page**: a book's card in a list shows only its title, series number, authors,
 narrators and dates read. Its title opens the book's page (`book.html#book=…`): its series and number, dates read,
@@ -26,8 +27,8 @@ links of both; imports bring none, and never match a book by them.
 an edition, when the edition has one: _Fill in from another catalog_ and AudiobookDB's **Compare** keep it with the
 edition ([AudiobookDB](audiobookdb.md#covers)). Otherwise nothing is stored for it: the page asks for the cover by the
 ids the book's editions already have, first Amazon's image of each ASIN (an audiobook's square cover), then Open
-Library's of the edition's Open Library id and of its ISBN, and shows the first that loads. A book whose editions have
-none of those, or that no site has a cover for, shows none.
+Library's of the edition's Open Library id and of its ISBN, and shows the first that loads; until then a faint square
+keeps its place. A book whose editions have none of those, or that no site has a cover for, shows none.
 Asking tells AudiobookDB, Amazon and Open Library which covers you look at, so _Covers_ (next to _+ Add a book_ on _Series_ and _Books_) turns them off; the choice
 is kept in this browser. Firefox's strict tracking protection blocks Amazon's images; the cover then comes
 from Open Library when it has one.
@@ -134,7 +135,7 @@ Author names on the books link there. See [Authors](authors.md).
 each with a page of their bio, links, series and titles; their names on the books link there. See
 [Narrators and publishers](narrators-publishers.md).
 
-**Edit a series and its books**: press **Edit** at the end of a series' page (open it from _Series_). The
+**Edit a series and its books**: press **Edit** at the top of a series' page (open it from _Series_). The
 _Edit series_ page shows the series and every book in it, each book with its fields (title, authors, number,
 genres, dates read and its ids) and its editions, all of them editable in place, and what the other catalogs
 you set up have for them, to pick. **Edit their books** on an author's page does the same for their books, and a

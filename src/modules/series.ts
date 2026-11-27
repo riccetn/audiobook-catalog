@@ -120,7 +120,6 @@ export class Series {
 
 	/** @returns the entry as the stored series info keeps it */
 	toJSON(): Record<string, unknown> {
-		const out: Record<string, unknown> = {};
 		const fields: Record<string, unknown> = {
 			total: this.total,
 			status: this.status,
@@ -128,12 +127,7 @@ export class Series {
 			ext: ExternalCatalog.order(this.external) || undefined,
 			links: this.links.length ? [...this.links] : undefined,
 		};
-		for (const k of Series.KEYS) {
-			if (fields[k] !== undefined) out[k] = fields[k];
-			else if (k in this.extra) out[k] = this.extra[k];
-		}
-		for (const [k, v] of Object.entries(this.extra)) if (!(k in out)) out[k] = v;
-		return out;
+		return Text.storedJSON(Series.KEYS, k => fields[k], this.extra);
 	}
 
 	/**

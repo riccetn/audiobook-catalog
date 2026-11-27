@@ -19,7 +19,7 @@ import {
 	narratorPageHref,
 	bookPageHref,
 	seriesPageHref,
-	hashValue,
+	setAddress,
 } from './store.js';
 import {byId, fieldById, spell, spellParts, plural, buildElement, fillElement, joined} from './dom.js';
 import {externalLinks, webLinks} from './id-fields.js';
@@ -144,31 +144,34 @@ export function watchCoversBox(redraw: () => void) {
 }
 
 /**
- * A book's cover, trying each address Cover.addresses gives until one loads; hidden until then, and for good
- * when none does. Nothing when covers are off or its editions have no id a cover can be found by.
+ * A book's cover, trying each address Cover.addresses gives until one loads: a faint square of its size until
+ * then (the picture inside hidden, so a broken or blank one never shows), and nothing for good when none loads.
+ * Nothing at all when covers are off or its editions have no id a cover can be found by.
  */
-export function coverImage(b: Book, size: CoverSize): HTMLImageElement | null {
+export function coverImage(b: Book, size: CoverSize): HTMLElement | null {
 	const addresses = coversShown() ? Cover.addresses(b, size) : [];
 	if (!addresses.length) return null;
 	let at = 0;
 	const next = () => {
 		if (++at < addresses.length) img.setAttribute('src', addresses[at]);
-		else img.classList.add('missing');
+		else slot.classList.add('missing');
 	};
 	const img = buildElement('img', {
-		class: `cover ${size}`,
 		src: addresses[0],
 		alt: '',
 		loading: 'lazy',
 		decoding: 'async',
 		referrerpolicy: 'no-referrer',
 		onload: () => {
-			if (Cover.isCover(img.naturalWidth, img.naturalHeight)) img.classList.add('loaded');
+			if (Cover.isCover(img.naturalWidth, img.naturalHeight)) slot.classList.add('loaded');
 			else next();
 		},
 		onerror: next,
 	}) as HTMLImageElement;
-	return img;
+	// The slot, not the picture, shows the placeholder: a picture kept hidden until it loads would hide its own
+	// background too.
+	const slot = buildElement('span', {class: `cover ${size}`}, img);
+	return slot;
 }
 
 /**
@@ -547,61 +550,4 @@ export function watchSearchAndFilters(addressNow: () => string, showView: () => 
 export function showFilterCount(filters: string[]) {
 	const on = filters.filter(id => fieldById(id).value).length;
 	byId('filtersBtn').textContent = on ? spell('Filters · {count}', {count: on}) : spell('Filters');
-}
-
-/**
- * The address's #a=1&b -> its parts, by name (true for a part without a value); anything malformed is read as best it can be.
- */
-export function hashParts(hash: string | null): Map<string, string | true> {
-	const dec = (v: string) => {
-		try {
-			return decodeURIComponent(v.replace(/\+/g, ' '));
-		} catch {
-			return v;
-		}
-	};
-	const p: Map<string, string | true> = new Map();
-	String(hash || '')
-		.replace(/^#/, '')
-		.split('&')
-		.filter(Boolean)
-		.forEach(part => {
-			const i = part.indexOf('=');
-			if (i < 0) p.set(dec(part), true);
-			else p.set(dec(part.slice(0, i)), dec(part.slice(i + 1)));
-		});
-	return p;
-}
-
-/**
- * A part of an address's parts (hashParts), trimmed; '' when it has no value.
- */
-export function hashText(parts: Map<string, string | true>, key: string): string {
-	const v = parts.get(key);
-	return typeof v === 'string' ? v.trim() : '';
-}
-
-/**
- * Parts -> an address's #a=1&b ('' for none); a part whose value is '' or false is left out.
- */
-export function hashOf(parts: [string, string | boolean][]): string {
-	const kept = parts
-		.filter(([, v]) => v !== '' && v !== false)
-		.map(([k, v]) => (v === true ? k : k + '=' + hashValue(String(v))));
-	return kept.length ? '#' + kept.join('&') : '';
-}
-
-/**
- * Put `hash` in the address: a new history entry, so Back returns to what was shown, unless `how` is 'replace'.
- */
-export function setAddress(how: 'push' | 'replace', hash: string, data: {search: boolean} | null = null) {
-	try {
-		history[how === 'replace' ? 'replaceState' : 'pushState'](
-			data,
-			'',
-			hash || location.pathname + (location.search || ''),
-		);
-	} catch {
-		/* the address just stays as it was */
-	}
 }

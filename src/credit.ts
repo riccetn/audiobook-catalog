@@ -22,6 +22,7 @@ import {
 	editPageHref,
 	bookPageHref,
 	seriesPageHref,
+	setAddress,
 } from './store.js';
 import {showIoStatus, byId, fieldById, spell, spellParts, plural, buildElement, fillElement, joined} from './dom.js';
 import {
@@ -34,11 +35,10 @@ import {
 } from './id-fields.js';
 import {lookupIdFields} from './connections.js';
 import {CREDIT_KINDS} from './credit-kinds.js';
-import {setAddress, nameLinks, authorLinks, statusTag, totalText} from './book-list.js';
+import {nameLinks, authorLinks, statusTag, totalText} from './book-list.js';
 import type {CreditKind} from './credit-kinds.js';
 import type {Book} from './modules/book.js';
 import type {Child, FormField} from './dom.js';
-import type {ContributorRecord} from './modules/catalog-records.js';
 import type {EntryInfo} from './modules/book-source.js';
 
 let KIND: CreditKind = CREDIT_KINDS.author;
@@ -407,9 +407,7 @@ async function saveCreditForm() {
 	}
 	// the one the new name is, with their books, which join these
 	if (renamed) {
-		const named: ContributorRecord[] = await queryCatalog(r =>
-			r.all('contributors', 'kindName', [KIND.one, newName]),
-		);
+		const named = await queryCatalog(r => r.all('contributors', 'kindName', [KIND.one, newName]));
 		for (const rec of named) await loadCredited(rec.id);
 		if (EDITING !== id) return;
 	}

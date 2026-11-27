@@ -13,6 +13,7 @@ import {sqliteD1} from '../server/sqlite-d1.ts';
 import {DatabaseSync} from 'node:sqlite';
 import {Book} from '#app/modules/book.js';
 import {Duplicates} from '#app/modules/duplicates.js';
+import {DeviceSetup} from '#app/modules/device-setup.js';
 import {
 	ALL_PAGES,
 	DEMO,
@@ -578,6 +579,26 @@ test('another device is set up from a QR code of the settings saved here, and as
 	assert.equal(empty.els.setupShowBtn.style.display, 'none');
 	assert.match(empty.els.setupState.textContent, /^Nothing to hand over yet/);
 });
+
+test("a set-up link's server is saved as Your server reads it: its address tidied, never one it can't use", async () => {
+	const kept = {url: 'https://catalog-proxy.example.workers.dev', key: 'right-key'};
+	const open = async (server: {url: string; key: string}) => {
+		const link = DeviceSetup.link('https://reader.example/import.html', {server});
+		const page = await boot({
+			page: 'import.html',
+			hash: link.slice(link.indexOf('#')),
+			storage: new Map<string, string>([['audiobook-catalog-proxy', JSON.stringify(kept)]]),
+			files: null,
+		});
+		await page.els.setupReceivedSave.listeners.click[0]();
+		return JSON.parse(page.storage.get('audiobook-catalog-proxy')!);
+	};
+	assert.deepEqual(await open({url: ' https://other-proxy.example.workers.dev/ ', key: ' other-key '}), {
+		url: 'https://other-proxy.example.workers.dev',
+		key: 'other-key',
+	});
+	assert.deepEqual(await open({url: 'http://other-proxy.example.workers.dev', key: 'other-key'}), kept, 'not https');
+});
 test('devices sync through your server: encrypted, taking in what the others changed, and asking when both changed a book', async () => {
 	// the real Worker behind the pages, with a D1 database for the synced copy
 	const database = new DatabaseSync(':memory:');
@@ -815,7 +836,7 @@ test("a book's Edit page asks the other catalogs about that book only, by its se
 	);
 	hc.sent.length = 0;
 	const book = await bootAsked('#book=Brine+Tide', {...options, files: null});
-	const bookId = book.get('BOOK_ID');
+	const bookId = book.get('EDITING.id');
 	assert.deepEqual(book.get('RUN.part'), {kind: 'series', name: 'Gull Isle', books: [bookId]});
 	assert.equal(book.get('DRAFTS.length'), 1);
 	assert.doesNotMatch(book.els.editBooks.innerHTML, /class="editNew/);
@@ -824,7 +845,7 @@ test("a book's Edit page asks the other catalogs about that book only, by its se
 	assert.ok(!hc.sent.some(s => /ShelfBySeries|ShelfByAuthor/.test(s.query)), 'no series or author is read');
 	assert.equal(book.get('RUN.review.fresh.length'), 0);
 	const lone = await bootAsked('#book=Lantern+Hours', {...options, files: null});
-	assert.deepEqual(lone.get('RUN.part'), {kind: 'author', name: 'R. T. Hale', books: [lone.get('BOOK_ID')]});
+	assert.deepEqual(lone.get('RUN.part'), {kind: 'author', name: 'R. T. Hale', books: [lone.get('EDITING.id')]});
 	// a new book is asked of no catalog
 	const added = await bootAdd('', {...options, files: null});
 	await added.ctx.ASKING;
@@ -921,13 +942,51 @@ test("the Edit series page compares a series' books with Hardcover when asked, a
 	assert.match(again.els.catalogNotes.textContent, /No catalog is ticked/);
 	assert.doesNotMatch(again.els.editBooks.innerHTML, /editOut|not found on/, 'nothing of the last run is shown');
 });
+test('the Edit series page opens, once the catalogs are asked, the closed cards of the books they have something for', async () => {
+	const mine = [
+		{t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ext: {'audible.com': 'B0TIDEWAT1'}}]},
+		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
+		{t: 'Salt Spray', a: ['Ann Vale'], s: 'Gull Isle', sn: '3'},
+	];
+	const hc = fakeHardcover(hardcoverState());
+	const setTimeout = (fn: () => unknown, ms: number) => {
+		if (ms === 1000) Promise.resolve().then(fn);
+		return 0;
+	};
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const page = await boot({
+		page: 'edit.html',
+		hash: '#series=Gull+Isle',
+		files: {'books.json': JSON.stringify(mine)},
+		hardcover: hc.fetch,
+		setTimeout,
+		storage,
+	});
+	await idle();
+	await page.ctx.ASKING;
+	const {els} = page;
+	const opened = () => [0, 1, 2].map(i => els[`book-${i}`].hasAttribute('open'));
+	const ask = async () => {
+		els.askBtn.listeners.click[0]();
+		await page.ctx.ASKING;
+		await idle();
+	};
+	assert.deepEqual(opened(), [false, false, false]);
+	els['book-1'].setAttribute('open', '');
+	await ask();
+	// Hardcover has Tidewater, read: its card opens; Brine Tide stays open, Salt Spray closed
+	assert.match(els['book-0'].innerHTML, /2024-03-15/);
+	assert.match(els['book-2'].innerHTML, /not found on Hardcover/);
+	assert.deepEqual(opened(), [true, true, false]);
+	// closed again, it stays closed when they are asked again
+	els['book-0'].removeAttribute('open');
+	await ask();
+	assert.deepEqual(opened(), [false, true, false]);
+});
 test("a series' and an author's page link to the Edit page, which old links to their comparison go to", async () => {
 	const home = await boot({hash: '#series=The+Lantern+Coast'});
 	await idle();
-	assert.match(
-		home.readable(home.els.results.innerHTML),
-		/<div class="page-actions"><a class="sedit" data-series="[^"]+" href="edit\.html#series=The\+Lantern\+Coast">Edit<\/a><\/div>/,
-	);
+	assert.equal(home.readable(home.els.seriesEdit.getAttribute('href')!), 'edit.html#series=The+Lantern+Coast');
 	assert.doesNotMatch(home.els.results.innerHTML, /catalogCompare/);
 	const author = await boot({page: 'author.html', hash: '#a=Marisol+Quenby'});
 	assert.match(
@@ -960,7 +1019,7 @@ test("a series' and an author's page link to the Edit page, which old links to t
 		setTimeout,
 		storage,
 	});
-	assert.equal(get('KIND'), 'author');
+	assert.equal(get('EDITING.kind'), 'author');
 	assert.equal(els.seriesPanel.hidden, true);
 	assert.equal(els.eyebrow.textContent, "Edit an author's books");
 	assert.deepEqual(get('DRAFTS.map(d => d.book.title)'), ['Brine Tide']);
@@ -974,7 +1033,7 @@ test("a series' and an author's page link to the Edit page, which old links to t
 	els.b0_s.listeners.change[0]();
 	assert.ok(await saveEdit({els}));
 	assert.equal((await kept(storage)).books[0].s, 'Gull Isles');
-	assert.equal(get('location.assigned'), 'author.html#a=' + get('AUTHOR_ID'));
+	assert.equal(get('location.assigned'), 'author.html#a=' + get('EDITING.id'));
 });
 // ------------------------------------------------------------------ AudiobookDB
 const SERVER_ENV = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
@@ -1514,6 +1573,11 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	);
 	// an edition's description is a short name for it: one line
 	assert.match(els['book-0'].innerHTML, /<input id="b0e0_desc" data-key="desc" placeholder="e\.g\. UK edition">/);
+	// the id fields' placeholders are short enough for the cards' narrow columns, the rest in their tooltips
+	assert.equal(els.b0e0_more.getAttribute('placeholder'), 'address, or id + catalog');
+	assert.match(els.b0e0_more.getAttribute('title')!, /^the edition's address, or its id with its catalog/);
+	assert.equal(els.b0_ext_goodreads.getAttribute('placeholder'), 'id or address');
+	assert.equal(els.b0_ext_goodreads.getAttribute('title'), 'id, or its address on goodreads.com');
 	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale/);
 	// AudiobookDB's book to take brings the ids it found: they aren't offered apart too
 	assert.equal(

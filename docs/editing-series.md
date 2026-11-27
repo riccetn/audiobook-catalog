@@ -1,8 +1,8 @@
 # Editing books and series
 
-**Edit** at the end of a series' page opens the _Edit series_ page (`edit.html#series=<id>`): the series and
-every book in it on one page, a card for each book, with what the other catalogs have for them. Everything is
-edited in place, and nothing is saved until you press **Review & save** and then **Save**.
+**Edit** at the top of a series' page, beside `+ Add a book`, opens the _Edit series_ page (`edit.html#series=<id>`):
+the series and every book in it on one page, a card for each book, with what the other catalogs have for them.
+Everything is edited in place, and nothing is saved until you press **Review & save** and then **Save**.
 
 **Edit their books** on an author's page opens the same page for every book by them (`edit.html#author=<id>`),
 each with its series and number among its fields; the author's own name, bio and links stay in their form.
@@ -35,6 +35,12 @@ them with your other changes. Nothing is sent to any catalog.
 Each book's card has its title, authors, number in the series, genres, dates read, its ids in other
 catalogs (Goodreads, Hardcover, Open Library, ...) and its links, one per line. A field that changed is marked, and one that can't be read
 (a date such as "last spring") is named on the book and changes nothing until it is fixed.
+
+With one or two books every card is open. With more, a card starts closed, showing only its summary (number, title,
+authors, dates read and how many editions), so the book you came for is easy to find: open it to edit it, or use
+**Expand all** and **Collapse all** beside _Books_. A card opens by itself when it needs you: a book you changed, one
+with a field that can't be read, one the other catalogs have something for once they are asked, and a new book ticked
+to add. A card you opened or closed stays so as the page draws the books again; it opens only for something new.
 
 ## Its editions
 
@@ -129,6 +135,6 @@ values aren't shown beside the fields and taking its book leaves it out. A book 
 
 **Review & save** lists every change, book by book: the fields, and each edition added, changed or removed.
 While the list is open the fields can't be changed, so **Save** saves just what it lists; **Back** goes on
-editing. When a field can't be read, Review & save says so and scrolls to it instead. **Save** saves the
+editing. When a field can't be read, Review & save says so and opens its card and scrolls to it instead. **Save** saves the
 books, adds the new books ticked, and keeps the ids picked for the series and people, then returns to the
 series' (or author's, or book's) page, which says what was saved, with any name new to the catalog; **Discard** returns to it without saving anything.
