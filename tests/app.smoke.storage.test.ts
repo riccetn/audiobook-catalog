@@ -1067,7 +1067,7 @@ test('removing a book excludes it from imports, and Export / Import carry the ex
 test("a book's Edit page links back to the book, and Discard returns to it", async () => {
 	const edit = await bootEditBook('The Drowned Chart');
 	const {els, ctx, get} = edit;
-	const id = get('BOOK_ID');
+	const id = get('EDITING.id');
 	assert.equal(ctx.location.hash, `#book=${id}`, 'an address by its title is turned into its id');
 	assert.equal(els.subtitle.textContent, 'The Drowned Chart');
 	assert.equal(els.backLink.getAttribute('href'), `book.html#book=${id}`);
@@ -1078,6 +1078,19 @@ test("a book's Edit page links back to the book, and Discard returns to it", asy
 	const none = await bootEditBook('No Such Book');
 	assert.equal(none.els.subtitle.textContent, 'There is no such book in the catalog.');
 	assert.equal(none.els.bookPanel.hidden, true);
+});
+test("an Edit page for a book or author the catalog doesn't have has nothing to review", async () => {
+	for (const hash of ['#book=No+Such+Book', '#author=No+Such+Author']) {
+		const {els, get, ctx} = await boot({page: 'edit.html', hash});
+		await idle();
+		assert.equal(get('EDITING.kind'), 'missing', hash);
+		await els.reviewBtn.listeners.click[0]();
+		await idle();
+		assert.equal(els.reviewPanel.classList.contains('open'), false, 'Review opens nothing');
+		assert.notEqual(els.seriesFormError.scrolledTo, true, 'nor points at the series panel');
+		els.discardBtn.listeners.click[0]();
+		assert.ok(!ctx.location.assigned, 'Discard has nowhere to go back to');
+	}
 });
 test('with a book removed, edits of the others save to the right books, in another tab too', async () => {
 	const mine = JSON.stringify([
@@ -1165,7 +1178,7 @@ test('a series and a book keep their ids in external catalogs, typed as an id or
 	els.sf_ext_goodreads.value = 'https://www.goodreads.com/book/show/4242';
 	assert.equal(await saveEdit(edit), false);
 	assert.match(els.seriesFormError.textContent, /Goodreads: https:\/\/www\.goodreads\.com\/book\/show\/4242/);
-	assert.ok(get('SERIES_ID'));
+	assert.ok(get('EDITING.id'));
 
 	// a book's Goodreads work, by its address, and its work on Open Library and its item on Wikidata
 	const bookEdit = await bootEditBook(SALT_ROAD, {storage});
@@ -1254,7 +1267,7 @@ test('a series is edited on its Edit series page, and removed from its books', a
 
 	// the page starts from the current entry, and lists its books
 	let edit = await bootEdit(name, {storage});
-	assert.equal(edit.get('SERIES_ID'), id);
+	assert.equal(edit.get('EDITING.id'), id);
 	assert.equal(edit.els.sf_name.value, name);
 	assert.equal(edit.els.sf_total.value, String(info[name].total));
 	assert.equal(edit.els.sf_status.value, info[name].status);
@@ -1431,7 +1444,7 @@ test('a series can be renamed on its Edit series page, on every book in it', asy
 	assert.equal(get(`CATALOG.books.some(b => b.series === ${JSON.stringify(name)})`), false);
 	assert.deepEqual(get(`CATALOG.infoByName('series').get('The Renamed Saga')`), info[name]);
 	assert.equal(get(`CATALOG.infoByName('series').has(${JSON.stringify(name)})`), false);
-	assert.equal(get('SERIES_ID'), seriesId, 'still the series shown, by its id');
+	assert.equal(get('EDITING.id'), seriesId, 'still the series shown, by its id');
 	assert.equal(els.subtitle.textContent, 'The Renamed Saga');
 	assert.match(els.ioStatus.textContent, new RegExp(`Renamed .* on ${count} book`));
 	const saved = await kept(storage);

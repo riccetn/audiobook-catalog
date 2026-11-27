@@ -61,16 +61,21 @@ export type NewPick = {kind: 'fresh' | 'missing'; n: number};
 // the ids a new book's editions have on the page, so a field changed is told from the catalog's; never stored
 const NEW_EDITION = 'new-edition-';
 
-/** What the page edits: a series' books, an author's, one book, or a new book being added. */
-export let KIND: 'series' | 'author' | 'book' | 'add' = 'series';
-/** The series' id, from the address (null on an author's page). */
-export let SERIES_ID: string | null = null;
-/** The author's id, from the address (null on a series' page). */
-export let AUTHOR_ID: string | null = null;
-/** The book's id, from the address (#book=...), on one book's page. */
-export let BOOK_ID: string | null = null;
-/** What a new book starts with (#add): the id of the series it is added to, and an author's name, or ''. */
-export let ADDING: {series: string; author: string} | null = null;
+/**
+ * What the page edits, by its kind: a series' books (#series=..., by the series' id, null when the address names
+ * no series the catalog has), an author's (#author=..., by the author's id), one book (#book=..., by its id), or a
+ * new book being added (#add: what it starts with, the id of the series it is added to and an author's name, each
+ * '' when the address names none). `missing` is an author's or book's page whose address names none the catalog
+ * has (or while it is looked up): there is nothing to load, ask about or save.
+ */
+export type Editing =
+	| {kind: 'series'; id: string | null}
+	| {kind: 'author'; id: string}
+	| {kind: 'book'; id: string}
+	| {kind: 'add'; series: string; author: string}
+	| {kind: 'missing'};
+/** What the page edits, from the address. */
+export let EDITING: Editing = {kind: 'series', id: null};
 /** What the other catalogs said, once asked; null before (or when none can be). */
 export let RUN: CatalogRun | null = null;
 /** Resolves once the catalogs to ask are shown (on open), and once they have been asked (each time Ask is pressed). */
@@ -93,7 +98,9 @@ let OPEN_PANEL: string | null = null;
 let REMOVING_SERIES = false; // Remove series was pressed once; the second press removes it
 let REMOVING_BOOK = false; // Remove book was pressed once; the second press removes it
 /** Whether the page edits books of the catalog by themselves (one book, or a new one), not a series' or author's. */
-const oneBook = (): boolean => KIND === 'book' || KIND === 'add';
+const oneBook = (): boolean => EDITING.kind === 'book' || EDITING.kind === 'add';
+/** The id of the series whose books are shown; null on any other page, and when there is none. */
+const seriesId = (): string | null => (EDITING.kind === 'series' ? EDITING.id : null);
 
 // The fields of a book the page edits, besides its ids: [key, label]. The series is edited on an author's
 // page and a book's; on a series' page it is the series' own name.
@@ -110,7 +117,7 @@ const BOOK_FIELDS: [string, string][] = [
 	['cra', 'Place in the book'],
 ];
 /** The book fields with an input on this page. */
-const bookFields = (): [string, string][] => BOOK_FIELDS.filter(([k]) => k !== 's' || KIND !== 'series');
+const bookFields = (): [string, string][] => BOOK_FIELDS.filter(([k]) => k !== 's' || EDITING.kind !== 'series');
 // The fields of an edition the page edits, besides its ids: [Edition.fields() key, label].
 const EDITION_FIELDS: [string, string][] = [
 	['t', 'Released as'],
@@ -905,8 +912,14 @@ function notAudioOf(d: Draft, ed: Edition): {source: number; note: NotAudio}[] {
 }
 
 /** A catalog's line: its icon and what it would change, with Take. */
-function offerRow(id: string, source: number, text: string, take: () => void, extra: Child[] = []): HTMLElement {
-	const run = RUN as CatalogRun;
+function offerRow(
+	run: CatalogRun,
+	id: string,
+	source: number,
+	text: string,
+	take: () => void,
+	extra: Child[] = [],
+): HTMLElement {
 	return buildElement(
 		'div',
 		{class: 'editTake', id},
@@ -933,7 +946,7 @@ function catalogFinds(d: Draft, i: number): HTMLElement[] {
 		const lines = bookPartChanges(d, offer.after);
 		if (lines.length)
 			out.push(
-				offerRow(`book-${i}-take-${offer.key}`, offer.source, lines.join('; '), () => {
+				offerRow(run, `book-${i}-take-${offer.key}`, offer.source, lines.join('; '), () => {
 					d.book = bookPartOf(d, offer.after);
 					renderBook(i);
 				}),
@@ -945,8 +958,8 @@ function catalogFinds(d: Draft, i: number): HTMLElement[] {
 	for (const {source, note} of reviewed ? reviewed.notAudio : []) {
 		if (placed.has(note)) continue;
 		// an edition put right with Take names no longer what the note is about
-		const fixes = fixOffers(d, i, source, note);
-		if (!note.fix || fixes.length) out.push(notAudioNote(source, note), ...fixes);
+		const fixes = fixOffers(run, d, i, source, note);
+		if (!note.fix || fixes.length) out.push(notAudioNote(run, source, note), ...fixes);
 	}
 	return out;
 }
@@ -956,8 +969,7 @@ function catalogFinds(d: Draft, i: number): HTMLElement[] {
  * Take: the values the edition has of the print book or ebook there taken out, or those taken out and the
  * audiobook edition there filled in. Those that would change nothing (taken already) aren't offered.
  */
-function fixOffers(d: Draft, i: number, source: number, note: NotAudio): HTMLElement[] {
-	const run = RUN as CatalogRun;
+function fixOffers(run: CatalogRun, d: Draft, i: number, source: number, note: NotAudio): HTMLElement[] {
 	const fix = note.fix;
 	if (!fix) return [];
 	const out: HTMLElement[] = [];
@@ -969,6 +981,7 @@ function fixOffers(d: Draft, i: number, source: number, note: NotAudio): HTMLEle
 	if (taken)
 		out.push(
 			offerRow(
+				run,
 				`book-${i}-fix-${source}-${fix.editionId}-out`,
 				source,
 				spell(
@@ -987,6 +1000,7 @@ function fixOffers(d: Draft, i: number, source: number, note: NotAudio): HTMLEle
 	if (filled)
 		out.push(
 			offerRow(
+				run,
 				`book-${i}-fix-${source}-${fix.editionId}-in`,
 				source,
 				spell(
@@ -1017,8 +1031,7 @@ function fixOffers(d: Draft, i: number, source: number, note: NotAudio): HTMLEle
 }
 
 /** A catalog's note that an edition may not be an audiobook. */
-function notAudioNote(source: number, note: NotAudio): HTMLElement {
-	const run = RUN as CatalogRun;
+function notAudioNote(run: CatalogRun, source: number, note: NotAudio): HTMLElement {
 	return buildElement(
 		'p',
 		{class: 'editNotAudio'},
@@ -1080,6 +1093,7 @@ function editionFinds(d: Draft, i: number, j: number): HTMLElement[] {
 	return [
 		...editionOffers(d, j).map(({offer, lines, now}) =>
 			offerRow(
+				run,
 				`book-${i}-ed-${j}-take-${offer.key}`,
 				offer.source,
 				lines.join('; ') || spell('a cover'),
@@ -1094,8 +1108,8 @@ function editionFinds(d: Draft, i: number, j: number): HTMLElement[] {
 			),
 		),
 		...notAudioOf(d, ed).flatMap(({source, note}) => [
-			notAudioNote(source, note),
-			...fixOffers(d, i, source, note),
+			notAudioNote(run, source, note),
+			...fixOffers(run, d, i, source, note),
 		]),
 	];
 }
@@ -1386,7 +1400,7 @@ function newCards(): {book: Book; card: HTMLElement}[] {
 	const run = RUN;
 	// one book's page adds no others
 	if (!run || oneBook()) return [];
-	const name = KIND === 'series' ? shownName() : undefined;
+	const name = EDITING.kind === 'series' ? shownName() : undefined;
 	return [
 		...run.review.fresh.map((book, n) => {
 			const picked = FRESH_PICKS.get(n);
@@ -1518,7 +1532,7 @@ export function askCatalogs(): Promise<void> {
 		const part = comparedPart();
 		if (part === undefined) return;
 		// the series' own info is asked of the catalogs at the same time, listed under the series panel
-		const series = KIND === 'series' ? fillSeries() : Promise.resolve();
+		const series = EDITING.kind === 'series' ? fillSeries() : Promise.resolve();
 		try {
 			await askAboutBooks(part);
 		} finally {
@@ -1540,7 +1554,7 @@ async function askAboutBooks(part: {kind: 'series' | 'author'; name: string}): P
 		dropAllNew();
 		render();
 		drawCatalogFound();
-		if (KIND === 'series') drawSeriesChips();
+		if (EDITING.kind === 'series') drawSeriesChips();
 		fillElement(
 			byId('catalogNotes'),
 			buildElement(
@@ -1561,7 +1575,7 @@ async function askAboutBooks(part: {kind: 'series' | 'author'; name: string}): P
 		part.kind,
 		part.name,
 		DRAFTS.filter(d => !d.added).map(d => d.id),
-		KIND === 'book',
+		EDITING.kind === 'book',
 	);
 	FRESH_PICKS = new Map();
 	MISSING_PICKS = new Map();
@@ -1569,7 +1583,7 @@ async function askAboutBooks(part: {kind: 'series' | 'author'; name: string}): P
 	dropAllNew();
 	drawCatalogFound();
 	render();
-	if (KIND === 'series') drawSeriesChips();
+	if (EDITING.kind === 'series') drawSeriesChips();
 }
 
 /** The other catalogs' names for the series, under its name. */
@@ -1728,7 +1742,7 @@ export function readBookFields(i: number) {
 	const b = d.book;
 	b.title = title;
 	b.authors = authors;
-	if (KIND !== 'series') b.series = Text.tidy(value('s')) || undefined;
+	if (EDITING.kind !== 'series') b.series = Text.tidy(value('s')) || undefined;
 	const number = Text.tidy(value('sn'));
 	b.number = number || undefined;
 	b.genres = value('g')
@@ -2004,7 +2018,8 @@ function editionFieldChanges(was: Edition, ed: Edition): string[] {
 /** Every change on the page, as [what it is on, the change]. */
 export function changes(): [string, string][] {
 	const out: [string, string][] = [];
-	const name = SERIES_ID === null ? undefined : CATALOG.nameOf('series', SERIES_ID);
+	const id = seriesId();
+	const name = id === null ? undefined : CATALOG.nameOf('series', id);
 	if (name !== undefined) for (const line of seriesChanges(name)) out.push([name, line]);
 	for (const d of DRAFTS)
 		if (!d.added)
@@ -2045,10 +2060,12 @@ export function changes(): [string, string][] {
  * one); undefined when there is none.
  */
 function shownName(): string | undefined {
-	if (KIND === 'author') return AUTHOR_ID === null ? undefined : CATALOG.nameOf('authors', AUTHOR_ID);
-	if (KIND === 'book') return CATALOG.book(BOOK_ID)?.title;
-	if (KIND === 'add') return DRAFTS.length ? DRAFTS[0].book.title : undefined;
-	return SERIES_ID === null ? undefined : CATALOG.nameOf('series', SERIES_ID);
+	const editing = EDITING;
+	if (editing.kind === 'author') return CATALOG.nameOf('authors', editing.id);
+	if (editing.kind === 'book') return CATALOG.book(editing.id)?.title;
+	if (editing.kind === 'add') return DRAFTS.length ? DRAFTS[0].book.title : undefined;
+	if (editing.kind === 'missing') return undefined;
+	return editing.id === null ? undefined : CATALOG.nameOf('series', editing.id);
 }
 
 /**
@@ -2057,28 +2074,32 @@ function shownName(): string | undefined {
  * catalog has yet.
  */
 function comparedPart(): {kind: 'series' | 'author'; name: string} | undefined {
-	if (KIND === 'add') return undefined;
-	if (KIND === 'book') {
-		const b = CATALOG.book(BOOK_ID);
+	const editing = EDITING;
+	if (editing.kind === 'add' || editing.kind === 'missing') return undefined;
+	if (editing.kind === 'book') {
+		const b = CATALOG.book(editing.id);
 		if (!b) return undefined;
 		if (b.series) return {kind: 'series', name: b.series};
 		return b.authors.length ? {kind: 'author', name: b.authors[0]} : undefined;
 	}
 	const name = shownName();
-	return name === undefined ? undefined : {kind: KIND, name};
+	return name === undefined ? undefined : {kind: editing.kind, name};
 }
 
 /** The page the Edit page came from: the series', the author's, the book's, or (adding one) its series' or Books. */
 function returnHref(): string | null {
-	if (KIND === 'author') return AUTHOR_ID === null ? null : creditPageHref('authors', AUTHOR_ID);
-	if (KIND === 'book') return BOOK_ID === null ? null : bookPageHref(BOOK_ID);
-	if (KIND === 'add') return ADDING && ADDING.series ? seriesPageHref(ADDING.series) : 'books.html';
-	return SERIES_ID === null ? null : seriesPageHref(SERIES_ID);
+	const editing = EDITING;
+	if (editing.kind === 'author') return creditPageHref('authors', editing.id);
+	if (editing.kind === 'book') return bookPageHref(editing.id);
+	if (editing.kind === 'add') return editing.series ? seriesPageHref(editing.series) : 'books.html';
+	if (editing.kind === 'missing') return null;
+	return editing.id === null ? null : seriesPageHref(editing.id);
 }
 
 /** What the series panel changes on the series, one line each. */
 function seriesChanges(name: string): string[] {
-	const info = SERIES_ID === null ? undefined : CATALOG.series.get(SERIES_ID);
+	const id = seriesId();
+	const info = id === null ? undefined : CATALOG.series.get(id);
 	const out: string[] = [];
 	const newName = Text.tidy(fieldById('sf_name').value);
 	if (newName && newName !== name) out.push(spell('Renamed to {name}', {name: newName}));
@@ -2104,7 +2125,7 @@ function seriesChanges(name: string): string[] {
  * it can't be saved; `entry` null when every field is empty (it then keeps no info).
  */
 async function readSeriesPanel(): Promise<{newName: string; entry: Series | null; note: string} | null> {
-	const id = SERIES_ID;
+	const id = seriesId();
 	const name = id === null ? undefined : CATALOG.nameOf('series', id);
 	if (id === null || name === undefined) return null;
 	const showError = (text: string) => {
@@ -2183,8 +2204,8 @@ export async function review() {
 				spell('{title}: {problems}', {title: d.book.title, problems: problems.join('; ')}),
 			);
 	}
-	const series = KIND === 'series' ? await readSeriesPanel() : null;
-	if (KIND === 'series' && !series) return showProblem(byId('seriesFormError'));
+	const series = EDITING.kind === 'series' ? await readSeriesPanel() : null;
+	if (EDITING.kind === 'series' && !series) return showProblem(byId('seriesFormError'));
 	const name = shownName();
 	if (name === undefined) return;
 	const lines = changes();
@@ -2246,10 +2267,10 @@ function showProblem(at: HTMLElement, status?: string) {
 export async function save() {
 	setReviewing(false);
 	await Promise.all(BOOK_LOOKUPS.values());
-	if (KIND === 'add') return saveNew();
-	const series = KIND === 'series' ? await readSeriesPanel() : null;
+	if (EDITING.kind === 'add') return saveNew();
+	const series = EDITING.kind === 'series' ? await readSeriesPanel() : null;
 	const name = shownName();
-	if ((KIND === 'series' && !series) || name === undefined) return;
+	if ((EDITING.kind === 'series' && !series) || name === undefined) return;
 	// a box set's edition changed here changes on its other books too, so they are loaded first
 	const keys = [
 		...new Set(DRAFTS.filter(d => !d.added).flatMap(d => d.book.editions.flatMap(ed => ed.idAndIsbnKeys()))),
@@ -2308,7 +2329,7 @@ export async function save() {
 	parts.push(
 		...[
 			saved
-				? KIND === 'book'
+				? EDITING.kind === 'book'
 					? spell('saved {name}', {name})
 					: spell('saved {books}', {books: plural(saved, 'book')})
 				: '',
@@ -2322,8 +2343,8 @@ export async function save() {
 				: '',
 		].filter(Boolean),
 	);
-	if (newId !== null && newId !== SERIES_ID) {
-		SERIES_ID = newId;
+	if (newId !== null && newId !== seriesId()) {
+		EDITING = {kind: 'series', id: newId};
 		setAddress('replace', '#series=' + hashValue(newId));
 	}
 	await loadShown();
@@ -2349,7 +2370,7 @@ export async function save() {
  */
 async function saveNew() {
 	const d = DRAFTS[0];
-	if (KIND !== 'add' || !d) return;
+	if (EDITING.kind !== 'add' || !d) return;
 	const book = d.book.clone();
 	book.id = undefined;
 	const keys = [...new Set(book.editions.flatMap(ed => ed.idAndIsbnKeys()))];
@@ -2358,8 +2379,7 @@ async function saveNew() {
 	const others = CATALOG.saveBook(null, book);
 	// saveBook gave it its id
 	const id = String(book.id);
-	KIND = 'book';
-	BOOK_ID = id;
+	EDITING = {kind: 'book', id};
 	d.id = id;
 	d.book = book.clone();
 	d.before = book.clone();
@@ -2389,7 +2409,7 @@ function discard() {
  * everything else, but their number in it) and removes it, then goes to every series.
  */
 async function removeSeries() {
-	const id = SERIES_ID,
+	const id = seriesId(),
 		name = id === null ? undefined : CATALOG.nameOf('series', id);
 	if (id === null || name === undefined) return;
 	if (changes().length) {
@@ -2416,8 +2436,8 @@ async function removeSeries() {
  * the exclusions, so imports skip it, then goes to its series' page (or to Books).
  */
 async function removeBook() {
-	const id = BOOK_ID;
-	const b = KIND === 'book' && id !== null ? CATALOG.book(id) : undefined;
+	const id = EDITING.kind === 'book' ? EDITING.id : null;
+	const b = id === null ? undefined : CATALOG.book(id);
 	if (id === null || !b) return;
 	if (!REMOVING_BOOK) {
 		REMOVING_BOOK = true;
@@ -2451,7 +2471,7 @@ async function removeBook() {
  * changes nothing; Add puts the ticked values in the panel's empty fields, which Review & save then lists.
  */
 export async function fillSeries(): Promise<void> {
-	const id = SERIES_ID;
+	const id = seriesId();
 	const name = id === null ? undefined : CATALOG.nameOf('series', id);
 	if (id === null || name === undefined) return;
 	const had = CATALOG.series.get(id);
@@ -2475,7 +2495,7 @@ export async function fillSeries(): Promise<void> {
 		current,
 		books: DRAFTS.map(d => d.book),
 		box: byId('sf_fill'),
-		still: () => SERIES_ID === id && !byId('seriesPanel').hidden,
+		still: () => seriesId() === id && !byId('seriesPanel').hidden,
 		onAdd: (info, added) => {
 			fieldById('sf_total').value = info.total === undefined ? '' : String(info.total);
 			fieldById('sf_status').value = info.status || '';
@@ -2573,15 +2593,15 @@ function markNav(href: string) {
 
 /** Load the series' or the author's books, and draw them as stored. */
 export async function loadShown() {
-	if (KIND === 'author') await loadAuthor();
-	else if (KIND === 'book') await loadBook();
-	else if (KIND === 'add') await loadNew();
-	else await loadSeries();
+	if (EDITING.kind === 'author') await loadAuthor();
+	else if (EDITING.kind === 'book') await loadBook();
+	else if (EDITING.kind === 'add') await loadNew();
+	else if (EDITING.kind === 'series') await loadSeries();
 }
 
 /** The order of the books shown: by series number (an author's by series first, then number). */
 function bookOrder(x: Book, y: Book): number {
-	if (KIND !== 'author') return Book.bySeriesNumber(x, y);
+	if (EDITING.kind !== 'author') return Book.bySeriesNumber(x, y);
 	return (
 		(x.series || '\uffff').localeCompare(y.series || '\uffff') ||
 		Book.bySeriesNumber(x, y) ||
@@ -2604,7 +2624,7 @@ function startDrafts(books: Book[]) {
 
 /** Load the series and its books, and draw them as stored. */
 export async function loadSeries() {
-	const id = SERIES_ID;
+	const id = seriesId();
 	if (id === null) return;
 	await loadRecords({seriesBooks: [id], series: [id]});
 	const name = CATALOG.nameOf('series', id);
@@ -2634,8 +2654,8 @@ export async function loadSeries() {
 
 /** Load the author's books (those that credit them as an author), and draw them as stored, by series. */
 export async function loadAuthor() {
-	const id = AUTHOR_ID;
-	if (id === null) return;
+	if (EDITING.kind !== 'author') return;
+	const id = EDITING.id;
 	const credited = await queryCatalog(r => r.allKeys('credits', 'byTitle', r.keyRange.bound([id], [id, []])));
 	await loadRecords({books: credited.map(key => (key as IDBValidKey[])[1] as string), contributors: [id]});
 	const name = CATALOG.nameOf('authors', id);
@@ -2657,8 +2677,8 @@ export async function loadAuthor() {
  * too), and draw it as stored.
  */
 export async function loadBook() {
-	const id = BOOK_ID;
-	if (id === null) return;
+	if (EDITING.kind !== 'book') return;
+	const id = EDITING.id;
 	await loadRecords({books: [id]});
 	const had = CATALOG.book(id);
 	const keys = had ? [...new Set(had.editions.flatMap(ed => ed.idAndIsbnKeys()))] : [];
@@ -2685,7 +2705,7 @@ export async function loadBook() {
  * every book of the series has (its co-authors on some books left out).
  */
 export async function loadNew() {
-	const start = ADDING || {series: '', author: ''};
+	const start = EDITING.kind === 'add' ? EDITING : {series: '', author: ''};
 	if (start.series) await loadRecords({seriesBooks: [start.series], series: [start.series]});
 	const series = start.series ? CATALOG.nameOf('series', start.series) || '' : '';
 	const books = series ? CATALOG.books.filter(b => b.series === series) : [];
@@ -2743,43 +2763,46 @@ export const READY = startPage(
 		const book = valueFromPageHash(location.hash, 'book');
 		const parts = hashParts(location.hash);
 		if (parts.has('add') || book !== null) {
-			KIND = parts.has('add') ? 'add' : 'book';
+			const adding = parts.has('add');
 			markNav('books.html');
 			byId('seriesPanel').hidden = true;
 			byId('bookPanel').hidden = false;
-			byId('eyebrow').textContent = spell(KIND === 'add' ? 'Add a book' : 'Edit book');
+			byId('eyebrow').textContent = spell(adding ? 'Add a book' : 'Edit book');
 			byId('editBooksHead').hidden = true;
-			if (KIND === 'add') {
-				ADDING = {series: hashText(parts, 'series'), author: hashText(parts, 'author')};
+			if (adding) {
+				EDITING = {kind: 'add', series: hashText(parts, 'series'), author: hashText(parts, 'author')};
 				byId('catalogPanel').hidden = true;
 				byId('bookRemoveBtn').hidden = true;
 			} else {
 				const asked = book as string;
+				EDITING = {kind: 'missing'};
 				// by its id, or by its title from an older link
-				BOOK_ID = await storedBookId(asked);
-				if (BOOK_ID === null) {
+				const id = await storedBookId(asked);
+				if (id === null) {
 					byId('subtitle').textContent = spell('There is no such book in the catalog.');
 					byId('bookPanel').hidden = true;
 					return;
 				}
-				if (BOOK_ID !== asked) setAddress('replace', '#book=' + hashValue(BOOK_ID));
+				EDITING = {kind: 'book', id};
+				if (id !== asked) setAddress('replace', '#book=' + hashValue(id));
 			}
 		} else if (author !== null) {
-			KIND = 'author';
 			markNav('authors.html');
 			byId('seriesPanel').hidden = true;
 			byId('eyebrow').textContent = spell("Edit an author's books");
+			EDITING = {kind: 'missing'};
 			// by its id, or by name from an older link
-			AUTHOR_ID = await storedContributorId('author', author);
-			if (AUTHOR_ID === null) {
+			const id = await storedContributorId('author', author);
+			if (id === null) {
 				byId('subtitle').textContent = spell('No author to edit: open one from their page.');
 				return;
 			}
+			EDITING = {kind: 'author', id};
 		} else {
 			const value = valueFromPageHash(location.hash, 'series');
 			if (value !== null) await loadRecords({series: [value], seriesNamed: [value]});
-			SERIES_ID = idFromAddress('series', value);
-			if (SERIES_ID === null) {
+			EDITING = {kind: 'series', id: idFromAddress('series', value)};
+			if (EDITING.id === null) {
 				byId('subtitle').textContent = spell('No series to edit: open one from its page.');
 				return;
 			}

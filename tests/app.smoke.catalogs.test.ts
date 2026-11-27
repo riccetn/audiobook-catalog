@@ -836,7 +836,7 @@ test("a book's Edit page asks the other catalogs about that book only, by its se
 	);
 	hc.sent.length = 0;
 	const book = await bootAsked('#book=Brine+Tide', {...options, files: null});
-	const bookId = book.get('BOOK_ID');
+	const bookId = book.get('EDITING.id');
 	assert.deepEqual(book.get('RUN.part'), {kind: 'series', name: 'Gull Isle', books: [bookId]});
 	assert.equal(book.get('DRAFTS.length'), 1);
 	assert.doesNotMatch(book.els.editBooks.innerHTML, /class="editNew/);
@@ -845,7 +845,7 @@ test("a book's Edit page asks the other catalogs about that book only, by its se
 	assert.ok(!hc.sent.some(s => /ShelfBySeries|ShelfByAuthor/.test(s.query)), 'no series or author is read');
 	assert.equal(book.get('RUN.review.fresh.length'), 0);
 	const lone = await bootAsked('#book=Lantern+Hours', {...options, files: null});
-	assert.deepEqual(lone.get('RUN.part'), {kind: 'author', name: 'R. T. Hale', books: [lone.get('BOOK_ID')]});
+	assert.deepEqual(lone.get('RUN.part'), {kind: 'author', name: 'R. T. Hale', books: [lone.get('EDITING.id')]});
 	// a new book is asked of no catalog
 	const added = await bootAdd('', {...options, files: null});
 	await added.ctx.ASKING;
@@ -981,7 +981,7 @@ test("a series' and an author's page link to the Edit page, which old links to t
 		setTimeout,
 		storage,
 	});
-	assert.equal(get('KIND'), 'author');
+	assert.equal(get('EDITING.kind'), 'author');
 	assert.equal(els.seriesPanel.hidden, true);
 	assert.equal(els.eyebrow.textContent, "Edit an author's books");
 	assert.deepEqual(get('DRAFTS.map(d => d.book.title)'), ['Brine Tide']);
@@ -995,7 +995,7 @@ test("a series' and an author's page link to the Edit page, which old links to t
 	els.b0_s.listeners.change[0]();
 	assert.ok(await saveEdit({els}));
 	assert.equal((await kept(storage)).books[0].s, 'Gull Isles');
-	assert.equal(get('location.assigned'), 'author.html#a=' + get('AUTHOR_ID'));
+	assert.equal(get('location.assigned'), 'author.html#a=' + get('EDITING.id'));
 });
 // ------------------------------------------------------------------ AudiobookDB
 const SERVER_ENV = {SERVER_KEY: 'right-key', ALLOWED_ORIGINS: 'https://example.github.io'};
