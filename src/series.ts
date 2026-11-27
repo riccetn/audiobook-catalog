@@ -110,7 +110,7 @@ async function resolveAddress(): Promise<void> {
  * The series' rows (see Overview), without reading any book.
  */
 async function readOverview(r: CatalogReader): Promise<Overview> {
-	const series: SeriesRecord[] = await r.all('series', 'byName');
+	const series = await r.all('series', 'byName');
 	const people = await r.get('contributors', [...new Set(series.flatMap(s => s.authorIds))]);
 	return {
 		series,

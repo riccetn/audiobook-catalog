@@ -8,7 +8,6 @@ import {byId, fieldById, spell, plural, buildElement, fillElement} from './dom.j
 import {CREDIT_KINDS} from './credit-kinds.js';
 import type {CreditKind} from './credit-kinds.js';
 import type {CatalogReader} from './modules/catalog-database.js';
-import type {ContributorRecord} from './modules/catalog-records.js';
 
 let KIND: CreditKind = CREDIT_KINDS.author;
 /**
@@ -93,8 +92,8 @@ function topAuthorsLine(x: ListEntry): HTMLParagraphElement | null {
  * The list, from the kind's records alone (and the names of the authors they name).
  */
 async function readList(r: CatalogReader): Promise<{list: ListEntry[]; total: number}> {
-	const records: ContributorRecord[] = await r.under('contributors', 'byName', [KIND.one]);
-	const authors: ContributorRecord[] = await r.get(
+	const records = await r.under('contributors', 'byName', [KIND.one]);
+	const authors = await r.get(
 		'contributors',
 		records.flatMap(c => c.topAuthorIds || []),
 	);
