@@ -93,6 +93,26 @@ export class Text {
 	}
 
 	/**
+	 * A stored entry's JSON, as a class that keeps what it can't read aside in `extra` writes it: each of `keys` in
+	 * that order with its value, else with what `extra` kept under it, then the rest of `extra`.
+	 * @param value the value a key has, undefined when it has none
+	 */
+	static storedJSON<K extends string>(
+		keys: readonly K[],
+		value: (key: K) => unknown,
+		extra: Record<string, unknown>,
+	): Record<string, unknown> {
+		const out: Record<string, unknown> = {};
+		for (const k of keys) {
+			const v = value(k);
+			if (v !== undefined) out[k] = v;
+			else if (k in extra) out[k] = extra[k];
+		}
+		for (const [k, v] of Object.entries(extra)) if (!(k in out)) out[k] = v;
+		return out;
+	}
+
+	/**
 	 * Trim and collapse whitespace: tabs, newlines, non-breaking spaces and runs of spaces become one space.
 	 */
 	static tidy(text: string): string {
@@ -377,6 +397,11 @@ export class Text {
 			if (v !== '' && !out.includes(v)) out.push(v);
 		}
 		return out;
+	}
+
+	/** An entry's links tidied as tidyLinks() does, leaving out what is not a text; none when `links` is not a list. */
+	static tidyLinkTexts(links: unknown): string[] {
+		return Array.isArray(links) ? (Text.tidyLinks(links.filter(x => typeof x === 'string')) as string[]) : [];
 	}
 
 	/** Links typed one per line (or parted by spaces), as the catalog keeps them (tidyLinks()). */

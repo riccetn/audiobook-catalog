@@ -194,13 +194,7 @@ export class Book {
 
 	/** @returns the book as it is stored, its keys in the usual order */
 	toJSON(): Record<string, unknown> {
-		const out: Record<string, unknown> = {};
-		for (const k of [Book.ID_KEY, ...Book.KEYS]) {
-			const v = this.value(k);
-			if (v !== undefined) out[k] = v;
-		}
-		for (const [k, v] of Object.entries(this.extra)) if (!(k in out)) out[k] = v;
-		return out;
+		return Text.storedJSON([Book.ID_KEY, ...Book.KEYS], k => this.value(k), this.extra);
 	}
 
 	/** @returns a copy, sharing nothing with this one */
@@ -647,14 +641,7 @@ export class Book {
 		if (Array.isArray(out.e))
 			out.e = out.e.flatMap((ed: Unchecked) => (Text.isObject(ed) ? Edition.splitIsbns(ed) : [ed]));
 		if (Array.isArray(out.e) && !out.e.length) delete out.e;
-		for (const key of ['t', 's', 'sn']) {
-			if (typeof out[key] === 'string') out[key] = Text.tidy(out[key]);
-		}
-		if (Text.isObject(out.ext)) out.ext = ExternalCatalog.tidy(out.ext);
-		if (Array.isArray(out.links)) {
-			out.links = Text.tidyLinks(out.links);
-			if (!out.links.length) delete out.links;
-		}
+		ExternalCatalog.tidyStored(out, ['t', 's', 'sn']);
 		if (Array.isArray(out.a)) out.a = Text.tidyNames(out.a);
 		if (Array.isArray(out.pl)) {
 			out.pl = Text.tidyList(out.pl).filter((x: unknown) => x !== '');

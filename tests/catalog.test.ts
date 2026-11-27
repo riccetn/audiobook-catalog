@@ -341,6 +341,42 @@ test('external catalogs: a form field takes an id or an address, and ids are tid
 	]);
 });
 
+test('external catalogs: an entry keeps only the ids that are texts, and a stored record its tidy ids and links', () => {
+	assert.deepEqual(ExternalCatalog.tidyIds({' GoodReads ': ' 7 ', hardcover: ' ', 'audible.com': 42}), {
+		goodreads: '7',
+	});
+	assert.deepEqual(ExternalCatalog.tidyIds('B0X'), {}, 'not an object');
+	const rec: Record<string, any> = {
+		t: '  The  Salt Road ',
+		d: 2020,
+		x: ' kept ',
+		ext: {goodreads: ' 7 '},
+		links: [' ', 'https://example.com/salt-road'],
+	};
+	ExternalCatalog.tidyStored(rec, ['t', 'd']);
+	assert.equal(
+		JSON.stringify(rec),
+		'{"t":"The Salt Road","d":2020,"x":" kept ","ext":{"goodreads":"7"},"links":["https://example.com/salt-road"]}',
+	);
+	const noLinks: Record<string, any> = {links: ['  ']};
+	ExternalCatalog.tidyStored(noLinks, []);
+	assert.deepEqual(noLinks, {}, 'no links left is no links');
+});
+
+test('stored entries: the keys in order, else what was kept aside, then the rest kept aside', () => {
+	const values: Record<string, unknown> = {a: 1, c: 3};
+	const json = Text.storedJSON(['c', 'b', 'a'], k => values[k], {z: 'z', b: 'kept', a: 'old'});
+	assert.equal(JSON.stringify(json), '{"c":3,"b":"kept","a":1,"z":"z"}');
+	assert.deepEqual(
+		Text.storedJSON(['a'], () => undefined, {}),
+		{},
+	);
+	assert.deepEqual(Text.tidyLinkTexts([' example.com/a ', 7, 'https://example.com/a', '']), [
+		'https://example.com/a',
+	]);
+	assert.deepEqual(Text.tidyLinkTexts('example.com/a'), [], 'not a list');
+});
+
 // ------------------------------------------------------------------ data
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(root, 'sample');
