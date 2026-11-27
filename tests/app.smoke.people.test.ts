@@ -612,7 +612,8 @@ test('a narrator or publisher can be edited on their page, with links checked, a
 		pub.els.creditBody.innerHTML,
 		/<a class="authorlink" href="https:\/\/hardcover\.app\/publishers\/[^"]*" target="_blank" rel="noopener">Hardcover ↗<\/a>/,
 	);
-	assert.equal(pub.els.cf_ext_hardcover.getAttribute('placeholder'), 'id, or its address on hardcover.app');
+	assert.equal(pub.els.cf_ext_hardcover.getAttribute('placeholder'), 'id or address');
+	assert.equal(pub.els.cf_ext_hardcover.getAttribute('title'), 'id, or its address on hardcover.app');
 	assert.ok(!pub.els.cf_ext.innerHTML.includes('cf_ext_goodreads'), 'Goodreads has no publisher pages');
 });
 test('Check on the import page lists problems; a catalog in an older format is kept in the current one at once', async () => {

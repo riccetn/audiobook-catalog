@@ -1535,6 +1535,11 @@ test("the Edit series page shows every catalog's value beside a book's field, an
 	);
 	// an edition's description is a short name for it: one line
 	assert.match(els['book-0'].innerHTML, /<input id="b0e0_desc" data-key="desc" placeholder="e\.g\. UK edition">/);
+	// the id fields' placeholders are short enough for the cards' narrow columns, the rest in their tooltips
+	assert.equal(els.b0e0_more.getAttribute('placeholder'), 'address, or id + catalog');
+	assert.match(els.b0e0_more.getAttribute('title')!, /^the edition's address, or its id with its catalog/);
+	assert.equal(els.b0_ext_goodreads.getAttribute('placeholder'), 'id or address');
+	assert.equal(els.b0_ext_goodreads.getAttribute('title'), 'id, or its address on goodreads.com');
 	assert.match(els.editBooks.innerHTML, /Add Tidewater — Ann Vale/);
 	// AudiobookDB's book to take brings the ids it found: they aren't offered apart too
 	assert.equal(

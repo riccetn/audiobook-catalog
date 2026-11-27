@@ -609,7 +609,8 @@ function anotherIdField(i: number, j: number, onchange: () => void): HTMLElement
 		buildElement('input', {
 			id,
 			'data-key': 'more',
-			placeholder: spell("the edition's address, or its id and catalog"),
+			placeholder: spell('address, or id + catalog'),
+			title: spell("the edition's address, or its id with its catalog picked beside it"),
 			onchange,
 		}),
 	);
