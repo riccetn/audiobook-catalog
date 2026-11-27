@@ -241,14 +241,17 @@ function renderOverview() {
 	const onlyMissing = fieldById('missingFilter').value === 'missing';
 	if (onlyMissing) rows = rows.filter(({rec}) => (rec.missing || []).length);
 
-	byId('subtitle').textContent = spell('{series} series across {books} audiobooks — tap a series to see its titles', {
+	byId('subtitle').textContent = spell('{series} series across {books} audiobooks — open a series to see its books', {
 		series: OVERVIEW.series.length,
 		books: TOTAL_BOOKS,
 	});
-	byId('resultCount').textContent = spell('{count} series shown', {count: rows.length});
+	// the Standalone row is a row too, so the count names it rather than leave a row uncounted
+	const showStandalone = !onlyMissing && (!q || 'standalone'.includes(q));
+	byId('resultCount').textContent = showStandalone
+		? spell('{count} series and the standalone books shown', {count: rows.length})
+		: spell('{count} series shown', {count: rows.length});
 
 	const out: Child[] = [];
-	const showStandalone = !onlyMissing && (!q || 'standalone'.includes(q));
 	if (rows.length === 0 && !showStandalone) {
 		out.push(
 			buildElement(

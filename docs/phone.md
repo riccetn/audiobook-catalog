@@ -47,5 +47,5 @@ installed app: closed, not only in the background), so a page never mixes the tw
 goes first instead, so an edit shows at once.
 
 On a phone's narrow screen the page keeps the list near the top: the page links stay on one line that
-scrolls sideways, and the catalog's filters fold away behind a **Filters** button next to the search box,
+scrolls sideways, starting with the page you are on in the middle and fading at an end with more links past it, and the catalog's filters fold away behind a **Filters** button next to the search box,
 which shows how many are on (_Filters · 2_). A book opened on its own shows no search or filters.

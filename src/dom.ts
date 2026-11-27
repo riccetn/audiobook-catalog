@@ -78,6 +78,40 @@ if (BRITISH) {
 }
 
 /**
+ * Put this page's tab in the middle of the nav bar when the bar is too narrow for all its tabs (a phone's, where
+ * it scrolls sideways and the later tabs start out of sight), and mark the ends with more tabs past them, which
+ * CSS fades so the bar shows it scrolls.
+ */
+export function fitNav(nav: HTMLElement) {
+	const current = nav.querySelector<HTMLElement>('a.current');
+	if (current && nav.scrollWidth > nav.clientWidth) {
+		const bar = nav.getBoundingClientRect(),
+			tab = current.getBoundingClientRect();
+		nav.scrollLeft += tab.left - bar.left - (bar.width - tab.width) / 2;
+	}
+	markNavEnds(nav);
+}
+
+function markNavEnds(nav: HTMLElement) {
+	nav.classList.toggle('moreBefore', nav.scrollLeft > 1);
+	nav.classList.toggle('moreAfter', nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1);
+}
+
+// Skip to content moves the focus past the nav bar without following its link: the address's hash says what a
+// page shows (a series, a book, a search), so "#main" would change it.
+document.querySelector('a.skipLink')?.addEventListener('click', event => {
+	event.preventDefault();
+	document.getElementById('main')?.focus();
+});
+
+const NAV = document.querySelector<HTMLElement>('nav.pages');
+if (NAV) {
+	fitNav(NAV);
+	NAV.addEventListener('scroll', () => markNavEnds(NAV), {passive: true});
+	addEventListener('resize', () => fitNav(NAV));
+}
+
+/**
  * Something to put in an element: an element, or text (always as text, never read as HTML). Null, undefined,
  * false and '' stand for nothing, so a part shown only sometimes can be `cond && buildElement(...)`; lists are flattened.
  */
