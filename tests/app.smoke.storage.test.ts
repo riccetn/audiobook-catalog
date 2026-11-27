@@ -584,6 +584,42 @@ test("Goodreads CSV downloads every book for Goodreads' import", async () => {
 	assert.match(blobs[0], /^Book Id,Title,Author,/);
 	assert.match(els.ioStatus.textContent, new RegExp(`Goodreads CSV with ${demoBooks.length} books downloaded`));
 });
+test("downloaded files are named by the viewer's date, not UTC's", async () => {
+	const {ctx, els, run} = await boot({page: 'import.html'});
+	await idle();
+	ctx.Blob = class {
+		constructor() {}
+	};
+	ctx.URL = {createObjectURL: () => 'blob:x', revokeObjectURL() {}};
+	const names: string[] = [];
+	const createElement = ctx.document.createElement;
+	ctx.document.createElement = (tag: string) => {
+		const el = createElement(tag);
+		if (tag === 'a') el.click = () => names.push(el.download);
+		return el;
+	};
+	// the evening of March 14 west of UTC, when it is already March 15 in UTC
+	const RealDate = run('Date');
+	ctx.Date = class extends RealDate {
+		getFullYear() {
+			return 2031;
+		}
+		getMonth() {
+			return 2;
+		}
+		getDate() {
+			return 14;
+		}
+		toISOString() {
+			return '2031-03-15T02:00:00.000Z';
+		}
+	};
+	els.exportBtn.listeners.click[0]();
+	els.goodreadsExportBtn.listeners.click[0]();
+	await idle();
+	ctx.Date = RealDate;
+	assert.deepEqual(names, ['audiobook-catalog-backup-2031-03-14.json', 'goodreads-import-2031-03-14.csv']);
+});
 test('the Backups panel says how old the last backup is, and the catalog page reminds you when it is getting old', async () => {
 	const storage = new Map<string, string>();
 	const imp = await boot({page: 'import.html', storage});
