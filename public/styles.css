@@ -1185,21 +1185,44 @@ a.iconbtn2[hidden] {
 	flex: 1;
 	min-width: 0;
 }
-/* A cover (book-list.js coverImage) keeps a square's room while it loads, so the card doesn't jump; a print cover
-   sits in it whole. One that never loads takes no room. */
+/* A cover (book-list.js coverImage) keeps a square's room while it loads, so the card doesn't jump: a faint square
+   that the picture fades in over once it loads (until then the picture itself is hidden, so a broken or blank one
+   never shows), a print cover sitting in it whole. One that never loads takes no room. */
 .cover {
+	display: block;
 	flex: 0 0 auto;
 	aspect-ratio: 1;
-	object-fit: contain;
 	border-radius: 4px;
+	overflow: hidden;
+	background-color: var(--line);
+	transition: background-color 0.2s;
+}
+/* the details' big square in a softer tint, so it doesn't outweigh what is beside it */
+.cover.large {
+	background-color: color-mix(in srgb, var(--line) 50%, var(--card));
+}
+.cover img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
 	opacity: 0;
 	transition: opacity 0.2s;
 }
 .cover.loaded {
+	background-color: transparent;
+}
+.cover.loaded img {
 	opacity: 1;
 }
 .cover.missing {
 	display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+	.cover,
+	.cover img {
+		transition: none;
+	}
 }
 .cover.small {
 	width: 2.8rem;
@@ -1659,11 +1682,11 @@ a.iconbtn2[hidden] {
 .editBook[open] > summary {
 	border-bottom: 1px solid var(--line);
 }
-.editBook > summary img {
+.editBook > summary .cover {
 	width: 3rem;
-	height: 3rem;
+}
+.editBook > summary .cover img {
 	object-fit: cover;
-	border-radius: 4px;
 }
 .editBookHead {
 	display: flex;

@@ -1206,7 +1206,7 @@ function coverPreviews(before: Book, after: Book): HTMLElement[] {
 			const only = Book.fromJSON({t: after.title, a: after.authors, e: [{img: {[catalog]: key}}]});
 			return coverImage(only, 'small');
 		})
-		.filter((img): img is HTMLImageElement => img !== null);
+		.filter((cover): cover is HTMLElement => cover !== null);
 	return images.length ? [buildElement('span', {class: 'editCovers'}, ...images)] : [];
 }
 
