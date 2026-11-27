@@ -942,6 +942,47 @@ test("the Edit series page compares a series' books with Hardcover when asked, a
 	assert.match(again.els.catalogNotes.textContent, /No catalog is ticked/);
 	assert.doesNotMatch(again.els.editBooks.innerHTML, /editOut|not found on/, 'nothing of the last run is shown');
 });
+test('the Edit series page opens, once the catalogs are asked, the closed cards of the books they have something for', async () => {
+	const mine = [
+		{t: 'Tidewater', a: ['Ann Vale'], s: 'Gull Isle', sn: '1', e: [{ext: {'audible.com': 'B0TIDEWAT1'}}]},
+		{t: 'Brine Tide', a: ['Ann Vale'], s: 'Gull Isle', sn: '2'},
+		{t: 'Salt Spray', a: ['Ann Vale'], s: 'Gull Isle', sn: '3'},
+	];
+	const hc = fakeHardcover(hardcoverState());
+	const setTimeout = (fn: () => unknown, ms: number) => {
+		if (ms === 1000) Promise.resolve().then(fn);
+		return 0;
+	};
+	const storage = new Map<string, string>([['audiobook-catalog-hardcover-token', 'tok-123']]);
+	const page = await boot({
+		page: 'edit.html',
+		hash: '#series=Gull+Isle',
+		files: {'books.json': JSON.stringify(mine)},
+		hardcover: hc.fetch,
+		setTimeout,
+		storage,
+	});
+	await idle();
+	await page.ctx.ASKING;
+	const {els} = page;
+	const opened = () => [0, 1, 2].map(i => els[`book-${i}`].hasAttribute('open'));
+	const ask = async () => {
+		els.askBtn.listeners.click[0]();
+		await page.ctx.ASKING;
+		await idle();
+	};
+	assert.deepEqual(opened(), [false, false, false]);
+	els['book-1'].setAttribute('open', '');
+	await ask();
+	// Hardcover has Tidewater, read: its card opens; Brine Tide stays open, Salt Spray closed
+	assert.match(els['book-0'].innerHTML, /2024-03-15/);
+	assert.match(els['book-2'].innerHTML, /not found on Hardcover/);
+	assert.deepEqual(opened(), [true, true, false]);
+	// closed again, it stays closed when they are asked again
+	els['book-0'].removeAttribute('open');
+	await ask();
+	assert.deepEqual(opened(), [false, true, false]);
+});
 test("a series' and an author's page link to the Edit page, which old links to their comparison go to", async () => {
 	const home = await boot({hash: '#series=The+Lantern+Coast'});
 	await idle();
