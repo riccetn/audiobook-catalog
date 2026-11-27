@@ -1,5 +1,5 @@
 // What every page shares: the catalog, kept in this browser's IndexedDB and nowhere else, the page links, the
-// last backup, syncing devices and the banner of a catalog's run. (Drawing and the status line are dom.ts's, the id
+// last backup, what syncing devices needs and the banner of a catalog's run. (Drawing and the status line are dom.ts's, the id
 // fields id-fields.ts's, your keys and server connections.ts's.) Each page's own module starts with startPage(), handing it a refresh()
 // that redraws the page from CATALOG.
 import {Text} from './modules/text.js';
@@ -22,9 +22,7 @@ import type {Book} from './modules/book.js';
 import type {NamedKind} from './modules/catalog.js';
 import type {ContributorKind} from './modules/contributor.js';
 import type {Unchecked, Phrase} from './modules/text.js';
-import type {SyncPrefer} from './modules/catalog-sync.js';
 import {spell, plural, firstThree, buildElement, fillElement, byId, showIoStatus} from './dom.js';
-import {fetchFromServer} from './connections.js';
 
 /**
  * Comparing with Hardcover or AudiobookDB, or sending to it, going on (or just ended) in a page, as showCatalogJob() shows it.
@@ -946,113 +944,45 @@ function setAsideOldCatalog() {
 	}
 }
 
-// ------------------------------------------------------------ syncing devices
-// With sync set up on your server (a D1 database, or make serve's SQLite file; docs/server.md), the server keeps one
-// copy of the catalog, encrypted with a passphrase that is kept in this browser only, like the server's key (never in a backup,
-// never sent). Syncing takes in what other devices changed since this browser last synced, saves it, and sends the
-// result as the next copy (CatalogSync). What this browser last synced is kept in IndexedDB (meta `sync`).
-export const SYNC_STORAGE_KEY = 'audiobook-catalog-sync-passphrase';
-
-/** @returns the sync passphrase saved in this browser, or '' */
-export function savedPassphrase(): string {
-	try {
-		return localStorage.getItem(SYNC_STORAGE_KEY) || '';
-	} catch {
-		return '';
-	}
-}
-
-/** @returns when this browser last synced, and the copy's revision then */
-export async function lastSync(): Promise<{revision: number; at: string} | null> {
-	try {
-		const base = DATABASE ? await DATABASE.syncBase() : null;
-		return base ? {revision: base.revision, at: base.at} : null;
-	} catch {
-		return null;
-	}
-}
+// ------------------------------------------------------------ what syncing devices needs
+// Syncing devices is sync.ts's, which only Import & export loads; what it needs of the stored catalog is here, so
+// the database and the saves stay this module's own.
 
 /**
- * What a sync did: how many records it took in from the other devices, whether it sent a new copy, and the
- * entries both this browser and another device changed (then nothing was done, unless told which to keep).
+ * What this browser keeps of its syncs (the database's syncBase() and keepSyncBase()), for sync.ts. Throws a plain
+ * error when this browser keeps no catalog.
  */
-export type SyncOutcome = {taken: number; sent: boolean; conflicts: string[]};
-
-/**
- * The server's answer to a sync request, or a plain error saying what is wrong.
- */
-async function syncAnswer(res: Response): Promise<{revision: number; data?: string | null}> {
-	if (res.status === 401) throw new Error(spell('your server refused the key'));
-	if (res.status === 501) throw new Error(spell('sync is not set up on your server (see Your server in the docs)'));
-	if (res.status === 404) throw new Error(spell('your server is from before sync: deploy it again'));
-	if (res.status === 413) throw new Error(spell('the catalog is too big to sync'));
-	if (!res.ok) throw new Error(spell('your server answered {status}', {status: res.status}));
-	return (await res.json()) as {revision: number; data?: string | null};
-}
-
-/**
- * Sync this browser's catalog with the copy on your server: take in what other devices changed since this
- * browser last synced, save it here, and send the result. When both changed one entry, nothing is changed and
- * the outcome names them, unless `prefer` says whose to keep. Throws a plain error (or CatalogSync's
- * WrongPassphrase, UnrelatedCatalogs, or NewerBackup) when it can't.
- */
-export async function syncCatalog(prefer?: SyncPrefer): Promise<SyncOutcome> {
+export function syncedCopies(): Pick<CatalogDatabase, 'syncBase' | 'keepSyncBase'> {
 	if (!DATABASE) throw new Error(SAVE_REFUSED || spell('this browser keeps no catalog to sync'));
-	const passphrase = savedPassphrase();
-	if (!passphrase) throw new Error(spell('save a sync passphrase first'));
-	// only Import & export syncs, so only it loads what syncing needs
-	const [{Backup}, {CatalogSync}] = await Promise.all([
-		import('./modules/backup.js'),
-		import('./modules/catalog-sync.js'),
-	]);
-	await wholeCatalog();
-	// another device may send its copy between this browser's reading and sending: then it reads again
-	for (let tries = 1; tries <= 3; tries++) {
-		const got = await syncAnswer(await fetchFromServer('sync'));
-		const base = await DATABASE.syncBase();
-		const opened = got.data ? await CatalogSync.open(got.data, passphrase) : null;
-		// what this browser synced last is of use only while the copy is that one, at that revision or later
-		const known = base && opened && opened.copy === base.copy && got.revision >= base.revision ? base.backup : null;
-		await SAVING;
-		const mine = Backup.write(CATALOG);
-		const result = CatalogSync.combine(known, mine, opened ? opened.backup : null, prefer);
-		if (result.conflicts.length && !prefer) return {taken: 0, sent: false, conflicts: result.conflicts};
-		if (result.taken) {
-			const before = CATALOG.books;
-			// the synced catalog in place of this one names its series and people under other ids, which can't be
-			// stored beside this one's names: this one goes first
-			if (prefer === 'replace') {
-				const emptied = new Catalog();
-				emptied.addExclusions(CATALOG.exclusions.entries); // only ever added to
-				CATALOG.replaceWith(emptied);
-				await persist();
-			}
-			CATALOG.replaceWith(CatalogRecords.toCatalog(result.records));
-			await persist();
-			if (CatalogRecords.changes(SAVED, recordsNow()).count)
-				throw new Error(spell('what the other devices changed could not be saved here, so nothing was sent'));
-			if (redrawPage) redrawPage(before);
-		}
-		const copy = opened ? opened.copy || Catalog.newId() : Catalog.newId();
-		if (opened && !result.sent) {
-			await DATABASE.keepSyncBase({
-				revision: got.revision,
-				copy,
-				backup: opened.backup,
-				at: new Date().toISOString(),
-			});
-			return {taken: result.taken, sent: false, conflicts: result.conflicts};
-		}
-		const now = Backup.write(CATALOG);
-		const key = opened ? opened.key : await CatalogSync.keyFor(passphrase);
-		const body = JSON.stringify({revision: got.revision, data: await CatalogSync.seal(now, key, copy)});
-		const res = await fetchFromServer('sync', undefined, {body});
-		if (res.status === 409) continue;
-		const sent = await syncAnswer(res);
-		await DATABASE.keepSyncBase({revision: sent.revision, copy, backup: now, at: new Date().toISOString()});
-		return {taken: result.taken, sent: true, conflicts: result.conflicts};
+	return DATABASE;
+}
+
+/** @returns the saves asked for so far, once they are done (whether the catalog was kept) */
+export function savesDone(): Promise<boolean> {
+	return SAVING;
+}
+
+/**
+ * Put the catalog a sync gave in place of the one the page holds and save it, then draw the page again.
+ * With `replace` this one goes first (but for its exclusions, which are only ever added to): the synced
+ * catalog names its series and people under other ids, which can't be stored beside this one's names.
+ * Throws a plain error when not all of it could be saved.
+ * @param synced the catalog the sync gave
+ * @param replace whether the synced catalog takes the place of this one rather than being taken into it
+ */
+export async function takeInSynced(synced: Catalog, replace: boolean): Promise<void> {
+	const before = CATALOG.books;
+	if (replace) {
+		const emptied = new Catalog();
+		emptied.addExclusions(CATALOG.exclusions.entries);
+		CATALOG.replaceWith(emptied);
+		await persist();
 	}
-	throw new Error(spell('other devices kept syncing meanwhile; try again'));
+	CATALOG.replaceWith(synced);
+	await persist();
+	if (CatalogRecords.changes(SAVED, recordsNow()).count)
+		throw new Error(spell('what the other devices changed could not be saved here, so nothing was sent'));
+	if (redrawPage) redrawPage(before);
 }
 
 // ------------------------------------------------------------ runs on a catalog's shelves

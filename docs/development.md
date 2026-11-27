@@ -15,6 +15,7 @@ src/                  the app's TypeScript, which make pages compiles into publi
   edit.ts             the Edit page: a series and its books, an author's books, one book or a new one, edited in place,
                         with what the other catalogs have (edit-catalogs.ts, loaded when asked) and Fill in
   import.ts           export file imports (Audible, Goodreads) and exports (Goodreads), catalogs' shelves (Hardcover, AudiobookDB), Check / Box sets, backups (Export / Restore / Merge)
+  sync.ts             Import & export's Sync between devices: the passphrase, and syncing with the copy on your server
   duplicates.ts       find and merge books entered twice
   stats.ts            how complete the catalog is: what lacks each value, and ids per external catalog (modules/catalog-stats.ts counts)
   credits.ts          the lists of authors, narrators and publishers

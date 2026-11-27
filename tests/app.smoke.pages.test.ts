@@ -45,6 +45,7 @@ const IMPORT_PAGE_ONLY = [
 	'modules/merger.js',
 	'modules/comparison.js',
 	'modules/catalog-sync.js',
+	'sync.js',
 ];
 for (const page of ALL_PAGES) {
 	const html = read(page);

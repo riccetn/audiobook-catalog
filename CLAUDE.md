@@ -201,8 +201,8 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   `whenSaved`, `storedRevision`),
   the page links
   (`placePageHref(id)`, `namedPlacePageHref(name)`, `pageHref(file, hash)`, only the hash on that page itself; `bookPageHref`, `seriesPageHref`, `standalonePageHref`; `creditPageHref(kind, id)`, and `authorPageHref`/`narratorPageHref`/`publisherPageHref`, which write the id the page holds for the name, else the name, never a new id; `valueFromPageHash` and `idFromAddress` read an address back, taking an id or, from older links, a name), the address helpers every page reads and writes its `#a=1&b` with (`hashValue` encodes a value, spaces as `+`; `hashParts` is the one decoder, which `valueFromPageHash` and `hashText` read through: a value ends at `&`, so a name holding one is written `%26`; `hashOf`, `setAddress`), the last backup (`noteBackup`, `backupAge`, `needsBackup`; localStorage `audiobook-catalog-last-backup`),
-  the sync (`syncCatalog(prefer)`: reads the server's copy (`fetchFromServer('sync')`), `CatalogSync.combine` with what this browser last synced (`CatalogDatabase.syncBase`, meta `sync`), saves, then sends the next copy over the revision read, again on a 409;
-  passphrase in localStorage `audiobook-catalog-sync-passphrase`, `savedPassphrase`, `lastSync`), `openWithStatus` and the run banner of a catalog's shelves (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
+  what `sync.js` needs of the stored catalog, so the database and the saves stay its own (`syncedCopies`, the database's `syncBase`/`keepSyncBase`, throwing when this browser keeps no catalog;
+  `savesDone`; `takeInSynced(catalog, replace)`, which saves the synced catalog in place of the page's and draws the page again), `openWithStatus` and the run banner of a catalog's shelves (`showCatalogJob`, `#bgTask`, a `CatalogJob` naming its catalog).
   Each page script ends with `export const READY = startPage(init, {refresh})` (`init` may be async; the import page also passes `onCatalogJob`;
   the people's lists end with `startCreditsPage(kind)` and their pages with `startCreditPage(kind)`, which call it).
   Pages keep what they show by id (books by `Book.id`, series and people by `CATALOG.idFor(kind, name)`), and so do their
@@ -276,6 +276,8 @@ TypeDoc (`api-docs/typedoc.json`: `src/*.ts` but `sw.ts`, and `src/modules/*.ts`
   hidden after `SETUP_SHOWN_MS`; the device that opens the link: `takeSettingsFromAddress` clears the address at once and shows `#setupReceived`,
   `saveReceivedSettings` only on its Save).
   Audible's catalog doesn't allow browser requests, so imports don't look series up on Audible (only the Edit page does, through the catalog proxy).
+- `sync.js` (imported only by `import.js`): _Sync between devices_ itself. `syncCatalog(prefer)`: reads the server's copy (`fetchFromServer('sync')`, its answer by `syncAnswer`), `CatalogSync.combine` with what this browser last synced (`store.js`'s `syncedCopies`, meta `sync`), saves (`takeInSynced`), then sends the next copy over the revision read, again on a 409;
+  the passphrase in localStorage `audiobook-catalog-sync-passphrase`, read and written only here (`savedPassphrase`, `savePassphrase`, '' removing it), `lastSync`, `SyncOutcome`.
 - `credit-kinds.js`: `CREDIT_KINDS`, what differs between authors, narrators and publishers on their lists and pages
   (`infoKey`, `hashKey`, `list`, `page`, labels, `texts`: the sentences that name the kind, as `spell()` templates, `href`).
 - `credits.js` (`authors.html`, `narrators.html`, `publishers.html`, each started by its own `authors.js`/`narrators.js`/
